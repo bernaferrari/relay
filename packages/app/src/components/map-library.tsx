@@ -270,7 +270,7 @@ export function MapLibrary(props: {
       </Show>
 
       <footer class="shrink-0 border-t border-border-weak-base p-1.5">
-        <Show when={props.area === "tests" && !recorder.recording() && !recorder.take()}>
+        <Show when={props.area === "tests" && !recorder.recording()}>
           {/* Creating a board is instant; recording is a contextual action on
               the board once a device is involved. */}
           <button

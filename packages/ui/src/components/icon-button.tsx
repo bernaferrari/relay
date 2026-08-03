@@ -28,7 +28,8 @@ function toDataSize(size: IconButtonSize | undefined): "small" | "normal" | "lar
 }
 
 /**
- * AgentBoard IconButton — 20 / 24 / 32 square hits.
+ * Relay IconButton — compact visible controls with at least a 44px effective
+ * pointer target. The title bar keeps its platform-specific exception.
  * Default variant is ghost for chrome/row actions (Stage product default).
  * Pass the glyph as children (Stage uses app Icon, not a shared icon set).
  */

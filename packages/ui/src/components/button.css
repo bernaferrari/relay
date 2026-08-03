@@ -1,4 +1,5 @@
 [data-component="button"] {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -170,6 +171,12 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
+  &[data-size="small"]::before {
+    content: "";
+    position: absolute;
+    inset: -8px -4px;
+  }
+
   &[data-size="normal"] {
     min-height: 36px;
     line-height: 36px;
@@ -187,6 +194,12 @@
     font-style: normal;
     font-weight: var(--font-weight-medium);
     letter-spacing: var(--letter-spacing-normal);
+  }
+
+  &[data-size="normal"]::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
   }
 
   &[data-size="large"] {

@@ -18,6 +18,7 @@ import {
 import type {
   AddScreenInput,
   AppMap,
+  AppMapBatchChange,
   AppMapCompiledFlow,
   AppMapPatch,
   CaseStack,
@@ -109,6 +110,7 @@ type GenerationRequestDto = {
   model?: string;
   count?: number;
   seed?: number;
+  allowedValues?: string[];
 };
 
 type GenerationResultDto = {
@@ -389,6 +391,17 @@ type SpecificOperationMap = {
     input: { appMapId: string; expectedRevision: number; eventId?: string; patch: AppMapPatch };
     output: { appMap: AppMap };
   };
+  "app-map.commit": {
+    input: {
+      appMapId: string;
+      expectedRevision: number;
+      eventId?: string;
+      summary?: string;
+      changes: AppMapBatchChange[];
+      patch?: AppMapPatch;
+    };
+    output: { appMap: AppMap };
+  };
   "app-map.screen.add": {
     input: { appMapId: string; expectedRevision: number; eventId?: string; input: AddScreenInput };
     output: { appMap: AppMap };
@@ -561,6 +574,10 @@ type SpecificOperationMap = {
     output: AuthoringSessionResponse;
   };
   "authoring.session.observe": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.capture": {
     input: { sessionId: string };
     output: AuthoringSessionResponse;
   };
@@ -1282,6 +1299,13 @@ const generationInputParser = objectParser<GenerationRequestDto>("generation inp
     fail("generation purpose", "must be variable or test-plan");
   }
   string(input.prompt, "generation prompt");
+  if (
+    input.allowedValues !== undefined &&
+    (!Array.isArray(input.allowedValues) ||
+      input.allowedValues.some((value) => typeof value !== "string" || !value.trim()))
+  ) {
+    fail("generation allowedValues", "must contain non-empty strings");
+  }
 });
 
 const generationOutputParser = objectParser<GenerationResultDto>("generation response", (input) => {
@@ -1838,6 +1862,18 @@ export const operationDefinitions = [
     input: appMapMutationParser<"app-map.update">("App Map update", "patch"),
     output: appMapOutputParser,
   }),
+  command("app-map.commit", "Commit App Map changes", "POST", "/app-maps/:appMapId/commit", {
+    category: "authoring",
+    input: objectParser<OperationInput<"app-map.commit">>("App Map commit", (input) => {
+      string(input.appMapId, "App Map commit appMapId");
+      number(input.expectedRevision, "App Map commit expectedRevision");
+      if (input.eventId !== undefined) string(input.eventId, "App Map commit eventId");
+      if (input.summary !== undefined) string(input.summary, "App Map commit summary");
+      if (!Array.isArray(input.changes)) fail("App Map commit changes", "must be an array");
+      if (input.patch !== undefined) record(input.patch, "App Map commit patch");
+    }),
+    output: appMapOutputParser,
+  }),
   command("app-map.screen.add", "Add App Map screen", "POST", "/app-maps/:appMapId/screens", {
     category: "authoring",
     input: appMapMutationParser<"app-map.screen.add">("screen addition", "input"),
@@ -2070,6 +2106,19 @@ export const operationDefinitions = [
     "Observe Authoring Target",
     "POST",
     "/authoring-sessions/:sessionId/observe",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+    },
+  ),
+  command(
+    "authoring.session.capture",
+    "Capture Authoring Screen",
+    "POST",
+    "/authoring-sessions/:sessionId/capture",
     {
       category: "authoring",
       input: authoringSessionRefParser,

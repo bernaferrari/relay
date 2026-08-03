@@ -41,6 +41,7 @@ import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readines
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
+import { targetIsReady } from "../lib/target-presentation";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -326,6 +327,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
   });
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
+  const selectedTargetCanCapture = () =>
+    targetIsReady(
+      server.devices().find((candidate) => candidate.serial === server.selectedDevice()),
+      server.health() === "online",
+    );
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
     if (selectedMap()) {
@@ -421,8 +427,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   async function captureFirstScreenFromBlankMap(): Promise<void> {
-    if (creatingBlankMap() || !selectedTargetIsReady()) {
-      if (!selectedTargetIsReady()) openDevicePicker();
+    if (creatingBlankMap() || !selectedTargetCanCapture()) {
+      if (!selectedTargetCanCapture()) openDevicePicker();
       return;
     }
     setCreatingBlankMap(true);
@@ -938,9 +944,32 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         navigatorOpen={navOpen()}
                         captureStartOnReady={captureStartOnReady()}
                         addNoteOnReady={addNoteOnReady()}
-                        onCaptureStartHandled={() => {
+                        onCaptureStartHandled={(success, appMapId) => {
                           setCaptureStartOnReady(false);
                           setCreatingBlankMap(false);
+                          if (success) return;
+                          // A failed first capture should return to the same
+                          // unsaved canvas, not manufacture an empty draft.
+                          void (async () => {
+                            const appMap = await server.loadAppMap(appMapId).catch(() => null);
+                            if (
+                              !appMap ||
+                              Object.keys(appMap.screens).length > 0 ||
+                              Object.keys(appMap.connections).length > 0 ||
+                              Object.keys(appMap.notes).length > 0
+                            )
+                              return;
+                            await server.runAction("app-map.remove", { appMapId });
+                            await server.refreshAppMaps();
+                            if (server.selectedAppMapId() === appMapId) {
+                              server.setSelectedAppMapId(null);
+                            }
+                          })().catch((error) =>
+                            toast(
+                              error instanceof Error ? error.message : String(error),
+                              "warning",
+                            ),
+                          );
                         }}
                         onAddNoteHandled={() => {
                           setAddNoteOnReady(false);

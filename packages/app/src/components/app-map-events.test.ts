@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canvasWheelAction } from "./app-map-events";
+import { canvasWheelAction, shouldIgnoreCanvasShortcut } from "./app-map-events";
 
 const wheel = (
   overrides: Partial<Parameters<typeof canvasWheelAction>[0]> = {},
@@ -49,4 +49,20 @@ test("Cmd or Ctrl wheel becomes a bounded zoom gesture", () => {
 
 test("zero-delta wheel input is ignored", () => {
   assert.equal(canvasWheelAction(wheel()), null);
+});
+
+test("canvas shortcuts yield to focused controls, dialogs, and already handled events", () => {
+  const target = (match: boolean) => ({ closest: () => (match ? ({} as Element) : null) });
+  assert.equal(
+    shouldIgnoreCanvasShortcut({ defaultPrevented: true, target: target(false) as never }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreCanvasShortcut({ defaultPrevented: false, target: target(true) as never }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreCanvasShortcut({ defaultPrevented: false, target: target(false) as never }),
+    false,
+  );
 });

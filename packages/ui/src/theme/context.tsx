@@ -8,7 +8,6 @@
 import { createEffect, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createSimpleContext } from "../context/helper";
-import oc2ThemeJson from "./themes/oc-2.json";
 import relayThemeJson from "./themes/relay.json";
 import { resolveThemeVariant, themeToCss } from "./resolve";
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve";
@@ -30,29 +29,15 @@ let known: Set<string> | undefined;
 
 function getFiles() {
   if (files) return files;
-  const lazy = import.meta.glob<{ default: DesktopTheme }>([
-    "./themes/*.json",
-    "!./themes/oc-2.json",
-    "!./themes/relay.json",
-  ]);
   files = {
     "./themes/relay.json": async () => ({ default: relayTheme }),
-    "./themes/oc-2.json": async () => ({ default: oc2Theme }),
-    ...lazy,
   };
   return files;
 }
 
 function themeIDs() {
   if (ids) return ids;
-  ids = Object.keys(getFiles())
-    .map((path) => path.slice("./themes/".length, -".json".length))
-    .sort((a, b) => {
-      const rank = (id: string) =>
-        id === "relay" ? 0 : id === "oc-2" ? 1 : id === "opencode" ? 2 : 10;
-      const d = rank(a) - rank(b);
-      return d !== 0 ? d : a.localeCompare(b);
-    });
+  ids = ["relay"];
   return ids;
 }
 
@@ -62,54 +47,14 @@ function knownThemes() {
   return known;
 }
 
-const names: Record<string, string> = {
-  relay: "Relay",
-  "oc-2": "OC-2",
-  amoled: "AMOLED",
-  aura: "Aura",
-  ayu: "Ayu",
-  carbonfox: "Carbonfox",
-  catppuccin: "Catppuccin",
-  "catppuccin-frappe": "Catppuccin Frappe",
-  "catppuccin-macchiato": "Catppuccin Macchiato",
-  cobalt2: "Cobalt2",
-  cursor: "Cursor",
-  dracula: "Dracula",
-  everforest: "Everforest",
-  flexoki: "Flexoki",
-  github: "GitHub",
-  gruvbox: "Gruvbox",
-  kanagawa: "Kanagawa",
-  "lucent-orng": "Lucent Orng",
-  material: "Material",
-  matrix: "Matrix",
-  mercury: "Mercury",
-  monokai: "Monokai",
-  nightowl: "Night Owl",
-  nord: "Nord",
-  "one-dark": "One Dark",
-  onedarkpro: "One Dark Pro",
-  opencode: "OpenCode",
-  orng: "Orng",
-  "osaka-jade": "Osaka Jade",
-  palenight: "Palenight",
-  rosepine: "Rose Pine",
-  shadesofpurple: "Shades of Purple",
-  solarized: "Solarized",
-  synthwave84: "Synthwave '84",
-  tokyonight: "Tokyonight",
-  vercel: "Vercel",
-  vesper: "Vesper",
-  zenburn: "Zenburn",
-};
+const names: Record<string, string> = { relay: "Relay" };
 
-const oc2Theme = oc2ThemeJson as DesktopTheme;
 const relayTheme = relayThemeJson as DesktopTheme;
 
-function normalize(id: string | null | undefined) {
-  if (id === "oc-1") return "oc-2";
-  if (id === "grok") return "relay";
-  return id;
+function normalize(_id: string | null | undefined) {
+  // Relay has one product design language. Appearance changes the color
+  // scheme, not the component contract or semantic palette.
+  return "relay";
 }
 
 function read(key: string) {
@@ -267,7 +212,6 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
     const [store, setStore] = createStore({
       themes: {
-        "oc-2": oc2Theme,
         relay: relayTheme,
       } as Record<string, DesktopTheme>,
       themeId,

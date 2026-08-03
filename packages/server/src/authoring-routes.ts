@@ -239,7 +239,7 @@ export async function handleAuthoringRoute(input: {
     if (method !== "POST" || !actionMatch) return false;
     const sessionId = actionMatch.sessionId!;
     const action = actionMatch.action!;
-    if (["observe", "start", "interact", "stop", "replay", "cancel"].includes(action)) {
+    if (["observe", "capture", "start", "interact", "stop", "replay", "cancel"].includes(action)) {
       await controlledSession(scope, sessionId);
     } else {
       await authoringSessions.get(sessionId);
@@ -249,6 +249,13 @@ export async function handleAuthoringRoute(input: {
       await body(request);
       json(response, 200, {
         session: await authoringSessions.observe(sessionId, authoringRuntime),
+      });
+      return true;
+    }
+    if (action === "capture") {
+      await body(request);
+      json(response, 200, {
+        session: await authoringSessions.capture(sessionId, authoringRuntime),
       });
       return true;
     }

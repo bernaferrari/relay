@@ -85,6 +85,10 @@ export type ScreenVariant = AppMapEntity & {
   targetProfile: TargetProfile;
   observation?: ScreenIdentityObservation;
   evidenceIds: string[];
+  /** Durable artifact locations corresponding to evidenceIds. Resource URIs
+   * remain separate from short stable identifiers so maps are both strict and
+   * reopenable without renderer-owned blob URLs. */
+  evidenceUris?: string[];
   baseline?: BaselineProvenance;
 };
 
@@ -250,6 +254,18 @@ export type ConnectionPatch = {
   actions?: ActionSpec[];
 };
 
+/** One atomic, reviewable authoring change. The desktop, CLI, HTTP API, and
+ * agents use this same vocabulary so a canvas gesture cannot partially save. */
+export type AppMapBatchChange =
+  | { kind: "screen.add"; input: AddScreenInput }
+  | { kind: "screen.update"; screenId: string; input: UpdateScreenInput }
+  | { kind: "screen.remove"; screenId: string }
+  | { kind: "connection.create"; connection: Connection }
+  | { kind: "connection.update"; connectionId: string; patch: ConnectionPatch }
+  | { kind: "connection.remove"; connectionId: string }
+  | { kind: "flow.save"; flow: Flow }
+  | { kind: "flow.remove"; flowId: string };
+
 export type ProposalChange =
   | { kind: "screen.add"; input: AddScreenInput }
   | { kind: "screen.update"; screenId: string; input: UpdateScreenInput }
@@ -286,6 +302,7 @@ export type ActivityEvent = AppMapScope & {
   actorKind: ActorKind;
   eventType:
     | "app-map.updated"
+    | "app-map.committed"
     | "screen.added"
     | "screen.updated"
     | "screen.removed"

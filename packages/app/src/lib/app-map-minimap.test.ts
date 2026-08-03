@@ -16,6 +16,12 @@ test("minimap projects world positions into a stable percentage space", () => {
     x: 0,
     y: 100,
   });
+  const signedPoint = minimapPoint(
+    { x: -400, y: -200 },
+    { left: -600, top: -300, width: 1200, height: 800 },
+  );
+  assert.ok(Math.abs(signedPoint.x - 100 / 6) < 1e-10);
+  assert.equal(signedPoint.y, 12.5);
 });
 
 test("minimap viewport shows the visible world window and clips overscroll", () => {
@@ -43,5 +49,9 @@ test("minimap navigation converts pointer ratios and centers without changing zo
   assert.deepEqual(
     centerCanvasViewport({ x: 0, y: 0, scale: 0.5 }, { width: 800, height: 600 }, point),
     { x: -50, y: 200, scale: 0.5 },
+  );
+  assert.deepEqual(
+    minimapWorldPoint({ x: 0.25, y: 0.5 }, { left: -600, top: -300, width: 1200, height: 800 }),
+    { x: -300, y: 100 },
   );
 });

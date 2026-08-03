@@ -32,7 +32,11 @@ export function AppMapBrowseView(props: {
   onRefreshScreenshots: () => void;
   canRefreshScreenshots: boolean;
 }) {
-  const [query, setQuery] = createSignal("");
+  const [screenQuery, setScreenQuery] = createSignal("");
+  const [coverageQuery, setCoverageQuery] = createSignal("");
+  const query = () => (props.mode === "screens" ? screenQuery() : coverageQuery());
+  const setQuery = (value: string) =>
+    props.mode === "screens" ? setScreenQuery(value) : setCoverageQuery(value);
   const [platform, setPlatform] = createSignal<"all" | "android" | "ios" | "browser">("all");
   const [outcome, setOutcome] = createSignal<"all" | BrowseRunOutcome>("all");
   const [screenPlatform, setScreenPlatform] = createSignal<"all" | "android" | "ios" | "browser">(
@@ -69,9 +73,16 @@ export function AppMapBrowseView(props: {
   const screenFiltersActive = () =>
     Boolean(query().trim()) || screenPlatform() !== "all" || baseline() !== "all";
   const clearScreenFilters = () => {
-    setQuery("");
+    setScreenQuery("");
     setScreenPlatform("all");
     setBaseline("all");
+  };
+  const coverageFiltersActive = () =>
+    Boolean(coverageQuery().trim()) || platform() !== "all" || outcome() !== "all";
+  const clearCoverageFilters = () => {
+    setCoverageQuery("");
+    setPlatform("all");
+    setOutcome("all");
   };
   const filteredRows = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
@@ -204,6 +215,8 @@ export function AppMapBrowseView(props: {
             <CoverageTable
               rows={filteredRows()}
               hasAnyRuns={rows().length > 0}
+              filtersActive={coverageFiltersActive()}
+              onClearFilters={clearCoverageFilters}
               onOpenRun={props.onOpenRun}
             />
           }
@@ -434,6 +447,8 @@ function actorForRun(run: PersistedRun): string {
 function CoverageTable(props: {
   rows: CoverageRow[];
   hasAnyRuns: boolean;
+  filtersActive: boolean;
+  onClearFilters: () => void;
   onOpenRun: (runId: string) => void;
 }) {
   const visibleRows = () => props.rows.slice(0, 200);
@@ -450,6 +465,8 @@ function CoverageTable(props: {
               ? "Try broader filters or clear the search."
               : "Run this map on one device or a target set. Each target will keep its own result."
           }
+          actionLabel={props.hasAnyRuns && props.filtersActive ? "Clear filters" : undefined}
+          onAction={props.hasAnyRuns && props.filtersActive ? props.onClearFilters : undefined}
         />
       }
     >

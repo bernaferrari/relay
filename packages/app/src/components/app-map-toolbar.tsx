@@ -39,7 +39,7 @@ export function AppMapOverviewToolbar(props: {
   return (
     <header
       class={cn(
-        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] transition-[left] duration-180 ease-out motion-reduce:transition-none max-[900px]:left-1/2 max-[620px]:top-2",
+        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] max-[900px]:left-1/2 max-[620px]:top-2",
         props.shiftForDevice
           ? props.wideDevice
             ? "left-[calc((100%-548px)/2)]"
@@ -57,7 +57,7 @@ export function AppMapOverviewToolbar(props: {
             tabindex={props.view === id ? 0 : -1}
             data-app-map-view={id}
             class={cn(
-              "inline-flex min-h-9 items-center gap-1.5 rounded-[7px] px-2.5 text-[11px] font-medium text-[var(--text-weak)] outline-none transition-[background-color,color,box-shadow] duration-150 hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]",
+              "relative inline-flex min-h-9 items-center gap-1.5 rounded-[7px] px-2.5 text-[11px] font-medium text-[var(--text-weak)] outline-none before:absolute before:-inset-1 before:content-[''] transition-[background-color,color,box-shadow] duration-150 hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]",
               props.view === id &&
                 "bg-[var(--v2-background-bg-base)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/12%),inset_0_0_0_1px_var(--v2-border-border-muted)]",
             )}
@@ -73,7 +73,7 @@ export function AppMapOverviewToolbar(props: {
         <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
         <button
           type="button"
-          class="inline-flex min-h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-medium text-[var(--text-interactive-base)] hover:brightness-105"
+          class="relative inline-flex min-h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-medium text-[var(--text-interactive-base)] before:absolute before:-inset-0.5 before:content-[''] hover:brightness-105"
           onClick={props.onOpenProposals}
         >
           <Icon name="sparkle" size={11} />
@@ -210,4 +210,4 @@ export function AppMapToolbar(props: {
 }
 
 const mapControlButton =
-  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "canvas-tool-control relative grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)] disabled:cursor-not-allowed disabled:opacity-35";

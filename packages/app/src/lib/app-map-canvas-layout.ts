@@ -3,6 +3,14 @@ import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
 export type CanvasViewport = CanvasPoint & { scale: number };
+export type CanvasBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
 
 /** Shared geometry for the App Map canvas and collaboration presence. */
 export const SCREEN_CARD_WIDTH = 180;
@@ -20,8 +28,20 @@ export function canvasBounds(
   nodes: MapTreeNode[],
   notes: CanvasNote[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
-): { width: number; height: number } {
-  if (!nodes.length && !notes.length) return { width: 760, height: 560 };
+): CanvasBounds {
+  if (!nodes.length && !notes.length) {
+    return { left: 0, top: 0, right: 760, bottom: 560, width: 760, height: 560 };
+  }
+  const left = Math.min(
+    0,
+    ...nodes.map((node) => positionFor(node).x),
+    ...notes.map((note) => note.x),
+  );
+  const top = Math.min(
+    0,
+    ...nodes.map((node) => positionFor(node).y),
+    ...notes.map((note) => note.y),
+  );
   const right = Math.max(
     ...nodes.map((node) => positionFor(node).x + SCREEN_CARD_WIDTH),
     ...notes.map((note) => note.x + 220),
@@ -32,12 +52,21 @@ export function canvasBounds(
     ...notes.map((note) => note.y + 132),
     448,
   );
-  return { width: Math.max(760, right + 112), height: Math.max(560, bottom + 112) };
+  const width = Math.max(760, right - left + 112);
+  const height = Math.max(560, bottom - top + 112);
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+  };
 }
 
 export function fitCanvasViewport(
   client: { width: number; height: number },
-  content: { width: number; height: number },
+  content: { width: number; height: number; left?: number; top?: number },
 ): CanvasViewport {
   const padding = 56;
   const scale = clampCanvasScale(
@@ -49,8 +78,8 @@ export function fitCanvasViewport(
   );
   return {
     scale,
-    x: Math.max(padding, (client.width - content.width * scale) / 2),
-    y: Math.max(padding, (client.height - content.height * scale) / 2),
+    x: Math.max(padding, (client.width - content.width * scale) / 2) - (content.left ?? 0) * scale,
+    y: Math.max(padding, (client.height - content.height * scale) / 2) - (content.top ?? 0) * scale,
   };
 }
 
@@ -58,8 +87,9 @@ export function canvasEdgeGeometry(
   edge: { from: string; to: string; kind: "forward" | "return" },
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
+  nodeIndex?: ReadonlyMap<string, MapTreeNode>,
 ): { path: string; labelPoint: CanvasPoint } {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const byId = nodeIndex ?? new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
   const to = byId.get(edge.to);
   if (!from || !to) return { path: "", labelPoint: { x: 0, y: 0 } };

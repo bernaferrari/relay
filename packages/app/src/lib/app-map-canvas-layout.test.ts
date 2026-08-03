@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MapTreeNode } from "./app-map-tree";
-import { canvasEdgeGeometry, fitCanvasViewport } from "./app-map-canvas-layout";
+import { canvasBounds, canvasEdgeGeometry, fitCanvasViewport } from "./app-map-canvas-layout";
 
 const start: MapTreeNode = {
   // Geometry is independent from persistence and target dimensions.
@@ -40,4 +40,14 @@ test("fit keeps a graph visible with stable canvas padding", () => {
   assert.ok(view.scale > 0 && view.scale <= 1);
   assert.ok(view.x >= 0);
   assert.ok(view.y >= 0);
+});
+
+test("fit includes content positioned left and above the world origin", () => {
+  const negative = { ...start, x: -420, y: -180 };
+  const bounds = canvasBounds([negative, settings], [], (node) => node);
+  assert.equal(bounds.left, -420);
+  assert.equal(bounds.top, -180);
+  const view = fitCanvasViewport({ width: 1000, height: 720 }, bounds);
+  assert.ok(negative.x * view.scale + view.x >= 0);
+  assert.ok(negative.y * view.scale + view.y >= 0);
 });

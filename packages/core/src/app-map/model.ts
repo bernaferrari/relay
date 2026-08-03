@@ -5,6 +5,7 @@ export {
   type ActivitySubjectKind,
   type AddScreenInput,
   type AppMap,
+  type AppMapBatchChange,
   type AppMapEntity,
   type AppMapErrorCode,
   type AppMapMutationContext,

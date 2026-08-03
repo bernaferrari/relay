@@ -290,6 +290,42 @@ export function Layout(props: {
     onCleanup(unsub);
   });
 
+  // App Maps and their screens are first-class palette entities. A person or
+  // agent can jump to a known runtime state without first navigating panels.
+  createEffect(() => {
+    const appMaps = server.appMaps();
+    const unsub = cmd.register(
+      appMaps.flatMap((appMap) => [
+        {
+          id: `app-map.${appMap.id}`,
+          title: appMap.name,
+          subtitle: `${Object.keys(appMap.screens).length} screens · App Map`,
+          group: "App Maps",
+          run: () => server.setSelectedAppMapId(appMap.id),
+        },
+        ...Object.values(appMap.screens).map((screen) => ({
+          id: `app-map.${appMap.id}.screen.${screen.id}`,
+          title: screen.title,
+          subtitle: `${appMap.name} · Screen`,
+          group: "Screens",
+          run: () => {
+            server.setSelectedAppMapId(appMap.id);
+            window.setTimeout(
+              () =>
+                window.dispatchEvent(
+                  new CustomEvent("relay:reveal-app-map-screen", {
+                    detail: { appMapId: appMap.id, screenId: screen.id },
+                  }),
+                ),
+              0,
+            );
+          },
+        })),
+      ]),
+    );
+    onCleanup(unsub);
+  });
+
   return (
     <div
       class={cn(

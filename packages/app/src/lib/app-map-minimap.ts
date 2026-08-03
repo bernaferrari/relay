@@ -9,27 +9,29 @@ export type AppMapMinimapBounds = {
 
 export function minimapPoint(
   point: CanvasPoint,
-  content: { width: number; height: number },
+  content: { width: number; height: number; left?: number; top?: number },
 ): CanvasPoint {
   return {
-    x: clampPercent((point.x / Math.max(1, content.width)) * 100),
-    y: clampPercent((point.y / Math.max(1, content.height)) * 100),
+    x: clampPercent(((point.x - (content.left ?? 0)) / Math.max(1, content.width)) * 100),
+    y: clampPercent(((point.y - (content.top ?? 0)) / Math.max(1, content.height)) * 100),
   };
 }
 
 export function minimapViewportBounds(
   viewport: CanvasViewport,
   client: { width: number; height: number },
-  content: { width: number; height: number },
+  content: { width: number; height: number; left?: number; top?: number },
 ): AppMapMinimapBounds {
   const worldLeft = -viewport.x / viewport.scale;
   const worldTop = -viewport.y / viewport.scale;
   const worldRight = worldLeft + client.width / viewport.scale;
   const worldBottom = worldTop + client.height / viewport.scale;
-  const left = clampPercent((worldLeft / Math.max(1, content.width)) * 100);
-  const top = clampPercent((worldTop / Math.max(1, content.height)) * 100);
-  const right = clampPercent((worldRight / Math.max(1, content.width)) * 100);
-  const bottom = clampPercent((worldBottom / Math.max(1, content.height)) * 100);
+  const contentLeft = content.left ?? 0;
+  const contentTop = content.top ?? 0;
+  const left = clampPercent(((worldLeft - contentLeft) / Math.max(1, content.width)) * 100);
+  const top = clampPercent(((worldTop - contentTop) / Math.max(1, content.height)) * 100);
+  const right = clampPercent(((worldRight - contentLeft) / Math.max(1, content.width)) * 100);
+  const bottom = clampPercent(((worldBottom - contentTop) / Math.max(1, content.height)) * 100);
   const width = Math.min(100, Math.max(3, right - left));
   const height = Math.min(100, Math.max(3, bottom - top));
   return {
@@ -42,11 +44,11 @@ export function minimapViewportBounds(
 
 export function minimapWorldPoint(
   ratio: CanvasPoint,
-  content: { width: number; height: number },
+  content: { width: number; height: number; left?: number; top?: number },
 ): CanvasPoint {
   return {
-    x: clampUnit(ratio.x) * content.width,
-    y: clampUnit(ratio.y) * content.height,
+    x: (content.left ?? 0) + clampUnit(ratio.x) * content.width,
+    y: (content.top ?? 0) + clampUnit(ratio.y) * content.height,
   };
 }
 

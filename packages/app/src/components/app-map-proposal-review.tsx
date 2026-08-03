@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import type { Proposal, ProposalChange } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { Icon } from "./icon";
@@ -18,8 +18,11 @@ export function AppMapProposalReview(props: {
   error?: string;
   onApprove: (proposalId: string) => void;
   onReject: (proposalId: string) => void;
+  onRequestChanges: (proposalId: string, reason: string) => void;
   onClose: () => void;
 }) {
+  const [feedbackId, setFeedbackId] = createSignal<string>();
+  const [feedback, setFeedback] = createSignal("");
   return (
     <aside
       class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[var(--map-elevation-panel)]"
@@ -97,24 +100,67 @@ export function AppMapProposalReview(props: {
                     +{proposal.changes.length - 5} more changes
                   </span>
                 </Show>
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    disabled={Boolean(props.busyId)}
-                    onClick={() => props.onApprove(proposal.id)}
-                  >
-                    {props.busyId === proposal.id ? "Applying…" : "Approve"}
-                  </Button>
-                  <button
-                    type="button"
-                    class="min-h-10 rounded-[8px] bg-[var(--v2-background-bg-layer-02)] px-3 text-[10.5px] font-medium text-[var(--text-base)] hover:text-[var(--text-strong)] disabled:opacity-50"
-                    disabled={Boolean(props.busyId)}
-                    onClick={() => props.onReject(proposal.id)}
-                  >
-                    Reject
-                  </button>
-                </div>
+                <Show when={feedbackId() === proposal.id}>
+                  <div class="mt-3 grid gap-2">
+                    <label class="grid gap-1 text-[10px] font-medium text-[var(--text-base)]">
+                      What should the agent change?
+                      <textarea
+                        autofocus
+                        class="min-h-20 resize-y rounded-[8px] bg-[var(--v2-background-bg-base)] px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-strong)] outline-none shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus:shadow-[inset_0_0_0_2px_var(--border-focus)]"
+                        value={feedback()}
+                        onInput={(event) => setFeedback(event.currentTarget.value.slice(0, 500))}
+                      />
+                    </label>
+                    <div class="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setFeedbackId();
+                          setFeedback("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        disabled={!feedback().trim() || Boolean(props.busyId)}
+                        onClick={() => props.onRequestChanges(proposal.id, feedback().trim())}
+                      >
+                        Send request
+                      </Button>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={feedbackId() !== proposal.id}>
+                  <div class="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      disabled={Boolean(props.busyId)}
+                      onClick={() => props.onApprove(proposal.id)}
+                    >
+                      {props.busyId === proposal.id ? "Applying…" : "Approve"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={Boolean(props.busyId)}
+                      onClick={() => {
+                        setFeedbackId(proposal.id);
+                        setFeedback("");
+                      }}
+                    >
+                      Request changes
+                    </Button>
+                    <button
+                      type="button"
+                      class="min-h-10 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)] disabled:opacity-50"
+                      disabled={Boolean(props.busyId)}
+                      onClick={() => props.onReject(proposal.id)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </Show>
               </article>
             )}
           </For>

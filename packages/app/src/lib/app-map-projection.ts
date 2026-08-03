@@ -1,29 +1,15 @@
 import type {
   ActionSpec,
   AppMap,
-  Connection,
-  ConnectionPatch,
+  AppMapBatchChange,
   Flow,
   CanvasGraph,
   AppMapCanvasState,
   RecipeStep,
-  Screen,
+  ScreenVariant,
 } from "@relay/protocol";
 
-export type AppMapProjectionChange =
-  | { kind: "screen.add"; screen: Screen }
-  | {
-      kind: "screen.update";
-      screenId: string;
-      patch: { title?: string; position?: { x: number; y: number } };
-    }
-  | { kind: "connection.create"; connection: Connection }
-  | {
-      kind: "connection.update";
-      connectionId: string;
-      patch: ConnectionPatch;
-    }
-  | { kind: "flow.save"; flow: Flow };
+export type AppMapProjectionChange = AppMapBatchChange;
 
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -87,6 +73,7 @@ export function planAppMapProjection(input: {
   graph: CanvasGraph;
   positions: Readonly<Record<string, { x: number; y: number }>>;
   recipeSteps: readonly RecipeStep[];
+  variantsByScreen?: Readonly<Record<string, readonly ScreenVariant[]>>;
 }): AppMapProjectionChange[] {
   const { appMap, graph, positions } = input;
   const changes: AppMapProjectionChange[] = [];
@@ -102,18 +89,22 @@ export function planAppMapProjection(input: {
   for (const item of graph.screens) {
     const position = positions[item.id];
     const existing = appMap.screens[item.id];
+    const variants = input.variantsByScreen?.[item.id]?.map((variant) => structuredClone(variant));
     if (!existing) {
       changes.push({
         kind: "screen.add",
-        screen: {
-          ...scope,
-          id: item.id,
-          title: item.title,
-          ...(item.identity ? { identity: structuredClone(item.identity) } : {}),
-          ...(position ? { position: structuredClone(position) } : {}),
-          variantIds: [],
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
+        input: {
+          screen: {
+            ...scope,
+            id: item.id,
+            title: item.title,
+            ...(item.identity ? { identity: structuredClone(item.identity) } : {}),
+            ...(position ? { position: structuredClone(position) } : {}),
+            variantIds: variants?.map((variant) => variant.id).sort() ?? [],
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+          },
+          ...(variants?.length ? { variants } : {}),
         },
       });
       continue;
@@ -124,8 +115,12 @@ export function planAppMapProjection(input: {
         ? { position: structuredClone(position) }
         : {}),
     };
-    if (Object.keys(patch).length)
-      changes.push({ kind: "screen.update", screenId: item.id, patch });
+    if (Object.keys(patch).length || variants?.length)
+      changes.push({
+        kind: "screen.update",
+        screenId: item.id,
+        input: { patch, ...(variants?.length ? { upsertVariants: variants } : {}) },
+      });
   }
 
   for (const item of graph.transitions) {

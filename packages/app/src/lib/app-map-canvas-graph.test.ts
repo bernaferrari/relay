@@ -98,6 +98,27 @@ test("capturing a screen creates unique nodes and refreshes matching observation
   assert.equal(refreshed.graph.transitions.length, 0);
 });
 
+test("default sibling screens never overlap", () => {
+  const first = addCanvasStartScreen(
+    emptyCanvasGraph(),
+    { id: "home", fingerprint: "home", capturedAt: 1, source: "recording" },
+    { at: 1 },
+  );
+  const settings = addGraphScreenConnection(
+    first.graph,
+    { fromScreenId: first.screen.id, title: "Settings", position: { x: 420, y: 80 } },
+    2,
+  );
+  const profile = addGraphScreenConnection(
+    settings.graph,
+    { fromScreenId: first.screen.id, title: "Profile", position: { x: 420, y: 440 } },
+    3,
+  );
+  const siblings = buildCanvasGraphTree(profile.graph, []).nodes.filter((node) => node.depth === 1);
+  assert.equal(siblings.length, 2);
+  assert.ok(Math.abs(siblings[0]!.y - siblings[1]!.y) >= 350);
+});
+
 test("a reviewed take creates an explicit start, destination screen, and transition", () => {
   const committed = commitTakeToCanvasGraph(emptyCanvasGraph(), {
     steps: [steps[0]!],

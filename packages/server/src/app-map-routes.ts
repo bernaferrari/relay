@@ -5,6 +5,7 @@ import {
   approveAppMapProposal,
   attachAppMapCaseStack,
   connectAppMapScreens,
+  commitAppMapChanges,
   createAppMap,
   currentOperationContext,
   deleteAppMap,
@@ -233,6 +234,23 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       yaml: formatAppMapYaml(appMap),
       filename: appMapYamlFilename(appMap.id),
     });
+    return true;
+  }
+
+  const mapCommit = matchPath(pathname, "/app-maps/:appMapId/commit");
+  if (method === "POST" && mapCommit) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.commit">,
+      "appMapId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      mapCommit.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => commitAppMapChanges(map, body.changes, body.patch, context, body.summary),
+    );
+    json(response, 200, { appMap });
     return true;
   }
 

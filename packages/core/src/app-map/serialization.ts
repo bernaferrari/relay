@@ -80,6 +80,7 @@ function normalizedVariant(value: ScreenVariant): ScreenVariant {
     ...structuredClone(value),
     targetProfile: normalizedProfile(value.targetProfile),
     evidenceIds: sortedStrings(value.evidenceIds),
+    ...(value.evidenceUris ? { evidenceUris: sortedStrings(value.evidenceUris) } : {}),
     ...(baseline ? { baseline } : {}),
   };
 }

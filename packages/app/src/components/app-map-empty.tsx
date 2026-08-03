@@ -3,7 +3,8 @@ import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
-import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
+import { targetIsReady } from "../lib/target-presentation";
+import { DeviceStatusLabel, appMapDeviceStatus } from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 import { Icon } from "./icon";
 
@@ -37,27 +38,17 @@ export function EmptyAppMap(props: {
         (!server.liveFrame()?.serial || server.liveFrame()?.serial === device()?.serial),
     }),
   );
-  const ready = () => readiness().kind === "ready";
-  const status = (): AppMapDeviceStatus => {
-    if (!device()) return { label: "Device", kind: "idle" };
-    if (server.health() !== "online") return { label: "Relay offline", kind: "attention" };
-    switch (readiness().kind) {
-      case "ready":
-        return { label: "Live", kind: "ready" };
-      case "checking-ios":
-        return { label: "Checking device", kind: "progress" };
-      case "ios-preparing":
-        return { label: "Preparing device", kind: "progress" };
-      case "screen-preparing":
-        return { label: "Starting live view", kind: "progress" };
-      case "device-unavailable":
-        return { label: "Device unavailable", kind: "attention" };
-      case "capture-error":
-        return { label: "Screen unavailable", kind: "attention" };
-      default:
-        return { label: "Device setup needed", kind: "attention" };
-    }
-  };
+  // A still capture uses the shared observation channel and remains available
+  // while the interactive stream is connecting. Only recording needs live
+  // video readiness.
+  const ready = () => targetIsReady(device(), server.health() === "online");
+  const status = () =>
+    appMapDeviceStatus({
+      readiness: readiness(),
+      deviceSelected: Boolean(device()),
+      serverOnline: server.health() === "online",
+      discovering: server.deviceDiscoveryStatus() === "scanning",
+    });
 
   return (
     <section
@@ -98,7 +89,7 @@ export function EmptyAppMap(props: {
       <Show when={props.deviceOpen}>
         <aside
           class={cn(
-            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[14px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] transition-[width] duration-180 ease-out motion-reduce:transition-none max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
+            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[14px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
             deviceOrientation() === "landscape"
               ? "w-[min(548px,calc(100%-32px))]"
               : "w-[min(388px,calc(100%-32px))]",

@@ -1,11 +1,49 @@
 import { Show } from "solid-js";
 import { cn } from "../lib/cn";
+import type { DeviceReadiness } from "../lib/device-readiness";
 import { Icon } from "./icon";
 
 export type AppMapDeviceStatus = {
   label: string;
   kind: "idle" | "progress" | "ready" | "recording" | "attention";
 };
+
+/** Convert readiness into one mutually exclusive status. Keeping this here
+ * prevents the empty map and an authored map from describing the same target
+ * differently. */
+export function appMapDeviceStatus(input: {
+  readiness: DeviceReadiness;
+  deviceSelected: boolean;
+  serverOnline: boolean;
+  discovering?: boolean;
+  recording?: boolean;
+}): AppMapDeviceStatus {
+  if (input.recording) return { label: "Recording", kind: "recording" };
+  if (!input.deviceSelected && input.serverOnline && input.discovering) {
+    return { label: "Looking for devices", kind: "progress" };
+  }
+  if (!input.deviceSelected) return { label: "Device", kind: "idle" };
+  if (!input.serverOnline) return { label: "Relay offline", kind: "attention" };
+  switch (input.readiness.kind) {
+    case "ready":
+      return { label: "Live", kind: "ready" };
+    case "checking-ios":
+      return { label: "Checking device", kind: "progress" };
+    case "ios-preparing":
+      return { label: "Preparing device", kind: "progress" };
+    case "screen-preparing":
+      return { label: "Starting live view", kind: "progress" };
+    case "device-unavailable":
+      return { label: "Device unavailable", kind: "attention" };
+    case "capture-error":
+      return { label: "Screen unavailable", kind: "attention" };
+    case "ios-developer-mode-disabled":
+    case "setup-ios":
+      return { label: "Device setup needed", kind: "attention" };
+    case "choose-device":
+      return { label: "Device", kind: "idle" };
+  }
+}
 
 /** One visual language for device state: neutral progress, semantic attention,
  * and a dot only when the live state is definitive. */

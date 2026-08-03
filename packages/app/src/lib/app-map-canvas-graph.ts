@@ -9,6 +9,7 @@ import type {
   RecordingClip,
   RecipeStep,
 } from "@relay/protocol";
+import { SCREEN_CARD_HEIGHT } from "./app-map-canvas-layout";
 import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
 /**
@@ -534,7 +535,7 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
         ),
         depth,
         x: depth * 304,
-        y: row * 328,
+        y: row * (SCREEN_CARD_HEIGHT + 32),
       };
     })
     .sort((a, b) => a.depth - b.depth || a.y - b.y);

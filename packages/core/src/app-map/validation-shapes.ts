@@ -200,6 +200,23 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
   assertTargetProfile(variant.targetProfile, `${label}.targetProfile`);
   if (variant.observation) assertObservation(variant.observation, `${label}.observation`);
   stringArray(variant.evidenceIds, `${label}.evidenceIds`);
+  if (variant.evidenceUris !== undefined) {
+    if (!Array.isArray(variant.evidenceUris) || variant.evidenceUris.length > 32) {
+      appMapFail("invalid-map", `${label}.evidenceUris must be an array of at most 32 items`);
+    }
+    const seen = new Set<string>();
+    variant.evidenceUris.forEach((uri, index) => {
+      requiredText(uri, `${label}.evidenceUris[${index}]`, 2_048);
+      if (!uri.startsWith("relay-evidence://")) {
+        appMapFail(
+          "invalid-map",
+          `${label}.evidenceUris[${index}] must be a Relay evidence resource`,
+        );
+      }
+      if (seen.has(uri)) appMapFail("duplicate-id", `${label}.evidenceUris contains a duplicate`);
+      seen.add(uri);
+    });
+  }
   if (variant.baseline) assertBaseline(variant.baseline, `${label}.baseline`);
 }
 
@@ -468,6 +485,7 @@ export function assertActivity(
     appMapFail("invalid-map", `${label}.actorKind is unsupported`);
   const eventTypes: ActivityEvent["eventType"][] = [
     "app-map.updated",
+    "app-map.committed",
     "screen.added",
     "screen.updated",
     "screen.removed",

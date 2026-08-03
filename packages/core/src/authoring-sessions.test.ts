@@ -206,6 +206,29 @@ test("sessions on different explicit targets progress independently", async () =
   });
 });
 
+test("screen capture persists evidence without starting video recording", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    const created = await store.create({
+      appMapId,
+      target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+      leaseId: "lease-a",
+      expectedAppMapRevision: appMap.revision,
+    });
+
+    const captured = await store.capture(created.id, runtime);
+
+    assert.equal(captured.state, "reviewing");
+    assert.deepEqual(runtime.lifecycle, ["observe"]);
+    const revision = captured.take?.revisions[0];
+    assert.ok(revision?.before);
+    assert.deepEqual(revision?.after, revision?.before);
+    assert.equal(revision?.actions.length, 0);
+    assert.ok(revision?.evidence.some((item) => item.kind === "screenshot"));
+  });
+});
+
 test("unsupported target interactions stay explicit and are not recorded", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);

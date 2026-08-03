@@ -392,6 +392,13 @@ export class RelayClient {
       { authoringSessionId: sessionId, ...(signal ? { signal } : {}) },
     );
   }
+  captureAuthoringScreen(sessionId: string, signal?: AbortSignal) {
+    return this.invoke(
+      "authoring.session.capture",
+      { sessionId },
+      { authoringSessionId: sessionId, ...(signal ? { signal } : {}) },
+    );
+  }
   startAuthoringSession(sessionId: string, signal?: AbortSignal) {
     return this.invoke(
       "authoring.session.start",

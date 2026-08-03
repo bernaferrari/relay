@@ -25,7 +25,7 @@ export const deterministicGenerationProvider: GenerationProvider = {
       return {
         provider: "deterministic",
         model: "planner-pass-through-v1",
-        values: [input.prompt],
+        values: [input.allowedValues?.[0] ?? input.prompt],
         generatedAt: Date.now(),
       };
     }
@@ -298,8 +298,11 @@ export async function generateValues(input: GenerationRequest): Promise<Generati
   const result = await provider.generate(input);
   const completedAt = Date.now();
   const usage = compactUsage(result.usage);
+  const allowed = input.allowedValues ? new Set(input.allowedValues) : undefined;
+  const values = allowed ? result.values.filter((value) => allowed.has(value)) : result.values;
   return {
     ...result,
+    values,
     ...(usage ? { usage } : {}),
     provenance: {
       requestId: randomUUID(),

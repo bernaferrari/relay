@@ -1527,6 +1527,7 @@ export function DeviceStage(_props: {
           fallback={
             <div
               data-device-chrome
+              data-device-content={displayImageSrc() ? "frame" : "status"}
               class={cn(
                 phoneShell,
                 "relative z-[2] shrink-0",

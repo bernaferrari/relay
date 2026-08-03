@@ -38,7 +38,7 @@ export function AppMapDeviceCompanion(props: {
   return (
     <aside
       class={cn(
-        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] transition-[width] duration-180 ease-out motion-reduce:transition-none",
+        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)]",
         props.closing && "ui-device-companion--closing",
         props.deviceSelected
           ? cn(

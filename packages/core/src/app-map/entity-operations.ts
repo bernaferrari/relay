@@ -17,7 +17,6 @@ export function updateAppMap(
   context: AppMapMutationContext,
 ): AppMap {
   const name = patch.name?.trim();
-  const description = patch.description?.trim();
   if (patch.name !== undefined && !name) appMapFail("invalid-map", "App Map name is required");
   return mutateAppMap(
     map,
@@ -27,18 +26,26 @@ export function updateAppMap(
       subject: { kind: "app-map", id: map.id },
       summary: `Updated ${name ?? map.name}`,
     },
-    (draft) => {
-      if (name) draft.name = name;
-      if (patch.description !== undefined) {
-        if (description) draft.description = description;
-        else delete draft.description;
-      }
-      if (patch.notes !== undefined) draft.notes = structuredClone(patch.notes);
-    },
+    (draft) => applyAppMapPatch(draft, patch),
   );
 }
 
-function assertEntityScope(map: AppMap, entity: Flow | Routine | Proposal | CaseStack): void {
+export function applyAppMapPatch(draft: AppMap, patch: AppMapPatch): void {
+  const name = patch.name?.trim();
+  const description = patch.description?.trim();
+  if (patch.name !== undefined && !name) appMapFail("invalid-map", "App Map name is required");
+  if (name) draft.name = name;
+  if (patch.description !== undefined) {
+    if (description) draft.description = description;
+    else delete draft.description;
+  }
+  if (patch.notes !== undefined) draft.notes = structuredClone(patch.notes);
+}
+
+export function assertEntityScope(
+  map: AppMap,
+  entity: Flow | Routine | Proposal | CaseStack,
+): void {
   if (
     entity.organizationId !== map.organizationId ||
     entity.projectId !== map.projectId ||

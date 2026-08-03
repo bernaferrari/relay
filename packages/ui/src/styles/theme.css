@@ -166,9 +166,9 @@
   --input-selected: #e0eaff;
   --input-focus: #fcfdff;
   --input-disabled: #ededed;
-  --text-base: #6f6f6f;
-  --text-weak: #8f8f8f;
-  --text-weaker: #c7c7c7;
+  --text-base: #525252;
+  --text-weak: #6f6f6f;
+  --text-weaker: #a3a3a3;
   --text-strong: #171717;
   --text-invert-base: #f8f8f8;
   --text-invert-weak: #f3f3f3;
@@ -431,9 +431,9 @@
     --input-selected: #0b1730;
     --input-focus: #091123;
     --input-disabled: #282828;
-    --text-base: rgba(255, 255, 255, 0.618);
-    --text-weak: rgba(255, 255, 255, 0.422);
-    --text-weaker: rgba(255, 255, 255, 0.284);
+    --text-base: rgba(255, 255, 255, 0.78);
+    --text-weak: rgba(255, 255, 255, 0.54);
+    --text-weaker: rgba(255, 255, 255, 0.42);
     --text-strong: rgba(255, 255, 255, 0.936);
     --text-invert-base: #a0a0a0;
     --text-invert-weak: #707070;

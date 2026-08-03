@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, CanvasGraph } from "@relay/protocol";
+import type { AppMap, CanvasGraph, ScreenVariant } from "@relay/protocol";
 import { mergeAppMapProjection, planAppMapProjection } from "./app-map-projection.js";
 
 const map: AppMap = {
@@ -48,6 +48,28 @@ const graph: CanvasGraph = {
   flows: [{ id: "main", name: "Main", screenId: "start", createdAt: 1, updatedAt: 3 }],
 };
 
+const startVariant: ScreenVariant = {
+  id: "variant-start-android",
+  organizationId: "acme",
+  projectId: "mobile",
+  appMapId: "store",
+  screenId: "start",
+  targetProfile: {
+    id: "profile-pixel",
+    targetId: "pixel",
+    source: "device",
+    platform: "android",
+    name: "Pixel",
+    viewport: { width: 1080, height: 2340 },
+    capabilities: ["screenshot"],
+    observedAt: 4,
+  },
+  evidenceIds: ["evidence-start"],
+  evidenceUris: ["relay-evidence://captures/start.png"],
+  createdAt: 4,
+  updatedAt: 4,
+};
+
 test("projects a canvas into ordered granular App Map changes", () => {
   const changes = planAppMapProjection({
     appMap: map,
@@ -75,7 +97,8 @@ test("does not erase agent-owned entities or emit unchanged canvas fields", () =
   });
   const projected = structuredClone(map);
   for (const change of first) {
-    if (change.kind === "screen.add") projected.screens[change.screen.id] = change.screen;
+    if (change.kind === "screen.add")
+      projected.screens[change.input.screen.id] = change.input.screen;
     if (change.kind === "connection.create")
       projected.connections[change.connection.id] = change.connection;
     if (change.kind === "flow.save") projected.flows[change.flow.id] = change.flow;
@@ -96,6 +119,47 @@ test("does not erase agent-owned entities or emit unchanged canvas fields", () =
     [],
   );
   assert.ok(projected.screens.agent);
+});
+
+test("persists captured evidence with a new screen and refreshes an existing screen", () => {
+  const first = planAppMapProjection({
+    appMap: map,
+    graph,
+    positions: {},
+    recipeSteps: [],
+    variantsByScreen: { start: [startVariant] },
+  });
+  const add = first.find(
+    (change) => change.kind === "screen.add" && change.input.screen.id === "start",
+  );
+  assert.equal(add?.kind, "screen.add");
+  if (add?.kind !== "screen.add") return;
+  assert.deepEqual(add.input.screen.variantIds, [startVariant.id]);
+  assert.deepEqual(add.input.variants, [startVariant]);
+
+  const projected = structuredClone(map);
+  projected.screens.start = structuredClone(add.input.screen);
+  projected.screenVariants[startVariant.id] = structuredClone(startVariant);
+  const refreshed = {
+    ...startVariant,
+    evidenceIds: ["evidence-start-new"],
+    evidenceUris: ["relay-evidence://captures/start-new.png"],
+    updatedAt: 5,
+  };
+  const updates = planAppMapProjection({
+    appMap: projected,
+    graph: { ...graph, screens: [graph.screens[0]!], transitions: [], flows: [] },
+    positions: {},
+    recipeSteps: [],
+    variantsByScreen: { start: [refreshed] },
+  });
+  assert.deepEqual(updates, [
+    {
+      kind: "screen.update",
+      screenId: "start",
+      input: { patch: {}, upsertVariants: [refreshed] },
+    },
+  ]);
 });
 
 test("projects canonical changes back without inventing verification evidence", () => {

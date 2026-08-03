@@ -6,6 +6,7 @@ import type {
   AuthoringScreenObservation,
   AuthoringSession,
   AuthoringVideoClip,
+  TargetProfile,
 } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import {
@@ -55,8 +56,14 @@ export type RecordingTake = {
 export type RecordingIssue = { kind: "setup" | "screen"; message: string };
 
 export type CapturedStartScreen = {
+  mapScope: { organizationId: string; projectId: string; appMapId: string };
+  targetProfile: TargetProfile;
   observation: AuthoringScreenObservation;
   screenshotUrl?: string;
+  evidenceIds: string[];
+  evidenceUris: string[];
+  semanticNodes: Array<Record<string, unknown>>;
+  viewport?: { width: number; height: number };
 };
 
 export const describeStep = sentenceForStep;
@@ -329,10 +336,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
     }
 
-    /** Capture the current target through the same authoritative observation
-     * boundary used by recording, then discard the temporary zero-action Take.
-     * The canvas receives identity + evidence without inventing an executable
-     * action or leaving a hidden recording session behind. */
+    /** Capture the current target through the authoritative observation
+     * boundary, without opening a video transport. The canvas receives
+     * identity + durable evidence without inventing an executable action. */
     async function captureStartScreen(): Promise<CapturedStartScreen | null> {
       if (activeSession()) {
         toast("Finish the current recording before choosing a start screen", "info");
@@ -371,22 +377,49 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           leaseId,
           expectedAppMapRevision: appMap.revision,
         });
-        session = await server.observeAuthoringSession(session.id);
-        if (session.state !== "ready")
-          throw new Error(session.error || "Device screen is not ready");
-        session = await server.startAuthoringSession(session.id);
-        if (session.state !== "recording") {
+        session = await server.captureAuthoringScreen(session.id);
+        if (session.state !== "reviewing")
           throw new Error(session.error || "Could not capture the current screen");
-        }
-        session = await server.stopAuthoringSession(session.id);
         const revision = sessionRevision(session);
+        if (!revision) throw new Error("The captured screen did not include durable evidence");
         const observation = revision?.before ? projectedObservation(revision.before) : undefined;
         const screenshot = revision?.evidence.find((item) => item.kind === "screenshot");
         if (!observation) throw new Error("The device did not return a screen observation");
         await server.discardAuthoringSession(session.id);
         session = null;
         return {
+          mapScope: {
+            organizationId: appMap.organizationId,
+            projectId: appMap.projectId,
+            appMapId: appMap.id,
+          },
+          targetProfile: {
+            id: `target:${device.platform === "ios" ? "ios" : device.platform === "browser" ? "browser" : "android"}:${device.serial}`,
+            targetId: device.serial,
+            source: device.platform === "browser" ? "browser" : "device",
+            platform:
+              device.platform === "ios"
+                ? "ios"
+                : device.platform === "browser"
+                  ? "browser"
+                  : "android",
+            name: device.name?.trim() || device.serial,
+            ...(typeof device.osVersion === "string" && device.osVersion.trim()
+              ? { osVersion: device.osVersion.trim() }
+              : {}),
+            ...(revision.before?.bounds ? { viewport: { ...revision.before.bounds } } : {}),
+            capabilities: ["snapshot", "screenshot"],
+            observedAt: observation.capturedAt,
+          },
           observation,
+          evidenceIds: revision.evidence
+            .filter((item) => item.kind === "screenshot")
+            .map((item) => item.id),
+          evidenceUris: revision.evidence
+            .filter((item) => item.kind === "screenshot")
+            .map((item) => item.uri),
+          semanticNodes: revision.before?.nodes?.map((node) => structuredClone(node)) ?? [],
+          ...(revision.before?.bounds ? { viewport: { ...revision.before.bounds } } : {}),
           ...(screenshot
             ? { screenshotUrl: server.authoringEvidenceUrl(screenshot.uri, screenshot.mime) }
             : {}),

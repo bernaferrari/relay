@@ -14,6 +14,13 @@
   padding: 0;
   background: transparent;
   color: var(--icon-base);
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+  }
 
   &[data-variant="primary"] {
     background-color: var(--button-primary-base, var(--icon-strong-base));
@@ -86,18 +93,26 @@
   }
 
   &[data-size="normal"] {
-    width: 24px;
-    height: 24px;
+    width: 36px;
+    height: 36px;
   }
 
   &[data-size="small"] {
-    width: 20px;
-    height: 20px;
+    width: 32px;
+    height: 32px;
+
+    &::before {
+      inset: -6px;
+    }
   }
 
   &[data-size="large"] {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
+
+    &::before {
+      inset: 0;
+    }
   }
 
   &:focus {

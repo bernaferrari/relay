@@ -365,6 +365,29 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
+  mapped(
+    "app-map.commit",
+    path("map commit", ["appMapId"], undefined, {
+      summary: "Apply one atomic App Map revision",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "changes",
+          type: "array",
+          required: true,
+          description: "Ordered screen, connection, and flow changes",
+        },
+        { name: "patch", type: "object", description: "Optional map metadata or notes patch" },
+        { name: "summary", type: "string", description: "Activity summary" },
+      ],
+    }),
+  ),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
@@ -446,6 +469,15 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       summary: "Capture the proposal's current device state",
       argumentHelp: [
         { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.capture",
+    path("session capture", ["sessionId"], undefined, {
+      summary: "Capture one durable screen without starting video recording",
+      argumentHelp: [
+        { name: "sessionId", type: "string", description: "Authoring session identifier" },
       ],
     }),
   ),

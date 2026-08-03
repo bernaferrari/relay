@@ -956,6 +956,9 @@ export type GenerationRequest = {
   model?: string;
   count?: number;
   seed?: number;
+  /** Optional closed output vocabulary. Providers may reason over untrusted
+   * app content, but Relay accepts only one of these exact values. */
+  allowedValues?: string[];
 };
 export type GenerationUsage = {
   inputTokens?: number | undefined;

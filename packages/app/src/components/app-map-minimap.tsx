@@ -51,7 +51,7 @@ export function AppMapMinimap(props: {
     <>
       <aside
         class={cn(
-          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-[right] duration-180 ease-out motion-reduce:transition-none min-[901px]:block",
+          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] min-[901px]:block",
           props.shiftForSidePanel
             ? props.wideDevice
               ? "right-[580px]"
@@ -222,7 +222,7 @@ function stateColor(state: AppMapRunPresentationState | undefined, selected: boo
 }
 
 const minimapControl =
-  "grid size-7 place-items-center rounded-[7px] text-[10px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
+  "relative grid size-7 place-items-center rounded-[7px] text-[10px] text-[var(--text-base)] outline-none before:absolute before:-inset-2 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
 
 const compactControl =
-  "grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
+  "relative grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";

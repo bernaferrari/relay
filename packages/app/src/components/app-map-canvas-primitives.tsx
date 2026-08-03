@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type { CanvasNote } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
@@ -6,6 +6,7 @@ import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
+import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
@@ -16,9 +17,10 @@ export function CanvasNoteCard(props: {
   note: CanvasNote;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
   onText: (text: string) => void;
-  onCommit: () => void;
+  onCommit: (previousText: string) => void;
   onDelete: () => void;
 }) {
+  let textAtFocus = props.note.text;
   return (
     <article
       class="absolute w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--v2-border-border-strong)_74%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
@@ -48,8 +50,11 @@ export function CanvasNoteCard(props: {
         value={props.note.text}
         aria-label="Canvas note"
         onPointerDown={(event) => event.stopPropagation()}
+        onFocus={() => {
+          textAtFocus = props.note.text;
+        }}
         onInput={(event) => props.onText(event.currentTarget.value.slice(0, 480))}
-        onBlur={props.onCommit}
+        onBlur={() => props.onCommit(textAtFocus)}
       />
     </article>
   );
@@ -87,6 +92,8 @@ export function ScreenCard(props: {
               : "ring-1 ring-[color-mix(in_srgb,var(--v2-border-border-strong)_55%,transparent)] group-hover/screen:ring-[var(--v2-border-border-strong)] group-hover/screen:shadow-[0_8px_20px_rgb(0_0_0/7%)]";
   return (
     <article
+      role="group"
+      aria-roledescription="screen"
       tabIndex={0}
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
@@ -237,6 +244,7 @@ export function ScreenCard(props: {
             <OrientedScreenshot
               src={src()}
               alt={`Recorded ${props.title} screen`}
+              loading="lazy"
               class="size-full object-contain object-top"
               evidence={props.orientationEvidence}
             />
@@ -277,13 +285,15 @@ export function KeyboardConnectionChooser(props: {
 }) {
   let panel: HTMLElement | undefined;
   createEffect(() => {
-    queueMicrotask(() => panel?.querySelector<HTMLButtonElement>("button")?.focus());
+    if (!panel) return;
+    onCleanup(trapFocus(panel));
   });
   return (
     <aside
       ref={(element) => (panel = element)}
       class="absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_18px_48px_rgb(0_0_0/34%)] backdrop-blur-[14px]"
       role="dialog"
+      aria-modal="true"
       aria-label={`Connect ${props.sourceTitle}`}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;

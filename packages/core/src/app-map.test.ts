@@ -7,6 +7,7 @@ import {
   approveAppMapProposal,
   attachAppMapCaseStack,
   connectAppMapScreens,
+  commitAppMapChanges,
   previewRoutineImpact,
   rejectAppMapProposal,
   removeAppMapConnection,
@@ -71,6 +72,7 @@ function variant(id: string, screenId: string, target = profile()): ScreenVarian
     targetProfile: target,
     observation: { fingerprint, nodes: [], volatileSignals: [] },
     evidenceIds: ["evidence-screen"],
+    evidenceUris: ["relay-evidence://captures/evidence-screen"],
   };
 }
 
@@ -258,6 +260,47 @@ test("validates a normalized project map containing every action kind and return
   );
 });
 
+test("commits a canvas gesture atomically as one revision and one activity event", () => {
+  const input = mapFixture();
+  delete input.screenVariants["variant-home"]!.baseline;
+  delete input.targetResults["result-1"];
+  delete input.runs["run-1"];
+  const result = commitAppMapChanges(
+    input,
+    [
+      { kind: "flow.remove", flowId: "main" },
+      { kind: "connection.remove", connectionId: "open-home" },
+      { kind: "screen.remove", screenId: "home" },
+    ],
+    { notes: {} },
+    context(input, "canvas-commit"),
+    "Removed Home path",
+  );
+
+  assert.equal(result.revision, input.revision + 1);
+  assert.equal(Object.keys(result.activity).length, 1);
+  assert.equal(result.activity["canvas-commit"]?.eventType, "app-map.committed");
+  assert.equal(result.screens.home, undefined);
+  assert.ok(input.screens.home, "the original map remains untouched");
+});
+
+test("rejects an invalid canvas batch without exposing a partial draft", () => {
+  const input = mapFixture();
+  expectError("missing-reference", () =>
+    commitAppMapChanges(
+      input,
+      [
+        { kind: "screen.add", input: { screen: screen("temporary") } },
+        { kind: "screen.remove", screenId: "missing" },
+      ],
+      undefined,
+      context(input, "invalid-canvas-commit"),
+    ),
+  );
+  assert.equal(input.screens.temporary, undefined);
+  assert.equal(input.revision, 3);
+});
+
 test("rejects invalid schema, record keys, scope, duplicate actions, and missing references", () => {
   const schema = mapFixture();
   (schema as unknown as { schemaVersion: number }).schemaVersion = 1;
@@ -299,6 +342,12 @@ test("validates variant ownership, baseline provenance, and one variant per targ
   duplicateTarget.screenVariants[second.id] = second;
   duplicateTarget.screens.home!.variantIds.push(second.id);
   expectError("duplicate-id", () => validateAppMap(duplicateTarget), /target profile/u);
+
+  const externalEvidence = mapFixture();
+  externalEvidence.screenVariants["variant-home"]!.evidenceUris = [
+    "https://example.com/untrusted.png",
+  ];
+  expectError("invalid-map", () => validateAppMap(externalEvidence), /Relay evidence resource/u);
 });
 
 test("rejects routine cycles, missing routine references, and missing asserted screens", () => {
@@ -842,6 +891,14 @@ test("serializes a deterministic YAML-ready plain object without sharing referen
   second.screens.home!.identity!.aliases = ["b".repeat(64), "c".repeat(64)];
   first.screenVariants["variant-home"]!.evidenceIds = ["evidence-z", "evidence-a"];
   second.screenVariants["variant-home"]!.evidenceIds = ["evidence-a", "evidence-z"];
+  first.screenVariants["variant-home"]!.evidenceUris = [
+    "relay-evidence://captures/z",
+    "relay-evidence://captures/a",
+  ];
+  second.screenVariants["variant-home"]!.evidenceUris = [
+    "relay-evidence://captures/a",
+    "relay-evidence://captures/z",
+  ];
   first.screenVariants["variant-home"]!.targetProfile.capabilities = ["tap", "screenshot"];
   second.screenVariants["variant-home"]!.targetProfile.capabilities = ["screenshot", "tap"];
   const firstRecorded = first.connections["open-home"]!.actions[0];

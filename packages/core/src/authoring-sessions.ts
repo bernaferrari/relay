@@ -633,6 +633,47 @@ export class AuthoringSessionStore {
     });
   }
 
+  /** Capture one durable observation without opening a video transport. This
+   * is deliberately distinct from a transition Take: screenshots of Home,
+   * Settings, permission sheets, and other system UI must not require an
+   * active application recording session on physical iOS. */
+  async capture(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
+    return this.#mutate(id, async (session) => {
+      assertOwner(session);
+      requireState(session, "preparing", "ready");
+      const captured = await persistObservation(await runtime.observe(session));
+      if (session.state === "preparing") session = transition(session, "ready");
+      const at = now();
+      const takeId = `take-${randomUUID()}`;
+      session = transition(session, "recording");
+      session.take = {
+        id: takeId,
+        state: "recording",
+        createdAt: at,
+        updatedAt: at,
+        currentRevision: 1,
+        revisions: [
+          {
+            id: `${takeId}:revision:1`,
+            takeId,
+            revision: 1,
+            createdAt: at,
+            createdBy: session.actorId,
+            reason: "recording",
+            actions: [],
+            evidence: captured.evidence,
+            before: captured.observation,
+            after: captured.observation,
+          },
+        ],
+        replayAttempts: [],
+      };
+      session = transition(session, "reviewing");
+      session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
+      return session;
+    });
+  }
+
   async start(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
     return this.#mutate(id, async (session) => {
       assertOwner(session);

@@ -7,6 +7,17 @@ export type CanvasWheelAction =
   | { kind: "zoom"; delta: number }
   | null;
 
+const CANVAS_SHORTCUT_EXCLUSION =
+  "input, textarea, select, button, a, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox'], [data-canvas-shortcuts='ignore']";
+
+export function shouldIgnoreCanvasShortcut(
+  event: Pick<KeyboardEvent, "defaultPrevented" | "target">,
+): boolean {
+  if (event.defaultPrevented) return true;
+  const target = event.target as { closest?: (selector: string) => Element | null } | null;
+  return Boolean(target?.closest?.(CANVAS_SHORTCUT_EXCLUSION));
+}
+
 /** Normalize mouse wheels and trackpads into the two canvas gestures people
  * already expect: unmodified two-axis pan, and anchored Cmd/Ctrl-wheel zoom. */
 export function canvasWheelAction(input: {
@@ -85,8 +96,7 @@ export function createAppMapEventOrchestration(options: {
       options.onUndoRequest(event, request.detail.redo);
     };
     const onCanvasKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (shouldIgnoreCanvasShortcut(event)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.code === "Space") {
         event.preventDefault();

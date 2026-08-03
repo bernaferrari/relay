@@ -1,9 +1,11 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import type { CollaborationAwareness, CanvasNote } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
   draftCanvasConnectionPath,
+  SCREEN_CARD_HEIGHT,
+  SCREEN_CARD_WIDTH,
   type CanvasPoint,
 } from "../lib/app-map-canvas-layout";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -25,6 +27,7 @@ export type AppMapCanvasSceneProps = {
   notes: readonly CanvasNote[];
   width: number;
   height: number;
+  visibleBounds: { left: number; top: number; right: number; bottom: number };
   selectedNodeId: string | null;
   selectedConnectionId: string | null;
   renamingNodeId: string | null;
@@ -53,7 +56,7 @@ export type AppMapCanvasSceneProps = {
   onCancelKeyboardConnection: () => void;
   onNotePointerDown: (event: PointerEvent, note: CanvasNote) => void;
   onNoteText: (note: CanvasNote, text: string) => void;
-  onCommitNote: () => void;
+  onCommitNote: (note: CanvasNote, previousText: string) => void;
   onDeleteNote: (note: CanvasNote) => void;
 };
 
@@ -102,17 +105,76 @@ const connectionStrokeClass = (
                   : "stroke-[color-mix(in_srgb,var(--text-weak)_78%,transparent)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
-  const nodeFor = (id: string) => props.nodes.find((node) => node.id === id);
+  const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
+  const nodeFor = (id: string) => nodeIndex().get(id);
+  const geometries = createMemo(
+    () =>
+      new Map(
+        props.connections.map((connection) => [
+          connection.id,
+          canvasEdgeGeometry(
+            {
+              from: connection.fromScreenId,
+              to: connection.toScreenId,
+              kind: connection.kind,
+            },
+            props.nodes,
+            props.positionFor,
+            nodeIndex(),
+          ),
+        ]),
+      ),
+  );
   const geometryFor = (connection: CanvasConnection) =>
-    canvasEdgeGeometry(
-      {
-        from: connection.fromScreenId,
-        to: connection.toScreenId,
-        kind: connection.kind,
-      },
-      props.nodes,
-      props.positionFor,
-    );
+    geometries().get(connection.id) ?? { path: "", labelPoint: { x: 0, y: 0 } };
+  const visibleNodes = createMemo(() =>
+    props.nodes.filter((node) => {
+      if (node.id === props.selectedNodeId || node.id === props.renamingNodeId) return true;
+      const point = props.positionFor(node);
+      return (
+        point.x + SCREEN_CARD_WIDTH >= props.visibleBounds.left &&
+        point.x <= props.visibleBounds.right &&
+        point.y + SCREEN_CARD_HEIGHT >= props.visibleBounds.top &&
+        point.y <= props.visibleBounds.bottom
+      );
+    }),
+  );
+  const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
+  const visibleConnections = createMemo(() =>
+    props.connections.filter((connection) => {
+      if (
+        connection.id === props.selectedConnectionId ||
+        visibleNodeIds().has(connection.fromScreenId) ||
+        visibleNodeIds().has(connection.toScreenId)
+      ) {
+        return true;
+      }
+      const from = nodeFor(connection.fromScreenId);
+      const to = nodeFor(connection.toScreenId);
+      if (!from || !to) return false;
+      const fromPoint = props.positionFor(from);
+      const toPoint = props.positionFor(to);
+      const left = Math.min(fromPoint.x, toPoint.x);
+      const right = Math.max(fromPoint.x, toPoint.x) + SCREEN_CARD_WIDTH;
+      const top = Math.min(fromPoint.y, toPoint.y);
+      const bottom = Math.max(fromPoint.y, toPoint.y) + SCREEN_CARD_HEIGHT;
+      return (
+        right >= props.visibleBounds.left &&
+        left <= props.visibleBounds.right &&
+        bottom >= props.visibleBounds.top &&
+        top <= props.visibleBounds.bottom
+      );
+    }),
+  );
+  const visibleNotes = createMemo(() =>
+    props.notes.filter(
+      (note) =>
+        note.x + 220 >= props.visibleBounds.left &&
+        note.x <= props.visibleBounds.right &&
+        note.y + 140 >= props.visibleBounds.top &&
+        note.y <= props.visibleBounds.bottom,
+    ),
+  );
 
   return (
     <>
@@ -155,7 +217,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             )}
           </For>
         </defs>
-        <For each={props.connections}>
+        <For each={visibleConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
             const runState = () => props.connectionRunState(connection.id);
@@ -219,7 +281,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         </Show>
       </svg>
 
-      <For each={props.connections}>
+      <For each={visibleConnections()}>
         {(connection) => {
           const geometry = () => geometryFor(connection);
           const count = () => props.caseCountFor(connection);
@@ -270,7 +332,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         height={props.height}
       />
 
-      <For each={props.nodes}>
+      <For each={visibleNodes()}>
         {(node) => (
           <ScreenCard
             node={node}
@@ -310,13 +372,13 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         }}
       </Show>
 
-      <For each={props.notes}>
+      <For each={visibleNotes()}>
         {(note) => (
           <CanvasNoteCard
             note={note}
             onPointerDown={(event) => props.onNotePointerDown(event, note)}
             onText={(text) => props.onNoteText(note, text)}
-            onCommit={props.onCommitNote}
+            onCommit={(previousText) => props.onCommitNote(note, previousText)}
             onDelete={() => props.onDeleteNote(note)}
           />
         )}

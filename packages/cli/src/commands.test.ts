@@ -49,6 +49,7 @@ test("all plan-035 authoring operations have friendly command paths", () => {
     "authoring.session.get",
     "authoring.session.create",
     "authoring.session.observe",
+    "authoring.session.capture",
     "authoring.session.start",
     "authoring.session.interact",
     "authoring.session.stop",

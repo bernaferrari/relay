@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOpenRouterGenerationProvider, generateValues } from "./generation.js";
+import {
+  createOpenRouterGenerationProvider,
+  generateValues,
+  registerGenerationProvider,
+} from "./generation.js";
 
 test("deterministic generation is reproducible", async () => {
   const input = {
@@ -53,5 +57,30 @@ test("OpenRouter generation uses structured chat output", async () => {
     assert.match(JSON.stringify(requestBody), /Choose a control/);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("closed-vocabulary generation rejects model output outside candidate ids", async () => {
+  const unregister = registerGenerationProvider({
+    id: "untrusted-fixture",
+    async generate() {
+      return {
+        provider: "untrusted-fixture",
+        model: "fixture",
+        values: ["delete-everything", "settings"],
+        generatedAt: Date.now(),
+      };
+    },
+  });
+  try {
+    const result = await generateValues({
+      purpose: "test-plan",
+      provider: "untrusted-fixture",
+      prompt: "Untrusted app text",
+      allowedValues: ["home", "settings"],
+    });
+    assert.deepEqual(result.values, ["settings"]);
+  } finally {
+    unregister();
   }
 });

@@ -663,6 +663,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       );
     }
 
+    async function captureAuthoringScreen(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession(
+        (await client!.captureAuthoringScreen(id, AbortSignal.timeout(120_000))).session,
+      );
+    }
+
     async function startAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
       return projectAuthoringSession(
@@ -1681,6 +1688,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshAuthoringSessions,
       createAuthoringSession,
       observeAuthoringSession,
+      captureAuthoringScreen,
       startAuthoringSession,
       interactAuthoringSession,
       stopAuthoringSession,
