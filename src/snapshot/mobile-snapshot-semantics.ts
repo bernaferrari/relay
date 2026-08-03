@@ -138,6 +138,27 @@ export function isTapPointInsideViewport(rect: Rect, viewport: Rect | null): boo
   return containsPoint(viewport, rect.x + rect.width / 2, rect.y + rect.height / 2);
 }
 
+/**
+ * #1542: the pure geometry boundary the off-screen refusal double-check's
+ * direct probe (`src/daemon/offscreen-target-probe.ts`) reduces its decision
+ * to, once it has a fresh, tree-independent read of one element. A probe
+ * confirms the element genuinely on-screen only when BOTH hold: XCTest's own
+ * live hit-test says `hittable`, AND the tap point sits inside the root
+ * viewport (`isTapPointInsideViewport`, above). Either signal alone is
+ * insufficient — `hittable` with no viewport check could confirm an element
+ * that is technically tappable but whose reported rect drifted outside the
+ * app window; a viewport check with no `hittable` check could confirm an
+ * element occluded or clipped in a way geometry alone can't see. Kept pure
+ * (and separate from the network read) so it is unit-testable without a
+ * runner mock.
+ */
+export function isConfirmedOnScreenProbe(
+  probe: { rect: Rect; hittable: boolean },
+  rootViewport: Rect | null,
+): boolean {
+  return probe.hittable && isTapPointInsideViewport(probe.rect, rootViewport);
+}
+
 export function resolveEffectiveViewportRect(
   node: Pick<SnapshotNode, 'rect' | 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'>,
   nodes: SnapshotNode[],
