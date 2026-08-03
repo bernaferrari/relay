@@ -1,5 +1,5 @@
 import { createEffect, onCleanup, onMount, type Accessor } from "solid-js";
-import type { JourneyRunReadiness } from "../lib/journey-run-readiness";
+import type { AppMapRunReadiness } from "../lib/app-map-run-readiness";
 import type { AppMapCanvasTool } from "./app-map-toolbar";
 
 export type CanvasWheelAction =
@@ -45,7 +45,7 @@ export function canvasWheelAction(input: {
 export function createAppMapEventOrchestration(options: {
   devicePanelOpen: Accessor<boolean>;
   reviewingTake: Accessor<boolean>;
-  runReadiness: Accessor<JourneyRunReadiness>;
+  runReadiness: Accessor<AppMapRunReadiness>;
   canvasTool: Accessor<AppMapCanvasTool>;
   renamingScreen: Accessor<boolean>;
   onDeviceSelected: () => void;

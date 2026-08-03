@@ -1,10 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
-import { isTapAction, type EditableActionKind } from "../lib/journey-action-conversion";
+import { isTapAction, type EditableActionKind } from "../lib/take-action-conversion";
 import { actionLabelForKind, filterActionGroups } from "./action-catalog";
 import { Icon } from "./icon";
-import { iconForStep } from "./journey-step-presentation";
+import { iconForStep } from "./take-step-presentation";
 
 export function ActionPicker(props: {
   step: RecipeStep;

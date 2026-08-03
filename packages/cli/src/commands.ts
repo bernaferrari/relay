@@ -724,10 +724,10 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "job.start",
     path("job start"),
-    path("run start", ["action"], undefined, {
+    path("run start", ["recipe"], undefined, {
       summary: "Start an execution job",
       argumentHelp: [
-        { name: "action", type: "string", description: "Routine or action identifier" },
+        { name: "recipe", type: "string", description: "Compiled Flow recipe identifier" },
       ],
       inputHelp: [{ name: "serial", type: "string", description: "Optional target device serial" }],
     }),

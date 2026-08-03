@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { JourneyTreeNode } from "./journey-tree";
-import { canvasEdgeGeometry, fitCanvasViewport } from "./journey-canvas-layout";
+import type { MapTreeNode } from "./app-map-tree";
+import { canvasEdgeGeometry, fitCanvasViewport } from "./app-map-canvas-layout";
 
-const start: JourneyTreeNode = {
+const start: MapTreeNode = {
+  // Geometry is independent from persistence and target dimensions.
   id: "start",
   screenKey: "start",
   title: "Start",
@@ -13,7 +14,7 @@ const start: JourneyTreeNode = {
   x: 0,
   y: 0,
 };
-const settings: JourneyTreeNode = { ...start, id: "settings", title: "Settings", x: 320, y: 84 };
+const settings: MapTreeNode = { ...start, id: "settings", title: "Settings", x: 320, y: 84 };
 
 test("canvas geometry is total while a graph is mid-edit", () => {
   assert.equal(

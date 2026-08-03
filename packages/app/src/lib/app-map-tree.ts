@@ -1,6 +1,6 @@
 import type { RecipeStep } from "./api-types";
 
-export type JourneyTreeNode = {
+export type MapTreeNode = {
   id: string;
   screenKey: string;
   title: string;
@@ -11,7 +11,7 @@ export type JourneyTreeNode = {
   y: number;
 };
 
-export type JourneyTreeEdge = {
+export type MapTreeEdge = {
   id: string;
   from: string;
   to: string;
@@ -20,18 +20,18 @@ export type JourneyTreeEdge = {
   kind: "forward" | "return";
 };
 
-export type JourneyTree = {
-  nodes: JourneyTreeNode[];
-  edges: JourneyTreeEdge[];
+export type MapTree = {
+  nodes: MapTreeNode[];
+  edges: MapTreeEdge[];
   /**
    * A real screen map needs a durable visual hash or a captured UI tree. The
    * step-index fallback keeps the model total, but must never be presented as
-   * a meaningful map to someone using an older recording.
+   * a meaningful map without durable screen evidence.
    */
   hasScreenIdentity: boolean;
 };
 
-type DraftNode = Omit<JourneyTreeNode, "depth" | "x" | "y"> & {
+type DraftNode = Omit<MapTreeNode, "depth" | "x" | "y"> & {
   parentId?: string;
   childIds: string[];
 };
@@ -72,10 +72,10 @@ export function hasScreenIdentity(step: RecipeStep): boolean {
   return Boolean(step.evidence?.screenshot?.sha256 || step.evidence?.nodes?.length);
 }
 
-export function buildJourneyTree(steps: RecipeStep[]): JourneyTree {
+export function buildMapTree(steps: RecipeStep[]): MapTree {
   const nodes = new Map<string, DraftNode>();
   const screenIds: string[] = [];
-  const edges: JourneyTreeEdge[] = [];
+  const edges: MapTreeEdge[] = [];
 
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index]!;
@@ -115,7 +115,7 @@ export function buildJourneyTree(steps: RecipeStep[]): JourneyTree {
 
   const rootIds = [...nodes.values()].filter((node) => !node.parentId).map((node) => node.id);
   let leaf = 0;
-  const laidOut = new Map<string, JourneyTreeNode>();
+  const laidOut = new Map<string, MapTreeNode>();
   const place = (id: string, depth: number): number => {
     const node = nodes.get(id)!;
     const childYs = node.childIds.map((child) => place(child, depth + 1));

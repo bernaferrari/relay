@@ -4,7 +4,7 @@ import {
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   type CanvasPoint,
-} from "../lib/journey-canvas-layout";
+} from "../lib/app-map-canvas-layout";
 
 export type PresenceGeometry = Readonly<{
   screenPositions: Readonly<Record<string, CanvasPoint>>;

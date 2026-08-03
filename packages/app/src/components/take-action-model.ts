@@ -1,9 +1,11 @@
 import type { AuthoringInteraction, StepTarget } from "@relay/protocol";
 import { describeStep, type RecordingTakeAction } from "../context/recorder";
-import { defaultTapTarget } from "../lib/journey-action-conversion";
+import { defaultTapTarget } from "../lib/take-action-conversion";
 import { defaultStrategy, parsePoint, type Strategy } from "../lib/step-target";
 
 export type TakeActionKind = AuthoringInteraction["kind"];
+
+/** One compact catalog for every editable recorded interaction. */
 
 export const TAKE_ACTION_KINDS: Array<{ id: TakeActionKind; label: string }> = [
   { id: "tap", label: "Tap" },

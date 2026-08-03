@@ -41,7 +41,7 @@ import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readines
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
-import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
+import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs";

@@ -1,6 +1,6 @@
-import type { JourneyGraph, RecipeStep } from "@relay/protocol";
+import type { CanvasGraph, RecipeStep } from "@relay/protocol";
 
-export type JourneyRunReadiness = {
+export type AppMapRunReadiness = {
   visible: boolean;
   ready: boolean;
   reason: string;
@@ -8,12 +8,12 @@ export type JourneyRunReadiness = {
   transitionPath: string[] | null;
 };
 
-type JourneyRunSelection = {
+type AppMapRunSelection = {
   screenId?: string | null;
   transitionId?: string | null;
 };
 
-function pathToScreen(graph: JourneyGraph, screenId: string): string[] | null {
+function pathToScreen(graph: CanvasGraph, screenId: string): string[] | null {
   const start = graph.flows[0]?.screenId;
   if (!start) return null;
   if (start === screenId) return [];
@@ -44,7 +44,7 @@ function pathToScreen(graph: JourneyGraph, screenId: string): string[] | null {
   return null;
 }
 
-function inferredPath(graph: JourneyGraph): { path: string[] | null; reason?: string } {
+function inferredPath(graph: CanvasGraph): { path: string[] | null; reason?: string } {
   const start = graph.flows[0]?.screenId;
   if (!start) return { path: null, reason: "Capture the entry screen first" };
 
@@ -72,9 +72,9 @@ function inferredPath(graph: JourneyGraph): { path: string[] | null; reason?: st
 }
 
 function selectedPath(
-  graph: JourneyGraph,
-  selection: JourneyRunSelection,
-): Pick<JourneyRunReadiness, "transitionPath" | "reason" | "label"> {
+  graph: CanvasGraph,
+  selection: AppMapRunSelection,
+): Pick<AppMapRunReadiness, "transitionPath" | "reason" | "label"> {
   if (selection.transitionId) {
     const transition = graph.transitions.find(({ id }) => id === selection.transitionId);
     const sourcePath = transition ? pathToScreen(graph, transition.fromScreenId) : null;
@@ -117,13 +117,13 @@ function selectedPath(
 /**
  * Resolves exactly what the graph Run button means. A connection can be a
  * verified no-op/automatic edge, so readiness is based on the selected graph
- * path—not on the legacy recipe's total step count.
+ * path—not on unrelated actions in the compiled recipe.
  */
-export function journeyRunReadiness(input: {
-  graph: JourneyGraph;
+export function appMapRunReadiness(input: {
+  graph: CanvasGraph;
   recipeSteps: RecipeStep[];
-  selection?: JourneyRunSelection;
-}): JourneyRunReadiness {
+  selection?: AppMapRunSelection;
+}): AppMapRunReadiness {
   const { graph, recipeSteps, selection = {} } = input;
   if (!graph.flows[0] || graph.transitions.length === 0) {
     return {

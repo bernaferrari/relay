@@ -29,7 +29,7 @@ export type DiscoveryPathRow = {
  * screens visited when they are queued makes back-edges harmless and keeps
  * sibling branches together in the order they were observed. Unlinked
  * captures are placed after the reachable graph instead of pretending to be
- * roots, which makes them visible without corrupting the journey.
+ * roots, which makes them visible without corrupting the App Map.
  */
 export function discoveryCanvasLayout(
   session: DiscoverySession,

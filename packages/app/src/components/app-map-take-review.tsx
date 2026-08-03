@@ -1,13 +1,13 @@
-import type { AuthoringInteraction, JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
+import type { AuthoringInteraction, CanvasScreen, RecordingClip } from "@relay/protocol";
 import type { RecordingTake } from "../context/recorder";
-import type { TakeDestination } from "../lib/journey-graph";
+import type { TakeDestination } from "../lib/app-map-canvas-graph";
 import { RecordedTakePlayer, TakeReviewSidebar } from "./app-map-capture-review";
 
 export type AppMapTakeReviewProps = {
   take: RecordingTake;
   selectedIndex: number;
   sourceTitle: string;
-  screens: JourneyGraphScreen[];
+  screens: CanvasScreen[];
   destination: TakeDestination;
   replayState: "idle" | "running" | "passed" | "failed";
   replayError?: string;
@@ -22,7 +22,7 @@ export type AppMapTakeReviewProps = {
   onReplaceAction: (actionId: string, interaction: AuthoringInteraction) => void | Promise<void>;
   onRemoveAction: (actionId: string) => void | Promise<void>;
   onReviewInvalidated: () => void;
-  onClip: (clip: JourneyVideoClip) => void | Promise<void>;
+  onClip: (clip: RecordingClip) => void | Promise<void>;
 };
 
 /** The take review is a focused mode with one decision surface and one evidence surface. */

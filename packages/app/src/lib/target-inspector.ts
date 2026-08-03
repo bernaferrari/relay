@@ -242,7 +242,7 @@ export function pointForConstraints(
   return { x: Math.round(x), y: Math.round(y) };
 }
 
-/** Resolve the five legacy shortcut anchors through the two-axis constraint model. */
+/** Resolve the five shortcut anchors through the two-axis constraint model. */
 export function pointForAnchor(
   node: RecordedNodeEvidence,
   anchor: TargetAnchor,

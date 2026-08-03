@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, JourneyGraph } from "@relay/protocol";
+import type { AppMap, CanvasGraph } from "@relay/protocol";
 import { mergeAppMapProjection, planAppMapProjection } from "./app-map-projection.js";
 
 const map: AppMap = {
@@ -25,7 +25,7 @@ const map: AppMap = {
   updatedAt: 1,
 };
 
-const graph: JourneyGraph = {
+const graph: CanvasGraph = {
   schemaVersion: 1,
   screens: [
     { id: "start", title: "Welcome", createdAt: 1, updatedAt: 1 },
@@ -144,7 +144,7 @@ test("projects canonical changes back without inventing verification evidence", 
 
   const metadata = mergeAppMapProjection(
     {
-      schemaVersion: 6,
+      schemaVersion: 1,
       positions: {},
       screenTitles: {},
       edgeLabels: {},

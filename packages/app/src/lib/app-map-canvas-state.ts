@@ -1,7 +1,7 @@
-import type { JourneyMetadata } from "@relay/protocol";
+import type { AppMapCanvasState } from "@relay/protocol";
 
-export const EMPTY_JOURNEY_METADATA: JourneyMetadata = {
-  schemaVersion: 6,
+export const EMPTY_APP_MAP_CANVAS_STATE: AppMapCanvasState = {
+  schemaVersion: 1,
   positions: {},
   edgeLabels: {},
   edgeKinds: {},

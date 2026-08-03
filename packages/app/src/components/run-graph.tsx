@@ -326,7 +326,7 @@ export function RunGraph(props: {
   );
 }
 
-/** Node card — visual twin of app-map-workspace's JourneyPlanCard, fed by an
+/** Node card — visual twin of app-map-workspace's FlowPlanCard, fed by an
  * execution moment instead of a planned step. Read-only: no add-step
  * affordance, no draggable repositioning, no edge-click editor. */
 function RunGraphNode(props: {

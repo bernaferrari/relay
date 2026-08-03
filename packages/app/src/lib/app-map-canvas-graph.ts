@@ -1,18 +1,18 @@
 import type {
-  JourneyGraph,
-  JourneyGraphDestination,
-  JourneyGraphScreen,
-  JourneyGraphTransition,
-  JourneyMetadata,
-  JourneyScreenObservation,
-  JourneyTransitionReview,
-  JourneyVideoClip,
+  CanvasGraph,
+  CanvasDestination,
+  CanvasScreen,
+  CanvasTransition,
+  AppMapCanvasState,
+  ScreenObservation,
+  ConnectionTakeReview,
+  RecordingClip,
   RecipeStep,
 } from "@relay/protocol";
-import { hasScreenIdentity, transitionLabel, type JourneyTree } from "./journey-tree";
+import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
 /**
- * The FigJam-facing authoring model for a journey.
+ * The FigJam-facing projection of the canonical App Map.
  *
  * A recipe is still the compact, target-neutral program Relay executes. This
  * module owns the separate document people arrange: screens, transitions, and
@@ -27,15 +27,15 @@ export type TakeDestination =
 
 export type CommitTakeInput = {
   sourceScreenId?: string | null;
-  sourceObservation?: JourneyScreenObservation;
-  destinationObservation?: JourneyScreenObservation;
+  sourceObservation?: ScreenObservation;
+  destinationObservation?: ScreenObservation;
   destination?: TakeDestination;
   steps: RecipeStep[];
   takeId?: string;
   videoTakeId?: string;
-  videoClip?: JourneyVideoClip;
-  mode?: JourneyGraphTransition["mode"];
-  review?: JourneyTransitionReview;
+  videoClip?: RecordingClip;
+  mode?: CanvasTransition["mode"];
+  review?: ConnectionTakeReview;
   at?: number;
 };
 
@@ -45,14 +45,14 @@ function id(prefix: string, at: number): string {
   return `${prefix}-${at.toString(36)}-${suffix}`;
 }
 
-function cloneGraph(graph: JourneyGraph): JourneyGraph {
+function cloneGraph(graph: CanvasGraph): CanvasGraph {
   return structuredClone(graph);
 }
 
 function withObservation(
-  screen: JourneyGraphScreen,
-  observation: JourneyScreenObservation | undefined,
-): JourneyGraphScreen {
+  screen: CanvasScreen,
+  observation: ScreenObservation | undefined,
+): CanvasScreen {
   if (!observation) return screen;
   const observations = screen.observations ?? [];
   const next = observations.some((item) => item.id === observation.id)
@@ -85,9 +85,9 @@ function withObservation(
 }
 
 export function screenForObservation(
-  graph: JourneyGraph,
-  observation: JourneyScreenObservation | undefined,
-): JourneyGraphScreen | undefined {
+  graph: CanvasGraph,
+  observation: ScreenObservation | undefined,
+): CanvasScreen | undefined {
   if (!observation) return undefined;
   return graph.screens.find(
     (screen) =>
@@ -97,11 +97,11 @@ export function screenForObservation(
   );
 }
 
-export function observeJourneyGraphScreen(
-  graph: JourneyGraph,
+export function observeCanvasScreen(
+  graph: CanvasGraph,
   screenId: string,
-  observation: JourneyScreenObservation | undefined,
-): JourneyGraph {
+  observation: ScreenObservation | undefined,
+): CanvasGraph {
   if (!observation) return cloneGraph(graph);
   const copy = cloneGraph(graph);
   copy.screens = copy.screens.map((screen) =>
@@ -110,7 +110,7 @@ export function observeJourneyGraphScreen(
   return copy;
 }
 
-export function emptyJourneyGraph(): JourneyGraph {
+export function emptyCanvasGraph(): CanvasGraph {
   return { schemaVersion: 1, screens: [], transitions: [], flows: [] };
 }
 
@@ -119,7 +119,7 @@ export function emptyJourneyGraph(): JourneyGraph {
  * is explicitly rewritten, so deleting layout never silently deletes test
  * behavior. The canonical App Map operation performs the final reference
  * safety check before the removal is shared. */
-export function removeJourneyGraphScreen(graph: JourneyGraph, screenId: string): JourneyGraph {
+export function removeCanvasScreen(graph: CanvasGraph, screenId: string): CanvasGraph {
   const copy = cloneGraph(graph);
   if (!copy.screens.some((screen) => screen.id === screenId)) return copy;
   copy.screens = copy.screens.filter((screen) => screen.id !== screenId);
@@ -135,17 +135,17 @@ export function removeJourneyGraphScreen(graph: JourneyGraph, screenId: string):
 /** Establish the first canvas node without creating a fake transition or
  * executable screenshot step. The observation is the durable screen identity;
  * recording can begin later from this explicit entry point. */
-export function addJourneyStartScreen(
-  graph: JourneyGraph,
-  observation: JourneyScreenObservation,
+export function addCanvasStartScreen(
+  graph: CanvasGraph,
+  observation: ScreenObservation,
   input: { title?: string; at?: number } = {},
-): { graph: JourneyGraph; screen: JourneyGraphScreen } {
+): { graph: CanvasGraph; screen: CanvasScreen } {
   if (graph.screens.length || graph.flows.length) {
     throw new Error("A start screen can only be added to an empty App Map");
   }
   const at = input.at ?? Date.now();
   const copy = cloneGraph(graph);
-  const screen: JourneyGraphScreen = {
+  const screen: CanvasScreen = {
     id: id("screen-start", at),
     title: input.title?.trim() || "Start",
     identity: { schemaVersion: 1, fingerprint: observation.fingerprint },
@@ -166,18 +166,18 @@ export function addJourneyStartScreen(
 
 /** Capture a unique app state without inventing a transition. Re-observing a
  * known state enriches that screen instead of creating a duplicate node. */
-export function addJourneyGraphScreen(
-  graph: JourneyGraph,
-  observation: JourneyScreenObservation,
+export function addCanvasScreen(
+  graph: CanvasGraph,
+  observation: ScreenObservation,
   input: { title?: string; at?: number } = {},
-): { graph: JourneyGraph; screen: JourneyGraphScreen; created: boolean } {
+): { graph: CanvasGraph; screen: CanvasScreen; created: boolean } {
   if (!graph.screens.length) {
-    const first = addJourneyStartScreen(graph, observation, input);
+    const first = addCanvasStartScreen(graph, observation, input);
     return { ...first, created: true };
   }
   const existing = screenForObservation(graph, observation);
   if (existing) {
-    const next = observeJourneyGraphScreen(graph, existing.id, observation);
+    const next = observeCanvasScreen(graph, existing.id, observation);
     return {
       graph: next,
       screen: next.screens.find((screen) => screen.id === existing.id)!,
@@ -186,7 +186,7 @@ export function addJourneyGraphScreen(
   }
   const at = input.at ?? Date.now();
   const copy = cloneGraph(graph);
-  const screen: JourneyGraphScreen = {
+  const screen: CanvasScreen = {
     id: id("screen", at),
     title: input.title?.trim() || `Screen ${copy.screens.length + 1}`,
     identity: { schemaVersion: 1, fingerprint: observation.fingerprint },
@@ -208,23 +208,26 @@ function screenTitle(step: RecipeStep | undefined, number: number): string {
 }
 
 /** Project the current canvas graph without inferring or migrating missing data. */
-export function ensureJourneyGraph(metadata: JourneyMetadata, _steps: RecipeStep[]): JourneyGraph {
+export function ensureCanvasGraph(metadata: AppMapCanvasState, _steps: RecipeStep[]): CanvasGraph {
   if (metadata.graph?.schemaVersion === 1) return cloneGraph(metadata.graph);
-  return emptyJourneyGraph();
+  return emptyCanvasGraph();
 }
 
-export function withJourneyGraph(metadata: JourneyMetadata, graph: JourneyGraph): JourneyMetadata {
-  return { ...metadata, schemaVersion: 6, graph: cloneGraph(graph) };
+export function withCanvasGraph(
+  metadata: AppMapCanvasState,
+  graph: CanvasGraph,
+): AppMapCanvasState {
+  return { ...metadata, schemaVersion: 1, graph: cloneGraph(graph) };
 }
 
 function sourceForTake(
-  graph: JourneyGraph,
+  graph: CanvasGraph,
   requested: string | null | undefined,
-  observation: JourneyScreenObservation | undefined,
+  observation: ScreenObservation | undefined,
   at: number,
 ): {
-  graph: JourneyGraph;
-  source: JourneyGraphScreen;
+  graph: CanvasGraph;
+  source: CanvasScreen;
 } {
   const copy = cloneGraph(graph);
   const existing = requested ? copy.screens.find((screen) => screen.id === requested) : undefined;
@@ -245,7 +248,7 @@ function sourceForTake(
     : undefined;
   if (flowScreen) return { graph: copy, source: flowScreen };
 
-  const source: JourneyGraphScreen = {
+  const source: CanvasScreen = {
     id: id("screen-start", at),
     title: "Start",
     ...(observation
@@ -273,10 +276,10 @@ function sourceForTake(
  * append happens separately, but callers pass its final stable step ids here
  * so the graph can never refer to ephemeral recorder ids.
  */
-export function commitTakeToJourneyGraph(
-  current: JourneyGraph,
+export function commitTakeToCanvasGraph(
+  current: CanvasGraph,
   input: CommitTakeInput,
-): { graph: JourneyGraph; transition: JourneyGraphTransition; destinationScreenId?: string } {
+): { graph: CanvasGraph; transition: CanvasTransition; destinationScreenId?: string } {
   const at = input.at ?? Date.now();
   const { graph, source } = sourceForTake(
     current,
@@ -293,7 +296,7 @@ export function commitTakeToJourneyGraph(
           ? { kind: "screen", screenId: observedDestination.id }
           : { kind: "new-screen" }));
   const lastStep = input.steps.at(-1);
-  let target: JourneyGraphDestination;
+  let target: CanvasDestination;
   let destinationScreenId: string | undefined;
 
   if (destination.kind === "end") {
@@ -306,7 +309,7 @@ export function commitTakeToJourneyGraph(
     target = { kind: "screen", screenId: observed.id };
     destinationScreenId = destinationScreen.id;
   } else {
-    const screen: JourneyGraphScreen = {
+    const screen: CanvasScreen = {
       id: id("screen", at),
       title: destination.title?.trim() || screenTitle(lastStep, graph.screens.length),
       ...(input.destinationObservation
@@ -335,7 +338,7 @@ export function commitTakeToJourneyGraph(
         transition.destination.kind === "screen" &&
         transition.destination.screenId === source.id,
     );
-  const transition: JourneyGraphTransition = {
+  const transition: CanvasTransition = {
     id: id("transition", at),
     fromScreenId: source.id,
     destination: target,
@@ -357,16 +360,16 @@ export function commitTakeToJourneyGraph(
 }
 
 export function addGraphConnection(
-  graph: JourneyGraph,
+  graph: CanvasGraph,
   input: { fromScreenId: string; toScreenId: string; label?: string },
   at = Date.now(),
-): { graph: JourneyGraph; transition: JourneyGraphTransition } {
+): { graph: CanvasGraph; transition: CanvasTransition } {
   const copy = cloneGraph(graph);
   const known = new Set(copy.screens.map((screen) => screen.id));
   if (!known.has(input.fromScreenId) || !known.has(input.toScreenId)) {
     throw new Error("Connections can only join screens in this App Map");
   }
-  const transition: JourneyGraphTransition = {
+  const transition: CanvasTransition = {
     id: id("transition", at),
     fromScreenId: input.fromScreenId,
     destination: { kind: "screen", screenId: input.toScreenId },
@@ -383,7 +386,7 @@ export function addGraphConnection(
 }
 
 export function addGraphScreenConnection(
-  graph: JourneyGraph,
+  graph: CanvasGraph,
   input: {
     fromScreenId: string;
     title?: string;
@@ -391,16 +394,16 @@ export function addGraphScreenConnection(
   },
   at = Date.now(),
 ): {
-  graph: JourneyGraph;
-  transition: JourneyGraphTransition;
-  screen: JourneyGraphScreen;
+  graph: CanvasGraph;
+  transition: CanvasTransition;
+  screen: CanvasScreen;
   position: { x: number; y: number };
 } {
   const copy = cloneGraph(graph);
   if (!copy.screens.some((screen) => screen.id === input.fromScreenId)) {
     throw new Error("A new screen must connect from an existing screen");
   }
-  const screen: JourneyGraphScreen = {
+  const screen: CanvasScreen = {
     id: id("screen", at),
     title: input.title?.trim() || "New screen",
     createdAt: at,
@@ -419,7 +422,7 @@ export function addGraphScreenConnection(
   };
 }
 
-export function removeGraphConnection(graph: JourneyGraph, id: string): JourneyGraph {
+export function removeGraphConnection(graph: CanvasGraph, id: string): CanvasGraph {
   return {
     ...cloneGraph(graph),
     transitions: graph.transitions.filter((transition) => transition.id !== id),
@@ -427,17 +430,17 @@ export function removeGraphConnection(graph: JourneyGraph, id: string): JourneyG
 }
 
 export function attachGraphConnectionSteps(
-  graph: JourneyGraph,
+  graph: CanvasGraph,
   id: string,
   steps: RecipeStep[],
   capture?: {
     takeId?: string;
     videoTakeId?: string;
-    videoClip?: JourneyVideoClip;
-    mode?: JourneyGraphTransition["mode"];
+    videoClip?: RecordingClip;
+    mode?: CanvasTransition["mode"];
   },
   at = Date.now(),
-): JourneyGraph {
+): CanvasGraph {
   const copy = cloneGraph(graph);
   copy.transitions = copy.transitions.map((transition) =>
     transition.id === id
@@ -460,11 +463,11 @@ export function attachGraphConnectionSteps(
 }
 
 export function reviewGraphTransition(
-  graph: JourneyGraph,
+  graph: CanvasGraph,
   id: string,
-  review: Pick<JourneyTransitionReview, "status" | "error" | "targets">,
+  review: Pick<ConnectionTakeReview, "status" | "error" | "targets">,
   at = Date.now(),
-): JourneyGraph {
+): CanvasGraph {
   const copy = cloneGraph(graph);
   copy.transitions = copy.transitions.map((transition) =>
     transition.id === id
@@ -485,7 +488,7 @@ export function reviewGraphTransition(
 }
 
 /** Adapt the explicit document to the existing canvas card primitives. */
-export function buildJourneyGraphTree(graph: JourneyGraph, steps: RecipeStep[]): JourneyTree {
+export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): MapTree {
   const stepIndexById = new Map(steps.map((step, index) => [step.id, index]));
   const screenById = new Map(graph.screens.map((screen) => [screen.id, screen]));
   const startIds = graph.flows.map((flow) => flow.screenId).filter((id) => screenById.has(id));

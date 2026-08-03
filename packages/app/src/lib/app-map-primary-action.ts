@@ -1,5 +1,5 @@
 import type { DeviceReadiness } from "./device-readiness";
-import type { JourneyRunReadiness } from "./journey-run-readiness";
+import type { AppMapRunReadiness } from "./app-map-run-readiness";
 
 export type AppMapPrimaryAction = {
   kind: "run" | "choose-device" | "open-device" | "blocked";
@@ -15,7 +15,7 @@ export type AppMapPrimaryAction = {
  */
 export function appMapPrimaryAction(input: {
   saveState: "idle" | "saving" | "saved" | "invalid";
-  run: JourneyRunReadiness;
+  run: AppMapRunReadiness;
   serverOnline: boolean;
   device: DeviceReadiness;
 }): AppMapPrimaryAction {

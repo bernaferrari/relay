@@ -1,17 +1,17 @@
 import { For, Show } from "solid-js";
-import type { CollaborationAwareness, JourneyCanvasNote } from "@relay/protocol";
+import type { CollaborationAwareness, CanvasNote } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
   draftCanvasConnectionPath,
   type CanvasPoint,
-} from "../lib/journey-canvas-layout";
-import type { JourneyTreeNode } from "../lib/journey-tree";
-import type { CanvasConnection } from "../lib/journey-prototype";
-import type { JourneyRunPresentationState } from "../lib/journey-run-projection";
+} from "../lib/app-map-canvas-layout";
+import type { MapTreeNode } from "../lib/app-map-tree";
+import type { CanvasConnection } from "../lib/app-map-connection-draft";
+import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
-import { CanvasNote, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
+import { CanvasNoteCard, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
 
 type ConnectionPreview = Readonly<{
   fromScreenId: string;
@@ -19,9 +19,9 @@ type ConnectionPreview = Readonly<{
 }>;
 
 export type AppMapCanvasSceneProps = {
-  nodes: JourneyTreeNode[];
+  nodes: MapTreeNode[];
   connections: readonly CanvasConnection[];
-  notes: readonly JourneyCanvasNote[];
+  notes: readonly CanvasNote[];
   width: number;
   height: number;
   selectedNodeId: string | null;
@@ -31,32 +31,32 @@ export type AppMapCanvasSceneProps = {
   connectionPreview?: ConnectionPreview;
   awareness: readonly CollaborationAwareness[];
   presenceGeometry: PresenceGeometry;
-  positionFor: (node: JourneyTreeNode) => CanvasPoint;
-  titleFor: (node: JourneyTreeNode) => string;
-  imageFor: (node: JourneyTreeNode) => string;
-  isFlowStart: (node: JourneyTreeNode) => boolean;
-  screenRunState: (screenId: string) => JourneyRunPresentationState | undefined;
-  connectionRunState: (connectionId: string) => JourneyRunPresentationState | undefined;
+  positionFor: (node: MapTreeNode) => CanvasPoint;
+  titleFor: (node: MapTreeNode) => string;
+  imageFor: (node: MapTreeNode) => string;
+  isFlowStart: (node: MapTreeNode) => boolean;
+  screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
+  connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
-  onSelectNode: (node: JourneyTreeNode) => void;
+  onSelectNode: (node: MapTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
-  onRenameNode: (node: JourneyTreeNode) => void;
-  onOpenNodeDetails: (node: JourneyTreeNode) => void;
-  onCommitNodeRename: (node: JourneyTreeNode, title: string) => void;
-  onConnectStart: (event: PointerEvent, node: JourneyTreeNode) => void;
-  onConnectKeyboard: (node: JourneyTreeNode) => void;
-  onNodePointerDown: (event: PointerEvent, node: JourneyTreeNode) => void;
+  onRenameNode: (node: MapTreeNode) => void;
+  onOpenNodeDetails: (node: MapTreeNode) => void;
+  onCommitNodeRename: (node: MapTreeNode, title: string) => void;
+  onConnectStart: (event: PointerEvent, node: MapTreeNode) => void;
+  onConnectKeyboard: (node: MapTreeNode) => void;
+  onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
   onChooseKeyboardConnection: (sourceId: string, targetId: string) => void;
   onCreateKeyboardDestination: (sourceId: string) => void;
   onCancelKeyboardConnection: () => void;
-  onNotePointerDown: (event: PointerEvent, note: JourneyCanvasNote) => void;
-  onNoteText: (note: JourneyCanvasNote, text: string) => void;
+  onNotePointerDown: (event: PointerEvent, note: CanvasNote) => void;
+  onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: () => void;
-  onDeleteNote: (note: JourneyCanvasNote) => void;
+  onDeleteNote: (note: CanvasNote) => void;
 };
 
 const markerClass = (
-  state: JourneyRunPresentationState | undefined,
+  state: AppMapRunPresentationState | undefined,
   connection: CanvasConnection,
   selected: boolean,
 ) =>
@@ -77,7 +77,7 @@ const markerClass = (
                 : "arrow";
 
 const connectionStrokeClass = (
-  state: JourneyRunPresentationState | undefined,
+  state: AppMapRunPresentationState | undefined,
   connection: CanvasConnection,
   selected: boolean,
 ) =>
@@ -309,7 +309,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
 
       <For each={props.notes}>
         {(note) => (
-          <CanvasNote
+          <CanvasNoteCard
             note={note}
             onPointerDown={(event) => props.onNotePointerDown(event, note)}
             onText={(text) => props.onNoteText(note, text)}

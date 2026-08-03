@@ -5,9 +5,10 @@ import {
   convertStepAction,
   convertTapGesture,
   type EditableActionKind,
-} from "./journey-action-conversion";
+} from "./take-action-conversion";
 
 const recordedTap: RecipeStep = {
+  // Evidence remains stable while its editable action kind changes.
   kind: "tap",
   target: { ref: "@e53", point: { x: 489, y: 1053 } },
   evidence: {

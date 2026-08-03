@@ -1,18 +1,18 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
-import type { JourneyCanvasNote } from "@relay/protocol";
+import type { CanvasNote } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
-import type { CanvasConnection } from "../lib/journey-prototype";
-import type { JourneyTreeNode } from "../lib/journey-tree";
+import type { CanvasConnection } from "../lib/app-map-connection-draft";
+import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
-import type { JourneyRunPresentationState } from "../lib/journey-run-projection";
+import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
 
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
-export function CanvasNote(props: {
-  note: JourneyCanvasNote;
+export function CanvasNoteCard(props: {
+  note: CanvasNote;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
   onText: (text: string) => void;
   onCommit: () => void;
@@ -55,12 +55,12 @@ export function CanvasNote(props: {
 }
 
 export function ScreenCard(props: {
-  node: JourneyTreeNode;
+  node: MapTreeNode;
   isFlowStart: boolean;
   title: string;
   selected: boolean;
   editing: boolean;
-  runState?: JourneyRunPresentationState;
+  runState?: AppMapRunPresentationState;
   position: { x: number; y: number };
   src: () => string;
   onSelect: () => void;
@@ -342,7 +342,7 @@ export function KeyboardConnectionChooser(props: {
 }
 
 export function ScreenInspector(props: {
-  node: JourneyTreeNode | null;
+  node: MapTreeNode | null;
   title: string;
   connections: CanvasConnection[];
   onSelectConnection: (connection: CanvasConnection) => void;

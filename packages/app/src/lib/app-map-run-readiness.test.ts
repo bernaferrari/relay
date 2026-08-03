@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { JourneyGraph, JourneyGraphTransition, RecipeStep } from "@relay/protocol";
-import { journeyRunReadiness } from "./journey-run-readiness";
+import type { CanvasGraph, CanvasTransition, RecipeStep } from "@relay/protocol";
+import { appMapRunReadiness } from "./app-map-run-readiness";
 
 const at = 1;
+
+// One readiness rule is shared by canvas controls and execution.
 const screen = (id: string) => ({ id, title: id, createdAt: at, updatedAt: at });
 const connection = (
   id: string,
   fromScreenId: string,
   to: string,
-  overrides: Partial<JourneyGraphTransition> = {},
-): JourneyGraphTransition => ({
+  overrides: Partial<CanvasTransition> = {},
+): CanvasTransition => ({
   id,
   fromScreenId,
   destination: { kind: "screen", screenId: to },
@@ -22,7 +24,7 @@ const connection = (
   updatedAt: at,
   ...overrides,
 });
-const graph = (transitions: JourneyGraphTransition[]): JourneyGraph => ({
+const graph = (transitions: CanvasTransition[]): CanvasGraph => ({
   schemaVersion: 1,
   screens: [screen("start"), screen("a"), screen("b")],
   transitions,
@@ -30,7 +32,7 @@ const graph = (transitions: JourneyGraphTransition[]): JourneyGraph => ({
 });
 
 test("allows a verified automatic connection with no recipe actions", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([connection("automatic", "start", "a", { mode: "automatic" })]),
     recipeSteps: [],
   });
@@ -39,7 +41,7 @@ test("allows a verified automatic connection with no recipe actions", () => {
 });
 
 test("blocks a captured connection until it is approved", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([connection("tap", "start", "a", { review: { status: "draft", updatedAt: at } })]),
     recipeSteps: [],
   });
@@ -48,7 +50,7 @@ test("blocks a captured connection until it is approved", () => {
 });
 
 test("asks for a destination when the graph branches", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([connection("left", "start", "a"), connection("right", "start", "b")]),
     recipeSteps: [],
   });
@@ -57,7 +59,7 @@ test("asks for a destination when the graph branches", () => {
 });
 
 test("runs only to the selected destination on a branch", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([connection("left", "start", "a"), connection("right", "start", "b")]),
     recipeSteps: [],
     selection: { screenId: "b" },
@@ -68,7 +70,7 @@ test("runs only to the selected destination on a branch", () => {
 });
 
 test("blocks when a connection references a missing recipe action", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([connection("tap", "start", "a", { stepIds: ["missing"] })]),
     recipeSteps: [] as RecipeStep[],
   });
@@ -77,7 +79,7 @@ test("blocks when a connection references a missing recipe action", () => {
 });
 
 test("requires an explicit destination for an unbounded loop", () => {
-  const result = journeyRunReadiness({
+  const result = appMapRunReadiness({
     graph: graph([
       connection("out", "start", "a"),
       connection("back", "a", "start", { kind: "return" }),

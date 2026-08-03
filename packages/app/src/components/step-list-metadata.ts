@@ -1,5 +1,5 @@
 import type { RecipeStep } from "../context/server";
-import { createTapStep } from "../lib/journey-action-conversion";
+import { createTapStep } from "../lib/take-action-conversion";
 import { sentenceForStep } from "../lib/step-sentence";
 import type { TitledId } from "../lib/job";
 import type { IconName } from "./icon";

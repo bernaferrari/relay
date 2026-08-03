@@ -22,7 +22,7 @@ export function shellRootNavVar(open: boolean): Record<string, string> {
 }
 
 /**
- * The single navigator: areas, journeys, and the open journey's steps. It
+ * The single navigator: areas, App Maps, and the open Flow's actions. It
  * replaces the old 58px rail + library + outline triple. Keeping one panel
  * means one selection model and one place to look for anything nameable.
  */

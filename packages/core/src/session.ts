@@ -6,13 +6,6 @@ import { readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { now, publish } from "./events.js";
 import {
-  getAction,
-  isActionId,
-  runAction,
-  type RunActionOptions,
-  type RunActionResult,
-} from "./actions.js";
-import {
   base,
   createDevice,
   resetDeviceClient,
@@ -21,7 +14,6 @@ import {
 } from "./device.js";
 import {
   glyphsFromLogLine,
-  planForAction,
   type Glyph,
   type TraceFrameRef,
   type TraceStep,
@@ -40,7 +32,6 @@ import {
   runWithJobControl,
   cooperativeCheckpoint,
   throwIfCancelled,
-  raceCancel,
   hardStopDeviceSession,
 } from "./control.js";
 import {
@@ -276,10 +267,8 @@ function setOutcome(job: TestJob): void {
 }
 
 export type EnqueueJobInput = {
-  /** legacy coded action id (mutually exclusive with `recipe`) */
-  action?: string;
-  /** recipe id — runs a JSON recipe instead of a coded action */
-  recipe?: string;
+  /** Internal executable recipe projection for a canonical App Map Flow. */
+  recipe: string;
   serial?: string;
   platform?: DevicePlatform;
   targetKind?: "device" | "browser";
@@ -296,7 +285,7 @@ export type EnqueueJobInput = {
   caseIndex?: number;
   caseCount?: number;
   artifacts?: TestJob["artifacts"];
-  /** Frozen execution input. Suite and retry jobs must provide/reuse this snapshot. */
+  /** Frozen execution input. Matrix and retry jobs reuse this snapshot. */
   recipeSnapshot?: Recipe;
   recipeGraph?: Record<string, Recipe>;
   projectId?: string;
@@ -384,37 +373,17 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     },
   };
 
-  // Recipe job: action doubles as the recipe id so history/run-dir naming keeps working.
-  // The recipe is resolved (title/steps) inside executeJob; enqueue stays sync.
-  let job: TestJob;
-  if (input.recipe) {
-    const recipeId = input.recipe;
-    job = {
-      ...baseJob,
-      action: recipeId,
-      recipeId,
-      glyphs: ["ai", "wait"],
-      kind: "Replay",
-      tone: "acc",
-      title: input.title ?? recipeId,
-    };
-  } else {
-    // Legacy coded-action job
-    const action = input.action;
-    if (!action || !isActionId(action)) {
-      throw new Error(`Unknown action: ${action ?? "(none)"}`);
-    }
-    const plan = planForAction(action);
-    const meta = getAction(action);
-    job = {
-      ...baseJob,
-      action,
-      glyphs: plan.glyphs,
-      kind: plan.kind,
-      tone: plan.tone,
-      title: meta?.title ?? action,
-    };
-  }
+  // `action` remains the report/event label; every execution itself is a frozen recipe.
+  const recipeId = input.recipe;
+  const job: TestJob = {
+    ...baseJob,
+    action: recipeId,
+    recipeId,
+    glyphs: ["ai", "wait"],
+    kind: "Replay",
+    tone: "acc",
+    title: input.title ?? recipeId,
+  };
   Object.defineProperty(job, "toJSON", {
     enumerable: false,
     value: () => jobForTransport(job),
@@ -470,8 +439,7 @@ export function retryJob(id: string): TestJob {
   const parent = jobs.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
   return enqueueJob({
-    action: parent.recipeId ? undefined : parent.action,
-    recipe: parent.recipeId,
+    recipe: parent.recipeId!,
     serial: parent.serial,
     platform: parent.platform,
     prodAccountMatch: parent.options?.prodAccountMatch,
@@ -674,28 +642,8 @@ export function cancelActiveJob(targetId?: string): TestJob | null {
   return cancelJob(active.id);
 }
 
-/** Legacy coded-action path: dispatch to runAction under cancel race. */
-async function runLegacyAction(
-  job: TestJob,
-  device: Device,
-  pushLog: (line: string) => void,
-): Promise<RunActionResult> {
-  // makeJob guarantees legacy jobs carry a valid ActionId; narrow to satisfy types.
-  if (!isActionId(job.action)) {
-    throw new Error(`not a legacy action: ${job.action}`);
-  }
-  const opts: RunActionOptions = {
-    ...(job.options?.prodAccountMatch ? { prodAccountMatch: job.options.prodAccountMatch } : {}),
-    onLog: (line) => {
-      throwIfCancelled(job.id);
-      pushLog(line);
-    },
-  };
-  return await raceCancel(runAction(device, job.action, opts), job.id);
-}
-
 /**
- * Recipe path: load the recipe, run each step as a real TraceStep. Cancel
+ * Load the frozen recipe and run each action as a real TraceStep. Cancel
  * propagates from device ops (controlled/raceCancel) and is rethrown so the
  * shared catch path finalizes the job. `setCurrentStep` routes per-step logs.
  */
@@ -813,40 +761,7 @@ async function executeJob(id: string): Promise<void> {
     serial: job.serial,
   });
 
-  const isRecipeJob = Boolean(job.recipeId);
-
-  // Legacy jobs build cosmetic phase steps advanced by log-line regexes.
-  // Recipe jobs open real TraceSteps one-per-step in runRecipeSteps.
-  const plan = planForAction(job.action);
-  const stepKind = job.retryOf ? ("Healed" as const) : plan.kind;
-  const stepTone = job.retryOf ? ("heal" as const) : plan.tone;
-  const phaseSpecs =
-    !isRecipeJob && plan.planned.length > 0
-      ? plan.planned
-      : !isRecipeJob
-        ? [{ title: job.title, glyphs: plan.glyphs as Glyph[] }]
-        : [];
-
-  const phaseSteps: TraceStep[] = phaseSpecs.map((p, i) =>
-    openStep(job, {
-      kind: stepKind,
-      tone: stepTone,
-      title: p.title,
-      glyphs: (job.retryOf && i === 0 ? (["re", ...p.glyphs] as Glyph[]) : p.glyphs) as Glyph[],
-      status: i === 0 ? "running" : undefined,
-      log:
-        i === 0
-          ? job.retryOf
-            ? `retry of ${job.retryOf.slice(0, 8)} · attempt ${job.attempts}`
-            : `start ${job.action}${job.deviceName ? ` · ${job.deviceName}` : ""}${job.serial ? ` (${job.serial})` : ""}`
-          : "",
-    }),
-  );
-
-  let phaseIdx = 0;
   let currentRecipeStep: TraceStep | undefined;
-  const currentPhase = () => phaseSteps[Math.min(phaseIdx, phaseSteps.length - 1)];
-  const logTarget = () => (phaseSteps.length > 0 ? currentPhase() : currentRecipeStep);
 
   const pushLog = (line: string) => {
     const safeLine = redactPrivateValue(
@@ -855,22 +770,7 @@ async function executeJob(id: string): Promise<void> {
       job.sensitiveInputNames ?? [],
     );
     job.logs.push(safeLine);
-    appendStepLog(logTarget(), safeLine);
-    // Advance phase on major progress markers so pause has clearer boundaries (legacy only)
-    if (
-      phaseSteps.length > 0 &&
-      phaseIdx < phaseSteps.length - 1 &&
-      (safeLine.startsWith("==>") ||
-        /ensure|restore|update|install|login|sign out|chooser/i.test(safeLine))
-    ) {
-      const cur = phaseSteps[phaseIdx];
-      if (cur && cur.status === "running") {
-        finishStep(cur, "ok", safeLine);
-        phaseIdx += 1;
-        const next = phaseSteps[phaseIdx];
-        if (next) next.status = "running";
-      }
-    }
+    appendStepLog(currentRecipeStep, safeLine);
     const level = /FAIL|error|Error|cancel/i.test(safeLine)
       ? ("error" as const)
       : /DONE|success|resumed|paused/i.test(safeLine)
@@ -879,7 +779,7 @@ async function executeJob(id: string): Promise<void> {
     publish({ type: "job.log", at: now(), jobId: job.id, line: safeLine, level });
   };
 
-  const primary = () => currentPhase() ?? currentRecipeStep ?? job.steps[job.steps.length - 1];
+  const primary = () => currentRecipeStep ?? job.steps[job.steps.length - 1];
   let device: Device | undefined;
   let evidence: RunEvidenceHandle | undefined = initializeRunEvidence(job);
   const finishEvidence = async () => {
@@ -928,16 +828,10 @@ async function executeJob(id: string): Promise<void> {
       }
     }, 50);
 
-    let result: { ok: boolean; result?: unknown; error?: string };
     try {
-      if (isRecipeJob) {
-        await runRecipeSteps(job, device, pushLog, (s) => {
-          currentRecipeStep = s;
-        });
-        result = { ok: true, result: "recipe completed" };
-      } else {
-        result = await runLegacyAction(job, device, pushLog);
-      }
+      await runRecipeSteps(job, device, pushLog, (step) => {
+        currentRecipeStep = step;
+      });
       if (pendingCancel) throw pendingCancel;
     } finally {
       clearInterval(heartbeat);
@@ -947,59 +841,46 @@ async function executeJob(id: string): Promise<void> {
 
     job.finishedAt = now();
 
-    if (result.ok) {
-      const wasRetry = Boolean(job.retryOf && job.previousError);
-      // close any open steps as ok (legacy phases + recipe steps alike)
-      for (const s of job.steps) {
-        if (s.status === "running" || !s.finishedAt) finishStep(s, "ok");
-      }
-      if (wasRetry) {
-        job.status = "healed";
-        job.healed = true;
-        job.healMessage = `Recovered after failure: ${job.previousError}. Recipe re-ran successfully on attempt ${job.attempts}.`;
-        job.tone = "heal";
-        job.kind = "Healed";
-        const last = job.steps[job.steps.length - 1];
-        if (last) {
-          last.tone = "heal";
-          last.kind = "Healed";
-          last.heal = job.healMessage;
-          finishStep(last, "healed", `✓ healed · ${result.result ?? "ok"}`);
-        }
-        publish({
-          type: "job.healed",
-          at: job.finishedAt,
-          jobId: job.id,
-          action: job.action,
-          healMessage: job.healMessage,
-        });
-      } else {
-        job.status = "ok";
-        const p = primary();
-        if (p) finishStep(p, "ok", `✓ ${result.result ?? "ok"}`);
-      }
-      job.result = result.result;
-      job.error = undefined;
-      job.errorCode = undefined;
-      setOutcome(job);
-    } else {
-      job.status = "error";
-      job.error = result.error;
-      job.errorCode = classifyError(result.error ?? "failed");
-      setOutcome(job);
-      for (const s of job.steps) {
-        if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
-      }
-      const pe = primary();
-      if (pe) finishStep(pe, "error", `✗ ${result.error}`);
+    const wasRetry = Boolean(job.retryOf && job.previousError);
+    for (const step of job.steps) {
+      if (step.status === "running" || !step.finishedAt) finishStep(step, "ok");
     }
+    if (wasRetry) {
+      job.status = "healed";
+      job.healed = true;
+      job.healMessage = `Recovered after failure: ${job.previousError}. Recipe re-ran successfully on attempt ${job.attempts}.`;
+      job.tone = "heal";
+      job.kind = "Healed";
+      const last = job.steps.at(-1);
+      if (last) {
+        last.tone = "heal";
+        last.kind = "Healed";
+        last.heal = job.healMessage;
+        finishStep(last, "healed", "✓ healed");
+      }
+      publish({
+        type: "job.healed",
+        at: job.finishedAt,
+        jobId: job.id,
+        action: job.action,
+        healMessage: job.healMessage,
+      });
+    } else {
+      job.status = "ok";
+      const step = primary();
+      if (step) finishStep(step, "ok", "✓ recipe completed");
+    }
+    job.result = "recipe completed";
+    job.error = undefined;
+    job.errorCode = undefined;
+    setOutcome(job);
 
     publish({
       type: "job.finished",
       at: job.finishedAt,
       jobId: job.id,
       action: job.action,
-      ok: result.ok,
+      ok: true,
       result: job.result,
       error: job.error,
       durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),

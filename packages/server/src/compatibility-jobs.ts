@@ -100,7 +100,7 @@ export async function enqueueCompatibilityBatch(
         { ...requireOperationContext(), leaseId: leases.get(profile.targetId)?.id },
         () =>
           runtime.enqueueJob({
-            recipe: body.recipe,
+            recipe: frozenRecipe.recipeSnapshot.id,
             recipeSnapshot: frozenRecipe.recipeSnapshot,
             recipeGraph: frozenRecipe.recipeGraph,
             serial: profile.targetId,

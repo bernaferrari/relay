@@ -109,7 +109,7 @@ function inProcessClient(): DeviceClient {
         },
         () =>
           enqueueJob({
-            action: opts.action,
+            recipe: opts.action,
             serial: opts.serial,
             platform,
           }),
@@ -197,7 +197,7 @@ function httpClient(baseUrl: string): DeviceClient {
     async runAction(opts) {
       // Async job so cancel/pause work against the same server process
       const { job: rawJob } = await relay.invoke("job.start", {
-        action: opts.action,
+        recipe: opts.action,
         ...(opts.serial ? { serial: opts.serial } : {}),
       });
       const job = rawJob as TestJob;

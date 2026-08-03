@@ -20,7 +20,7 @@ test("operation descriptors have unique IDs, transports, and complete safety met
 test("runtime parsers reject malformed input and output", () => {
   assert.throws(
     () => operationDefinition("job.start").input.parse({ serial: "device" }),
-    /job action/,
+    /job recipe/,
   );
   assert.throws(
     () => operationDefinition("target.screenshot.capture").output.parse({ path: "shot.png" }),
@@ -63,5 +63,5 @@ test("descriptor invariants catch duplicates and unsafe cancellation metadata", 
 });
 
 // Compile-time contract: known operation inputs are inferred from the registry map.
-const validInput: OperationInput<"job.start"> = { action: "smoke" };
-assert.equal(validInput.action, "smoke");
+const validInput: OperationInput<"job.start"> = { recipe: "smoke" };
+assert.equal(validInput.recipe, "smoke");

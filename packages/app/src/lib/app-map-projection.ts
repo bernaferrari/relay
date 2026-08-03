@@ -4,8 +4,8 @@ import type {
   Connection,
   ConnectionPatch,
   Flow,
-  JourneyGraph,
-  JourneyMetadata,
+  CanvasGraph,
+  AppMapCanvasState,
   RecipeStep,
   Screen,
 } from "@relay/protocol";
@@ -29,7 +29,7 @@ function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function flowPath(graph: JourneyGraph, startScreenId: string): string[] {
+function flowPath(graph: CanvasGraph, startScreenId: string): string[] {
   const connectionIds: string[] = [];
   const visited = new Set<string>();
   let screenId: string | undefined = startScreenId;
@@ -46,7 +46,7 @@ function flowPath(graph: JourneyGraph, startScreenId: string): string[] {
 }
 
 function transitionActions(
-  transition: JourneyGraph["transitions"][number],
+  transition: CanvasGraph["transitions"][number],
   stepsById: ReadonlyMap<string, RecipeStep>,
 ): ActionSpec[] {
   const steps = transition.stepIds.flatMap((id) => {
@@ -84,7 +84,7 @@ function transitionActions(
  */
 export function planAppMapProjection(input: {
   appMap: AppMap;
-  graph: JourneyGraph;
+  graph: CanvasGraph;
   positions: Readonly<Record<string, { x: number; y: number }>>;
   recipeSteps: readonly RecipeStep[];
 }): AppMapProjectionChange[] {
@@ -185,7 +185,10 @@ export function planAppMapProjection(input: {
 }
 
 /** Read projection used by the canvas for approved human or agent changes. */
-export function mergeAppMapProjection(metadata: JourneyMetadata, appMap: AppMap): JourneyMetadata {
+export function mergeAppMapProjection(
+  metadata: AppMapCanvasState,
+  appMap: AppMap,
+): AppMapCanvasState {
   const screens = Object.values(appMap.screens)
     .sort((left, right) => left.id.localeCompare(right.id))
     .map((screen) => ({

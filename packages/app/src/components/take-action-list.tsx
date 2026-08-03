@@ -2,7 +2,9 @@ import { For, Show, createSignal, type JSX } from "solid-js";
 import type { RecordingTakeAction } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { describeTakeAction, moveActionIds } from "./journey-take-action-model";
+import { describeTakeAction, moveActionIds } from "./take-action-model";
+
+/** Ordered, keyboard-accessible Take actions. */
 
 const iconButton =
   "grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-30";

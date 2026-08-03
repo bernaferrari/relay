@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   DiscoverySession,
-  JourneyGraph,
+  CanvasGraph,
   ObservedScreen,
   ObservedTransition,
 } from "@relay/protocol";
-import { canonicalDiscoveryScreenId, importDiscoveryJourney } from "./discovery-journey-import.js";
+import { canonicalDiscoveryScreenId, importDiscoveryAppMap } from "./discovery-app-map-import.js";
+
+// Discovery proposals must merge into the same canonical App Map.
 
 const screen = (id: string, capturedAt: number, fingerprint = id): ObservedScreen => ({
   id,
@@ -61,7 +63,7 @@ test("imports branches and deduplicates screen observations by fingerprint", () 
     ],
   );
 
-  const { graph, warnings } = importDiscoveryJourney(source);
+  const { graph, warnings } = importDiscoveryAppMap(source);
   const homeId = canonicalDiscoveryScreenId("home-stable");
   assert.equal(graph.screens.length, 3);
   const home = graph.screens.find((item) => item.id === homeId);
@@ -93,7 +95,7 @@ test("imports branches and deduplicates screen observations by fingerprint", () 
 });
 
 test("preserves cycles and marks an observed back edge as a return", () => {
-  const { graph } = importDiscoveryJourney(
+  const { graph } = importDiscoveryAppMap(
     session(
       [screen("home", 1), screen("settings", 2)],
       [
@@ -120,7 +122,7 @@ test("preserves cycles and marks an observed back edge as a return", () => {
 });
 
 test("merges a discovery fingerprint into an already canonical authored screen", () => {
-  const existing: JourneyGraph = {
+  const existing: CanvasGraph = {
     schemaVersion: 1,
     screens: [
       {
@@ -134,10 +136,10 @@ test("merges a discovery fingerprint into an already canonical authored screen",
     transitions: [],
     flows: [],
   };
-  const observed = screen("observed-home", 10, "legacy-fingerprint");
+  const observed = screen("observed-home", 10, "known-fingerprint");
   observed.identity = { schemaVersion: 1, fingerprint: "canonical-home" };
 
-  const { graph } = importDiscoveryJourney(session([observed], []), existing);
+  const { graph } = importDiscoveryAppMap(session([observed], []), existing);
   assert.equal(graph.screens.length, 1);
   assert.equal(graph.screens[0]?.id, "screen-home");
   assert.equal(graph.screens[0]?.observations?.[0]?.externalId, "observed-home");
@@ -149,15 +151,15 @@ test("merges repeatedly into an existing graph without mutation or duplication",
     [screen("home", 1), screen("profile", 2)],
     [transition("Open profile", "home", "profile", 10)],
   );
-  const existing: JourneyGraph = {
+  const existing: CanvasGraph = {
     schemaVersion: 1,
     screens: [{ id: "authored", title: "Authored", createdAt: 0, updatedAt: 0 }],
     transitions: [],
     flows: [],
   };
   const existingSnapshot = structuredClone(existing);
-  const first = importDiscoveryJourney(observed, existing);
-  const second = importDiscoveryJourney(observed, first.graph);
+  const first = importDiscoveryAppMap(observed, existing);
+  const second = importDiscoveryAppMap(observed, first.graph);
 
   assert.deepEqual(existing, existingSnapshot);
   assert.notEqual(first.graph, existing);
@@ -178,7 +180,7 @@ test("warns about incomplete observations without inventing destinations or acti
     ],
   );
 
-  const { graph, warnings } = importDiscoveryJourney(observed);
+  const { graph, warnings } = importDiscoveryAppMap(observed);
   assert.equal(graph.transitions.length, 1);
   assert.equal(graph.transitions[0]?.label, "Manual jump");
   assert.deepEqual(graph.transitions[0]?.stepIds, []);

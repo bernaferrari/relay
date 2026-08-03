@@ -1,9 +1,10 @@
-import type { JourneyCanvasNote } from "@relay/protocol";
-import type { JourneyTreeNode } from "./journey-tree";
+import type { CanvasNote } from "@relay/protocol";
+import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
 export type CanvasViewport = CanvasPoint & { scale: number };
 
+/** Shared geometry for the App Map canvas and collaboration presence. */
 export const SCREEN_CARD_WIDTH = 180;
 export const SCREEN_CARD_HEIGHT = 350;
 export const SCREEN_FRAME_TOP = 30;
@@ -16,9 +17,9 @@ export function clampCanvasScale(value: number): number {
 }
 
 export function canvasBounds(
-  nodes: JourneyTreeNode[],
-  notes: JourneyCanvasNote[],
-  positionFor: (node: JourneyTreeNode) => CanvasPoint,
+  nodes: MapTreeNode[],
+  notes: CanvasNote[],
+  positionFor: (node: MapTreeNode) => CanvasPoint,
 ): { width: number; height: number } {
   if (!nodes.length && !notes.length) return { width: 760, height: 560 };
   const right = Math.max(
@@ -55,8 +56,8 @@ export function fitCanvasViewport(
 
 export function canvasEdgeGeometry(
   edge: { from: string; to: string; kind: "forward" | "return" },
-  nodes: JourneyTreeNode[],
-  positionFor: (node: JourneyTreeNode) => CanvasPoint,
+  nodes: MapTreeNode[],
+  positionFor: (node: MapTreeNode) => CanvasPoint,
 ): { path: string; labelPoint: CanvasPoint } {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
@@ -94,8 +95,8 @@ export function canvasEdgeGeometry(
 export function draftCanvasConnectionPath(
   fromId: string,
   point: CanvasPoint,
-  nodes: JourneyTreeNode[],
-  positionFor: (node: JourneyTreeNode) => CanvasPoint,
+  nodes: MapTreeNode[],
+  positionFor: (node: MapTreeNode) => CanvasPoint,
 ): string {
   const from = nodes.find((node) => node.id === fromId);
   if (!from) return "";

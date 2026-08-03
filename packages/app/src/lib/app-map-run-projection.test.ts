@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { JourneyGraph, RecipeStep } from "@relay/protocol";
+import type { CanvasGraph, RecipeStep } from "@relay/protocol";
 import type { JobInfo, TraceStep } from "./api-types";
-import { projectJourneyRun } from "./journey-run-projection";
+import { projectAppMapRun } from "./app-map-run-projection";
 
 const now = 10_000;
 
@@ -41,7 +41,7 @@ function trace(
   };
 }
 
-function graph(): JourneyGraph {
+function graph(): CanvasGraph {
   return {
     schemaVersion: 1,
     screens: [
@@ -84,7 +84,7 @@ function job(
 ): JobInfo {
   return {
     id: "run-1",
-    action: "journey",
+    action: "app-map",
     status,
     queuedAt: now - 100,
     startedAt: now,
@@ -94,8 +94,8 @@ function job(
     logs: [],
     steps: traces,
     recipeSnapshot: {
-      id: "journey",
-      title: "Journey",
+      id: "app-map",
+      title: "App Map",
       source: "custom",
       steps,
       createdAt: now,
@@ -106,7 +106,7 @@ function job(
 }
 
 test("projects a passing path, timing, evidence, and traversal order", () => {
-  const result = projectJourneyRun({
+  const result = projectAppMapRun({
     graph: graph(),
     recipeSteps: steps,
     job: job("ok", [trace(0, "ok"), trace(1, "ok")], {
@@ -154,7 +154,7 @@ test("projects a passing path, timing, evidence, and traversal order", () => {
 });
 
 test("attributes a failed step only to its edge and blocks the destination", () => {
-  const result = projectJourneyRun({
+  const result = projectAppMapRun({
     graph: graph(),
     recipeSteps: steps,
     job: job("error", [trace(0, "error")], {
@@ -178,7 +178,7 @@ test("attributes a failed step only to its edge and blocks the destination", () 
 
 test("keeps a healed edge distinct from an ordinary pass", () => {
   const healed = trace(1, "healed", { heal: "Recovered with a stronger locator" });
-  const result = projectJourneyRun({
+  const result = projectAppMapRun({
     graph: graph(),
     recipeSteps: steps,
     job: job("healed", [trace(0, "ok"), healed], {
@@ -193,7 +193,7 @@ test("keeps a healed edge distinct from an ordinary pass", () => {
 });
 
 test("projects a partial active run without marking untouched edges as passed", () => {
-  const result = projectJourneyRun({
+  const result = projectAppMapRun({
     graph: graph(),
     recipeSteps: steps,
     job: job("running", [trace(0, "ok"), trace(1, "running")]),
@@ -211,14 +211,14 @@ test("reports unmapped graph, recipe, and trace steps instead of guessing", () =
   broken.transitions[0]!.stepIds = ["missing-step"];
   const recipe = [...steps, recipeStep("orphan")];
   const frozen = recipe.map((step) => ({ ...step }));
-  const result = projectJourneyRun({
+  const result = projectAppMapRun({
     graph: broken,
     recipeSteps: recipe,
     job: {
       ...job("ok", [trace(0, "ok"), trace(1, "ok"), trace(2, "ok")]),
       recipeSnapshot: {
-        id: "journey",
-        title: "Journey",
+        id: "app-map",
+        title: "App Map",
         source: "custom",
         steps: frozen,
         createdAt: now,

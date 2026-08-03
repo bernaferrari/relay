@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,9 +46,12 @@ export async function bundleServer() {
   );
   // Playwright derives its package root from the generated bundle directory
   // and reads this metadata during module initialization.
-  await copyFile(
-    resolve(desktopRoot, "node_modules/playwright-core/package.json"),
+  const playwrightPackage = JSON.parse(
+    await readFile(resolve(desktopRoot, "node_modules/playwright-core/package.json"), "utf8"),
+  );
+  await writeFile(
     resolve(outDir, "../package.json"),
+    `${JSON.stringify({ ...playwrightPackage, type: "module" }, null, 2)}\n`,
   );
   await copyFile(
     resolve(desktopRoot, "node_modules/playwright-core/browsers.json"),

@@ -142,7 +142,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const safeMatrix = redactRunMatrix(matrix, definitions.value);
     const jobs = matrix.cases.map((item) =>
       enqueueJob({
-        recipe: body.recipe,
+        recipe: frozenRecipe.recipeSnapshot.id,
         ...frozenRecipe,
         serial: body.serial,
         platform: body.platform,
@@ -204,7 +204,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
 
   if (method === "POST" && pathname === "/jobs") {
     const body = (await parseJsonBody(req)) as {
-      action?: string;
       recipe?: string;
       serial?: string;
       platform?: "android" | "ios";
@@ -214,8 +213,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       retryOf?: string;
       variables?: Record<string, string>;
     };
-    if (!body.action && !body.recipe && !body.retryOf) {
-      throw new HttpError(400, "action or recipe is required");
+    if (!body.recipe && !body.retryOf) {
+      throw new HttpError(400, "recipe is required");
     }
     if (body.recipe && !scope.localTrusted) {
       throw new HttpError(403, "Recipe jobs require a project-owned recipe store");
@@ -240,8 +239,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       job = body.retryOf
         ? retryJob(body.retryOf)
         : enqueueJob({
-            action: body.action,
-            recipe: body.recipe,
+            recipe: body.recipe!,
             ...frozenRecipe,
             serial: body.serial,
             platform: body.platform,
@@ -256,7 +254,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             ownerId: currentOperationContext()!.actorId,
           });
     } catch (err) {
-      // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.
+      // Invalid or missing compiled recipes are client errors, not server faults.
       const message = err instanceof Error ? err.message : String(err);
       throw new HttpError(400, message);
     }

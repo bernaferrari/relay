@@ -575,7 +575,7 @@ export type ScreenIdentity = {
 
 /** One concrete observation of a semantic screen. A node can accumulate many
  * observations across recordings, discovery sessions, devices, and runs. */
-export type JourneyScreenObservation = {
+export type ScreenObservation = {
   id: string;
   fingerprint: string;
   capturedAt: number;
@@ -724,34 +724,34 @@ export type TestVariable = {
   sensitive?: boolean;
 };
 
-export type JourneyNodePosition = { x: number; y: number };
+export type CanvasPosition = { x: number; y: number };
 /** Non-executable context placed beside captured screens: a compact canvas
  * primitive for requirements, review decisions, or a reminder to branch. */
-export type JourneyCanvasNote = JourneyNodePosition & {
+export type CanvasNote = CanvasPosition & {
   id: string;
   text: string;
   createdAt: number;
   updatedAt: number;
 };
 /** A non-destructive edit of the evidence video attached to a transition. */
-export type JourneyVideoClip = {
+export type RecordingClip = {
   startMs: number;
   endMs: number;
 };
 
-/** Replay is the approval loop for one transition, independent from a full
- * journey run. A draft can be refined repeatedly without losing its evidence. */
-export type JourneyTransitionReview = {
+/** Replay is the approval loop for one connection, independent from a full
+ * Flow run. A draft can be refined repeatedly without losing its evidence. */
+export type ConnectionTakeReview = {
   status: "draft" | "verified" | "failed";
   updatedAt: number;
   verifiedAt?: number;
   error?: string;
   /** Verification is recorded per target so one passing phone never hides a
    * failing tablet. The aggregate status remains useful for compact UI. */
-  targets?: JourneyTargetVerification[];
+  targets?: TargetVerification[];
 };
 
-export type JourneyTargetVerification = {
+export type TargetVerification = {
   targetId: string;
   targetName?: string;
   platform?: "android" | "ios" | "browser";
@@ -764,32 +764,32 @@ export type JourneyTargetVerification = {
 
 /** A captured pass before (or after) it becomes part of the executable path.
  * Keeping the raw step/evidence references here lets people resume review
- * after a restart without turning exploratory actions into the journey. */
-export type JourneyTake = {
+ * after a restart without turning exploratory actions into the App Map. */
+export type ConnectionTake = {
   id: string;
   recipeId: string;
   /** Explicit source keeps a paused/reloaded review attached to the screen
    * the person actually recorded from, rather than whichever card is selected
    * when they return. */
   sourceScreenId?: string;
-  sourceObservation?: JourneyScreenObservation;
-  destinationObservation?: JourneyScreenObservation;
+  sourceObservation?: ScreenObservation;
+  destinationObservation?: ScreenObservation;
   startedAt: number;
   finishedAt?: number;
   group: string;
   /** Local Relay video evidence captured through the physical iOS runner. */
   videoTakeId?: string;
-  videoClip?: JourneyVideoClip;
+  videoClip?: RecordingClip;
   state: "review" | "kept" | "discarded";
   steps: RecipeStep[];
 };
-/** A deliberately small, human-owned decision about the executable journey.
+/** A deliberately small, human-owned decision about the executable Flow.
  * It is separate from run evidence: someone can approve the authored path
  * while still reviewing a particular run against a visual baseline. */
-export type JourneyReviewState = "draft" | "needs-review" | "approved" | "attention";
+export type MapReviewState = "draft" | "needs-review" | "approved" | "attention";
 
-export type JourneyReview = {
-  state: JourneyReviewState;
+export type MapReview = {
+  state: MapReviewState;
   updatedAt: number;
   approvedAt?: number;
 };
@@ -799,16 +799,15 @@ export type JourneyReview = {
  * intentional, visible reminder to record that interaction. This keeps the
  * graph honest while still letting someone sketch a route before recording it.
  */
-export type JourneyConnection = {
+export type PrototypeConnection = {
   id: string;
   fromScreenId: string;
   toScreenId: string;
   stepId?: string;
-  /** Capture provenance survives even when the canvas is migrated to the
-   * canonical graph model. */
+  /** Capture provenance remains attached to the canonical connection. */
   takeId?: string;
   videoTakeId?: string;
-  videoClip?: JourneyVideoClip;
+  videoClip?: RecordingClip;
   label?: string;
   state: "recorded" | "needs-recording";
   createdAt: number;
@@ -816,7 +815,7 @@ export type JourneyConnection = {
 };
 
 /**
- * Canonical authoring graph for a journey. A graph is deliberately separate
+ * Canvas projection of the canonical App Map. The projection is separate
  * from the executable recipe: it describes the screens a person sees and the
  * transitions they approve between those screens. The runner still receives a
  * plain ordered RecipeStep[] compiled from the transition step ids.
@@ -824,26 +823,25 @@ export type JourneyConnection = {
  * This separation is what lets the canvas become collaborative and free-form
  * without making a partially-arranged diagram change what runs on a device.
  */
-export type JourneyGraphScreen = {
+export type CanvasScreen = {
   id: string;
   title: string;
-  /** Canonical semantic identity. Optional for migrated journeys whose older
-   * evidence is insufficient; future observations can establish it. */
+  /** Canonical semantic identity. Optional until evidence establishes it. */
   identity?: ScreenIdentity;
   /** Concrete captures known to represent this screen. */
-  observations?: JourneyScreenObservation[];
+  observations?: ScreenObservation[];
   /** The post-action capture used to render this card, when one exists. */
   representativeStepId?: string;
   createdAt: number;
   updatedAt: number;
 };
 
-export type JourneyGraphDestination = { kind: "screen"; screenId: string } | { kind: "end" };
+export type CanvasDestination = { kind: "screen"; screenId: string } | { kind: "end" };
 
-export type JourneyGraphTransition = {
+export type CanvasTransition = {
   id: string;
   fromScreenId: string;
-  destination: JourneyGraphDestination;
+  destination: CanvasDestination;
   /** Stable recipe action ids, in the exact order a person recorded them. */
   stepIds: string[];
   /** Immutable evidence committed in the same aggregate as this connection. */
@@ -853,15 +851,15 @@ export type JourneyGraphTransition = {
    * discrete action can describe. */
   takeId?: string;
   videoTakeId?: string;
-  videoClip?: JourneyVideoClip;
+  videoClip?: RecordingClip;
   /** How the transition was authored. All modes still compile to recipe steps. */
   mode?: "interaction" | "automatic" | "reusable";
-  review?: JourneyTransitionReview;
+  review?: ConnectionTakeReview;
   /** Where this edge came from. This makes repeated discovery imports
    * idempotent and keeps generated maps auditable without coupling execution
    * to a discovery session. */
   provenance?: {
-    source: "recording" | "discovery" | "manual" | "migration";
+    source: "recording" | "discovery" | "manual";
     externalId?: string;
     sessionId?: string;
   };
@@ -872,8 +870,8 @@ export type JourneyGraphTransition = {
   updatedAt: number;
 };
 
-/** A journey can expose more than one intentional entry point. */
-export type JourneyGraphFlow = {
+/** An App Map can expose more than one intentional Flow entry point. */
+export type CanvasFlow = {
   id: string;
   name: string;
   screenId: string;
@@ -884,16 +882,16 @@ export type JourneyGraphFlow = {
   updatedAt: number;
 };
 
-export type JourneyGraph = {
+export type CanvasGraph = {
   schemaVersion: 1;
-  screens: JourneyGraphScreen[];
-  transitions: JourneyGraphTransition[];
-  flows: JourneyGraphFlow[];
+  screens: CanvasScreen[];
+  transitions: CanvasTransition[];
+  flows: CanvasFlow[];
 };
 
-/** A named device context for a journey. Variant-specific captures can be
+/** A named device context for an App Map. Variant-specific captures can be
  * attached later without changing the authored route or its executable steps. */
-export type JourneyDeviceVariant = {
+export type DeviceVariant = {
   id: string;
   label: string;
   deviceId?: string;
@@ -901,45 +899,40 @@ export type JourneyDeviceVariant = {
   updatedAt: number;
 };
 
-export type JourneyVerification = {
+export type MapVerification = {
   state: "draft" | "verifying" | "needs-review" | "baselined";
   updatedAt: number;
   baselineAt?: number;
   baselineRunId?: string;
 };
 
-/** Versioned canvas-only prototype data. It is deliberately optional so
- * existing recordings retain their exact executable recipe semantics. */
-export type JourneyPrototype = {
-  connections?: JourneyConnection[];
-  deviceVariants?: JourneyDeviceVariant[];
-  verification?: JourneyVerification;
+/** Canvas-only prototype data, projected from canonical App Map entities. */
+export type ConnectionPrototype = {
+  connections?: PrototypeConnection[];
+  deviceVariants?: DeviceVariant[];
+  verification?: MapVerification;
 };
 /**
  * Layout metadata is deliberately separate from a recipe's executable steps.
- * It lets the graph evolve (and be rearranged) without making a recorded
- * journey impossible to run on an older Relay host.
+ * It lets the graph evolve and be rearranged without changing executable actions.
  */
-export type JourneyMetadata = {
-  schemaVersion?: 1 | 2 | 3 | 4 | 5 | 6;
-  positions: Record<string, JourneyNodePosition>;
+export type AppMapCanvasState = {
+  schemaVersion: 1;
+  positions: Record<string, CanvasPosition>;
   /** Human names for captured screens. Kept outside executable steps so the
    * graph can be clarified without changing what a runner performs. */
   screenTitles?: Record<string, string>;
   edgeLabels: Record<string, string>;
   edgeKinds: Record<string, string>;
-  notes?: JourneyCanvasNote[];
+  notes?: CanvasNote[];
   /** Versioned, non-executable recording review state. */
-  takes?: JourneyTake[];
-  /** Human approval of the journey itself; run-by-run visual approval stays in run evidence. */
-  review?: JourneyReview;
+  takes?: ConnectionTake[];
+  /** Human approval of the map; run-by-run visual approval stays in run evidence. */
+  review?: MapReview;
   /** Canvas-only authoring, device coverage, and baseline state. */
-  prototype?: JourneyPrototype;
-  /**
-   * The versioned source of truth for canvas authoring. Older layout fields
-   * remain readable during migration, but new writes should use this graph.
-   */
-  graph?: JourneyGraph;
+  prototype?: ConnectionPrototype;
+  /** Renderer projection of canonical App Map screens, connections, and flows. */
+  graph?: CanvasGraph;
 };
 
 export type GenerationPurpose = "variable" | "test-plan";

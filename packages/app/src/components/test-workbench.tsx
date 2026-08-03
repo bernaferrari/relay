@@ -5,7 +5,7 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { shellStageDrawerClearance, shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
-import { JourneyInspector } from "./journey-chrome";
+import { AppMapInspector } from "./app-map-inspector";
 import { ExecutionInspector } from "./execution-inspector";
 
 /**
@@ -59,7 +59,7 @@ export function TestWorkbench(props: {
           fallback={
             <Show
               when={execution()}
-              fallback={<JourneyInspector compact onOpenTargets={props.onOpenTargets} />}
+              fallback={<AppMapInspector compact onOpenTargets={props.onOpenTargets} />}
             >
               {(job) => <ExecutionInspector job={job()} onOpenReport={props.onOpenRun} />}
             </Show>

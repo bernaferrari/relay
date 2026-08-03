@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { JourneyMetadata, RecipeStep } from "@relay/protocol";
-import { buildJourneyTree } from "./journey-tree";
+import type { AppMapCanvasState, RecipeStep } from "@relay/protocol";
+import { buildMapTree } from "./app-map-tree";
+
+// Draft connections stay explicitly unapproved until recording review.
 import {
   addPlannedConnection,
   attachRecordedTake,
@@ -9,8 +11,8 @@ import {
   canvasConnections,
   removeAuthoredConnection,
   reviewTransition,
-  setJourneyBaseline,
-} from "./journey-prototype";
+  setMapBaseline,
+} from "./app-map-connection-draft";
 
 const steps: RecipeStep[] = [
   {
@@ -35,9 +37,9 @@ const steps: RecipeStep[] = [
   },
 ];
 
-const recordedTree = buildJourneyTree(steps);
-const metadata: JourneyMetadata = {
-  schemaVersion: 6,
+const recordedTree = buildMapTree(steps);
+const metadata: AppMapCanvasState = {
+  schemaVersion: 1,
   positions: {},
   edgeLabels: {},
   edgeKinds: {},
@@ -76,7 +78,7 @@ const metadata: JourneyMetadata = {
 };
 
 test("derived connections retain the runnable action identity", () => {
-  const tree = buildJourneyTree(steps);
+  const tree = buildMapTree(steps);
   const connection = canvasConnections(tree, steps, metadata)[0];
   assert.equal(connection?.stepId, "open");
   assert.equal(connection?.state, "recorded");
@@ -84,7 +86,7 @@ test("derived connections retain the runnable action identity", () => {
 });
 
 test("planned connections are reversible and become recorded only after a stable step id exists", () => {
-  const tree = buildJourneyTree(steps);
+  const tree = buildMapTree(steps);
   const [from, to] = tree.nodes;
   const planned = addPlannedConnection(
     metadata,
@@ -130,7 +132,7 @@ test("planned connections are reversible and become recorded only after a stable
 });
 
 test("visual quick behaviors remain replayable and independently reviewable", () => {
-  const tree = buildJourneyTree(steps);
+  const tree = buildMapTree(steps);
   const [from, to] = tree.nodes;
   const planned = addPlannedConnection(
     metadata,
@@ -145,7 +147,7 @@ test("visual quick behaviors remain replayable and independently reviewable", ()
   const attached = attachTransitionSteps(planned, pending.id, [automaticStep], "automatic", 20);
   const reviewed = reviewTransition(attached, pending.id, { status: "verified" }, 30);
   const connection = canvasConnections(
-    buildJourneyTree([...steps, automaticStep]),
+    buildMapTree([...steps, automaticStep]),
     [...steps, automaticStep],
     reviewed,
   ).find((candidate) => candidate.id === pending.id);
@@ -156,7 +158,7 @@ test("visual quick behaviors remain replayable and independently reviewable", ()
 });
 
 test("a baseline is a canvas decision and never alters the executable recipe", () => {
-  const baseline = setJourneyBaseline(metadata, "baselined", 30);
+  const baseline = setMapBaseline(metadata, "baselined", 30);
   assert.equal(baseline.prototype?.verification?.state, "baselined");
   assert.equal(baseline.prototype?.verification?.baselineAt, 30);
   assert.equal(steps[0]?.id, "open");

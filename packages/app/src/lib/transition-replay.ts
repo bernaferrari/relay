@@ -5,7 +5,7 @@ export type TransitionReplayResult =
   | { ok: false; error: string; failedStepIndex: number };
 
 /**
- * Reproduce one arrow without running the rest of the journey. Keeping this
+ * Reproduce one connection without running the rest of the Flow. Keeping this
  * orchestration pure makes transition approval deterministic and prevents a
  * failed action from spilling into the next screen.
  */

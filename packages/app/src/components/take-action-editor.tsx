@@ -4,6 +4,8 @@ import type { RecordingTakeAction } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { STRATEGIES, type Strategy } from "../lib/step-target";
 import { Icon } from "./icon";
+
+/** Focused editor for one interaction in an uncommitted Take. */
 import {
   TAKE_ACTION_KINDS,
   interactionForAction,
@@ -13,7 +15,7 @@ import {
   targetValue,
   targetWithStrategy,
   type TakeActionKind,
-} from "./journey-take-action-model";
+} from "./take-action-model";
 
 const field =
   "h-11 w-full rounded-[8px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[16px] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-[12px]";

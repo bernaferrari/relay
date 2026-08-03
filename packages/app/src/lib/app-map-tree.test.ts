@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { RecipeStep } from "./api-types";
-import { buildJourneyTree, screenKeyForStep } from "./journey-tree";
+import { buildMapTree, screenKeyForStep } from "./app-map-tree";
 
 const tap = (label: string, screen: string): RecipeStep =>
   ({
@@ -21,7 +21,7 @@ const tap = (label: string, screen: string): RecipeStep =>
   }) as RecipeStep;
 
 test("a repeated captured screen becomes one node with a return path", () => {
-  const tree = buildJourneyTree([
+  const tree = buildMapTree([
     tap("Settings", "home"),
     tap("Notifications", "settings"),
     { kind: "key", key: "back", evidence: tap("", "notifications").evidence } as RecipeStep,
@@ -52,7 +52,7 @@ test("a stable UI tree folds older screenshot-less recordings", () => {
 });
 
 test("marks recordings without a durable screen identity as an ordered action list", () => {
-  const tree = buildJourneyTree([
+  const tree = buildMapTree([
     { kind: "tap", target: { point: { x: 12, y: 18 } } } as RecipeStep,
     { kind: "type", text: "hello" } as RecipeStep,
   ]);

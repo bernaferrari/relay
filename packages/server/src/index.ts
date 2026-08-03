@@ -1446,7 +1446,7 @@ async function handleRequest(
       };
       await assertTargetControl(scope, body.serial);
       const job = enqueueJob({
-        action: runMatch.id!,
+        recipe: runMatch.id!,
         serial: body.serial,
         platform: body.platform,
         prodAccountMatch: body.prodAccountMatch,

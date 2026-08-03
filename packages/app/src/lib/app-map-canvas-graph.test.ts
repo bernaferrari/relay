@@ -1,26 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { JourneyMetadata, RecipeStep } from "@relay/protocol";
+import type { AppMapCanvasState, RecipeStep } from "@relay/protocol";
+
+// The canvas projection never becomes a second persisted graph.
 import {
-  addJourneyGraphScreen,
-  addJourneyStartScreen,
-  buildJourneyGraphTree,
-  commitTakeToJourneyGraph,
+  addCanvasScreen,
+  addCanvasStartScreen,
+  buildCanvasGraphTree,
+  commitTakeToCanvasGraph,
   addGraphScreenConnection,
   attachGraphConnectionSteps,
-  emptyJourneyGraph,
-  ensureJourneyGraph,
+  emptyCanvasGraph,
+  ensureCanvasGraph,
   reviewGraphTransition,
-  removeJourneyGraphScreen,
-  withJourneyGraph,
-} from "./journey-graph";
+  removeCanvasScreen,
+  withCanvasGraph,
+} from "./app-map-canvas-graph";
 
-const metadata: JourneyMetadata = {
-  schemaVersion: 6,
+const metadata: AppMapCanvasState = {
+  schemaVersion: 1,
   positions: {},
   edgeLabels: {},
   edgeKinds: {},
-  graph: emptyJourneyGraph(),
+  graph: emptyCanvasGraph(),
 };
 
 const steps: RecipeStep[] = [
@@ -36,32 +38,29 @@ test("the current device screen can become the entry node without an executable 
     source: "recording" as const,
     deviceId: "device-1",
   };
-  const captured = addJourneyStartScreen(emptyJourneyGraph(), observation, { at: 10 });
+  const captured = addCanvasStartScreen(emptyCanvasGraph(), observation, { at: 10 });
 
   assert.equal(captured.graph.screens.length, 1);
   assert.equal(captured.graph.transitions.length, 0);
   assert.equal(captured.graph.flows[0]?.screenId, captured.screen.id);
   assert.deepEqual(captured.screen.observations, [observation]);
-  assert.equal(buildJourneyGraphTree(captured.graph, []).nodes[0]?.representativeStepIndex, -1);
-  assert.throws(() => addJourneyStartScreen(captured.graph, observation, { at: 20 }));
+  assert.equal(buildCanvasGraphTree(captured.graph, []).nodes[0]?.representativeStepIndex, -1);
+  assert.throws(() => addCanvasStartScreen(captured.graph, observation, { at: 20 }));
 });
 
 test("removing a screen removes its canvas routes and entry flow without deleting recipe steps", () => {
-  const committed = commitTakeToJourneyGraph(emptyJourneyGraph(), {
+  const committed = commitTakeToCanvasGraph(emptyCanvasGraph(), {
     steps: [steps[0]!],
     at: 10,
   });
-  const removed = removeJourneyGraphScreen(committed.graph, committed.destinationScreenId!);
+  const removed = removeCanvasScreen(committed.graph, committed.destinationScreenId!);
 
   assert.equal(removed.screens.length, 1);
   assert.equal(removed.transitions.length, 0);
   assert.equal(removed.flows.length, 1);
   assert.equal(steps[0]?.id, "open-settings");
 
-  const withoutStart = removeJourneyGraphScreen(
-    committed.graph,
-    committed.graph.flows[0]!.screenId,
-  );
+  const withoutStart = removeCanvasScreen(committed.graph, committed.graph.flows[0]!.screenId);
   assert.equal(withoutStart.flows.length, 0);
   assert.equal(withoutStart.transitions.length, 0);
 });
@@ -73,8 +72,8 @@ test("capturing a screen creates unique nodes and refreshes matching observation
     capturedAt: 10,
     source: "recording" as const,
   };
-  const first = addJourneyGraphScreen(emptyJourneyGraph(), home, { at: 10 });
-  const settings = addJourneyGraphScreen(
+  const first = addCanvasScreen(emptyCanvasGraph(), home, { at: 10 });
+  const settings = addCanvasScreen(
     first.graph,
     {
       id: "observation-settings",
@@ -84,7 +83,7 @@ test("capturing a screen creates unique nodes and refreshes matching observation
     },
     { title: "Settings", at: 20 },
   );
-  const refreshed = addJourneyGraphScreen(settings.graph, {
+  const refreshed = addCanvasScreen(settings.graph, {
     ...home,
     id: "observation-home-2",
     capturedAt: 30,
@@ -100,7 +99,7 @@ test("capturing a screen creates unique nodes and refreshes matching observation
 });
 
 test("a reviewed take creates an explicit start, destination screen, and transition", () => {
-  const committed = commitTakeToJourneyGraph(emptyJourneyGraph(), {
+  const committed = commitTakeToCanvasGraph(emptyCanvasGraph(), {
     steps: [steps[0]!],
     takeId: "take-1",
     videoTakeId: "video-1",
@@ -119,13 +118,13 @@ test("a reviewed take creates an explicit start, destination screen, and transit
   assert.equal(committed.transition.review?.status, "verified");
   assert.equal(committed.transition.destination.kind, "screen");
   assert.equal(committed.destinationScreenId, committed.graph.screens[1]?.id);
-  const tree = buildJourneyGraphTree(committed.graph, steps);
+  const tree = buildCanvasGraphTree(committed.graph, steps);
   assert.equal(tree.nodes[0]?.representativeStepIndex, -1);
   assert.equal(tree.nodes[1]?.representativeStepIndex, 0);
 });
 
 test("attaching and replaying a planned transition keeps refinement state on the edge", () => {
-  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), { steps: [steps[0]!], at: 10 });
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
   const planned = addGraphScreenConnection(
     first.graph,
     { fromScreenId: first.destinationScreenId!, position: { x: 500, y: 100 } },
@@ -163,7 +162,7 @@ test("attaching and replaying a planned transition keeps refinement state on the
 });
 
 test("dropping a connector on blank canvas creates a planned destination", () => {
-  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), { steps: [steps[0]!], at: 10 });
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
   const added = addGraphScreenConnection(
     first.graph,
     {
@@ -181,9 +180,9 @@ test("dropping a connector on blank canvas creates a planned destination", () =>
 });
 
 test("a reviewed take can explicitly return to an existing screen or end a flow", () => {
-  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), { steps: [steps[0]!], at: 10 });
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
   const start = first.graph.flows[0]!.screenId;
-  const second = commitTakeToJourneyGraph(first.graph, {
+  const second = commitTakeToCanvasGraph(first.graph, {
     sourceScreenId: first.destinationScreenId,
     destination: { kind: "screen", screenId: start },
     steps: [steps[1]!],
@@ -192,7 +191,7 @@ test("a reviewed take can explicitly return to an existing screen or end a flow"
   assert.equal(second.transition.kind, "return");
   assert.deepEqual(second.transition.destination, { kind: "screen", screenId: start });
 
-  const ended = commitTakeToJourneyGraph(second.graph, {
+  const ended = commitTakeToCanvasGraph(second.graph, {
     sourceScreenId: first.destinationScreenId,
     destination: { kind: "end" },
     steps: [],
@@ -215,13 +214,13 @@ test("recording observations resolve repeated screens without creating duplicate
     capturedAt: 20,
     source: "recording" as const,
   };
-  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), {
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), {
     sourceObservation: home,
     destinationObservation: settings,
     steps: [steps[0]!],
     at: 10,
   });
-  const returned = commitTakeToJourneyGraph(first.graph, {
+  const returned = commitTakeToCanvasGraph(first.graph, {
     sourceScreenId: first.destinationScreenId,
     sourceObservation: settings,
     destinationObservation: { ...home, id: "observation-home-2", capturedAt: 30 },
@@ -239,10 +238,10 @@ test("recording observations resolve repeated screens without creating duplicate
 });
 
 test("graph layout and recipe execution stay separate", () => {
-  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), { steps: [steps[0]!], at: 10 });
-  const stored = withJourneyGraph(metadata, first.graph);
-  const graph = ensureJourneyGraph(stored, steps);
-  const tree = buildJourneyGraphTree(graph, steps);
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
+  const stored = withCanvasGraph(metadata, first.graph);
+  const graph = ensureCanvasGraph(stored, steps);
+  const tree = buildCanvasGraphTree(graph, steps);
   assert.equal(tree.nodes.length, 2);
   assert.equal(tree.edges.length, 1);
   assert.equal(steps[0]?.kind, "tap");

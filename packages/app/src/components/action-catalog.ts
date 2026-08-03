@@ -1,5 +1,5 @@
 import type { RecipeStep } from "../context/server";
-import type { EditableActionKind } from "../lib/journey-action-conversion";
+import type { EditableActionKind } from "../lib/take-action-conversion";
 import type { IconName } from "./icon";
 import { kindIcon, kindLabel } from "./step-list-metadata";
 

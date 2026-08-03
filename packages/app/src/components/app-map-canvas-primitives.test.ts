@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CanvasConnection } from "../lib/journey-prototype";
+import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 
 test("connection evidence names the one target that was actually checked", () => {

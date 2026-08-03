@@ -1,14 +1,14 @@
 import type {
   EvidenceEvent,
   FailureCategory,
-  JourneyGraph,
-  JourneyGraphScreen,
-  JourneyGraphTransition,
+  CanvasGraph,
+  CanvasScreen,
+  CanvasTransition,
   RecipeStep,
 } from "@relay/protocol";
 import type { JobInfo, TraceStep } from "./api-types";
 
-export type JourneyRunPresentationState =
+export type AppMapRunPresentationState =
   | "idle"
   | "running"
   | "passed"
@@ -17,9 +17,9 @@ export type JourneyRunPresentationState =
   | "blocked"
   | "unknown";
 
-export type JourneyRunMappingState = "mapped" | "partial" | "unmapped";
+export type AppMapRunMappingState = "mapped" | "partial" | "unmapped";
 
-export type JourneyRunProjectionIssueCode =
+export type AppMapRunProjectionIssueCode =
   | "graph-step-missing-from-recipe"
   | "graph-step-ambiguous-in-recipe"
   | "graph-step-shared-by-transitions"
@@ -34,8 +34,8 @@ export type JourneyRunProjectionIssueCode =
   | "transition-steps-noncontiguous"
   | "traversal-disconnected";
 
-export type JourneyRunProjectionIssue = {
-  code: JourneyRunProjectionIssueCode;
+export type AppMapRunProjectionIssue = {
+  code: AppMapRunProjectionIssueCode;
   message: string;
   transitionId?: string;
   recipeStepId?: string;
@@ -44,12 +44,12 @@ export type JourneyRunProjectionIssue = {
   traceIndex?: number;
 };
 
-export type JourneyRunEvidenceScope = "before" | "after" | "step" | "unknown";
+export type AppMapRunEvidenceScope = "before" | "after" | "step" | "unknown";
 
-export type JourneyRunEvidenceReference =
+export type AppMapRunEvidenceReference =
   | {
       kind: "frame";
-      scope: JourneyRunEvidenceScope;
+      scope: AppMapRunEvidenceScope;
       recipeStepId: string;
       traceStepId: string;
       path: string;
@@ -58,7 +58,7 @@ export type JourneyRunEvidenceReference =
     }
   | {
       kind: "event";
-      scope: JourneyRunEvidenceScope;
+      scope: AppMapRunEvidenceScope;
       recipeStepId: string;
       traceStepId: string;
       sequence: number;
@@ -69,7 +69,7 @@ export type JourneyRunEvidenceReference =
     }
   | {
       kind: "artifact";
-      scope: JourneyRunEvidenceScope;
+      scope: AppMapRunEvidenceScope;
       recipeStepId: string;
       traceStepId: string;
       index: number;
@@ -77,80 +77,80 @@ export type JourneyRunEvidenceReference =
       capturedAt: number;
     };
 
-export type JourneyRunTiming = {
+export type AppMapRunTiming = {
   completeness: "complete" | "partial" | "unknown";
   startedAt?: number;
   finishedAt?: number;
   durationMs?: number;
 };
 
-export type JourneyRunFailureReference = {
+export type AppMapRunFailureReference = {
   recipeStepId: string;
   traceStepId: string;
   message?: string;
   category?: FailureCategory;
 };
 
-export type JourneyRunStepReference = {
+export type AppMapRunStepReference = {
   recipeStepId: string;
   recipeIndex: number;
   traceStepId?: string;
   traceIndex?: number;
-  state: JourneyRunPresentationState;
+  state: AppMapRunPresentationState;
 };
 
-export type JourneyRunTransitionProjection = {
+export type AppMapRunTransitionProjection = {
   transitionId: string;
-  state: JourneyRunPresentationState;
-  mapping: JourneyRunMappingState;
+  state: AppMapRunPresentationState;
+  mapping: AppMapRunMappingState;
   traversalOrder?: number;
-  stepReferences: JourneyRunStepReference[];
-  timing: JourneyRunTiming;
-  evidence: JourneyRunEvidenceReference[];
-  failure?: JourneyRunFailureReference;
-  issues: JourneyRunProjectionIssue[];
+  stepReferences: AppMapRunStepReference[];
+  timing: AppMapRunTiming;
+  evidence: AppMapRunEvidenceReference[];
+  failure?: AppMapRunFailureReference;
+  issues: AppMapRunProjectionIssue[];
 };
 
-export type JourneyRunScreenVisit = {
+export type AppMapRunScreenVisit = {
   order: number;
   transitionId: string;
   role: "source" | "destination";
-  state: JourneyRunPresentationState;
+  state: AppMapRunPresentationState;
 };
 
-export type JourneyRunScreenProjection = {
+export type AppMapRunScreenProjection = {
   screenId: string;
-  state: JourneyRunPresentationState;
-  visits: JourneyRunScreenVisit[];
-  evidence: JourneyRunEvidenceReference[];
+  state: AppMapRunPresentationState;
+  visits: AppMapRunScreenVisit[];
+  evidence: AppMapRunEvidenceReference[];
 };
 
-export type JourneyRunTraversalEntry = {
+export type AppMapRunTraversalEntry = {
   order: number;
   transitionId: string;
   fromScreenId: string;
   toScreenId?: string;
   recipeStepIds: string[];
   recipeIndexes: number[];
-  state: JourneyRunPresentationState;
+  state: AppMapRunPresentationState;
   connectedFromPrevious: boolean | null;
 };
 
-export type JourneyRunProjection = {
-  transitions: Record<string, JourneyRunTransitionProjection>;
-  screens: Record<string, JourneyRunScreenProjection>;
-  traversal: JourneyRunTraversalEntry[];
+export type AppMapRunProjection = {
+  transitions: Record<string, AppMapRunTransitionProjection>;
+  screens: Record<string, AppMapRunScreenProjection>;
+  traversal: AppMapRunTraversalEntry[];
   activeTraversalOrder?: number;
   unmapped: {
-    graphStepReferences: JourneyRunProjectionIssue[];
-    recipeSteps: JourneyRunProjectionIssue[];
-    traceSteps: JourneyRunProjectionIssue[];
+    graphStepReferences: AppMapRunProjectionIssue[];
+    recipeSteps: AppMapRunProjectionIssue[];
+    traceSteps: AppMapRunProjectionIssue[];
   };
-  issues: JourneyRunProjectionIssue[];
+  issues: AppMapRunProjectionIssue[];
 };
 
-export type JourneyRunProjectionInput = {
-  graph: JourneyGraph;
+export type AppMapRunProjectionInput = {
+  graph: CanvasGraph;
   recipeSteps: RecipeStep[];
   job?: JobInfo | null;
 };
@@ -164,29 +164,29 @@ type IndexedTraceStep = {
 };
 
 type TransitionWork = {
-  transition: JourneyGraphTransition;
+  transition: CanvasTransition;
   recipeSteps: IndexedRecipeStep[];
   traces: IndexedTraceStep[];
-  issues: JourneyRunProjectionIssue[];
+  issues: AppMapRunProjectionIssue[];
   structurallyMapped: boolean;
 };
 
 function issue(
-  code: JourneyRunProjectionIssueCode,
+  code: AppMapRunProjectionIssueCode,
   message: string,
-  details: Omit<JourneyRunProjectionIssue, "code" | "message"> = {},
-): JourneyRunProjectionIssue {
+  details: Omit<AppMapRunProjectionIssue, "code" | "message"> = {},
+): AppMapRunProjectionIssue {
   return { code, message, ...details };
 }
 
-function evidenceScope(value: string): JourneyRunEvidenceScope {
+function evidenceScope(value: string): AppMapRunEvidenceScope {
   const normalized = value.trim().toLowerCase();
   if (normalized.startsWith("before") || normalized.endsWith(".before")) return "before";
   if (normalized.startsWith("after") || normalized.endsWith(".after")) return "after";
   return "unknown";
 }
 
-function traceState(trace: TraceStep): JourneyRunPresentationState {
+function traceState(trace: TraceStep): AppMapRunPresentationState {
   if (trace.status === "error" || trace.tone === "fail" || trace.tone === "danger") {
     return "failed";
   }
@@ -204,7 +204,7 @@ function timingFor(
   traces: IndexedTraceStep[],
   expectedCount: number,
   terminal: boolean,
-): JourneyRunTiming {
+): AppMapRunTiming {
   if (traces.length === 0) return { completeness: "unknown" };
 
   const startedAt = Math.min(...traces.map(({ trace }) => trace.startedAt));
@@ -235,8 +235,8 @@ function timingFor(
 function evidenceForTrace(
   job: JobInfo | null | undefined,
   item: IndexedTraceStep,
-): JourneyRunEvidenceReference[] {
-  const references: JourneyRunEvidenceReference[] = item.trace.frames.map((frame) => ({
+): AppMapRunEvidenceReference[] {
+  const references: AppMapRunEvidenceReference[] = item.trace.frames.map((frame) => ({
     kind: "frame",
     scope: evidenceScope(frame.caption),
     recipeStepId: item.recipeStepId,
@@ -283,7 +283,7 @@ function transitionState(
   work: TransitionWork,
   job: JobInfo | null | undefined,
   failedRecipeIndex: number | undefined,
-): JourneyRunPresentationState {
+): AppMapRunPresentationState {
   if (work.transition.state === "needs-recording") return "blocked";
   if (!work.structurallyMapped || work.recipeSteps.length === 0) return "unknown";
   if (!job || job.status === "queued") return "idle";
@@ -323,8 +323,8 @@ function transitionState(
   return "idle";
 }
 
-function aggregateScreenState(states: JourneyRunPresentationState[]): JourneyRunPresentationState {
-  const priority: JourneyRunPresentationState[] = [
+function aggregateScreenState(states: AppMapRunPresentationState[]): AppMapRunPresentationState {
+  const priority: AppMapRunPresentationState[] = [
     "failed",
     "blocked",
     "running",
@@ -336,26 +336,26 @@ function aggregateScreenState(states: JourneyRunPresentationState[]): JourneyRun
   return priority.find((state) => states.includes(state)) ?? "idle";
 }
 
-function destinationScreenId(transition: JourneyGraphTransition): string | undefined {
+function destinationScreenId(transition: CanvasTransition): string | undefined {
   return transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
 }
 
-function screenProjection(screen: JourneyGraphScreen): JourneyRunScreenProjection {
+function screenProjection(screen: CanvasScreen): AppMapRunScreenProjection {
   return { screenId: screen.id, state: "idle", visits: [], evidence: [] };
 }
 
 /**
- * Project an ordered recipe run onto its authored journey graph without
+ * Project an ordered recipe run onto its authored App Map without
  * inventing attribution. Runtime trace UUIDs are joined to graph step IDs only
  * through their explicit recipe index. Any missing, duplicated, or conflicting
  * link is returned in `unmapped` and leaves the affected graph state unknown.
  */
-export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunProjection {
+export function projectAppMapRun(input: AppMapRunProjectionInput): AppMapRunProjection {
   const { graph, recipeSteps, job } = input;
-  const allIssues: JourneyRunProjectionIssue[] = [];
-  const graphStepReferences: JourneyRunProjectionIssue[] = [];
-  const unmappedRecipeSteps: JourneyRunProjectionIssue[] = [];
-  const unmappedTraceSteps: JourneyRunProjectionIssue[] = [];
+  const allIssues: AppMapRunProjectionIssue[] = [];
+  const graphStepReferences: AppMapRunProjectionIssue[] = [];
+  const unmappedRecipeSteps: AppMapRunProjectionIssue[] = [];
+  const unmappedTraceSteps: AppMapRunProjectionIssue[] = [];
 
   const recipeById = new Map<string, IndexedRecipeStep[]>();
   recipeSteps.forEach((step, index) => {
@@ -430,7 +430,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
 
   const works = new Map<string, TransitionWork>();
   for (const transition of graph.transitions) {
-    const transitionIssues: JourneyRunProjectionIssue[] = [];
+    const transitionIssues: AppMapRunProjectionIssue[] = [];
     const indexedSteps: IndexedRecipeStep[] = [];
 
     if (transition.stepIds.length === 0) {
@@ -501,7 +501,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
       );
     }
 
-    const invalidCodes: JourneyRunProjectionIssueCode[] = [
+    const invalidCodes: AppMapRunProjectionIssueCode[] = [
       "transition-has-no-steps",
       "graph-step-missing-from-recipe",
       "graph-step-ambiguous-in-recipe",
@@ -534,7 +534,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
     for (const entry of entries) {
       const owners = ownersByStepId.get(id) ?? [];
       if (owners.length === 1 && !unsafeRecipeIndexes.has(entry.index)) continue;
-      const code: JourneyRunProjectionIssueCode =
+      const code: AppMapRunProjectionIssueCode =
         owners.length === 0 ? "recipe-step-not-in-graph" : "graph-step-shared-by-transitions";
       const unmapped = issue(
         code,
@@ -578,7 +578,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
     .filter((work) => work.structurallyMapped && work.recipeSteps.length > 0)
     .sort((a, b) => a.recipeSteps[0]!.index - b.recipeSteps[0]!.index);
 
-  const traversal: JourneyRunTraversalEntry[] = executableWorks.map((work, order) => {
+  const traversal: AppMapRunTraversalEntry[] = executableWorks.map((work, order) => {
     const previous = executableWorks[order - 1];
     const previousDestination = previous ? destinationScreenId(previous.transition) : undefined;
     const connectedFromPrevious = previous
@@ -608,12 +608,12 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
   });
 
   const orderByTransition = new Map(traversal.map((entry) => [entry.transitionId, entry.order]));
-  const transitions: Record<string, JourneyRunTransitionProjection> = {};
+  const transitions: Record<string, AppMapRunTransitionProjection> = {};
   for (const work of works.values()) {
     const state = transitionState(work, job, failedRecipeIndex);
     const evidence = work.traces.flatMap((trace) => evidenceForTrace(job, trace));
     const failed = work.traces.find(({ trace }) => traceState(trace) === "failed");
-    const mapping: JourneyRunMappingState = work.structurallyMapped
+    const mapping: AppMapRunMappingState = work.structurallyMapped
       ? "mapped"
       : work.recipeSteps.length > 0
         ? "partial"
@@ -652,7 +652,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
     };
   }
 
-  const screens: Record<string, JourneyRunScreenProjection> = Object.fromEntries(
+  const screens: Record<string, AppMapRunScreenProjection> = Object.fromEntries(
     graph.screens.map((screen) => [screen.id, screenProjection(screen)]),
   );
   let visitOrder = 0;
@@ -661,7 +661,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
     const source = screens[entry.fromScreenId];
     const hasObservation = transition.stepReferences.some(({ traceStepId }) => traceStepId);
     if (source) {
-      const sourceState: JourneyRunPresentationState = hasObservation ? "passed" : "idle";
+      const sourceState: AppMapRunPresentationState = hasObservation ? "passed" : "idle";
       source.visits.push({
         order: visitOrder++,
         transitionId: entry.transitionId,
@@ -674,7 +674,7 @@ export function projectJourneyRun(input: JourneyRunProjectionInput): JourneyRunP
     if (!entry.toScreenId) continue;
     const destination = screens[entry.toScreenId];
     if (!destination) continue;
-    const destinationState: JourneyRunPresentationState =
+    const destinationState: AppMapRunPresentationState =
       transition.state === "failed" || transition.state === "blocked"
         ? "blocked"
         : transition.state;

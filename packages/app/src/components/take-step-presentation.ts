@@ -1,6 +1,8 @@
 import type { RecipeStep, RecordedStepEvidence } from "../context/server";
 import type { IconName } from "./icon";
 
+/** Visual semantics shared by Take review and run presentation. */
+
 export function evidenceForStep(step?: RecipeStep): RecordedStepEvidence | undefined {
   return step?.evidence;
 }

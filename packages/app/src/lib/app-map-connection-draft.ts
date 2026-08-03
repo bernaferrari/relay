@@ -1,22 +1,22 @@
 import type {
-  JourneyConnection,
-  JourneyGraphTransition,
-  JourneyMetadata,
-  JourneyTake,
-  JourneyTransitionReview,
+  PrototypeConnection,
+  CanvasTransition,
+  AppMapCanvasState,
+  ConnectionTake,
+  ConnectionTakeReview,
   RecipeStep,
 } from "@relay/protocol";
-import type { JourneyTree } from "./journey-tree";
-import { transitionLabel } from "./journey-tree";
+import type { MapTree } from "./app-map-tree";
+import { transitionLabel } from "./app-map-tree";
 import {
   addGraphConnection,
   addGraphScreenConnection,
   attachGraphConnectionSteps,
-  ensureJourneyGraph,
+  ensureCanvasGraph,
   removeGraphConnection,
   reviewGraphTransition,
-  withJourneyGraph,
-} from "./journey-graph";
+  withCanvasGraph,
+} from "./app-map-canvas-graph";
 
 /**
  * The executable recipe and the visual prototype deliberately meet here, in
@@ -25,18 +25,18 @@ import {
  * runner executes. Keeping this separate from rendering makes a new canvas or
  * a future collaboration transport a replaceable concern.
  */
-export type CanvasConnection = JourneyConnection & {
+export type CanvasConnection = PrototypeConnection & {
   stepIds: string[];
   source: "derived" | "authored";
   kind: "forward" | "return";
-  mode?: JourneyGraphTransition["mode"];
-  review?: JourneyTransitionReview;
+  mode?: CanvasTransition["mode"];
+  review?: ConnectionTakeReview;
 };
 
 export function canvasConnections(
-  tree: JourneyTree,
+  tree: MapTree,
   steps: RecipeStep[],
-  metadata: JourneyMetadata,
+  metadata: AppMapCanvasState,
 ): CanvasConnection[] {
   // v6 has one authored source of truth. Recipes remain executable data; the
   // graph tells the canvas which recipe actions make up each connection.
@@ -115,17 +115,17 @@ export function canvasConnections(
 }
 
 export function addPlannedConnection(
-  metadata: JourneyMetadata,
-  input: Pick<JourneyConnection, "fromScreenId" | "toScreenId"> & { label?: string },
+  metadata: AppMapCanvasState,
+  input: Pick<PrototypeConnection, "fromScreenId" | "toScreenId"> & { label?: string },
   at = Date.now(),
   steps: RecipeStep[] = [],
-): JourneyMetadata {
-  const added = addGraphConnection(ensureJourneyGraph(metadata, steps), input, at);
-  return withJourneyGraph(metadata, added.graph);
+): AppMapCanvasState {
+  const added = addGraphConnection(ensureCanvasGraph(metadata, steps), input, at);
+  return withCanvasGraph(metadata, added.graph);
 }
 
 export function addPlannedScreenConnection(
-  metadata: JourneyMetadata,
+  metadata: AppMapCanvasState,
   input: {
     fromScreenId: string;
     title?: string;
@@ -133,9 +133,9 @@ export function addPlannedScreenConnection(
   },
   at = Date.now(),
   steps: RecipeStep[] = [],
-): JourneyMetadata {
-  const added = addGraphScreenConnection(ensureJourneyGraph(metadata, steps), input, at);
-  return withJourneyGraph(
+): AppMapCanvasState {
+  const added = addGraphScreenConnection(ensureCanvasGraph(metadata, steps), input, at);
+  return withCanvasGraph(
     {
       ...metadata,
       positions: {
@@ -147,21 +147,24 @@ export function addPlannedScreenConnection(
   );
 }
 
-export function removeAuthoredConnection(metadata: JourneyMetadata, id: string): JourneyMetadata {
-  return withJourneyGraph(metadata, removeGraphConnection(ensureJourneyGraph(metadata, []), id));
+export function removeAuthoredConnection(
+  metadata: AppMapCanvasState,
+  id: string,
+): AppMapCanvasState {
+  return withCanvasGraph(metadata, removeGraphConnection(ensureCanvasGraph(metadata, []), id));
 }
 
 export function attachRecordedTake(
-  metadata: JourneyMetadata,
+  metadata: AppMapCanvasState,
   connectionId: string,
-  take: Pick<JourneyTake, "id" | "steps" | "videoTakeId" | "videoClip">,
+  take: Pick<ConnectionTake, "id" | "steps" | "videoTakeId" | "videoClip">,
   at = Date.now(),
-): JourneyMetadata {
+): AppMapCanvasState {
   if (!take.steps.some((step) => step.id)) return metadata;
-  return withJourneyGraph(
+  return withCanvasGraph(
     metadata,
     attachGraphConnectionSteps(
-      ensureJourneyGraph(metadata, []),
+      ensureCanvasGraph(metadata, []),
       connectionId,
       take.steps,
       {
@@ -176,39 +179,39 @@ export function attachRecordedTake(
 }
 
 export function attachTransitionSteps(
-  metadata: JourneyMetadata,
+  metadata: AppMapCanvasState,
   connectionId: string,
   steps: RecipeStep[],
-  mode: NonNullable<JourneyGraphTransition["mode"]>,
+  mode: NonNullable<CanvasConnection["mode"]>,
   at = Date.now(),
-): JourneyMetadata {
+): AppMapCanvasState {
   if (!steps.some((step) => step.id)) return metadata;
-  return withJourneyGraph(
+  return withCanvasGraph(
     metadata,
-    attachGraphConnectionSteps(ensureJourneyGraph(metadata, []), connectionId, steps, { mode }, at),
+    attachGraphConnectionSteps(ensureCanvasGraph(metadata, []), connectionId, steps, { mode }, at),
   );
 }
 
 export function reviewTransition(
-  metadata: JourneyMetadata,
+  metadata: AppMapCanvasState,
   connectionId: string,
-  review: Pick<JourneyTransitionReview, "status" | "error" | "targets">,
+  review: Pick<ConnectionTakeReview, "status" | "error" | "targets">,
   at = Date.now(),
-): JourneyMetadata {
-  return withJourneyGraph(
+): AppMapCanvasState {
+  return withCanvasGraph(
     metadata,
-    reviewGraphTransition(ensureJourneyGraph(metadata, []), connectionId, review, at),
+    reviewGraphTransition(ensureCanvasGraph(metadata, []), connectionId, review, at),
   );
 }
 
-export function setJourneyBaseline(
-  metadata: JourneyMetadata,
+export function setMapBaseline(
+  metadata: AppMapCanvasState,
   state: "draft" | "verifying" | "needs-review" | "baselined",
   at = Date.now(),
-): JourneyMetadata {
+): AppMapCanvasState {
   return {
     ...metadata,
-    schemaVersion: metadata.graph ? 6 : 5,
+    schemaVersion: 1,
     prototype: {
       ...metadata.prototype,
       verification: {

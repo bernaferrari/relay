@@ -33,7 +33,7 @@ import {
   type VerticalConstraint,
 } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
-import { evidenceForStep } from "./journey-step-presentation";
+import { evidenceForStep } from "./take-step-presentation";
 import { targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";

@@ -1,4 +1,4 @@
-import type { CanvasConnection } from "./journey-prototype";
+import type { CanvasConnection } from "./app-map-connection-draft";
 
 export function checkedTargetsLabel(
   targets: readonly { targetId: string; targetName?: string }[] | undefined,

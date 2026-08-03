@@ -1,13 +1,13 @@
 import type {
   DiscoverySession,
-  JourneyGraph,
-  JourneyGraphScreen,
-  JourneyGraphTransition,
+  CanvasGraph,
+  CanvasScreen,
+  CanvasTransition,
   ObservedScreen,
   ObservedTransition,
 } from "@relay/protocol";
 
-export type DiscoveryJourneyImportWarningCode =
+export type DiscoveryAppMapImportWarningCode =
   | "missing-screen-fingerprint"
   | "missing-flow-start"
   | "missing-transition-source"
@@ -15,27 +15,27 @@ export type DiscoveryJourneyImportWarningCode =
   | "non-replayable-transition"
   | "conflicting-transition";
 
-export type DiscoveryJourneyImportWarning = {
-  code: DiscoveryJourneyImportWarningCode;
+export type DiscoveryAppMapImportWarning = {
+  code: DiscoveryAppMapImportWarningCode;
   message: string;
   sessionId: string;
   screenId?: string;
   transitionId?: string;
 };
 
-export type DiscoveryJourneyImportResult = {
-  graph: JourneyGraph;
-  warnings: DiscoveryJourneyImportWarning[];
+export type DiscoveryAppMapImportResult = {
+  graph: CanvasGraph;
+  warnings: DiscoveryAppMapImportWarning[];
 };
 
-const emptyGraph = (): JourneyGraph => ({
+const emptyGraph = (): CanvasGraph => ({
   schemaVersion: 1,
   screens: [],
   transitions: [],
   flows: [],
 });
 
-function cloneGraph(graph: JourneyGraph): JourneyGraph {
+function cloneGraph(graph: CanvasGraph): CanvasGraph {
   return structuredClone(graph);
 }
 
@@ -99,7 +99,7 @@ function nonReplayableReason(transition: ObservedTransition): string | undefined
   return undefined;
 }
 
-function sameTransition(left: JourneyGraphTransition, right: JourneyGraphTransition): boolean {
+function sameTransition(left: CanvasTransition, right: CanvasTransition): boolean {
   return (
     left.fromScreenId === right.fromScreenId &&
     left.destination.kind === right.destination.kind &&
@@ -112,18 +112,18 @@ function sameTransition(left: JourneyGraphTransition, right: JourneyGraphTransit
 }
 
 /**
- * Convert a discovery observation into the canonical journey topology.
+ * Convert a discovery observation into the canonical App Map topology.
  *
  * Observations deliberately become `needs-recording` edges with no recipe
  * step ids. Discovery can prove that a path was seen, but it cannot claim the
- * stable executable actions required by the journey runner.
+ * stable executable actions required by the Flow runner.
  */
-export function importDiscoveryJourney(
+export function importDiscoveryAppMap(
   session: DiscoverySession,
-  existingGraph: JourneyGraph = emptyGraph(),
-): DiscoveryJourneyImportResult {
+  existingGraph: CanvasGraph = emptyGraph(),
+): DiscoveryAppMapImportResult {
   const graph = cloneGraph(existingGraph);
-  const warnings: DiscoveryJourneyImportWarning[] = [];
+  const warnings: DiscoveryAppMapImportWarning[] = [];
   const observedById = new Map(session.screens.map((screen) => [screen.id, screen]));
   const validScreens = session.screens.filter((screen) => {
     if (stableFingerprint(screen).length > 0) return true;
@@ -145,7 +145,7 @@ export function importDiscoveryJourney(
   }
 
   const canonicalByObservedId = new Map<string, string>();
-  const importedScreens: JourneyGraphScreen[] = [];
+  const importedScreens: CanvasScreen[] = [];
   const existingByFingerprint = new Map(
     graph.screens.flatMap((screen) => {
       const fingerprints = [
@@ -166,7 +166,7 @@ export function importDiscoveryJourney(
       : undefined;
     const id = existing?.id ?? canonicalDiscoveryScreenId(fingerprint);
     for (const observation of observations) canonicalByObservedId.set(observation.id, id);
-    const journeyObservations = ordered.map((observation) => ({
+    const screenObservations = ordered.map((observation) => ({
       id: `discovery-observation:${encodeURIComponent(session.id)}:${encodeURIComponent(observation.id)}`,
       fingerprint: stableFingerprint(observation),
       capturedAt: observation.capturedAt,
@@ -181,7 +181,7 @@ export function importDiscoveryJourney(
       const knownObservationIds = new Set(
         (existing.observations ?? []).map((observation) => observation.id),
       );
-      const merged: JourneyGraphScreen = {
+      const merged: CanvasScreen = {
         ...existing,
         identity: existing.identity ?? {
           schemaVersion: 1,
@@ -192,7 +192,7 @@ export function importDiscoveryJourney(
         },
         observations: [
           ...(existing.observations ?? []),
-          ...journeyObservations.filter((observation) => !knownObservationIds.has(observation.id)),
+          ...screenObservations.filter((observation) => !knownObservationIds.has(observation.id)),
         ],
         updatedAt: Math.max(existing.updatedAt, ordered.at(-1)!.capturedAt),
       };
@@ -210,7 +210,7 @@ export function importDiscoveryJourney(
           ? { aliases: [...ordered[0].identity.aliases].sort() }
           : {}),
       },
-      observations: journeyObservations,
+      observations: screenObservations,
       createdAt: ordered[0]!.capturedAt,
       updatedAt: ordered.at(-1)!.capturedAt,
     });
@@ -288,7 +288,7 @@ export function importDiscoveryJourney(
     }
 
     const reversePair = `${toScreenId}\u0000${fromScreenId}`;
-    const transition: JourneyGraphTransition = {
+    const transition: CanvasTransition = {
       id: canonicalTransitionId(session.id, observed.id),
       fromScreenId,
       destination: { kind: "screen", screenId: toScreenId },
@@ -345,4 +345,4 @@ export function importDiscoveryJourney(
   return { graph, warnings };
 }
 
-export const discoverySessionToJourneyGraph = importDiscoveryJourney;
+export const discoverySessionToCanvasGraph = importDiscoveryAppMap;

@@ -118,7 +118,7 @@ export function staggerY(index: number): number {
   return table[phase]! * SCREEN_ROW_STAGGER;
 }
 
-/** Tiny deterministic horizontal jitter for organic Atlas energy. */
+/** Tiny deterministic horizontal jitter for an organic App Map layout. */
 export function staggerX(index: number): number {
   const phase = index % 5;
   const table = [0, 10, -6, 14, -10] as const;

@@ -14,7 +14,7 @@ import type { RecipeStep, StepTarget } from "../context/server";
 import { STRATEGIES, fmtPoint, parsePoint, type Strategy } from "../lib/step-target";
 import { cn } from "../lib/cn";
 import { ADD_GROUPS } from "./step-list-metadata";
-import { accentForStep, iconForStep } from "./journey-step-presentation";
+import { accentForStep, iconForStep } from "./take-step-presentation";
 import { Icon } from "./icon";
 import { fieldInput, fieldLabel, mono, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
 
@@ -237,8 +237,8 @@ export function AddMenu(props: {
                         onClick={() => props.onPick(o.make())}
                       >
                         <span
-                          class="justify-self-center text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]"
-                          style={{ "--journey-node-accent": accentForStep(step()) }}
+                          class="justify-self-center text-[color-mix(in_srgb,var(--map-node-accent)_78%,white)]"
+                          style={{ "--map-node-accent": accentForStep(step()) }}
                           aria-hidden="true"
                         >
                           <Icon name={iconForStep(step())} size={13} />

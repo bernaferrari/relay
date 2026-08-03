@@ -301,7 +301,7 @@ type SpecificOperationMap = {
   };
   "job.get": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.start": {
-    input: { action: string; serial?: string; [key: string]: unknown };
+    input: { recipe: string; serial?: string; [key: string]: unknown };
     output: { job: OperationRecord };
   };
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
@@ -912,7 +912,7 @@ const recipeHistoryRestoreParser = objectParser<OperationRecord>(
 const genericObjectOutputParser = objectParser<OperationRecord>("operation response");
 
 const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
-  string(input.action, "job action");
+  string(input.recipe, "job recipe");
 });
 
 const enabledInputParser = objectParser<{ enabled: boolean }>("enabled input", (input) => {

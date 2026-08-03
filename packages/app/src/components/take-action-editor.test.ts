@@ -9,7 +9,7 @@ import {
   moveActionIds,
   takeActionError,
   targetWithStrategy,
-} from "./journey-take-action-model";
+} from "./take-action-model";
 
 function action(
   id: string,
@@ -124,9 +124,9 @@ test("replacement validation blocks incomplete or unsafe action drafts", () => {
   assert.equal(takeActionError({ kind: "tap", target: { label: "Continue" } }), undefined);
 });
 
-test("Take editing surfaces use explicit transitions and accessible target sizes", async () => {
+test("Take editing surfaces use focused transitions and accessible target sizes", async () => {
   const sources = await Promise.all(
-    ["journey-take-action-list.tsx", "journey-take-action-editor.tsx"].map((file) =>
+    ["take-action-list.tsx", "take-action-editor.tsx"].map((file) =>
       readFile(new URL(file, import.meta.url), "utf8"),
     ),
   );

@@ -1,13 +1,13 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
-import type { AuthoringInteraction, JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
+import type { AuthoringInteraction, CanvasScreen, RecordingClip } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
-import type { TakeDestination } from "../lib/journey-graph";
+import type { TakeDestination } from "../lib/app-map-canvas-graph";
 import { phoneScreen } from "../lib/ui";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
-import { TakeActionEditor } from "./journey-take-action-editor";
-import { TakeActionList } from "./journey-take-action-list";
+import { TakeActionEditor } from "./take-action-editor";
+import { TakeActionList } from "./take-action-list";
 
 const controlButton =
   "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
@@ -58,7 +58,7 @@ export type TakeReviewSidebarProps = {
   take: RecordingTake;
   selectedIndex: number;
   sourceTitle: string;
-  screens: JourneyGraphScreen[];
+  screens: CanvasScreen[];
   destination: TakeDestination;
   onSelect: (index: number) => void;
   onDestination: (destination: TakeDestination) => void;
@@ -417,8 +417,8 @@ export function RecordedTakePlayer(props: {
   onSelect: (index: number) => void;
   screenshotFor: (step: RecipeStep | undefined, index: number) => string;
   videoSrc?: string;
-  clip?: JourneyVideoClip;
-  onClip?: (clip: JourneyVideoClip) => void;
+  clip?: RecordingClip;
+  onClip?: (clip: RecordingClip) => void;
 }) {
   const [durationMs, setDurationMs] = createSignal(0);
   let video: HTMLVideoElement | undefined;

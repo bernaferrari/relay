@@ -12,7 +12,7 @@ import { useServer, type RecipeStep } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
-import { createTapStep } from "../lib/journey-action-conversion";
+import { createTapStep } from "../lib/take-action-conversion";
 import { Icon, type IconName } from "./icon";
 import { AddMenu } from "./step-list-controls";
 import { InsertGap, StepRow } from "./step-row";

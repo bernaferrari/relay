@@ -64,7 +64,7 @@ test("an unlabeled tapped child inherits the closest accessibility label", () =>
   });
 });
 
-test("remote authoring activity is visible without replacing local Journey or Target focus", () => {
+test("remote authoring activity is visible without replacing local App Map or Target focus", () => {
   const session = (
     id: string,
     actorId: string,

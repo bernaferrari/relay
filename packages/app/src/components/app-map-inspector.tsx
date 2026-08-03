@@ -9,6 +9,8 @@ import {
 } from "../context/server";
 import { toast } from "../context/toast";
 import { useWorkbench } from "../context/workbench";
+
+/** Detailed controls opened explicitly for the selected App Map object. */
 import { cn } from "../lib/cn";
 import { sentenceForStep, stepValid } from "../lib/step-sentence";
 import { defaultStrategy, fmtPoint, type Strategy } from "../lib/step-target";
@@ -30,10 +32,10 @@ import {
   tapGesture,
   type EditableActionKind,
   type TapGesture,
-} from "../lib/journey-action-conversion";
+} from "../lib/take-action-conversion";
 import { testRunBlocker } from "../lib/test-run-readiness";
 import { Icon } from "./icon";
-import { actionForStep, evidenceForStep } from "./journey-step-presentation";
+import { actionForStep, evidenceForStep } from "./take-step-presentation";
 import { ActionPicker } from "./action-picker";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
@@ -221,7 +223,7 @@ function usesCompactInspector(step: RecipeStep): boolean {
   ].includes(step.kind);
 }
 
-export function JourneyInspector(props: { onOpenTargets: () => void; compact?: boolean }) {
+export function AppMapInspector(props: { onOpenTargets: () => void; compact?: boolean }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
