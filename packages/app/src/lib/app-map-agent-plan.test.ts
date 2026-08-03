@@ -11,7 +11,12 @@ test("expands target and model coverage while preserving one serial queue per ta
       { serial: "ipad", name: "iPad", platform: "ios" },
     ],
     AGENT_MODELS.slice(0, 2),
+    { strategy: "divide", areas: ["Account", "Settings"], actionBudget: 60 },
     () => `worker-${++sequence}`,
+  );
+  assert.deepEqual(
+    workers.map((worker) => worker.focus),
+    ["Account", "Settings", "Account", "Settings"],
   );
 
   assert.equal(workers.length, 4);

@@ -1,0 +1,64 @@
+import { createMemo, createSignal, type JSX } from "solid-js";
+import {
+  companionFramePresentation,
+  companionImageLayout,
+  type CompanionDimensions,
+} from "./app-map-device-companion-geometry";
+
+export type ScreenshotOrientationEvidence = {
+  logicalViewport?: CompanionDimensions;
+  platform?: string;
+  edge?: "left" | "right";
+};
+
+/** Keep persisted screenshots in the same orientation as the live device. */
+export function OrientedScreenshot(props: {
+  src: string;
+  alt: string;
+  evidence?: ScreenshotOrientationEvidence;
+  class?: string;
+  loading?: JSX.ImgHTMLAttributes<HTMLImageElement>["loading"];
+}) {
+  const [natural, setNatural] = createSignal<CompanionDimensions>();
+  const presentation = createMemo(() =>
+    companionFramePresentation({
+      frame: natural(),
+      logicalViewport: props.evidence?.logicalViewport,
+      platform: props.evidence?.platform,
+      edge: props.evidence?.edge,
+    }),
+  );
+  const layout = createMemo(() => {
+    const value = presentation();
+    return value ? companionImageLayout(value) : undefined;
+  });
+
+  return (
+    <span class="grid size-full min-h-0 place-items-center overflow-hidden">
+      <img
+        src={props.src}
+        alt={props.alt}
+        loading={props.loading}
+        decoding="async"
+        draggable={false}
+        class={props.class}
+        style={
+          layout()
+            ? {
+                width: `${layout()!.widthPercent}%`,
+                height: `${layout()!.heightPercent}%`,
+                transform: `rotate(${layout()!.rotationDegrees}deg)`,
+                "transform-origin": "center",
+              }
+            : undefined
+        }
+        onLoad={(event) =>
+          setNatural({
+            width: event.currentTarget.naturalWidth,
+            height: event.currentTarget.naturalHeight,
+          })
+        }
+      />
+    </span>
+  );
+}

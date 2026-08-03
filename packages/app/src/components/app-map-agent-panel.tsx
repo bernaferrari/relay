@@ -61,12 +61,15 @@ export function AppMapAgentPanel(props: {
               state={exploration.state()}
               stage={exploration.stage()}
               workers={exploration.workers()}
+              onRetry={(workerId) => void exploration.retry(workerId)}
             />
           }
         >
           <AppMapAgentSetup
             goal={exploration.goal()}
             minutes={exploration.minutes()}
+            actionBudget={exploration.actionBudget()}
+            strategy={exploration.strategy()}
             devices={exploration.devices()}
             targetIds={exploration.targetIds()}
             selectedTargetCount={exploration.targetCount()}
@@ -74,6 +77,8 @@ export function AppMapAgentPanel(props: {
             onOpenTargets={props.onOpenTargets}
             onGoal={exploration.setGoal}
             onMinutes={exploration.setMinutes}
+            onActionBudget={exploration.setActionBudget}
+            onStrategy={exploration.setStrategy}
             onTargetIds={exploration.setTargetIds}
             onModelIds={exploration.setModelIds}
           />

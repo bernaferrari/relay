@@ -94,6 +94,33 @@ test("remote authoring activity is visible without replacing local App Map or Ta
   assert.equal(selectedTarget, "device-a");
 });
 
+test("a failed authoring attempt does not remain the active recorder", () => {
+  const failed: AuthoringSession = {
+    schemaVersion: 1,
+    id: "failed",
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:me",
+    actorKind: "human",
+    appMapId: "map-a",
+    state: "failed",
+    target: { kind: "device", platform: "ios", targetId: "ipad" },
+    leaseId: "expired-lease",
+    expectedAppMapRevision: 1,
+    error: "The target lease is unavailable",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  assert.equal(
+    selectProjectedAuthoringSession([failed], {
+      appMapId: "map-a",
+      targetId: "ipad",
+      actorId: "human:me",
+    }),
+    null,
+  );
+});
+
 test("Take projection preserves canonical zero-step and grouped action boundaries", () => {
   const session: AuthoringSession = {
     schemaVersion: 1,

@@ -1864,7 +1864,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
             if (session.target.kind !== "device" || session.target.platform !== "ios") return;
             const take = await reconcileIosVideoTake(session.target.targetId);
             if (!take) return;
-            return { data: await readFile(take.path), mime: "video/mp4" };
+            const data = await readFile(take.path).catch(() => undefined);
+            return data ? { data, mime: "video/mp4" } : undefined;
           },
         }),
     );

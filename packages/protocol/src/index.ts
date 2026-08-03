@@ -260,6 +260,17 @@ export type RunEvidenceArtifactSummary = {
   summary?: string;
 };
 
+/** One inspectable fact placed on the run's shared replay clock. */
+export type RunEvidenceEvent = {
+  id: string;
+  at: number;
+  channel: "log" | "network" | "performance" | "crash" | "artifact";
+  tone: "neutral" | "info" | "success" | "warning" | "critical";
+  label: string;
+  detail?: string;
+  sourceId?: string;
+};
+
 export type RunEvidenceQuery = {
   schemaVersion: 1;
   runId: string;
@@ -281,6 +292,7 @@ export type RunEvidenceQuery = {
   performance: RunEvidencePerformanceSample[];
   crashes: unknown[];
   artifacts: RunEvidenceArtifactSummary[];
+  events: RunEvidenceEvent[];
   limits: { requested: number; applied: number; bodiesIncluded: boolean };
   notes: string[];
 };
@@ -544,6 +556,7 @@ export type DiscoveryAgentContext = {
   workerId: string;
   appMapId: string;
   goal: string;
+  focus?: string;
   provider: string;
   model?: string;
   buildId?: string;

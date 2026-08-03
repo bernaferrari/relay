@@ -34,8 +34,8 @@ import {
 } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
 import { evidenceForStep } from "./take-step-presentation";
-import { targetIsReady } from "../lib/target-presentation";
-import { deviceReadiness } from "../lib/device-readiness";
+import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
+import { deviceReadiness, presentDeviceIssue } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_SNAPSHOT_INTERVAL_MS,
@@ -449,7 +449,6 @@ export function DeviceStage(_props: {
     | "ready"
     | "needs-setup"
     | "developer-mode-disabled"
-    | "device-support-pending"
     | "failed"
   >("idle");
   const [iosSetupCheck, setIosSetupCheck] = createSignal(0);
@@ -721,6 +720,7 @@ export function DeviceStage(_props: {
     !tabVisible() ||
     server.health() !== "online" ||
     picker() !== null ||
+    physicalIosRecording() ||
     (currentDevice()?.platform === "ios" && !["preparing", "ready"].includes(iosSetupState()));
 
   async function tickLiveFrame(): Promise<void> {
@@ -792,7 +792,10 @@ export function DeviceStage(_props: {
       return;
     }
     if (readiness.kind === "ios-preparing") {
-      setIosSetupState("device-support-pending");
+      // Reading the first screen is what asks CoreDevice to activate its DDI.
+      // Treat this as real preparation, not a passive state that can spin
+      // forever waiting for another application to do the work.
+      setIosSetupState("preparing");
       return;
     }
 
@@ -873,7 +876,11 @@ export function DeviceStage(_props: {
   });
 
   createEffect(() => {
-    const policy = liveInspectionPolicy(liveControlActive(), usesScreenshotPreview());
+    const policy = liveInspectionPolicy(
+      liveControlActive(),
+      usesScreenshotPreview(),
+      physicalIosRecording(),
+    );
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
     // H.264 owns pixels whenever it is healthy. Accessibility inspection is
@@ -1009,6 +1016,11 @@ export function DeviceStage(_props: {
     fx: number,
     fy: number,
   ): Promise<boolean> {
+    // The low-latency touch stream is backed by scrcpy and only exists for
+    // Android. Sending it for Apple targets creates a noisy 409 before the
+    // semantic XCTest interaction succeeds, making one tap look like an
+    // error. Return false so the normal recorder interaction is used directly.
+    if (currentDevice()?.platform !== "android") return Promise.resolve(false);
     const send = () => server.touchDevice(action, fx, fy);
     touchChain = action === "down" ? send() : touchChain.then((ready) => (ready ? send() : false));
     return touchChain;
@@ -1143,6 +1155,21 @@ export function DeviceStage(_props: {
   const targetReady = () => targetIsReady(currentDevice(), server.health() === "online");
   const supportsH264Stream = () => currentDevice()?.platform === "android";
   const usesScreenshotPreview = () => !supportsH264Stream() || videoFailed();
+  const physicalIosRecording = () => rec.recording() && targetIsPhysicalIos(currentDevice());
+  let physicalIosRecordingWasActive = false;
+  createEffect(() => {
+    const active = physicalIosRecording();
+    if (active) {
+      // Any capture failure immediately preceding the take belongs to the old
+      // preview attempt, not to the recording that now owns the runner.
+      server.clearLiveCaptureIssue();
+    } else if (physicalIosRecordingWasActive && liveControlActive()) {
+      // Stop completes server-side before the projected session leaves the
+      // recording state, so it is safe to refresh both pixels and semantics.
+      void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+    }
+    physicalIosRecordingWasActive = active;
+  });
   const liveCaptureIssue = () => server.liveCaptureIssue();
   const needsIosSetup = () =>
     currentDevice()?.platform === "ios" && iosSetupState() === "needs-setup";
@@ -1175,7 +1202,7 @@ export function DeviceStage(_props: {
   const preparingIosScreen = () =>
     targetReady() &&
     currentDevice()?.platform === "ios" &&
-    ["preparing", "device-support-pending"].includes(iosSetupState()) &&
+    iosSetupState() === "preparing" &&
     !displayImageSrc() &&
     !liveCaptureIssue();
   const checkingIosSetup = () =>
@@ -1191,17 +1218,8 @@ export function DeviceStage(_props: {
     return preparingIosScreen() ? "Preparing this iPad" : "Waiting for screen";
   };
   const devicePanelState = createMemo<DevicePanelState | null>(() => {
-    if (displayImageSrc()) return null;
-
     const recordingIssue = rec.recordingIssue();
     const issue = recordingIssue?.message ?? liveCaptureIssue() ?? "";
-    const shouldLeaveDeviceFrame =
-      embeddedRecordingControls() ||
-      developerModeDisabled() ||
-      recordingIssue?.kind === "setup" ||
-      hasIosSetupIssue();
-    if (!shouldLeaveDeviceFrame) return null;
-
     if (server.health() !== "online") {
       return {
         kind: "error",
@@ -1220,6 +1238,20 @@ export function DeviceStage(_props: {
       };
     }
 
+    // A physical iPad uses one local XCTest runner for video and inspection.
+    // While recording, keep the last usable frame if one exists and never
+    // replace it with a stale screenshot/setup error caused by a competing
+    // read. With no cached frame, explain the direct-device workflow without
+    // drawing the message inside a fake phone silhouette.
+    if (physicalIosRecording()) {
+      if (displayImageSrc()) return null;
+      return {
+        kind: "recording",
+        title: "Recording on this iPad",
+        detail: "Use the iPad directly. Relay will refresh the screen when you stop.",
+      };
+    }
+
     const accountIssue =
       /xcode.*not signed in|apple team|accounts settings|valid credentials/i.test(issue);
 
@@ -1233,12 +1265,24 @@ export function DeviceStage(_props: {
       };
     }
 
+    // CoreDevice can take a moment to mount its developer image after an iPad
+    // is paired or unlocked. During that interval an earlier screenshot poll
+    // may still have an error attached to it. Preparation is authoritative:
+    // never pair a spinner/header with a stale Retry action.
+    if (iosDeviceSupportPending() || checkingIosSetup() || preparingIosScreen()) {
+      return {
+        kind: "progress",
+        title: emptyStageTitle(),
+        detail: iosSetupGuidance(),
+      };
+    }
+
     if (recordingIssue?.kind === "setup" || hasIosSetupIssue()) {
       return {
         kind: "setup",
         title: accountIssue ? "Finish setup in Xcode" : "Finish Apple device setup",
         detail:
-          issue ||
+          (issue ? presentDeviceIssue(issue, currentDevice()?.name ?? "this iPad") : undefined) ||
           "Relay needs a small, locally signed runner before it can read and control this iPad.",
         primaryAction: accountIssue && platform.openXcode ? "open-xcode" : "open-settings",
         primaryLabel: accountIssue && platform.openXcode ? "Open Xcode" : "Review setup",
@@ -1250,11 +1294,16 @@ export function DeviceStage(_props: {
       return {
         kind: "error",
         title: "Can’t read this screen",
-        detail: issue,
+        detail: presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
         primaryAction: "retry",
         primaryLabel: "Try again",
       };
     }
+
+    // A valid frame is the only state that receives device chrome. Check it
+    // after all current failures so stale pixels never hide a newer setup or
+    // connection problem inside the old phone-shaped fallback.
+    if (displayImageSrc()) return null;
 
     return {
       kind: "progress",
@@ -1286,12 +1335,17 @@ export function DeviceStage(_props: {
     setVideoReady(false);
     setVideoFailed(false);
   });
-  function retryScreenPreview(): void {
+  async function retryScreenPreview(): Promise<void> {
     if (currentDevice()?.platform === "ios" && iosSetupState() !== "ready") {
       setIosSetupCheck((check) => check + 1);
       return;
     }
     server.clearLiveCaptureIssue();
+    const serial = currentDevice()?.serial;
+    // A window that lost a lease while the device was busy cannot recover by
+    // polling alone. Re-selecting the same target reacquires control without
+    // making the person choose the device a second time.
+    if (serial) await server.setSelectedDevice(serial);
     if (rec.recordingIssue()) {
       void rec.enterRecordMode();
       return;

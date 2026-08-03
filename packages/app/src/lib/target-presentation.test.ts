@@ -5,15 +5,35 @@ import {
   preferredTargetSerial,
   presentTarget,
   targetGroupMatchesQuery,
+  targetIsPhysicalIos,
   targetIsReady,
   targetSearchText,
 } from "./target-presentation";
-import { deviceReadiness } from "./device-readiness";
+import { deviceReadiness, presentDeviceIssue } from "./device-readiness";
 
 test("uses readable platform labels in settings and target details", () => {
   assert.equal(platformLabel("ios"), "iOS");
   assert.equal(platformLabel("android"), "Android");
   assert.equal(platformLabel("browser"), "Browser");
+});
+
+test("distinguishes physical Apple hardware from simulators", () => {
+  assert.equal(
+    targetIsPhysicalIos({
+      serial: "ipad",
+      platform: "ios",
+      kind: "Physical device",
+    }),
+    true,
+  );
+  assert.equal(
+    targetIsPhysicalIos({
+      serial: "sim",
+      platform: "ios",
+      kind: "simulator",
+    }),
+    false,
+  );
 });
 
 test("presents a named simulator without exposing its UUID in the label", () => {
@@ -171,4 +191,16 @@ test("one session-readiness rule blocks recording for Apple setup and capture fa
     }).kind,
     "capture-error",
   );
+});
+
+test("device diagnostics are presented without SDK commands", () => {
+  const detail = presentDeviceIssue(
+    'iOS snapshot requires an active app session on the target device. Run open first (for example: open --session sim --platform ios --device "iPad" <app>).',
+    "iPad Pro",
+  );
+  assert.equal(
+    detail,
+    "Relay lost the live app connection. Keep iPad Pro unlocked, then try again.",
+  );
+  assert.doesNotMatch(detail, /--session|open --/);
 });

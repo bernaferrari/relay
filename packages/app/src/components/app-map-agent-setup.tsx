@@ -3,6 +3,7 @@ import type { DeviceInfo } from "../lib/api-types";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { AGENT_MODELS } from "./app-map-agent-types";
+import type { AgentStrategy } from "./app-map-agent-types";
 
 function available(device: DeviceInfo): boolean {
   return device.connectionState !== "offline" && device.connectionState !== "unauthorized";
@@ -11,6 +12,8 @@ function available(device: DeviceInfo): boolean {
 export function AppMapAgentSetup(props: {
   goal: string;
   minutes: number;
+  actionBudget: number;
+  strategy: AgentStrategy;
   devices: DeviceInfo[];
   targetIds: string[];
   selectedTargetCount: number;
@@ -18,6 +21,8 @@ export function AppMapAgentSetup(props: {
   onOpenTargets: () => void;
   onGoal: (value: string) => void;
   onMinutes: (value: number) => void;
+  onActionBudget: (value: number) => void;
+  onStrategy: (value: AgentStrategy) => void;
   onTargetIds: (value: string[]) => void;
   onModelIds: (value: string[]) => void;
 }) {
@@ -47,6 +52,38 @@ export function AppMapAgentSetup(props: {
       </label>
 
       <fieldset class="grid gap-2">
+        <legend class="text-[10.5px] font-semibold text-[var(--text-base)]">Agent teamwork</legend>
+        <div class="grid grid-cols-2 gap-1 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-1">
+          <For
+            each={
+              [
+                ["divide", "Divide the map", "Each agent owns an area"],
+                ["compare", "Compare agents", "Same goal, independent results"],
+              ] as const
+            }
+          >
+            {(option) => (
+              <button
+                type="button"
+                class={cn(
+                  "grid min-h-14 content-center rounded-[8px] px-2 text-left transition-[background-color,color,box-shadow] duration-150",
+                  props.strategy === option[0] &&
+                    "bg-[var(--v2-background-bg-base)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
+                )}
+                aria-pressed={props.strategy === option[0]}
+                onClick={() => props.onStrategy(option[0])}
+              >
+                <strong class="text-[11px] font-medium text-[var(--text-strong)]">
+                  {option[1]}
+                </strong>
+                <small class="mt-0.5 text-[9.5px] text-[var(--text-weak)]">{option[2]}</small>
+              </button>
+            )}
+          </For>
+        </div>
+      </fieldset>
+
+      <fieldset class="grid gap-2">
         <legend class="text-[10.5px] font-semibold text-[var(--text-base)]">Time budget</legend>
         <div class="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-1">
           <For each={[5, 10, 20]}>
@@ -62,6 +99,28 @@ export function AppMapAgentSetup(props: {
                 onClick={() => props.onMinutes(value)}
               >
                 {value} min
+              </button>
+            )}
+          </For>
+        </div>
+      </fieldset>
+
+      <fieldset class="grid gap-2">
+        <legend class="text-[10.5px] font-semibold text-[var(--text-base)]">Action budget</legend>
+        <div class="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-1">
+          <For each={[24, 60, 120]}>
+            {(value) => (
+              <button
+                type="button"
+                class={cn(
+                  "min-h-11 rounded-[8px] text-[11.5px] font-medium text-[var(--text-base)] transition-[background-color,color,box-shadow] duration-150",
+                  props.actionBudget === value &&
+                    "bg-[var(--v2-background-bg-base)] text-[var(--text-strong)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
+                )}
+                aria-pressed={props.actionBudget === value}
+                onClick={() => props.onActionBudget(value)}
+              >
+                {value} actions
               </button>
             )}
           </For>

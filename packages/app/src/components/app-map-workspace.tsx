@@ -66,6 +66,11 @@ import { caseStackCount } from "../lib/case-stack-presentation";
 import { AppMapCanvasScene } from "./app-map-canvas-scene";
 import { AppMapTakeReview } from "./app-map-take-review";
 import { useAppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
+import {
+  companionLogicalViewport,
+  companionOrientationEdge,
+} from "./app-map-device-companion-geometry";
+import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -138,37 +143,27 @@ export function AppMapWorkspace(props: {
       job,
     });
   });
-  const [appleSetupCheckAttempt] = createSignal(0);
-  const [appleSetupCheckFailed, setAppleSetupCheckFailed] = createSignal(false);
   let requestedAppleSetupFor = "";
   let appMapMutationQueue = Promise.resolve();
   let appliedCanonicalRevision = "";
   createEffect(() => {
     const device = selectedDevice();
     const setup = server.appleDeviceSetup();
-    const attempt = appleSetupCheckAttempt();
     if (device?.platform !== "ios" || setup) {
       requestedAppleSetupFor = "";
-      setAppleSetupCheckFailed(false);
       return;
     }
-    const requestKey = `${device.serial}:${attempt}`;
+    const requestKey = device.serial;
     if (requestedAppleSetupFor === requestKey) return;
     requestedAppleSetupFor = requestKey;
-    setAppleSetupCheckFailed(false);
     void server.refreshAppleDeviceSetup().catch(() => {
-      // A cold local server or a just-connected iPad can briefly be
-      // unavailable. Surface a retry instead of keeping the person in an
-      // unexplained loading state.
-      const current = selectedDevice();
-      if (current?.platform === "ios" && current.serial === device.serial) {
-        setAppleSetupCheckFailed(true);
-      }
+      // A cold detailed Xcode inspection can exceed the short UI request
+      // budget. That timeout is not proof of broken setup; live readiness is
+      // authoritative and continues preparing the device.
     });
   });
   const recordState = (): Parameters<typeof AppMapEmptyState>[0]["recordState"] => {
     const device = selectedDevice();
-    if (device?.platform === "ios" && appleSetupCheckFailed()) return "setup-check-failed";
     const liveFrame = server.liveFrame();
     const readiness = deviceReadiness(device, server.health() === "online", {
       ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
@@ -207,7 +202,6 @@ export function AppMapWorkspace(props: {
       case "capture-error":
         return { label: "Screen unavailable", kind: "attention" } as const;
       case "enable-developer-mode":
-      case "setup-check-failed":
       case "setup-ios":
         return { label: "Device setup needed", kind: "attention" } as const;
       default:
@@ -569,6 +563,14 @@ export function AppMapWorkspace(props: {
       return;
     }
     void server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
+  };
+  const refreshMapScreenshots = () => {
+    if (!graphRunReadiness().ready) {
+      toast(graphRunReadiness().reason ?? "Finish the flow before refreshing screenshots", "info");
+      return;
+    }
+    toast("Replaying the flow to capture fresh screenshots", "info");
+    runCanvasGraph();
   };
   const reusableBehaviors = createMemo(() =>
     server
@@ -1633,6 +1635,15 @@ export function AppMapWorkspace(props: {
                         ""
                       );
                     }}
+                    orientationEvidenceForScreen={(screenId) => {
+                      const node = tree().nodes.find((candidate) => candidate.id === screenId);
+                      return node
+                        ? screenshotOrientationEvidence(
+                            server,
+                            draft.steps()[node.representativeStepIndex],
+                          )
+                        : undefined;
+                    }}
                     stateForScreen={(screenId) => runProjection().screens[screenId]?.state}
                     onOpenScreen={(screenId) => {
                       setWorkspaceView("map");
@@ -1654,6 +1665,8 @@ export function AppMapWorkspace(props: {
                       setHistoryOpen(false);
                       setAgentOpen(true);
                     }}
+                    canRefreshScreenshots={graphRunReadiness().ready}
+                    onRefreshScreenshots={refreshMapScreenshots}
                   />
                 )}
               </Show>
@@ -1683,7 +1696,8 @@ export function AppMapWorkspace(props: {
                   deviceSelected={Boolean(selectedDevice())}
                   liveScreenSrc={liveScreenSrc()}
                   captureBusy={startCaptureBusy()}
-                  onUseCurrentScreen={() => void useCurrentScreenAsStart()}
+                  onStartRecording={recordFromHere}
+                  onCaptureScreen={() => void captureCurrentScreen()}
                   onAddNote={addNote}
                   onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
                 />
@@ -1723,6 +1737,12 @@ export function AppMapWorkspace(props: {
                     screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
                     capturedScreenUrls()[node.id] ||
                     ""
+                  }
+                  orientationEvidenceFor={(node) =>
+                    screenshotOrientationEvidence(
+                      server,
+                      draft.steps()[node.representativeStepIndex],
+                    )
                   }
                   isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
@@ -1971,7 +1991,7 @@ export function AppMapWorkspace(props: {
             recorder.arming() || startCaptureBusy()
               ? "Preparing…"
               : !hasCanvasContent()
-                ? "Capture screen"
+                ? "Start recording"
                 : selectedConnection()
                   ? selectedConnection()!.state === "needs-recording"
                     ? "Record"
@@ -1983,7 +2003,11 @@ export function AppMapWorkspace(props: {
           onOpenTargets={props.onOpenTargets}
           onRecord={() => {
             if (!hasCanvasContent()) {
-              void useCurrentScreenAsStart();
+              // A first recording already observes both sides of the
+              // transition. Let that single action create the entry screen,
+              // destination, and connection; screenshot-only capture remains
+              // available from the camera tool.
+              recordFromHere();
               return;
             }
             const connection = selectedConnection();
@@ -2053,4 +2077,24 @@ function AppMapLoadFeedback(props: { status: "loading" | "error"; onRetry: () =>
 function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
   const screenshot = evidenceForStep(step)?.screenshot;
   return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
+}
+
+function screenshotOrientationEvidence(
+  server: ReturnType<typeof useServer>,
+  step: RecipeStep | undefined,
+): ScreenshotOrientationEvidence | undefined {
+  const evidence = evidenceForStep(step);
+  if (!evidence) return undefined;
+  const logicalViewport =
+    companionLogicalViewport(evidence.nodes) ??
+    (evidence.deviceBounds ? { ...evidence.deviceBounds } : undefined);
+  const platform = evidence.serial
+    ? server.devices().find((device) => device.serial === evidence.serial)?.platform
+    : undefined;
+  const edge = companionOrientationEdge(evidence.nodes, logicalViewport);
+  return {
+    ...(logicalViewport ? { logicalViewport } : {}),
+    ...(platform ? { platform } : {}),
+    ...(edge ? { edge } : {}),
+  };
 }

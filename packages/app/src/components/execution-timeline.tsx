@@ -8,6 +8,7 @@ import {
 import { cn } from "../lib/cn";
 import { formatReviewTime } from "../lib/run-review-model";
 import { Icon } from "./icon";
+import type { RunEvidenceEvent } from "@relay/protocol";
 
 export type ExecutionTimelineMode = "plan" | "live" | "replay";
 
@@ -16,6 +17,14 @@ function stateDot(state: ExecutionMomentState): string {
   if (state === "passed") return "bg-[var(--icon-success-base)]";
   if (state === "paused") return "bg-[var(--icon-warning-base)]";
   if (state === "running") return "bg-[var(--v2-background-bg-accent)]";
+  return "bg-[var(--text-weak)]";
+}
+
+function evidenceDot(tone: RunEvidenceEvent["tone"]): string {
+  if (tone === "critical") return "bg-[var(--icon-critical-base)]";
+  if (tone === "warning") return "bg-[var(--icon-warning-base)]";
+  if (tone === "success") return "bg-[var(--icon-success-base)]";
+  if (tone === "info") return "bg-[var(--v2-background-bg-accent)]";
   return "bg-[var(--text-weak)]";
 }
 
@@ -40,6 +49,9 @@ export function ExecutionTimeline(props: {
   markerFractions?: number[];
   /** Boundaries where quiet source time was collapsed from the review rail. */
   skippedFractions?: number[];
+  /** Normalized evidence facts already projected onto this timeline. */
+  evidenceMarkers?: Array<{ event: RunEvidenceEvent; fraction: number }>;
+  onEvidenceSelect?: (event: RunEvidenceEvent) => void;
   class?: string;
 }) {
   let trackEl: HTMLDivElement | undefined;
@@ -164,8 +176,8 @@ export function ExecutionTimeline(props: {
               </div>
               <div class="h-1 overflow-hidden rounded-full bg-[var(--v2-background-bg-layer-02)]">
                 <div
-                  class="h-full rounded-full bg-[var(--v2-background-bg-accent)] transition-[width] duration-150 ease-out"
-                  style={{ width: `${overviewPercent()}%` }}
+                  class="h-full w-full origin-left rounded-full bg-[var(--v2-background-bg-accent)] transition-transform duration-150 ease-out"
+                  style={{ transform: `scaleX(${overviewPercent() / 100})` }}
                 />
               </div>
             </div>
@@ -173,7 +185,7 @@ export function ExecutionTimeline(props: {
             <div class="flex shrink-0 items-center gap-1">
               <button
                 type="button"
-                class="grid size-7 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
+                class="grid size-11 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
                 aria-label="Previous step"
                 disabled={safeIndex() === 0}
                 onClick={() => (props.onPrevious ? props.onPrevious() : move(-1))}
@@ -182,7 +194,7 @@ export function ExecutionTimeline(props: {
               </button>
               <button
                 type="button"
-                class="grid size-7 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
+                class="grid size-11 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
                 aria-label="Next step"
                 disabled={safeIndex() >= props.moments.length - 1}
                 onClick={() => (props.onNext ? props.onNext() : move(1))}
@@ -198,7 +210,7 @@ export function ExecutionTimeline(props: {
         <div class="flex min-w-0 items-center gap-2.5">
           <button
             type="button"
-            class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
+            class="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
             aria-label={props.playing ? "Pause run playback" : "Play run playback"}
             aria-pressed={props.playing}
             onClick={() => props.onTogglePlayback?.()}
@@ -208,7 +220,7 @@ export function ExecutionTimeline(props: {
           <Show when={props.onCycleSpeed}>
             <button
               type="button"
-              class="grid h-7 min-w-7 shrink-0 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
+              class="grid h-11 min-w-11 shrink-0 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-02)] px-2 font-mono text-[10px] font-semibold tabular-nums text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
               aria-label="Playback speed"
               onClick={() => props.onCycleSpeed?.()}
             >
@@ -220,7 +232,7 @@ export function ExecutionTimeline(props: {
             ref={(element) => {
               trackEl = element;
             }}
-            class="group relative h-7 min-w-0 flex-1 cursor-pointer touch-none select-none"
+            class="group relative h-11 min-w-0 flex-1 cursor-pointer touch-none select-none"
             role="group"
             aria-label="Scrub run playback"
             onPointerDown={(event) => {
@@ -248,15 +260,15 @@ export function ExecutionTimeline(props: {
                 centered bar so the track reads as one line, not a fat slab. */}
             <div class="pointer-events-none absolute top-1/2 left-0 h-1.5 w-full -translate-y-1/2 overflow-hidden rounded-full bg-[var(--v2-background-bg-layer-01)]">
               <div
-                class="h-full rounded-full bg-[var(--v2-background-bg-accent)] transition-[width] duration-150 ease-linear"
-                style={{ width: `${fillPercent()}%` }}
+                class="h-full w-full origin-left rounded-full bg-[var(--v2-background-bg-accent)] transition-transform duration-150 ease-linear"
+                style={{ transform: `scaleX(${fillPercent() / 100})` }}
               />
             </div>
             <For each={props.moments}>
               {(moment) => (
                 <button
                   type="button"
-                  class="absolute top-1/2 z-[1] flex h-full w-2.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)]"
+                  class="absolute top-1/2 z-[2] flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)]"
                   style={{ left: `${offsetPercent(moment)}%` }}
                   aria-label={`Jump to step ${moment.index + 1}: ${moment.title}. ${executionStateLabel(moment.state, "step")}`}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -269,6 +281,30 @@ export function ExecutionTimeline(props: {
                     class={cn(
                       "size-1.5 rounded-full ring-2 ring-[var(--v2-background-bg-layer-01)]",
                       stateDot(moment.state),
+                    )}
+                  />
+                </button>
+              )}
+            </For>
+            <For each={props.evidenceMarkers ?? []}>
+              {(marker) => (
+                <button
+                  type="button"
+                  class="absolute top-1/2 z-[1] flex size-11 -translate-x-1/2 -translate-y-1/2 items-start justify-center rounded-full pt-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)]"
+                  style={{ left: `${Math.max(0, Math.min(1, marker.fraction)) * 100}%` }}
+                  aria-label={`${marker.event.channel}: ${marker.event.label}${marker.event.detail ? `. ${marker.event.detail}` : ""}`}
+                  data-tip={`${marker.event.label}${marker.event.detail ? ` · ${marker.event.detail}` : ""}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    scrubToFraction(marker.fraction);
+                    props.onEvidenceSelect?.(marker.event);
+                  }}
+                >
+                  <i
+                    class={cn(
+                      "h-2 w-0.5 rounded-full opacity-80 transition-opacity group-hover:opacity-100",
+                      evidenceDot(marker.event.tone),
                     )}
                   />
                 </button>

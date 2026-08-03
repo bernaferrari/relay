@@ -17,7 +17,7 @@ import {
 } from "./server";
 import { ancestryOf, nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
 import { sentenceForStep } from "../lib/step-sentence";
-import { targetIsReady } from "../lib/target-presentation";
+import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
 
 export type RecLevel = "smart" | "element" | "point";
@@ -188,7 +188,9 @@ export function selectProjectedAuthoringSession(
     .filter(
       (session) =>
         session.appMapId === input.appMapId &&
-        !["committed", "cancelled"].includes(session.state) &&
+        // Failed attempts remain in Activity, but they no longer own the
+        // recorder or their expired lease after the workspace recovers.
+        !["committed", "cancelled", "failed"].includes(session.state) &&
         (!input.targetId || session.target.targetId === input.targetId),
     )
     .sort((left, right) => right.updatedAt - left.updatedAt);
@@ -247,6 +249,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!activeSession()) setPendingGroup("");
     }
 
+    async function ensureControlLease(serial: string): Promise<string | null> {
+      // Validate ownership at the server boundary instead of trusting a
+      // renderer-local id that may have expired or been released after a
+      // process restart. Re-selecting the same target is intentionally
+      // idempotent from the person's point of view.
+      await server.setSelectedDevice(serial);
+      return server.selectedLeaseId();
+    }
+
     async function enterRecordMode(): Promise<boolean> {
       const existing = activeSession();
       if (existing) {
@@ -254,12 +265,19 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           toast("Another collaborator is using this device", "info");
           return false;
         }
-        if (existing.state === "failed") {
-          const ready = await server.observeAuthoringSession(existing.id);
-          if (ready.state !== "ready") return false;
-          const started = await server.startAuthoringSession(existing.id);
-          setInteracting(started.state === "recording");
-          return started.state === "recording";
+        // Observation and video preparation are intentionally separate on
+        // physical iOS. If video could not start yet (for example while the
+        // Home screen had no active app session), retain the valid observation
+        // and let Start recording retry it after the person opens an app.
+        if (existing.state === "ready") {
+          try {
+            const session = await server.startAuthoringSession(existing.id);
+            setInteracting(session.state === "recording");
+            return session.state === "recording";
+          } catch (error) {
+            toast(error instanceof Error ? error.message : String(error), "warning");
+            return false;
+          }
         }
         return false;
       }
@@ -270,10 +288,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       const appMapId = server.selectedAppMapId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
-      const leaseId = server.selectedLeaseId();
+      const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
         toast(
-          "Relay needs an App Map, device, and active control lease before recording",
+          server.liveCaptureIssue() ||
+            "Device control is not available yet. Try again in a moment.",
           "warning",
         );
         return false;
@@ -297,7 +316,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ...(pendingGroup().trim() ? { group: pendingGroup().trim() } : {}),
         });
         session = await server.observeAuthoringSession(session.id);
-        if (session.state !== "ready") return false;
+        if (session.state !== "ready") {
+          toast(session.error || "Relay could not prepare this device for recording", "warning");
+          return false;
+        }
         session = await server.startAuthoringSession(session.id);
         setInteracting(session.state === "recording");
         return session.state === "recording";
@@ -323,10 +345,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       const appMapId = server.selectedAppMapId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
-      const leaseId = server.selectedLeaseId();
+      const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
         toast(
-          "Relay needs an App Map, device, and active control lease to capture this screen",
+          server.liveCaptureIssue() ||
+            "Device control is not available yet. Try again in a moment.",
           "warning",
         );
         return null;
@@ -386,7 +409,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       await flushType();
       const session = activeSession();
       if (!session || !ownsActiveSession() || session.state !== "recording") return;
-      await server.stopAuthoringSession(session.id);
+      const stopped = await server.stopAuthoringSession(session.id);
+      if (stopped.error) toast(stopped.error, "warning");
       setInteracting(true);
     }
 
@@ -400,21 +424,43 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       const node = nodeAtPoint(snapshot, fx, fy);
       const target = buildTapTarget(snapshot.bounds, semanticTapNode(snapshot, node), fx, fy);
+      const physicalIosTarget = targetIsPhysicalIos(
+        server.devices().find((device) => device.serial === server.selectedDevice()),
+      )
+        ? {
+            ...(target.label ? { label: target.label } : {}),
+            ...(target.point ? { point: target.point } : {}),
+          }
+        : target;
       const session = activeSession();
       if (session?.state === "recording" && ownsActiveSession()) {
         await server.interactAuthoringSession(session.id, {
           kind: "tap",
-          target,
+          target: physicalIosTarget,
           ...(alreadyApplied ? { applied: true } : {}),
         });
         return true;
       }
       if (alreadyApplied) return true;
-      if (target.point) {
-        return server.interactStep({ kind: "point", x: target.point.x, y: target.point.y });
+      // Match Relay's resolver policy: deterministic semantic identity first,
+      // then human-readable intent, with coordinates only as the final escape
+      // hatch. Coordinate-first taps were visibly highlighted correctly yet
+      // missed on rotated physical iPads.
+      if (
+        targetIsPhysicalIos(
+          server.devices().find((device) => device.serial === server.selectedDevice()),
+        )
+      ) {
+        if (target.label) return server.interactStep({ kind: "label", label: target.label });
+        return target.point
+          ? server.interactStep({ kind: "point", x: target.point.x, y: target.point.y })
+          : false;
       }
       if (target.ref) return server.interactStep({ kind: "ref", ref: target.ref });
-      return target.label ? server.interactStep({ kind: "label", label: target.label }) : false;
+      if (target.label) return server.interactStep({ kind: "label", label: target.label });
+      return target.point
+        ? server.interactStep({ kind: "point", x: target.point.x, y: target.point.y })
+        : false;
     }
 
     async function driveSwipe(

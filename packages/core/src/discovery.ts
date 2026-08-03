@@ -45,12 +45,14 @@ function normalizeAgentContext(
     throw new Error("discovery agent source is invalid");
   }
   const model = optionalText(input.model, "discovery agent model", 240);
+  const focus = optionalText(input.focus, "discovery agent focus", 240);
   const buildId = optionalText(input.buildId, "discovery build id", 240);
   const caseStackId = optionalText(input.caseStackId, "discovery case stack id", 240);
   return {
     workerId: requiredText(input.workerId, "discovery worker id", 160),
     appMapId: requiredText(input.appMapId, "discovery App Map id", 160),
     goal: requiredText(input.goal, "discovery goal", 4_000),
+    ...(focus ? { focus } : {}),
     provider: requiredText(input.provider, "discovery agent provider", 160),
     ...(model ? { model } : {}),
     ...(buildId ? { buildId } : {}),
@@ -362,17 +364,11 @@ export function suggestDiscoveryControl(session: DiscoverySession): {
   const currentScreen = session.currentScreenId
     ? session.screens.find((screen) => screen.id === session.currentScreenId)
     : undefined;
-  // Once the session knows what is visible, never suggest a control from a
-  // different screen. Legacy maps without currentScreenId retain the old
-  // best-effort ordering until the next capture records one.
-  const orderedScreens = currentScreen ? [currentScreen] : session.screens;
-  for (const screen of orderedScreens) {
-    const control = screen.controls?.find(
-      (item) => !used.has(`${screen.id}:${JSON.stringify(item.target)}`),
-    );
-    if (control) return { screenId: screen.id, control };
-  }
-  return null;
+  if (!currentScreen) return null;
+  const control = currentScreen.controls?.find(
+    (item) => !used.has(`${currentScreen.id}:${JSON.stringify(item.target)}`),
+  );
+  return control ? { screenId: currentScreen.id, control } : null;
 }
 
 export function isSensitiveDiscoveryAction(

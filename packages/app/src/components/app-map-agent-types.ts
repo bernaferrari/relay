@@ -1,4 +1,5 @@
 export type AgentState = "idle" | "running" | "stopping" | "complete" | "error";
+export type AgentStrategy = "divide" | "compare";
 
 export type AgentModelOption = {
   id: string;
@@ -15,6 +16,8 @@ export type AgentWorker = {
   targetId: string;
   targetName: string;
   model: AgentModelOption;
+  focus?: string;
+  actionBudget: number;
   status: AgentWorkerStatus;
   stage: string;
   planner: "model" | "semantic";

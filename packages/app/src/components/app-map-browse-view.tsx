@@ -9,6 +9,7 @@ import {
   type BrowseRunOutcome,
 } from "../lib/app-map-browse";
 import { Icon } from "./icon";
+import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 export type AppMapBrowseMode = "screens" | "coverage";
 
@@ -21,16 +22,23 @@ export function AppMapBrowseView(props: {
   recipeId: string;
   deviceOpen: boolean;
   imageForScreen: (screenId: string) => string;
+  orientationEvidenceForScreen: (screenId: string) => ScreenshotOrientationEvidence | undefined;
   stateForScreen: (screenId: string) => ScreenState | undefined;
   onOpenScreen: (screenId: string) => void;
   onOpenRun: (runId: string) => void;
   onToggleDevice: () => void;
   onCaptureScreen: () => void;
   onOpenAgent: () => void;
+  onRefreshScreenshots: () => void;
+  canRefreshScreenshots: boolean;
 }) {
   const [query, setQuery] = createSignal("");
   const [platform, setPlatform] = createSignal<"all" | "android" | "ios" | "browser">("all");
   const [outcome, setOutcome] = createSignal<"all" | BrowseRunOutcome>("all");
+  const [screenPlatform, setScreenPlatform] = createSignal<"all" | "android" | "ios" | "browser">(
+    "all",
+  );
+  const [baseline, setBaseline] = createSignal<"all" | "approved" | "missing">("all");
   const areas = createMemo(() => deriveAppMapAreas(props.appMap));
   const filteredAreas = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
@@ -39,12 +47,32 @@ export function AppMapBrowseView(props: {
         ...area,
         screenIds: area.screenIds.filter((id) => {
           const screen = props.appMap.screens[id];
-          return !needle || screen?.title.toLocaleLowerCase().includes(needle);
+          const variants = screen?.variantIds.flatMap((variantId) => {
+            const variant = props.appMap.screenVariants[variantId];
+            return variant ? [variant] : [];
+          });
+          const matchesQuery = !needle || screen?.title.toLocaleLowerCase().includes(needle);
+          const matchesPlatform =
+            screenPlatform() === "all" ||
+            variants?.some((variant) => variant.targetProfile.platform === screenPlatform());
+          const matchesBaseline =
+            baseline() === "all" ||
+            (baseline() === "approved"
+              ? variants?.some((variant) => variant.baseline)
+              : !variants?.some((variant) => variant.baseline));
+          return matchesQuery && matchesPlatform && matchesBaseline;
         }),
       }))
       .filter((area) => area.screenIds.length > 0);
   });
   const rows = createMemo(() => coverageRows(props.appMap, props.runs, props.recipeId));
+  const screenFiltersActive = () =>
+    Boolean(query().trim()) || screenPlatform() !== "all" || baseline() !== "all";
+  const clearScreenFilters = () => {
+    setQuery("");
+    setScreenPlatform("all");
+    setBaseline("all");
+  };
   const filteredRows = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
     return rows().filter(
@@ -81,6 +109,17 @@ export function AppMapBrowseView(props: {
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <Show when={props.mode === "screens"}>
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={!props.canRefreshScreenshots}
+                data-tip="Replay the flow and compare fresh captures with approved baselines"
+                onClick={props.onRefreshScreenshots}
+              >
+                <Icon name="camera" size={13} /> Refresh screenshots
+              </Button>
+            </Show>
             <Button variant="secondary" size="md" onClick={props.onOpenAgent}>
               <Icon name="scan" size={13} /> Explore with Relay
             </Button>
@@ -90,7 +129,7 @@ export function AppMapBrowseView(props: {
         <div
           class={cn(
             "sticky top-[64px] z-10 mb-5 flex min-h-12 items-center gap-2 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_6px_18px_rgb(0_0_0/6%)] backdrop-blur-[14px] max-[680px]:flex-wrap",
-            props.mode === "screens" && "max-w-[420px]",
+            props.mode === "screens" && "max-w-[760px]",
           )}
         >
           <label class="relative min-w-[180px] flex-1">
@@ -107,6 +146,29 @@ export function AppMapBrowseView(props: {
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
+          <Show when={props.mode === "screens"}>
+            <FilterSelect
+              label="Target platform"
+              value={screenPlatform()}
+              onChange={(value) => setScreenPlatform(value as ReturnType<typeof screenPlatform>)}
+              options={[
+                ["all", "All targets"],
+                ["android", "Android"],
+                ["ios", "iOS"],
+                ["browser", "Browser"],
+              ]}
+            />
+            <FilterSelect
+              label="Screenshot baseline"
+              value={baseline()}
+              onChange={(value) => setBaseline(value as ReturnType<typeof baseline>)}
+              options={[
+                ["all", "All baselines"],
+                ["approved", "Approved"],
+                ["missing", "Needs baseline"],
+              ]}
+            />
+          </Show>
           <Show when={props.mode === "coverage"}>
             <FilterSelect
               label="Platform"
@@ -152,24 +214,24 @@ export function AppMapBrowseView(props: {
               fallback={
                 <BrowseEmpty
                   icon="search"
-                  title={query() ? "No screens match" : "No screens yet"}
+                  title={screenFiltersActive() ? "No screens match" : "No screens yet"}
                   body={
-                    query()
-                      ? "Try a broader name."
+                    screenFiltersActive()
+                      ? "Try broader filters."
                       : props.deviceOpen
                         ? "Capture the screen already visible on the device, or let Relay explore the app."
                         : "Open the device or let Relay explore the app."
                   }
                   actionLabel={
-                    query()
-                      ? "Clear search"
+                    screenFiltersActive()
+                      ? "Clear filters"
                       : props.deviceOpen
                         ? "Capture current screen"
                         : "Open device"
                   }
                   onAction={() =>
-                    query()
-                      ? setQuery("")
+                    screenFiltersActive()
+                      ? clearScreenFilters()
                       : props.deviceOpen
                         ? props.onCaptureScreen()
                         : props.onToggleDevice()
@@ -201,10 +263,12 @@ export function AppMapBrowseView(props: {
                           <ScreenTile
                             screen={screen()}
                             image={props.imageForScreen(screenId)}
+                            orientationEvidence={props.orientationEvidenceForScreen(screenId)}
                             state={props.stateForScreen(screenId)}
                             incoming={incomingCount(props.appMap, screenId)}
                             outgoing={outgoingCount(props.appMap, screenId)}
                             targets={screenTargetNames(props.appMap, screen())}
+                            approvedTargets={screenApprovedTargetCount(props.appMap, screen())}
                             onOpen={() => props.onOpenScreen(screenId)}
                           />
                         );
@@ -224,10 +288,12 @@ export function AppMapBrowseView(props: {
 function ScreenTile(props: {
   screen: Screen;
   image: string;
+  orientationEvidence?: ScreenshotOrientationEvidence;
   state?: ScreenState;
   incoming: number;
   outgoing: number;
   targets: string[];
+  approvedTargets: number;
   onOpen: () => void;
 }) {
   return (
@@ -246,17 +312,22 @@ function ScreenTile(props: {
             </div>
           }
         >
-          <img
+          <OrientedScreenshot
             src={props.image}
             alt=""
             loading="lazy"
-            decoding="async"
             class="block size-full object-contain"
+            evidence={props.orientationEvidence}
           />
         </Show>
         <Show when={props.state && props.state !== "idle"}>
           <span class={cn("absolute top-2 right-2", statePill(props.state!))}>
             <i class="size-1.5 rounded-full bg-current" /> {stateLabel(props.state!)}
+          </span>
+        </Show>
+        <Show when={props.targets.length > 0}>
+          <span class="absolute bottom-2 left-2 inline-flex min-h-6 items-center rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] px-2 text-[9px] font-medium text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)] backdrop-blur">
+            {props.approvedTargets}/{props.targets.length} approved
           </span>
         </Show>
       </div>
@@ -507,6 +578,10 @@ function screenTargetNames(appMap: AppMap, screen: Screen): string[] {
     const variant = appMap.screenVariants[id];
     return variant ? [variant.targetProfile.name] : [];
   });
+}
+
+function screenApprovedTargetCount(appMap: AppMap, screen: Screen): number {
+  return screen.variantIds.filter((id) => Boolean(appMap.screenVariants[id]?.baseline)).length;
 }
 
 function connectionLabel(appMap: AppMap, connectionId: string): string {

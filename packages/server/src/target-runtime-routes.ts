@@ -2,11 +2,13 @@ import type http from "node:http";
 import {
   installRegisteredBuild,
   launchRegisteredBuild,
+  createDevice,
   listDeviceLeases,
   listDevices,
   listTargetWorkers,
   preflightDevicePool,
   preflightRegisteredBuild,
+  openApp,
   readBuild,
   readDevicePool,
   runWithTargetContext,
@@ -20,6 +22,12 @@ export type TargetRuntimeRouteRuntime = {
   listDevices: typeof listDevices;
   listDeviceLeases: typeof listDeviceLeases;
   assertTargetControl: typeof assertTargetControl;
+  launchApp: (input: {
+    serial: string;
+    platform: "android" | "ios";
+    app: string;
+    relaunch: boolean;
+  }) => Promise<void>;
   runBuildCommand?: BuildCommandRunner;
 };
 
@@ -27,6 +35,11 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   listDevices,
   listDeviceLeases,
   assertTargetControl,
+  launchApp: async ({ serial, platform, app, relaunch }) => {
+    await runWithTargetContext({ kind: "device", platform, serial }, () =>
+      openApp(createDevice(), app, { relaunch }),
+    );
+  },
 };
 
 export async function handleTargetRuntimeRoute(context: {
@@ -42,6 +55,29 @@ export async function handleTargetRuntimeRoute(context: {
 
   if (method === "GET" && pathname === "/target-workers") {
     json(response, 200, { workers: listTargetWorkers() });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/device/app/launch") {
+    const body = (await parseJsonBody(request)) as {
+      serial?: unknown;
+      app?: unknown;
+      relaunch?: unknown;
+    };
+    const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+    const app = typeof body.app === "string" ? body.app.trim() : "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    if (!app) throw new HttpError(400, "app is required");
+    await runtime.assertTargetControl(scope, serial);
+    const device = (await runtime.listDevices().catch(() => [])).find(
+      (candidate) => candidate.serial === serial,
+    );
+    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
+    const relaunch = body.relaunch !== false;
+    await runtime.launchApp({ serial, platform: device.platform, app, relaunch });
+    json(response, 200, {
+      launched: { serial, app, platform: device.platform, launchedAt: Date.now() },
+    });
     return true;
   }
 

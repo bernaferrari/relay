@@ -25,6 +25,13 @@
       0 1px 2px rgb(0 0 0 / 8%),
       0 6px 16px -10px color-mix(in srgb, var(--button-primary-base) 58%, transparent);
 
+    /* A button owns its foreground. Product call sites may wrap labels for
+       layout, but those wrappers must not accidentally make primary actions
+       unreadable by carrying a generic text token. */
+    & > * {
+      color: inherit;
+    }
+
     [data-slot="icon-svg"] {
       color: var(--button-primary-foreground, var(--icon-invert-base));
     }
@@ -50,6 +57,10 @@
 
       [data-slot="icon-svg"] {
         color: currentColor;
+      }
+
+      & > * {
+        color: inherit;
       }
     }
   }

@@ -235,6 +235,7 @@ test("discovery suggests only safe unexplored semantic controls", async () => {
       allowSensitiveControls: false,
     },
     status: "running" as const,
+    currentScreenId: "screen-a",
     createdAt: 1,
     updatedAt: 1,
     screens: [{ id: "screen-a", fingerprint: "a", capturedAt: 1, controls }],
@@ -250,6 +251,7 @@ test("discovery suggests only safe unexplored semantic controls", async () => {
   };
   const branched = {
     ...session,
+    currentScreenId: "screen-b",
     screens: [...session.screens, secondScreen],
     transitions: [
       {

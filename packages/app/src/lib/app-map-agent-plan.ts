@@ -1,24 +1,38 @@
 import type { DeviceInfo } from "./api-types";
-import type { AgentModelOption, AgentWorker } from "../components/app-map-agent-types";
+import type {
+  AgentModelOption,
+  AgentStrategy,
+  AgentWorker,
+} from "../components/app-map-agent-types";
 
 export function buildAgentWorkers(
   targets: readonly DeviceInfo[],
   models: readonly AgentModelOption[],
+  options: { strategy: AgentStrategy; areas: readonly string[]; actionBudget: number },
   id: () => string = () => crypto.randomUUID(),
 ): AgentWorker[] {
-  return targets.flatMap((target) =>
-    models.map((model) => ({
-      id: id(),
-      targetId: target.serial,
-      targetName: target.name ?? target.serial,
-      model,
-      status: "queued",
-      stage: "Waiting for target",
-      planner: "model",
-      screens: 0,
-      interactions: 0,
-    })),
+  const workers = targets.flatMap((target) =>
+    models.map(
+      (model): AgentWorker => ({
+        id: id(),
+        targetId: target.serial,
+        targetName: target.name ?? target.serial,
+        model,
+        actionBudget: options.actionBudget,
+        status: "queued",
+        stage: "Waiting for target",
+        planner: "model",
+        screens: 0,
+        interactions: 0,
+      }),
+    ),
   );
+  return workers.map((worker, index) => ({
+    ...worker,
+    ...(options.strategy === "divide" && options.areas.length
+      ? { focus: options.areas[index % options.areas.length] }
+      : {}),
+  }));
 }
 
 /** Independent targets may run concurrently; each returned row is one target's

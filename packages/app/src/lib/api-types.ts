@@ -181,24 +181,6 @@ export type CompatibilityReport = import("@relay/protocol").CompatibilityReport;
 
 export type HealthState = "unknown" | "online" | "offline";
 
-export type TestAtlas = {
-  nodes: Array<{
-    id: string;
-    title: string;
-    stepCount: number;
-    capabilities: string[];
-    signature: string;
-  }>;
-  edges: Array<{
-    from: string;
-    to: string;
-    kind: "reuse" | "branch" | "repeat";
-    label: string;
-  }>;
-  duplicateClusters: Array<{ signature: string; recipeIds: string[]; savings: number }>;
-  coverage: Array<{ capability: string; tests: number }>;
-};
-
 export type LocalSchedule = {
   id: string;
   recipeId: string;

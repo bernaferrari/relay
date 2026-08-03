@@ -385,15 +385,22 @@ export class RelayClient {
   createAuthoringSession(input: OperationInput<"authoring.session.create">) {
     return this.invoke("authoring.session.create", input, { authoringSessionId: undefined });
   }
-  observeAuthoringSession(sessionId: string) {
+  observeAuthoringSession(sessionId: string, signal?: AbortSignal) {
     return this.invoke(
       "authoring.session.observe",
       { sessionId },
-      { authoringSessionId: sessionId },
+      { authoringSessionId: sessionId, ...(signal ? { signal } : {}) },
     );
   }
-  startAuthoringSession(sessionId: string) {
-    return this.invoke("authoring.session.start", { sessionId }, { authoringSessionId: sessionId });
+  startAuthoringSession(sessionId: string, signal?: AbortSignal) {
+    return this.invoke(
+      "authoring.session.start",
+      { sessionId },
+      {
+        authoringSessionId: sessionId,
+        ...(signal ? { signal } : {}),
+      },
+    );
   }
   interactAuthoringSession(sessionId: string, interaction: AuthoringInteraction) {
     return this.invoke(
@@ -402,8 +409,15 @@ export class RelayClient {
       { authoringSessionId: sessionId },
     );
   }
-  stopAuthoringSession(sessionId: string) {
-    return this.invoke("authoring.session.stop", { sessionId }, { authoringSessionId: sessionId });
+  stopAuthoringSession(sessionId: string, signal?: AbortSignal) {
+    return this.invoke(
+      "authoring.session.stop",
+      { sessionId },
+      {
+        authoringSessionId: sessionId,
+        ...(signal ? { signal } : {}),
+      },
+    );
   }
   trimAuthoringTake(input: TrimAuthoringTakeInput) {
     return this.invoke("authoring.take.trim", input, { authoringSessionId: input.sessionId });

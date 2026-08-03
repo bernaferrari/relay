@@ -42,6 +42,8 @@ import {
 } from "../lib/review-cut";
 import { seg, segBtn, segBtnOn } from "../lib/ui";
 import type {
+  RunEvidenceEvent,
+  RunEvidenceQuery,
   VisualComparison as DurableVisualComparison,
   VisualReviewAction,
   VisualReviewDecision,
@@ -77,9 +79,7 @@ export function RunsWorkspace(props: {
     | "performance"
     | "compatibility"
   >("timeline");
-  const [runEvidence, setRunEvidence] = createSignal<
-    import("@relay/protocol").RunEvidenceQuery | null
-  >(null);
+  const [runEvidence, setRunEvidence] = createSignal<RunEvidenceQuery | null>(null);
   const [runEvidenceLoading, setRunEvidenceLoading] = createSignal(false);
   const [runEvidenceRunId, setRunEvidenceRunId] = createSignal<string | null>(null);
   const [durableVisualComparison, setDurableVisualComparison] =
@@ -140,11 +140,11 @@ export function RunsWorkspace(props: {
     // same flow forty times. Full chronology remains one deliberate click
     // away for audit work.
     if (filter !== "all" || historyExpanded()) return filtered;
-    const seenJourneys = new Set<string>();
+    const seenFlows = new Set<string>();
     return filtered.filter((row) => {
       const key = row.action || row.title || row.id;
-      if (seenJourneys.has(key)) return false;
-      seenJourneys.add(key);
+      if (seenFlows.has(key)) return false;
+      seenFlows.add(key);
       return true;
     });
   });
@@ -191,8 +191,7 @@ export function RunsWorkspace(props: {
   });
   createEffect(() => {
     const job = selected();
-    const evidenceTab = tab();
-    if (!job?.persisted || !["network", "logs", "performance"].includes(evidenceTab)) return;
+    if (!job?.persisted) return;
     if (runEvidenceRunId() === job.id && runEvidence()) return;
     setRunEvidence(null);
     setRunEvidenceRunId(job.id);
@@ -484,8 +483,20 @@ export function RunsWorkspace(props: {
             <RunReplayStage
               job={job()}
               items={selectedCanvasItems()}
+              evidence={runEvidenceRunId() === job().id ? runEvidence() : null}
               selectedIndex={selectedRunStep()}
               onSelect={selectRunStep}
+              onOpenEvidence={(event) => {
+                setTab(
+                  event.channel === "network"
+                    ? "network"
+                    : event.channel === "performance"
+                      ? "performance"
+                      : event.channel === "log"
+                        ? "logs"
+                        : "evaluation",
+                );
+              }}
               onBack={() => {
                 setSelectedId(null);
                 const url = new URL(window.location.href);
@@ -880,8 +891,10 @@ type VideoArtifactData = {
 function RunReplayStage(props: {
   job: JobInfo;
   items: FrameCanvasItem[];
+  evidence: RunEvidenceQuery | null;
   selectedIndex: number;
   onSelect: (index: number) => void;
+  onOpenEvidence: (event: RunEvidenceEvent) => void;
   onBack: () => void;
 }) {
   const server = useServer();
@@ -1074,6 +1087,16 @@ function RunReplayStage(props: {
         ? videoTotalDurationMs()
         : totalDuration();
   };
+  const evidenceMarkers = createMemo(() => {
+    const total = timelineTotalMs();
+    if (total <= 0) return [];
+    const cut = reviewCut();
+    return (props.evidence?.events ?? []).map((event) => {
+      const sourceOffset = event.at >= videoStart() ? event.at - videoStart() : event.at;
+      const projected = cutActive() && cut ? sourceTimeToReviewMs(cut, sourceOffset) : sourceOffset;
+      return { event, fraction: Math.max(0, Math.min(1, projected / total)) };
+    });
+  });
   // Seeking effect: fires whenever the selected step changes from anywhere
   // (timeline chip, step list, arrow keys) except when the change originated
   // from the video's own timeupdate — that direction is already in sync.
@@ -1322,6 +1345,8 @@ function RunReplayStage(props: {
           totalDurationMs={timelineTotalMs()}
           markerFractions={reviewMarkerFractions()}
           skippedFractions={reviewGapFractions()}
+          evidenceMarkers={evidenceMarkers()}
+          onEvidenceSelect={props.onOpenEvidence}
           speed={speed()}
           onCycleSpeed={cycleSpeed}
           onScrub={(fraction) => {

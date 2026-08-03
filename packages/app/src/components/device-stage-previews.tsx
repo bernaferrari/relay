@@ -10,7 +10,7 @@ export type DeviceBounds = { width: number; height: number };
 export type CoordinateGuide = NonNullable<ReturnType<typeof targetPointGuide>>;
 
 export type DevicePanelState = {
-  kind: "progress" | "setup" | "error";
+  kind: "progress" | "recording" | "setup" | "error";
   title: string;
   detail: string;
   primaryAction?: "open-xcode" | "open-settings" | "retry";
@@ -44,7 +44,7 @@ export function DevicePanelStatus(props: {
     <div
       class="relative z-[2] grid w-full max-w-[360px] justify-items-center gap-5 px-5 text-center"
       data-device-state={props.state.kind}
-      role={props.state.kind === "progress" ? "status" : "group"}
+      role={["progress", "recording"].includes(props.state.kind) ? "status" : "group"}
       aria-live="polite"
     >
       <span
@@ -56,7 +56,18 @@ export function DevicePanelStatus(props: {
       >
         <Show
           when={props.state.kind === "progress"}
-          fallback={<Icon name={props.state.kind === "setup" ? "sliders" : "alert"} size={20} />}
+          fallback={
+            <Icon
+              name={
+                props.state.kind === "recording"
+                  ? "circle"
+                  : props.state.kind === "setup"
+                    ? "sliders"
+                    : "alert"
+              }
+              size={props.state.kind === "recording" ? 12 : 20}
+            />
+          }
         >
           <span class="size-5 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none" />
         </Show>
@@ -72,7 +83,7 @@ export function DevicePanelStatus(props: {
       </div>
 
       <Show when={props.state.primaryAction && props.state.primaryLabel}>
-        <div class="flex min-h-10 flex-wrap items-center justify-center gap-1.5">
+        <div class="flex min-h-11 flex-wrap items-center justify-center gap-1.5">
           <Button variant="primary" size="lg" onClick={runPrimary}>
             <Show when={props.state.primaryAction === "open-xcode"}>
               <Icon name="external" size={13} />
@@ -82,7 +93,7 @@ export function DevicePanelStatus(props: {
           <Show when={props.state.secondaryRetry}>
             <button
               type="button"
-              class="inline-flex min-h-10 items-center justify-center gap-2 rounded-[9px] px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-[9px] px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
               onClick={props.onRetry}
             >
               <Icon name="refresh" size={13} /> Check again

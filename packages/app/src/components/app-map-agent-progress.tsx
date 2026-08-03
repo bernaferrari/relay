@@ -16,6 +16,7 @@ export function AppMapAgentProgress(props: {
   state: AgentState;
   stage: string;
   workers: AgentWorker[];
+  onRetry: (workerId: string) => void;
 }) {
   const complete = () => props.workers.filter((worker) => worker.status === "complete").length;
   const proposals = () => props.workers.filter((worker) => worker.proposalId).length;
@@ -90,7 +91,8 @@ export function AppMapAgentProgress(props: {
                     </Show>
                   </span>
                   <small class="mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]">
-                    {worker.targetName} · {worker.stage}
+                    {worker.targetName}
+                    {worker.focus ? ` · ${worker.focus}` : ""} · {worker.stage}
                   </small>
                   <Show when={worker.error}>
                     <small class="mt-1 block text-[9.5px]/[1.35] text-[var(--icon-critical-base)]">
@@ -98,10 +100,21 @@ export function AppMapAgentProgress(props: {
                     </small>
                   </Show>
                 </span>
-                <span class="text-right text-[9px] text-[var(--text-weak)] tabular-nums">
-                  {worker.screens}
-                  <br />
-                  screens
+                <span class="grid justify-items-end gap-1 text-right text-[9px] text-[var(--text-weak)] tabular-nums">
+                  <span>
+                    {worker.screens} screens
+                    <br />
+                    {worker.interactions}/{worker.actionBudget} actions
+                  </span>
+                  <Show when={worker.status === "error" || worker.status === "stopped"}>
+                    <button
+                      type="button"
+                      class="min-h-11 rounded-lg px-2 text-[10px] font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
+                      onClick={() => props.onRetry(worker.id)}
+                    >
+                      Retry
+                    </button>
+                  </Show>
                 </span>
               </li>
             )}

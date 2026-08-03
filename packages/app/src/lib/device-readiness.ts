@@ -35,6 +35,27 @@ export type DeviceReadinessContext = {
 const APPLE_SETUP_ISSUE =
   /(developer mode|runner|signing|xcode|provision|team id|bundle id|set.?up|account)/i;
 
+/** Turn driver and SDK diagnostics into concise recovery guidance. Raw
+ * commands, bundle identifiers, and session names belong in Activity—not in
+ * a person-facing canvas state. */
+export function presentDeviceIssue(message: string, deviceName = "the device"): string {
+  if (/active app session|no active session|session[_ ]not[_ ]found/i.test(message)) {
+    return `Relay lost the live app connection. Keep ${deviceName} unlocked, then try again.`;
+  }
+  if (/already bound|another.*session|session.*in use/i.test(message)) {
+    return `Another session is using ${deviceName}. Close it or wait for it to finish, then try again.`;
+  }
+  if (/xcode.*not signed in|apple team|accounts settings|valid credentials/i.test(message)) {
+    return "Xcode needs access to the Apple account for this iPad. Check Xcode Settings → Accounts, then try again.";
+  }
+  const firstLine = message.split("\n", 1)[0]?.trim() ?? "";
+  const withoutCommand = firstLine
+    .replace(/\s*Run\s+open\s+first.*$/i, "")
+    .replace(/\s*\(for example:.*$/i, "")
+    .trim();
+  return withoutCommand || `Relay could not read ${deviceName}. Keep it unlocked, then try again.`;
+}
+
 export function deviceReadiness(
   device: DeviceInfo | null | undefined,
   serverOnline: boolean,
@@ -64,7 +85,7 @@ export function deviceReadiness(
       kind: "ios-preparing",
       title: "Preparing this iPad",
       detail:
-        "Keep the iPad unlocked while macOS enables Apple device support. This can take a minute after Developer Mode is turned on.",
+        "Keep the iPad unlocked. Relay is finishing the local connection; this can take a minute after Developer Mode is turned on.",
     };
   }
 
@@ -75,7 +96,7 @@ export function deviceReadiness(
     return {
       kind: setupIssue ? "setup-ios" : "capture-error",
       title: setupIssue ? "Set up this iPad" : "Can’t read this screen",
-      detail: captureIssue,
+      detail: presentDeviceIssue(captureIssue, device.name ?? "the device"),
     };
   }
 
@@ -91,7 +112,7 @@ export function deviceReadiness(
       return {
         kind: "checking-ios",
         title: "Checking iPad setup",
-        detail: "Relay is checking the local runner before enabling recording.",
+        detail: "Relay is checking that this Mac can read and control the iPad.",
       };
     }
     const blockingCheck = context.appleSetup.checks.find(
@@ -103,7 +124,7 @@ export function deviceReadiness(
         title: "Set up this iPad",
         detail:
           blockingCheck?.detail ??
-          "Relay needs its local runner before it can read and control this iPad.",
+          "Relay needs one Apple device permission before it can read and control this iPad.",
       };
     }
   }

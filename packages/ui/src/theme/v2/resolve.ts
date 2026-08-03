@@ -73,39 +73,20 @@ function assignHueRamp(prefix: string, scale: HexColor[]): Record<string, V2Colo
 }
 
 function readPalette(variant: ThemeVariant): PaletteInput {
-  if ("palette" in variant && variant.palette) {
-    const palette = variant.palette;
-    return {
-      neutral: palette.neutral,
-      ink: palette.ink,
-      primary: palette.primary,
-      accent: palette.accent ?? palette.info,
-      success: palette.success,
-      warning: palette.warning,
-      error: palette.error,
-      info: palette.info,
-      interactive: palette.interactive ?? palette.primary,
-      diffAdd: palette.diffAdd ?? shift(palette.success, { c: 0.55, l: 0.14 }),
-      diffDelete: palette.diffDelete ?? palette.error,
-    };
-  }
-  if ("seeds" in variant && variant.seeds) {
-    const seeds = variant.seeds;
-    return {
-      neutral: seeds.neutral,
-      ink: seeds.neutral,
-      primary: seeds.primary,
-      accent: seeds.info,
-      success: seeds.success,
-      warning: seeds.warning,
-      error: seeds.error,
-      info: seeds.info,
-      interactive: seeds.interactive,
-      diffAdd: seeds.diffAdd,
-      diffDelete: seeds.diffDelete,
-    };
-  }
-  throw new Error("Theme variant requires `palette` or `seeds`");
+  const palette = variant.palette;
+  return {
+    neutral: palette.neutral,
+    ink: palette.ink,
+    primary: palette.primary,
+    accent: palette.accent ?? palette.info,
+    success: palette.success,
+    warning: palette.warning,
+    error: palette.error,
+    info: palette.info,
+    interactive: palette.interactive ?? palette.primary,
+    diffAdd: palette.diffAdd ?? shift(palette.success, { c: 0.55, l: 0.14 }),
+    diffDelete: palette.diffDelete ?? palette.error,
+  };
 }
 
 /** Build v2 primitive ramps (100 = lightest). Alpha ramps are static in `v2/styles/colors.css`. */

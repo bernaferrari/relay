@@ -21,6 +21,13 @@ export type IosVideoTake = {
   warning?: string;
 };
 
+/** A recorder can leave a large `mdat` behind when XCTest disappears without
+ * writing the movie index. Browsers render that as a black 0:00 player. Keep
+ * the artifact for diagnostics, but never present it as reviewable evidence. */
+export function isFinalizedMp4(data: Buffer): boolean {
+  return data.subarray(0, 64).includes(Buffer.from("ftyp")) && data.includes(Buffer.from("moov"));
+}
+
 const takesById = new Map<string, IosVideoTake>();
 const activeTakeBySerial = new Map<string, string>();
 const DEFAULT_READY_TAKE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -64,6 +71,38 @@ async function persistTake(take: IosVideoTake): Promise<void> {
 
 function pathBelongsToTakeDirectory(path: string): boolean {
   return resolve(dirname(path)) === resolve(iosVideoTakeDirectory());
+}
+
+async function finishDeviceRecording(take: IosVideoTake): Promise<{
+  path: string;
+  warning?: string;
+}> {
+  try {
+    const result = await captureDeviceVideo({ serial: take.serial, action: "stop" });
+    return {
+      path: result.path ?? take.path,
+      ...(result.warning ? { warning: result.warning } : {}),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/(?:no active recording|runner session restarted during recording)/i.test(message)) {
+      throw error;
+    }
+
+    // The daemon can disappear after it has flushed the local file, or before
+    // the first frame reaches disk. Neither case should trap the authoring
+    // session in Recording forever: preserve evidence when present and finish
+    // gracefully with an explicit warning when it is not.
+    const preserved = await access(take.path)
+      .then(() => true)
+      .catch(() => false);
+    return {
+      path: take.path,
+      warning: preserved
+        ? "Recording was interrupted when Relay restarted; preserved video may end early."
+        : "Recording was interrupted before its video could be saved.",
+    };
+  }
 }
 
 /**
@@ -139,8 +178,8 @@ export async function stopIosVideoTake(serial: string): Promise<IosVideoTake | n
   const take = takesById.get(takeId);
   activeTakeBySerial.delete(serial);
   if (!take) return null;
-  const result = await captureDeviceVideo({ serial, action: "stop" });
-  const path = result.path ?? take.path;
+  const result = await finishDeviceRecording(take);
+  const path = result.path;
   let warning = result.warning;
   try {
     await access(path);
@@ -196,9 +235,8 @@ export async function reconcileIosVideoTake(serial: string): Promise<IosVideoTak
   }
   const take = candidates.sort((left, right) => right.startedAt - left.startedAt)[0];
   if (!take) return null;
-  const result = await captureDeviceVideo({ serial, action: "stop" });
-  const path = result.path ?? take.path;
-  await access(path);
+  const result = await finishDeviceRecording(take);
+  const path = result.path;
   const complete: IosVideoTake = {
     ...take,
     path,

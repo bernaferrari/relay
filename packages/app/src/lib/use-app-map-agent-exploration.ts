@@ -8,10 +8,12 @@ import type {
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { agentTargetQueues, buildAgentWorkers } from "./app-map-agent-plan";
+import { deriveAppMapAreas } from "./app-map-browse";
 import {
   AGENT_MODELS,
   type AgentModelOption,
   type AgentState,
+  type AgentStrategy,
   type AgentWorker,
 } from "../components/app-map-agent-types";
 
@@ -23,6 +25,8 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     "Explore the important paths in this app and map distinct screens.",
   );
   const [minutes, setMinutes] = createSignal(5);
+  const [actionBudget, setActionBudget] = createSignal(60);
+  const [strategy, setStrategy] = createSignal<AgentStrategy>("divide");
   const [targetIds, setTargetIds] = createSignal<string[]>(
     server.selectedDevice() ? [server.selectedDevice()!] : [],
   );
@@ -93,6 +97,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
         prompt: [
           "You are safely exploring a mobile application to build an accurate App Map.",
           `Goal: ${goal().trim()}`,
+          ...(session.agent?.focus ? [`Assigned area: ${session.agent.focus}`] : []),
           `Current screen: ${current.title ?? "Observed screen"}`,
           `Already observed: ${session.screens.map((screen) => screen.title ?? screen.id).join(", ")}`,
           "Choose exactly one candidate that is useful and non-destructive.",
@@ -155,13 +160,14 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
           workerId: worker.id,
           appMapId: runMap.id,
           goal: goal().trim(),
+          ...(worker.focus ? { focus: worker.focus } : {}),
           provider: worker.model.provider,
           ...(worker.model.model ? { model: worker.model.model } : {}),
           source: "ui",
         },
         scope: {
-          maxScreens: 120,
-          maxTransitions: 160,
+          maxScreens: Math.max(24, worker.actionBudget),
+          maxTransitions: worker.actionBudget,
           maxDurationMs: minutes() * 60_000,
           allowSensitiveControls: false,
         },
@@ -170,7 +176,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
       await server.setDiscoveryStatus(session.id, "running");
       await server.captureDiscoveryScreen(session.id);
       const deadline = Date.now() + minutes() * 60_000;
-      const maxActions = Math.min(120, Math.max(18, minutes() * 12));
+      const maxActions = worker.actionBudget;
 
       for (let index = 0; index < maxActions && Date.now() < deadline; index += 1) {
         if (token !== runToken) break;
@@ -256,7 +262,12 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     }
 
     const token = ++runToken;
-    const plan = buildAgentWorkers(selectedTargets(), selectedModels());
+    const areas = deriveAppMapAreas(runMap).map((area) => area.title);
+    const plan = buildAgentWorkers(selectedTargets(), selectedModels(), {
+      strategy: strategy(),
+      areas,
+      actionBudget: actionBudget(),
+    });
     setWorkers(plan);
     setState("running");
     setStage(
@@ -306,6 +317,33 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     setStage("Exploration stopped");
   }
 
+  async function retry(workerId: string): Promise<void> {
+    if (state() === "running" || state() === "stopping") return;
+    const runMap = appMap();
+    const worker = workers().find((candidate) => candidate.id === workerId);
+    if (!runMap || !worker) return;
+    const token = ++runToken;
+    updateWorker(worker.id, {
+      status: "queued",
+      stage: "Waiting for target",
+      error: undefined,
+      proposalId: undefined,
+      sessionId: undefined,
+      screens: 0,
+      interactions: 0,
+    });
+    setState("running");
+    setStage(`Retrying ${worker.model.shortLabel} on ${worker.targetName}`);
+    await runWorker({ ...worker, status: "queued" }, token, runMap);
+    if (token !== runToken) return;
+    await server.refreshAppMaps();
+    const updated = workers().find((candidate) => candidate.id === worker.id);
+    setState(updated?.status === "error" ? "error" : "complete");
+    setStage(
+      updated?.proposalId ? "Proposal ready for review" : (updated?.stage ?? "Retry complete"),
+    );
+  }
+
   onCleanup(() => {
     if (state() !== "running" && state() !== "stopping") return;
     runToken += 1;
@@ -321,6 +359,8 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     targetCount: () => selectedTargets().length,
     goal,
     minutes,
+    actionBudget,
+    strategy,
     targetIds,
     modelIds,
     state,
@@ -330,10 +370,13 @@ export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
     proposalCount,
     setGoal,
     setMinutes,
+    setActionBudget,
+    setStrategy,
     setTargetIds,
     setModelIds,
     start,
     stop,
+    retry,
   };
 }
 

@@ -126,7 +126,7 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
     const msg = err instanceof Error ? err.message : String(err);
     const context = currentTargetContext();
     if (
-      /no active session|session[_ ]not[_ ]found/i.test(msg) &&
+      /no active session|active app session|session[_ ]not[_ ]found/i.test(msg) &&
       context.kind === "device" &&
       context.platform === "ios" &&
       context.serial
@@ -140,7 +140,7 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
       return await op();
     }
     if (/already bound/i.test(msg) && !getExecutingJobId()) {
-      await hardStopDeviceSession().catch(() => undefined);
+      await hardStopDeviceSession(context).catch(() => undefined);
       return await op();
     }
     throw err;
@@ -669,7 +669,17 @@ async function snapshotForTarget(
     !target.context.serial
   ) {
     return {
-      nodes: await snapshotThroughSdk(target.device, interactiveOnly),
+      // Apple can keep the local runner alive while dropping its app binding
+      // after Relay restarts or the DDI reconnects. Screenshots already heal
+      // that state through `withSession`; the accessibility tree must use the
+      // same recovery path or authoring fails while the visible Live panel
+      // continues to work.
+      nodes:
+        target.context.kind === "device" && target.context.platform === "ios"
+          ? await withSession(target.device, () =>
+              snapshotThroughSdk(target.device, interactiveOnly),
+            )
+          : await snapshotThroughSdk(target.device, interactiveOnly),
       inspectable: true,
       source: "sdk",
     };

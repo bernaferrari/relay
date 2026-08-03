@@ -69,6 +69,47 @@ test("browser authoring observation stays on the explicit browser adapter path",
   );
 });
 
+test("physical Apple authoring reads evidence through one runner channel", async () => {
+  const order: string[] = [];
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  await captureAuthoringObservation(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      order.push("snapshot:start");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      order.push("snapshot:end");
+      return {
+        serial: "ipad-a",
+        capturedAt: 10,
+        nodes: [],
+        interactive: [],
+        bounds: { width: 834, height: 1194 },
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: { schemaVersion: 1, fingerprint: "ipad-screen" },
+      };
+    },
+    async captureScreenshot() {
+      order.push("screenshot");
+      return {
+        serial: "ipad-a",
+        capturedAt: 11,
+        mime: "image/png",
+        base64: Buffer.from("ipad-png").toString("base64"),
+        path: "/ipad/capture.png",
+        bytes: 8,
+      };
+    },
+  });
+
+  assert.deepEqual(order, ["snapshot:start", "snapshot:end", "screenshot"]);
+});
+
 test("Authoring Sessions require an explicit actor-owned target lease and remain observable", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-authoring-server-"));
   const previous = {

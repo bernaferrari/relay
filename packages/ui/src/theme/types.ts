@@ -7,18 +7,6 @@ export interface OklchColor {
   h: number; // Hue 0-360
 }
 
-export interface ThemeSeedColors {
-  neutral: HexColor;
-  primary: HexColor;
-  success: HexColor;
-  warning: HexColor;
-  error: HexColor;
-  info: HexColor;
-  interactive: HexColor;
-  diffAdd: HexColor;
-  diffDelete: HexColor;
-}
-
 export interface ThemePaletteColors {
   neutral: HexColor;
   ink: HexColor;
@@ -38,9 +26,7 @@ type ThemeVariantBase = {
   v2Overrides?: Record<string, V2ColorValue>;
 };
 
-export type ThemeVariant =
-  | ({ seeds: ThemeSeedColors; palette?: never } & ThemeVariantBase)
-  | ({ palette: ThemePaletteColors; seeds?: never } & ThemeVariantBase);
+export type ThemeVariant = { palette: ThemePaletteColors } & ThemeVariantBase;
 
 export interface DesktopTheme {
   $schema?: string;

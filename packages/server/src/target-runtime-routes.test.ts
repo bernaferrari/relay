@@ -146,3 +146,66 @@ test("exposes pool capacity and installs and launches a registered artifact thro
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("launches an arbitrary app through the leased target session", async () => {
+  const launched: Array<{
+    serial: string;
+    platform: "android" | "ios";
+    app: string;
+    relaunch: boolean;
+  }> = [];
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial: "ipad-1",
+          name: "iPad",
+          platform: "ios",
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: "ipad-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      launchApp: async (input) => {
+        launched.push(input);
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "Settings", relaunch: false }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(launched, [
+      { serial: "ipad-1", platform: "ios", app: "Settings", relaunch: false },
+    ]);
+    const body = (await response.json()) as {
+      launched: { serial: string; app: string; platform: string; launchedAt: number };
+    };
+    assert.deepEqual(
+      {
+        serial: body.launched.serial,
+        app: body.launched.app,
+        platform: body.launched.platform,
+      },
+      { serial: "ipad-1", app: "Settings", platform: "ios" },
+    );
+    assert.equal(Number.isFinite(body.launched.launchedAt), true);
+  } finally {
+    await server.close();
+  }
+});

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { currentTargetContext, targetSessionName, type TargetContext } from "./target-context.js";
+import { targetSessionName, type TargetContext } from "./target-context.js";
 
 /**
  * Job control — cooperative pause + aggressive cancel.
@@ -185,22 +185,11 @@ export async function cooperativeCheckpointWithTimeout(
 }
 
 /** Best-effort: close agent-device session so in-flight commands drop. */
-export async function hardStopDeviceSession(target?: TargetContext): Promise<void> {
+export async function hardStopDeviceSession(target: TargetContext): Promise<void> {
   try {
     const { createAgentDeviceClient } = await import("agent-device");
-    let context = target;
-    if (!context) {
-      try {
-        context = currentTargetContext();
-      } catch {
-        // Legacy callers without an explicit target can only address the
-        // explicitly configured shared session.
-      }
-    }
     const client = createAgentDeviceClient({
-      session:
-        process.env.AGENT_DEVICE_SESSION?.trim() ||
-        (context ? targetSessionName(context) : "relay-actions"),
+      session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(target),
     });
     await client.sessions.close({ shutdown: false });
   } catch {

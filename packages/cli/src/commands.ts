@@ -155,6 +155,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.app.launch",
+    path("target app launch", ["serial", "app"]),
+    path("device launch", ["serial", "app"], undefined, {
+      summary: "Launch an app and make it the active device session",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected device serial" },
+        { name: "app", type: "string", description: "App name, package, or bundle identifier" },
+      ],
+      examples: [
+        "relay device launch emulator-5554 com.example.app",
+        "relay device launch 00008110 Settings",
+      ],
+    }),
+  ),
+  mapped(
     "target.interact",
     path("target interact", ["serial"]),
     path("device interact", ["serial"], undefined, {

@@ -93,7 +93,12 @@ async function recentIosRunnerFailure(udid?: string): Promise<string | undefined
     try {
       const info = await stat(path);
       if (Date.now() - info.mtimeMs > 60_000) continue;
-      const log = (await readFile(path, "utf8")).slice(-32_768);
+      const tail = (await readFile(path, "utf8")).slice(-32_768);
+      // runner.log is reused across launches. Only the newest xcodebuild
+      // invocation can explain the operation that just failed; an old signing
+      // line must not turn a later app-session error into fake setup work.
+      const invocation = tail.lastIndexOf("Command line invocation:");
+      const log = invocation >= 0 ? tail.slice(invocation) : tail;
       if (/no account for team|valid credentials/i.test(log)) {
         return "No Account for Team";
       }
@@ -137,8 +142,23 @@ export function normalizeIosRunnerError(error: unknown): Error {
  * present the same actionable setup state.
  */
 export async function diagnoseIosRunnerError(error: unknown, udid?: string): Promise<Error> {
+  const normalized = normalizeIosRunnerError(error);
+  const message = error instanceof Error ? error.message : String(error);
+  if (normalized instanceof IosRunnerSetupError) {
+    const diagnostic = await recentIosRunnerFailure(udid);
+    return diagnostic ? normalizeIosRunnerError(new Error(diagnostic)) : normalized;
+  }
+
+  // Session, lease, and app-binding failures are runtime problems. Looking at
+  // a recently touched runner.log for every error allowed an older signing
+  // line to relabel them as an Xcode-account problem whenever a healthy runner
+  // later appended new output. Only enrich errors that actually came from
+  // runner preparation.
+  if (!/runner|prepare|xcodebuild|build-for-testing|ios-runner/i.test(message)) {
+    return error instanceof Error ? error : new Error(message);
+  }
   const diagnostic = await recentIosRunnerFailure(udid);
-  return normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
+  return diagnostic ? normalizeIosRunnerError(new Error(diagnostic)) : normalized;
 }
 
 /**
@@ -169,15 +189,7 @@ export async function recordIosVideo(
   input: { udid: string; action: "start" | "stop"; path?: string },
 ): Promise<IosVideoCaptureResult> {
   try {
-    const result = await device.recording.record({
-      platform: "ios",
-      udid: input.udid,
-      device: input.udid,
-      action: input.action,
-      ...(input.path ? { path: input.path } : {}),
-      fps: 30,
-      quality: "high",
-    } as Parameters<Device["recording"]["record"]>[0]);
+    const result = await device.recording.record(iosRecordingOptions(input));
     return {
       mode: "recorded-video",
       ...(valueFrom(result, "path") || input.path
@@ -189,4 +201,25 @@ export async function recordIosVideo(
     const diagnostic = await recentIosRunnerFailure(input.udid);
     throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
   }
+}
+
+/**
+ * Physical Apple targets have one canonical selector: their UDID. Passing the
+ * same value through the generic `device` field as well makes agent-device
+ * compare two selector forms, reject its existing binding, and discard the
+ * active app session that recording needs.
+ */
+export function iosRecordingOptions(input: {
+  udid: string;
+  action: "start" | "stop";
+  path?: string;
+}): Parameters<Device["recording"]["record"]>[0] {
+  return {
+    platform: "ios",
+    udid: input.udid,
+    action: input.action,
+    ...(input.path ? { path: input.path } : {}),
+    fps: 30,
+    quality: "high",
+  } as Parameters<Device["recording"]["record"]>[0];
 }

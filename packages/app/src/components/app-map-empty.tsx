@@ -184,8 +184,8 @@ export function EmptyAppMap(props: {
         <button
           type="button"
           class={emptyMapToolButton}
-          aria-label="Capture screen"
-          data-tip="Capture screen"
+          aria-label="Capture screenshot"
+          data-tip="Capture screenshot"
           onClick={props.onCaptureFirstScreen}
         >
           <Icon name="smartphone" size={14} />

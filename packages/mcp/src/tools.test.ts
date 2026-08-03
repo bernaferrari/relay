@@ -129,6 +129,17 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
   assert.throws(() => screenshot.inputSchema.parse({ input: { serial: "device-1" } }));
 });
 
+test("exposes app launch as one high-intent leased target tool", () => {
+  const launch = tool("target.app.launch");
+  assert.equal(launch.name, "relay_target_app_launch");
+  assert.match(launch.description, /Target capabilities: launch/);
+  assert.match(launch.description, /Lease: exclusive/);
+  assert.deepEqual(launch.inputSchema.parse({ serial: "ipad-1", app: "Settings" }), {
+    serial: "ipad-1",
+    app: "Settings",
+  });
+});
+
 test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
   assert.deepEqual(
     tool("app-map.update").inputSchema.parse({
@@ -160,7 +171,7 @@ test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
     tool("app-map.update").inputSchema.parse({
       appMapId: "checkout",
       expectedRevision: 3,
-      patch: { secretLegacyField: true },
+      patch: { unknownSecretField: true },
     }),
   );
 });

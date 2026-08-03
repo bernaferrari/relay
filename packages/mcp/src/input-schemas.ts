@@ -110,6 +110,13 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "target.authorize": z.object(targetReference).strict(),
   "target.snapshot.capture": z.object(targetReference).strict(),
   "target.screenshot.capture": z.object(targetReference).strict(),
+  "target.app.launch": z
+    .object({
+      ...targetReference,
+      app: text("App name, package, or bundle identifier"),
+      relaunch: z.boolean().optional(),
+    })
+    .strict(),
   "target.interact": z
     .object({
       ...targetReference,

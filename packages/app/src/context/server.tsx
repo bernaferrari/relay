@@ -658,12 +658,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function observeAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.observeAuthoringSession(id)).session);
+      return projectAuthoringSession(
+        (await client!.observeAuthoringSession(id, AbortSignal.timeout(120_000))).session,
+      );
     }
 
     async function startAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.startAuthoringSession(id)).session);
+      return projectAuthoringSession(
+        (await client!.startAuthoringSession(id, AbortSignal.timeout(120_000))).session,
+      );
     }
 
     async function interactAuthoringSession(
@@ -678,7 +682,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function stopAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.stopAuthoringSession(id)).session);
+      return projectAuthoringSession(
+        (await client!.stopAuthoringSession(id, AbortSignal.timeout(120_000))).session,
+      );
     }
 
     async function trimAuthoringTake(

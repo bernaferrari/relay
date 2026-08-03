@@ -28,7 +28,7 @@ import type {
 } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
-import { startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
+import { isFinalizedMp4, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
 import type { RequestContext } from "./security.js";
 
 function targetContext(target: AuthoringTarget) {
@@ -38,9 +38,12 @@ function targetContext(target: AuthoringTarget) {
 }
 
 async function deviceFor(session: AuthoringSession) {
-  return session.target.kind === "browser"
-    ? await getBrowserDevice(session.target.targetId)
-    : createDevice();
+  const context = targetContext(session.target);
+  return runWithTargetContext(context, () =>
+    session.target.kind === "browser"
+      ? getBrowserDevice(session.target.targetId)
+      : Promise.resolve(createDevice()),
+  );
 }
 
 type AuthoringObservationDependencies = {
@@ -62,10 +65,18 @@ export async function captureAuthoringObservation(
 ): Promise<CapturedAuthoringObservation> {
   const device = await dependencies.resolveDevice(session);
   return runWithTargetContext(targetContext(session.target), async () => {
-    const [snapshot, screenshot] = await Promise.all([
-      dependencies.captureSnapshot(device),
-      dependencies.captureScreenshot(device),
-    ]);
+    // A physical Apple device has one XCTest command channel. Issuing the UI
+    // tree and fallback screenshot concurrently makes the runner cancel one
+    // request, so an otherwise healthy iPad intermittently falls back out of
+    // recording. Android, simulators, and browsers keep the faster parallel
+    // path because their capture transports are independent.
+    const [snapshot, screenshot] =
+      session.target.kind === "device" && session.target.platform === "ios"
+        ? [await dependencies.captureSnapshot(device), await dependencies.captureScreenshot(device)]
+        : await Promise.all([
+            dependencies.captureSnapshot(device),
+            dependencies.captureScreenshot(device),
+          ]);
     return {
       capturedAt: Math.max(snapshot.capturedAt, screenshot.capturedAt),
       targetId: session.target.targetId,
@@ -155,15 +166,21 @@ function runtime(): AuthoringRuntime {
       const take = await stopIosVideoTake(session.target.targetId);
       if (!take) return { warning: "No active Apple video recording was found." };
       let data: Buffer | undefined;
+      let warning = take.warning;
       try {
         data = await readFile(take.path);
+        if (!isFinalizedMp4(data)) {
+          data = undefined;
+          warning ??=
+            "Apple recording ended before its video was finalized. The transition and final screen were still saved.";
+        }
       } catch {
         data = undefined;
       }
       return {
         ...(data ? { data } : {}),
         mime: "video/mp4",
-        ...(take.warning ? { warning: take.warning } : {}),
+        ...(warning ? { warning } : {}),
       };
     },
   };

@@ -6,7 +6,7 @@ import { cn } from "../lib/cn";
 
 const labelClass = "text-12-medium text-text-strong";
 const inputClass =
-  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
+  "h-11 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
 
 export function DeviceSettingsPanel() {
   const server = useServer();
@@ -125,8 +125,8 @@ export function DeviceSettingsPanel() {
       <div class="border-t border-border-weak-base pt-4">
         <h4 class="m-0 text-12-medium text-text-strong">Apple devices</h4>
         <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-          Physical iPhone and iPad control uses Xcode’s local developer tools. Relay handles the
-          connection for you.
+          Relay connects to iPhones and iPads through the Apple device support already on this Mac.
+          You only need to intervene when a permission is missing.
         </p>
       </div>
 
@@ -168,11 +168,11 @@ export function DeviceSettingsPanel() {
                           <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-warning-base" />
                           <div class="min-w-0">
                             <p class="m-0 text-12-medium text-text-strong">
-                              Connect an Apple account in Xcode
+                              Apple device access needs attention
                             </p>
                             <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-                              Add your Apple account in Xcode once. Relay will handle the device
-                              connection after that.
+                              Open Xcode once and add an Apple account. Relay will use that local
+                              permission for this device.
                             </p>
                           </div>
                         </div>

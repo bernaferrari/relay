@@ -33,11 +33,13 @@ function operation(operationId = "authoring.test"): OperationContext {
 class FakeRuntime implements AuthoringRuntime {
   screen = "source";
   observations = 0;
+  lifecycle: string[] = [];
   executed: AuthoringInteraction[] = [];
   replayed: RecipeStep[][] = [];
   failReplay = false;
 
   async observe() {
+    this.lifecycle.push("observe");
     this.observations += 1;
     const capturedAt = 1_000 + this.observations;
     return {
@@ -60,9 +62,12 @@ class FakeRuntime implements AuthoringRuntime {
     if (this.failReplay) throw new Error("replay failed");
   }
 
-  async startVideo() {}
+  async startVideo() {
+    this.lifecycle.push("start-video");
+  }
 
   async stopVideo() {
+    this.lifecycle.push("stop-video");
     return { data: Buffer.from("video"), mime: "video/mp4" };
   }
 }
@@ -237,7 +242,9 @@ test("the session routes every supported control and evidence-only interaction",
     for (const interaction of interactions) {
       session = await store.interact(session.id, interaction, runtime);
     }
+    runtime.lifecycle = [];
     session = await store.stop(session.id, runtime);
+    assert.deepEqual(runtime.lifecycle.slice(0, 2), ["stop-video", "observe"]);
     const revision = session.take!.revisions.at(-1)!;
     assert.equal(revision.actions.length, interactions.length);
     assert.deepEqual(

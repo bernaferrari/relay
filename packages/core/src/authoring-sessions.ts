@@ -421,10 +421,15 @@ async function finishRecording(
   idleStartedAt?: number,
 ): Promise<AuthoringSession> {
   const stoppedAt = now();
-  const captured = await persistObservation(await runtime.observe(session));
+  // Seal the transport before asking the target for its final state. On a
+  // physical Apple device both video and snapshots use XCTest; taking the
+  // snapshot first restarts the runner and destroys the active recording.
+  // The final observation still happens immediately afterwards and therefore
+  // remains the destination state for this Take.
   const video = await runtime.stopVideo?.(session);
+  const captured = await persistObservation(await runtime.observe(session));
   const before = currentRevision(session).before?.capturedAt ?? captured.observation.capturedAt;
-  const videoEndMs = Math.max(0, captured.observation.capturedAt - before);
+  const videoEndMs = Math.max(0, stoppedAt - before);
   const videoEvidence = video?.data
     ? [
         await persistAuthoringEvidence({

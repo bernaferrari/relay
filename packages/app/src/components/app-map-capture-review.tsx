@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
 import type { AuthoringInteraction, CanvasScreen, RecordingClip } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
@@ -448,88 +449,92 @@ export function RecordedTakePlayer(props: {
         </div>
       </Show>
 
-      <div
-        data-device-chrome
-        class={cn(
-          reviewPhoneShell,
-          "relative z-[1] h-[min(790px,calc(100%-136px))] max-w-[min(440px,calc(100%-56px))] shrink-0",
-        )}
-        style={{ "aspect-ratio": "9 / 19.5" }}
+      <Show
+        when={Boolean(props.videoSrc || imageSrc())}
+        fallback={
+          <div class="grid w-full max-w-[340px] justify-items-center gap-3 rounded-[14px] bg-[var(--v2-background-bg-layer-01)] px-8 py-9 text-center shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_8px_30px_-24px_rgb(0_0_0/30%)]">
+            <span class="grid size-10 place-items-center rounded-[12px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]">
+              <Icon name="camera" size={18} />
+            </span>
+            <div>
+              <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">
+                No screen captured
+              </strong>
+              <p class="m-0 mt-1 max-w-[30ch] text-[11px]/[1.5] text-[var(--text-weak)]">
+                This passive connection has no frame or video to preview.
+              </p>
+            </div>
+          </div>
+        }
       >
         <div
-          class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[20px] bg-black")}
+          data-device-chrome
+          class={cn(
+            reviewPhoneShell,
+            "relative z-[1] h-[min(790px,calc(100%-136px))] max-w-[min(440px,calc(100%-56px))] shrink-0",
+          )}
+          style={{ "aspect-ratio": "9 / 19.5" }}
         >
-          <Show
-            when={props.videoSrc}
-            fallback={
-              <Show
-                when={imageSrc()}
-                fallback={
-                  <div class="grid h-full place-items-center bg-[var(--v2-background-bg-base)] px-7 text-center">
-                    <div class="grid justify-items-center gap-2.5">
-                      <span class="grid size-10 place-items-center rounded-[12px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]">
-                        <Icon name="camera" size={18} />
-                      </span>
-                      <div>
-                        <strong class="block text-[12px] font-semibold text-[var(--text-strong)]">
-                          No screen captured
-                        </strong>
-                        <p class="m-0 mt-1 text-[10.5px]/[1.45] text-[var(--text-weak)]">
-                          This action is kept, but it has no recorded frame to preview.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                }
-              >
+          <div
+            class={cn(
+              phoneScreen,
+              "relative h-full w-full overflow-hidden rounded-[20px] bg-black",
+            )}
+          >
+            <Show
+              when={props.videoSrc}
+              fallback={
                 <img
                   class="h-full w-full object-contain"
                   src={imageSrc()}
                   alt={`Recorded screen for ${title()}`}
                   draggable={false}
                 />
-              </Show>
-            }
-          >
-            {(src) => (
-              <video
-                ref={(element) => {
-                  video = element;
-                }}
-                class="h-full w-full object-contain"
-                src={src()}
-                controls
-                playsinline
-                aria-label="Recorded take video"
-                onLoadedMetadata={(event) => {
-                  const nextDuration = Math.max(0, Math.round(event.currentTarget.duration * 1000));
-                  setDurationMs(nextDuration);
-                  if (!props.clip && nextDuration > 0) {
-                    props.onClip?.({ startMs: 0, endMs: nextDuration });
-                  }
-                }}
-                onPlay={(event) => {
-                  const clip = props.clip;
-                  if (
-                    clip &&
-                    (event.currentTarget.currentTime * 1000 < clip.startMs ||
-                      event.currentTarget.currentTime * 1000 >= clip.endMs)
-                  ) {
-                    event.currentTarget.currentTime = clip.startMs / 1000;
-                  }
-                }}
-                onTimeUpdate={(event) => {
-                  const clip = props.clip;
-                  if (clip && event.currentTarget.currentTime * 1000 >= clip.endMs) {
-                    event.currentTarget.pause();
-                    event.currentTarget.currentTime = clip.startMs / 1000;
-                  }
-                }}
-              />
-            )}
-          </Show>
+              }
+            >
+              {(src) => (
+                <video
+                  ref={(element) => {
+                    video = element;
+                  }}
+                  class="h-full w-full object-contain"
+                  src={src()}
+                  controls
+                  playsinline
+                  aria-label="Recorded take video"
+                  onLoadedMetadata={(event) => {
+                    const nextDuration = Math.max(
+                      0,
+                      Math.round(event.currentTarget.duration * 1000),
+                    );
+                    setDurationMs(nextDuration);
+                    if (!props.clip && nextDuration > 0) {
+                      props.onClip?.({ startMs: 0, endMs: nextDuration });
+                    }
+                  }}
+                  onPlay={(event) => {
+                    const clip = props.clip;
+                    if (
+                      clip &&
+                      (event.currentTarget.currentTime * 1000 < clip.startMs ||
+                        event.currentTarget.currentTime * 1000 >= clip.endMs)
+                    ) {
+                      event.currentTarget.currentTime = clip.startMs / 1000;
+                    }
+                  }}
+                  onTimeUpdate={(event) => {
+                    const clip = props.clip;
+                    if (clip && event.currentTarget.currentTime * 1000 >= clip.endMs) {
+                      event.currentTarget.pause();
+                      event.currentTarget.currentTime = clip.startMs / 1000;
+                    }
+                  }}
+                />
+              )}
+            </Show>
+          </div>
         </div>
-      </div>
+      </Show>
 
       <Show when={props.videoSrc && durationMs() > 0 ? props.clip : undefined}>
         {(clip) => {
@@ -631,7 +636,6 @@ export function AppMapEmptyState(props: {
     | "checking-ios"
     | "preparing-ios"
     | "preparing-screen"
-    | "setup-check-failed"
     | "setup-ios"
     | "enable-developer-mode"
     | "capture-error"
@@ -641,7 +645,8 @@ export function AppMapEmptyState(props: {
   deviceSelected: boolean;
   liveScreenSrc?: string;
   captureBusy: boolean;
-  onUseCurrentScreen: () => void;
+  onStartRecording: () => void;
+  onCaptureScreen: () => void;
   onAddNote: () => void;
   onToggleDevice: () => void;
 }) {
@@ -662,9 +667,8 @@ export function AppMapEmptyState(props: {
     }
     if (!props.deviceOpen) {
       return {
-        title: "Set the entry screen",
-        detail:
-          "Use Device in the toolbar, navigate to the beginning, then save that screen to the canvas.",
+        title: "Start anywhere",
+        detail: "Open Device to navigate first, or record from the screen already on your device.",
       };
     }
     switch (props.recordState) {
@@ -675,7 +679,6 @@ export function AppMapEmptyState(props: {
         };
       case "setup-ios":
       case "enable-developer-mode":
-      case "setup-check-failed":
       case "capture-error":
         return {
           title: "Finish device setup",
@@ -696,8 +699,8 @@ export function AppMapEmptyState(props: {
         };
       default:
         return {
-          title: "Set the entry screen",
-          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this flow begins, then capture the current screen.`,
+          title: "Start anywhere",
+          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this flow begins. Relay captures it when recording starts.`,
         };
     }
   };
@@ -711,59 +714,46 @@ export function AppMapEmptyState(props: {
           )}
           style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
         >
-          <section class="grid w-[min(410px,calc(100vw-48px))] justify-items-center text-center">
-            <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
-              <Icon name={isRecording() ? "camera" : "smartphone"} size={20} />
-            </span>
-            <h2 class="m-0 mt-4 text-[22px]/[1.2] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
+          <section class="grid w-[min(390px,calc(100vw-48px))] justify-items-center text-center">
+            <h2 class="m-0 text-balance text-[20px]/[1.25] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
               {guidance().title}
             </h2>
-            <p class="m-0 mt-2 max-w-[42ch] text-[13px]/[1.55] text-[var(--text-weak)] text-pretty">
+            <p class="m-0 mt-1.5 max-w-[40ch] text-pretty text-[13px]/[1.5] text-[var(--text-weak)]">
               {guidance().detail}
             </p>
             <Show when={!props.take}>
-              <div class="mt-4 flex min-h-11 items-center gap-3">
-                <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
-                  <i
-                    class={cn(
-                      "size-1.5 rounded-full",
-                      props.recordState === "ready"
-                        ? "bg-[var(--icon-success-base)]"
-                        : "bg-[var(--icon-warning-base)] motion-safe:animate-pulse",
-                    )}
-                  />
-                  {props.recordState === "ready"
-                    ? "Ready to capture"
-                    : props.recordState === "choose-device"
+              <div class="mt-4 flex min-h-11 items-center justify-center gap-3">
+                <Show when={props.recordState !== "ready"}>
+                  <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
+                    <i class="size-1.5 rounded-full bg-[var(--icon-warning-base)] motion-safe:animate-pulse" />
+                    {props.recordState === "choose-device"
                       ? "Waiting for a device"
                       : props.recordState === "device-unavailable"
                         ? "Device unavailable"
                         : props.recordState === "setup-ios" ||
-                            props.recordState === "enable-developer-mode" ||
-                            props.recordState === "setup-check-failed"
+                            props.recordState === "enable-developer-mode"
                           ? "Setup needed"
                           : props.deviceOpen
                             ? "Connecting…"
                             : "Press D to show the device"}
-                </span>
+                  </span>
+                </Show>
                 <Show when={props.recordState === "ready"}>
-                  <button
-                    type="button"
-                    class={cn(
-                      primaryButton,
-                      "ml-auto shrink-0 justify-center px-4 shadow-[0_8px_24px_-12px_color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)]",
-                    )}
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    class="min-w-[148px] shrink-0"
                     disabled={props.captureBusy}
                     aria-busy={props.captureBusy}
-                    onClick={props.onUseCurrentScreen}
+                    onClick={props.onStartRecording}
                   >
                     <Icon
-                      name={props.captureBusy ? "refresh" : "camera"}
+                      name={props.captureBusy ? "refresh" : "circle"}
                       size={13}
                       class={props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
                     />
-                    {props.captureBusy ? "Saving…" : "Use current screen"}
-                  </button>
+                    {props.captureBusy ? "Preparing…" : "Start recording"}
+                  </Button>
                 </Show>
               </div>
             </Show>
@@ -790,10 +780,11 @@ export function AppMapEmptyState(props: {
         <button
           type="button"
           class={emptyMapControl}
-          aria-label="Capture screen"
-          onClick={props.onUseCurrentScreen}
+          aria-label="Capture screenshot"
+          data-tip="Capture screenshot · S"
+          onClick={props.onCaptureScreen}
         >
-          <Icon name="smartphone" size={14} />
+          <Icon name="camera" size={14} />
         </button>
         <button type="button" class={emptyMapControl} aria-label="Create connection" disabled>
           <Icon name="arrow-right" size={14} />

@@ -8,6 +8,7 @@ import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
+import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
@@ -63,6 +64,7 @@ export function ScreenCard(props: {
   runState?: AppMapRunPresentationState;
   position: { x: number; y: number };
   src: () => string;
+  orientationEvidence?: ScreenshotOrientationEvidence;
   onSelect: () => void;
   onRename: () => void;
   onOpenDetails: () => void;
@@ -232,11 +234,11 @@ export function ScreenCard(props: {
               frameStateClass(),
             )}
           >
-            <img
+            <OrientedScreenshot
               src={src()}
               alt={`Recorded ${props.title} screen`}
-              draggable={false}
               class="size-full object-contain object-top"
+              evidence={props.orientationEvidence}
             />
           </div>
         )}

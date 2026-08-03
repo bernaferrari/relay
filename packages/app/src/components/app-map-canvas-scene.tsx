@@ -12,6 +12,7 @@ import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasNoteCard, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
+import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 type ConnectionPreview = Readonly<{
   fromScreenId: string;
@@ -34,6 +35,7 @@ export type AppMapCanvasSceneProps = {
   positionFor: (node: MapTreeNode) => CanvasPoint;
   titleFor: (node: MapTreeNode) => string;
   imageFor: (node: MapTreeNode) => string;
+  orientationEvidenceFor: (node: MapTreeNode) => ScreenshotOrientationEvidence | undefined;
   isFlowStart: (node: MapTreeNode) => boolean;
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
   connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
@@ -279,6 +281,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             runState={props.screenRunState(node.id)}
             position={props.positionFor(node)}
             src={() => props.imageFor(node)}
+            orientationEvidence={props.orientationEvidenceFor(node)}
             onSelect={() => props.onSelectNode(node)}
             onRename={() => props.onRenameNode(node)}
             onOpenDetails={() => props.onOpenNodeDetails(node)}

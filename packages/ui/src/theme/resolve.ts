@@ -501,46 +501,20 @@ interface ThemeColors {
 }
 
 function getColors(variant: ThemeVariant): ThemeColors {
-  const input = variant as { palette?: unknown; seeds?: unknown };
-  if (input.palette && input.seeds) {
-    throw new Error("Theme variant cannot define both `palette` and `seeds`");
-  }
-
-  if (variant.palette) {
-    return {
-      compact: true,
-      neutral: variant.palette.neutral,
-      ink: variant.palette.ink,
-      primary: variant.palette.primary,
-      accent: variant.palette.accent ?? variant.palette.info,
-      success: variant.palette.success,
-      warning: variant.palette.warning,
-      error: variant.palette.error,
-      info: variant.palette.info,
-      interactive: variant.palette.interactive ?? variant.palette.primary,
-      diffAdd: variant.palette.diffAdd,
-      diffDelete: variant.palette.diffDelete,
-    };
-  }
-
-  if (variant.seeds) {
-    return {
-      compact: false,
-      neutral: variant.seeds.neutral,
-      ink: undefined,
-      primary: variant.seeds.primary,
-      accent: variant.seeds.info,
-      success: variant.seeds.success,
-      warning: variant.seeds.warning,
-      error: variant.seeds.error,
-      info: variant.seeds.info,
-      interactive: variant.seeds.interactive,
-      diffAdd: variant.seeds.diffAdd,
-      diffDelete: variant.seeds.diffDelete,
-    };
-  }
-
-  throw new Error("Theme variant requires `palette` or `seeds`");
+  return {
+    compact: true,
+    neutral: variant.palette.neutral,
+    ink: variant.palette.ink,
+    primary: variant.palette.primary,
+    accent: variant.palette.accent ?? variant.palette.info,
+    success: variant.palette.success,
+    warning: variant.palette.warning,
+    error: variant.palette.error,
+    info: variant.palette.info,
+    interactive: variant.palette.interactive ?? variant.palette.primary,
+    diffAdd: variant.palette.diffAdd,
+    diffDelete: variant.palette.diffDelete,
+  };
 }
 
 function generateNeutralAlphaScale(neutralScale: HexColor[], isDark: boolean): HexColor[] {

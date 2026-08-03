@@ -141,6 +141,11 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { actionId: "login", serial: "pixel-9" },
     ],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
+    [
+      ["device", "launch", "ipad-1", "Settings"],
+      "target.app.launch",
+      { serial: "ipad-1", app: "Settings" },
+    ],
     [["proposal", "record", "proposal-1"], "authoring.session.start", { sessionId: "proposal-1" }],
     [["proposal", "accept", "proposal-1"], "authoring.session.commit", { sessionId: "proposal-1" }],
     [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],

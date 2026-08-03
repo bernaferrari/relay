@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   diagnoseIosRunnerError,
+  iosRecordingOptions,
   IosRunnerSetupError,
   normalizeIosRunnerError,
 } from "./ios-device-adapter.js";
@@ -65,7 +66,44 @@ test("reads signing diagnostics from the selected iPad session", async () => {
   }
 });
 
+test("does not relabel an app-session failure from an older signing log", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-ios-runtime-log-"));
+  const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
+  const udid = "ipad-runtime";
+  try {
+    process.env.AGENT_DEVICE_STATE_DIR = root;
+    const session = join(root, "sessions", "relay-ios-ipad-runtime");
+    await mkdir(session, { recursive: true });
+    await writeFile(
+      join(session, "runner.log"),
+      'old error: No Account for Team "ABCDE12345".\nCommand line invocation:\nnew runner command completed ok=1\n',
+      "utf8",
+    );
+
+    const original = new Error("iOS snapshot requires an active app session");
+    assert.equal(await diagnoseIosRunnerError(original, udid), original);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("keeps regular runner failures intact", () => {
   const original = new Error("The iPad was unplugged");
   assert.equal(normalizeIosRunnerError(original), original);
+});
+
+test("records a physical iPad with one canonical target selector", () => {
+  const options = iosRecordingOptions({
+    udid: "ipad-udid",
+    action: "start",
+    path: "/tmp/take.mp4",
+  }) as Record<string, unknown>;
+
+  assert.equal(options.platform, "ios");
+  assert.equal(options.udid, "ipad-udid");
+  assert.equal(options.device, undefined);
+  assert.equal(options.action, "start");
+  assert.equal(options.path, "/tmp/take.mp4");
 });

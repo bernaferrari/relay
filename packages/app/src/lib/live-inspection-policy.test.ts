@@ -22,3 +22,10 @@ test("inactive device control does not poll either capture path", () => {
     pollFallbackFrame: false,
   });
 });
+
+test("an exclusive physical-device recording suspends all inspection polling", () => {
+  assert.deepEqual(liveInspectionPolicy(true, true, true), {
+    pollSnapshot: false,
+    pollFallbackFrame: false,
+  });
+});

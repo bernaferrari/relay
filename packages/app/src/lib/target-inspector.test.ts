@@ -69,7 +69,7 @@ describe("target inspector evidence model", () => {
 
   it("reconstructs sibling ancestry geometrically for older captures", () => {
     const sibling = { ref: "@sibling", rect: { x: 20, y: 100, width: 40, height: 40 } };
-    const legacyEvidence = {
+    const sparseEvidence = {
       ...evidence,
       nodes: [
         { ref: "@screen", role: "screen", rect: { x: 0, y: 0, width: 100, height: 200 } },
@@ -79,7 +79,7 @@ describe("target inspector evidence model", () => {
       ],
     };
     assert.deepEqual(
-      recordedNodeHierarchy(legacyEvidence, sibling).map((node) => node.ref),
+      recordedNodeHierarchy(sparseEvidence, sibling).map((node) => node.ref),
       ["@sibling", "@row", "@screen"],
     );
   });

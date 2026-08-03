@@ -39,60 +39,6 @@
       "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|var\\(--[a-z0-9-]+\\))$",
       "description": "Either a hex color value (#rgb/#rgba/#rrggbb/#rrggbbaa) or a CSS variable reference"
     },
-    "ThemeSeedColors": {
-      "type": "object",
-      "description": "The semantic seed set used to generate a theme",
-      "additionalProperties": false,
-      "required": [
-        "neutral",
-        "primary",
-        "success",
-        "warning",
-        "error",
-        "info",
-        "interactive",
-        "diffAdd",
-        "diffDelete"
-      ],
-      "properties": {
-        "neutral": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Base neutral color for generating the gray scale"
-        },
-        "primary": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Primary brand/accent color"
-        },
-        "success": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Success state color (typically green)"
-        },
-        "warning": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Warning state color (typically yellow/orange)"
-        },
-        "error": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Error/critical state color (typically red)"
-        },
-        "info": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Informational state color (typically purple/blue)"
-        },
-        "interactive": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Interactive element color (links, buttons)"
-        },
-        "diffAdd": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Color for diff additions"
-        },
-        "diffDelete": {
-          "$ref": "#/definitions/HexColor",
-          "description": "Color for diff deletions"
-        }
-      }
-    },
     "ThemePaletteColors": {
       "type": "object",
       "description": "A compact semantic palette used to derive the full theme programmatically",
@@ -147,13 +93,9 @@
     },
     "ThemeVariant": {
       "type": "object",
-      "description": "A theme variant (light or dark) with either a compact palette or semantic seeds and optional overrides",
-      "oneOf": [{ "required": ["seeds"] }, { "required": ["palette"] }],
+      "description": "A theme variant (light or dark) with a compact palette and optional overrides",
+      "required": ["palette"],
       "properties": {
-        "seeds": {
-          "$ref": "#/definitions/ThemeSeedColors",
-          "description": "Legacy seed colors used to generate the full palette"
-        },
         "palette": {
           "$ref": "#/definitions/ThemePaletteColors",
           "description": "Compact palette used to derive the full token set"

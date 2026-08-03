@@ -26,6 +26,12 @@ export function targetIsReady(target: DeviceInfo | null | undefined, online: boo
   );
 }
 
+export function targetIsPhysicalIos(target: DeviceInfo | null | undefined): boolean {
+  return Boolean(
+    target?.platform === "ios" && !/simulator|emulator/i.test(String(target.kind ?? "")),
+  );
+}
+
 export function preferredTargetSerial(targets: readonly DeviceInfo[]): string | null {
   return targets.find((target) => targetIsReady(target, true))?.serial ?? null;
 }

@@ -3,7 +3,13 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { iosVideoTakeDirectory, pruneIosVideoTakes } from "./ios-video-capture.js";
+import { iosVideoTakeDirectory, isFinalizedMp4, pruneIosVideoTakes } from "./ios-video-capture.js";
+
+test("recognizes only finalized MP4 evidence", () => {
+  assert.equal(isFinalizedMp4(Buffer.from("....ftyp....mdat....moov....")), true);
+  assert.equal(isFinalizedMp4(Buffer.from("....ftyp....mdat....")), false);
+  assert.equal(isFinalizedMp4(Buffer.from("not a movie")), false);
+});
 
 test("stores Apple review takes outside runs and prunes only expired ready evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-ios-takes-"));

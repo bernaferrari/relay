@@ -11,7 +11,6 @@ type Toast = { id: number; text: string; tone: ToastTone };
  *   window.dispatchEvent(new CustomEvent("stage:toast", { detail: { text, tone } }))
  * or from inside the provider via useToast().push(...).
  * This keeps the toast system free of import cycles (e.g. the server/command contexts).
- * Legacy `specimen:toast` is still accepted for one release.
  */
 export const { use: useToast, provider: ToastProvider } = createSimpleContext({
   name: "Toast",
@@ -50,7 +49,7 @@ function toneCls(tone: ToastTone): string {
   return "border-border-weak-base bg-surface-raised-stronger-non-alpha text-text-strong";
 }
 
-const TOAST_EVENTS = ["stage:toast", "specimen:toast"] as const;
+const TOAST_EVENT = "stage:toast";
 
 export function Toaster(): JSX.Element {
   const t = useToast();
@@ -63,10 +62,10 @@ export function Toaster(): JSX.Element {
     if (detail?.text) t.push(detail.text, detail.tone ?? "info", detail.ttl);
   };
   onMount(() => {
-    for (const name of TOAST_EVENTS) window.addEventListener(name, onToast);
+    window.addEventListener(TOAST_EVENT, onToast);
   });
   onCleanup(() => {
-    for (const name of TOAST_EVENTS) window.removeEventListener(name, onToast);
+    window.removeEventListener(TOAST_EVENT, onToast);
   });
 
   return (

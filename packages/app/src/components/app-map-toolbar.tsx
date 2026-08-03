@@ -143,8 +143,8 @@ export function AppMapToolbar(props: {
       <button
         type="button"
         class={mapControlButton}
-        aria-label="Capture screen"
-        data-tip="Capture screen · S"
+        aria-label="Capture screenshot"
+        data-tip="Capture screenshot · S"
         onClick={props.onCaptureScreen}
       >
         <Icon name="camera" size={15} />

@@ -295,6 +295,17 @@ type SpecificOperationMap = {
       };
     };
   };
+  "target.app.launch": {
+    input: { serial: string; app: string; relaunch?: boolean };
+    output: {
+      launched: {
+        serial: string;
+        app: string;
+        platform: "android" | "ios";
+        launchedAt: number;
+      };
+    };
+  };
   "job.list": {
     input: { full?: boolean; limit?: number };
     output: { jobs: JobSummaryDto[]; active?: JobSummaryDto | null };
@@ -878,6 +889,28 @@ const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
 const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
   string(input.serial, "target serial");
 });
+
+const targetAppLaunchInputParser = objectParser<OperationInput<"target.app.launch">>(
+  "target app launch input",
+  (input) => {
+    string(input.serial, "target app launch serial");
+    string(input.app, "target app launch app");
+    if (input.relaunch !== undefined) boolean(input.relaunch, "target app launch relaunch");
+  },
+);
+
+const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.launch">>(
+  "target app launch response",
+  (input) => {
+    const launched = record(input.launched, "launched app");
+    string(launched.serial, "launched app serial");
+    string(launched.app, "launched app name");
+    if (launched.platform !== "android" && launched.platform !== "ios") {
+      fail("launched app platform", "must be android or ios");
+    }
+    number(launched.launchedAt, "launched app timestamp");
+  },
+);
 
 const recipeRefParser = objectParser<OperationRecord>("recipe reference", (input) => {
   string(input.recipeId, "recipeId");
@@ -1567,6 +1600,14 @@ export const operationDefinitions = [
     lease: "shared",
     input: targetInputParser,
     output: screenshotParser,
+  }),
+  command("target.app.launch", "Launch app on target", "POST", "/device/app/launch", {
+    category: "target",
+    targetCapabilities: ["launch"],
+    lease: "exclusive",
+    idempotency: "inherent",
+    input: targetAppLaunchInputParser,
+    output: targetAppLaunchOutputParser,
   }),
   command("target.interact", "Interact with target", "POST", "/interact", {
     category: "target",

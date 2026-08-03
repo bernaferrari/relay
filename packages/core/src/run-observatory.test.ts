@@ -142,7 +142,37 @@ test("buildRunEvidence normalizes device logs and network exchanges", () => {
   assert.equal(evidence.network[0]?.method, "POST");
   assert.equal(evidence.network[0]?.result, "failure");
   assert.equal(evidence.network[0]?.status, 500);
+  assert.deepEqual(
+    evidence.events.map((event) => [event.channel, event.at, event.tone]),
+    [
+      ["log", 21, "critical"],
+      ["network", 23, "critical"],
+    ],
+  );
   assert.equal(evidence.limits.bodiesIncluded, false);
+});
+
+test("buildRunEvidence places every evidence channel on one chronological clock", () => {
+  const evidence = buildRunEvidence(
+    run({
+      artifacts: [
+        { kind: "crash", capturedAt: 40, data: { message: "App stopped" } },
+        { kind: "logs", capturedAt: 10, data: { entries: ["Started"] } },
+        { kind: "performance-start", capturedAt: 20, data: { cpu: 12 } },
+        { kind: "screenshot", capturedAt: 30, data: { message: "Before tap" } },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    evidence.events.map((event) => [event.channel, event.at]),
+    [
+      ["log", 10],
+      ["performance", 20],
+      ["artifact", 30],
+      ["crash", 40],
+    ],
+  );
 });
 
 test("buildRunEvidence never exposes network bodies without consent", () => {

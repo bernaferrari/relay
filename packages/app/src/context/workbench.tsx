@@ -30,11 +30,10 @@ export type RunChip =
 export type StepPreviewRequest = { index: number; token: number };
 
 const AUTO_KEY = "stage:auto-continue";
-const AUTO_KEY_LEGACY = "specimen:auto-continue";
 
 function loadAutoContinue(): boolean {
   try {
-    const v = localStorage.getItem(AUTO_KEY) ?? localStorage.getItem(AUTO_KEY_LEGACY);
+    const v = localStorage.getItem(AUTO_KEY);
     return v === "1";
   } catch {
     return false;
