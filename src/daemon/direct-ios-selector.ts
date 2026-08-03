@@ -1,4 +1,5 @@
 import { isIosFamily } from '@agent-device/kernel/device';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { isActiveProviderDevice } from '../provider-device-runtime.ts';
 import type { SessionState } from './types.ts';
 import { tryParseSelectorChain } from '../selectors/index.ts';
@@ -7,18 +8,44 @@ import type { ElementSelectorTapOptions } from '@agent-device/contracts/interact
 
 export type DirectIosSelectorTarget = ElementSelectorTapOptions & { raw: string };
 
+/**
+ * Is this session eligible for a direct, tree-independent local XCTest
+ * runner read/tap? Both the direct-selector tap fast path and the offscreen
+ * refusal double-check probe (`src/daemon/offscreen-target-probe.ts`) share
+ * this "local runner, not a provider-owned device" boundary — provider-owned
+ * iOS devices resolve through their own interactor-backed runtime instead.
+ *
+ * The one difference between the two callers is explicit, not baked in: the
+ * tap fast path skips itself while `session.postGestureStabilization` is
+ * pending (it hands off to the tree-based runtime path instead), but the
+ * double-check must NOT inherit that skip — it exists specifically to cover
+ * the window where the bulk AX tree is stale (pending or just-cleared
+ * stabilization), so excluding that window would defeat its purpose.
+ */
+export function isLocalIosRunnerSession(
+  session: SessionState | undefined,
+  options: { skipPendingPostGestureStabilization: boolean },
+): session is SessionState {
+  if (!session) return false;
+  if (!isIosFamily(session.device)) return false;
+  // This fast path talks directly to the local XCTest runner. Provider-owned
+  // iOS devices must resolve through their interactor-backed snapshot runtime
+  // instead, which keeps selectors and interaction guarantees on one backend.
+  if (isActiveProviderDevice(session.device)) return false;
+  if (options.skipPendingPostGestureStabilization && session.postGestureStabilization) {
+    return false;
+  }
+  return true;
+}
+
 export function readSimpleIosSelectorTarget(params: {
   session: SessionState | undefined;
   selectorExpression: string;
 }): DirectIosSelectorTarget | null {
   const { session, selectorExpression } = params;
-  if (!session) return null;
-  if (!isIosFamily(session.device)) return null;
-  // This fast path talks directly to the local XCTest runner. Provider-owned
-  // iOS devices must resolve through their interactor-backed snapshot runtime
-  // instead, which keeps selectors and interaction guarantees on one backend.
-  if (isActiveProviderDevice(session.device)) return null;
-  if (session.postGestureStabilization) return null;
+  if (!isLocalIosRunnerSession(session, { skipPendingPostGestureStabilization: true })) {
+    return null;
+  }
   const chain = tryParseSelectorChain(selectorExpression);
   if (!chain) return null;
   if (chain.selectors.length !== 1) return null;
@@ -32,6 +59,22 @@ export function readSimpleIosSelectorTarget(params: {
 
 function isRunnerNativeSelectorKey(key: string): key is DirectIosSelectorTarget['key'] {
   return key === 'id' || key === 'label' || key === 'text' || key === 'value';
+}
+
+/**
+ * The selector a bulk-tree node's OWN attributes give us for a direct runner
+ * re-read: prefer the stable `id` (accessibility identifier), fall back to
+ * `label`. Neither is guaranteed unique on the runner side — an ambiguous
+ * match is the caller's problem to fail closed on, not this parser's.
+ */
+export function deriveDirectIosNodeSelector(
+  node: Pick<SnapshotNode, 'identifier' | 'label'>,
+): { key: 'id' | 'label'; value: string } | null {
+  const identifier = node.identifier?.trim();
+  if (identifier) return { key: 'id', value: identifier };
+  const label = node.label?.trim();
+  if (label) return { key: 'label', value: label };
+  return null;
 }
 
 export function isDirectIosSelectorFallbackError(

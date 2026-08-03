@@ -298,6 +298,7 @@ export function createInteractionDevice(
       | 'longPress'
       | 'scroll'
       | 'performGesture'
+      | 'confirmOffscreenTargetVisible'
     >
   > & {
     platform?: AgentDeviceBackend['platform'];
@@ -327,6 +328,12 @@ export function createInteractionDevice(
         : undefined,
       scroll: overrides.scroll ? async (...args) => await overrides.scroll?.(...args) : undefined,
       performGesture: overrides.performGesture,
+      // #1542: undefined by default, so every existing test keeps proving the
+      // fail-closed refusal unchanged; only tests that opt in exercise the
+      // rescue/agreement paths.
+      confirmOffscreenTargetVisible: overrides.confirmOffscreenTargetVisible
+        ? async (...args) => (await overrides.confirmOffscreenTargetVisible?.(...args)) ?? null
+        : undefined,
     } satisfies AgentDeviceBackend,
     artifacts: createLocalArtifactAdapter(),
     sessions: createMemorySessionStore([

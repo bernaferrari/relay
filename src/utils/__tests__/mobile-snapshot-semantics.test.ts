@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildMobileSnapshotPresentation,
   classifyOffscreenScrollDirection,
+  isConfirmedOnScreenProbe,
   isNodeVisibleInEffectiveViewport,
 } from '../../snapshot/mobile-snapshot-semantics.ts';
-import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import type { Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
 
 test('mobile presentation keeps only visible nodes and adds off-screen summary fallback', () => {
   const nodes: SnapshotNode[] = [
@@ -561,4 +562,48 @@ test('mobile presentation does not let contradictory scroll indicator add hidden
   const container = presentation.nodes.find((node) => node.index === 1);
   assert.equal(container?.hiddenContentAbove, true);
   assert.equal(container?.hiddenContentBelow, undefined);
+});
+
+// #1542: isConfirmedOnScreenProbe is the pure geometry boundary the off-screen
+// refusal double-check's direct probe (src/daemon/offscreen-target-probe.ts)
+// reduces its confirm/don't-confirm decision to, once it has a fresh,
+// tree-independent read of the target. Each branch below is proved with a
+// counterfactual per docs/agents/testing.md — see the comment on each test
+// for the one-line mutation that turns it red.
+
+const CONFIRM_PROBE_ROOT_VIEWPORT: Rect = { x: 0, y: 0, width: 400, height: 800 };
+
+test('isConfirmedOnScreenProbe: hittable + inside the root viewport -> confirmed', () => {
+  const probe = { rect: { x: 100, y: 100, width: 50, height: 50 }, hittable: true };
+  assert.equal(isConfirmedOnScreenProbe(probe, CONFIRM_PROBE_ROOT_VIEWPORT), true);
+});
+
+test('isConfirmedOnScreenProbe: inside the viewport but NOT hittable -> not confirmed', () => {
+  // Counterfactual ("ignore hittable"): change the function to
+  // `return isTapPointInsideViewport(probe.rect, rootViewport);`, dropping
+  // the hittable check entirely. This test goes red — it pins that a probe
+  // reporting a plausible rect but a live "not hittable" state (occluded,
+  // disabled, or otherwise not actually tappable) must not rescue.
+  const probe = { rect: { x: 100, y: 100, width: 50, height: 50 }, hittable: false };
+  assert.equal(isConfirmedOnScreenProbe(probe, CONFIRM_PROBE_ROOT_VIEWPORT), false);
+});
+
+test('isConfirmedOnScreenProbe: hittable but OUTSIDE the root viewport -> not confirmed', () => {
+  // Counterfactual ("ignore viewport"): change the function to
+  // `return probe.hittable;`, dropping the viewport containment check
+  // entirely. This test goes red — it pins that a probe's live rect is still
+  // checked against the root viewport: hittable alone is not sufficient
+  // (the reported rect could still be nonsensical or off-window).
+  const probe = { rect: { x: 5000, y: 5000, width: 50, height: 50 }, hittable: true };
+  assert.equal(isConfirmedOnScreenProbe(probe, CONFIRM_PROBE_ROOT_VIEWPORT), false);
+});
+
+test('isConfirmedOnScreenProbe: neither hittable nor inside the viewport -> not confirmed', () => {
+  const probe = { rect: { x: 5000, y: 5000, width: 50, height: 50 }, hittable: false };
+  assert.equal(isConfirmedOnScreenProbe(probe, CONFIRM_PROBE_ROOT_VIEWPORT), false);
+});
+
+test('isConfirmedOnScreenProbe: a missing root viewport fails open on the geometry half (matches isTapPointInsideViewport)', () => {
+  const probe = { rect: { x: 5000, y: 5000, width: 50, height: 50 }, hittable: true };
+  assert.equal(isConfirmedOnScreenProbe(probe, null), true);
 });

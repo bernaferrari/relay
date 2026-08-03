@@ -431,6 +431,37 @@ export type AgentDeviceBackend = {
   ): Promise<BackendScreenshotResult | void>;
   readText?(context: BackendCommandContext, node: SnapshotNode): Promise<BackendReadTextResult>;
   findText?(context: BackendCommandContext, text: string): Promise<BackendFindTextResult>;
+  /**
+   * #1542 off-screen refusal double-check: called ONLY at the moment the
+   * shared off-screen interaction guard is about to REFUSE a click/tap/
+   * gesture-target resolution, to re-confirm the target directly — bypassing
+   * whatever bulk accessibility tree the guard's verdict came from (observed
+   * on iOS: a keyboard-dismiss content-offset correction can leave a
+   * ScrollView's bulk AX frame squeezed to a stale value, or the whole bulk
+   * tree pinned at pre-gesture values, while the target is genuinely fine).
+   *
+   * Conceptually a boolean ("is this actually visible?"), but returns the
+   * confirmed LIVE rect rather than a bare `true`/`false`: a rescue must tap
+   * at the live coordinate, never the stale bulk-tree one the guard was
+   * about to refuse — a caller that used the original rect after a rescue
+   * would silently tap the wrong place when the bulk tree is stale, not just
+   * stale-looking. `rootViewport` is the guard's own already-resolved root
+   * viewport (Application/Window frame), passed in so an implementation can
+   * validate the live rect's tap point against it without recomputing it.
+   *
+   * Returns `null` when the target cannot be positively confirmed on-screen
+   * (no stable id/label, not found, ambiguous match, not hittable, outside
+   * `rootViewport`, or any transport failure) — the guard MUST fail closed
+   * (refuse) on `null`. This is a rescue path only, never a way to relax a
+   * genuine refusal. Backends that do not support a direct, tree-independent
+   * read simply omit this method, which leaves today's refuse-on-off-screen
+   * behavior byte-for-byte unchanged.
+   */
+  confirmOffscreenTargetVisible?(
+    context: BackendCommandContext,
+    node: Pick<SnapshotNode, 'identifier' | 'label'>,
+    rootViewport: Rect | null,
+  ): Promise<Rect | null>;
   tap?(
     context: BackendCommandContext,
     point: Point,

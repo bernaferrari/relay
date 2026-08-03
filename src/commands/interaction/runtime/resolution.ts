@@ -238,15 +238,23 @@ async function resolveRefInteractionTarget(
       })
     : resolved.node;
   assertInteractionNotBlocked(node, `Ref ${target.ref}`, params.action);
-  assertVisibleRefTarget(node, capture.snapshot.nodes, target.ref, params.action);
-  const point = resolveNodeCenter(node, `Ref ${target.ref} not found or has invalid bounds`);
+  // #1542: point/response read from the returned (possibly rescue-patched) node.
+  const visibleNode = await assertVisibleRefTarget(
+    runtime,
+    options,
+    node,
+    capture.snapshot.nodes,
+    target.ref,
+    params.action,
+  );
+  const point = resolveNodeCenter(visibleNode, `Ref ${target.ref} not found or has invalid bounds`);
   return {
     kind: 'ref',
     point,
     target: { kind: 'ref', ref: `@${resolved.ref}` },
     ...describeResolvedInteractionNode(
       runtime,
-      node,
+      visibleNode,
       capture.snapshot.nodes,
       params.action,
       resolved.resolution,
@@ -311,9 +319,17 @@ async function resolveSelectorInteractionTarget(
       })
     : resolved.node;
   assertInteractionNotBlocked(node, `Selector ${resolved.selector.raw}`, params.action);
-  assertVisibleSelectorTarget(node, capture.snapshot.nodes, resolved.selector.raw, params.action);
-  const point = resolveNodeCenter(
+  // #1542: see the ref-target twin above.
+  const visibleNode = await assertVisibleSelectorTarget(
+    runtime,
+    options,
     node,
+    capture.snapshot.nodes,
+    resolved.selector.raw,
+    params.action,
+  );
+  const point = resolveNodeCenter(
+    visibleNode,
     `Selector ${resolved.selector.raw} resolved to invalid bounds`,
   );
   return {
@@ -322,7 +338,7 @@ async function resolveSelectorInteractionTarget(
     target: { kind: 'selector', selector: resolved.selector.raw },
     ...describeResolvedInteractionNode(
       runtime,
-      node,
+      visibleNode,
       capture.snapshot.nodes,
       params.action,
       buildSelectorResolutionDisclosure(resolved, capture.snapshot.nodes),
@@ -690,13 +706,15 @@ function isUsableResolvedNode(node: SnapshotNode | null | undefined): node is Sn
 // resolving to a closed drawer/carousel item "succeeds" by tapping coordinates
 // outside the viewport (observed as `Tapped (-161, 265)` against Bluesky's
 // closed drawer) while the same node via @ref is refused.
-function assertVisibleSelectorTarget(
+async function assertVisibleSelectorTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
   node: SnapshotNode,
   nodes: SnapshotState['nodes'],
   selector: string,
   action: InteractionAction,
-): void {
-  throwIfOffscreenInteractionTarget(node, nodes, {
+): Promise<SnapshotNode> {
+  return await throwIfOffscreenInteractionTarget(runtime, options, node, nodes, {
     message: `Selector ${selector} resolved to an off-screen element and is not safe to ${action}`,
     details: { reason: 'offscreen_selector', selector },
     // A selector re-resolves against a fresh snapshot on every attempt, so the
@@ -710,13 +728,15 @@ function assertVisibleSelectorTarget(
   });
 }
 
-function assertVisibleRefTarget(
+async function assertVisibleRefTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
   node: SnapshotNode,
   nodes: SnapshotState['nodes'],
   refInput: string,
   action: InteractionAction,
-): void {
-  throwIfOffscreenInteractionTarget(node, nodes, {
+): Promise<SnapshotNode> {
+  return await throwIfOffscreenInteractionTarget(runtime, options, node, nodes, {
     message: `Ref ${refInput} is off-screen and not safe to ${action}`,
     details: { reason: 'offscreen_ref', ref: normalizeRef(refInput) },
     // The scroll that reveals the target expires the ref frame (#1366, ADR
@@ -747,11 +767,14 @@ function scrollRevealClause(direction: OffscreenScrollDirection | null): string 
  * `assertVisibleRefTarget`) ERROR with the runtime path's exact shapes, and
  * the non-hittable annotation is returned for the fast-path result.
  *
- * Zero extra round trips by construction: no session, no stored snapshot, an
- * unresolvable/invalid ref, or a node without a usable rect all make the
- * preflight a no-op and the fast path proceeds exactly as before. Promotion
- * to a hittable ancestor stays a runtime-path behavior — the preflight never
- * changes which element the backend acts on.
+ * Zero extra round trips by construction on the accept path: no session, no
+ * stored snapshot, an unresolvable/invalid ref, or a node without a usable
+ * rect all make the preflight a no-op and the fast path proceeds exactly as
+ * before. Promotion to a hittable ancestor stays a runtime-path behavior —
+ * the preflight never changes which element the backend acts on. Exception:
+ * a would-be off-screen refusal may spend one extra iOS runner round trip
+ * (#1542's double-check) before erroring — cost only on the path that was
+ * about to fail anyway.
  */
 export async function preflightNativeRefInteraction(
   runtime: AgentDeviceRuntime,
@@ -772,12 +795,21 @@ export async function preflightNativeRefInteraction(
   });
   if (!resolved) return {};
   assertInteractionNotBlocked(resolved.node, `Ref ${target.ref}`, action);
-  assertVisibleRefTarget(resolved.node, nodes, target.ref, action);
+  // #1542: dispatches by REF, not coordinate, so no point to re-derive — but
+  // evidence/annotation below still describes the returned (visible) node.
+  const visibleNode = await assertVisibleRefTarget(
+    runtime,
+    options,
+    resolved.node,
+    nodes,
+    target.ref,
+    action,
+  );
   return {
-    ...describeNonHittableTarget(resolved.node, action),
+    ...describeNonHittableTarget(visibleNode, action),
     // ADR 0012 decision 3: the guard lookup above doubles as the record-time
     // evidence source for the fast path, at zero extra capture cost.
-    node: resolved.node,
+    node: visibleNode,
     preActionNodes: nodes,
   };
 }
@@ -785,7 +817,25 @@ export async function preflightNativeRefInteraction(
 // isNodeVisibleOnScreen (not the effective-viewport form): items inside an
 // off-screen scrollable container (closed drawer) must also count as
 // off-screen, not just items scrolled out of an on-screen container.
-function throwIfOffscreenInteractionTarget(
+//
+// #1542: once the bulk tree says off-screen, the guard gives iOS one chance
+// to rescue a FALSE refusal via the optional backend.confirmOffscreenTargetVisible
+// hook — a stale/corrupted bulk tree can say off-screen while the app is
+// visually fine (zero cost on the accept path; runs only here). A confirmed
+// rescue returns the node PATCHED WITH THE LIVE RECT: the caller must act on
+// that returned node, never the original, because in the frozen-bulk-tree
+// manifestation the original rect can be stale even when the rescue verdict
+// is correct — tapping it would silently land at the wrong coordinate. The
+// hook fails closed (null) on anything short of a positive confirmation, so
+// a genuine refusal, or any backend without the hook, is unchanged.
+//
+// Exported (not just for callers here) for ADR 0011 registry honesty:
+// interaction-guarantees.ts's `offscreen` cells point their `via` at this
+// function, not at isNodeVisibleOnScreen alone, since this is the actual
+// end-to-end enforcement point.
+export async function throwIfOffscreenInteractionTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
   node: SnapshotNode,
   nodes: SnapshotState['nodes'],
   failure: {
@@ -793,9 +843,16 @@ function throwIfOffscreenInteractionTarget(
     details: Record<string, unknown>;
     hint: (direction: OffscreenScrollDirection | null) => string;
   },
-): void {
+): Promise<SnapshotNode> {
   const viewport = node.rect ? resolveEffectiveViewportRect(node, nodes) : null;
-  if (!node.rect || !viewport || isNodeVisibleOnScreen(node, nodes)) return;
+  if (!node.rect || !viewport || isNodeVisibleOnScreen(node, nodes)) return node;
+  const rootViewport = resolveViewportRect(nodes, node.rect);
+  const liveRect = await runtime.backend.confirmOffscreenTargetVisible?.(
+    toBackendContext(runtime, options),
+    node,
+    rootViewport,
+  );
+  if (liveRect) return { ...node, rect: liveRect };
   // The direction that scrolls this off-screen target into view. Named in the
   // hint (and surfaced as a machine-readable detail) so the recovery is a single
   // deterministic move instead of a guess (#1366). Derived from the same

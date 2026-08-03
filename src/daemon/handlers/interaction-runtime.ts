@@ -21,8 +21,11 @@ import { createDaemonRuntimeSessionStore } from '../runtime-session.ts';
 import { resolveWebProvider, type WebProvider } from '../../platforms/web/provider.ts';
 import { stripAtPrefix } from './interaction-touch-targets.ts';
 import { NO_ACTIVE_SESSION_MESSAGE } from './response.ts';
-import type { Rect } from '@agent-device/kernel/snapshot';
+import type { Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
 import { getRequestSignal } from '../../request/cancel.ts';
+import { buildAppleRunnerRequestOptions } from '../apple-runner-options.ts';
+import { isLocalIosRunnerSession } from '../direct-ios-selector.ts';
+import { confirmIosOffscreenTargetVisible } from '../offscreen-target-probe.ts';
 
 type InteractionRuntimeParams = InteractionHandlerParams & {
   captureSnapshotForSession: CaptureSnapshotForSession;
@@ -81,6 +84,27 @@ function createInteractionBackend(
         session.device,
         params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
       )),
+    // #1542: iOS-only escape hatch for the off-screen refusal double-check.
+    // Local (non-provider) iOS sessions get a direct, AX-tree-independent
+    // probe (deliberately NOT skipped while postGestureStabilization is
+    // pending — see isLocalIosRunnerSession); every other platform/session
+    // omits this field, so the guard's decision stays exactly what it is
+    // today (fail closed).
+    confirmOffscreenTargetVisible: isLocalIosRunnerSession(session, {
+      skipPendingPostGestureStabilization: false,
+    })
+      ? async (_context, node: Pick<SnapshotNode, 'identifier' | 'label'>, rootViewport) =>
+          await confirmIosOffscreenTargetVisible({
+            session,
+            node,
+            rootViewport,
+            requestOptions: buildAppleRunnerRequestOptions({
+              req,
+              logPath: params.logPath,
+              traceLogPath: session.trace?.outPath,
+            }),
+          })
+      : undefined,
     tap: async (_context, point): Promise<BackendActionResult> => {
       // ADR 0014 side-effect seam: the point is resolved; expire the ref frame
       // synchronously before dispatching so a later step cannot reuse it.
