@@ -12,6 +12,7 @@ test("discovery becomes a target-covered App Map proposal without mutating the m
     name: "Product",
     revision: 0,
     notes: {},
+    groups: {},
     screens: {},
     screenVariants: {},
     connections: {},

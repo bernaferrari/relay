@@ -24,9 +24,11 @@ import {
   removeAppMapConnection,
   removeAppMapCaseStack,
   removeAppMapFlow,
+  removeAppMapGroup,
   removeAppMapRoutine,
   removeAppMapScreen,
   saveAppMapFlow,
+  saveAppMapGroup,
   saveAppMapCaseStack,
   saveAppMapRoutine,
   submitAppMapProposal,
@@ -378,6 +380,43 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       body.expectedRevision,
       body.eventId,
       (map, context) => removeAppMapConnection(map, connectionRemove.connectionId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const groupSave = matchPath(pathname, "/app-maps/:appMapId/groups/:groupId");
+  if (method === "PUT" && groupSave) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.group.save">,
+      "appMapId" | "groupId"
+    >;
+    if (body.group.id !== groupSave.groupId) {
+      throw new HttpError(400, "Group id must match the route");
+    }
+    const appMap = await applyMutation(
+      scope,
+      groupSave.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => saveAppMapGroup(map, body.group, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const groupRemove = matchPath(pathname, "/app-maps/:appMapId/groups/:groupId/remove");
+  if (method === "POST" && groupRemove) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.group.remove">,
+      "appMapId" | "groupId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      groupRemove.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => removeAppMapGroup(map, groupRemove.groupId!, context),
     );
     json(response, 200, { appMap });
     return true;

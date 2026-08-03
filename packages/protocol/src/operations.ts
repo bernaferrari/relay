@@ -25,6 +25,7 @@ import type {
   Connection,
   ConnectionPatch,
   Flow,
+  MapGroup,
   Proposal,
   Routine,
   UpdateScreenInput,
@@ -436,6 +437,20 @@ type SpecificOperationMap = {
   };
   "app-map.connection.remove": {
     input: { appMapId: string; connectionId: string; expectedRevision: number; eventId?: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.group.save": {
+    input: {
+      appMapId: string;
+      groupId: string;
+      expectedRevision: number;
+      eventId?: string;
+      group: MapGroup;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.group.remove": {
+    input: { appMapId: string; groupId: string; expectedRevision: number; eventId?: string };
     output: { appMap: AppMap };
   };
   "app-map.flow.save": {
@@ -1938,6 +1953,29 @@ export const operationDefinitions = [
       input: appMapMutationParser<"app-map.connection.remove">("connection removal", undefined, [
         "connectionId",
       ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.group.save",
+    "Save App Map Group",
+    "PUT",
+    "/app-maps/:appMapId/groups/:groupId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.group.save">("Group save", "group", ["groupId"]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.group.remove",
+    "Remove App Map Group",
+    "POST",
+    "/app-maps/:appMapId/groups/:groupId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.group.remove">("Group removal", undefined, ["groupId"]),
       output: appMapOutputParser,
       confirmation: "confirm",
     },

@@ -4,6 +4,7 @@ import type {
   AppMapMutationContext,
   CaseStack,
   Flow,
+  MapGroup,
   Proposal,
   Routine,
 } from "./model.js";
@@ -44,7 +45,7 @@ export function applyAppMapPatch(draft: AppMap, patch: AppMapPatch): void {
 
 export function assertEntityScope(
   map: AppMap,
-  entity: Flow | Routine | Proposal | CaseStack,
+  entity: Flow | Routine | Proposal | CaseStack | MapGroup,
 ): void {
   if (
     entity.organizationId !== map.organizationId ||

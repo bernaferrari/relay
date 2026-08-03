@@ -476,6 +476,7 @@ export async function createAppMap(input: {
       name: input.name.trim() || "Untitled",
       revision: 0,
       notes: {},
+      groups: {},
       screens: {},
       screenVariants: {},
       connections: {},

@@ -19,6 +19,7 @@ const APP_MAP_FIELDS = new Set([
   "description",
   "revision",
   "notes",
+  "groups",
   "screens",
   "screenVariants",
   "connections",
@@ -34,6 +35,7 @@ const APP_MAP_FIELDS = new Set([
 ]);
 const ENTITY_FIELDS = [
   "notes",
+  "groups",
   "screens",
   "screenVariants",
   "connections",
@@ -109,6 +111,9 @@ function scopedProposalChange(value: ProposalChange, scope: AppMapScope): Propos
   if (value.kind === "connection.connect") {
     return { ...value, connection: scoped(value.connection, scope) };
   }
+  if (value.kind === "group.save") {
+    return { ...value, group: scoped(value.group, scope) };
+  }
   return structuredClone(value);
 }
 
@@ -143,6 +148,7 @@ export function rescopeAppMap(
     organizationId: destination.organizationId,
     projectId: destination.projectId,
     notes: mapEntities(value.notes),
+    groups: mapEntities(value.groups),
     screens: mapEntities(value.screens),
     screenVariants: mapEntities(value.screenVariants),
     connections: mapEntities(value.connections),

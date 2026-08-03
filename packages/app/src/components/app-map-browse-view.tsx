@@ -44,6 +44,7 @@ export function AppMapBrowseView(props: {
   );
   const [baseline, setBaseline] = createSignal<"all" | "approved" | "missing">("all");
   const areas = createMemo(() => deriveAppMapAreas(props.appMap));
+  const explicitGroupCount = () => Object.keys(props.appMap.groups).length;
   const filteredAreas = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
     return areas()
@@ -115,7 +116,9 @@ export function AppMapBrowseView(props: {
             </h2>
             <p class="mt-1 max-w-[680px] text-[12px]/[1.5] text-[var(--text-weak)]">
               {props.mode === "screens"
-                ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} across ${areas().length} ${areas().length === 1 ? "area" : "areas"}.`
+                ? explicitGroupCount()
+                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "Group" : "Groups"}`
+                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"}, organized by path.`
                 : `${rows().length} ${rows().length === 1 ? "result" : "results"}. Every device and actor stays independently inspectable.`}
             </p>
           </div>
@@ -221,7 +224,7 @@ export function AppMapBrowseView(props: {
             />
           }
         >
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),260px))] items-start gap-x-6 gap-y-8">
+          <div class="grid gap-8">
             <For
               each={filteredAreas()}
               fallback={
@@ -268,7 +271,7 @@ export function AppMapBrowseView(props: {
                       {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
                     </span>
                   </header>
-                  <div class="grid gap-3.5">
+                  <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),260px))] items-start gap-6">
                     <For each={area.screenIds}>
                       {(screenId) => {
                         const screen = () => props.appMap.screens[screenId]!;

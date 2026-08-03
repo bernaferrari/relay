@@ -7,7 +7,9 @@ export type AppMapArea = {
   screenIds: string[];
 };
 
-type AreaProjection = Pick<AppMap, "screens" | "connections" | "flows">;
+type AreaProjection = Pick<AppMap, "screens" | "connections" | "flows"> & {
+  groups?: AppMap["groups"];
+};
 
 function orderedScreens(screens: Record<string, Screen>): Screen[] {
   return Object.values(screens).sort(
@@ -62,6 +64,45 @@ function rootScreenIds(input: AreaProjection, screens: Screen[]): string[] {
 export function deriveAppMapAreas(input: AreaProjection): AppMapArea[] {
   const screens = orderedScreens(input.screens);
   if (!screens.length) return [];
+  const explicitGroups = Object.values(input.groups ?? {}).sort(
+    (left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id),
+  );
+  if (explicitGroups.length) {
+    const grouped = new Set(explicitGroups.flatMap((group) => group.screenIds));
+    const groups = explicitGroups.flatMap((group): AppMapArea[] => {
+      const screenIds = group.screenIds.filter((id) => Boolean(input.screens[id]));
+      return screenIds.length
+        ? [{ id: `group:${group.id}`, title: group.name, rootScreenId: screenIds[0]!, screenIds }]
+        : [];
+    });
+    const remainderScreens = Object.fromEntries(
+      Object.entries(input.screens).filter(([id]) => !grouped.has(id)),
+    );
+    if (!Object.keys(remainderScreens).length) return groups;
+    const remainderConnections = Object.fromEntries(
+      Object.entries(input.connections).filter(([, connection]) => {
+        const destinationId =
+          connection.destination.kind === "screen" ? connection.destination.screenId : undefined;
+        return (
+          Boolean(remainderScreens[connection.fromScreenId]) &&
+          (!destinationId || Boolean(remainderScreens[destinationId]))
+        );
+      }),
+    );
+    const remainderFlows = Object.fromEntries(
+      Object.entries(input.flows).filter(([, flow]) =>
+        Boolean(remainderScreens[flow.startScreenId]),
+      ),
+    );
+    return [
+      ...groups,
+      ...deriveAppMapAreas({
+        screens: remainderScreens,
+        connections: remainderConnections,
+        flows: remainderFlows,
+      }),
+    ];
+  }
   const destinations = screenDestinations(input.connections);
   const roots = rootScreenIds(input, screens);
   const seeds: Array<{ id: string; title: string; root: string; order: number }> = [];

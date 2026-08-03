@@ -91,7 +91,12 @@ function proposalReferencesScreen(proposal: Proposal, screenId: string): boolean
   });
 }
 
-export function dropScreen(draft: AppMap, screenId: string, ignoreProposalId?: string): void {
+export function dropScreen(
+  draft: AppMap,
+  screenId: string,
+  ignoreProposalId?: string,
+  at = draft.updatedAt,
+): void {
   identifier(screenId, "screenId");
   const screen = draft.screens[screenId];
   if (!screen) appMapFail("missing-reference", `Screen ${screenId} does not exist`);
@@ -129,6 +134,12 @@ export function dropScreen(draft: AppMap, screenId: string, ignoreProposalId?: s
     appMapFail("in-use", `Screen ${screenId} is referenced by pending proposal ${proposal.id}`);
   }
   for (const variantId of screen.variantIds) delete draft.screenVariants[variantId];
+  for (const group of Object.values(draft.groups)) {
+    if (!group.screenIds.includes(screenId)) continue;
+    group.screenIds = group.screenIds.filter((id) => id !== screenId);
+    group.updatedAt = at;
+    if (group.screenIds.length === 0) delete draft.groups[group.id];
+  }
   delete draft.screens[screenId];
 }
 
@@ -180,6 +191,6 @@ export function removeAppMapScreen(
       subject: { kind: "screen", id: screenId },
       summary: `Removed screen ${screenId}`,
     },
-    (draft) => dropScreen(draft, screenId),
+    (draft) => dropScreen(draft, screenId, undefined, context.at),
   );
 }

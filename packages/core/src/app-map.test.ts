@@ -168,6 +168,7 @@ function mapFixture(): AppMap {
     name: "Store",
     revision: 3,
     notes: {},
+    groups: {},
     screens: {
       start: screen("start", [startVariant.id]),
       home: screen("home", [homeVariant.id]),
@@ -262,6 +263,14 @@ test("validates a normalized project map containing every action kind and return
 
 test("commits a canvas gesture atomically as one revision and one activity event", () => {
   const input = mapFixture();
+  input.groups.home = {
+    ...scope,
+    id: "home",
+    name: "Home Group",
+    screenIds: ["home"],
+    createdAt: at,
+    updatedAt: at,
+  };
   delete input.screenVariants["variant-home"]!.baseline;
   delete input.targetResults["result-1"];
   delete input.runs["run-1"];
@@ -281,7 +290,53 @@ test("commits a canvas gesture atomically as one revision and one activity event
   assert.equal(Object.keys(result.activity).length, 1);
   assert.equal(result.activity["canvas-commit"]?.eventType, "app-map.committed");
   assert.equal(result.screens.home, undefined);
+  assert.equal(result.groups.home, undefined);
   assert.ok(input.screens.home, "the original map remains untouched");
+});
+
+test("keeps Groups visual-only and enforces one Group per screen", () => {
+  const input = mapFixture();
+  const grouped = commitAppMapChanges(
+    input,
+    [
+      {
+        kind: "group.save",
+        group: {
+          ...scope,
+          id: "settings",
+          name: "Settings",
+          screenIds: ["start", "home"],
+          createdAt: at,
+          updatedAt: at,
+        },
+      },
+    ],
+    undefined,
+    context(input, "group-settings"),
+  );
+  assert.deepEqual(grouped.groups.settings?.screenIds, ["start", "home"]);
+  assert.deepEqual(grouped.connections, input.connections);
+
+  expectError("in-use", () =>
+    commitAppMapChanges(
+      grouped,
+      [
+        {
+          kind: "group.save",
+          group: {
+            ...scope,
+            id: "duplicate",
+            name: "Duplicate",
+            screenIds: ["home"],
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+      ],
+      undefined,
+      context(grouped, "group-duplicate"),
+    ),
+  );
 });
 
 test("rejects an invalid canvas batch without exposing a partial draft", () => {

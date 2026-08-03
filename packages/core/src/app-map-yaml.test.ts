@@ -13,6 +13,7 @@ function emptyMap(): AppMap {
     description: "A portable checkout map",
     revision: 0,
     notes: {},
+    groups: {},
     screens: {},
     screenVariants: {},
     connections: {},

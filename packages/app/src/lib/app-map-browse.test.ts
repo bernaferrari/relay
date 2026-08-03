@@ -26,7 +26,9 @@ function connection(id: string, from: string, to: string): Connection {
   };
 }
 
-function projection(): Pick<AppMap, "screens" | "connections" | "flows"> {
+function projection(): Pick<AppMap, "screens" | "connections" | "flows"> & {
+  groups?: AppMap["groups"];
+} {
   return {
     screens: {
       home: screen("home", "Home", 1),
@@ -76,6 +78,26 @@ describe("deriveAppMapAreas", () => {
       title: "Other screens",
       rootScreenId: "orphan",
       screenIds: ["orphan"],
+    });
+  });
+
+  it("uses explicit Groups before derived path organization", () => {
+    const input = projection();
+    input.groups = {
+      settings: {
+        ...scope,
+        id: "settings",
+        name: "Settings",
+        screenIds: ["settings", "notifications", "privacy"],
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    };
+    assert.deepEqual(deriveAppMapAreas(input)[0], {
+      id: "group:settings",
+      title: "Settings",
+      rootScreenId: "settings",
+      screenIds: ["settings", "notifications", "privacy"],
     });
   });
 });

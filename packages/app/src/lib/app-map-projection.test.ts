@@ -11,6 +11,7 @@ const map: AppMap = {
   name: "Store",
   revision: 0,
   notes: {},
+  groups: {},
   screens: {},
   screenVariants: {},
   connections: {},

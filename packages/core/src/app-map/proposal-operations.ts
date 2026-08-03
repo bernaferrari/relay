@@ -4,6 +4,7 @@ import type { AppMap, AppMapMutationContext, ProposalChange } from "./model.js";
 import { mutateAppMap } from "./mutation.js";
 import { proposalConflictsSince } from "./proposal-conflicts.js";
 import { dropScreen, patchScreen, putScreen } from "./screen-operations.js";
+import { dropMapGroup, putMapGroup } from "./group-operations.js";
 
 function applyProposalChange(
   draft: AppMap,
@@ -19,7 +20,7 @@ function applyProposalChange(
       patchScreen(draft, change.screenId, change.input, at);
       break;
     case "screen.remove":
-      dropScreen(draft, change.screenId, proposalId);
+      dropScreen(draft, change.screenId, proposalId, at);
       break;
     case "connection.connect":
       putConnection(draft, change.connection);
@@ -29,6 +30,12 @@ function applyProposalChange(
       break;
     case "connection.remove":
       dropConnection(draft, change.connectionId);
+      break;
+    case "group.save":
+      putMapGroup(draft, change.group);
+      break;
+    case "group.remove":
+      dropMapGroup(draft, change.groupId);
       break;
   }
 }

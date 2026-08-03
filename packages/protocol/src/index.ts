@@ -932,6 +932,8 @@ export type ConnectionPrototype = {
 export type AppMapCanvasState = {
   schemaVersion: 1;
   positions: Record<string, CanvasPosition>;
+  /** Optional visual organization projected from canonical Map Groups. */
+  groups?: import("./app-map.js").MapGroup[];
   /** Human names for captured screens. Kept outside executable steps so the
    * graph can be clarified without changing what a runner performs. */
   screenTitles?: Record<string, string>;

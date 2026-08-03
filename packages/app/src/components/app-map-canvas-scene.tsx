@@ -1,5 +1,5 @@
 import { For, Show, createMemo } from "solid-js";
-import type { CollaborationAwareness, CanvasNote } from "@relay/protocol";
+import type { CollaborationAwareness, CanvasNote, MapGroup } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
@@ -14,6 +14,7 @@ import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasNoteCard, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
+import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 type ConnectionPreview = Readonly<{
@@ -25,12 +26,16 @@ export type AppMapCanvasSceneProps = {
   nodes: MapTreeNode[];
   connections: readonly CanvasConnection[];
   notes: readonly CanvasNote[];
+  groups: readonly MapGroup[];
   width: number;
   height: number;
   visibleBounds: { left: number; top: number; right: number; bottom: number };
   selectedNodeId: string | null;
+  selectedNodeIds: readonly string[];
+  selectedGroupId: string | null;
   selectedConnectionId: string | null;
   renamingNodeId: string | null;
+  renamingGroupId: string | null;
   keyboardConnectionSourceId: string | null;
   connectionPreview?: ConnectionPreview;
   awareness: readonly CollaborationAwareness[];
@@ -43,7 +48,8 @@ export type AppMapCanvasSceneProps = {
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
   connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
-  onSelectNode: (node: MapTreeNode) => void;
+  onSelectNode: (node: MapTreeNode, event?: MouseEvent) => void;
+  onNodeContextMenu: (event: MouseEvent, node: MapTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
   onRenameNode: (node: MapTreeNode) => void;
   onOpenNodeDetails: (node: MapTreeNode) => void;
@@ -51,6 +57,16 @@ export type AppMapCanvasSceneProps = {
   onConnectStart: (event: PointerEvent, node: MapTreeNode) => void;
   onConnectKeyboard: (node: MapTreeNode) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
+  onSelectGroup: (group: MapGroup) => void;
+  onGroupPointerDown: (
+    event: PointerEvent & { currentTarget: HTMLElement },
+    group: MapGroup,
+  ) => void;
+  onGroupContextMenu: (event: MouseEvent, group: MapGroup) => void;
+  onRenameGroup: (group: MapGroup) => void;
+  onCommitGroupRename: (group: MapGroup, name: string) => void;
+  onUngroup: (group: MapGroup) => void;
+  onGroupSelection: () => void;
   onChooseKeyboardConnection: (sourceId: string, targetId: string) => void;
   onCreateKeyboardDestination: (sourceId: string) => void;
   onCancelKeyboardConnection: () => void;
@@ -105,6 +121,10 @@ const connectionStrokeClass = (
                   : "stroke-[color-mix(in_srgb,var(--text-weak)_78%,transparent)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
+  const selectedNodeIds = createMemo(() => new Set(props.selectedNodeIds));
+  const screenPositions = createMemo(() =>
+    Object.fromEntries(props.nodes.map((node) => [node.id, props.positionFor(node)])),
+  );
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
   const geometries = createMemo(
@@ -129,7 +149,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     geometries().get(connection.id) ?? { path: "", labelPoint: { x: 0, y: 0 } };
   const visibleNodes = createMemo(() =>
     props.nodes.filter((node) => {
-      if (node.id === props.selectedNodeId || node.id === props.renamingNodeId) return true;
+      if (selectedNodeIds().has(node.id) || node.id === props.renamingNodeId) return true;
       const point = props.positionFor(node);
       return (
         point.x + SCREEN_CARD_WIDTH >= props.visibleBounds.left &&
@@ -178,8 +198,22 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
 
   return (
     <>
+      <AppMapGroupsLayer
+        groups={props.groups}
+        positions={screenPositions()}
+        selectedGroupId={props.selectedGroupId}
+        renamingGroupId={props.renamingGroupId}
+        selectedScreenIds={selectedNodeIds()}
+        onSelectGroup={props.onSelectGroup}
+        onGroupPointerDown={props.onGroupPointerDown}
+        onGroupContextMenu={props.onGroupContextMenu}
+        onRenameGroup={props.onRenameGroup}
+        onCommitGroupRename={props.onCommitGroupRename}
+        onUngroup={props.onUngroup}
+        onGroupSelection={props.onGroupSelection}
+      />
       <svg
-        class="absolute inset-0 overflow-visible"
+        class="pointer-events-none absolute inset-0 overflow-visible"
         width={props.width}
         height={props.height}
         aria-label="Map connections"
@@ -251,7 +285,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 />
                 <path
                   d={geometry().path}
-                  class="cursor-pointer fill-none stroke-transparent"
+                  class="pointer-events-auto cursor-pointer fill-none stroke-transparent"
                   stroke-width="16"
                   aria-hidden="true"
                   onPointerDown={(event) => event.stopPropagation()}
@@ -338,13 +372,15 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             node={node}
             isFlowStart={props.isFlowStart(node)}
             title={props.titleFor(node)}
-            selected={props.selectedNodeId === node.id}
+            selected={selectedNodeIds().has(node.id)}
+            showActions={props.selectedNodeIds.length === 1 && props.selectedNodeId === node.id}
             editing={props.renamingNodeId === node.id}
             runState={props.screenRunState(node.id)}
             position={props.positionFor(node)}
             src={() => props.imageFor(node)}
             orientationEvidence={props.orientationEvidenceFor(node)}
-            onSelect={() => props.onSelectNode(node)}
+            onSelect={(event) => props.onSelectNode(node, event)}
+            onContextMenu={(event) => props.onNodeContextMenu(event, node)}
             onRename={() => props.onRenameNode(node)}
             onOpenDetails={() => props.onOpenNodeDetails(node)}
             onCommitRename={(title) => props.onCommitNodeRename(node, title)}

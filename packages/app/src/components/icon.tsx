@@ -35,6 +35,7 @@ export type IconName =
   | "smartphone"
   | "server"
   | "folder"
+  | "group"
   | "bolt"
   | "external"
   | "slash"
@@ -121,6 +122,11 @@ const STROKE: Record<string, Path[]> = {
     {
       d: "M4 20a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5.5a1 1 0 0 1 .8.4L12 6h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1z",
     },
+  ],
+  group: [
+    { d: "M8 4H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3" },
+    { d: "M16 6h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-3" },
+    { d: "M7 9h8v6H7z" },
   ],
   external: [{ d: "M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" }],
   slash: [{ d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" }, { d: "m5.6 5.6 12.8 12.8" }],

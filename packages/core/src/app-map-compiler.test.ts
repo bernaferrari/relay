@@ -51,6 +51,7 @@ function fixture(): AppMap {
     name: "Store",
     revision: 7,
     notes: {},
+    groups: {},
     screens: {
       welcome: screen("welcome", "Welcome"),
       home: screen("home", "Home"),

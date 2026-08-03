@@ -22,6 +22,7 @@ export {
   type ConnectionPatch,
   type Flow,
   type GestureSpec,
+  type MapGroup,
   type Proposal,
   type ProposalChange,
   type ProposalDecision,

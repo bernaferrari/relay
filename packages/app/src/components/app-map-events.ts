@@ -69,6 +69,8 @@ export function createAppMapEventOrchestration(options: {
   onAddNote: () => void;
   onCreateConnection: () => void;
   onRecord: () => void;
+  onGroupSelection: () => void;
+  onUngroupSelection: () => void;
   onDeleteSelection: () => void;
   onEscape: () => void;
 }) {
@@ -97,6 +99,12 @@ export function createAppMapEventOrchestration(options: {
     };
     const onCanvasKey = (event: KeyboardEvent) => {
       if (shouldIgnoreCanvasShortcut(event)) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "g") {
+        event.preventDefault();
+        if (event.shiftKey) options.onUngroupSelection();
+        else options.onGroupSelection();
+        return;
+      }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.code === "Space") {
         event.preventDefault();

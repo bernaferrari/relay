@@ -6,6 +6,7 @@ import {
   assertCaseStack,
   assertConnection,
   assertFlow,
+  assertMapGroup,
   assertProposal,
   assertRoutine,
   assertRun,
@@ -106,6 +107,22 @@ function assertVariants(map: AppMap): void {
         "missing-reference",
         `Variant ${variant.id} baseline evidence is absent from its target result`,
       );
+    }
+  }
+}
+
+function assertGroups(map: AppMap): void {
+  const owners = new Map<string, string>();
+  for (const group of Object.values(map.groups)) {
+    for (const screenId of group.screenIds) {
+      if (!map.screens[screenId]) {
+        appMapFail("missing-reference", `Group ${group.id} references missing screen ${screenId}`);
+      }
+      const owner = owners.get(screenId);
+      if (owner) {
+        appMapFail("duplicate-id", `Screen ${screenId} belongs to Groups ${owner} and ${group.id}`);
+      }
+      owners.set(screenId, group.id);
     }
   }
 }
@@ -271,7 +288,8 @@ function assertRunReferences(map: AppMap): void {
 
 /** Runtime validation plus a defensive clone suitable for pure reducers. */
 export function validateAppMap(value: unknown): AppMap {
-  const input = objectValue(value, "App Map") as unknown as AppMap;
+  const document = objectValue(value, "App Map");
+  const input = document as unknown as AppMap;
   if (input.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
     appMapFail("invalid-map", `App Map schemaVersion must be ${APP_MAP_SCHEMA_VERSION}`);
   }
@@ -297,6 +315,9 @@ export function validateAppMap(value: unknown): AppMap {
   );
   assertEntityRecord(input.notes, "App Map.notes", (item, label) =>
     assertAppMapNote(item, scope, label),
+  );
+  assertEntityRecord(input.groups, "App Map.groups", (item, label) =>
+    assertMapGroup(item, scope, label),
   );
   assertEntityRecord(input.screenVariants, "App Map.screenVariants", (item, label) =>
     assertVariant(item, scope, label),
@@ -324,6 +345,7 @@ export function validateAppMap(value: unknown): AppMap {
 
   const collections = {
     notes: input.notes,
+    groups: input.groups,
     screens: input.screens,
     screenVariants: input.screenVariants,
     connections: input.connections,
@@ -348,6 +370,7 @@ export function validateAppMap(value: unknown): AppMap {
   }
 
   assertVariants(input);
+  assertGroups(input);
   assertConnectionsAndActions(input);
   assertRoutineGraph(input);
   assertFlows(input);

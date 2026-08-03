@@ -11,6 +11,7 @@ import type {
   Connection,
   ConnectionPatch,
   Flow,
+  MapGroup,
   Proposal,
   ProposalChange,
   Routine,
@@ -169,6 +170,18 @@ export function assertAppMapNote(note: AppMapNote, scope: AppMapScope, label: st
   requiredText(note.text, `${label}.text`, 480);
   if (!Number.isFinite(note.position.x) || !Number.isFinite(note.position.y)) {
     appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
+  }
+}
+
+export function assertMapGroup(group: MapGroup, scope: AppMapScope, label: string): void {
+  assertEntity(group, scope, label);
+  requiredText(group.name, `${label}.name`, 120);
+  stringArray(group.screenIds, `${label}.screenIds`);
+  if (group.screenIds.length === 0) {
+    appMapFail("invalid-map", `${label}.screenIds must contain at least one screen`);
+  }
+  if (new Set(group.screenIds).size !== group.screenIds.length) {
+    appMapFail("duplicate-id", `${label}.screenIds contains a duplicate screen`);
   }
 }
 
@@ -429,6 +442,12 @@ function assertProposalChange(change: ProposalChange, scope: AppMapScope, label:
     case "connection.remove":
       identifier(change.connectionId, `${label}.connectionId`);
       break;
+    case "group.save":
+      assertMapGroup(change.group, scope, `${label}.group`);
+      break;
+    case "group.remove":
+      identifier(change.groupId, `${label}.groupId`);
+      break;
     default:
       appMapFail("invalid-map", `${label}.kind is unsupported`);
   }
@@ -492,6 +511,8 @@ export function assertActivity(
     "connection.connected",
     "connection.updated",
     "connection.removed",
+    "group.saved",
+    "group.removed",
     "flow.saved",
     "flow.removed",
     "routine.saved",
@@ -512,6 +533,7 @@ export function assertActivity(
       event.subject.kind === "app-map" ||
       event.subject.kind === "screen" ||
       event.subject.kind === "connection" ||
+      event.subject.kind === "group" ||
       event.subject.kind === "flow" ||
       event.subject.kind === "routine" ||
       event.subject.kind === "case-stack" ||

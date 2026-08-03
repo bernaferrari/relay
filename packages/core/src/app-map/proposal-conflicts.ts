@@ -1,8 +1,8 @@
 import type { ActivityEvent, AppMap, Proposal, ProposalChange } from "./model.js";
 
-type EntityKey = `${"app-map" | "screen" | "connection"}:${string}`;
+type EntityKey = `${"app-map" | "screen" | "connection" | "group"}:${string}`;
 
-function key(kind: "app-map" | "screen" | "connection", id: string): EntityKey {
+function key(kind: "app-map" | "screen" | "connection" | "group", id: string): EntityKey {
   return `${kind}:${id}`;
 }
 
@@ -18,6 +18,10 @@ function touchedByChange(change: ProposalChange): EntityKey[] {
     case "connection.update":
     case "connection.remove":
       return [key("connection", change.connectionId)];
+    case "group.save":
+      return [key("group", change.group.id)];
+    case "group.remove":
+      return [key("group", change.groupId)];
   }
 }
 
@@ -27,7 +31,11 @@ export function proposalEntityKeys(proposal: Pick<Proposal, "changes">): Set<Ent
 
 function eventEntityKeys(map: AppMap, event: ActivityEvent): Set<EntityKey> {
   if (event.subject.kind === "app-map") return new Set([key("app-map", map.id)]);
-  if (event.subject.kind === "screen" || event.subject.kind === "connection") {
+  if (
+    event.subject.kind === "screen" ||
+    event.subject.kind === "connection" ||
+    event.subject.kind === "group"
+  ) {
     return new Set([key(event.subject.kind, event.subject.id)]);
   }
   if (event.eventType === "proposal.approved") {

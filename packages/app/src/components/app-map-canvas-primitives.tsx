@@ -70,7 +70,9 @@ export function ScreenCard(props: {
   position: { x: number; y: number };
   src: () => string;
   orientationEvidence?: ScreenshotOrientationEvidence;
-  onSelect: () => void;
+  showActions?: boolean;
+  onSelect: (event?: MouseEvent) => void;
+  onContextMenu: (event: MouseEvent) => void;
   onRename: () => void;
   onOpenDetails: () => void;
   onCommitRename: (title: string) => void;
@@ -102,6 +104,7 @@ export function ScreenCard(props: {
       )}
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       onClick={props.onSelect}
+      onContextMenu={props.onContextMenu}
       onDblClick={(event) => {
         event.stopPropagation();
         props.onRename();
@@ -124,7 +127,7 @@ export function ScreenCard(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <Show when={props.selected && !props.editing}>
+      <Show when={props.selected && props.showActions !== false && !props.editing}>
         <div class="absolute bottom-[calc(100%+10px)] left-1/2 z-30 flex min-h-10 -translate-x-1/2 items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]">
           <button
             type="button"

@@ -9,7 +9,9 @@ function describeChange(change: ProposalChange): string {
   if (change.kind === "screen.remove") return `Remove screen ${change.screenId}`;
   if (change.kind === "connection.connect") return `Connect from ${change.connection.fromScreenId}`;
   if (change.kind === "connection.update") return `Update connection ${change.connectionId}`;
-  return `Remove connection ${change.connectionId}`;
+  if (change.kind === "connection.remove") return `Remove connection ${change.connectionId}`;
+  if (change.kind === "group.save") return `Save Group “${change.group.name}”`;
+  return `Remove Group ${change.groupId}`;
 }
 
 export function AppMapProposalReview(props: {

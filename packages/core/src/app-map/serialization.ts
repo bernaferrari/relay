@@ -139,6 +139,11 @@ function normalizedProposalChange(value: ProposalChange): ProposalChange {
           ...(value.patch.actions ? { actions: value.patch.actions.map(normalizedAction) } : {}),
         },
       };
+    case "group.save":
+      return {
+        kind: value.kind,
+        group: { ...structuredClone(value.group), screenIds: sortedStrings(value.group.screenIds) },
+      };
     default:
       return structuredClone(value);
   }
@@ -166,6 +171,10 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
     ...(map.description ? { description: map.description } : {}),
     revision: map.revision,
     notes: sortedEntities(map.notes),
+    groups: sortedEntities(map.groups).map((group) => ({
+      ...group,
+      screenIds: sortedStrings(group.screenIds),
+    })),
     screens: sortedEntities(map.screens).map(normalizedScreen),
     screenVariants: sortedEntities(map.screenVariants).map(normalizedVariant),
     connections: sortedEntities(map.connections).map(normalizedConnection),

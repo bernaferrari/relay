@@ -57,6 +57,13 @@ export type AppMapNote = AppMapEntity & {
   position: AppMapPoint;
 };
 
+/** Optional visual organization for the canvas and screen browser. A Group
+ * never changes execution, identity, or connection semantics. */
+export type MapGroup = AppMapEntity & {
+  name: string;
+  screenIds: string[];
+};
+
 export type Screen = AppMapEntity & {
   title: string;
   description?: string;
@@ -263,6 +270,8 @@ export type AppMapBatchChange =
   | { kind: "connection.create"; connection: Connection }
   | { kind: "connection.update"; connectionId: string; patch: ConnectionPatch }
   | { kind: "connection.remove"; connectionId: string }
+  | { kind: "group.save"; group: MapGroup }
+  | { kind: "group.remove"; groupId: string }
   | { kind: "flow.save"; flow: Flow }
   | { kind: "flow.remove"; flowId: string };
 
@@ -272,7 +281,9 @@ export type ProposalChange =
   | { kind: "screen.remove"; screenId: string }
   | { kind: "connection.connect"; connection: Connection }
   | { kind: "connection.update"; connectionId: string; patch: ConnectionPatch }
-  | { kind: "connection.remove"; connectionId: string };
+  | { kind: "connection.remove"; connectionId: string }
+  | { kind: "group.save"; group: MapGroup }
+  | { kind: "group.remove"; groupId: string };
 
 export type ProposalDecision = { actorId: string; at: number; reason?: string };
 
@@ -291,6 +302,7 @@ export type ActivitySubjectKind =
   | "app-map"
   | "screen"
   | "connection"
+  | "group"
   | "flow"
   | "routine"
   | "case-stack"
@@ -309,6 +321,8 @@ export type ActivityEvent = AppMapScope & {
     | "connection.connected"
     | "connection.updated"
     | "connection.removed"
+    | "group.saved"
+    | "group.removed"
     | "flow.saved"
     | "flow.removed"
     | "routine.saved"
@@ -336,6 +350,7 @@ export type AppMap = {
   description?: string;
   revision: number;
   notes: Record<string, AppMapNote>;
+  groups: Record<string, MapGroup>;
   screens: Record<string, Screen>;
   screenVariants: Record<string, ScreenVariant>;
   connections: Record<string, Connection>;
@@ -376,6 +391,7 @@ export type SerializedAppMap = Omit<
   AppMap,
   | "screens"
   | "notes"
+  | "groups"
   | "screenVariants"
   | "connections"
   | "caseStacks"
@@ -387,6 +403,7 @@ export type SerializedAppMap = Omit<
   | "activity"
 > & {
   notes: AppMapNote[];
+  groups: MapGroup[];
   screens: Screen[];
   screenVariants: ScreenVariant[];
   connections: Connection[];

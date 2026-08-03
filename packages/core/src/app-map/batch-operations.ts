@@ -2,6 +2,7 @@ import type { AppMap, AppMapBatchChange, AppMapMutationContext, AppMapPatch } fr
 import { dropConnection, patchConnection, putConnection } from "./connection-operations.js";
 import { applyAppMapPatch, assertEntityScope } from "./entity-operations.js";
 import { appMapFail } from "./errors.js";
+import { dropMapGroup, putMapGroup } from "./group-operations.js";
 import { mutateAppMap } from "./mutation.js";
 import { dropScreen, patchScreen, putScreen } from "./screen-operations.js";
 
@@ -40,7 +41,7 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
       patchScreen(draft, change.screenId, change.input, at);
       return;
     case "screen.remove":
-      dropScreen(draft, change.screenId);
+      dropScreen(draft, change.screenId, undefined, at);
       return;
     case "connection.create":
       putConnection(draft, change.connection);
@@ -50,6 +51,12 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
       return;
     case "connection.remove":
       dropConnection(draft, change.connectionId);
+      return;
+    case "group.save":
+      putMapGroup(draft, change.group);
+      return;
+    case "group.remove":
+      dropMapGroup(draft, change.groupId);
       return;
     case "flow.save":
       assertEntityScope(draft, change.flow);

@@ -3,6 +3,7 @@ import type {
   AppMap,
   AppMapBatchChange,
   Flow,
+  MapGroup,
   CanvasGraph,
   AppMapCanvasState,
   RecipeStep,
@@ -72,6 +73,7 @@ export function planAppMapProjection(input: {
   appMap: AppMap;
   graph: CanvasGraph;
   positions: Readonly<Record<string, { x: number; y: number }>>;
+  groups?: readonly MapGroup[];
   recipeSteps: readonly RecipeStep[];
   variantsByScreen?: Readonly<Record<string, readonly ScreenVariant[]>>;
 }): AppMapProjectionChange[] {
@@ -121,6 +123,12 @@ export function planAppMapProjection(input: {
         screenId: item.id,
         input: { patch, ...(variants?.length ? { upsertVariants: variants } : {}) },
       });
+  }
+
+  for (const group of input.groups ?? []) {
+    if (!same(appMap.groups[group.id], group)) {
+      changes.push({ kind: "group.save", group: structuredClone(group) });
+    }
   }
 
   for (const item of graph.transitions) {
@@ -239,6 +247,9 @@ export function mergeAppMapProjection(
   }
   return {
     ...metadata,
+    groups: Object.values(appMap.groups)
+      .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+      .map((group) => structuredClone(group)),
     notes: Object.values(appMap.notes)
       .sort((left, right) => left.createdAt - right.createdAt)
       .map((note) => ({
