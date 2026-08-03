@@ -2,6 +2,7 @@ import { For, Show, createMemo } from "solid-js";
 import type { MapGroup } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mapGroupGeometry } from "../lib/app-map-groups";
+import { selectedScreensRect } from "../lib/app-map-selection";
 import type { CanvasPoint } from "../lib/app-map-canvas-layout";
 import { Icon } from "./icon";
 
@@ -11,6 +12,7 @@ export function AppMapGroupsLayer(props: {
   selectedGroupId: string | null;
   renamingGroupId: string | null;
   selectedScreenIds: ReadonlySet<string>;
+  viewportScale: number;
   onSelectGroup: (group: MapGroup) => void;
   onGroupPointerDown: (
     event: PointerEvent & { currentTarget: HTMLElement },
@@ -23,7 +25,7 @@ export function AppMapGroupsLayer(props: {
   onGroupSelection: () => void;
 }) {
   const selectionGeometry = createMemo(() =>
-    mapGroupGeometry({ id: "selection", screenIds: [...props.selectedScreenIds] }, props.positions),
+    selectedScreensRect([...props.selectedScreenIds], props.positions),
   );
   const selectedGroup = createMemo(
     () => props.groups.find((group) => group.id === props.selectedGroupId) ?? null,
@@ -114,6 +116,22 @@ export function AppMapGroupsLayer(props: {
         }}
       </For>
 
+      <Show when={props.selectedScreenIds.size > 1 && selectionGeometry()}>
+        {(bounds) => (
+          <div
+            class="pointer-events-none absolute z-[18] rounded-[9px] border border-[var(--text-interactive-base)]"
+            data-app-map-selection-bounds
+            aria-hidden="true"
+            style={{
+              transform: `translate3d(${bounds().left}px, ${bounds().top}px, 0)`,
+              width: `${bounds().width}px`,
+              height: `${bounds().height}px`,
+              "border-width": `${1 / props.viewportScale}px`,
+            }}
+          />
+        )}
+      </Show>
+
       <Show
         when={
           selectedGroup() &&
@@ -168,14 +186,14 @@ export function AppMapGroupsLayer(props: {
             <button
               type="button"
               class="inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-              data-tip="Group selection · ⌘G"
+              data-tip="Group · ⌘G"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
                 props.onGroupSelection();
               }}
             >
-              <Icon name="group" size={13} /> Group selection
+              <Icon name="group" size={13} /> Group
             </button>
           </div>
         )}

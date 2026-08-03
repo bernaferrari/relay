@@ -81,7 +81,14 @@ import {
 } from "./app-map-device-companion-geometry";
 import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
 import { targetIsReady } from "../lib/target-presentation";
-import { groupForScreen, groupsAfterScreenDrag, nextGroupName } from "../lib/app-map-groups";
+import { groupForScreen, nextGroupName } from "../lib/app-map-groups";
+import {
+  APP_MAP_MARQUEE_THRESHOLD,
+  canvasSelectionRect,
+  mergeSelectedScreenIds,
+  screenIdsInSelection,
+  type CanvasSelectionRect,
+} from "../lib/app-map-selection";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -295,6 +302,15 @@ export function AppMapWorkspace(props: {
     error?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
+  const [selectionMarquee, setSelectionMarquee] = createSignal<{
+    pointerId: number;
+    start: CanvasPoint;
+    current: CanvasPoint;
+    startClient: CanvasPoint;
+    baseIds: string[];
+    additive: boolean;
+    moved: boolean;
+  } | null>(null);
   const [canvasClientSize, setCanvasClientSize] = createSignal({ width: 0, height: 0 });
   const [, setLocalCursor] = createSignal<CanvasPoint | undefined>();
   let canvas: HTMLElement | undefined;
@@ -368,6 +384,19 @@ export function AppMapWorkspace(props: {
     });
     canvasResizeObserver.observe(element);
   };
+  const canvasPointFromClient = (clientX: number, clientY: number): CanvasPoint => {
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const viewport = view();
+    return {
+      x: (clientX - rect.left - viewport.x) / viewport.scale,
+      y: (clientY - rect.top - viewport.y) / viewport.scale,
+    };
+  };
+  const marqueeRect = createMemo<CanvasSelectionRect | null>(() => {
+    const marquee = selectionMarquee();
+    return marquee?.moved ? canvasSelectionRect(marquee.start, marquee.current) : null;
+  });
   const applyCanvasPointerMove = (clientX: number, clientY: number) => {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -430,6 +459,28 @@ export function AppMapWorkspace(props: {
             : note,
         ),
       }));
+      return;
+    }
+    const marquee = selectionMarquee();
+    if (marquee) {
+      const moved =
+        marquee.moved ||
+        Math.hypot(clientX - marquee.startClient.x, clientY - marquee.startClient.y) >
+          APP_MAP_MARQUEE_THRESHOLD;
+      const current = canvasPointFromClient(clientX, clientY);
+      setSelectionMarquee({ ...marquee, current, moved });
+      if (!moved) return;
+      const hits = screenIdsInSelection(
+        tree().nodes.map((node) => node.id),
+        positions(),
+        canvasSelectionRect(marquee.start, current),
+      );
+      const selected = mergeSelectedScreenIds(marquee.baseIds, hits, marquee.additive);
+      setSelectedNodeIds(selected);
+      setSelectedNodeIdValue(selected.at(-1) ?? null);
+      setSelectedGroupId(null);
+      setSelectedConnectionId(null);
+      setScreenInspectorOpen(false);
       return;
     }
     if (!pan) return;
@@ -1629,7 +1680,7 @@ export function AppMapWorkspace(props: {
     setSelectedConnectionId(null);
     setSelectedGroupId(group.id);
     setGroupMenu(null);
-    toast("Grouped selection", "success");
+    toast("Created Group", "success");
   };
   const ungroup = (group: MapGroup) => {
     persistMetadata({
@@ -1787,6 +1838,13 @@ export function AppMapWorkspace(props: {
       if (node) removeScreen(node);
     },
     onEscape: () => {
+      const marquee = selectionMarquee();
+      if (marquee) {
+        setSelectedNodeIds(marquee.baseIds);
+        setSelectedNodeIdValue(marquee.baseIds.at(-1) ?? null);
+        setSelectionMarquee(null);
+        return;
+      }
       if (contextSurface()) {
         setContextSurface(null);
         return;
@@ -1845,27 +1903,43 @@ export function AppMapWorkspace(props: {
           }}
           onPointerDown={(event) => {
             const target = event.target as HTMLElement;
-            if (
-              !target.closest(
-                "[data-app-map-screen-id], [data-app-map-group-id], aside, button, input, textarea",
-              )
-            ) {
-              setSelectedNodeId(null);
-              setSelectedGroupId(null);
-              setSelectedConnectionId(null);
-              setScreenInspectorOpen(false);
-            }
+            const isCanvasBackground = !target.closest(
+              "[data-app-map-screen-id], [data-app-map-group-id], aside, button, input, textarea",
+            );
             if (!target.closest("[data-app-map-group-menu]")) setGroupMenu(null);
             const wantsPan = canvasTool() === "hand" || event.button === 1;
-            if (!hasCanvasContent() || !wantsPan || target.closest("button")) return;
-            pan = { x: event.clientX, y: event.clientY, view: view() };
-            (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+            if (hasCanvasContent() && wantsPan && !target.closest("button")) {
+              pan = { x: event.clientX, y: event.clientY, view: view() };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+            if (!hasCanvasContent() || !isCanvasBackground || event.button !== 0) return;
+            const point = canvasPointFromClient(event.clientX, event.clientY);
+            setSelectedGroupId(null);
+            setSelectedConnectionId(null);
+            setScreenInspectorOpen(false);
+            setSelectionMarquee({
+              pointerId: event.pointerId,
+              start: point,
+              current: point,
+              startClient: { x: event.clientX, y: event.clientY },
+              baseIds: event.shiftKey ? [...selectedNodeIds()] : [],
+              additive: event.shiftKey,
+              moved: false,
+            });
+            event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
             scheduleCanvasPointerMove(event.clientX, event.clientY);
           }}
           onPointerUp={(event) => {
             flushCanvasPointerMove(event.clientX, event.clientY);
+            const marquee = selectionMarquee();
+            if (marquee?.pointerId === event.pointerId) {
+              if (!marquee.moved && !marquee.additive) setSelectedNodeId(null);
+              setSelectionMarquee(null);
+              return;
+            }
             if (connectionDrag) {
               const source = connectionDrag.fromScreenId;
               const hit = document.elementFromPoint(event.clientX, event.clientY);
@@ -1915,18 +1989,9 @@ export function AppMapWorkspace(props: {
               return;
             }
             if (nodeDrag?.moved) {
-              const nextGroups = nodeDrag.groupId
-                ? groups()
-                : groupsAfterScreenDrag(
-                    groups(),
-                    nodeDrag.ids,
-                    nodeDrag.before.positions,
-                    positions(),
-                    Date.now(),
-                  );
-              persistMetadata(withCanvasGraph({ ...canvasState(), groups: nextGroups }, graph()), {
-                before: nodeDrag.before,
-              });
+              // Membership changes only through Group/Ungroup. The Group's
+              // visual bounds derive from its members and resize while they move.
+              persistMetadata(withCanvasGraph(canvasState(), graph()), { before: nodeDrag.before });
               suppressNodeSelectionClick = true;
               queueMicrotask(() => {
                 suppressNodeSelectionClick = false;
@@ -1946,6 +2011,12 @@ export function AppMapWorkspace(props: {
             nodeDrag = undefined;
             noteDrag = undefined;
             pan = undefined;
+            const marquee = selectionMarquee();
+            if (marquee) {
+              setSelectedNodeIds(marquee.baseIds);
+              setSelectedNodeIdValue(marquee.baseIds.at(-1) ?? null);
+              setSelectionMarquee(null);
+            }
           }}
           onPointerLeave={() => setLocalCursor(undefined)}
         >
@@ -2098,6 +2169,21 @@ export function AppMapWorkspace(props: {
                   transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
                 }}
               >
+                <Show when={marqueeRect()}>
+                  {(selection) => (
+                    <div
+                      class="pointer-events-none absolute z-50 rounded-[4px] border border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--product-accent-soft)_48%,transparent)]"
+                      data-app-map-marquee
+                      aria-hidden="true"
+                      style={{
+                        transform: `translate3d(${selection().left}px, ${selection().top}px, 0)`,
+                        width: `${selection().width}px`,
+                        height: `${selection().height}px`,
+                        "border-width": `${1 / view().scale}px`,
+                      }}
+                    />
+                  )}
+                </Show>
                 <AppMapCanvasScene
                   nodes={tree().nodes}
                   connections={connections()}
@@ -2105,6 +2191,7 @@ export function AppMapWorkspace(props: {
                   groups={groups()}
                   width={bounds().width}
                   height={bounds().height}
+                  viewportScale={view().scale}
                   visibleBounds={visibleCanvasBounds()}
                   selectedNodeId={selectedNodeId()}
                   selectedNodeIds={selectedNodeIds()}
@@ -2306,7 +2393,7 @@ export function AppMapWorkspace(props: {
                                 onClick={groupSelection}
                               >
                                 <span class="inline-flex items-center gap-2">
-                                  <Icon name="group" size={13} /> Group selection
+                                  <Icon name="group" size={13} /> Group
                                 </span>
                                 <kbd class="text-[10px] text-[var(--text-weak)]">⌘G</kbd>
                               </button>

@@ -35,28 +35,6 @@ export function mapGroupGeometry(
   return { id: group.id, left, top, right, bottom, width: right - left, height: bottom - top };
 }
 
-export function groupAtPoint(
-  groups: readonly MapGroup[],
-  positions: Readonly<Record<string, CanvasPoint>>,
-  point: CanvasPoint,
-  excludedScreenIds: ReadonlySet<string> = new Set(),
-): MapGroup | undefined {
-  return [...groups].reverse().find((group) => {
-    const reduced = {
-      ...group,
-      screenIds: group.screenIds.filter((id) => !excludedScreenIds.has(id)),
-    };
-    const geometry = mapGroupGeometry(reduced, positions) ?? mapGroupGeometry(group, positions);
-    return (
-      geometry &&
-      point.x >= geometry.left &&
-      point.x <= geometry.right &&
-      point.y >= geometry.top &&
-      point.y <= geometry.bottom
-    );
-  });
-}
-
 export function groupForScreen(
   groups: readonly MapGroup[],
   screenId: string,
@@ -70,57 +48,4 @@ export function nextGroupName(groups: readonly MapGroup[]): string {
   let index = 2;
   while (names.has(`Group ${index}`)) index += 1;
   return `Group ${index}`;
-}
-
-/** Reconciles visual membership after a screen drag. Moving every member of a
- * Group preserves it; moving individual screens lets their center point leave
- * or enter another Group. */
-export function groupsAfterScreenDrag(
-  groups: readonly MapGroup[],
-  draggedIds: readonly string[],
-  previousPositions: Readonly<Record<string, CanvasPoint>>,
-  currentPositions: Readonly<Record<string, CanvasPoint>>,
-  at: number,
-): MapGroup[] {
-  const moved = new Set(draggedIds);
-  const wholeGroups = new Set(
-    groups
-      .filter(
-        (group) =>
-          group.screenIds.length > 0 && group.screenIds.every((screenId) => moved.has(screenId)),
-      )
-      .map((group) => group.id),
-  );
-  const movableIds = draggedIds.filter((id) => {
-    const owner = groupForScreen(groups, id);
-    return !owner || !wholeGroups.has(owner.id);
-  });
-  if (!movableIds.length) return [...groups];
-
-  const movable = new Set(movableIds);
-  const next = groups.map((group) => ({
-    ...group,
-    screenIds: group.screenIds.filter((id) => !movable.has(id)),
-  }));
-  for (const id of movableIds) {
-    const position = currentPositions[id];
-    if (!position) continue;
-    const target = groupAtPoint(
-      groups,
-      previousPositions,
-      { x: position.x + SCREEN_CARD_WIDTH / 2, y: position.y + SCREEN_CARD_HEIGHT / 2 },
-      movable,
-    );
-    if (!target) continue;
-    const destination = next.find((group) => group.id === target.id);
-    if (destination && !destination.screenIds.includes(id)) destination.screenIds.push(id);
-  }
-  return next
-    .filter((group) => group.screenIds.length > 0)
-    .map((group) => {
-      const previous = groups.find((candidate) => candidate.id === group.id);
-      return JSON.stringify(group.screenIds) === JSON.stringify(previous?.screenIds)
-        ? group
-        : { ...group, updatedAt: at };
-    });
 }

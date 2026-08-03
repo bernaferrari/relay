@@ -29,6 +29,7 @@ export type AppMapCanvasSceneProps = {
   groups: readonly MapGroup[];
   width: number;
   height: number;
+  viewportScale: number;
   visibleBounds: { left: number; top: number; right: number; bottom: number };
   selectedNodeId: string | null;
   selectedNodeIds: readonly string[];
@@ -204,6 +205,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         selectedGroupId={props.selectedGroupId}
         renamingGroupId={props.renamingGroupId}
         selectedScreenIds={selectedNodeIds()}
+        viewportScale={props.viewportScale}
         onSelectGroup={props.onSelectGroup}
         onGroupPointerDown={props.onGroupPointerDown}
         onGroupContextMenu={props.onGroupContextMenu}
