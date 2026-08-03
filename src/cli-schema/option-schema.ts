@@ -11,10 +11,7 @@ import {
 export type OptionSpec = {
   key: FlagKey;
   flagDefinitions: readonly FlagDefinition[];
-  config: {
-    enabled: boolean;
-    key: string;
-  };
+  configurable: boolean;
   env: {
     names: readonly string[];
   };
@@ -40,7 +37,7 @@ export function getOptionSpec(key: FlagKey): OptionSpec | undefined {
 }
 
 export function getConfigurableOptionSpecs(command: string | null): OptionSpec[] {
-  return optionSpecs.filter((spec) => spec.config.enabled && spec.supportsCommand(command));
+  return optionSpecs.filter((spec) => spec.configurable && spec.supportsCommand(command));
 }
 
 export function isFlagSupportedForCommand(key: FlagKey, command: string | null): boolean {
@@ -82,10 +79,7 @@ function buildOptionSpecs(): OptionSpec[] {
     .map(([key, flagDefinitions]) => ({
       key,
       flagDefinitions,
-      config: {
-        enabled: !CONFIG_EXCLUDED_FLAG_KEYS.has(key),
-        key,
-      },
+      configurable: !CONFIG_EXCLUDED_FLAG_KEYS.has(key),
       env: {
         names: ENV_EXCLUDED_FLAG_KEYS.has(key) ? [] : [buildPrimaryEnvVarName(key)],
       },

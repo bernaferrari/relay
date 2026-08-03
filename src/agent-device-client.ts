@@ -103,7 +103,7 @@ export function createAgentDeviceClient(
     input?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> => {
     const merged = mergeClientOptions(config, options);
-    const response = await transport({
+    const request = {
       session: resolveSessionName(merged.session),
       command,
       positionals,
@@ -111,7 +111,8 @@ export function createAgentDeviceClient(
       flags: buildRequestFlags(merged, metadataFlags),
       runtime: merged.runtime,
       meta: buildMeta(merged),
-    });
+    };
+    const response = await transport(request, { authToken: merged.daemonAuthToken });
     if (!response.ok) {
       throwDaemonError(response.error);
     }
