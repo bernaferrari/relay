@@ -1,0 +1,90 @@
+diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
+index 8c73d1c115411942aad34b64aa0110cda5b15818..b53e5720083a13ccf173a01b4a4a51174172befd 100644
+--- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
++++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
+@@ -22,6 +22,9 @@ func runnerCGImage(from image: RunnerImage) -> CGImage? {
+ }
+ 
+ extension RunnerTests {
++  private static let managedRecordingPrefix = "agent-device-recording-"
++  private static let managedRecordingSuffix = ".mp4"
++
+   // MARK: - Recording
+ 
+   func captureRunnerFrame() -> RunnerImage? {
+@@ -58,6 +61,55 @@ extension RunnerTests {
+     activeRecording = nil
+   }
+ 
++  /// Removes recordings owned by this runner from its temporary container.
++  ///
++  /// Physical iOS recordings are copied to the host after `recordStop`. The files in the
++  /// runner container are only transport artifacts, so keeping them after a session ends
++  /// causes iOS to report unbounded Documents & Data usage. Cleanup is deliberately scoped
++  /// to our timestamped MP4 names so unrelated XCTest temporary files are never touched.
++  func cleanupStaleRunnerRecordings(keeping retainedFileName: String? = nil) {
++    let fileManager = FileManager.default
++    let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
++    let entries: [URL]
++
++    do {
++      entries = try fileManager.contentsOfDirectory(
++        at: temporaryDirectory,
++        includingPropertiesForKeys: [.isRegularFileKey],
++        options: [.skipsHiddenFiles]
++      )
++    } catch {
++      NSLog(
++        "AGENT_DEVICE_RUNNER_RECORD_CLEANUP_LIST_FAILED path=%@ error=%@",
++        temporaryDirectory.path,
++        String(describing: error)
++      )
++      return
++    }
++
++    for entry in entries {
++      let fileName = entry.lastPathComponent
++      guard
++        fileName != retainedFileName,
++        fileName.hasPrefix(Self.managedRecordingPrefix),
++        fileName.hasSuffix(Self.managedRecordingSuffix)
++      else {
++        continue
++      }
++
++      do {
++        try fileManager.removeItem(at: entry)
++        NSLog("AGENT_DEVICE_RUNNER_RECORD_CLEANUP_REMOVED path=%@", entry.path)
++      } catch {
++        NSLog(
++          "AGENT_DEVICE_RUNNER_RECORD_CLEANUP_REMOVE_FAILED path=%@ error=%@",
++          entry.path,
++          String(describing: error)
++        )
++      }
++    }
++  }
++
+   func resolveRecordingOutPath(_ requestedOutPath: String) -> String {
+ #if os(macOS)
+     if requestedOutPath.hasPrefix("/") {
+@@ -67,6 +119,7 @@ extension RunnerTests {
+     let fileName = URL(fileURLWithPath: requestedOutPath).lastPathComponent
+     let fallbackName = "agent-device-recording-\(Int(Date().timeIntervalSince1970 * 1000)).mp4"
+     let safeFileName = fileName.isEmpty ? fallbackName : fileName
++    cleanupStaleRunnerRecordings(keeping: safeFileName)
+     return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
+   }
+ 
+diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
+index 4aa404a6b9a711aea54a539a8be75ad5c972d14e..243b5cbbfba03a6c8b1270271da77155fd81c553 100644
+--- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
++++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
+@@ -86,6 +86,7 @@ final class RunnerTests: XCTestCase {
+ 
+   override func setUp() {
+     continueAfterFailure = true
++    cleanupStaleRunnerRecordings()
+   }
+ 
+   @MainActor

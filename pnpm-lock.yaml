@@ -219,6 +219,9 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.6
   '@xhmikosr/decompress': ^10.2.1
 
+patchedDependencies:
+  agent-device@0.18.3: df64f30b3f73c8505738118b3ebc1c7fdbe1e4f6a1f1f18889b84ff53672c22f
+
 importers:
 
   .:
@@ -324,7 +327,7 @@ importers:
         version: link:../protocol
       agent-device:
         specifier: ^0.18.3
-        version: 0.18.3
+        version: 0.18.3(patch_hash=df64f30b3f73c8505738118b3ebc1c7fdbe1e4f6a1f1f18889b84ff53672c22f)
       playwright-core:
         specifier: ^1.61.1
         version: 1.61.1
@@ -371,7 +374,7 @@ importers:
         version: 35.7.5(supports-color@7.2.0)
       electron-builder:
         specifier: ^26.0.12
-        version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
+        version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
@@ -386,7 +389,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0)'
       vite-plugin-solid:
         specifier: ^2.11.6
-        version: 2.11.12(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))(solid-js@1.9.14)(supports-color@7.2.0)
+        version: 2.11.12(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))(solid-js@1.9.14)
 
   packages/mcp:
     dependencies:
@@ -3750,12 +3753,32 @@ snapshots:
 
   '@babel/compat-data@7.29.7': {}
 
+  '@babel/core@7.29.7':
+    dependencies:
+      '@babel/code-frame': 7.29.7
+      '@babel/generator': 7.29.7
+      '@babel/helper-compilation-targets': 7.29.7
+      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7)
+      '@babel/helpers': 7.29.7
+      '@babel/parser': 7.29.7
+      '@babel/template': 7.29.7
+      '@babel/traverse': 7.29.7(supports-color@7.2.0)
+      '@babel/types': 7.29.7
+      '@jridgewell/remapping': 2.3.5
+      convert-source-map: 2.0.0
+      debug: 4.4.3(supports-color@7.2.0)
+      gensync: 1.0.0-beta.2
+      json5: 2.2.3
+      semver: 6.3.1
+    transitivePeerDependencies:
+      - supports-color
+
   '@babel/core@7.29.7(supports-color@7.2.0)':
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/generator': 7.29.7
       '@babel/helper-compilation-targets': 7.29.7
-      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7(supports-color@7.2.0))(supports-color@7.2.0)
+      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7(supports-color@7.2.0))
       '@babel/helpers': 7.29.7
       '@babel/parser': 7.29.7
       '@babel/template': 7.29.7
@@ -3792,17 +3815,26 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.7
 
-  '@babel/helper-module-imports@7.29.7(supports-color@7.2.0)':
+  '@babel/helper-module-imports@7.29.7':
     dependencies:
       '@babel/traverse': 7.29.7(supports-color@7.2.0)
       '@babel/types': 7.29.7
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7(supports-color@7.2.0))(supports-color@7.2.0)':
+  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7(supports-color@7.2.0))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
-      '@babel/helper-module-imports': 7.29.7(supports-color@7.2.0)
+      '@babel/helper-module-imports': 7.29.7
+      '@babel/helper-validator-identifier': 7.29.7
+      '@babel/traverse': 7.29.7(supports-color@7.2.0)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-module-imports': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
       '@babel/traverse': 7.29.7(supports-color@7.2.0)
     transitivePeerDependencies:
@@ -3828,6 +3860,11 @@ snapshots:
   '@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7(supports-color@7.2.0))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
+      '@babel/helper-plugin-utils': 7.29.7
+
+  '@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7)':
+    dependencies:
+      '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
   '@babel/runtime@7.29.7': {}
@@ -3879,13 +3916,13 @@ snapshots:
       got: 11.8.6
       progress: 2.0.3
       semver: 6.3.1
-      sumchecker: 3.0.1(supports-color@7.2.0)
+      sumchecker: 3.0.1
     optionalDependencies:
       global-agent: 3.0.0
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/get@3.1.0(supports-color@7.2.0)':
+  '@electron/get@3.1.0':
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       env-paths: 2.2.1
@@ -3893,13 +3930,13 @@ snapshots:
       got: 11.8.6
       progress: 2.0.3
       semver: 6.3.1
-      sumchecker: 3.0.1(supports-color@7.2.0)
+      sumchecker: 3.0.1
     optionalDependencies:
       global-agent: 3.0.0
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/notarize@2.5.0(supports-color@7.2.0)':
+  '@electron/notarize@2.5.0':
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       fs-extra: 9.1.0
@@ -3907,7 +3944,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/osx-sign@1.3.3(supports-color@7.2.0)':
+  '@electron/osx-sign@1.3.3':
     dependencies:
       compare-version: 0.1.2
       debug: 4.4.3(supports-color@7.2.0)
@@ -3918,18 +3955,18 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/rebuild@4.2.0(supports-color@7.2.0)':
+  '@electron/rebuild@4.2.0':
     dependencies:
       '@malept/cross-spawn-promise': 2.0.0
       debug: 4.4.3(supports-color@7.2.0)
       node-abi: 4.33.0
       node-api-version: 0.2.1
       node-gyp: 12.4.0
-      read-binary-file-arch: 1.0.6(supports-color@7.2.0)
+      read-binary-file-arch: 1.0.6
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/universal@2.0.3(supports-color@7.2.0)':
+  '@electron/universal@2.0.3':
     dependencies:
       '@electron/asar': 3.4.1
       '@malept/cross-spawn-promise': 2.0.0
@@ -3941,7 +3978,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/windows-sign@1.2.2(supports-color@7.2.0)':
+  '@electron/windows-sign@1.2.2':
     dependencies:
       cross-dirname: 0.1.0
       debug: 4.4.3(supports-color@7.2.0)
@@ -4135,7 +4172,7 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@malept/flatpak-bundler@0.4.0(supports-color@7.2.0)':
+  '@malept/flatpak-bundler@0.4.0':
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       fs-extra: 9.1.0
@@ -4725,7 +4762,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@xhmikosr/decompress-tarbz2@8.1.0(supports-color@7.2.0)':
+  '@xhmikosr/decompress-tarbz2@8.1.0':
     dependencies:
       '@xhmikosr/decompress-tar': 8.1.0(supports-color@7.2.0)
       file-type: 20.5.0(supports-color@7.2.0)
@@ -4738,7 +4775,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@xhmikosr/decompress-targz@8.1.0(supports-color@7.2.0)':
+  '@xhmikosr/decompress-targz@8.1.0':
     dependencies:
       '@xhmikosr/decompress-tar': 8.1.0(supports-color@7.2.0)
       file-type: 20.5.0(supports-color@7.2.0)
@@ -4749,7 +4786,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@xhmikosr/decompress-unzip@7.1.0(supports-color@7.2.0)':
+  '@xhmikosr/decompress-unzip@7.1.0':
     dependencies:
       file-type: 20.5.0(supports-color@7.2.0)
       get-stream: 6.0.1
@@ -4760,9 +4797,9 @@ snapshots:
   '@xhmikosr/decompress@10.2.1(supports-color@7.2.0)':
     dependencies:
       '@xhmikosr/decompress-tar': 8.1.0(supports-color@7.2.0)
-      '@xhmikosr/decompress-tarbz2': 8.1.0(supports-color@7.2.0)
-      '@xhmikosr/decompress-targz': 8.1.0(supports-color@7.2.0)
-      '@xhmikosr/decompress-unzip': 7.1.0(supports-color@7.2.0)
+      '@xhmikosr/decompress-tarbz2': 8.1.0
+      '@xhmikosr/decompress-targz': 8.1.0
+      '@xhmikosr/decompress-unzip': 7.1.0
       graceful-fs: 4.2.11
       strip-dirs: 3.0.0
     transitivePeerDependencies:
@@ -4944,7 +4981,7 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  agent-device@0.18.3:
+  agent-device@0.18.3(patch_hash=df64f30b3f73c8505738118b3ebc1c7fdbe1e4f6a1f1f18889b84ff53672c22f):
     dependencies:
       yaml: 2.9.0
 
@@ -4963,33 +5000,33 @@ snapshots:
 
   ansi-styles@5.2.0: {}
 
-  app-builder-lib@26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0):
+  app-builder-lib@26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3):
     dependencies:
       '@electron/asar': 3.4.1
       '@electron/fuses': 1.8.0
-      '@electron/get': 3.1.0(supports-color@7.2.0)
-      '@electron/notarize': 2.5.0(supports-color@7.2.0)
-      '@electron/osx-sign': 1.3.3(supports-color@7.2.0)
-      '@electron/rebuild': 4.2.0(supports-color@7.2.0)
-      '@electron/universal': 2.0.3(supports-color@7.2.0)
-      '@malept/flatpak-bundler': 0.4.0(supports-color@7.2.0)
+      '@electron/get': 3.1.0
+      '@electron/notarize': 2.5.0
+      '@electron/osx-sign': 1.3.3
+      '@electron/rebuild': 4.2.0
+      '@electron/universal': 2.0.3
+      '@malept/flatpak-bundler': 0.4.0
       '@noble/hashes': 2.2.0
       '@peculiar/webcrypto': 1.7.1
       '@types/fs-extra': 9.0.13
       ajv: 8.20.0
       asn1js: 3.0.10
       async-exit-hook: 2.0.1
-      builder-util: 26.15.3(supports-color@7.2.0)
-      builder-util-runtime: 9.7.0(supports-color@7.2.0)
+      builder-util: 26.15.3
+      builder-util-runtime: 9.7.0
       chromium-pickle-js: 0.2.0
       ci-info: 4.3.1
       debug: 4.4.3(supports-color@7.2.0)
-      dmg-builder: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
+      dmg-builder: 26.15.3(electron-builder-squirrel-windows@26.15.3)
       dotenv: 16.6.1
       dotenv-expand: 11.0.7
       ejs: 3.1.10
-      electron-builder-squirrel-windows: 26.15.3(dmg-builder@26.15.3)(supports-color@7.2.0)
-      electron-publish: 26.15.3(supports-color@7.2.0)
+      electron-builder-squirrel-windows: 26.15.3(dmg-builder@26.15.3)
+      electron-publish: 26.15.3
       fs-extra: 10.1.0
       hosted-git-info: 4.1.0
       isbinaryfile: 5.0.7
@@ -5046,10 +5083,26 @@ snapshots:
       html-entities: 2.3.3
       parse5: 7.3.0
 
+  babel-plugin-jsx-dom-expressions@0.40.7(@babel/core@7.29.7):
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/helper-module-imports': 7.18.6
+      '@babel/plugin-syntax-jsx': 7.29.7(@babel/core@7.29.7)
+      '@babel/types': 7.29.7
+      html-entities: 2.3.3
+      parse5: 7.3.0
+
   babel-preset-solid@1.9.12(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.14):
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
       babel-plugin-jsx-dom-expressions: 0.40.7(@babel/core@7.29.7(supports-color@7.2.0))
+    optionalDependencies:
+      solid-js: 1.9.14
+
+  babel-preset-solid@1.9.12(@babel/core@7.29.7)(solid-js@1.9.14):
+    dependencies:
+      '@babel/core': 7.29.7
+      babel-plugin-jsx-dom-expressions: 0.40.7(@babel/core@7.29.7)
     optionalDependencies:
       solid-js: 1.9.14
 
@@ -5134,23 +5187,23 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  builder-util-runtime@9.7.0(supports-color@7.2.0):
+  builder-util-runtime@9.7.0:
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       sax: 1.6.0
     transitivePeerDependencies:
       - supports-color
 
-  builder-util@26.15.3(supports-color@7.2.0):
+  builder-util@26.15.3:
     dependencies:
       '@types/debug': 4.1.13
-      builder-util-runtime: 9.7.0(supports-color@7.2.0)
+      builder-util-runtime: 9.7.0
       chalk: 4.1.2
       cross-spawn: 7.0.6
       debug: 4.4.3(supports-color@7.2.0)
       fs-extra: 10.1.0
-      http-proxy-agent: 7.0.2(supports-color@7.2.0)
-      https-proxy-agent: 7.0.6(supports-color@7.2.0)
+      http-proxy-agent: 7.0.2
+      https-proxy-agent: 7.0.6
       js-yaml: 4.3.0
       sanitize-filename: 1.6.4
       source-map-support: 0.5.21
@@ -5300,10 +5353,10 @@ snapshots:
       minimatch: 3.1.5
       p-limit: 3.1.0
 
-  dmg-builder@26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0):
+  dmg-builder@26.15.3(electron-builder-squirrel-windows@26.15.3):
     dependencies:
-      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
-      builder-util: 26.15.3(supports-color@7.2.0)
+      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)
+      builder-util: 26.15.3
       fs-extra: 10.1.0
       js-yaml: 4.3.0
     transitivePeerDependencies:
@@ -5332,23 +5385,23 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  electron-builder-squirrel-windows@26.15.3(dmg-builder@26.15.3)(supports-color@7.2.0):
+  electron-builder-squirrel-windows@26.15.3(dmg-builder@26.15.3):
     dependencies:
-      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
-      builder-util: 26.15.3(supports-color@7.2.0)
-      electron-winstaller: 5.4.0(supports-color@7.2.0)
+      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)
+      builder-util: 26.15.3
+      electron-winstaller: 5.4.0
     transitivePeerDependencies:
       - dmg-builder
       - supports-color
 
-  electron-builder@26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0):
+  electron-builder@26.15.3(electron-builder-squirrel-windows@26.15.3):
     dependencies:
-      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
-      builder-util: 26.15.3(supports-color@7.2.0)
-      builder-util-runtime: 9.7.0(supports-color@7.2.0)
+      app-builder-lib: 26.15.3(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3)
+      builder-util: 26.15.3
+      builder-util-runtime: 9.7.0
       chalk: 4.1.2
       ci-info: 4.4.0
-      dmg-builder: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
+      dmg-builder: 26.15.3(electron-builder-squirrel-windows@26.15.3)
       fs-extra: 10.1.0
       lazy-val: 1.0.5
       simple-update-notifier: 2.0.0
@@ -5357,12 +5410,12 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-publish@26.15.3(supports-color@7.2.0):
+  electron-publish@26.15.3:
     dependencies:
       '@types/fs-extra': 9.0.13
       aws4: 1.13.2
-      builder-util: 26.15.3(supports-color@7.2.0)
-      builder-util-runtime: 9.7.0(supports-color@7.2.0)
+      builder-util: 26.15.3
+      builder-util-runtime: 9.7.0
       chalk: 4.1.2
       form-data: 4.0.6
       fs-extra: 10.1.0
@@ -5373,7 +5426,7 @@ snapshots:
 
   electron-to-chromium@1.5.385: {}
 
-  electron-winstaller@5.4.0(supports-color@7.2.0):
+  electron-winstaller@5.4.0:
     dependencies:
       '@electron/asar': 3.4.1
       debug: 4.4.3(supports-color@7.2.0)
@@ -5381,7 +5434,7 @@ snapshots:
       lodash: 4.18.1
       temp: 0.9.4
     optionalDependencies:
-      '@electron/windows-sign': 1.2.2(supports-color@7.2.0)
+      '@electron/windows-sign': 1.2.2
     transitivePeerDependencies:
       - supports-color
 
@@ -5774,7 +5827,7 @@ snapshots:
 
   http-cache-semantics@4.2.0: {}
 
-  http-proxy-agent@7.0.2(supports-color@7.2.0):
+  http-proxy-agent@7.0.2:
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@7.2.0)
@@ -5791,7 +5844,7 @@ snapshots:
       quick-lru: 5.1.1
       resolve-alpn: 1.2.1
 
-  https-proxy-agent@7.0.6(supports-color@7.2.0):
+  https-proxy-agent@7.0.6:
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@7.2.0)
@@ -6267,7 +6320,7 @@ snapshots:
 
   react-is@17.0.2: {}
 
-  read-binary-file-arch@1.0.6(supports-color@7.2.0):
+  read-binary-file-arch@1.0.6:
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
@@ -6391,10 +6444,10 @@ snapshots:
       seroval: 1.5.4
       seroval-plugins: 1.5.4(seroval@1.5.4)
 
-  solid-refresh@0.6.3(solid-js@1.9.14)(supports-color@7.2.0):
+  solid-refresh@0.6.3(solid-js@1.9.14):
     dependencies:
       '@babel/generator': 7.29.7
-      '@babel/helper-module-imports': 7.29.7(supports-color@7.2.0)
+      '@babel/helper-module-imports': 7.29.7
       '@babel/types': 7.29.7
       solid-js: 1.9.14
     transitivePeerDependencies:
@@ -6469,7 +6522,7 @@ snapshots:
       '@tokenizer/token': 0.3.0
       peek-readable: 5.4.2
 
-  sumchecker@3.0.1(supports-color@7.2.0):
+  sumchecker@3.0.1:
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
@@ -6648,14 +6701,14 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite-plugin-solid@2.11.12(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))(solid-js@1.9.14)(supports-color@7.2.0):
+  vite-plugin-solid@2.11.12(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))(solid-js@1.9.14):
     dependencies:
-      '@babel/core': 7.29.7(supports-color@7.2.0)
+      '@babel/core': 7.29.7
       '@types/babel__core': 7.20.5
-      babel-preset-solid: 1.9.12(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.14)
+      babel-preset-solid: 1.9.12(@babel/core@7.29.7)(solid-js@1.9.14)
       merge-anything: 5.1.7
       solid-js: 1.9.14
-      solid-refresh: 0.6.3(solid-js@1.9.14)(supports-color@7.2.0)
+      solid-refresh: 0.6.3(solid-js@1.9.14)
       vite: '@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0)'
       vitefu: 1.1.3(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.1)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))
     transitivePeerDependencies:
@@ -6668,7 +6721,7 @@ snapshots:
       babel-preset-solid: 1.9.12(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.14)
       merge-anything: 5.1.7
       solid-js: 1.9.14
-      solid-refresh: 0.6.3(solid-js@1.9.14)(supports-color@7.2.0)
+      solid-refresh: 0.6.3(solid-js@1.9.14)
       vite: '@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0)'
       vitefu: 1.1.3(@voidzero-dev/vite-plus-core@0.2.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0))
     transitivePeerDependencies:

@@ -31,4 +31,17 @@ describe("Relay workspace verification", () => {
     expect(root.scripts?.["test:packages"]).toBe("pnpm -r --if-present run test");
     expect(root.scripts?.["test:packages"]).not.toContain("vp test");
   });
+
+  it("keeps physical iOS runner recordings bounded", async () => {
+    const workspace = await readFile("pnpm-workspace.yaml", "utf8");
+    const patch = await readFile("patches/agent-device@0.18.3.patch", "utf8");
+
+    expect(workspace).toContain("agent-device@0.18.3: patches/agent-device@0.18.3.patch");
+    expect(patch).toContain(
+      'private static let managedRecordingPrefix = "agent-device-recording-"',
+    );
+    expect(patch).toContain("cleanupStaleRunnerRecordings()");
+    expect(patch).toContain("cleanupStaleRunnerRecordings(keeping: safeFileName)");
+    expect(patch).toContain("try fileManager.removeItem(at: entry)");
+  });
 });
