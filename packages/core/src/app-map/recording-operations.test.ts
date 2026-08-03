@@ -13,12 +13,13 @@ const afterFingerprint = "b".repeat(64);
 
 function mapFixture(): AppMap {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "map-1",
     organizationId: "org-1",
     projectId: "project-1",
     name: "Store",
     revision: 0,
+    notes: {},
     screens: {},
     screenVariants: {},
     connections: {},

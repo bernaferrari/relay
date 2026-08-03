@@ -241,6 +241,16 @@ export function mergeAppMapProjection(metadata: JourneyMetadata, appMap: AppMap)
   }
   return {
     ...metadata,
+    notes: Object.values(appMap.notes)
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .map((note) => ({
+        id: note.id,
+        text: note.text,
+        x: note.position.x,
+        y: note.position.y,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+      })),
     positions,
     screenTitles,
     graph: { schemaVersion: 1, screens, transitions, flows },

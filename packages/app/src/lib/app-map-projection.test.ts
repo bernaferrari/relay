@@ -4,12 +4,13 @@ import type { AppMap, JourneyGraph } from "@relay/protocol";
 import { mergeAppMapProjection, planAppMapProjection } from "./app-map-projection.js";
 
 const map: AppMap = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "store",
   organizationId: "acme",
   projectId: "mobile",
   name: "Store",
   revision: 0,
+  notes: {},
   screens: {},
   screenVariants: {},
   connections: {},

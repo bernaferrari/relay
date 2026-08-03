@@ -395,26 +395,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.proposal.approve", path("proposal approve", ["appMapId", "proposalId"])),
   mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
 
-  mapped("journey.list", path("journey list")),
-  mapped("journey.get", path("journey get", ["journeyId"])),
-  mapped("journey.create", path("journey create")),
-  mapped("journey.update", path("journey update", ["journeyId"])),
-  mapped("journey.delete", path("journey delete", ["journeyId"])),
-  mapped("journey.import", path("journey import")),
-  mapped("journey.history.restore", path("journey history restore", ["journeyId"])),
-  mapped("journey.evidence.save", path("journey evidence save", ["journeyId"])),
-  mapped("journey.document.get", path("journey document get", ["journeyId"])),
-  mapped("journey.document.update", path("journey document update", ["journeyId"])),
-  mapped("collaboration.document.bootstrap", path("collaboration bootstrap", ["journeyId"])),
-  mapped("collaboration.document.sync", path("collaboration sync", ["journeyId"])),
-  mapped("collaboration.update.append", path("collaboration update append", ["journeyId"])),
-  mapped("collaboration.status.get", path("collaboration status", ["journeyId"])),
-  mapped("collaboration.document.export", path("collaboration export", ["journeyId"])),
-  mapped("collaboration.document.repair", path("collaboration repair", ["journeyId"])),
-  mapped("collaboration.awareness.publish", path("collaboration awareness publish", ["journeyId"])),
-  mapped("collaboration.awareness.list", path("collaboration awareness list", ["journeyId"])),
-  mapped("collaboration.awareness.remove", path("collaboration awareness remove", ["journeyId"])),
-
   mapped("authoring.session.list", path("session list")),
   mapped(
     "authoring.session.get",
@@ -712,14 +692,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
 
-  mapped("collection.list", path("collection list")),
-  mapped("collection.get", path("collection get", ["collectionId"])),
-  mapped("collection.create", path("collection create")),
-  mapped("collection.update", path("collection update", ["collectionId"])),
-  mapped("collection.delete", path("collection delete", ["collectionId"])),
-  mapped("collection.restore", path("collection restore", ["collectionId"])),
-  mapped("collection.run", path("collection run", ["collectionId"])),
-
   mapped("schedule.list", path("schedule list")),
   mapped("schedule.create", path("schedule create")),
   mapped("schedule.delete", path("schedule delete", ["scheduleId"])),
@@ -793,30 +765,29 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped("job.active.cancel", path("job active cancel")),
-  mapped(
-    "job.graph-path.start",
-    path("job graph-path start"),
-    path("journey flow run", ["recipe", "flowName"], undefined, {
-      summary: "Run a named path through an App Map",
-      argumentHelp: [
-        { name: "mapId", type: "string", description: "App Map identifier" },
-        { name: "flowName", type: "string", description: "Named flow start" },
-      ],
-      inputHelp: [
-        { name: "serial", type: "string", description: "Device serial" },
-        {
-          name: "transitionPath",
-          type: "string[]",
-          description: "Explicit connection identifiers",
-        },
-        { name: "platform", type: "android | ios", description: "Device platform" },
-      ],
-      examples: ['relay flow run checkout Checkout --input \'{"serial":"emulator-5554"}\''],
-    }),
-  ),
   mapped("job.matrix.start", path("job matrix start")),
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
+
+  ...(
+    [
+      "recipe.list",
+      "recipe.get",
+      "recipe.create",
+      "recipe.update",
+      "recipe.delete",
+      "recipe.yaml.get",
+      "recipe.import",
+      "recipe.evidence.create",
+      "recipe.history.list",
+      "recipe.history.restore",
+      "recipe.stability.get",
+    ] as const
+  ).map((operationId) => ({
+    operationId,
+    exclusion: "internal" as const,
+    reason: "Compiled recipe storage is internal; people and agents author App Map flows.",
+  })),
 
   mapped("run.list", path("run list")),
   {

@@ -22,8 +22,8 @@ function operationHeaders(
 
 test("project-scoped variables persist and expose revision conflicts", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-server-state-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const client = new RelayClient({
@@ -56,8 +56,8 @@ test("project-scoped variables persist and expose revision conflicts", async () 
     );
   } finally {
     await server.close();
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -142,11 +142,11 @@ test("authenticated network service cannot read unowned workspace assets", async
   process.env.RELAY_REDACTION_MODE = "on";
   const server = await startServer({ host: "0.0.0.0", port: 0, token });
   try {
-    const response = await fetch(`http://127.0.0.1:${server.port}/journeys`, {
+    const response = await fetch(`http://127.0.0.1:${server.port}/recipes`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "x-project-id": "project-a",
-        ...operationHeaders("journey.list", "configured-service"),
+        ...operationHeaders("recipe.list", "configured-service"),
       },
     });
     assert.equal(response.status, 403);

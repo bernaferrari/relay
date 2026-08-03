@@ -5,7 +5,6 @@ import {
   type DevicePool,
   type GenerationRequest,
   type GenerationResult,
-  type JourneyMetadata,
   type Project,
   type RevisionWrite,
   type Revisioned,
@@ -33,12 +32,6 @@ import {
   type ReorderAuthoringTakeInput,
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
-  type CollaborationAppendResponse,
-  type CollaborationAwarenessListResponse,
-  type CollaborationAwarenessPublishInput,
-  type CollaborationAwarenessRemoveResponse,
-  type CollaborationAwarenessResponse,
-  type CollaborationDocumentResponse,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -382,61 +375,6 @@ export class RelayClient {
   }
   updateVariables(write: RevisionWrite<TestVariable[]>): Promise<Revisioned<TestVariable[]>> {
     return this.invoke("workspace.variables.update", write) as Promise<Revisioned<TestVariable[]>>;
-  }
-  journey(recipeId: string): Promise<Revisioned<JourneyMetadata>> {
-    return this.invoke("journey.document.get", { journeyId: recipeId }) as Promise<
-      Revisioned<JourneyMetadata>
-    >;
-  }
-  updateJourney(
-    recipeId: string,
-    write: RevisionWrite<JourneyMetadata>,
-  ): Promise<Revisioned<JourneyMetadata>> {
-    return this.invoke("journey.document.update", {
-      journeyId: recipeId,
-      ...write,
-    }) as Promise<Revisioned<JourneyMetadata>>;
-  }
-  bootstrapCollaboration(journeyId: string): Promise<CollaborationDocumentResponse> {
-    return this.invoke("collaboration.document.bootstrap", { journeyId });
-  }
-  syncCollaboration(
-    journeyId: string,
-    stateVectorBase64: string,
-  ): Promise<CollaborationDocumentResponse> {
-    return this.invoke("collaboration.document.sync", { journeyId, stateVectorBase64 });
-  }
-  appendCollaborationUpdate(
-    journeyId: string,
-    updateBase64: string,
-    clientUpdateId: string,
-    options: InvokeOptions = {},
-  ): Promise<CollaborationAppendResponse> {
-    return this.invoke(
-      "collaboration.update.append",
-      { journeyId, updateBase64, clientUpdateId },
-      { ...options, idempotencyKey: options.idempotencyKey ?? clientUpdateId },
-    );
-  }
-  collaborationStatus(journeyId: string): Promise<CollaborationDocumentResponse> {
-    return this.invoke("collaboration.status.get", { journeyId });
-  }
-  exportCollaboration(journeyId: string): Promise<CollaborationDocumentResponse> {
-    return this.invoke("collaboration.document.export", { journeyId });
-  }
-  repairCollaboration(journeyId: string): Promise<CollaborationDocumentResponse> {
-    return this.invoke("collaboration.document.repair", { journeyId });
-  }
-  publishCollaborationAwareness(
-    input: CollaborationAwarenessPublishInput,
-  ): Promise<CollaborationAwarenessResponse> {
-    return this.invoke("collaboration.awareness.publish", input);
-  }
-  collaborationAwareness(journeyId: string): Promise<CollaborationAwarenessListResponse> {
-    return this.invoke("collaboration.awareness.list", { journeyId });
-  }
-  removeCollaborationAwareness(journeyId: string): Promise<CollaborationAwarenessRemoveResponse> {
-    return this.invoke("collaboration.awareness.remove", { journeyId });
   }
   authoringSessions() {
     return this.invoke("authoring.session.list", {});

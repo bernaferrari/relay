@@ -5,12 +5,13 @@ import { proposalFromDiscovery } from "./observation-proposal.js";
 
 test("discovery becomes a target-covered App Map proposal without mutating the map", () => {
   const map: AppMap = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "map",
     organizationId: "org",
     projectId: "project",
     name: "Product",
     revision: 0,
+    notes: {},
     screens: {},
     screenVariants: {},
     connections: {},

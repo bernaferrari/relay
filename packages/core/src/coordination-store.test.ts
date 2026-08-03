@@ -18,15 +18,15 @@ test("keyed serialization preserves same-resource order without blocking other r
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const first = queue.run("journey:a", async () => {
+  const first = queue.run("app-map:a", async () => {
     order.push("a:start");
     await blocked;
     order.push("a:end");
   });
-  const second = queue.run("journey:a", async () => {
+  const second = queue.run("app-map:a", async () => {
     order.push("a:second");
   });
-  await queue.run("journey:b", async () => {
+  await queue.run("app-map:b", async () => {
     order.push("b");
   });
   assert.deepEqual(order, ["a:start", "b"]);

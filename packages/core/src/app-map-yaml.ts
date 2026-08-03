@@ -18,6 +18,7 @@ const APP_MAP_FIELDS = new Set([
   "name",
   "description",
   "revision",
+  "notes",
   "screens",
   "screenVariants",
   "connections",
@@ -32,6 +33,7 @@ const APP_MAP_FIELDS = new Set([
   "updatedAt",
 ]);
 const ENTITY_FIELDS = [
+  "notes",
   "screens",
   "screenVariants",
   "connections",
@@ -140,6 +142,7 @@ export function rescopeAppMap(
     id: appMapId,
     organizationId: destination.organizationId,
     projectId: destination.projectId,
+    notes: mapEntities(value.notes),
     screens: mapEntities(value.screens),
     screenVariants: mapEntities(value.screenVariants),
     connections: mapEntities(value.connections),

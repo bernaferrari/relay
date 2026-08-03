@@ -1,6 +1,6 @@
 /**
- * Version the recorder writes into a journey document. Keep this separate
- * from the recipe YAML schema: a journey can remain executable while its
+ * Version the recorder writes into App Map evidence. Keep this separate
+ * from the recipe YAML schema: a flow can remain executable while its
  * captured evidence contract evolves.
  */
 export const CURRENT_RECORDING_FORMAT_VERSION = 2 as const;

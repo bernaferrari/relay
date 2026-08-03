@@ -4,8 +4,6 @@ import type {
   CaseStack,
   JourneyCanvasNote,
   JourneyMetadata,
-  Revisioned,
-  CollaborationAwareness,
 } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -13,7 +11,6 @@ import { useServer, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type JourneyTreeNode } from "../lib/journey-tree";
-import { createJourneyDocument, type JourneyDocument } from "../lib/journey-document";
 import {
   addPlannedConnection,
   addPlannedScreenConnection,
@@ -52,8 +49,6 @@ import { evidenceForStep } from "./journey-step-presentation";
 import { AppMapEmptyState } from "./app-map-capture-review";
 import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
-import { collaborationActivity } from "../lib/collaboration-awareness";
-import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
 import {
   AppMapOverviewToolbar,
@@ -101,11 +96,10 @@ export function AppMapWorkspace(props: {
   const workbench = useWorkbench();
   // State must exist before a Solid memo reads it: createMemo evaluates its
   // computation immediately, including when the component is recreated by HMR.
-  const [metadata, setMetadata] = createSignal<Revisioned<JourneyMetadata>>({
-    revision: 0,
-    value: EMPTY_JOURNEY_METADATA,
-    updatedAt: 0,
-  });
+  // App Map is the only persisted authoring document. This compact canvas
+  // projection is renderer state only; it is rebuilt from the App Map and is
+  // never loaded from or saved to a parallel Journey resource.
+  const [canvasState, setCanvasState] = createSignal<JourneyMetadata>(EMPTY_JOURNEY_METADATA);
   const [loadedAppMapId, setLoadedAppMapId] = createSignal<string | null>(null);
   const [appMapLoadState, setAppMapLoadState] = createSignal<AppMapLoadState>({
     status: "idle",
@@ -113,7 +107,7 @@ export function AppMapWorkspace(props: {
   const [appMapLoadAttempt, setAppMapLoadAttempt] = createSignal(0);
   const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
   const [agentOpen, setAgentOpen] = createSignal(false);
-  const graph = createMemo(() => ensureJourneyGraph(metadata().value, draft.steps()));
+  const graph = createMemo(() => ensureJourneyGraph(canvasState(), draft.steps()));
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
   const activeAppMap = createMemo(() =>
     server.appMaps().find((candidate) => candidate.id === server.selectedAppMapId()),
@@ -155,7 +149,7 @@ export function AppMapWorkspace(props: {
   const [appleSetupCheckAttempt] = createSignal(0);
   const [appleSetupCheckFailed, setAppleSetupCheckFailed] = createSignal(false);
   let requestedAppleSetupFor = "";
-  let canonicalProjectionQueue = Promise.resolve();
+  let appMapMutationQueue = Promise.resolve();
   let appliedCanonicalRevision = "";
   createEffect(() => {
     const device = selectedDevice();
@@ -238,7 +232,7 @@ export function AppMapWorkspace(props: {
       : undefined;
   });
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
-  const connections = createMemo(() => canvasConnections(tree(), draft.steps(), metadata().value));
+  const connections = createMemo(() => canvasConnections(tree(), draft.steps(), canvasState()));
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
@@ -276,13 +270,8 @@ export function AppMapWorkspace(props: {
     error?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
-  const [remoteAwareness, setRemoteAwareness] = createSignal<readonly CollaborationAwareness[]>([]);
-  const [localCursor, setLocalCursor] = createSignal<CanvasPoint | undefined>();
+  const [, setLocalCursor] = createSignal<CanvasPoint | undefined>();
   let canvas: HTMLElement | undefined;
-  let journeyDocument: JourneyDocument | null = null;
-  let collaborationRuntime: JourneyCollaborationRuntime | null = null;
-  let unsubscribeJourneyDocument: (() => void) | undefined;
-  let unsubscribeAwareness: (() => void) | undefined;
   let pan: { x: number; y: number; view: CanvasViewport } | undefined;
   let nodeDrag:
     | { id: string; x: number; y: number; origin: CanvasPoint; moved: boolean }
@@ -303,7 +292,6 @@ export function AppMapWorkspace(props: {
   let recordRequestedAfterDeviceSelection = false;
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
-  let metadataSaveSequence = 0;
   let destinationResolvedForTake = "";
   let captureCloseTimer: number | undefined;
 
@@ -340,43 +328,6 @@ export function AppMapWorkspace(props: {
     if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
   });
 
-  const closeJourneyDocument = () => {
-    unsubscribeAwareness?.();
-    unsubscribeAwareness = undefined;
-    unsubscribeJourneyDocument?.();
-    unsubscribeJourneyDocument = undefined;
-    collaborationRuntime?.destroy();
-    collaborationRuntime = null;
-    journeyDocument?.destroy();
-    journeyDocument = null;
-    setRemoteAwareness([]);
-    setLocalCursor(undefined);
-  };
-
-  const openJourneyDocument = (journeyId: string, value: JourneyMetadata) => {
-    closeJourneyDocument();
-    const document = createJourneyDocument(value);
-    journeyDocument = document;
-    unsubscribeJourneyDocument = document.subscribe((next, origin) => {
-      const remoteCollaborationOrigin =
-        typeof origin === "object" &&
-        origin !== null &&
-        (origin as { type?: string }).type === "relay-collaboration-remote";
-      if (!remoteCollaborationOrigin) return;
-      setMetadata((current) => ({
-        ...current,
-        revision: current.revision + 1,
-        value: next,
-        updatedAt: Date.now(),
-      }));
-    });
-    collaborationRuntime = server.createJourneyCollaboration(journeyId, document.doc);
-    unsubscribeAwareness = collaborationRuntime.subscribeAwareness(setRemoteAwareness);
-    void collaborationRuntime.start().catch((error: unknown) => {
-      toast(error instanceof Error ? error.message : "Collaboration could not connect", "warning");
-    });
-  };
-
   const reviewingTake = () => recorder.take()?.state === "review";
 
   createEffect(() => {
@@ -410,21 +361,18 @@ export function AppMapWorkspace(props: {
     setCaptureOpen(false);
     appliedCanonicalRevision = "";
     if (!appMapId) {
-      closeJourneyDocument();
       setLoadedAppMapId(null);
       setAppMapLoadState({ status: "idle" });
-      setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
+      setCanvasState(EMPTY_JOURNEY_METADATA);
       return;
     }
-    closeJourneyDocument();
     setLoadedAppMapId(null);
     setAppMapLoadState({ status: "loading", appMapId });
     void server
-      .loadJourney(appMapId)
-      .then((next) => {
+      .loadAppMap(appMapId)
+      .then((appMap) => {
         if (server.selectedAppMapId() === appMapId) {
-          setMetadata(next);
-          openJourneyDocument(appMapId, next.value);
+          setCanvasState(mergeAppMapProjection(EMPTY_JOURNEY_METADATA, appMap));
           setLoadedAppMapId(appMapId);
           setAppMapLoadState({ status: "ready", appMapId });
         }
@@ -443,17 +391,16 @@ export function AppMapWorkspace(props: {
     const revisionKey = `${appMapId}:${appMap.revision}`;
     if (appliedCanonicalRevision === revisionKey) return;
     appliedCanonicalRevision = revisionKey;
-    const current = metadata();
-    const value = mergeAppMapProjection(current.value, appMap);
+    const current = canvasState();
+    const value = mergeAppMapProjection(current, appMap);
     if (
-      JSON.stringify(value.graph) === JSON.stringify(current.value.graph) &&
-      JSON.stringify(value.positions) === JSON.stringify(current.value.positions) &&
-      JSON.stringify(value.screenTitles) === JSON.stringify(current.value.screenTitles)
+      JSON.stringify(value.graph) === JSON.stringify(current.graph) &&
+      JSON.stringify(value.positions) === JSON.stringify(current.positions) &&
+      JSON.stringify(value.screenTitles) === JSON.stringify(current.screenTitles)
     ) {
       return;
     }
-    journeyDocument?.replace(value, "remote");
-    setMetadata({ ...current, value, updatedAt: Math.max(current.updatedAt, appMap.updatedAt) });
+    setCanvasState(value);
   });
 
   // A blank App Map starts with its device companion visible: the first screen
@@ -507,12 +454,10 @@ export function AppMapWorkspace(props: {
     setCaptureOpen(true);
     void recorder.enterRecordMode();
   });
-  onCleanup(closeJourneyDocument);
-
-  const positions = () => metadata().value.positions;
+  const positions = () => canvasState().positions;
   const titleFor = (node: JourneyTreeNode) =>
-    metadata().value.screenTitles?.[node.id]?.trim() || node.title;
-  const hasCanvasContent = () => hasMap() || (metadata().value.notes?.length ?? 0) > 0;
+    canvasState().screenTitles?.[node.id]?.trim() || node.title;
+  const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
   const positionFor = (node: JourneyTreeNode): CanvasPoint => positions()[node.id] ?? node;
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
@@ -653,7 +598,7 @@ export function AppMapWorkspace(props: {
       })),
   );
   const bounds = createMemo(() =>
-    canvasBounds(tree().nodes, metadata().value.notes ?? [], positionFor),
+    canvasBounds(tree().nodes, canvasState().notes ?? [], positionFor),
   );
   const presenceGeometry = createMemo(() => ({
     screenPositions: Object.fromEntries(
@@ -674,34 +619,6 @@ export function AppMapWorkspace(props: {
       ]),
     ),
   }));
-
-  createEffect(() => {
-    const appMapId = loadedAppMapId();
-    const runtime = collaborationRuntime;
-    const element = canvas;
-    const currentView = view();
-    if (!appMapId || !runtime?.enabled || !element) return;
-    runtime.updateAwareness({
-      activity: collaborationActivity({
-        recording: recorder.recording(),
-        running: server.running(),
-        editing: Boolean(selectedNodeId() || selectedConnectionId() || localCursor()),
-      }),
-      ...(localCursor() ? { cursor: localCursor() } : {}),
-      ...(selectedNodeId()
-        ? { selection: { screenId: selectedNodeId()! } }
-        : selectedConnectionId()
-          ? { selection: { connectionId: selectedConnectionId()! } }
-          : {}),
-      viewport: {
-        x: currentView.x,
-        y: currentView.y,
-        zoom: currentView.scale,
-        width: element.clientWidth,
-        height: element.clientHeight,
-      },
-    });
-  });
 
   const fit = () => {
     const element = canvas;
@@ -743,17 +660,12 @@ export function AppMapWorkspace(props: {
       zoomViewportAtPoint(current, clampCanvasScale(current.scale + delta), anchor),
     );
   };
-  function syncCanonicalProjection(value: JourneyMetadata): void {
+  function persistAppMapCanvas(value: JourneyMetadata): void {
     const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
-    canonicalProjectionQueue = canonicalProjectionQueue
+    appMapMutationQueue = appMapMutationQueue
       .then(async () => {
-        let appMap;
-        try {
-          appMap = await server.loadAppMap(appMapId);
-        } catch {
-          return;
-        }
+        let appMap = await server.loadAppMap(appMapId);
         const projectedGraph = ensureJourneyGraph(value, draft.steps());
         const changes = planAppMapProjection({
           appMap,
@@ -810,47 +722,48 @@ export function AppMapWorkspace(props: {
         if (changes.length) await server.refreshAppMaps();
       })
       .catch((error) => {
-        toast(
-          `Canvas saved, but its shared App Map projection needs attention: ${error instanceof Error ? error.message : String(error)}`,
-          "warning",
-        );
+        toast(error instanceof Error ? error.message : "The App Map could not be saved", "warning");
       });
   }
-  const applyRemoteMetadata = (next: Revisioned<JourneyMetadata>) => {
-    journeyDocument?.replace(next.value, "remote");
-    setMetadata(next);
-    syncCanonicalProjection(next.value);
-  };
   const persistMetadata = (value: JourneyMetadata) => {
-    const appMapId = server.selectedAppMapId();
-    if (!appMapId) return;
-    const current = metadata();
-    const nextValue = journeyDocument?.replace(value) ?? value;
-    setMetadata({
-      ...current,
-      revision: current.revision + 1,
-      value: nextValue,
-      updatedAt: Date.now(),
-    });
-    syncCanonicalProjection(nextValue);
-    // When opted in, the provider is the only canvas writer. The revisioned
-    // compatibility document remains the sole writer while collaboration is disabled.
-    if (collaborationRuntime?.enabled) return;
-    const sequence = ++metadataSaveSequence;
-    void server
-      .saveJourney(appMapId, current, nextValue)
-      .then((next) => {
-        if (sequence === metadataSaveSequence) applyRemoteMetadata(next);
-      })
-      .catch(() => {
-        if (sequence === metadataSaveSequence) applyRemoteMetadata(current);
-      });
+    if (!server.selectedAppMapId()) return;
+    setCanvasState(value);
+    persistAppMapCanvas(value);
   };
   const persistPositions = (next: Record<string, CanvasPoint>) =>
-    persistMetadata(withJourneyGraph({ ...metadata().value, positions: next }, graph()));
+    persistMetadata(withJourneyGraph({ ...canvasState(), positions: next }, graph()));
   const persistNotes = (notes: JourneyCanvasNote[]) => {
-    if (!server.selectedAppMapId()) return;
-    persistMetadata(withJourneyGraph({ ...metadata().value, notes }, graph()));
+    const appMap = activeAppMap();
+    if (!appMap) return;
+    setCanvasState(withJourneyGraph({ ...canvasState(), notes }, graph()));
+    const canonicalNotes = Object.fromEntries(
+      notes.map((note) => [
+        note.id,
+        {
+          id: note.id,
+          organizationId: appMap.organizationId,
+          projectId: appMap.projectId,
+          appMapId: appMap.id,
+          text: note.text.trim() || "Note",
+          position: { x: note.x, y: note.y },
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+        },
+      ]),
+    );
+    appMapMutationQueue = appMapMutationQueue
+      .then(async () => {
+        const current = await server.loadAppMap(appMap.id);
+        await server.runAction("app-map.update", {
+          appMapId: current.id,
+          expectedRevision: current.revision,
+          patch: { notes: canonicalNotes },
+        });
+        await server.refreshAppMaps();
+      })
+      .catch((error) =>
+        toast(error instanceof Error ? error.message : "Notes could not be saved", "warning"),
+      );
   };
   const chooseTargetSet = (targetSetId?: string) => {
     const flow = activeFlow();
@@ -868,7 +781,7 @@ export function AppMapWorkspace(props: {
         };
       }),
     };
-    persistMetadata(withJourneyGraph(metadata().value, next));
+    persistMetadata(withJourneyGraph(canvasState(), next));
   };
   createEffect(() => {
     window.dispatchEvent(
@@ -920,7 +833,7 @@ export function AppMapWorkspace(props: {
       const captured = await recorder.captureStartScreen();
       if (!captured || hasMap()) return;
       const added = addJourneyStartScreen(graph(), captured.observation);
-      persistMetadata(withJourneyGraph(metadata().value, added.graph));
+      persistMetadata(withJourneyGraph(canvasState(), added.graph));
       if (captured.screenshotUrl) {
         setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
       }
@@ -939,7 +852,7 @@ export function AppMapWorkspace(props: {
       const captured = await recorder.captureStartScreen();
       if (!captured) return;
       const added = addJourneyGraphScreen(graph(), captured.observation);
-      persistMetadata(withJourneyGraph(metadata().value, added.graph));
+      persistMetadata(withJourneyGraph(canvasState(), added.graph));
       if (captured.screenshotUrl) {
         setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
       }
@@ -975,7 +888,7 @@ export function AppMapWorkspace(props: {
     const at = Date.now();
     const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
     persistNotes([
-      ...(metadata().value.notes ?? []),
+      ...(canvasState().notes ?? []),
       { id, text: "Add context for this part of the map", x, y, createdAt: at, updatedAt: at },
     ]);
   };
@@ -1136,7 +1049,7 @@ export function AppMapWorkspace(props: {
     ]);
     if (!inserted.length) return;
     persistMetadata(
-      attachTransitionSteps(metadata().value, connection.id, inserted, mode, Date.now()),
+      attachTransitionSteps(canvasState(), connection.id, inserted, mode, Date.now()),
     );
     setTransitionReplay({ connectionId: connection.id, state: "idle" });
   };
@@ -1200,7 +1113,7 @@ export function AppMapWorkspace(props: {
         const error = target.error!;
         persistMetadata(
           reviewTransition(
-            metadata().value,
+            canvasState(),
             connection.id,
             { status: "failed", error, targets: [target] },
             Date.now(),
@@ -1212,7 +1125,7 @@ export function AppMapWorkspace(props: {
       }
       persistMetadata(
         reviewTransition(
-          metadata().value,
+          canvasState(),
           connection.id,
           { status: "verified", targets: [target] },
           Date.now(),
@@ -1224,7 +1137,7 @@ export function AppMapWorkspace(props: {
     }
     persistMetadata(
       reviewTransition(
-        metadata().value,
+        canvasState(),
         connection.id,
         { status: "failed", error: result.error },
         Date.now(),
@@ -1268,7 +1181,7 @@ export function AppMapWorkspace(props: {
   };
   const chooseKeyboardConnection = (fromScreenId: string, toScreenId: string) => {
     const next = addPlannedConnection(
-      metadata().value,
+      canvasState(),
       { fromScreenId, toScreenId },
       Date.now(),
       draft.steps(),
@@ -1284,7 +1197,7 @@ export function AppMapWorkspace(props: {
     if (!source) return;
     const position = positionFor(source);
     const next = addPlannedScreenConnection(
-      metadata().value,
+      canvasState(),
       {
         fromScreenId,
         position: { x: position.x + 300, y: position.y },
@@ -1300,14 +1213,14 @@ export function AppMapWorkspace(props: {
   };
   const removeConnection = (connection: CanvasConnection) => {
     if (connection.source !== "authored") return;
-    persistMetadata(removeAuthoredConnection(metadata().value, connection.id));
+    persistMetadata(removeAuthoredConnection(canvasState(), connection.id));
     setSelectedConnectionId(null);
     queueCanonicalRemoval({ connectionIds: [connection.id] });
   };
   const queueCanonicalRemoval = (input: { connectionIds?: string[]; screenId?: string }) => {
     const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
-    canonicalProjectionQueue = canonicalProjectionQueue
+    appMapMutationQueue = appMapMutationQueue
       .then(async () => {
         let appMap = await server.loadAppMap(appMapId);
         const connectionIds = new Set(input.connectionIds ?? []);
@@ -1375,7 +1288,7 @@ export function AppMapWorkspace(props: {
       });
   };
   const removeScreen = (node: JourneyTreeNode) => {
-    const current = metadata().value;
+    const current = canvasState();
     const nextGraph = removeJourneyGraphScreen(graph(), node.id);
     const nextPositions = { ...current.positions };
     const nextTitles = { ...current.screenTitles };
@@ -1406,8 +1319,8 @@ export function AppMapWorkspace(props: {
     persistMetadata(
       withJourneyGraph(
         {
-          ...metadata().value,
-          screenTitles: { ...metadata().value.screenTitles, [node.id]: next },
+          ...canvasState(),
+          screenTitles: { ...canvasState().screenTitles, [node.id]: next },
         },
         nextGraph,
       ),
@@ -1415,35 +1328,9 @@ export function AppMapWorkspace(props: {
     setRenamingNodeId(null);
   };
   const undo = () => {
-    if (journeyDocument?.canUndo()) {
-      const current = metadata();
-      const value = journeyDocument.undoOnce();
-      setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
-      const appMapId = server.selectedAppMapId();
-      if (collaborationRuntime?.enabled) return;
-      const sequence = ++metadataSaveSequence;
-      if (appMapId)
-        void server
-          .saveJourney(appMapId, current, value)
-          .then((next) => sequence === metadataSaveSequence && applyRemoteMetadata(next));
-      return;
-    }
     draft.undo();
   };
   const redo = () => {
-    if (journeyDocument?.canRedo()) {
-      const current = metadata();
-      const value = journeyDocument.redoOnce();
-      setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
-      const appMapId = server.selectedAppMapId();
-      if (collaborationRuntime?.enabled) return;
-      const sequence = ++metadataSaveSequence;
-      if (appMapId)
-        void server
-          .saveJourney(appMapId, current, value)
-          .then((next) => sequence === metadataSaveSequence && applyRemoteMetadata(next));
-      return;
-    }
     draft.redo();
   };
 
@@ -1466,15 +1353,10 @@ export function AppMapWorkspace(props: {
     onCloseDevicePanel: closeCapturePanel,
     onRunMap: runJourneyGraph,
     onUndoRequest: (event, shouldRedo) => {
-      if (shouldRedo) {
-        if (!journeyDocument?.canRedo()) return;
-        event.preventDefault();
-        redo();
-        return;
-      }
-      if (!journeyDocument?.canUndo()) return;
+      if (shouldRedo ? !draft.canRedo() : !draft.canUndo()) return;
       event.preventDefault();
-      undo();
+      if (shouldRedo) redo();
+      else undo();
     },
     onToolChange: setCanvasTool,
     onCaptureScreen: () => void captureCurrentScreen(),
@@ -1602,17 +1484,14 @@ export function AppMapWorkspace(props: {
                   y: nodeDrag.origin.y + (event.clientY - nodeDrag.y) / view().scale,
                 },
               };
-              setMetadata((current) => ({
-                ...current,
-                value: { ...current.value, positions: next },
-              }));
+              setCanvasState((current) => ({ ...current, positions: next }));
               return;
             }
             if (noteDrag) {
               const moved = Math.hypot(event.clientX - noteDrag.x, event.clientY - noteDrag.y) > 4;
               if (!moved && !noteDrag.moved) return;
               noteDrag.moved = true;
-              const next = (metadata().value.notes ?? []).map((note) =>
+              const next = (canvasState().notes ?? []).map((note) =>
                 note.id === noteDrag!.id
                   ? {
                       ...note,
@@ -1622,10 +1501,7 @@ export function AppMapWorkspace(props: {
                     }
                   : note,
               );
-              setMetadata((current) => ({
-                ...current,
-                value: { ...current.value, notes: next },
-              }));
+              setCanvasState((current) => ({ ...current, notes: next }));
               return;
             }
             if (!pan) return;
@@ -1644,7 +1520,7 @@ export function AppMapWorkspace(props: {
               let next: JourneyMetadata | null = null;
               if (target && target !== source) {
                 next = addPlannedConnection(
-                  metadata().value,
+                  canvasState(),
                   {
                     fromScreenId: source,
                     toScreenId: target,
@@ -1662,7 +1538,7 @@ export function AppMapWorkspace(props: {
                 ) > 72
               ) {
                 next = addPlannedScreenConnection(
-                  metadata().value,
+                  canvasState(),
                   {
                     fromScreenId: source,
                     position: {
@@ -1685,7 +1561,7 @@ export function AppMapWorkspace(props: {
               return;
             }
             if (nodeDrag?.moved) persistPositions(positions());
-            if (noteDrag?.moved) persistNotes(metadata().value.notes ?? []);
+            if (noteDrag?.moved) persistNotes(canvasState().notes ?? []);
             nodeDrag = undefined;
             noteDrag = undefined;
             pan = undefined;
@@ -1832,7 +1708,7 @@ export function AppMapWorkspace(props: {
                 <AppMapCanvasScene
                   nodes={tree().nodes}
                   connections={connections()}
-                  notes={metadata().value.notes ?? []}
+                  notes={canvasState().notes ?? []}
                   width={bounds().width}
                   height={bounds().height}
                   selectedNodeId={selectedNodeId()}
@@ -1847,7 +1723,7 @@ export function AppMapWorkspace(props: {
                         }
                       : undefined
                   }
-                  awareness={remoteAwareness()}
+                  awareness={[]}
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
                   titleFor={titleFor}
@@ -1916,20 +1792,17 @@ export function AppMapWorkspace(props: {
                     };
                   }}
                   onNoteText={(note, text) =>
-                    setMetadata((current) => ({
+                    setCanvasState((current) => ({
                       ...current,
-                      value: {
-                        ...current.value,
-                        notes: (current.value.notes ?? []).map((entry) =>
-                          entry.id === note.id ? { ...entry, text, updatedAt: Date.now() } : entry,
-                        ),
-                      },
+                      notes: (current.notes ?? []).map((entry) =>
+                        entry.id === note.id ? { ...entry, text, updatedAt: Date.now() } : entry,
+                      ),
                     }))
                   }
-                  onCommitNote={() => persistNotes(metadata().value.notes ?? [])}
+                  onCommitNote={() => persistNotes(canvasState().notes ?? [])}
                   onDeleteNote={(note) =>
                     persistNotes(
-                      (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
+                      (canvasState().notes ?? []).filter((entry) => entry.id !== note.id),
                     )
                   }
                 />

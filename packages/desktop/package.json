@@ -2,7 +2,7 @@
   "name": "@relay/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Record, edit, and run mobile and browser journeys with Relay.",
+  "description": "Map, verify, and run mobile and browser applications with Relay.",
   "author": "Relay",
   "type": "module",
   "main": "./out/main/index.js",

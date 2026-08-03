@@ -3,7 +3,6 @@
  * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
-import { join } from "node:path";
 import { URL } from "node:url";
 import { readFile } from "node:fs/promises";
 import {
@@ -25,7 +24,6 @@ import {
   captureSnapshot,
   createDevice,
   enqueueJob,
-  freezeRecipeGraph,
   formatSnapshotTree,
   formatRecipeYaml,
   formatMatrixYaml,
@@ -67,16 +65,13 @@ import {
   listCompatibilityMatrices,
   readCompatibilityMatrix,
   listProjects,
-  readJourney,
   readProjectVariables,
   releaseDeviceLease,
   saveBuild,
   saveDevicePool,
   saveCompatibilityMatrix,
   saveProject,
-  writeJourney,
   writeProjectVariables,
-  buildTestAtlas,
   listRecipeHistory,
   restoreRecipeHistory,
   recipeStability,
@@ -106,14 +101,6 @@ import {
   resolveCompatibilityMatrix,
   buildDiscoveryCoverage,
   type RecipeParameter,
-  createSuiteRunManifest,
-  deleteSuite,
-  listSuiteHistory,
-  listSuites,
-  readSuite,
-  restoreSuiteHistory,
-  saveSuite,
-  type SaveSuiteInput,
   getRedactionPolicy,
   getEvidenceCollectionPolicy,
   loadEvidenceCollectionPolicy,
@@ -133,8 +120,6 @@ import {
   authoringSessions,
   runWithOperationContext,
   readAuthoringEvidence,
-  listJourneyAggregates,
-  findWorkspaceRoot,
   type AuthoringRuntime,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
@@ -184,22 +169,11 @@ import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
 } from "./target-runtime-routes.js";
-import {
-  createCollaborationRouteService,
-  handleCollaborationRoute,
-  type CollaborationRouteService,
-} from "./collaboration-routes.js";
-import type { CollaborationAwarenessService } from "./collaboration-awareness.js";
-import {
-  DurableCollaborativeJourneyStore,
-  LocalCollaborativeJourneyStorageProvider,
-} from "./collaborative-journey-store.js";
 import { createReadStream } from "node:fs";
 import type {
   Build,
   DevicePool,
   GenerationRequest,
-  JourneyMetadata,
   Project,
   RevisionWrite,
   TestVariable,
@@ -215,12 +189,6 @@ export type StartServerOptions = {
   /** Test seam for the host-owned Android stream transport. */
   liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
-  collaboration?: {
-    enabled: boolean;
-    store?: DurableCollaborativeJourneyStore;
-    awareness?: CollaborationAwarenessService;
-    clock?: () => number;
-  };
 };
 
 export type StartedServer = {
@@ -349,7 +317,6 @@ async function handleRequest(
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
-  collaboration?: CollaborationRouteService,
   liveVideoStream = streamAndroidVideo,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
 ): Promise<void> {
@@ -410,17 +377,6 @@ async function handleRequest(
         response: res,
         scope,
         runtime: targetRuntime,
-      })
-    )
-      return;
-    if (
-      await handleCollaborationRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-        service: collaboration,
       })
     )
       return;
@@ -1129,26 +1085,6 @@ async function handleRequest(
       return;
     }
 
-    const journeyMatch = matchPath(pathname, "/journeys/:id/document");
-    if (method === "GET" && journeyMatch) {
-      json(res, 200, await readJourney(scope.projectId, journeyMatch.id!));
-      return;
-    }
-    if (method === "PUT" && journeyMatch) {
-      const body = (await parseJsonBody(req)) as RevisionWrite<JourneyMetadata>;
-      if (
-        !Number.isInteger(body.expectedRevision) ||
-        !body.value?.positions ||
-        !body.value?.edgeLabels ||
-        !body.value?.edgeKinds
-      ) {
-        throw new HttpError(400, "expectedRevision and Journey metadata are required");
-      }
-      body.idempotencyKey ||= req.headers["idempotency-key"] as string | undefined;
-      json(res, 200, await writeJourney(scope.projectId, journeyMatch.id!, body));
-      return;
-    }
-
     if (method === "POST" && pathname === "/generate") {
       const body = (await parseJsonBody(req)) as GenerationRequest;
       if (!body.prompt?.trim() || (body.purpose !== "variable" && body.purpose !== "test-plan")) {
@@ -1204,144 +1140,8 @@ async function handleRequest(
       return;
     }
 
-    // ---- Collection CRUD and execution ----
-    if (method === "GET" && pathname === "/collections") {
-      json(res, 200, { collections: await listSuites() });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/collections") {
-      const body = (await parseJsonBody(req)) as SaveSuiteInput;
-      if (body.expectedRevision !== 0)
-        throw new HttpError(409, "New Collections require revision 0");
-      try {
-        const collection = await saveSuite(body);
-        json(res, 201, { collection });
-      } catch (error) {
-        if (error instanceof RevisionConflict || error instanceof IdempotencyConflict) throw error;
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const suiteHistoryMatch = matchPath(pathname, "/collections/:id/history");
-    if (method === "GET" && suiteHistoryMatch) {
-      json(res, 200, { history: await listSuiteHistory(suiteHistoryMatch.id!) });
-      return;
-    }
-
-    const suiteRestoreMatch = matchPath(pathname, "/collections/:id/restore");
-    if (method === "POST" && suiteRestoreMatch) {
-      const body = (await parseJsonBody(req)) as { updatedAt?: number };
-      if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
-      try {
-        const collection = await restoreSuiteHistory(suiteRestoreMatch.id!, body.updatedAt!);
-        json(res, 200, { collection });
-      } catch (error) {
-        throw new HttpError(404, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const suiteRunMatch = matchPath(pathname, "/collections/:id/run");
-    if (method === "POST" && suiteRunMatch) {
-      const suite = await readSuite(suiteRunMatch.id!);
-      if (!suite) throw new HttpError(404, "Collection not found");
-      const body = (await parseJsonBody(req)) as {
-        serial?: string;
-        platform?: "android" | "ios";
-        targetKind?: "device" | "browser";
-        browserTargetId?: string;
-      };
-      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
-      const recipes = await listRecipes();
-      let manifest;
-      try {
-        manifest = createSuiteRunManifest(suite, recipes);
-      } catch (error) {
-        throw new HttpError(409, error instanceof Error ? error.message : String(error));
-      }
-      if (manifest.entries.length === 0)
-        throw new HttpError(409, "This collection has no enabled Journeys");
-      const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
-      for (const entry of manifest.entries) {
-        const current = recipesById.get(entry.testId);
-        if (current && current.updatedAt !== entry.testUpdatedAt) {
-          throw new HttpError(
-            409,
-            `“${current.title}” is pinned to an earlier version. Restore it or follow latest before running.`,
-          );
-        }
-      }
-      const recipeGraphs = new Map(
-        await Promise.all(
-          manifest.entries.map(async (entry) => {
-            const recipe = recipesById.get(entry.testId)!;
-            return [entry.testId, await freezeRecipeGraph(recipe)] as const;
-          }),
-        ),
-      );
-      const jobs = manifest.entries.map((entry, index) => {
-        const recipe = recipesById.get(entry.testId)!;
-        return enqueueJob({
-          recipe: entry.testId,
-          title: recipe.title,
-          serial: body.serial,
-          platform: body.platform,
-          targetKind: body.targetKind,
-          browserTargetId: body.browserTargetId,
-          variables: entry.inputs,
-          recipeSnapshot: structuredClone(recipe),
-          recipeGraph: recipeGraphs.get(entry.testId),
-          batchId: manifest.id,
-          caseIndex: index,
-          caseCount: manifest.entries.length,
-          artifacts: [
-            {
-              kind: "suite-run-manifest",
-              capturedAt: manifest.createdAt,
-              data: { manifest, entry },
-            },
-          ],
-          projectId: scope.projectId,
-          ownerId: currentOperationContext()!.actorId,
-        });
-      });
-      json(res, 202, { manifest, jobs });
-      return;
-    }
-
-    const suiteMatch = matchPath(pathname, "/collections/:id");
-    if (method === "GET" && suiteMatch) {
-      const suite = await readSuite(suiteMatch.id!);
-      if (!suite) throw new HttpError(404, "Collection not found");
-      json(res, 200, { collection: suite });
-      return;
-    }
-    if (method === "PUT" && suiteMatch) {
-      const body = (await parseJsonBody(req)) as SaveSuiteInput;
-      try {
-        const collection = await saveSuite({ ...body, id: suiteMatch.id! });
-        json(res, 200, { collection });
-      } catch (error) {
-        if (error instanceof RevisionConflict || error instanceof IdempotencyConflict) throw error;
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-    if (method === "DELETE" && suiteMatch) {
-      await deleteSuite(suiteMatch.id!);
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/journeys") {
-      json(res, 200, { journeys: await listRecipes() });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/atlas") {
-      json(res, 200, { atlas: buildTestAtlas(await listRecipes()) });
+    if (method === "GET" && pathname === "/recipes") {
+      json(res, 200, { recipes: await listRecipes() });
       return;
     }
 
@@ -1374,10 +1174,10 @@ async function handleRequest(
       return;
     }
 
-    const recipeEvidenceImageMatch = matchPath(pathname, "/journeys/:id/evidence/:evidenceId");
+    const recipeEvidenceImageMatch = matchPath(pathname, "/recipes/:recipeId/evidence/:evidenceId");
     if (method === "GET" && recipeEvidenceImageMatch) {
       const image = await readRecipeEvidenceImage(
-        recipeEvidenceImageMatch.id!,
+        recipeEvidenceImageMatch.recipeId!,
         recipeEvidenceImageMatch.evidenceId!,
       );
       if (!image) throw new HttpError(404, "Recording evidence not found");
@@ -1395,10 +1195,7 @@ async function handleRequest(
     if (method === "GET" && authoringEvidenceMatch) {
       const sha256 = authoringEvidenceMatch.sha256!;
       const uri = `relay-evidence://${sha256}`;
-      const [sessions, aggregates] = await Promise.all([
-        authoringSessions.list(scope.projectId),
-        listJourneyAggregates(scope.projectId),
-      ]);
+      const sessions = await authoringSessions.list(scope.projectId);
       const permitted =
         sessions.some((session) =>
           session.take?.revisions.some((revision) =>
@@ -1409,8 +1206,7 @@ async function handleRequest(
           session.take?.replayAttempts.some((attempt) =>
             attempt.evidence.some((evidence) => evidence.uri === uri),
           ),
-        ) ||
-        aggregates.some((aggregate) => aggregate.evidence.some((evidence) => evidence.uri === uri));
+        );
       if (!permitted) throw new HttpError(404, "Authoring evidence not found");
       const artifact = await readAuthoringEvidence(sha256);
       if (!artifact) throw new HttpError(404, "Authoring evidence not found");
@@ -1430,9 +1226,9 @@ async function handleRequest(
       return;
     }
 
-    const recipeHistoryMatch = matchPath(pathname, "/journeys/:id/history");
+    const recipeHistoryMatch = matchPath(pathname, "/recipes/:recipeId/history");
     if (method === "GET" && recipeHistoryMatch) {
-      json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.id!) });
+      json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.recipeId!) });
       return;
     }
     if (method === "POST" && recipeHistoryMatch) {
@@ -1440,7 +1236,7 @@ async function handleRequest(
       if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
       try {
         json(res, 200, {
-          journey: await restoreRecipeHistory(recipeHistoryMatch.id!, body.updatedAt!),
+          recipe: await restoreRecipeHistory(recipeHistoryMatch.recipeId!, body.updatedAt!),
         });
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
@@ -1448,16 +1244,16 @@ async function handleRequest(
       return;
     }
 
-    const recipeStabilityMatch = matchPath(pathname, "/journeys/:id/stability");
+    const recipeStabilityMatch = matchPath(pathname, "/recipes/:recipeId/stability");
     if (method === "GET" && recipeStabilityMatch) {
-      json(res, 200, { stability: await recipeStability(recipeStabilityMatch.id!) });
+      json(res, 200, { stability: await recipeStability(recipeStabilityMatch.recipeId!) });
       return;
     }
 
-    const recipeYamlMatch = matchPath(pathname, "/journeys/:id/yaml");
+    const recipeYamlMatch = matchPath(pathname, "/recipes/:recipeId/yaml");
     if (method === "GET" && recipeYamlMatch) {
-      const recipe = await readRecipe(recipeYamlMatch.id!);
-      if (!recipe) throw new HttpError(404, "Journey not found");
+      const recipe = await readRecipe(recipeYamlMatch.recipeId!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
       const yaml = formatRecipeYaml(recipe);
       // The HTTP API defaults to JSON while direct links, curl, and Git tooling
       // receive the portable source file. Keeping both forms at one address
@@ -1467,7 +1263,7 @@ async function handleRequest(
       return;
     }
 
-    if (method === "POST" && pathname === "/journeys/import") {
+    if (method === "POST" && pathname === "/recipes/import") {
       const body = (await parseJsonBody(req)) as {
         yaml?: string;
         dryRun?: boolean;
@@ -1480,7 +1276,7 @@ async function handleRequest(
         if (body.dryRun) {
           json(res, 200, {
             preview: {
-              journey: parsed,
+              recipe: parsed,
               exists: Boolean(existing),
               canonicalYaml: formatRecipeYaml(parsed),
             },
@@ -1511,7 +1307,7 @@ async function handleRequest(
           quarantineReason: parsed.quarantineReason,
           recordingFormatVersion: parsed.recordingFormatVersion,
         });
-        json(res, 201, { journey: recipe });
+        json(res, 201, { recipe });
       } catch (error) {
         if (error instanceof HttpError) throw error;
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
@@ -1519,10 +1315,10 @@ async function handleRequest(
       return;
     }
 
-    const recipeEvidenceMatch = matchPath(pathname, "/journeys/:id/evidence");
+    const recipeEvidenceMatch = matchPath(pathname, "/recipes/:recipeId/evidence");
     if (method === "POST" && recipeEvidenceMatch) {
-      const recipe = await readRecipe(recipeEvidenceMatch.id!);
-      if (!recipe) throw new HttpError(404, "Journey not found");
+      const recipe = await readRecipe(recipeEvidenceMatch.recipeId!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
       const body = (await parseJsonBody(req, 12 * 1024 * 1024)) as {
         evidenceId?: string;
         mime?: string;
@@ -1544,15 +1340,15 @@ async function handleRequest(
       return;
     }
 
-    const recipeMatch = matchPath(pathname, "/journeys/:id");
+    const recipeMatch = matchPath(pathname, "/recipes/:recipeId");
     if (method === "GET" && recipeMatch) {
-      const recipe = await readRecipe(recipeMatch.id!);
-      if (!recipe) throw new HttpError(404, "Journey not found");
-      json(res, 200, { journey: recipe });
+      const recipe = await readRecipe(recipeMatch.recipeId!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
+      json(res, 200, { recipe });
       return;
     }
 
-    if (method === "POST" && pathname === "/journeys") {
+    if (method === "POST" && pathname === "/recipes") {
       const body = (await parseJsonBody(req)) as {
         expectedRevision?: number;
         title?: string;
@@ -1563,7 +1359,7 @@ async function handleRequest(
         quarantined?: boolean;
         quarantineReason?: string;
       };
-      if (body.expectedRevision !== 0) throw new HttpError(409, "New Journeys require revision 0");
+      if (body.expectedRevision !== 0) throw new HttpError(409, "New recipes require revision 0");
       if (!body.title || !body.title.trim()) throw new HttpError(400, "title is required");
       let steps;
       try {
@@ -1581,12 +1377,12 @@ async function handleRequest(
         quarantined: body.quarantined,
         quarantineReason: body.quarantineReason,
       });
-      json(res, 201, { journey: recipe });
+      json(res, 201, { recipe });
       return;
     }
 
     if (method === "PUT" && recipeMatch) {
-      const id = recipeMatch.id!;
+      const id = recipeMatch.recipeId!;
       // saveRecipe refuses builtin ids with a clear message.
       const body = (await parseJsonBody(req)) as {
         expectedRevision?: number;
@@ -1625,13 +1421,13 @@ async function handleRequest(
         const message = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, message);
       }
-      json(res, 200, { journey: recipe });
+      json(res, 200, { recipe });
       return;
     }
 
     if (method === "DELETE" && recipeMatch) {
       try {
-        await deleteRecipe(recipeMatch.id!);
+        await deleteRecipe(recipeMatch.recipeId!);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, message);
@@ -2039,7 +1835,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   await loadDeviceSetup();
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
-  const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
+  const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -2079,18 +1875,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
   }
   const sse = createSseHub(CORS_HEADERS);
-  let collaboration: CollaborationRouteService | undefined;
-  if (opts.collaboration?.enabled) {
-    if (!opts.collaboration.store) {
-      throw new Error("Collaboration is enabled but no durable store was configured");
-    }
-    collaboration = createCollaborationRouteService({
-      store: opts.collaboration.store,
-      ...(opts.collaboration.awareness ? { awareness: opts.collaboration.awareness } : {}),
-      ...(opts.collaboration.clock ? { clock: opts.collaboration.clock } : {}),
-    });
-  }
-
   const server = http.createServer((req, res) => {
     void handleRequest(
       req,
@@ -2099,7 +1883,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       isLoopbackHost(host),
       sse,
       opts.authoringRuntime,
-      collaboration,
       opts.liveVideoStream,
       opts.targetRuntime,
     );
@@ -2137,33 +1920,14 @@ async function main(): Promise<void> {
   const tokenIdx = argv.indexOf("--token");
   const port = portIdx >= 0 ? Number(argv[portIdx + 1]) : 8787;
   const host = hostIdx >= 0 ? (argv[hostIdx + 1] ?? "127.0.0.1") : "127.0.0.1";
-  const token =
-    tokenIdx >= 0
-      ? argv[tokenIdx + 1]
-      : (process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN);
-  const collaborationEnabled = process.env.RELAY_COLLABORATION_ENABLED === "true";
-  const collaboration = collaborationEnabled
-    ? {
-        enabled: true as const,
-        store: new DurableCollaborativeJourneyStore({
-          storage: new LocalCollaborativeJourneyStorageProvider({
-            rootDirectory: join(
-              process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot(),
-              ".relay",
-            ),
-          }),
-        }),
-      }
-    : undefined;
+  const token = tokenIdx >= 0 ? argv[tokenIdx + 1] : process.env.RELAY_AUTH_TOKEN;
   const started = await startServer({
     port,
     host,
     token,
-    ...(collaboration ? { collaboration } : {}),
   });
   console.log(`@relay/server listening on http://${started.host}:${started.port}`);
   console.log(`  runs → ${runsRoot()}`);
-  if (collaborationEnabled) console.log("  collaboration → enabled");
 }
 
 const invokedDirectly =

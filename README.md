@@ -11,11 +11,10 @@ teams like PostHog: clear empty states, CI exits, doctor checks, evidence on dis
 
 ```
 packages/
-  protocol/  canonical operations · actors · resources · collaboration DTOs
+  protocol/  canonical operations · actors · resources · awareness DTOs
   client/    authenticated project-scoped HTTP + SSE client
-  collaboration/ safe granular Yjs App Map document
-  core/      authoring · graph compiler · jobs · evidence · target adapters
-  server/    operation HTTP API · SSE · durable collaboration
+  core/      App Maps · authoring · jobs · evidence · target adapters
+  server/    operation HTTP API · SSE · leases · artifacts
   cli/       server-first human/agent operation client
   mcp/       scoped MCP v2 adapter with native PNG screenshots
   tui/       terminal workspace
@@ -51,7 +50,7 @@ The equivalent CLI flow is:
 ```bash
 relay target create --input '{"name":"Store staging","url":"https://staging.example.com"}'
 relay target open <target-id>           # sign in normally in Relay's isolated profile
-relay run create --input '{...}'        # freeze the Journey path and explicit Target
+relay app-map flow run --input '{...}'  # freeze the Flow revision and explicit Target
 ```
 
 Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertion, or reusable flow
@@ -63,8 +62,8 @@ target, and unsupported device-only operations fail explicitly instead of being 
 An App Map is the canonical product model: **screens** are unique app states, **connections** are
 actions or transitions, and **flows** are reusable paths through the same graph. Layout and notes
 are document concerns; a selected path compiles to the target-neutral recipe IR when it runs. That
-seam makes the canvas the visual source of truth while keeping every device adapter and existing
-recipe compatible. The same map also has **Screens** and **Coverage** projections for browsing large
+seam makes the canvas the visual source of truth while keeping every device adapter target-neutral.
+The same map also has **Screens** and **Coverage** projections for browsing large
 products and comparing per-device, per-actor results without creating another source of truth.
 
 ```text
@@ -72,8 +71,8 @@ Start screen ── recorded transition ──> Settings
                  └─ return transition ─> Start screen
 ```
 
-Relay is pre-release, so the v6 graph is canonical and unsupported historical canvas documents can
-be reset instead of creating a second migration/write path.
+Relay is pre-release, so App Map schema v2 is the only accepted canvas format. Unsupported state is
+discarded; Relay does not carry a migration reader or dual-write path.
 
 Every recording captures semantic observations before and after the action. Relay normalizes
 volatile UI details, matches the destination to an existing screen when possible, and creates a new
@@ -295,8 +294,9 @@ POST /jobs/soak  GET /reports/soak/:batchId
 GET/POST /projects /builds /device-pools /device-leases
 GET/POST /matrices  POST /matrices/:id/resolve  GET /target-profiles
 GET/POST /targets  POST /targets/:id/open  POST /targets/:id/preflight
+GET/POST /app-maps  GET /app-maps/:appMapId
 GET /recipes/:id/yaml  POST /recipes/import
-GET/PUT  /project/variables /recipes/:id/journey
+GET/PUT /project/variables
 POST /generate
 GET  /report  GET /report/:id  GET /report/junit
 GET  /snapshot /screenshot
@@ -319,9 +319,7 @@ GET  /runs /runs/:id /runs/:id/frames/:file
 | `RELAY_REDACTION_MODE`    | workspace setting       | Lock evidence redaction `on` or `off` for this process                                   |
 | `RELAY_GITHUB_REPOSITORY` | —                       | `owner/repo` for public GitHub Releases through Electron's update service                |
 | `RELAY_UPDATE_FEED_URL`   | —                       | Custom signed update feed; supports `{platform}`, `{arch}`, and `{version}` placeholders |
-
-The former `GROK_DEVICE_*` environment variables remain accepted as compatibility aliases.
-| `INSTALL_TIMEOUT_MS` | `300000` | Install/update wait |
+| `INSTALL_TIMEOUT_MS`      | `300000`                | Install/update wait                                                                      |
 
 The HTTP server refuses non-loopback bindings without a bearer token. For LAN or remote access,
 set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default

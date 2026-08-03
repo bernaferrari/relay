@@ -79,15 +79,15 @@ export function getControl(jobId: string): JobControlState | undefined {
   return controls.get(jobId);
 }
 
-let legacyExecutingJobId: string | null = null;
+let fallbackExecutingJobId: string | null = null;
 const executingJobs = new AsyncLocalStorage<string>();
 
 export function setExecutingJobId(id: string | null): void {
-  legacyExecutingJobId = id;
+  fallbackExecutingJobId = id;
 }
 
 export function getExecutingJobId(): string | null {
-  return executingJobs.getStore() ?? legacyExecutingJobId;
+  return executingJobs.getStore() ?? fallbackExecutingJobId;
 }
 
 export function runWithJobControl<T>(jobId: string, operation: () => Promise<T>): Promise<T> {

@@ -5,7 +5,7 @@ export type MapLibraryItem = Pick<AppMap, "id" | "name" | "updatedAt"> & {
   connectionCount: number;
 };
 
-/** The library is a projection of the canonical map—not its legacy recipe
+/** The library is a projection of the canonical map—not its internal recipe
  * shadow. This keeps screen-only maps visible and correctly classified. */
 export function appMapLibraryItem(appMap: AppMap): MapLibraryItem {
   return {

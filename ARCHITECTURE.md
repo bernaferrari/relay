@@ -1,229 +1,133 @@
-# Architecture — app testing shell
+# Relay architecture
 
-Product UI work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md). `@relay/ui` owns semantic
-tokens and shared primitives; product components use Tailwind utilities for ordinary styling.
+Relay is a local-first application mapping and verification system for people and agents. Product UI
+work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md): `@relay/ui` owns semantic tokens and shared
+primitives, while product components use Tailwind utilities for ordinary styling.
 
-Inspired by OpenCode v2, adapted for **local-first app testing** across managed browsers and
-connected mobile devices (not a coding agent).
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  HOSTS                                                        │
-│  desktop (Electron) │ app (Solid web) │ cli │ tui │ mcp       │
-└─────────┬──────────────────┬──────────────────┬──────────────┘
-          │       authenticated @relay/client │ in-process
-          ▼                  ▼                  ▼
-┌──────────────────────────────────────────────────────────────┐
-│  server — scoped resources, jobs, device leases, SSE bus      │
-└─────────────────────────────┬────────────────────────────────┘
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│ protocol → core — target-neutral IR, execution, evaluation      │
-└─────────────────────────────┬────────────────────────────────┘
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│ target adapters — managed browser │ Android/iOS agent-device  │
-└──────────────────────────────────────────────────────────────┘
+```text
+desktop (Electron) · web app · CLI · TUI · MCP
+                     │
+          authenticated @relay/client
+                     │
+      server — operations · events · leases
+                     │
+       protocol → runAction → core domain
+                     │
+ browser · Android · iOS target adapters
+                     │
+        evidence store → App Map projection
 ```
 
-## OpenCode patterns we mirror
+## Canonical product model
 
-| OpenCode              | Relay (app testing)                                |
-| --------------------- | -------------------------------------------------- |
-| Sessions + runner     | **Test jobs** (`enqueueJob` / queue / history)     |
-| SSE / event sync      | **`GET /events`** + in-process `publish/subscribe` |
-| Command palette       | **⌘K** command registry in `app`                   |
-| Platform injection    | **`Platform`** for web vs Electron                 |
-| Thin hosts / fat core | Domain only in **`core`**                          |
-| Default TTY → TUI     | **`relay`** opens testing TUI                      |
-| Inspector-like UI     | **UI snapshot tree** + **screenshot** tabs         |
-| Theme JSON            | **`ui` themes** (grok / dracula / nord)            |
+Each project has one **App Map**. Its normalized entities are Screens, Screen Variants, Connections,
+Actions, Routines, Flows, Runs, Target Results, Baselines, Proposals, Notes, and Activity Events.
+Screens are observed application states; Connections describe how one state reaches another; Flows
+are reusable paths through the map.
+
+There is no second graph document and no compatibility authoring model. App Map schema v2 is the
+only persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
+inferred. Executable recipes are an internal deterministic YAML projection used by the runner; they
+are not an alternate public product model.
 
 ## Packages
 
-| Package                | Role                                                                               |
-| ---------------------- | ---------------------------------------------------------------------------------- |
-| `@relay/core`          | Authoring sessions, graph compiler, target-neutral execution, evidence, discovery  |
-| `@relay/protocol`      | Canonical connections, revisions, suites, resources, generation, and event schemas |
-| `@relay/client`        | Authenticated project-scoped HTTP and fetch-streamed SSE client                    |
-| `@relay/collaboration` | Safe, granular, versioned Yjs Journey schema and reconciliation                    |
-| `@relay/server`        | HTTP + SSE over core                                                               |
-| `@relay/cli`           | Server-first operation client for people, scripts, and agents                      |
-| `@relay/mcp`           | Scoped MCP v2 adapter; native PNG observation and operation tools                  |
-| `@relay/tui`           | Terminal testing workspace                                                         |
-| `@relay/ui`            | Solid design system + themes                                                       |
-| `@relay/app`           | Solid product UI (workspace / inspector / screen / activity)                       |
-| `@relay/desktop`       | Electron shell                                                                     |
+| Package           | Responsibility                                                            |
+| ----------------- | ------------------------------------------------------------------------- |
+| `@relay/protocol` | Canonical operation, entity, event, revision, and evidence schemas        |
+| `@relay/core`     | App Map operations, authoring, execution, evaluation, evidence, discovery |
+| `@relay/server`   | Project-scoped HTTP, SSE, operation dispatch, leases, and artifacts       |
+| `@relay/client`   | Validated HTTP operations and reconnecting event stream                   |
+| `@relay/cli`      | Server-first interface for people, scripts, CI, and agents                |
+| `@relay/mcp`      | Capability-scoped MCP adapter with native PNG observations                |
+| `@relay/tui`      | Terminal workspace                                                        |
+| `@relay/ui`       | Host-independent Solid design system                                      |
+| `@relay/app`      | Host-independent Solid product UI                                         |
+| `@relay/desktop`  | Sandboxed Electron host                                                   |
 
-## Operation contract
+## One operation boundary
 
-`packages/protocol/src/operations.ts` is the canonical, versioned description of every public
-domain operation. Each descriptor owns its stable ID, runtime input and output parsers, HTTP
-transport, safety confirmation, target capabilities, lease requirement, idempotency, progress, and
-cancellation metadata. It contains data only and sits below the protocol barrel; it never imports a
-server handler or renderer callback.
+`packages/protocol/src/operations.ts` describes every public domain operation. Each descriptor owns
+its stable ID, runtime input/output parser, transport, safety confirmation, capability and lease
+requirements, idempotency, progress, and cancellation metadata.
 
-`@relay/server` binds incoming requests to those descriptors and validates both sides of the
-existing handler boundary. `GET /meta` is generated from the same registry, so CLI and MCP adapters
-can discover capabilities without scraping routes. `@relay/client.invoke(id, input)` derives the
-request and validates successful responses; malformed server output becomes `ApiError(502)`.
-High-frequency named client methods are small conveniences over `invoke`, not independent
-contracts. The app command palette can adapt an operation with `operationCommand`; visual-only
-commands such as zoom and panel visibility remain local.
+The app, CLI, TUI, MCP adapter, and future SDKs call the same validated operations. The server
+installs canonical actor and request identity before calling `runAction`; hosts do not contain private
+domain behavior. `GET /meta` is generated from the registry, so machine interfaces discover exact
+contracts instead of scraping route documentation. MCP operations accept the direct canonical input
+shape only.
 
-Public authoring vocabulary is **Journey**, **Screen**, **Connection**, **Take**, **Collection**,
-**Run**, and **Target**. HTTP authoring resources therefore use `/journeys` and `/collections`.
-`Recipe` and `Suite` may remain names for internal execution/storage structures but must not leak
-through a host contract. Non-operation resources are deliberately narrow: SSE events, live video,
-and immutable run/evidence artifacts. They use `RelayClient.resource`; all product mutations use an
-operation.
+Internal recipe operations are deliberately excluded from CLI and MCP. Public automation authors and
+runs App Map Flows; the compiler owns the private recipe projection.
 
-## Rules
+## State, concurrency, and collaboration
 
-1. Domain logic stays in `core`.
-2. Every host consumes registered **operations + events** through `@relay/client`; no direct CLI or
-   MCP domain runtime exists.
-3. Renderer never imports `electron`.
-4. `ui` has zero host knowledge.
-5. `vendor/opencode` is reference-only.
-6. Hosts use `@relay/client`; transport shapes live in `@relay/protocol`.
-7. Shared product state is server-owned and revisioned; browser storage is for preferences only.
-8. Recipes remain target-neutral. Browser and mobile adapters implement the same control and
-   observation contract; unsupported capabilities fail explicitly.
-9. Git-tracked `tests/*.relay.yaml` remains the canonical executable source while the Journey graph
-   is the canonical visual authoring source. Pre-release collaboration documents can be reset;
-   there is no dual-write migration path.
-10. Compatibility matrices select only observed target profiles and preserve every exclusion reason.
-11. Desktop update feeds, signatures, and installation stay in Electron's main process. The shared UI
-    receives only a typed update state and can request a check or restart after download.
-12. Tests are canonical library assets. Suites store ordered references, not copies; every suite run
-    freezes its exact suite revision, test revisions, target, and inputs before enqueueing work.
+Shared resources are project-scoped, revisioned, and written atomically. Mutations use expected
+revisions and idempotency keys; stale writes return the current resource. Stable entity IDs and
+field-level operations allow a hosted collaboration provider to be added without changing domain
+entities.
 
-## Actor, command, and event invariants
+Presence, cursors, viewport, and transient activity are ephemeral awareness data. They are never
+execution authority and are not persisted in App Maps. Device input and recording require explicit,
+visible, exclusive leases; observation remains shareable. Agent mutations default to attributed
+Proposals. Identity merges, approved baselines, and verified status require human approval.
 
-Every registered request carries one canonical command identity: actor ID and kind, organization,
-project, operation, request, timestamp, and idempotency key. The server validates that identity at
-the operation boundary and installs it in async-local context before core code runs. Local desktop,
-TUI, CLI, and future MCP callers use this same path; “local” is a trust scope, not an alternate
-mutation implementation.
+## Authoring and execution
 
-Core publishes only versioned event envelopes. The envelope retains the command's actor,
-operation, request, correlation, causation, authoring-session, and lease identity while its payload
-describes the domain event. SSE assigns monotonic cursors, replays from `Last-Event-ID`, reports a
-typed gap when its bounded window cannot satisfy a cursor, and clients deduplicate before
-projection. A gap refreshes the client's scoped projections; it never changes local UI focus.
+The canvas is the primary authoring surface. A recording creates an Authoring Session and immutable
+Take evidence. Review can trim, split, replace, replay, or rewrite the proposed Connection. Approval
+commits the reviewed Connection to the App Map and compiles its executable action projection.
 
-Journey and Collection writes use their persisted `updatedAt` value as the expected revision,
-serialize competing writes, and atomically rename a complete temporary file into place. A stale
-write receives `409` with the current resource, while replaying an idempotency key returns the
-original result without emitting another resource mutation.
+A run freezes the Flow revision, selected targets, variables, target profiles, comparison regions,
+baseline provenance, and evidence policy before enqueueing. Device groups execute independently per
+target and retain every Target Result; one target can never overwrite another. Destination mismatch
+is a failure even when the input action itself succeeded.
 
-## Journey graph document
-
-`JourneyMetadata` schema v6 is the authoring document for the desktop canvas. It deliberately keeps
-three concerns separate:
-
-| Concern                                            | Owner                                            | Purpose                                                 |
-| -------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------- |
-| Screens, connections, flow starts, layout, notes   | Revisioned Journey document                      | The FigJam-like authoring surface                       |
-| Authoring Session, Take revisions, replay history  | `core/authoring-sessions.ts`                     | Shared lifecycle for humans, agents, CLI, and UI        |
-| Live target control and capture                    | Server Authoring Session routes + explicit lease | One attributable device-control path                    |
-| Recorder controls and review                       | `app/context/recorder.tsx` projection            | A thin view of server state; never lifecycle authority  |
-| Semantic screen identity                           | `core/screen-identity.ts`                        | Stable matching across recording, discovery, and replay |
-| Recipe steps, graph connection, immutable evidence | `core/journey-aggregate.ts`                      | One recoverable atomic visibility point                 |
-
-Review commits through one core service. It verifies the expected Journey and Recipe revisions,
-resolves the observed destination, assigns stable executable step IDs, preserves content-addressed
-evidence, and writes the Recipe plus graph connection as one fsynced aggregate rename. A connection
-therefore cannot become visible before its steps and evidence are durable. A crash before the rename
-returns the Session to review; a crash after it completes the Session from the committed aggregate.
-Only the server emits the final `authoring.committed` event. Renderer signals and progress UI are
-projections of persisted Session state.
-
-Recording captures semantic observations at both ends of a transition. `screen-identity.ts`
-normalizes volatile UI-tree values and resolves those observations to canonical screens, so a route
-back to a screen creates an edge to the existing node instead of a duplicate node. Discovery uses
-the same identity engine and merges its branches and cycles into the same journey graph, preserving
-whether each edge came from authored recording, manual editing, or automated exploration.
-
-The graph is the authoring source of truth. `journey-graph-compiler.ts` validates a selected path
-(including loops), requires executable and reviewed transitions, and compiles it to the existing
-recipe IR. `POST /jobs/graph-path` freezes that path, recipe revision, graph revision, and target
-before enqueueing the normal runner. This keeps every existing recipe adapter compatible while the
-canvas gains branching semantics. Run events are projected back onto the frozen transition IDs so
-the graph can show running, passed, failed, and healed nodes and edges without making runtime state
-part of the authoring document.
-
-The collaborative document is a granular, ID-keyed Yjs projection of Screens, Connections, flow
-starts, positions, notes, and draft labels. A disabled-by-default provider synchronizes opaque
-updates with project-scoped state vectors, offline queues, idempotent append, reconnect, snapshots,
-and compaction. Ephemeral awareness carries bounded human/agent cursor, selection, viewport, and
-activity data; it never changes another actor's focus or enters Journey persistence.
-
-Yjs is not execution authority. Step IDs, evidence, Take/video references, review state, leases,
-Runs, and Authoring Sessions are rejected or stripped from untrusted updates. After the authoritative
-Take commit succeeds, the server projects only its safe graph shape into the shared document. This
-lets a person and an agent edit and observe the same map without allowing either client to forge a
-reviewed executable Connection.
+Project variables are shareable, typed values. Private actor values remain outside the shared App Map
+and resolve at run time. Matrices can expand values, targets, builds, models, and variants without
+duplicating a Flow.
 
 ## Target boundary
 
-`core/targets.ts` owns target definitions, isolated browser profiles, and preflight checks.
-`core/browser-target.ts` adapts Playwright to the existing device contract while the canonical
-recipe IR stays independent of Playwright and agent-device. A run freezes target preflight,
-performance, screenshots, logs, network activity, and video into immutable evidence. Managed
-browser profiles live under `.relay/browser-profiles/` and never reuse personal browser data.
-Target focus belongs to each client and is never published as shared selection. Every observation
-or control operation carries an explicit target context. Control additionally requires an active
-lease owned by the command actor; the lease ID is retained on resulting events. Core target code
-does not inspect or mutate target-selection environment variables, so concurrent human and agent
-operations cannot retarget each other or a queued background run.
-`POST /targets/:id/open` always launches a headed browser for human login, MFA, consent, or other
-setup. Closing that session flushes the isolated profile; future UI, CLI, scheduled, and matrix
-runs reuse it. Direct attachment to a personal browser profile is intentionally not the default
-because it is nondeterministic and may expose unrelated browsing data.
+`core/targets.ts` owns target definitions, isolated browser profiles, and preflight checks. Browser,
+Android, and iOS adapters implement the same target-neutral observation and control contract.
+Unsupported capabilities fail explicitly.
 
-## Traces, heal, runs/, overlays
+Every observation and control operation names its target. Control also requires the caller's active
+lease. No process-global selected device is execution authority, so concurrent people and agents
+cannot silently retarget one another.
 
-| Concern                | Module                                               |
-| ---------------------- | ---------------------------------------------------- |
-| Glyph plans per recipe | `core/trace.ts` → `RECIPE_TRACE_PLANS`               |
-| Job steps + heal retry | `core/session.ts` → `retryJob`, status `healed`      |
-| Disk layout            | `core/runs.ts` → `runs/<ts>_<action>_<device>_<id>/` |
-| Snapshot bounds        | `core/workspace.ts` → `captureSnapshot().bounds`     |
-| Stage overlays         | `app/components/stage.tsx` → `.hit-rect`             |
+Target resolution is deterministic first: stable IDs, accessibility semantics, visible text,
+structural relationships, and prior visual anchors precede optional model grounding. Raw coordinates
+are an explicit final fallback. Every resolution records method, candidates, confidence, chosen
+bounds, and verification result.
 
-SSE events include `job.step`, `job.frame`, `job.healed` in addition to queue lifecycle events.
+## Evidence and Activity
 
-## Evidence, storage, and transport ownership
+All consequential operations append an Activity Event with actor, source, request, affected entities,
+target, duration, outcome, and safe diagnostics. Runs commit synchronized evidence against one
+monotonic clock: actions, assertions, frames, UI trees, logs, network summaries, performance, model
+decisions, lifecycle events, and failures.
 
-Every terminal schema-v5 run commits once: report files are written and synced, then `.complete` is
-renamed as the commit point. `core/run-catalog.ts` indexes only committed manifests in a rebuildable
-SQLite catalog; artifact files and manifests remain authoritative. Run/job list endpoints return
-protocol summaries, while detail and artifact routes resolve one exact run.
+Run artifacts and committed manifests are authoritative; SQLite indexes are rebuildable projections.
+Sensitive network bodies, audio probes, and crash diagnostics require explicit consent. Redaction runs
+before persistence and transport. Unsupported or denied evidence channels remain visible instead of
+silently appearing successful.
 
-`core/run-evidence.ts` owns the run-scoped evidence manifest. Input, screenshots, UI trees, logs,
-network summaries, performance, and video are automatic where supported. Network bodies,
-time-bucketed audio probes, and crash diagnostics require an explicit workspace consent grant;
-the policy is frozen before collectors start. Native crash collection uses Android's crash log
-buffer, iOS Simulator unified logs, or physical-device system crash reports. Browser request and
-response bodies are bounded per response. Unsupported adapters remain visible as unsupported
-channels rather than silently succeeding. Redaction runs before disk and HTTP serialization.
+## Host and security invariants
 
-The default-off redaction policy is persisted at `.relay/privacy.json`, can be locked with
-`RELAY_REDACTION_MODE`, and cannot be disabled on a non-loopback server binding. CLI and in-process
-TUI hosts load the same policy before collecting evidence. Sensitive collector consent is separate
-and persisted at `.relay/evidence.json`; it defaults to no grants.
+1. Domain logic stays in `core` and is reached through registered operations.
+2. Renderer code never imports Electron; it only uses the typed preload bridge.
+3. `@relay/ui` has no host or domain knowledge.
+4. Electron uses context isolation, a sandboxed renderer, no Node integration, and a narrow CSP-bound
+   preload API.
+5. Local HTTP uses scoped identity. Non-loopback serving requires authentication and redaction.
+6. YAML App Map import/export and run artifacts are deterministic, open projections—not hidden
+   alternate sources of truth.
+7. A partial or failed operation remains inspectable and never silently rewrites approved behavior.
 
-`@relay/protocol` is canonical for summaries, traces, evidence, metrics, and endpoint contracts.
-`server/sse.ts` owns event-client lifecycle and `server/scheduler.ts` owns schedule timers. The app's
-`context/server.tsx` remains a compatibility composition façade; resource requests live in the
-focused `lib/server-*-remote.ts` modules and privacy, target, run, capture, and discovery
-controllers. The façade is retained
-because it coordinates reconnection order and platform preference restoration; new transport DTOs
-must not be added there.
+## Development verification
 
-Authoring composes an 82-line `step-row.tsx` shell with target/assertion, interaction, flow/control,
-and device/observability editor families. `runs-workspace.tsx` owns the complete report-tab
-lifecycle. Pure presentation, URL construction, capture, orchestration, and review calculations
-remain extracted and tested under `app/src/lib`.
+Run `vp check`, `vp test`, and `pnpm run test:packages`. For the exact Electron renderer, run
+`pnpm dev:desktop`, then `pnpm inspect:desktop` in another terminal. The inspector captures the real
+preload/IPC renderer, a screenshot, console and page errors, layout overflow, and accessible controls.

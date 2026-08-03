@@ -33,6 +33,7 @@ export function updateAppMap(
         if (description) draft.description = description;
         else delete draft.description;
       }
+      if (patch.notes !== undefined) draft.notes = structuredClone(patch.notes);
     },
   );
 }

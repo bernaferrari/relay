@@ -44,12 +44,13 @@ function fixture(): AppMap {
     ],
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: scope.appMapId,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
     name: "Store",
     revision: 7,
+    notes: {},
     screens: {
       welcome: screen("welcome", "Welcome"),
       home: screen("home", "Home"),

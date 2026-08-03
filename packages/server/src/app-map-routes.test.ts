@@ -14,8 +14,8 @@ import { startServer } from "./index.js";
 
 test("App Map operations are equivalent for human and agent actors", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-server-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const connection = {
@@ -150,16 +150,16 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.deepEqual(await human.invoke("app-map.list", {}), { appMaps: [] });
   } finally {
     await server.close();
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("App Maps export and import through their canonical YAML contract", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-yaml-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const client = new RelayClient({
@@ -173,7 +173,7 @@ test("App Maps export and import through their canonical YAML contract", async (
     await client.invoke("app-map.create", { appMapId: "checkout", name: "Checkout" });
     const exported = await client.invoke("app-map.export", { appMapId: "checkout" });
     assert.equal(exported.filename, "checkout.relay.map.yaml");
-    assert.match(exported.yaml, /schemaVersion: 1/u);
+    assert.match(exported.yaml, /schemaVersion: 2/u);
 
     const dryRun = await client.invoke("app-map.import", {
       yaml: exported.yaml,
@@ -190,17 +190,17 @@ test("App Maps export and import through their canonical YAML contract", async (
     assert.equal(copied.appMap.projectId, "mobile");
   } finally {
     await server.close();
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("an agent turns observations into a proposal that a human must approve", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-observation-proposal-"));
-  const previousState = process.env.GROK_DEVICE_STATE_DIR;
+  const previousState = process.env.RELAY_STATE_DIR;
   const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  process.env.RELAY_STATE_DIR = root;
   process.env.RELAY_WORKSPACE_ROOT = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
@@ -279,18 +279,18 @@ test("an agent turns observations into a proposal that a human must approve", as
     );
   } finally {
     await server.close();
-    if (previousState === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previousState;
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
     if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a saved App Map flow runs without a Journey projection", async () => {
+test("a saved App Map flow runs without an auxiliary canvas document", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-run-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const client = new RelayClient({
@@ -421,8 +421,8 @@ test("a saved App Map flow runs without a Journey projection", async () => {
     assert.equal(JSON.stringify(result).includes("person@example.test"), false);
   } finally {
     await server.close();
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });

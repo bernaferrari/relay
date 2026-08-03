@@ -4,6 +4,7 @@ import type {
   ActivityEvent,
   AddScreenInput,
   AppMapEntity,
+  AppMapNote,
   AppMapScope,
   BaselineProvenance,
   CaseStack,
@@ -161,6 +162,14 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
     }
   }
   stringArray(screen.variantIds, `${label}.variantIds`);
+}
+
+export function assertAppMapNote(note: AppMapNote, scope: AppMapScope, label: string): void {
+  assertEntity(note, scope, label);
+  requiredText(note.text, `${label}.text`, 480);
+  if (!Number.isFinite(note.position.x) || !Number.isFinite(note.position.y)) {
+    appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
+  }
 }
 
 function assertBaseline(value: BaselineProvenance, label: string): void {

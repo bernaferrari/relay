@@ -61,23 +61,21 @@ with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `auth
 | `full`    | Every canonical Relay operation; intended for trusted orchestration only   |
 
 Tools advertise and take operation fields directly. For example, capture a screenshot with
-`{"serial":"emulator-5554"}`. Existing clients that send the legacy
-`{"input":{"serial":"emulator-5554"}}` envelope remain compatible, while discovery still publishes
-the precise direct shape. Known operation contracts expose specific required fields, types, and
-enums; intentionally generic Relay operations remain extensible objects and are still validated by
-the canonical protocol parser before invocation.
+`{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation
+contracts expose specific required fields, types, and enums; intentionally generic Relay operations
+remain extensible objects and are still validated by the canonical protocol parser before invocation.
 
 ## Surface and safety model
 
-- Resources expose bounded, sanitized project, Journey, Collection, Run, Authoring Session, Target,
-  and observation state under scoped `relay://` URIs. They do not provide arbitrary filesystem reads.
+- Resources expose bounded, sanitized project, App Map, Flow, Run, Authoring Session, Target, and
+  observation state under scoped `relay://` URIs. They do not provide arbitrary filesystem reads.
 - Tools are generated from Relay's canonical operation registry and invoke Relay through
   `@relay/client`. Mutations keep the configured agent actor identity and Relay's lease, revision, and
   idempotency rules.
 - `relay_target_screenshot_capture` returns the current Target screenshot as native MCP `image/png`
   content plus safe metadata. It never exposes Relay host paths.
 - Curated prompts guide safe app mapping, failed-connection repair, and Take review. Every prompt
-  requires the configured project and the relevant Target, Journey, session, connection, or Take IDs.
+  requires the configured project and the relevant Target, App Map, session, connection, or Take IDs.
 - Observation is not mutation permission. Side-effecting and destructive operations require explicit
   user approval; confirmation-protected tools additionally require the literal `confirm: true` field.
 - MCP request cancellation is forwarded to the Relay client. A cancelled request does not grant

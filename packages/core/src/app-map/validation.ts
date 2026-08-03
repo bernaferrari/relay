@@ -2,6 +2,7 @@ import { appMapFail } from "./errors.js";
 import { APP_MAP_SCHEMA_VERSION, type ActionSpec, type AppMap } from "./model.js";
 import {
   assertActivity,
+  assertAppMapNote,
   assertCaseStack,
   assertConnection,
   assertFlow,
@@ -272,7 +273,7 @@ function assertRunReferences(map: AppMap): void {
 export function validateAppMap(value: unknown): AppMap {
   const input = objectValue(value, "App Map") as unknown as AppMap;
   if (input.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
-    appMapFail("invalid-map", "App Map schemaVersion must be 1");
+    appMapFail("invalid-map", `App Map schemaVersion must be ${APP_MAP_SCHEMA_VERSION}`);
   }
   identifier(input.id, "App Map.id");
   identifier(input.organizationId, "App Map.organizationId");
@@ -293,6 +294,9 @@ export function validateAppMap(value: unknown): AppMap {
 
   assertEntityRecord(input.screens, "App Map.screens", (item, label) =>
     assertScreen(item, scope, label),
+  );
+  assertEntityRecord(input.notes, "App Map.notes", (item, label) =>
+    assertAppMapNote(item, scope, label),
   );
   assertEntityRecord(input.screenVariants, "App Map.screenVariants", (item, label) =>
     assertVariant(item, scope, label),
@@ -319,6 +323,7 @@ export function validateAppMap(value: unknown): AppMap {
   );
 
   const collections = {
+    notes: input.notes,
     screens: input.screens,
     screenVariants: input.screenVariants,
     connections: input.connections,

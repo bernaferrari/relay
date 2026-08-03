@@ -81,8 +81,7 @@ async function recentIosRunnerFailure(udid?: string): Promise<string | undefined
   // `createDevice` isolates every physical target into its own agent-device
   // session. The old generic lookup missed exactly the log produced by the
   // selected iPad, so a precise Xcode account failure became a vague signing
-  // message. Prefer the target session, while retaining the explicit and
-  // legacy names for callers that intentionally override session isolation.
+  // message. Prefer the target session, then an explicit caller override.
   const sessions = [
     ...(udid ? [iosSessionName(udid)] : []),
     ...(configuredSession ? [configuredSession] : []),

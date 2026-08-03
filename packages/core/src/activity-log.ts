@@ -79,10 +79,7 @@ export type ActivityLogOptions = {
 };
 
 function relayStateRoot(): string {
-  return (
-    (process.env.RELAY_STATE_DIR ?? process.env.GROK_DEVICE_STATE_DIR)?.trim() ||
-    join(findWorkspaceRoot(), ".relay")
-  );
+  return process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
 }
 
 function boundedText(value: string, label: string, max = MAX_IDENTIFIER_LENGTH): string {

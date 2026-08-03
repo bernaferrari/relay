@@ -105,7 +105,7 @@ function slug(s: string): string {
 }
 
 export function runsRoot(): string {
-  const env = (process.env.RELAY_RUNS_DIR ?? process.env.GROK_DEVICE_RUNS_DIR)?.trim();
+  const env = process.env.RELAY_RUNS_DIR?.trim();
   if (env) return env;
   return join(findWorkspaceRoot(), "runs");
 }

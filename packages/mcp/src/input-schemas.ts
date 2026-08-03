@@ -212,6 +212,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         .object({
           name: text("App Map name").optional(),
           description: z.union([z.string(), z.null()]).optional(),
+          notes: z.record(z.string(), unknownRecord).optional(),
         })
         .strict(),
     })
@@ -375,47 +376,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       reason: z.string().optional(),
     })
     .strict(),
-  "journey.get": z.object({ journeyId: identifier("App Map identifier") }).strict(),
-  "journey.create": z
-    .object({
-      expectedRevision: natural("Initial revision, normally zero"),
-      title: text("App Map title"),
-      steps: z.array(unknownRecord),
-    })
-    .catchall(z.unknown()),
-  "journey.update": z
-    .object({
-      journeyId: identifier("App Map identifier"),
-      expectedRevision: natural("Current App Map revision"),
-    })
-    .catchall(z.unknown()),
-  "journey.delete": z.object({ journeyId: identifier("App Map identifier") }).strict(),
-  "journey.history.restore": z
-    .object({
-      journeyId: identifier("App Map identifier"),
-      updatedAt: natural("History timestamp to restore"),
-    })
-    .strict(),
-  "journey.import": z
-    .object({
-      yaml: text("Portable App Map YAML"),
-      dryRun: z.boolean().optional(),
-      conflict: z.enum(["reject", "replace", "copy"]).optional(),
-    })
-    .strict(),
-  "journey.evidence.save": z
-    .object({ journeyId: identifier("App Map identifier") })
-    .catchall(z.unknown()),
-  "journey.document.get": z.object({ journeyId: identifier("App Map identifier") }).strict(),
-  "journey.document.update": z
-    .object({
-      journeyId: identifier("App Map identifier"),
-      expectedRevision: natural("Current App Map document revision"),
-      value: unknownRecord,
-      actorId: z.string().optional(),
-      idempotencyKey: z.string().optional(),
-    })
-    .strict(),
   "authoring.session.get": z.object(sessionReference).strict(),
   "authoring.session.create": z
     .object({
@@ -462,17 +422,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "authoring.session.discard": z.object(sessionReference).strict(),
   "authoring.session.cancel": z.object(sessionReference).strict(),
   "authoring.session.cleanup": z.object(sessionReference).strict(),
-  "collection.get": z.object({ collectionId: identifier("Collection identifier") }).strict(),
-  "collection.delete": z.object({ collectionId: identifier("Collection identifier") }).strict(),
-  "collection.restore": z
-    .object({
-      collectionId: identifier("Collection identifier"),
-      updatedAt: natural("History timestamp to restore"),
-    })
-    .strict(),
-  "collection.run": z
-    .object({ collectionId: identifier("Collection identifier") })
-    .catchall(z.unknown()),
   "schedule.delete": z.object({ scheduleId: identifier("Schedule identifier") }).strict(),
   "matrix.delete": z.object({ matrixId: identifier("Compatibility matrix identifier") }).strict(),
   "matrix.resolve": z.object({ matrixId: identifier("Compatibility matrix identifier") }).strict(),
@@ -536,21 +485,5 @@ export function relayToolInputSchema(
       : z.literal(true).optional().describe("Optional explicit approval"),
   });
 
-  return z.preprocess((value) => {
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      !("input" in value) ||
-      typeof value.input !== "object" ||
-      value.input === null ||
-      Array.isArray(value.input)
-    ) {
-      return value;
-    }
-    const { confirm } = value as { confirm?: unknown };
-    return {
-      ...(value.input as Record<string, unknown>),
-      ...(confirm === undefined ? {} : { confirm }),
-    };
-  }, directSchema);
+  return directSchema;
 }

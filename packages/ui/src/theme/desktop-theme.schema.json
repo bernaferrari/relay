@@ -41,7 +41,7 @@
     },
     "ThemeSeedColors": {
       "type": "object",
-      "description": "The legacy semantic seed set used to generate a theme",
+      "description": "The semantic seed set used to generate a theme",
       "additionalProperties": false,
       "required": [
         "neutral",
@@ -147,7 +147,7 @@
     },
     "ThemeVariant": {
       "type": "object",
-      "description": "A theme variant (light or dark) with either a compact palette or legacy seeds and optional overrides",
+      "description": "A theme variant (light or dark) with either a compact palette or semantic seeds and optional overrides",
       "oneOf": [{ "required": ["seeds"] }, { "required": ["palette"] }],
       "properties": {
         "seeds": {

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { rename, unlink, writeFile } from "node:fs/promises";
 
 /** Serializes only operations that address the same resource. Idle keys are
- * removed immediately, so unrelated Journeys and Collections never share a
+ * removed immediately, so unrelated resources never share a
  * process-wide write queue. */
 export class KeyedSerialQueue {
   readonly #tails = new Map<string, Promise<void>>();

@@ -16,7 +16,7 @@ function event(
     actorKind: actorId.startsWith("agent:") ? "agent" : "human",
     organizationId: "local",
     projectId: "default",
-    operationId: "journey.update",
+    operationId: "app-map.update",
     requestId: `request-${sequence}`,
     occurredAt: sequence,
     payload,
@@ -29,21 +29,21 @@ test("interleaved actors refresh resources without projecting target focus", () 
     0,
     event(1, { type: "device.selected", at: 1, serial: "agent-device" }),
   );
-  const journey = projectRelayEvent(
+  const appMap = projectRelayEvent(
     remoteSelection.cursor,
     event(2, {
       type: "resource.updated",
       at: 2,
       projectId: "default",
-      resource: "journey",
+      resource: "app-map",
       resourceId: "login",
       revision: 3,
     }),
   );
   assert.equal(selectedDevice, "human-device");
   assert.deepEqual(remoteSelection.refresh, []);
-  assert.deepEqual(journey.refresh, ["journeys"]);
-  assert.equal(journey.activity?.actorId, "agent:indexer");
+  assert.deepEqual(appMap.refresh, ["appMaps"]);
+  assert.equal(appMap.activity?.actorId, "agent:indexer");
 });
 
 test("duplicates and out-of-order events are ignored", () => {
@@ -69,7 +69,7 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
   assert.equal(projection.accepted, true);
   assert.deepEqual(projection.refresh, [
     "devices",
-    "journeys",
+    "recipes",
     "appMaps",
     "jobs",
     "runs",
@@ -95,7 +95,7 @@ test("App Map resource changes refresh the canonical map projection", () => {
   assert.deepEqual(projection.refresh, ["appMaps"]);
 });
 
-test("recording activity refreshes Authoring Sessions without replacing Journey focus", () => {
+test("recording activity refreshes Authoring Sessions without replacing App Map focus", () => {
   const projection = projectRelayEvent(
     0,
     event(1, {

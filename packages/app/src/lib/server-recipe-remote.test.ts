@@ -7,9 +7,9 @@ test("keeps recipe persistence endpoint construction in one module", async () =>
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     calls.push(`${init?.method ?? "GET"} ${path}`);
     if (path.endsWith("/yaml")) return { yaml: "schemaVersion: 1" } as T;
-    return { journey: { id: "login", title: "Login", steps: [] } } as T;
+    return { recipe: { id: "login", title: "Login", steps: [] } } as T;
   };
   await saveRecipe(request, { id: "login", expectedRevision: 12, title: "Login", steps: [] });
   assert.equal(await loadRecipeYaml(request, "login"), "schemaVersion: 1");
-  assert.deepEqual(calls, ["PUT /journeys/login", "GET /journeys/login/yaml"]);
+  assert.deepEqual(calls, ["PUT /recipes/login", "GET /recipes/login/yaml"]);
 });

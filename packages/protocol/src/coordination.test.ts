@@ -8,7 +8,7 @@ const identity = {
   actorKind: "human" as const,
   organizationId: "local",
   projectId: "default",
-  operationId: "journey.update",
+  operationId: "app-map.update",
   requestId: "req-1",
   idempotencyKey: "idem-1",
   issuedAt: 1,

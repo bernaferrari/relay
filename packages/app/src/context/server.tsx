@@ -10,12 +10,6 @@ import type {
   DiscoveryDecisionProvenance,
   DiscoveryScope,
   DiscoveryControl,
-  JourneyMetadata,
-  JourneyCanvasNote,
-  JourneyConnection,
-  JourneyDeviceVariant,
-  JourneyGraph,
-  JourneyTake,
   OperationId,
   OperationInput,
   OperationOutput,
@@ -78,16 +72,6 @@ import {
   type AndroidSetupStatus,
 } from "../lib/server-device-setup-remote";
 import { createServerRunController } from "../lib/server-run-controller";
-import {
-  JourneyCollaborationRuntime,
-  normalizeAppCollaborationConfig,
-  type AppCollaborationConfig,
-} from "../lib/journey-collaboration-runtime";
-import {
-  createRelayAwarenessTransport,
-  createRelayCollaborationTransport,
-} from "../lib/relay-collaboration-transport";
-import type * as Y from "yjs";
 import type {
   ActionInfo,
   DeviceInfo,
@@ -106,71 +90,6 @@ import type {
   LocalSchedule,
 } from "../lib/api-types";
 import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
-
-function mergeJourneyTakes(
-  remote: JourneyTake[] | undefined,
-  local: JourneyTake[] | undefined,
-): JourneyTake[] {
-  const byId = new Map((remote ?? []).map((take) => [take.id, take]));
-  for (const take of local ?? []) byId.set(take.id, take);
-  return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).slice(-50);
-}
-
-function mergeJourneyConnections(
-  remote: JourneyConnection[] | undefined,
-  local: JourneyConnection[] | undefined,
-): JourneyConnection[] {
-  const byId = new Map((remote ?? []).map((connection) => [connection.id, connection]));
-  for (const connection of local ?? []) byId.set(connection.id, connection);
-  return [...byId.values()];
-}
-
-function mergeJourneyVariants(
-  remote: JourneyDeviceVariant[] | undefined,
-  local: JourneyDeviceVariant[] | undefined,
-): JourneyDeviceVariant[] {
-  const byId = new Map((remote ?? []).map((variant) => [variant.id, variant]));
-  for (const variant of local ?? []) byId.set(variant.id, variant);
-  return [...byId.values()];
-}
-
-function mergeJourneyNotes(
-  remote: JourneyCanvasNote[] | undefined,
-  local: JourneyCanvasNote[] | undefined,
-): JourneyCanvasNote[] {
-  const byId = new Map((remote ?? []).map((note) => [note.id, note]));
-  for (const note of local ?? []) byId.set(note.id, note);
-  return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt).slice(-100);
-}
-
-/**
- * The graph is an append-friendly canvas document. On a revision conflict we
- * retain objects created by either author and choose the newest edit for a
- * shared id. Deletions are currently local-only actions; when real multiplayer
- * arrives this is the one seam to extend with tombstones, not a reason to
- * spread collaboration conditionals through the canvas.
- */
-function mergeJourneyGraphs(
-  remote: JourneyGraph | undefined,
-  local: JourneyGraph | undefined,
-): JourneyGraph | undefined {
-  if (!remote) return local;
-  if (!local) return remote;
-  const merge = <T extends { id: string; updatedAt: number }>(left: T[], right: T[]): T[] => {
-    const byId = new Map(left.map((entry) => [entry.id, entry]));
-    for (const entry of right) {
-      const previous = byId.get(entry.id);
-      if (!previous || entry.updatedAt >= previous.updatedAt) byId.set(entry.id, entry);
-    }
-    return [...byId.values()];
-  };
-  return {
-    schemaVersion: 1,
-    screens: merge(remote.screens, local.screens),
-    transitions: merge(remote.transitions, local.transitions),
-    flows: merge(remote.flows, local.flows),
-  };
-}
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -204,13 +123,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
   init: (
     props: {
       pollMs?: number;
-      collaboration?: boolean | Partial<AppCollaborationConfig>;
     } = {},
   ) => {
     const platform = usePlatform();
     const pollMs = props.pollMs ?? 5000;
-    const collaborationConfig = normalizeAppCollaborationConfig(props.collaboration);
-    const collaborationClientId = `app:${crypto.randomUUID()}`;
 
     const [serverUrl, setServerUrlState] = createSignal("");
     const [actorId, setActorId] = createSignal("");
@@ -671,8 +587,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshRecipes() {
       if (health() === "offline") return;
       try {
-        const data = await request<{ journeys: RecipeInfo[] }>("/journeys");
-        const list = asArray<RecipeInfo>(data, "journeys");
+        const data = await request<{ recipes: RecipeInfo[] }>("/recipes");
+        const list = asArray<RecipeInfo>(data, "recipes");
         setRecipes(list);
         setRecipesLoaded(true);
       } catch {
@@ -689,7 +605,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function loadAppMap(appMapId: string): Promise<AppMap> {
-      return (await runAction("app-map.get", { appMapId })).appMap;
+      const appMap = (await runAction("app-map.get", { appMapId })).appMap;
+      setAppMaps((current) => [
+        appMap,
+        ...current.filter((candidate) => candidate.id !== appMap.id),
+      ]);
+      return appMap;
     }
 
     async function createAppMap(appMapId: string, name: string): Promise<AppMap> {
@@ -1017,11 +938,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function loadJourney(recipeId: string): Promise<Revisioned<JourneyMetadata>> {
-      if (!client) await resolveConnection();
-      return client!.journey(recipeId);
-    }
-
     async function runAction<Id extends OperationId>(
       operationId: Id,
       input: OperationInput<Id>,
@@ -1031,57 +947,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         requestId: crypto.randomUUID(),
         idempotencyKey: crypto.randomUUID(),
       });
-    }
-
-    async function saveJourney(
-      recipeId: string,
-      current: Revisioned<JourneyMetadata>,
-      value: JourneyMetadata,
-    ): Promise<Revisioned<JourneyMetadata>> {
-      if (!client) await resolveConnection();
-      try {
-        return await client!.updateJourney(recipeId, {
-          expectedRevision: current.revision,
-          value,
-          idempotencyKey: crypto.randomUUID(),
-        });
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          const latest = (error.body as { current?: Revisioned<JourneyMetadata> })?.current;
-          if (latest) {
-            return client!.updateJourney(recipeId, {
-              expectedRevision: latest.revision,
-              value: {
-                ...latest.value,
-                ...value,
-                positions: { ...latest.value.positions, ...value.positions },
-                screenTitles: { ...latest.value.screenTitles, ...value.screenTitles },
-                edgeLabels: { ...latest.value.edgeLabels, ...value.edgeLabels },
-                edgeKinds: { ...latest.value.edgeKinds, ...value.edgeKinds },
-                notes: mergeJourneyNotes(latest.value.notes, value.notes),
-                // A take has one stable id; keep local updates for matching
-                // ids while retaining remote takes created by collaborators.
-                takes: mergeJourneyTakes(latest.value.takes, value.takes),
-                prototype: {
-                  ...latest.value.prototype,
-                  ...value.prototype,
-                  connections: mergeJourneyConnections(
-                    latest.value.prototype?.connections,
-                    value.prototype?.connections,
-                  ),
-                  deviceVariants: mergeJourneyVariants(
-                    latest.value.prototype?.deviceVariants,
-                    value.prototype?.deviceVariants,
-                  ),
-                },
-                graph: mergeJourneyGraphs(latest.value.graph, value.graph),
-              },
-              idempotencyKey: crypto.randomUUID(),
-            });
-          }
-        }
-        throw error;
-      }
     }
 
     async function generate(input: GenerationRequest): Promise<GenerationResult> {
@@ -1163,7 +1028,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     function refreshFromEvent(kind: EventRefresh) {
       const refreshers: Record<EventRefresh, () => Promise<unknown>> = {
         devices: refreshDevices,
-        journeys: refreshRecipes,
+        recipes: refreshRecipes,
         appMaps: refreshAppMaps,
         jobs: refreshJobs,
         runs: refreshRuns,
@@ -1693,7 +1558,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const {
       runRecipe: runRecipeRemote,
       runAppMapFlow: runAppMapFlowRemote,
-      runJourneyPath: runJourneyPathRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
       loadCompatibilityReport,
       retrySelectedJob,
@@ -1728,34 +1592,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       () => recipes().find((recipe) => recipe.id === selectedAppMapId()) ?? null,
     );
 
-    function createJourneyCollaboration(journeyId: string, doc: Y.Doc) {
-      if (!collaborationConfig.enabled) {
-        return new JourneyCollaborationRuntime({
-          config: collaborationConfig,
-          doc,
-          scope: { projectId: connection?.projectId ?? "default", journeyId },
-          clientId: collaborationClientId,
-        });
-      }
-      if (!client || !connection) {
-        throw new Error("Relay collaboration requires an active server connection");
-      }
-      return new JourneyCollaborationRuntime({
-        config: collaborationConfig,
-        doc,
-        scope: { projectId: connection.projectId, journeyId },
-        clientId: collaborationClientId,
-        transport: createRelayCollaborationTransport(client),
-        awarenessTransport: createRelayAwarenessTransport(client),
-      });
-    }
-
     return {
       projectId: () => connection?.projectId ?? "default",
       serverUrl,
       actorId,
-      collaborationConfig,
-      createJourneyCollaboration,
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
@@ -1769,8 +1609,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshProjectVariables,
       saveProjectVariables,
       runAction,
-      loadJourney,
-      saveJourney,
       generate,
       scheduleRecipe,
       refreshSchedules,
@@ -1883,7 +1721,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       retryConnection,
       runRecipeRemote,
       runAppMapFlowRemote,
-      runJourneyPathRemote,
       runCompatibilityMatrixRemote,
       loadCompatibilityReport,
       saveRecipeRemote,

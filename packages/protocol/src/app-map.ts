@@ -2,7 +2,7 @@ import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recip
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity, TargetProfile } from "./index.js";
 
-export const APP_MAP_SCHEMA_VERSION = 1 as const;
+export const APP_MAP_SCHEMA_VERSION = 2 as const;
 
 export type VolatileSemanticKind =
   | "clock"
@@ -52,6 +52,11 @@ export type AppMapEntity = AppMapScope & {
 
 export type AppMapPoint = { x: number; y: number };
 
+export type AppMapNote = AppMapEntity & {
+  text: string;
+  position: AppMapPoint;
+};
+
 export type Screen = AppMapEntity & {
   title: string;
   description?: string;
@@ -60,7 +65,11 @@ export type Screen = AppMapEntity & {
   variantIds: string[];
 };
 
-export type AppMapPatch = { name?: string; description?: string | null };
+export type AppMapPatch = {
+  name?: string;
+  description?: string | null;
+  notes?: Record<string, AppMapNote>;
+};
 
 export type BaselineProvenance = {
   approvedAt: number;
@@ -309,6 +318,7 @@ export type AppMap = {
   name: string;
   description?: string;
   revision: number;
+  notes: Record<string, AppMapNote>;
   screens: Record<string, Screen>;
   screenVariants: Record<string, ScreenVariant>;
   connections: Record<string, Connection>;
@@ -348,6 +358,7 @@ export type RoutineImpactPreview = {
 export type SerializedAppMap = Omit<
   AppMap,
   | "screens"
+  | "notes"
   | "screenVariants"
   | "connections"
   | "caseStacks"
@@ -358,6 +369,7 @@ export type SerializedAppMap = Omit<
   | "proposals"
   | "activity"
 > & {
+  notes: AppMapNote[];
   screens: Screen[];
   screenVariants: ScreenVariant[];
   connections: Connection[];

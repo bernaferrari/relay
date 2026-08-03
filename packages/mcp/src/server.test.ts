@@ -230,7 +230,7 @@ test("publishes operation-shaped schemas and rejects invalid arguments before in
   }
 });
 
-test("accepts legacy wrapped input without weakening the advertised operation schema", async () => {
+test("rejects wrapped input so agents use the one advertised operation schema", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const session = await connectMcp({
     async invoke(operationId, input) {
@@ -238,7 +238,7 @@ test("accepts legacy wrapped input without weakening the advertised operation sc
       return { lease: { id: "lease-1" } };
     },
   });
-  const legacyInput = {
+  const wrappedInput = {
     poolId: "pool-1",
     deviceSerial: "device-1",
     expiresAt: Date.now() + 60_000,
@@ -260,13 +260,12 @@ test("accepts legacy wrapped input without weakening the advertised operation sc
     const result = callResult(
       await session.request("tools/call", {
         name: "relay_lease_create",
-        arguments: { input: legacyInput, confirm: true },
+        arguments: { input: wrappedInput, confirm: true },
       }),
     );
 
-    assert.equal(result.isError, undefined);
-    assert.deepEqual(result.structuredContent, { result: { lease: { id: "lease-1" } } });
-    assert.deepEqual(calls, [{ operationId: "lease.create", input: legacyInput }]);
+    assert.equal(result.isError, true);
+    assert.deepEqual(calls, []);
   } finally {
     await session.close();
   }

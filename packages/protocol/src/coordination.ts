@@ -42,8 +42,7 @@ export type ResourceKind =
   | "lease"
   | "variables"
   | "app-map"
-  | "journey"
-  | "collection"
+  | "recipe"
   | "matrix"
   | "recording-session"
   | "discovery-session";

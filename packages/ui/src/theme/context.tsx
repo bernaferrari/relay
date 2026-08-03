@@ -258,13 +258,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     defaultColorScheme?: ColorScheme;
     onThemeApplied?: (detail: ThemeAppliedDetail) => void;
   }) => {
-    const legacyThemeId = read("grok-device-theme-id");
-    const legacyColorScheme = read("grok-device-color-scheme") as ColorScheme | null;
-    const themeId =
-      normalize(read(STORAGE_KEYS.THEME_ID) ?? legacyThemeId ?? props.defaultTheme) ?? "relay";
+    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "relay";
     const colorScheme =
       (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ??
-      legacyColorScheme ??
       props.defaultColorScheme ??
       "system";
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme;

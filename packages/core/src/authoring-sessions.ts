@@ -21,7 +21,7 @@ import { KeyedSerialQueue } from "./coordination-store.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
-import { authoringEvidenceExists, persistAuthoringEvidence } from "./journey-aggregate.js";
+import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
 
 export class AuthoringStateError extends Error {
   readonly status = 409;
@@ -110,9 +110,7 @@ function transition(session: AuthoringSession, state: AuthoringSessionState): Au
 }
 
 function root(): string {
-  const state =
-    (process.env.RELAY_STATE_DIR ?? process.env.GROK_DEVICE_STATE_DIR)?.trim() ||
-    join(findWorkspaceRoot(), ".relay");
+  const state = process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
   return join(state, "authoring-sessions");
 }
 

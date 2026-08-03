@@ -2,7 +2,7 @@ import type { EventEnvelope, ResourceKind } from "@relay/protocol";
 
 export type EventRefresh =
   | "devices"
-  | "journeys"
+  | "recipes"
   | "appMaps"
   | "jobs"
   | "runs"
@@ -28,7 +28,7 @@ export type EventProjection = {
 
 const RESOURCE_REFRESH: Partial<Record<ResourceKind, EventRefresh>> = {
   variables: "variables",
-  journey: "journeys",
+  recipe: "recipes",
   "app-map": "appMaps",
   matrix: "matrices",
   "discovery-session": "discoveries",
@@ -37,7 +37,7 @@ const RESOURCE_REFRESH: Partial<Record<ResourceKind, EventRefresh>> = {
 
 const GAP_REFRESH: EventRefresh[] = [
   "devices",
-  "journeys",
+  "recipes",
   "appMaps",
   "jobs",
   "runs",

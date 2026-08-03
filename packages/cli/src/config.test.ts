@@ -140,7 +140,7 @@ test("every friendly command path parses to its descriptor operation", () => {
 });
 
 test("friendly inputs default to an object and path arguments override JSON fields", () => {
-  const list = parseCli(["journey", "list"], {});
+  const list = parseCli(["map", "list"], {});
   assert.equal(list.command, "invoke");
   if (list.command === "invoke") assert.deepEqual(list.input, {});
 
@@ -151,22 +151,22 @@ test("friendly inputs default to an object and path arguments override JSON fiel
     assert.deepEqual(screenshot.input, { serial: "pixel-9" });
   }
 
-  const journey = parseCli(
+  const map = parseCli(
     [
-      "journey",
+      "map",
       "update",
       "checkout",
       "--input",
-      '{"journeyId":"wrong","expectedRevision":7,"value":{"title":"Checkout"}}',
+      '{"appMapId":"wrong","expectedRevision":7,"patch":{"name":"Checkout"}}',
     ],
     {},
   );
-  assert.equal(journey.command, "invoke");
-  if (journey.command === "invoke") {
-    assert.deepEqual(journey.input, {
-      journeyId: "checkout",
+  assert.equal(map.command, "invoke");
+  if (map.command === "invoke") {
+    assert.deepEqual(map.input, {
+      appMapId: "checkout",
       expectedRevision: 7,
-      value: { title: "Checkout" },
+      patch: { name: "Checkout" },
     });
   }
 });
@@ -214,7 +214,6 @@ test("friendly aliases and lifecycle commands construct operation inputs", () =>
       "authoring.take.replace",
       { sessionId: "session-1", actionId: "action-2" },
     ],
-    [["collection", "run", "smoke"], "collection.run", { collectionId: "smoke" }],
     [["run", "pin", "update", "run-1"], "run.pin.update", { runId: "run-1" }],
     [
       ["discovery", "capture", "discovery-1", "pixel-9"],

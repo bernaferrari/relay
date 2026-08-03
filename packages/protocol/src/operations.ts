@@ -15,26 +15,6 @@ import {
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
 } from "./authoring.js";
-import {
-  parseCollaborationAppendInput,
-  parseCollaborationAppendResponse,
-  parseCollaborationAwarenessListResponse,
-  parseCollaborationAwarenessPublishInput,
-  parseCollaborationAwarenessRemoveResponse,
-  parseCollaborationAwarenessResponse,
-  parseCollaborationDocumentResponse,
-  parseCollaborationJourneyInput,
-  parseCollaborationSyncInput,
-  type CollaborationAppendInput,
-  type CollaborationAppendResponse,
-  type CollaborationAwarenessListResponse,
-  type CollaborationAwarenessPublishInput,
-  type CollaborationAwarenessRemoveResponse,
-  type CollaborationAwarenessResponse,
-  type CollaborationDocumentResponse,
-  type CollaborationJourneyInput,
-  type CollaborationSyncInput,
-} from "./collaboration.js";
 import type {
   AddScreenInput,
   AppMap,
@@ -193,23 +173,6 @@ type DeviceLeaseDto = {
   leasedAt: number;
   expiresAt: number;
   releasedAt?: number;
-};
-
-type JourneyDto = {
-  id: string;
-  title: string;
-  steps: unknown[];
-  createdAt: number;
-  updatedAt: number;
-  [key: string]: unknown;
-};
-
-type CollectionDto = {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  [key: string]: unknown;
 };
 
 export type OperationMode = "query" | "command" | "stream";
@@ -574,50 +537,6 @@ type SpecificOperationMap = {
     };
     output: { appMap: AppMap };
   };
-  "journey.document.get": {
-    input: { journeyId: string };
-    output: RevisionedDto<unknown>;
-  };
-  "journey.document.update": {
-    input: { journeyId: string } & RevisionWriteDto<unknown>;
-    output: RevisionedDto<unknown>;
-  };
-  "collaboration.document.bootstrap": {
-    input: CollaborationJourneyInput;
-    output: CollaborationDocumentResponse;
-  };
-  "collaboration.document.sync": {
-    input: CollaborationSyncInput;
-    output: CollaborationDocumentResponse;
-  };
-  "collaboration.update.append": {
-    input: CollaborationAppendInput;
-    output: CollaborationAppendResponse;
-  };
-  "collaboration.status.get": {
-    input: CollaborationJourneyInput;
-    output: CollaborationDocumentResponse;
-  };
-  "collaboration.document.export": {
-    input: CollaborationJourneyInput;
-    output: CollaborationDocumentResponse;
-  };
-  "collaboration.document.repair": {
-    input: CollaborationJourneyInput;
-    output: CollaborationDocumentResponse;
-  };
-  "collaboration.awareness.publish": {
-    input: CollaborationAwarenessPublishInput;
-    output: CollaborationAwarenessResponse;
-  };
-  "collaboration.awareness.list": {
-    input: CollaborationJourneyInput;
-    output: CollaborationAwarenessListResponse;
-  };
-  "collaboration.awareness.remove": {
-    input: CollaborationJourneyInput;
-    output: CollaborationAwarenessRemoveResponse;
-  };
   "authoring.session.list": {
     input: Record<string, never>;
     output: AuthoringSessionListResponse;
@@ -720,39 +639,6 @@ type SpecificOperationMap = {
     output: { lease: DeviceLeaseDto };
   };
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
-  "journey.list": { input: Record<string, never>; output: { journeys: JourneyDto[] } };
-  "journey.get": { input: { journeyId: string }; output: { journey: JourneyDto } };
-  "journey.create": {
-    input: OperationRecord & { expectedRevision: number };
-    output: { journey: JourneyDto };
-  };
-  "journey.update": {
-    input: { journeyId: string; expectedRevision: number } & OperationRecord;
-    output: { journey: JourneyDto };
-  };
-  "journey.delete": { input: { journeyId: string }; output: { ok: true } };
-  "journey.history.restore": {
-    input: { journeyId: string; updatedAt: number };
-    output: { journey: JourneyDto };
-  };
-  "collection.list": { input: Record<string, never>; output: { collections: CollectionDto[] } };
-  "collection.get": {
-    input: { collectionId: string };
-    output: { collection: CollectionDto };
-  };
-  "collection.create": {
-    input: OperationRecord & { expectedRevision: number };
-    output: { collection: CollectionDto };
-  };
-  "collection.update": {
-    input: { collectionId: string; expectedRevision: number } & OperationRecord;
-    output: { collection: CollectionDto };
-  };
-  "collection.delete": { input: { collectionId: string }; output: { ok: true } };
-  "collection.restore": {
-    input: { collectionId: string; updatedAt: number };
-    output: { collection: CollectionDto };
-  };
 };
 
 type GenericOperationId =
@@ -772,9 +658,17 @@ type GenericOperationId =
   | "target.scroll"
   | "target.video.start"
   | "action.run"
-  | "journey.import"
-  | "journey.evidence.save"
-  | "collection.run"
+  | "recipe.list"
+  | "recipe.get"
+  | "recipe.create"
+  | "recipe.update"
+  | "recipe.delete"
+  | "recipe.yaml.get"
+  | "recipe.import"
+  | "recipe.evidence.create"
+  | "recipe.history.list"
+  | "recipe.history.restore"
+  | "recipe.stability.get"
   | "schedule.list"
   | "schedule.create"
   | "schedule.delete"
@@ -793,7 +687,6 @@ type GenericOperationId =
   | "discovery.promote"
   | "job.retry"
   | "job.active.cancel"
-  | "job.graph-path.start"
   | "job.matrix.start"
   | "job.compatibility-matrix.start"
   | "job.soak.start"
@@ -986,6 +879,38 @@ const targetInputParser = objectParser<OperationRecord>("target operation", (inp
   string(input.serial, "target serial");
 });
 
+const recipeRefParser = objectParser<OperationRecord>("recipe reference", (input) => {
+  string(input.recipeId, "recipeId");
+});
+
+const recipeWriteParser = objectParser<OperationRecord>("recipe write", (input) => {
+  if (input.recipeId !== undefined) string(input.recipeId, "recipeId");
+  number(input.expectedRevision, "expectedRevision");
+  string(input.title, "title");
+  if (!Array.isArray(input.steps)) fail("steps", "must be an array");
+});
+
+const recipeImportParser = objectParser<OperationRecord>("recipe import", (input) => {
+  string(input.yaml, "yaml");
+});
+
+const recipeEvidenceParser = objectParser<OperationRecord>("recipe evidence", (input) => {
+  string(input.recipeId, "recipeId");
+  string(input.evidenceId, "evidenceId");
+  string(input.mime, "mime");
+  string(input.base64, "base64");
+});
+
+const recipeHistoryRestoreParser = objectParser<OperationRecord>(
+  "recipe history restore",
+  (input) => {
+    string(input.recipeId, "recipeId");
+    number(input.updatedAt, "updatedAt");
+  },
+);
+
+const genericObjectOutputParser = objectParser<OperationRecord>("operation response");
+
 const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
   string(input.action, "job action");
 });
@@ -1019,15 +944,6 @@ const revisionedVariablesParser = objectParser<RevisionedDto<TestVariableDto[]>>
     number(input.revision, "variables revision");
     number(input.updatedAt, "variables updatedAt");
     if (!Array.isArray(input.value)) fail("variables value", "must be an array");
-  },
-);
-
-const revisionedJourneyParser = objectParser<RevisionedDto<unknown>>(
-  "Journey document response",
-  (input) => {
-    number(input.revision, "Journey revision");
-    number(input.updatedAt, "Journey updatedAt");
-    record(input.value, "Journey document");
   },
 );
 
@@ -1358,13 +1274,6 @@ const generationOutputParser = objectParser<GenerationResultDto>("generation res
   }
 });
 
-const revisionWriteInputParser = objectParser<OperationRecord>("revisioned write", (input) => {
-  const revision = number(input.expectedRevision, "expectedRevision");
-  if (revision < 0) {
-    fail("expectedRevision", "must be non-negative");
-  }
-});
-
 const authoringSessionRefParser = objectParser<OperationRecord>(
   "authoring session input",
   assertAuthoringSessionRef,
@@ -1513,51 +1422,6 @@ const commitAuthoringSessionParser = objectParser<CommitAuthoringSessionInput>(
 const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = {
   description: "authoring session response",
   parse: parseAuthoringSessionResponse,
-};
-
-const collaborationJourneyInputParser: RuntimeParser<CollaborationJourneyInput> = {
-  description: "scoped collaborative Journey input",
-  parse: parseCollaborationJourneyInput,
-};
-
-const collaborationSyncInputParser: RuntimeParser<CollaborationSyncInput> = {
-  description: "bounded collaborative Journey state-vector sync input",
-  parse: parseCollaborationSyncInput,
-};
-
-const collaborationAppendInputParser: RuntimeParser<CollaborationAppendInput> = {
-  description: "bounded idempotent collaborative Journey update input",
-  parse: parseCollaborationAppendInput,
-};
-
-const collaborationDocumentResponseParser: RuntimeParser<CollaborationDocumentResponse> = {
-  description: "bounded collaborative Journey update and metrics response",
-  parse: parseCollaborationDocumentResponse,
-};
-
-const collaborationAppendResponseParser: RuntimeParser<CollaborationAppendResponse> = {
-  description: "collaborative Journey append result",
-  parse: parseCollaborationAppendResponse,
-};
-
-const collaborationAwarenessPublishParser: RuntimeParser<CollaborationAwarenessPublishInput> = {
-  description: "bounded ephemeral collaboration awareness input",
-  parse: parseCollaborationAwarenessPublishInput,
-};
-
-const collaborationAwarenessResponseParser: RuntimeParser<CollaborationAwarenessResponse> = {
-  description: "ephemeral collaboration awareness response",
-  parse: parseCollaborationAwarenessResponse,
-};
-
-const collaborationAwarenessListParser: RuntimeParser<CollaborationAwarenessListResponse> = {
-  description: "ephemeral collaboration awareness list response",
-  parse: parseCollaborationAwarenessListResponse,
-};
-
-const collaborationAwarenessRemoveParser: RuntimeParser<CollaborationAwarenessRemoveResponse> = {
-  description: "ephemeral collaboration awareness removal response",
-  parse: parseCollaborationAwarenessRemoveResponse,
 };
 
 const authoringSessionListParser: RuntimeParser<AuthoringSessionListResponse> = {
@@ -1815,6 +1679,75 @@ export const operationDefinitions = [
     category: "execution",
     progress: true,
     cancellable: true,
+  }),
+  query("recipe.list", "List executable recipes", "/recipes", {
+    category: "authoring",
+    input: emptyInputParser,
+    output: genericObjectOutputParser,
+  }),
+  query("recipe.get", "Get executable recipe", "/recipes/:recipeId", {
+    category: "authoring",
+    input: recipeRefParser,
+    output: genericObjectOutputParser,
+  }),
+  command("recipe.create", "Create executable recipe", "POST", "/recipes", {
+    category: "authoring",
+    input: recipeWriteParser,
+    output: genericObjectOutputParser,
+  }),
+  command("recipe.update", "Update executable recipe", "PUT", "/recipes/:recipeId", {
+    category: "authoring",
+    input: recipeWriteParser,
+    output: genericObjectOutputParser,
+  }),
+  command("recipe.delete", "Delete executable recipe", "DELETE", "/recipes/:recipeId", {
+    category: "authoring",
+    confirmation: "confirm",
+    input: recipeRefParser,
+    output: okParser,
+  }),
+  query("recipe.yaml.get", "Get recipe YAML", "/recipes/:recipeId/yaml", {
+    category: "authoring",
+    input: recipeRefParser,
+    output: genericObjectOutputParser,
+  }),
+  command("recipe.import", "Import recipe YAML", "POST", "/recipes/import", {
+    category: "authoring",
+    input: recipeImportParser,
+    output: genericObjectOutputParser,
+  }),
+  command(
+    "recipe.evidence.create",
+    "Attach recipe evidence",
+    "POST",
+    "/recipes/:recipeId/evidence",
+    {
+      category: "evidence",
+      input: recipeEvidenceParser,
+      output: genericObjectOutputParser,
+    },
+  ),
+  query("recipe.history.list", "List recipe history", "/recipes/:recipeId/history", {
+    category: "authoring",
+    input: recipeRefParser,
+    output: genericObjectOutputParser,
+  }),
+  command(
+    "recipe.history.restore",
+    "Restore recipe history",
+    "POST",
+    "/recipes/:recipeId/history",
+    {
+      category: "authoring",
+      confirmation: "confirm",
+      input: recipeHistoryRestoreParser,
+      output: genericObjectOutputParser,
+    },
+  ),
+  query("recipe.stability.get", "Get recipe stability", "/recipes/:recipeId/stability", {
+    category: "evidence",
+    input: recipeRefParser,
+    output: genericObjectOutputParser,
   }),
   query("workspace.variables.get", "Get project variables", "/project/variables", {
     input: emptyInputParser,
@@ -2074,170 +2007,6 @@ export const operationDefinitions = [
       confirmation: "confirm",
     },
   ),
-  query("journey.list", "List Journeys", "/journeys", {
-    category: "authoring",
-    input: emptyInputParser,
-    output: arrayFieldParser("Journeys response", "journeys"),
-  }),
-  query("journey.get", "Get Journey", "/journeys/:journeyId", {
-    category: "authoring",
-    output: objectFieldParser("Journey response", "journey"),
-  }),
-  command("journey.create", "Create Journey", "POST", "/journeys", {
-    category: "authoring",
-    input: revisionWriteInputParser,
-    output: objectFieldParser("Journey response", "journey"),
-  }),
-  command("journey.update", "Update Journey", "PUT", "/journeys/:journeyId", {
-    category: "authoring",
-    input: revisionWriteInputParser,
-    output: objectFieldParser("Journey response", "journey"),
-  }),
-  command("journey.delete", "Delete Journey", "DELETE", "/journeys/:journeyId", {
-    category: "authoring",
-    output: okParser,
-  }),
-  command("journey.import", "Import Journey", "POST", "/journeys/import", {
-    category: "authoring",
-  }),
-  command(
-    "journey.history.restore",
-    "Restore Journey history",
-    "POST",
-    "/journeys/:journeyId/history",
-    {
-      category: "authoring",
-      confirmation: "confirm",
-      output: objectFieldParser("Journey response", "journey"),
-    },
-  ),
-  command(
-    "journey.evidence.save",
-    "Save Journey evidence",
-    "POST",
-    "/journeys/:journeyId/evidence",
-    {
-      category: "evidence",
-    },
-  ),
-  query("journey.document.get", "Get Journey document", "/journeys/:journeyId/document", {
-    category: "authoring",
-    output: revisionedJourneyParser,
-  }),
-  command(
-    "journey.document.update",
-    "Update Journey document",
-    "PUT",
-    "/journeys/:journeyId/document",
-    {
-      category: "authoring",
-      output: revisionedJourneyParser,
-    },
-  ),
-  command(
-    "collaboration.document.bootstrap",
-    "Bootstrap collaborative Journey",
-    "POST",
-    "/journeys/:journeyId/collaboration/bootstrap",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationDocumentResponseParser,
-      idempotency: "inherent",
-    },
-  ),
-  command(
-    "collaboration.document.sync",
-    "Sync collaborative Journey",
-    "POST",
-    "/journeys/:journeyId/collaboration/sync",
-    {
-      category: "authoring",
-      input: collaborationSyncInputParser,
-      output: collaborationDocumentResponseParser,
-      idempotency: "inherent",
-    },
-  ),
-  command(
-    "collaboration.update.append",
-    "Append collaborative Journey update",
-    "POST",
-    "/journeys/:journeyId/collaboration/updates",
-    {
-      category: "authoring",
-      input: collaborationAppendInputParser,
-      output: collaborationAppendResponseParser,
-      idempotency: "required",
-    },
-  ),
-  query(
-    "collaboration.status.get",
-    "Get collaborative Journey status",
-    "/journeys/:journeyId/collaboration/status",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationDocumentResponseParser,
-    },
-  ),
-  query(
-    "collaboration.document.export",
-    "Export collaborative Journey",
-    "/journeys/:journeyId/collaboration/export",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationDocumentResponseParser,
-    },
-  ),
-  command(
-    "collaboration.document.repair",
-    "Repair collaborative Journey storage",
-    "POST",
-    "/journeys/:journeyId/collaboration/repair",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationDocumentResponseParser,
-      idempotency: "inherent",
-      confirmation: "confirm",
-    },
-  ),
-  command(
-    "collaboration.awareness.publish",
-    "Publish collaboration awareness",
-    "PUT",
-    "/journeys/:journeyId/collaboration/awareness",
-    {
-      category: "authoring",
-      input: collaborationAwarenessPublishParser,
-      output: collaborationAwarenessResponseParser,
-      idempotency: "inherent",
-    },
-  ),
-  query(
-    "collaboration.awareness.list",
-    "List collaboration awareness",
-    "/journeys/:journeyId/collaboration/awareness",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationAwarenessListParser,
-    },
-  ),
-  command(
-    "collaboration.awareness.remove",
-    "Remove collaboration awareness",
-    "DELETE",
-    "/journeys/:journeyId/collaboration/awareness",
-    {
-      category: "authoring",
-      input: collaborationJourneyInputParser,
-      output: collaborationAwarenessRemoveParser,
-      idempotency: "inherent",
-      confirmation: "none",
-    },
-  ),
   query("authoring.session.list", "List Authoring Sessions", "/authoring-sessions", {
     category: "authoring",
     input: emptyInputParser,
@@ -2395,45 +2164,6 @@ export const operationDefinitions = [
     "/authoring-sessions/:sessionId",
     { category: "authoring", input: authoringSessionRefParser, output: okParser },
   ),
-  query("collection.list", "List Collections", "/collections", {
-    category: "authoring",
-    input: emptyInputParser,
-    output: arrayFieldParser("Collections response", "collections"),
-  }),
-  query("collection.get", "Get Collection", "/collections/:collectionId", {
-    category: "authoring",
-    output: objectFieldParser("Collection response", "collection"),
-  }),
-  command("collection.create", "Create Collection", "POST", "/collections", {
-    category: "authoring",
-    input: revisionWriteInputParser,
-    output: objectFieldParser("Collection response", "collection"),
-  }),
-  command("collection.update", "Update Collection", "PUT", "/collections/:collectionId", {
-    category: "authoring",
-    input: revisionWriteInputParser,
-    output: objectFieldParser("Collection response", "collection"),
-  }),
-  command("collection.delete", "Delete Collection", "DELETE", "/collections/:collectionId", {
-    category: "authoring",
-    output: okParser,
-  }),
-  command(
-    "collection.restore",
-    "Restore Collection",
-    "POST",
-    "/collections/:collectionId/restore",
-    {
-      category: "authoring",
-      confirmation: "confirm",
-      output: objectFieldParser("Collection response", "collection"),
-    },
-  ),
-  command("collection.run", "Run Collection", "POST", "/collections/:collectionId/run", {
-    category: "execution",
-    progress: true,
-    cancellable: true,
-  }),
   query("schedule.list", "List schedules", "/schedules"),
   command("schedule.create", "Create schedule", "POST", "/schedules"),
   command("schedule.delete", "Delete schedule", "DELETE", "/schedules/:scheduleId"),
@@ -2517,11 +2247,6 @@ export const operationDefinitions = [
   command("job.active.cancel", "Cancel active job", "POST", "/jobs/active/cancel", {
     category: "execution",
     idempotency: "inherent",
-  }),
-  command("job.graph-path.start", "Run Journey path", "POST", "/jobs/graph-path", {
-    category: "execution",
-    progress: true,
-    cancellable: true,
   }),
   command("job.matrix.start", "Run job matrix", "POST", "/jobs/matrix", {
     category: "execution",
@@ -2608,7 +2333,7 @@ export const operationDefinitions = [
     },
   ),
   command("run.pin.update", "Pin Run", "POST", "/runs/:runId/pin", { category: "execution" }),
-  command("step.run", "Run one Journey step", "POST", "/step/run", {
+  command("step.run", "Run one recipe step", "POST", "/step/run", {
     category: "execution",
     targetCapabilities: ["snapshot", "tap", "type", "scroll"],
     lease: "exclusive",

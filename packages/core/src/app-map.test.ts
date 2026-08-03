@@ -159,12 +159,13 @@ function mapFixture(): AppMap {
   };
   const signIn = routine("sign-in", [{ id: "enter-email", kind: "text", text: "{{email}}" }]);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: scope.appMapId,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
     name: "Store",
     revision: 3,
+    notes: {},
     screens: {
       start: screen("start", [startVariant.id]),
       home: screen("home", [homeVariant.id]),
@@ -259,7 +260,7 @@ test("validates a normalized project map containing every action kind and return
 
 test("rejects invalid schema, record keys, scope, duplicate actions, and missing references", () => {
   const schema = mapFixture();
-  (schema as unknown as { schemaVersion: number }).schemaVersion = 2;
+  (schema as unknown as { schemaVersion: number }).schemaVersion = 1;
   expectError("invalid-map", () => validateAppMap(schema), /schemaVersion/u);
 
   const key = mapFixture();

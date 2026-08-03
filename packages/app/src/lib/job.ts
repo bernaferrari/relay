@@ -57,8 +57,6 @@ export function n(count: number, noun: string): string {
 /** Display fallback for a test title: blank/whitespace never renders empty. */
 export function displayTitle(title: string | undefined | null): string {
   const value = (title ?? "").trim();
-  const legacyUntitled = /^Untitled journey(?:\s+(\d+))?$/i.exec(value);
-  if (legacyUntitled) return legacyUntitled[1] ? `Untitled ${legacyUntitled[1]}` : "Untitled";
   return value || "Untitled";
 }
 

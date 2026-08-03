@@ -4,9 +4,7 @@ import {
   cancelJob,
   currentOperationContext,
   enqueueJob,
-  compileJourneyGraph,
   freezeRecipeExecution,
-  freezeRecipeGraph,
   getActiveJob,
   getActiveJobs,
   getJob,
@@ -14,8 +12,6 @@ import {
   pauseJob,
   prepareRunMatrix,
   readProjectVariables,
-  readJourney,
-  readRecipe,
   referencedRuntimeInputs,
   referencedVariableIds,
   redactRunMatrix,
@@ -111,65 +107,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const job = cancelActiveJob(targetId);
     if (!job) throw new HttpError(404, "No active job");
     json(res, 200, { job });
-    return true;
-  }
-
-  if (method === "POST" && pathname === "/jobs/graph-path") {
-    const body = (await parseJsonBody(req)) as {
-      recipe?: string;
-      flowName?: string;
-      transitionPath?: string[];
-      serial?: string;
-      platform?: "android" | "ios";
-      targetKind?: "device" | "browser";
-      browserTargetId?: string;
-    };
-    if (!body.recipe?.trim()) throw new HttpError(400, "recipe is required");
-    if (!body.flowName?.trim()) throw new HttpError(400, "flowName is required");
-    if (body.transitionPath && !body.transitionPath.every((id) => typeof id === "string")) {
-      throw new HttpError(400, "transitionPath must contain transition ids");
-    }
-    if (!scope.localTrusted) {
-      throw new HttpError(403, "Graph jobs require a project-owned journey store");
-    }
-    await assertTargetControl(scope, body.browserTargetId ?? body.serial);
-    const recipe = await readRecipe(body.recipe);
-    if (!recipe) throw new HttpError(404, "Journey recipe not found");
-    const journey = await readJourney(scope.projectId, recipe.id);
-    if (!journey.value.graph) throw new HttpError(409, "Journey has no canonical graph");
-    let compiled;
-    try {
-      compiled = compileJourneyGraph({
-        graph: journey.value.graph,
-        flowName: body.flowName,
-        recipeSteps: recipe.steps,
-        ...(body.transitionPath ? { transitionPath: body.transitionPath } : {}),
-      });
-    } catch (error) {
-      throw new HttpError(409, error instanceof Error ? error.message : String(error));
-    }
-    const recipeSnapshot = { ...structuredClone(recipe), steps: structuredClone(compiled.steps) };
-    const recipeGraph = await freezeRecipeGraph(recipeSnapshot);
-    const job = enqueueJob({
-      recipe: recipe.id,
-      title: `${recipe.title} · ${compiled.flow.name}`,
-      recipeSnapshot,
-      recipeGraph,
-      serial: body.serial,
-      platform: body.platform,
-      targetKind: body.targetKind,
-      browserTargetId: body.browserTargetId,
-      artifacts: [
-        {
-          kind: "journey-graph-plan",
-          capturedAt: Date.now(),
-          data: compiled,
-        },
-      ],
-      projectId: scope.projectId,
-      ownerId: currentOperationContext()!.actorId,
-    });
-    json(res, 202, { job, compiled });
     return true;
   }
 

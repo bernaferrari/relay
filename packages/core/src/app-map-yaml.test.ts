@@ -5,13 +5,14 @@ import { formatAppMapYaml, parseAppMapYaml } from "./app-map-yaml.js";
 
 function emptyMap(): AppMap {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "checkout",
     organizationId: "source-org",
     projectId: "source-project",
     name: "Checkout",
     description: "A portable checkout map",
     revision: 0,
+    notes: {},
     screens: {},
     screenVariants: {},
     connections: {},
@@ -31,7 +32,7 @@ test("App Map YAML round-trips deterministically and can move between projects",
   const yaml = formatAppMapYaml(emptyMap());
   assert.match(
     yaml,
-    /^schemaVersion: 1\nid: checkout\norganizationId: source-org\nprojectId: source-project\nname: Checkout\ndescription:/u,
+    /^schemaVersion: 2\nid: checkout\norganizationId: source-org\nprojectId: source-project\nname: Checkout\ndescription:/u,
   );
   assert.equal(formatAppMapYaml(parseAppMapYaml(yaml)), yaml);
   const moved = parseAppMapYaml(yaml, {
@@ -47,7 +48,7 @@ test("App Map YAML round-trips deterministically and can move between projects",
 
 test("App Map YAML rejects aliases, duplicate ids, and unknown root fields", () => {
   assert.throws(
-    () => parseAppMapYaml("schemaVersion: 1\nid: &id checkout\nname: *id\n"),
+    () => parseAppMapYaml("schemaVersion: 2\nid: &id checkout\nname: *id\n"),
     /anchors and aliases/iu,
   );
   const duplicate = formatAppMapYaml({

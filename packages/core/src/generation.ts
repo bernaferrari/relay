@@ -268,8 +268,7 @@ function registerBuiltins(): void {
     });
   }
 
-  const localUrl =
-    process.env.RELAY_LOCAL_GENERATION_URL ?? process.env.GROK_DEVICE_LOCAL_GENERATION_URL;
+  const localUrl = process.env.RELAY_LOCAL_GENERATION_URL;
   if (localUrl) {
     registerGenerationProvider({
       id: "local",
@@ -292,11 +291,7 @@ function registerBuiltins(): void {
 registerBuiltins();
 
 export async function generateValues(input: GenerationRequest): Promise<GenerationResult> {
-  const providerId =
-    input.provider ??
-    process.env.RELAY_GENERATION_PROVIDER ??
-    process.env.GROK_DEVICE_GENERATION_PROVIDER ??
-    "deterministic";
+  const providerId = input.provider ?? process.env.RELAY_GENERATION_PROVIDER ?? "deterministic";
   const provider = providers.get(providerId);
   if (!provider) throw new Error(`Generation provider is not configured: ${providerId}`);
   const startedAt = Date.now();

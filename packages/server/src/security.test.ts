@@ -41,9 +41,9 @@ describe("server security", () => {
   });
 
   it("keeps unowned workspace assets on the local control plane", () => {
-    assert.equal(isLocalWorkspacePath("/journeys"), true);
-    assert.equal(isLocalWorkspacePath("/journeys/custom-login"), true);
-    assert.equal(isLocalWorkspacePath("/collections/smoke/run"), true);
+    assert.equal(isLocalWorkspacePath("/recipes"), true);
+    assert.equal(isLocalWorkspacePath("/recipes/custom-login"), true);
+    assert.equal(isLocalWorkspacePath("/app-maps"), false);
     assert.equal(isLocalWorkspacePath("/runs"), false);
     assert.equal(isLocalWorkspacePath("/jobs/123"), false);
   });

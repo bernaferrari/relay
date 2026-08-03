@@ -124,13 +124,11 @@ test("CLI authoring commands commit a fake transition visible to another client"
     RELAY_WORKSPACE_ROOT: process.env.RELAY_WORKSPACE_ROOT,
     RELAY_STATE_DIR: process.env.RELAY_STATE_DIR,
     RELAY_RECIPES_DIR: process.env.RELAY_RECIPES_DIR,
-    GROK_DEVICE_RECIPES_DIR: process.env.GROK_DEVICE_RECIPES_DIR,
     RELAY_TESTS_DIR: process.env.RELAY_TESTS_DIR,
   };
   process.env.RELAY_WORKSPACE_ROOT = root;
   process.env.RELAY_STATE_DIR = join(root, "state");
   process.env.RELAY_RECIPES_DIR = join(root, "recipes");
-  process.env.GROK_DEVICE_RECIPES_DIR = join(root, "recipes");
   process.env.RELAY_TESTS_DIR = join(root, "tests");
 
   const runtime = new FakeRuntime();

@@ -161,13 +161,12 @@ function inProcessClient(): DeviceClient {
 
 function httpClient(baseUrl: string): DeviceClient {
   const base = baseUrl.replace(/\/+$/, "");
-  const token = process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
+  const token = process.env.RELAY_AUTH_TOKEN;
   const relay = new RelayClient({
     url: base,
     auth: token ? { type: "bearer", token } : { type: "none" },
-    organizationId:
-      process.env.RELAY_ORGANIZATION_ID ?? process.env.GROK_DEVICE_ORGANIZATION_ID ?? "local",
-    projectId: process.env.RELAY_PROJECT_ID ?? process.env.GROK_DEVICE_PROJECT_ID ?? "default",
+    organizationId: process.env.RELAY_ORGANIZATION_ID ?? "local",
+    projectId: process.env.RELAY_PROJECT_ID ?? "default",
     actorId: process.env.RELAY_ACTOR_ID ?? "human:local-tui",
     actorKind: "human",
   });
@@ -254,7 +253,7 @@ function httpClient(baseUrl: string): DeviceClient {
 }
 
 export async function createClient(serverUrl?: string): Promise<DeviceClient> {
-  const envUrl = (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim();
+  const envUrl = process.env.RELAY_URL?.trim();
   const candidate = (serverUrl ?? envUrl ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
   if (serverUrl || envUrl || (await probe(candidate))) {
     if (await probe(candidate)) return httpClient(candidate);

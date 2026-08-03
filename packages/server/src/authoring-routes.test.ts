@@ -73,11 +73,11 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
   const root = await mkdtemp(join(tmpdir(), "relay-authoring-server-"));
   const previous = {
     state: process.env.RELAY_STATE_DIR,
-    recipes: process.env.GROK_DEVICE_RECIPES_DIR,
+    recipes: process.env.RELAY_RECIPES_DIR,
     tests: process.env.RELAY_TESTS_DIR,
   };
   process.env.RELAY_STATE_DIR = join(root, "state");
-  process.env.GROK_DEVICE_RECIPES_DIR = join(root, "recipes");
+  process.env.RELAY_RECIPES_DIR = join(root, "recipes");
   process.env.RELAY_TESTS_DIR = join(root, "tests");
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   const connection = {
@@ -131,8 +131,8 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
     await server.close();
     if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous.state;
-    if (previous.recipes === undefined) delete process.env.GROK_DEVICE_RECIPES_DIR;
-    else process.env.GROK_DEVICE_RECIPES_DIR = previous.recipes;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
     if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
     else process.env.RELAY_TESTS_DIR = previous.tests;
     await rm(root, { recursive: true, force: true });

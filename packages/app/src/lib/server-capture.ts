@@ -259,7 +259,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   ): Promise<{ bytes: number; sha256: string; deduplicated: boolean } | null> {
     try {
       const saved = await deps.request<{ bytes: number; sha256: string; deduplicated: boolean }>(
-        `/journeys/${encodeURIComponent(recipeId)}/evidence`,
+        `/recipes/${encodeURIComponent(recipeId)}/evidence`,
         {
           method: "POST",
           body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),

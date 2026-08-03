@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -24,11 +24,11 @@ import { formatRecipeYaml, parseRecipeYaml, recipeYamlPath } from "./recipe-yaml
 let tmp = "";
 before(async () => {
   tmp = await mkdtemp(join(tmpdir(), "recipes-test-"));
-  process.env.GROK_DEVICE_RECIPES_DIR = tmp;
+  process.env.RELAY_RECIPES_DIR = tmp;
   process.env.RELAY_TESTS_DIR = join(tmp, "tests");
 });
 after(async () => {
-  delete process.env.GROK_DEVICE_RECIPES_DIR;
+  delete process.env.RELAY_RECIPES_DIR;
   delete process.env.RELAY_TESTS_DIR;
   await rm(tmp, { recursive: true, force: true });
 });
@@ -73,7 +73,7 @@ describe("recipe store roundtrip", () => {
     assert.deepEqual(logout!.steps, [{ kind: "flow", flow: "logout" }]);
   });
 
-  it("persists recorder screenshots outside recipe JSON", async () => {
+  it("persists recorder screenshots outside recipe YAML", async () => {
     const saved = await saveRecipe({ expectedRevision: 0, title: "Evidence", steps: [] });
     const image = Buffer.from("recorded-image");
     const result = await saveRecipeEvidenceImage({
@@ -112,21 +112,6 @@ describe("recipe store roundtrip", () => {
     const read = await readRecipe(saved.id);
     assert.deepEqual(read?.variables, { account_tier: "Pro" });
     assert.equal(read?.steps[0]?.kind, "type");
-  });
-
-  it("keeps legacy JSON readable but lets YAML with the same id win", async () => {
-    const saved = await saveRecipe({
-      id: "custom-precedence",
-      expectedRevision: 0,
-      title: "YAML version",
-      steps: [],
-    });
-    await writeFile(
-      join(tmp, "custom-precedence.json"),
-      JSON.stringify({ ...saved, title: "Legacy JSON version" }),
-      "utf8",
-    );
-    assert.equal((await readRecipe(saved.id))?.title, "YAML version");
   });
 
   it("lists YAML history when a git-native test is edited", async () => {
@@ -302,12 +287,12 @@ describe("packaged recipe CRUD", () => {
     assert.equal((await readRecipe("logout"))?.title, "Custom logout");
   });
 
-  it("allows a packaged recipe to be deleted", async () => {
+  it("removing a packaged override restores its immutable runtime default", async () => {
     await deleteRecipe("logout");
-    assert.equal(await readRecipe("logout"), null);
+    assert.equal((await readRecipe("logout"))?.source, "builtin");
     assert.equal(
       (await listRecipes()).some((recipe) => recipe.id === "logout"),
-      false,
+      true,
     );
   });
 });

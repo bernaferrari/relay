@@ -248,18 +248,3 @@ test("graph layout and recipe execution stay separate", () => {
   assert.equal(steps[0]?.kind, "tap");
   assert.equal(steps[1]?.kind, "key");
 });
-
-test("v5 recordings migrate lazily without mutating the executable actions", () => {
-  const legacy: JourneyMetadata = {
-    schemaVersion: 5,
-    positions: {},
-    edgeLabels: {},
-    edgeKinds: {},
-  };
-  const graph = ensureJourneyGraph(legacy, steps);
-  const tree = buildJourneyGraphTree(graph, steps);
-  assert.equal(graph.schemaVersion, 1);
-  assert.equal(tree.nodes.length, 2);
-  assert.equal(tree.nodes[0]?.representativeStepIndex, 0);
-  assert.equal(tree.edges.length, 1);
-});

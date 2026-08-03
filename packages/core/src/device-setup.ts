@@ -65,10 +65,8 @@ function parseAppleSetup(value: unknown): AppleDeviceSetup | undefined {
   const teamId = nonEmpty(record.teamId);
   const bundleId = nonEmpty(record.bundleId);
   if (!teamId || !bundleId) return undefined;
-  // Older Relay builds persisted the certificate discovered in Keychain even
-  // though the runner uses Xcode automatic signing. An identity on its own is
-  // not a valid manual-signing configuration and makes Xcode reject the
-  // runner. Treat partial legacy overrides as absent during migration.
+  // Manual signing is valid only when identity and provisioning profile are a
+  // complete pair. Otherwise Xcode automatic signing remains authoritative.
   const signingIdentity = nonEmpty(record.signingIdentity);
   const provisioningProfile = nonEmpty(record.provisioningProfile);
   return {

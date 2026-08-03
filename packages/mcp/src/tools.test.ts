@@ -31,12 +31,24 @@ test("maps every tool-eligible operation exactly once", () => {
     new Set(relayMcpTools.map(({ operationId }) => operationId)).size,
     relayMcpTools.length,
   );
-  assert.deepEqual(relayMcpExclusions, [
-    {
-      operationId: "event.stream",
-      reason: "Relay event streams are resource-only and are not exposed as MCP tools.",
-    },
-  ]);
+  assert.deepEqual(
+    relayMcpExclusions.map(({ operationId }) => operationId),
+    [
+      "event.stream",
+      "recipe.list",
+      "recipe.get",
+      "recipe.create",
+      "recipe.update",
+      "recipe.delete",
+      "recipe.yaml.get",
+      "recipe.import",
+      "recipe.evidence.create",
+      "recipe.history.list",
+      "recipe.history.restore",
+      "recipe.stability.get",
+    ],
+  );
+  assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
   assert.equal(
     relayMcpTools.some(({ name }) => name === "relay_event_stream"),
     false,
@@ -114,9 +126,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
   assert.deepEqual(screenshot.inputSchema.parse({ serial: "device-1" }), {
     serial: "device-1",
   });
-  assert.deepEqual(screenshot.inputSchema.parse({ input: { serial: "device-1" } }), {
-    serial: "device-1",
-  });
+  assert.throws(() => screenshot.inputSchema.parse({ input: { serial: "device-1" } }));
 });
 
 test("gives agents exact schemas for App Map metadata and Case Stacks", () => {

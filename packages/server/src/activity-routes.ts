@@ -37,26 +37,19 @@ function semanticResource(
   const params = pathParameters(pathname, pattern);
   const prefix = operationId.split(".")[0] ?? "project";
   const kind =
-    prefix === "authoring"
-      ? "recording-session"
-      : prefix === "collaboration"
-        ? "journey"
-        : prefix === "workspace"
-          ? "project"
-          : prefix;
+    prefix === "authoring" ? "recording-session" : prefix === "workspace" ? "project" : prefix;
   const preferredKeys =
-    kind === "journey"
-      ? ["journeyId", "id"]
-      : kind === "recording-session"
-        ? ["sessionId", "id"]
-        : [
-            `${kind.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())}Id`,
-            "id",
-            "journeyId",
-            "sessionId",
-            "actionId",
-            "leaseId",
-          ];
+    kind === "recording-session"
+      ? ["sessionId", "id"]
+      : [
+          `${kind.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())}Id`,
+          "id",
+          "appMapId",
+          "recipeId",
+          "sessionId",
+          "actionId",
+          "leaseId",
+        ];
   return {
     kind,
     id: preferredKeys.map((key) => params[key]).find(Boolean) ?? projectId,

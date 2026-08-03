@@ -18,13 +18,11 @@
   },
   "dependencies": {
     "@relay/client": "workspace:*",
-    "@relay/collaboration": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@relay/ui": "workspace:*",
     "@yume-chan/scrcpy": "2.3.0",
     "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3",
-    "solid-js": "catalog:",
-    "yjs": "^13.6.29"
+    "solid-js": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.11",

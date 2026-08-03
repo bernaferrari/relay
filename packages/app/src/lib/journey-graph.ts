@@ -9,20 +9,15 @@ import type {
   JourneyVideoClip,
   RecipeStep,
 } from "@relay/protocol";
-import {
-  buildJourneyTree,
-  hasScreenIdentity,
-  transitionLabel,
-  type JourneyTree,
-} from "./journey-tree";
+import { hasScreenIdentity, transitionLabel, type JourneyTree } from "./journey-tree";
 
 /**
  * The FigJam-facing authoring model for a journey.
  *
  * A recipe is still the compact, target-neutral program Relay executes. This
  * module owns the separate document people arrange: screens, transitions, and
- * explicit flow starts. Keeping the seam pure makes migrations, a future Yjs
- * provider, and alternate canvas UIs straightforward to swap in.
+ * explicit flow starts. This is a transient canvas projection; the App Map is
+ * the only persisted authoring model.
  */
 
 export type TakeDestination =
@@ -212,89 +207,10 @@ function screenTitle(step: RecipeStep | undefined, number: number): string {
   return `Screen ${number}`;
 }
 
-/**
- * Import pre-v6 inferred data once. The migration is intentionally tolerant:
- * older recipes without screenshots remain usable as an ordered captured path
- * without claiming that two anonymous actions represent the same screen.
- */
-export function ensureJourneyGraph(metadata: JourneyMetadata, steps: RecipeStep[]): JourneyGraph {
+/** Project the current canvas graph without inferring or migrating missing data. */
+export function ensureJourneyGraph(metadata: JourneyMetadata, _steps: RecipeStep[]): JourneyGraph {
   if (metadata.graph?.schemaVersion === 1) return cloneGraph(metadata.graph);
-
-  const legacy = buildJourneyTree(steps);
-  const screens: JourneyGraphScreen[] = legacy.nodes.map((node) => {
-    const step = steps[node.representativeStepIndex];
-    return {
-      id: node.id,
-      title: metadata.screenTitles?.[node.id]?.trim() || node.title,
-      ...(step?.id ? { representativeStepId: step.id } : {}),
-      createdAt: 0,
-      updatedAt: 0,
-    };
-  });
-  const knownScreenIds = new Set(screens.map((screen) => screen.id));
-  const transitions: JourneyGraphTransition[] = legacy.edges.map((edge) => {
-    const step = steps[edge.stepIndex];
-    const saved = metadata.prototype?.connections?.find((connection) => connection.id === edge.id);
-    return {
-      id: edge.id,
-      fromScreenId: edge.from,
-      destination: { kind: "screen", screenId: edge.to },
-      stepIds: step?.id ? [step.id] : [],
-      label: saved?.label?.trim() || metadata.edgeLabels[edge.id] || edge.label,
-      state: "recorded",
-      review: {
-        status: "verified",
-        updatedAt: saved?.updatedAt ?? 0,
-        verifiedAt: saved?.updatedAt ?? 0,
-      },
-      provenance: { source: "migration" },
-      kind: edge.kind,
-      createdAt: saved?.createdAt ?? 0,
-      updatedAt: saved?.updatedAt ?? 0,
-    };
-  });
-
-  // A planned legacy connector is still an authored intent. Bring it forward
-  // rather than silently deleting a person's unfinished route.
-  for (const connection of metadata.prototype?.connections ?? []) {
-    if (!knownScreenIds.has(connection.fromScreenId) || !knownScreenIds.has(connection.toScreenId))
-      continue;
-    if (transitions.some((transition) => transition.id === connection.id)) continue;
-    transitions.push({
-      id: connection.id,
-      fromScreenId: connection.fromScreenId,
-      destination: { kind: "screen", screenId: connection.toScreenId },
-      stepIds: connection.stepId ? [connection.stepId] : [],
-      ...(connection.takeId ? { takeId: connection.takeId } : {}),
-      ...(connection.videoTakeId ? { videoTakeId: connection.videoTakeId } : {}),
-      ...(connection.videoClip ? { videoClip: { ...connection.videoClip } } : {}),
-      ...(connection.label?.trim() ? { label: connection.label.trim() } : {}),
-      state: connection.stepId ? "recorded" : "needs-recording",
-      ...(connection.stepId
-        ? {
-            review: {
-              status: "verified" as const,
-              updatedAt: connection.updatedAt,
-              verifiedAt: connection.updatedAt,
-            },
-          }
-        : {}),
-      provenance: { source: "migration" },
-      kind: "forward",
-      createdAt: connection.createdAt,
-      updatedAt: connection.updatedAt,
-    });
-  }
-
-  const start = legacy.nodes[0];
-  return {
-    schemaVersion: 1,
-    screens,
-    transitions,
-    flows: start
-      ? [{ id: "flow-main", name: "Main flow", screenId: start.id, createdAt: 0, updatedAt: 0 }]
-      : [],
-  };
+  return emptyJourneyGraph();
 }
 
 export function withJourneyGraph(metadata: JourneyMetadata, graph: JourneyGraph): JourneyMetadata {

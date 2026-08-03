@@ -13,21 +13,19 @@ import {
   listCompatibilityMatrices,
   listAppMaps,
   listDeviceLeases,
-  readJourney,
   readAppMap,
   readProjectVariables,
   releaseDeviceLease,
   saveCompatibilityMatrix,
   mutateStoredAppMap,
-  writeJourney,
   writeProjectVariables,
 } from "./collaboration.js";
 import { addAppMapScreen } from "./app-map.js";
 
 test("App Maps persist normalized revisions and reject unsafe stored mutations", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-maps-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   try {
     const created = await createAppMap({
       organizationId: "acme",
@@ -99,16 +97,16 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
     assert.equal(await readAppMap("mobile", "store"), null);
     assert.equal(await deleteAppMap("mobile", "store"), false);
   } finally {
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("revisioned project data detects conflicts and preserves idempotency", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-state-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   try {
     const initial = await readProjectVariables("project-a");
     const first = await writeProjectVariables("project-a", {
@@ -138,85 +136,17 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
       writeProjectVariables("project-a", { expectedRevision: 0, value: [] }),
       (error) => error instanceof RevisionConflict && error.current.revision === 1,
     );
-
-    const journey = await writeJourney("project-a", "login", {
-      expectedRevision: 0,
-      value: {
-        schemaVersion: 6,
-        positions: { first: { x: 12, y: 24 } },
-        edgeLabels: { "first:second": "Continue" },
-        edgeKinds: { "first:second": "flow" },
-        notes: [
-          {
-            id: "note-1",
-            text: "Keep this branch independent",
-            x: 44,
-            y: 52,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-        ],
-        takes: [
-          {
-            id: "take-1",
-            recipeId: "login",
-            startedAt: 1,
-            group: "Sign in",
-            state: "review",
-            steps: [{ kind: "key", key: "home" }],
-          },
-        ],
-        review: { state: "needs-review", updatedAt: 2 },
-        graph: {
-          schemaVersion: 1,
-          screens: [
-            { id: "start", title: "Start", createdAt: 1, updatedAt: 1 },
-            {
-              id: "settings",
-              title: "Settings",
-              representativeStepId: "open-settings",
-              createdAt: 2,
-              updatedAt: 2,
-            },
-          ],
-          transitions: [
-            {
-              id: "open-settings",
-              fromScreenId: "start",
-              destination: { kind: "screen", screenId: "settings" },
-              stepIds: ["open-settings"],
-              state: "recorded",
-              kind: "forward",
-              createdAt: 2,
-              updatedAt: 2,
-            },
-          ],
-          flows: [{ id: "main", name: "Main flow", screenId: "start", createdAt: 1, updatedAt: 1 }],
-        },
-      },
-    });
-    assert.equal(journey.revision, 1);
-    assert.deepEqual((await readJourney("project-a", "login")).value.positions.first, {
-      x: 12,
-      y: 24,
-    });
-    assert.equal((await readJourney("project-a", "login")).value.takes?.[0]?.state, "review");
-    assert.equal((await readJourney("project-a", "login")).value.review?.state, "needs-review");
-    assert.equal(
-      (await readJourney("project-a", "login")).value.graph?.transitions[0]?.id,
-      "open-settings",
-    );
   } finally {
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("device leases enforce exclusive ownership and release lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-leases-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   try {
     const lease = await leaseDevice({
       projectId: "p",
@@ -238,16 +168,16 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     assert.equal((await releaseDeviceLease(lease.id)).status, "released");
     assert.equal((await listDeviceLeases("p"))[0]?.status, "released");
   } finally {
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("compatibility matrices have project-scoped CRUD", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-matrices-"));
-  const previous = process.env.GROK_DEVICE_STATE_DIR;
-  process.env.GROK_DEVICE_STATE_DIR = root;
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   try {
     const created = await saveCompatibilityMatrix({
       id: "release",
@@ -266,8 +196,8 @@ test("compatibility matrices have project-scoped CRUD", async () => {
     await deleteCompatibilityMatrix("p", "release");
     assert.deepEqual(await listCompatibilityMatrices("p"), []);
   } finally {
-    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
-    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });

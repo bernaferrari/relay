@@ -7,7 +7,6 @@ import {
   type CompatibilityMatrix,
   type DeviceLease,
   type DevicePool,
-  type JourneyMetadata,
   type Project,
   type ResourceEvent,
   type RevisionWrite,
@@ -16,11 +15,10 @@ import {
 } from "@relay/protocol";
 import { now, publish } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
-import { commitJourneyAggregate, readJourneyAggregate } from "./journey-aggregate.js";
-import { currentOperationContext } from "./operation-context.js";
 import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
+import { currentOperationContext } from "./operation-context.js";
 
 type CollaborationState = {
   projects: Project[];
@@ -29,28 +27,14 @@ type CollaborationState = {
   matrices: CompatibilityMatrix[];
   leases: DeviceLease[];
   variables: Record<string, Revisioned<TestVariable[]>>;
-  journeys: Record<string, Revisioned<JourneyMetadata>>;
   appMaps: Record<string, AppMap>;
-  idempotency: Record<string, number>;
+  idempotency: Record<string, number | string>;
 };
 
-const EMPTY_JOURNEY: JourneyMetadata = {
-  schemaVersion: 6,
-  positions: {},
-  edgeLabels: {},
-  edgeKinds: {},
-  notes: [],
-  takes: [],
-  review: { state: "draft", updatedAt: now() },
-  graph: { schemaVersion: 1, screens: [], transitions: [], flows: [] },
-};
 let queue = Promise.resolve();
 
 function stateRoot(): string {
-  return (
-    (process.env.RELAY_STATE_DIR ?? process.env.GROK_DEVICE_STATE_DIR)?.trim() ||
-    join(findWorkspaceRoot(), ".relay")
-  );
+  return process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
 }
 
 function statePath(): string {
@@ -68,7 +52,6 @@ function emptyState(): CollaborationState {
     matrices: [],
     leases: [],
     variables: {},
-    journeys: {},
     appMaps: {},
     idempotency: {},
   };
@@ -77,13 +60,23 @@ function emptyState(): CollaborationState {
 async function readState(): Promise<CollaborationState> {
   try {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<CollaborationState>;
-    // State files are intentionally forwards-compatible. New resources do not
-    // make an existing local project unreadable after an upgrade.
+    // App Map v2 is a clean product reset. Unsupported map schemas are
+    // discarded instead of migrated or kept as dual state.
+    const appMaps = Object.fromEntries(
+      Object.entries(parsed.appMaps ?? {}).filter(
+        ([, value]) => value.schemaVersion === APP_MAP_SCHEMA_VERSION && value.notes,
+      ),
+    );
+    const empty = emptyState();
     return {
-      ...emptyState(),
-      ...parsed,
+      projects: parsed.projects ?? empty.projects,
+      builds: parsed.builds ?? [],
+      pools: parsed.pools ?? [],
       matrices: parsed.matrices ?? [],
-      appMaps: parsed.appMaps ?? {},
+      leases: parsed.leases ?? [],
+      variables: parsed.variables ?? {},
+      appMaps,
+      idempotency: parsed.idempotency ?? {},
     };
   } catch {
     return emptyState();
@@ -417,66 +410,6 @@ export async function writeProjectVariables(
   });
 }
 
-export async function readJourney(
-  projectId: string,
-  recipeId: string,
-): Promise<Revisioned<JourneyMetadata>> {
-  const aggregate = await readJourneyAggregate(projectId, recipeId);
-  if (aggregate) return structuredClone(aggregate.document);
-  return (await readState()).journeys[`${projectId}:${recipeId}`] ?? revisioned(EMPTY_JOURNEY);
-}
-
-export async function writeJourney(
-  projectId: string,
-  recipeId: string,
-  write: RevisionWrite<JourneyMetadata>,
-): Promise<Revisioned<JourneyMetadata>> {
-  const aggregate = await readJourneyAggregate(projectId, recipeId);
-  if (aggregate) {
-    const replayKey = write.idempotencyKey;
-    if (aggregate.document.revision !== write.expectedRevision) {
-      throw new RevisionConflict(aggregate.document);
-    }
-    const next = writeRevision(aggregate.document, write);
-    const operation = currentOperationContext();
-    await commitJourneyAggregate({
-      organizationId: operation?.organizationId ?? aggregate.organizationId,
-      projectId,
-      journeyId: recipeId,
-      recipe: aggregate.recipe,
-      document: next,
-      evidence: aggregate.evidence,
-      ...(replayKey ? { transactionId: `${recipeId}:document:${replayKey}` } : {}),
-    });
-    emit({
-      type: "resource.updated",
-      at: next.updatedAt,
-      projectId,
-      resource: "journey",
-      resourceId: recipeId,
-      revision: next.revision,
-    });
-    return next;
-  }
-  return mutate((state) => {
-    const key = `${projectId}:${recipeId}`;
-    if (write.idempotencyKey && state.idempotency[`${key}:${write.idempotencyKey}`])
-      return state.journeys[key] ?? revisioned(EMPTY_JOURNEY);
-    const next = writeRevision(state.journeys[key] ?? revisioned(EMPTY_JOURNEY), write);
-    state.journeys[key] = next;
-    if (write.idempotencyKey) state.idempotency[`${key}:${write.idempotencyKey}`] = next.revision;
-    emit({
-      type: "resource.updated",
-      at: next.updatedAt,
-      projectId,
-      resource: "journey",
-      resourceId: recipeId,
-      revision: next.revision,
-    });
-    return next;
-  });
-}
-
 function appMapKey(projectId: string, appMapId: string): string {
   return `${projectId}:${appMapId}`;
 }
@@ -520,7 +453,20 @@ export async function createAppMap(input: {
 }): Promise<AppMap> {
   return mutate((state) => {
     const key = appMapKey(input.projectId, input.appMapId);
-    if (state.appMaps[key]) throw new Error(`App Map ${input.appMapId} already exists`);
+    const operation = currentOperationContext();
+    const replayKey = operation?.idempotencyKey
+      ? `${input.projectId}:app-map:create:${operation.idempotencyKey}`
+      : undefined;
+    const fingerprint = JSON.stringify({ appMapId: input.appMapId, name: input.name });
+    if (state.appMaps[key]) {
+      if (replayKey && state.idempotency[replayKey] === fingerprint) {
+        return validateAppMap(state.appMaps[key]);
+      }
+      throw new Error(`App Map ${input.appMapId} already exists`);
+    }
+    if (replayKey && state.idempotency[replayKey] !== undefined) {
+      throw new Error("Idempotency key was already used with different App Map input");
+    }
     const at = input.at ?? now();
     const appMap = validateAppMap({
       schemaVersion: APP_MAP_SCHEMA_VERSION,
@@ -529,6 +475,7 @@ export async function createAppMap(input: {
       projectId: input.projectId,
       name: input.name.trim() || "Untitled",
       revision: 0,
+      notes: {},
       screens: {},
       screenVariants: {},
       connections: {},
@@ -543,6 +490,7 @@ export async function createAppMap(input: {
       updatedAt: at,
     });
     state.appMaps[key] = appMap;
+    if (replayKey) state.idempotency[replayKey] = fingerprint;
     emit({
       type: "resource.created",
       at,
@@ -648,6 +596,7 @@ export async function duplicateAppMap(input: {
       projectId: input.projectId,
       name: input.name?.trim() || `${source.name} (copy)`,
       revision: 0,
+      notes: duplicateEntityRecord(source.notes, input.appMapId, at),
       screens: duplicateEntityRecord(source.screens, input.appMapId, at),
       screenVariants,
       connections: duplicateEntityRecord(source.connections, input.appMapId, at),

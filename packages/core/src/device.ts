@@ -185,12 +185,8 @@ async function controlled<T>(op: () => Promise<T>): Promise<T> {
       return await raceCancel(op());
     },
     {
-      attempts: Number(
-        process.env.RELAY_RETRY_ATTEMPTS ?? process.env.GROK_DEVICE_RETRY_ATTEMPTS ?? 3,
-      ),
-      baseDelayMs: Number(
-        process.env.RELAY_RETRY_DELAY_MS ?? process.env.GROK_DEVICE_RETRY_DELAY_MS ?? 350,
-      ),
+      attempts: Number(process.env.RELAY_RETRY_ATTEMPTS ?? 3),
+      baseDelayMs: Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
     },
   );
 }

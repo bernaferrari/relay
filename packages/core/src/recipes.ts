@@ -1,11 +1,10 @@
 /**
- * One recipe model: JSON step-list recipes on disk, listed/edited over HTTP,
+ * One recipe model: deterministic YAML recipes on disk, listed/edited over HTTP,
  * executed by the job engine (recipe-runner.ts + session.ts).
  *
  * Built-in coded flows are mirrored here as single-`flow`-step recipes so the
  * UI has a uniform list; custom recipes live as files under `recipes/`.
  */
-import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile, unlink, rm, stat, link } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -40,12 +39,6 @@ import {
   payloadFingerprint,
   scopedIdempotencyKey,
 } from "./coordination-store.js";
-import {
-  commitJourneyAggregate,
-  deleteJourneyAggregate,
-  listJourneyAggregates,
-  readJourneyAggregate,
-} from "./journey-aggregate.js";
 export type {
   HumanCheckpointReason,
   HorizontalCoordinateAnchor,
@@ -79,7 +72,7 @@ export type Recipe = {
   /**
    * Version of the recorded-evidence contract. It is intentionally separate
    * from the YAML schema so recordings can be audited or retired without
-   * invalidating an otherwise readable journey definition.
+   * invalidating an otherwise readable flow definition.
    */
   recordingFormatVersion?: RecordingFormatVersion;
   steps: RecipeStep[];
@@ -93,12 +86,12 @@ const MAX_WAIT_MS = 15 * 60 * 1000;
 
 /** Directory for custom recipes — mirrors runsRoot()'s convention. */
 export function recipesRoot(): string {
-  const env = (process.env.RELAY_RECIPES_DIR ?? process.env.GROK_DEVICE_RECIPES_DIR)?.trim();
+  const env = process.env.RELAY_RECIPES_DIR?.trim();
   if (env) return env;
   return join(findWorkspaceRoot(), "recipes");
 }
 
-/** Git-tracked YAML definitions live separately from legacy local JSON recipes. */
+/** Git-tracked YAML definitions are the only persisted recipe source. */
 export function testsRoot(): string {
   const env = process.env.RELAY_TESTS_DIR?.trim();
   return env || join(findWorkspaceRoot(), "tests");
@@ -113,7 +106,7 @@ function evidenceDir(recipeId: string): string {
   return join(recipesRoot(), ".evidence", evidencePart(recipeId, "recipeId"));
 }
 
-/** Persist a recorder screenshot outside recipe JSON so tests stay small and editable. */
+/** Persist a recorder screenshot outside recipe YAML so tests stay small and editable. */
 export async function saveRecipeEvidenceImage(input: {
   recipeId: string;
   evidenceId: string;
@@ -1285,26 +1278,12 @@ export function builtinRecipes(): Recipe[] {
   }));
 }
 
-type StoredRecipe = Recipe | { id: string; hidden: true };
-
-async function readStoredRecipe(id: string): Promise<StoredRecipe | null> {
-  const yaml = await readYamlRecipeFile(recipeYamlPath(testsRoot(), id));
-  if (yaml) return yaml;
-  try {
-    const raw = await readFile(join(recipesRoot(), `${id}.json`), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isObject(parsed) || !isString(parsed.id)) return null;
-    if (parsed.hidden === true) return { id: parsed.id, hidden: true };
-    const recipe = parsed as unknown as Recipe;
-    recipe.source = "custom";
-    return recipe;
-  } catch {
-    return null;
-  }
+async function readStoredRecipe(id: string): Promise<Recipe | null> {
+  return readYamlRecipeFile(recipeYamlPath(testsRoot(), id));
 }
 
-/** Packaged flows and disk recipes share one editable catalog. Disk entries with
- * the same id override a packaged default; tombstones hide deleted defaults. */
+/** Packaged flows and YAML recipes share one editable catalog. A YAML entry with
+ * the same id overrides its packaged default. */
 export async function listRecipes(): Promise<Recipe[]> {
   const builtins = builtinRecipes();
   const yamlRecipes = new Map<string, Recipe>();
@@ -1316,58 +1295,20 @@ export async function listRecipes(): Promise<Recipe[]> {
       /* Invalid YAML is surfaced on direct open/import, but must not break the library. */
     }
   }
-  let entries: string[] = [];
-  try {
-    entries = await readdir(recipesRoot());
-  } catch {
-    entries = [];
-  }
   const customs = new Map<string, Recipe>();
   const overrides = new Map<string, Recipe>();
-  const hidden = new Set<string>();
-  for (const name of entries) {
-    if (!name.endsWith(".json")) continue;
-    try {
-      const raw = await readFile(join(recipesRoot(), name), "utf8");
-      const parsed = JSON.parse(raw) as unknown;
-      if (!isObject(parsed) || !isString(parsed.id)) continue;
-      if (parsed.hidden === true) {
-        hidden.add(parsed.id);
-        continue;
-      }
-      const recipe = parsed as unknown as Recipe;
-      recipe.source = "custom";
-      if (isActionId(recipe.id)) overrides.set(recipe.id, recipe);
-      else customs.set(recipe.id, recipe);
-    } catch {
-      /* skip unreadable files — tolerant like listPersistedRuns */
-    }
-  }
   for (const [id, recipe] of yamlRecipes) {
     if (isActionId(id)) overrides.set(id, recipe);
     else customs.set(id, recipe);
   }
-  for (const aggregate of await listJourneyAggregates(
-    currentOperationContext()?.projectId ?? "default",
-  )) {
-    if (isActionId(aggregate.recipe.id)) overrides.set(aggregate.recipe.id, aggregate.recipe);
-    else customs.set(aggregate.recipe.id, aggregate.recipe);
-  }
   const customList = [...customs.values()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  const included = builtins
-    .filter((recipe) => !hidden.has(recipe.id))
-    .map((recipe) => overrides.get(recipe.id) ?? recipe);
+  const included = builtins.map((recipe) => overrides.get(recipe.id) ?? recipe);
   return [...included, ...customList];
 }
 
 export async function readRecipe(id: string): Promise<Recipe | null> {
-  const aggregate = await readJourneyAggregate(
-    currentOperationContext()?.projectId ?? "default",
-    id,
-  );
-  if (aggregate) return structuredClone(aggregate.recipe);
   const stored = await readStoredRecipe(id);
-  if (stored) return "hidden" in stored ? null : stored;
+  if (stored) return stored;
   const builtin = builtinRecipes().find((r) => r.id === id);
   if (builtin) return builtin;
   return null;
@@ -1484,12 +1425,8 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
     id = `custom-${slugify(input.title)}-${requestedAt.toString(36)}`;
   }
   // If overwriting, preserve createdAt.
-  const aggregate = await readJourneyAggregate(
-    currentOperationContext()?.projectId ?? "default",
-    id,
-  );
-  const stored = aggregate?.recipe ?? (await readStoredRecipe(id));
-  const existing = stored && !("hidden" in stored) ? stored : null;
+  const stored = await readStoredRecipe(id);
+  const existing = stored;
   const ts = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
   const quarantineReason = input.quarantineReason ?? existing?.quarantineReason;
   const recipe: Recipe = {
@@ -1526,13 +1463,9 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
   if (existing) {
     const historyDir = join(recipesRoot(), ".history", id);
     await mkdir(historyDir, { recursive: true });
-    const existingYaml = await stat(recipeYamlPath(testsRoot(), id)).then(
-      () => true,
-      () => false,
-    );
     await writeFile(
-      join(historyDir, `${existing.updatedAt}.${existingYaml ? "relay.yaml" : "json"}`),
-      existingYaml ? formatRecipeYaml(existing) : JSON.stringify(existing, null, 2),
+      join(historyDir, `${existing.updatedAt}.relay.yaml`),
+      formatRecipeYaml(existing),
       { encoding: "utf8", flag: "wx" },
     ).catch((error: unknown) => {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
@@ -1567,14 +1500,14 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   const id = requestedId || `custom-${slugify(input.title)}-${generatedSuffix}`;
   const normalizedInput = { ...input, id };
   const resourceIdentity = `${testsRoot()}:${requestedId ?? `create:${operation?.idempotencyKey ?? id}`}`;
-  const queueKey = `${operation?.organizationId ?? "local"}\u0000${operation?.projectId ?? "default"}\u0000journey\u0000${resourceIdentity}`;
+  const queueKey = `${operation?.organizationId ?? "local"}\u0000${operation?.projectId ?? "default"}\u0000recipe\u0000${resourceIdentity}`;
   const replayKey = operation
     ? scopedIdempotencyKey({
         organizationId: operation.organizationId,
         projectId: operation.projectId,
         operationId: operation.operationId,
         idempotencyKey: operation.idempotencyKey,
-        resourceKind: "journey",
+        resourceKind: "recipe",
         resourceId: resourceIdentity,
       })
     : undefined;
@@ -1587,22 +1520,11 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
       throw recipeConflict(current);
     }
     const saved = await saveRecipeUnchecked(normalizedInput);
-    const aggregate = await readJourneyAggregate(operation?.projectId ?? "default", saved.id);
-    if (aggregate) {
-      await commitJourneyAggregate({
-        organizationId: operation?.organizationId ?? aggregate.organizationId,
-        projectId: operation?.projectId ?? aggregate.projectId,
-        journeyId: saved.id,
-        recipe: saved,
-        document: aggregate.document,
-        evidence: aggregate.evidence,
-      });
-    }
     publish({
       type: current ? "resource.updated" : "resource.created",
       at: saved.updatedAt,
       projectId: currentOperationContext()?.projectId ?? "default",
-      resource: "journey",
+      resource: "recipe",
       resourceId: saved.id,
       revision: saved.updatedAt,
     });
@@ -1615,21 +1537,13 @@ export async function listRecipeHistory(id: string): Promise<Recipe[]> {
   const dir = join(recipesRoot(), ".history", evidencePart(id, "recipeId"));
   try {
     const entries = (await readdir(dir))
-      // History is written in the same format as the current recipe. Keep both
-      // extensions discoverable so git-native YAML has the same version history
-      // guarantees as the legacy JSON format.
-      .filter((file) => file.endsWith(".json") || file.endsWith(".relay.yaml"))
+      .filter((file) => file.endsWith(".relay.yaml"))
       .sort()
       .reverse();
     const versions: Recipe[] = [];
     for (const file of entries.slice(0, 50)) {
-      if (file.endsWith(".relay.yaml")) {
-        const parsed = await readYamlRecipeFile(join(dir, file));
-        if (parsed) versions.push(parsed);
-      } else {
-        const parsed = JSON.parse(await readFile(join(dir, file), "utf8")) as Recipe;
-        versions.push(parsed);
-      }
+      const parsed = await readYamlRecipeFile(join(dir, file));
+      if (parsed) versions.push(parsed);
     }
     return versions;
   } catch {
@@ -1655,36 +1569,23 @@ export async function restoreRecipeHistory(id: string, updatedAt: number): Promi
   });
 }
 
-/** Delete any recipe. Packaged defaults receive a tombstone so they remain
- * deleted instead of reappearing on the next list operation. */
+/** Delete a custom recipe or packaged override. Packaged defaults are immutable
+ * runtime primitives and reappear when their YAML override is removed. */
 export async function deleteRecipe(id: string): Promise<void> {
   await ensureRecipesRoot();
   await ensureTestsRoot();
-  await deleteJourneyAggregate(currentOperationContext()?.projectId ?? "default", id);
   await rm(evidenceDir(id), { recursive: true, force: true });
   const yamlPath = recipeYamlPath(testsRoot(), id);
   await unlink(yamlPath).catch((error: unknown) => {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   });
-  if (isActionId(id)) {
-    await writeFile(
-      join(recipesRoot(), `${id}.json`),
-      JSON.stringify({ id, hidden: true }, null, 2),
-      "utf8",
-    );
-    return;
-  }
   publish({
     type: "resource.deleted",
     at: now(),
     projectId: currentOperationContext()?.projectId ?? "default",
-    resource: "journey",
+    resource: "recipe",
     resourceId: id,
   });
-  const path = join(recipesRoot(), `${id}.json`);
-  if (existsSync(path)) {
-    await unlink(path);
-  }
 }
 
 /** Direction arrow for a swipe's dominant axis: ↓ ↑ → ← ↘ etc. */

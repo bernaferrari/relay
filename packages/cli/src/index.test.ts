@@ -44,7 +44,7 @@ const relayEvent: EventEnvelope = {
   actorKind: "system",
   eventId: "event-1",
   sequence: 1,
-  operationId: "journey.update",
+  operationId: "app-map.update",
   requestId: "request-1",
   occurredAt: 1,
   payload: { type: "resource.updated", at: 1 },
@@ -83,11 +83,6 @@ test("friendly command families invoke through the operation client", async () =
     input: Record<string, unknown>;
   }> = [
     {
-      argv: ["journey", "get", "onboarding"],
-      operationId: "journey.get",
-      input: { journeyId: "onboarding" },
-    },
-    {
       argv: ["screen", "list", "onboarding"],
       operationId: "app-map.get",
       input: { appMapId: "onboarding" },
@@ -123,11 +118,6 @@ test("friendly command families invoke through the operation client", async () =
       argv: ["take", "replay", "session-1"],
       operationId: "authoring.take.replay",
       input: { sessionId: "session-1" },
-    },
-    {
-      argv: ["collection", "run", "smoke"],
-      operationId: "collection.run",
-      input: { collectionId: "smoke" },
     },
     {
       argv: ["run", "visual-baseline", "update", "run-7"],

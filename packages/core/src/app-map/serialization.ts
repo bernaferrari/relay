@@ -164,6 +164,7 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
     name: map.name,
     ...(map.description ? { description: map.description } : {}),
     revision: map.revision,
+    notes: sortedEntities(map.notes),
     screens: sortedEntities(map.screens).map(normalizedScreen),
     screenVariants: sortedEntities(map.screenVariants).map(normalizedVariant),
     connections: sortedEntities(map.connections).map(normalizedConnection),

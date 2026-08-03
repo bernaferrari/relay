@@ -12,13 +12,6 @@ import {
   setJourneyBaseline,
 } from "./journey-prototype";
 
-const metadata: JourneyMetadata = {
-  schemaVersion: 5,
-  positions: {},
-  edgeLabels: {},
-  edgeKinds: {},
-};
-
 const steps: RecipeStep[] = [
   {
     id: "open",
@@ -42,6 +35,46 @@ const steps: RecipeStep[] = [
   },
 ];
 
+const recordedTree = buildJourneyTree(steps);
+const metadata: JourneyMetadata = {
+  schemaVersion: 6,
+  positions: {},
+  edgeLabels: {},
+  edgeKinds: {},
+  graph: {
+    schemaVersion: 1,
+    screens: recordedTree.nodes.map((node) => ({
+      id: node.id,
+      title: node.title,
+      representativeStepId: steps[node.representativeStepIndex]?.id,
+      createdAt: 1,
+      updatedAt: 1,
+    })),
+    transitions: recordedTree.edges.map((edge) => ({
+      id: edge.id,
+      fromScreenId: edge.from,
+      destination: { kind: "screen" as const, screenId: edge.to },
+      stepIds: steps[edge.stepIndex]?.id ? [steps[edge.stepIndex]!.id!] : [],
+      label: edge.label,
+      state: "recorded" as const,
+      kind: edge.kind,
+      createdAt: 1,
+      updatedAt: 1,
+    })),
+    flows: recordedTree.nodes[0]
+      ? [
+          {
+            id: "flow-main",
+            name: "Main flow",
+            screenId: recordedTree.nodes[0].id,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ]
+      : [],
+  },
+};
+
 test("derived connections retain the runnable action identity", () => {
   const tree = buildJourneyTree(steps);
   const connection = canvasConnections(tree, steps, metadata)[0];
@@ -59,8 +92,8 @@ test("planned connections are reversible and become recorded only after a stable
     10,
     steps,
   );
-  // The migrated recording remains alongside the newly sketched route. Select
-  // the actual pending route instead of assuming it is the first transition.
+  // The recorded route remains alongside the newly sketched route. Select the
+  // actual pending route instead of assuming it is the first transition.
   const pending = planned.graph?.transitions.find(
     (transition) => transition.state === "needs-recording",
   );
@@ -91,7 +124,7 @@ test("planned connections are reversible and become recorded only after a stable
     removed.graph?.transitions.some((transition) => transition.id === pending!.id),
     false,
   );
-  // The migrated recording is independent evidence, not part of the authored
+  // The recorded route is independent evidence, not part of the authored
   // connection we just removed.
   assert.equal(removed.graph?.transitions.length, 1);
 });

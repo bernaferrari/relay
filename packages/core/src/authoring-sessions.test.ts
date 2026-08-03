@@ -77,11 +77,11 @@ async function withWorkspace(
   const directory = await mkdtemp(join(tmpdir(), "relay-authoring-"));
   const previous = {
     state: process.env.RELAY_STATE_DIR,
-    recipes: process.env.GROK_DEVICE_RECIPES_DIR,
+    recipes: process.env.RELAY_RECIPES_DIR,
     tests: process.env.RELAY_TESTS_DIR,
   };
   process.env.RELAY_STATE_DIR = join(directory, "state");
-  process.env.GROK_DEVICE_RECIPES_DIR = join(directory, "recipes");
+  process.env.RELAY_RECIPES_DIR = join(directory, "recipes");
   process.env.RELAY_TESTS_DIR = join(directory, "tests");
   try {
     await runWithOperationContext(operation("app-map.create"), async () => {
@@ -100,8 +100,8 @@ async function withWorkspace(
   } finally {
     if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous.state;
-    if (previous.recipes === undefined) delete process.env.GROK_DEVICE_RECIPES_DIR;
-    else process.env.GROK_DEVICE_RECIPES_DIR = previous.recipes;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
     if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
     else process.env.RELAY_TESTS_DIR = previous.tests;
     await rm(directory, { recursive: true, force: true });

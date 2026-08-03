@@ -8,6 +8,7 @@ export {
   type AppMapEntity,
   type AppMapErrorCode,
   type AppMapMutationContext,
+  type AppMapNote,
   type AppMapPatch,
   type AppMapPoint,
   type AppMapScope,

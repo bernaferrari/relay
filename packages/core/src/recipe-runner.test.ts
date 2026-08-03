@@ -22,10 +22,10 @@ const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
 
 // Keep controlled() single-attempt so error paths are fast and deterministic.
 before(() => {
-  process.env.GROK_DEVICE_RETRY_ATTEMPTS = "1";
+  process.env.RELAY_RETRY_ATTEMPTS = "1";
 });
 after(() => {
-  delete process.env.GROK_DEVICE_RETRY_ATTEMPTS;
+  delete process.env.RELAY_RETRY_ATTEMPTS;
 });
 
 /**

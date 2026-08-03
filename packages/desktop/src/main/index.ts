@@ -22,9 +22,7 @@ if (debugPort && /^\d+$/.test(debugPort)) {
 }
 
 function serverProbeOptions() {
-  const authorizationToken = (
-    process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN
-  )?.trim();
+  const authorizationToken = process.env.RELAY_AUTH_TOKEN?.trim();
   return {
     product: "relay",
     version: PRODUCT_VERSION,
@@ -36,8 +34,7 @@ app.setName(PRODUCT_NAME);
 process.title = PRODUCT_NAME;
 if (process.platform === "win32") app.setAppUserModelId("com.relay.desktop");
 
-let serverUrl =
-  (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
+let serverUrl = process.env.RELAY_URL?.trim() || DEFAULT_SERVER_URL;
 let serverChild: ChildProcess | null = null;
 const updates = new DesktopUpdater();
 
@@ -71,8 +68,7 @@ function resolveServerEntry(): string | null {
  * Otherwise spawn packages/server via tsx/node when possible.
  */
 async function ensureServer(): Promise<string> {
-  const preferred =
-    (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
+  const preferred = process.env.RELAY_URL?.trim() || DEFAULT_SERVER_URL;
 
   if (await isServerCompatible(preferred)) {
     console.log(`[desktop] using existing server at ${preferred}`);

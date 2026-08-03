@@ -18,6 +18,24 @@ export const relayMcpExclusions = [
     operationId: "event.stream",
     reason: "Relay event streams are resource-only and are not exposed as MCP tools.",
   },
+  ...(
+    [
+      "recipe.list",
+      "recipe.get",
+      "recipe.create",
+      "recipe.update",
+      "recipe.delete",
+      "recipe.yaml.get",
+      "recipe.import",
+      "recipe.evidence.create",
+      "recipe.history.list",
+      "recipe.history.restore",
+      "recipe.stability.get",
+    ] as const
+  ).map((operationId) => ({
+    operationId,
+    reason: "Compiled recipe storage is internal; agents author and run App Map flows.",
+  })),
 ] as const satisfies readonly { operationId: OperationId; reason: string }[];
 
 type ExcludedOperationId = (typeof relayMcpExclusions)[number]["operationId"];

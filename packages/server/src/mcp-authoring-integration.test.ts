@@ -162,7 +162,7 @@ function callTool(
   name: string,
   input: Record<string, unknown>,
 ) {
-  return session.request("tools/call", { name, arguments: { input, confirm: true } });
+  return session.request("tools/call", { name, arguments: { ...input, confirm: true } });
 }
 
 async function waitFor(predicate: () => boolean, message: string, timeoutMs = 2_000) {
@@ -202,7 +202,6 @@ test("MCP agent authors a transition observed by an app client", async () => {
     RELAY_WORKSPACE_ROOT: process.env.RELAY_WORKSPACE_ROOT,
     RELAY_STATE_DIR: process.env.RELAY_STATE_DIR,
     RELAY_RECIPES_DIR: process.env.RELAY_RECIPES_DIR,
-    GROK_DEVICE_RECIPES_DIR: process.env.GROK_DEVICE_RECIPES_DIR,
     RELAY_TESTS_DIR: process.env.RELAY_TESTS_DIR,
   };
   const fakeAdbBin = await installFakeAdb(root);
@@ -210,7 +209,6 @@ test("MCP agent authors a transition observed by an app client", async () => {
   process.env.RELAY_WORKSPACE_ROOT = root;
   process.env.RELAY_STATE_DIR = join(root, "state");
   process.env.RELAY_RECIPES_DIR = join(root, "recipes");
-  process.env.GROK_DEVICE_RECIPES_DIR = join(root, "recipes");
   process.env.RELAY_TESTS_DIR = join(root, "tests");
 
   const runtime = new FakeRuntime();
@@ -340,7 +338,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
     cancelNextHealth = true;
     const cancelledCall = mcp.startRequest("tools/call", {
       name: "relay_system_health_get",
-      arguments: { input: {}, confirm: true },
+      arguments: { confirm: true },
     });
     await waitFor(
       () => cancellationFetchEntered,

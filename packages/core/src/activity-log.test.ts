@@ -17,7 +17,7 @@ function operation(
     actorKind: "agent",
     organizationId: "acme",
     projectId,
-    operationId: "journey.update",
+    operationId: "app-map.update",
     requestId,
     idempotencyKey: requestId,
     issuedAt: 100,
@@ -26,8 +26,8 @@ function operation(
 }
 
 const activity = (summary: string, timestamp: number) => ({
-  eventType: "journey.updated",
-  resourceKind: "journey",
+  eventType: "app-map.updated",
+  resourceKind: "app-map",
   resourceId: "checkout",
   summary,
   timestamp,
@@ -73,7 +73,7 @@ test("Activity history survives a new store instance with semantic attribution i
       {
         actorId: "agent:indexer",
         actorKind: "agent",
-        operationId: "journey.update",
+        operationId: "app-map.update",
         requestId: "request-1",
         correlationId: "correlation-1",
         causationId: "causation-1",
