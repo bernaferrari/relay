@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import {
   hashRemoteConfigFile,
@@ -9,15 +8,7 @@ import {
   readRemoteConnectionState,
 } from '../remote/remote-connection-state.ts';
 import { runCliCapture, type CapturedDaemonRequest } from './cli-capture.ts';
-
-function makeTempWorkspace(): { root: string; home: string; project: string } {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-config-'));
-  const home = path.join(root, 'home');
-  const project = path.join(root, 'project');
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(project, { recursive: true });
-  return { root, home, project };
-}
+import { makeTempWorkspace } from './cli-config-fixtures.ts';
 
 test('CLI merges config defaults with precedence user < project < env < CLI', async () => {
   const { root, home, project } = makeTempWorkspace();
@@ -72,11 +63,11 @@ test('config can set appsFilter through canonical enum values', async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('config can provide install-from-source GitHub Actions artifact source', async () => {
+test('user config can provide install-from-source GitHub Actions artifact source', async () => {
   const { root, home, project } = makeTempWorkspace();
   fs.mkdirSync(path.join(home, '.agent-device'), { recursive: true });
   fs.writeFileSync(
-    path.join(project, 'agent-device.json'),
+    path.join(home, '.agent-device', 'config.json'),
     JSON.stringify({
       platform: 'android',
       installSource: {
@@ -130,84 +121,6 @@ test('command-specific config defaults are ignored for commands that do not supp
   assert.equal(result.calls.length, 1);
   assert.equal(result.calls[0]?.flags?.platform, 'ios');
   assert.equal(Object.hasOwn(result.calls[0]?.flags ?? {}, 'snapshotDepth'), false);
-
-  fs.rmSync(root, { recursive: true, force: true });
-});
-
-test('interaction commands preserve remote config defaults', async () => {
-  const { root, home, project } = makeTempWorkspace();
-  fs.mkdirSync(path.join(home, '.agent-device'), { recursive: true });
-  fs.writeFileSync(
-    path.join(project, 'agent-device.json'),
-    JSON.stringify({
-      daemonBaseUrl: 'https://daemon.example.test',
-      daemonAuthToken: 'token-123',
-      daemonTransport: 'http',
-      tenant: 'tenant-123',
-      runId: 'run-123',
-      leaseId: 'lease-123',
-      platform: 'ios',
-    }),
-    'utf8',
-  );
-
-  const commands = [
-    ['press', '10', '20'],
-    ['click', '10', '20'],
-    ['fill', '10', '20', 'hello'],
-    ['longpress', '10', '20'],
-    ['get', 'text', '@e1'],
-  ];
-
-  for (const command of commands) {
-    const result = await runCliCapture([...command, '--json'], {
-      cwd: project,
-      env: { HOME: home },
-    });
-
-    assert.equal(result.code, null, command.join(' '));
-    assert.equal(result.calls.length, 1, command.join(' '));
-    assert.equal(result.calls[0]?.flags?.daemonBaseUrl, 'https://daemon.example.test');
-    assert.equal(result.calls[0]?.flags?.daemonAuthToken, 'token-123');
-    assert.equal(result.calls[0]?.flags?.daemonTransport, 'http');
-    assert.equal(result.calls[0]?.flags?.tenant, 'tenant-123');
-    assert.equal(result.calls[0]?.flags?.runId, 'run-123');
-    assert.equal(result.calls[0]?.flags?.leaseId, 'lease-123');
-    assert.equal(result.calls[0]?.flags?.platform, 'ios');
-  }
-
-  fs.rmSync(root, { recursive: true, force: true });
-});
-
-test('normal config can point commands at a direct remote daemon proxy', async () => {
-  const { root, home, project } = makeTempWorkspace();
-  fs.mkdirSync(path.join(home, '.agent-device'), { recursive: true });
-  fs.writeFileSync(
-    path.join(project, 'agent-device.json'),
-    JSON.stringify({
-      daemonBaseUrl: 'https://example.trycloudflare.com/agent-device',
-      daemonAuthToken: 'proxy-token',
-    }),
-    'utf8',
-  );
-
-  const result = await runCliCapture(['devices', '--json'], {
-    cwd: project,
-    env: { HOME: home },
-  });
-
-  assert.equal(result.code, null);
-  assert.equal(result.calls.length, 1);
-  assert.equal(result.calls[0]?.command, 'devices');
-  assert.equal(
-    result.calls[0]?.flags?.daemonBaseUrl,
-    'https://example.trycloudflare.com/agent-device',
-  );
-  assert.equal(result.calls[0]?.flags?.daemonAuthToken, 'proxy-token');
-  assert.equal(Object.hasOwn(result.calls[0]?.flags ?? {}, 'platform'), false);
-  assert.equal(Object.hasOwn(result.calls[0]?.flags ?? {}, 'remoteConfig'), false);
-  assert.equal(Object.hasOwn(result.calls[0]?.flags ?? {}, 'tenant'), false);
-  assert.equal(Object.hasOwn(result.calls[0]?.flags ?? {}, 'runId'), false);
 
   fs.rmSync(root, { recursive: true, force: true });
 });

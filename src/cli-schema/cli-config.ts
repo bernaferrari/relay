@@ -26,18 +26,113 @@ export function resolveConfigBackedFlagDefaults(options: {
   return mergeDefinedFlags(defaults, readEnvFlagDefaults(env, options.command));
 }
 
+type ConfigFileSource = 'user' | 'project' | 'explicit';
+
+type ConfigPath = { path: string; required: boolean; source: ConfigFileSource };
+
+// Project config is repository-controlled, so new flags are operator-only by default.
+// Adding a key here is the only way to make it available to ./agent-device.json.
+const PROJECT_CONFIG_FLAG_KEYS = new Set<FlagKey>([
+  'json',
+  'platform',
+  'target',
+  'device',
+  'udid',
+  'serial',
+  'session',
+  'sessionLock',
+  'activity',
+  'launchArgs',
+  'launchUrl',
+  'remote',
+  'deviceHub',
+  'testIme',
+  'appsFilter',
+  'clean',
+  'force',
+  'stale',
+  'relaunch',
+  'shutdown',
+  'surface',
+  'headless',
+  'restart',
+  'noRecord',
+  'record',
+  'recordAs',
+  'snapshotInteractiveOnly',
+  'snapshotDiff',
+  'snapshotDepth',
+  'snapshotScope',
+  'snapshotRaw',
+  'snapshotForceFull',
+  'screenshotPixelDensity',
+  'screenshotFullscreen',
+  'screenshotMaxSize',
+  'screenshotNoStabilize',
+  'screenshotNormalizeStatusBar',
+  'overlayRefs',
+  'networkInclude',
+  'baseline',
+  'threshold',
+  'count',
+  'pointerCount',
+  'fps',
+  'quality',
+  'hideTouches',
+  'recordingScope',
+  'intervalMs',
+  'delayMs',
+  'durationMs',
+  'holdMs',
+  'jitterPx',
+  'pixels',
+  'doubleTap',
+  'verify',
+  'settle',
+  'settleQuietMs',
+  'clickButton',
+  'backMode',
+  'pauseMs',
+  'pattern',
+  'kind',
+  'perfTemplate',
+  'responseLevel',
+  'verbose',
+  'cost',
+  'timeoutMs',
+  'retries',
+  'failFast',
+  'recordVideo',
+  'replayUpdate',
+  'replayMaestro',
+  'replayFrom',
+  'replayPlanDigest',
+  'replayKeepSession',
+  'findFirst',
+  'findLast',
+  'batchOnError',
+  'batchMaxSteps',
+  'retainPaths',
+  'retentionMs',
+  'shardAll',
+  'shardSplit',
+  'noLogin',
+]);
+
 function resolveConfigPaths(
   cwd: string,
   explicitCliConfigPath: string | undefined,
   env: EnvMap,
-): Array<{ path: string; required: boolean }> {
+): ConfigPath[] {
   const explicitConfig = explicitCliConfigPath ?? env.AGENT_DEVICE_CONFIG;
   if (explicitConfig) {
-    return [{ path: resolveInputPath(explicitConfig, cwd, env), required: true }];
+    return [
+      { path: resolveInputPath(explicitConfig, cwd, env), required: true, source: 'explicit' },
+    ];
   }
   return [
-    { path: resolveUserConfigPath(env), required: false },
-    { path: path.resolve(cwd, 'agent-device.json'), required: false },
+    { path: resolveUserConfigPath(env), required: false, source: 'user' },
+    { path: path.resolve(cwd, 'agent-device.json'), required: false, source: 'project' },
   ];
 }
 
@@ -49,18 +144,17 @@ function resolveInputPath(inputPath: string, cwd: string, env: EnvMap): string {
   return resolveUserPath(inputPath, { cwd, env });
 }
 
-function loadConfigFileDefaults(
-  pathsToCheck: Array<{ path: string; required: boolean }>,
-): Partial<CliFlags> {
+function loadConfigFileDefaults(pathsToCheck: ConfigPath[]): Partial<CliFlags> {
   const merged: Partial<CliFlags> = {};
   for (const entry of pathsToCheck) {
-    const parsed = loadSingleConfigFile(entry.path, entry.required);
+    const parsed = loadSingleConfigFile(entry);
     mergeDefinedFlags(merged, parsed);
   }
   return merged;
 }
 
-function loadSingleConfigFile(filePath: string, required: boolean): Partial<CliFlags> {
+function loadSingleConfigFile(entry: ConfigPath): Partial<CliFlags> {
+  const { path: filePath, required } = entry;
   if (!fs.existsSync(filePath)) {
     if (required) {
       throw new AppError('INVALID_ARGS', `Config file not found: ${filePath}`);
@@ -90,31 +184,43 @@ function loadSingleConfigFile(filePath: string, required: boolean): Partial<CliF
     throw new AppError('INVALID_ARGS', `Config file must contain a JSON object: ${filePath}`);
   }
 
-  return parseConfigObject(parsed as Record<string, unknown>, `config file ${filePath}`);
+  return parseConfigObject(parsed as Record<string, unknown>, {
+    source: entry.source,
+    label: `${entry.source === 'project' ? 'project ' : ''}config file ${filePath}`,
+  });
 }
 
 function parseConfigObject(
   source: Record<string, unknown>,
-  sourceLabel: string,
+  origin: { source: ConfigFileSource; label: string },
 ): Partial<CliFlags> {
   const flags: Partial<CliFlags> = {};
   for (const [rawKey, rawValue] of Object.entries(source)) {
-    if (rawKey === 'installSource') {
-      flags.installSource = parseInstallSourceConfig(rawValue, sourceLabel);
-      continue;
-    }
     const key = rawKey as FlagKey;
     const spec = getOptionSpec(key);
     if (!spec) {
-      throw new AppError('INVALID_ARGS', `Unknown config key "${rawKey}" in ${sourceLabel}.`);
+      throw new AppError('INVALID_ARGS', `Unknown config key "${rawKey}" in ${origin.label}.`);
     }
-    if (!spec.config.enabled) {
-      throw new AppError('INVALID_ARGS', `Unsupported config key "${rawKey}" in ${sourceLabel}.`);
+    if (!spec.configurable) {
+      throw new AppError(
+        'INVALID_ARGS',
+        `Config key "${rawKey}" is not allowed in ${origin.label}. This key is not supported in config files.`,
+      );
+    }
+    if (origin.source === 'project' && !PROJECT_CONFIG_FLAG_KEYS.has(key)) {
+      throw new AppError(
+        'INVALID_ARGS',
+        `Config key "${rawKey}" is not allowed in ${origin.label}. Move it to ~/.agent-device/config.json, pass it with --config or AGENT_DEVICE_CONFIG, or provide it through CLI flags/environment variables.`,
+      );
+    }
+    if (key === 'installSource') {
+      flags.installSource = parseInstallSourceConfig(rawValue, origin.label);
+      continue;
     }
     (flags as Record<string, unknown>)[key] = parseOptionValueFromSource(
       spec,
       rawValue,
-      sourceLabel,
+      origin.label,
       rawKey,
     );
   }

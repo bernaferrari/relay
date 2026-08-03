@@ -26,6 +26,7 @@ export type CapturedCliRun = {
   stdout: string;
   stderr: string;
   calls: CapturedDaemonRequest[];
+  transportOptions: DaemonTransportOptions[];
 };
 
 export type CliCaptureOptions = {
@@ -33,6 +34,7 @@ export type CliCaptureOptions = {
   env?: Record<string, string | undefined>;
   stateDirPrefix?: string;
   passthroughBufferWrites?: boolean;
+  useRealDaemonClient?: boolean;
   sendToDaemon?: (
     req: CapturedDaemonRequest,
     options?: DaemonTransportOptions,
@@ -58,6 +60,7 @@ export async function runCliCapture(
   let stderr = '';
   let code: number | null = null;
   const calls: CapturedDaemonRequest[] = [];
+  const transportOptions: DaemonTransportOptions[] = [];
   const stateDir = options.stateDirPrefix
     ? fs.mkdtempSync(path.join(os.tmpdir(), options.stateDirPrefix))
     : undefined;
@@ -98,6 +101,7 @@ export async function runCliCapture(
     daemonOptions?: DaemonTransportOptions,
   ): Promise<DaemonResponse> => {
     calls.push(req);
+    transportOptions.push(daemonOptions);
     if (options.sendToDaemon) {
       return await options.sendToDaemon(req, daemonOptions);
     }
@@ -105,7 +109,7 @@ export async function runCliCapture(
   };
 
   try {
-    await runCli(argv, { sendToDaemon });
+    await runCli(argv, options.useRealDaemonClient ? undefined : { sendToDaemon });
   } catch (error) {
     if (error instanceof ExitSignal) code = error.code;
     else throw error;
@@ -118,5 +122,5 @@ export async function runCliCapture(
     process.chdir(originalCwd);
   }
 
-  return { code, stdout, stderr, calls };
+  return { code, stdout, stderr, calls, transportOptions };
 }
