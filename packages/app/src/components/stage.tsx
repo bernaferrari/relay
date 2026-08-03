@@ -38,6 +38,7 @@ import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness, presentDeviceIssue } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
+  LIVE_FALLBACK_FRAME_INTERVAL_MS,
   LIVE_SNAPSHOT_INTERVAL_MS,
   POST_INTERACTION_SNAPSHOT_DELAY_MS,
   liveInspectionPolicy,
@@ -724,8 +725,7 @@ export function DeviceStage(_props: {
     (currentDevice()?.platform === "ios" && !["preparing", "ready"].includes(iosSetupState()));
 
   async function tickLiveFrame(): Promise<void> {
-    const concurrency = supportsH264Stream() && !videoReady() && videoFailed() ? 2 : 1;
-    if (livePaused() || frameRequestsInFlight >= concurrency) return;
+    if (livePaused() || frameRequestsInFlight >= 1) return;
     frameRequestsInFlight += 1;
     try {
       await server.pollLiveFrame();
@@ -756,6 +756,9 @@ export function DeviceStage(_props: {
     snapRefreshTimer = window.setTimeout(() => {
       snapRefreshTimer = undefined;
       void tickLiveSnapshot();
+      // Keep a slow fallback responsive to deliberate device input without
+      // restoring the old permanent eight-images-per-second hot loop.
+      if (usesScreenshotPreview()) void tickLiveFrame();
     }, delayMs);
   }
 
@@ -901,7 +904,7 @@ export function DeviceStage(_props: {
       // can be several megabytes, so a calm cadence avoids saturating the UI.
       // Post-interaction refreshes remain immediate through
       // `scheduleLiveSnapshot` and the touch/keyboard completion paths.
-      frameTimer = setInterval(() => void tickLiveFrame(), supportsH264Stream() ? 125 : 1_500);
+      frameTimer = setInterval(() => void tickLiveFrame(), LIVE_FALLBACK_FRAME_INTERVAL_MS);
     }
     onCleanup(stopLiveTimers);
   });
@@ -1321,7 +1324,7 @@ export function DeviceStage(_props: {
   });
   const liveVideoSrc = createMemo(() => {
     const identity = videoIdentity();
-    if (!identity || !liveControlActive() || !supportsH264Stream()) return "";
+    if (!identity || !liveControlActive() || !tabVisible() || !supportsH264Stream()) return "";
     const separator = identity.lastIndexOf("|");
     const base = identity.slice(0, separator);
     const serial = identity.slice(separator + 1);

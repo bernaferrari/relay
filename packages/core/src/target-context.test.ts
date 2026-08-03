@@ -24,7 +24,7 @@ test("target contexts remain isolated across interleaved operations", async () =
   ]);
 
   assert.deepEqual(android, {
-    base: { platform: "android", serial: "android-a", device: "android-a" },
+    base: { platform: "android", serial: "android-a" },
     platform: "android",
     identity: "android-a",
   });

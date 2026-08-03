@@ -182,7 +182,7 @@ function httpClient(baseUrl: string): DeviceClient {
       return data.actions as ActionMeta[];
     },
     async listJobs() {
-      const data = await relay.invoke("job.list", { full: true });
+      const data = await relay.invoke("job.list", { limit: 50 });
       return data.jobs as unknown as TestJob[];
     },
     async selectDevice(serial) {

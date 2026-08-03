@@ -7,6 +7,7 @@ import {
   captureSnapshot,
   createDevice,
   getBrowserDevice,
+  observeVisualScreenFingerprint,
   runRecipeStep,
   runWithTargetContext,
   type AuthoringRuntime,
@@ -77,13 +78,22 @@ export async function captureAuthoringObservation(
             dependencies.captureSnapshot(device),
             dependencies.captureScreenshot(device),
           ]);
+    const screenshotBytes = Buffer.from(screenshot.base64, "base64");
+    // Authoring always has a screenshot, while native semantics can disappear
+    // between two captures on real devices (notably Samsung Settings and
+    // custom-rendered apps). Keep one identity modality for the whole Take so
+    // a successful replay cannot fail merely because accessibility recovered.
+    // The semantic tree remains attached as evidence and is still used by the
+    // deterministic resolver; visual identity is only the screen-state key.
+    const fingerprint =
+      observeVisualScreenFingerprint(screenshotBytes) ?? snapshot.screenIdentity.fingerprint;
     return {
       capturedAt: Math.max(snapshot.capturedAt, screenshot.capturedAt),
       targetId: session.target.targetId,
-      fingerprint: snapshot.screenIdentity.fingerprint,
+      fingerprint,
       ...(snapshot.bounds ? { bounds: snapshot.bounds } : {}),
       nodes: snapshot.nodes.slice(0, 256) as Array<Record<string, unknown>>,
-      screenshot: { data: Buffer.from(screenshot.base64, "base64"), mime: screenshot.mime },
+      screenshot: { data: screenshotBytes, mime: screenshot.mime },
     };
   });
 }

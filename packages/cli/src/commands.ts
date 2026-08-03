@@ -448,7 +448,20 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "authoring.session.create",
-    path("session create"),
+    path("session create", [], undefined, {
+      summary: "Start a recording session on an App Map and device",
+      inputHelp: [
+        { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
+        { name: "target", type: "object", required: true, description: "Device or browser target" },
+        { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
+        {
+          name: "expectedAppMapRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+      ],
+    }),
     path("proposal create", [], undefined, {
       summary: "Create a proposal attached to an App Map and device",
       inputHelp: [
@@ -495,7 +508,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "authoring.session.interact",
-    path("session interact", ["sessionId"]),
+    path("session interact", ["sessionId"], undefined, {
+      summary: "Perform an explicit interaction while recording",
+      inputHelp: [
+        {
+          name: "interaction",
+          type: "object",
+          required: true,
+          description: "Tap, type, swipe, key, wait, or screenshot interaction",
+        },
+      ],
+    }),
     path("session tap", ["sessionId"], { interaction: { kind: "tap" } }),
     path("session type", ["sessionId"], { interaction: { kind: "type" } }),
     path("session swipe", ["sessionId"], { interaction: { kind: "swipe" } }),
@@ -690,7 +713,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "authoring.session.commit",
-    path("session commit", ["sessionId"]),
+    path("session commit", ["sessionId"], undefined, {
+      summary: "Commit a successfully replayed recording to the App Map",
+      inputHelp: [
+        {
+          name: "destination",
+          type: "object",
+          description: "Existing screen, new screen, or end destination",
+        },
+        {
+          name: "mode",
+          type: "interaction | automatic | reusable",
+          description: "Connection execution mode",
+        },
+      ],
+    }),
     path("proposal accept", ["sessionId"], undefined, {
       summary: "Accept a proposal into the App Map",
       argumentHelp: [

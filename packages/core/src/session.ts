@@ -41,6 +41,7 @@ import {
   glyphsForStep,
   type HumanCheckpointReason,
   type Recipe,
+  type RecipeStep,
   type StepTarget,
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
@@ -84,12 +85,15 @@ function classifyError(message: string): JobErrorCode {
 /** Avoid importing workspace (session↔workspace cycle). */
 async function resolveDeviceMeta(
   serial?: string,
-  platform?: DevicePlatform,
+  _platform?: DevicePlatform,
 ): Promise<{ deviceName?: string; deviceAvailable?: boolean }> {
   if (!serial) return {};
   try {
     const client = createDevice();
-    const devices = await client.devices.list(platform ? { platform } : undefined);
+    // Some SDK backends apply platform filters before normalizing attached
+    // physical devices. Discover once, then match the canonical identifiers
+    // ourselves so execution and the device picker cannot disagree.
+    const devices = await client.devices.list();
     const match = devices.find((d) => {
       const s =
         d.android?.serial ?? d.ios?.udid ?? d.identifiers?.serial ?? d.identifiers?.udid ?? d.id;
@@ -642,6 +646,38 @@ export function cancelActiveJob(targetId?: string): TestJob | null {
   return cancelJob(active.id);
 }
 
+export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | "after")[] {
+  switch (step.kind) {
+    // These steps already produce their own evidence or only orchestrate
+    // nested steps. Capturing two additional device states adds latency and
+    // duplicate frames without improving diagnosis.
+    case "sleep":
+    case "screenshot":
+    case "logs":
+    case "network":
+    case "script":
+    case "flow":
+    case "module":
+    case "repeat":
+    case "branch":
+      return [];
+    // Assertions and waits need the resulting state, not an identical frame
+    // before the check. Interaction steps retain both sides of the causal
+    // boundary.
+    case "expect":
+    case "expect-screen":
+    case "assert-content":
+    case "extract":
+    case "evaluate-semantic":
+    case "wait-for":
+    case "wait-response":
+    case "pause":
+      return ["after"];
+    default:
+      return ["before", "after"];
+  }
+}
+
 /**
  * Load the frozen recipe and run each action as a real TraceStep. Cancel
  * propagates from device ops (controlled/raceCancel) and is rethrown so the
@@ -680,15 +716,20 @@ async function runRecipeSteps(
         capturedAt: now(),
         data: { stepId: ts.id, command: resolvedStep },
       });
-      await captureAutomaticState(job, device, ts, "before", pushLog);
+      const evidencePhases = automaticEvidencePhases(resolvedStep);
+      if (evidencePhases.includes("before"))
+        await captureAutomaticState(job, device, ts, "before", pushLog);
       await runRecipeStep(device, resolvedStep, {
         log: pushLog,
         job,
         recipeGraph: job.recipeGraph,
       });
-      await captureAutomaticState(job, device, ts, "after", pushLog);
+      if (evidencePhases.includes("after"))
+        await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "ok");
     } catch (err) {
+      // A failure frame is always useful, including when the normal policy
+      // suppresses redundant evidence for a passive step.
       await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(undefined);

@@ -173,7 +173,7 @@ export function base() {
   const serial = context.kind === "device" ? context.serial : undefined;
   return platform === "ios"
     ? ({ platform, ...(serial ? { udid: serial } : {}) } as const)
-    : ({ platform, ...(serial ? { serial, device: serial } : {}) } as const);
+    : ({ platform, ...(serial ? { serial } : {}) } as const);
 }
 
 /** Run a device promise under cancel race, pause checkpoints, and flake retries. */

@@ -778,6 +778,8 @@ export async function captureScreenshot(opts?: {
   jobId?: string;
   /** skip attaching to job */
   ephemeral?: boolean;
+  /** skip the additional semantic snapshot when the caller only needs pixels */
+  includeScreenMatch?: boolean;
 }): Promise<ScreenshotPayload> {
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
@@ -810,18 +812,20 @@ export async function captureScreenshot(opts?: {
     const base64 = buf.toString("base64");
     const dimensions = pngDimensions(buf);
     let screenMatch: ScreenshotPayload["screenMatch"];
-    try {
-      const semantic = await snapshotForTarget(target, false);
-      const identity = observeScreenIdentity(semantic.nodes);
-      if (identity.fingerprint) {
-        screenMatch = {
-          fingerprint: identity.fingerprint,
-          matchedScreenId: null,
-          status: "observed",
-        };
+    if (opts?.includeScreenMatch !== false) {
+      try {
+        const semantic = await snapshotForTarget(target, false);
+        const identity = observeScreenIdentity(semantic.nodes);
+        if (identity.fingerprint) {
+          screenMatch = {
+            fingerprint: identity.fingerprint,
+            matchedScreenId: null,
+            status: "observed",
+          };
+        }
+      } catch {
+        screenMatch = undefined;
       }
-    } catch {
-      screenMatch = undefined;
     }
     const serial = targetIdentity();
     publish({ type: "screenshot.captured", at: now(), serial, bytes: buf.byteLength });

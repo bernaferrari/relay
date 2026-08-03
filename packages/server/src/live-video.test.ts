@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { encodeRelayVideoPacket } from "./live-video.js";
+import { AndroidVideoStreamRegistry, encodeRelayVideoPacket } from "./live-video.js";
+
+test("live video registry replaces stale producers without releasing the replacement", () => {
+  const registry = new AndroidVideoStreamRegistry();
+  let firstClosed = 0;
+  let secondClosed = 0;
+  const releaseFirst = registry.replace("device-1", () => {
+    firstClosed += 1;
+  });
+  const releaseSecond = registry.replace("device-1", () => {
+    secondClosed += 1;
+  });
+
+  assert.equal(firstClosed, 1);
+  assert.equal(secondClosed, 0);
+  assert.equal(registry.count(), 1);
+  releaseFirst();
+  assert.equal(registry.count(), 1);
+  releaseSecond();
+  assert.equal(registry.count(), 0);
+});
 
 test("live video framing preserves packet kind, keyframe, timestamp, and size", () => {
   const header = Buffer.from(

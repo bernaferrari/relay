@@ -18,6 +18,7 @@ export function appMapPrimaryAction(input: {
   run: AppMapRunReadiness;
   serverOnline: boolean;
   device: DeviceReadiness;
+  running?: boolean;
 }): AppMapPrimaryAction {
   if (input.saveState === "invalid") {
     return {
@@ -32,6 +33,14 @@ export function appMapPrimaryAction(input: {
       kind: "blocked",
       label: "Saving…",
       reason: "Relay will enable the run when this map is saved",
+      icon: "refresh",
+    };
+  }
+  if (input.running) {
+    return {
+      kind: "blocked",
+      label: "Running…",
+      reason: "Relay is replaying this flow on the selected device",
       icon: "refresh",
     };
   }

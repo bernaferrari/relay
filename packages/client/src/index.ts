@@ -297,7 +297,7 @@ export class RelayClient {
     });
   }
   async jobs(): Promise<{ jobs: JobSummary[] }> {
-    const body = await this.invoke("job.list", { full: false });
+    const body = await this.invoke("job.list", {});
     if (!body || !Array.isArray(body.jobs))
       throw new ApiError(502, "Malformed jobs response", body);
     try {

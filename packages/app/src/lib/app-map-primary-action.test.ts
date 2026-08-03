@@ -68,3 +68,21 @@ test("a ready map and device produce the run action", () => {
     { kind: "run", label: "Run flow", reason: "", icon: "play" },
   );
 });
+
+test("an active replay replaces the run action with honest progress", () => {
+  assert.deepEqual(
+    appMapPrimaryAction({
+      saveState: "saved",
+      run: runnable,
+      serverOnline: true,
+      device: { kind: "ready" },
+      running: true,
+    }),
+    {
+      kind: "blocked",
+      label: "Running…",
+      reason: "Relay is replaying this flow on the selected device",
+      icon: "refresh",
+    },
+  );
+});

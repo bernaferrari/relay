@@ -61,7 +61,7 @@ import {
 } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { evaluateSemantic } from "./evaluation.js";
-import { observeScreenIdentity } from "./screen-identity.js";
+import { observeScreenIdentity, observeVisualScreenFingerprint } from "./screen-identity.js";
 
 function nodeText(node: SnapshotNode): string[] {
   return [node.label, node.value]
@@ -77,6 +77,17 @@ function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
     return nodeText(node).some((value) => value.toLowerCase().includes(query));
   }
   return false;
+}
+
+export function screenIdentityMatches(
+  expected: ReadonlySet<string>,
+  semanticFingerprint: string,
+  visualFingerprint?: string,
+): boolean {
+  return (
+    expected.has(semanticFingerprint) ||
+    Boolean(visualFingerprint && expected.has(visualFingerprint))
+  );
 }
 
 function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
@@ -226,6 +237,8 @@ export type RecipeStepContext = {
   job?: TestJob;
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
+  /** Test seam and provider override for pixel-only destination identity. */
+  observeVisualFingerprint?: () => Promise<string | undefined>;
 };
 
 async function runReusableRecipe(
@@ -699,10 +712,34 @@ export async function runRecipeStep(
     case "expect-screen": {
       const observed = observeScreenIdentity(await snapshot(device));
       const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
-      if (!expected.has(observed.fingerprint)) {
+      if (screenIdentityMatches(expected, observed.fingerprint)) {
+        log(`screen: reached ${step.screenTitle}`);
+        break;
+      }
+
+      // Custom-rendered and some system screens can expose an empty or
+      // unstable accessibility tree. Authoring records a stable visual alias
+      // for exactly that case, so replay must consult the same modality before
+      // rejecting an otherwise identical destination.
+      const visualFingerprint = ctx.observeVisualFingerprint
+        ? await ctx.observeVisualFingerprint()
+        : observeVisualScreenFingerprint(
+            Buffer.from(
+              (
+                await captureScreenshot({
+                  device,
+                  caption: `Verify ${step.screenTitle}`,
+                  ephemeral: true,
+                  includeScreenMatch: false,
+                })
+              ).base64,
+              "base64",
+            ),
+          );
+      if (!screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
         throw new Error(
           `expect-screen: reached a different screen instead of "${step.screenTitle}" ` +
-            `(expected ${step.fingerprint.slice(0, 8)}, observed ${observed.fingerprint.slice(0, 8)})`,
+            `(expected ${step.fingerprint.slice(0, 8)}, observed ${(visualFingerprint ?? observed.fingerprint).slice(0, 8)})`,
         );
       }
       log(`screen: reached ${step.screenTitle}`);

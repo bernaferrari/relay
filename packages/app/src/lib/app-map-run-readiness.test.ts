@@ -69,6 +69,23 @@ test("runs only to the selected destination on a branch", () => {
   assert.deepEqual(result.transitionPath, ["right"]);
 });
 
+test("uses the actual entry screen when branch flows sort before the main flow", () => {
+  const value = graph([connection("enter", "start", "a"), connection("branch", "a", "b")]);
+  value.flows = [
+    { id: "a-branch", name: "Branch", screenId: "a", createdAt: at + 1, updatedAt: at + 1 },
+    { id: "z-main", name: "Main", screenId: "start", createdAt: at, updatedAt: at },
+  ];
+
+  const result = appMapRunReadiness({
+    graph: value,
+    recipeSteps: [],
+    selection: { transitionId: "enter" },
+  });
+
+  assert.deepEqual(result.transitionPath, ["enter"]);
+  assert.notEqual(result.reason, "This connection is not reachable from the entry screen");
+});
+
 test("blocks when a connection references a missing recipe action", () => {
   const result = appMapRunReadiness({
     graph: graph([connection("tap", "start", "a", { stepIds: ["missing"] })]),

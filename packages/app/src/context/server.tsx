@@ -764,7 +764,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshJobs() {
       if (health() === "offline") return;
       try {
-        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
+        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
         const list = asArray<JobInfo>(data, "jobs");
         const active = data.active;
         setJobs((current) => {

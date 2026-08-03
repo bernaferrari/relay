@@ -23,6 +23,28 @@ import { CORS_HEADERS, HttpError } from "./http.js";
 
 const PACKET_HEADER_BYTES = 16;
 
+/** One encoder per Android target. A reconnect replaces a stale response
+ * before another scrcpy process starts, so renderer refreshes and multiple
+ * Relay windows cannot accumulate producers. */
+export class AndroidVideoStreamRegistry {
+  readonly #active = new Map<string, { token: symbol; close: () => void }>();
+
+  replace(serial: string, close: () => void): () => void {
+    this.#active.get(serial)?.close();
+    const token = Symbol(serial);
+    this.#active.set(serial, { token, close });
+    return () => {
+      if (this.#active.get(serial)?.token === token) this.#active.delete(serial);
+    };
+  }
+
+  count(): number {
+    return this.#active.size;
+  }
+}
+
+const activeVideoStreams = new AndroidVideoStreamRegistry();
+
 export type AndroidTouchAction = "down" | "move" | "up" | "cancel";
 export type AndroidKeyboardInput =
   | { kind: "text"; text: string }
@@ -140,6 +162,9 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
   if (!device) throw new HttpError(404, `Android device not available: ${serial}`);
 
   const adb = await server.createAdb(device);
+  const releaseStream = activeVideoStreams.replace(serial, () => {
+    if (!res.destroyed && !res.writableEnded) res.destroy();
+  });
   let scrcpy: AdbScrcpyClient<AdbScrcpyOptions2_1<true>> | undefined;
   let cancelReader: (() => Promise<void>) | undefined;
   let disconnected = false;
@@ -171,16 +196,16 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
         control: true,
         cleanup: false,
         logLevel: "error",
-        maxFps: 60,
-        // The preview is ~680 physical pixels wide on a Retina display.
-        // 1440px on the phone's long edge preserves that detail while cutting
-        // encode/decode/texture pixels by ~62% versus this device's 2336px.
-        maxSize: 1440,
+        // Smooth for authoring while bounding decoder and GPU pressure.
+        maxFps: 30,
+        // The preview is ~540 physical pixels wide in the companion panel.
+        // 1080px preserves Retina detail while bounding decoded textures.
+        maxSize: 1080,
         // scrcpy's default socket name is global on the device. A unique SCID
         // prevents a reconnect (or a second Relay window) from attaching to a
         // previous capture process and waiting forever for its video socket.
         scid: randomInt(0x80000000).toString(16),
-        videoBitRate: 8_000_000,
+        videoBitRate: 4_000_000,
         tunnelForward: false,
       },
       { version: VERSION },
@@ -232,6 +257,7 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
       if (!disconnected && !res.destroyed && !res.writableEnded) throw error;
     }
   } finally {
+    releaseStream();
     if (scrcpy?.controller && activeControls.get(serial)?.controller === scrcpy.controller) {
       activeControls.delete(serial);
     }

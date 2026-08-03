@@ -101,6 +101,7 @@ export function ScreenCard(props: {
       data-app-map-screen-id={props.node.id}
       class={cn(
         "group/screen absolute grid h-[350px] w-[180px] grid-rows-[24px_320px] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
+        props.selected && "z-20",
       )}
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       onClick={props.onSelect}

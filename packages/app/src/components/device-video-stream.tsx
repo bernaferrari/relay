@@ -62,6 +62,16 @@ export function DeviceVideoStream(props: {
       cancelAnimationFrame(readyFrame);
       removeSizeListener();
       decoder.dispose();
+      // Reconnects must release GPU textures and decoded backing stores now,
+      // rather than waiting for a future Chromium GC pass.
+      const gl =
+        canvas?.getContext("webgl2") ??
+        (canvas?.getContext("webgl") as WebGLRenderingContext | null | undefined);
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     });
   });
 

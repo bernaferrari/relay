@@ -1,4 +1,10 @@
 export const LIVE_SNAPSHOT_INTERVAL_MS = 1_500;
+/**
+ * Screenshot fallback is evidence-sized, not a video frame. Polling it at
+ * video cadence queues PNG decodes in Chromium faster than they are reclaimed
+ * when H.264 is unavailable.
+ */
+export const LIVE_FALLBACK_FRAME_INTERVAL_MS = 1_500;
 export const POST_INTERACTION_SNAPSHOT_DELAY_MS = 180;
 
 /** Video and accessibility capture have independent lifecycles.

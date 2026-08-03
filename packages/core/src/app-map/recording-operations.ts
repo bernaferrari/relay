@@ -31,6 +31,7 @@ export type AppMapRecordingInput = {
   before?: AuthoringObservation;
   after?: AuthoringObservation;
   evidenceIds: string[];
+  evidenceUrisById?: Record<string, string>;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string };
@@ -104,6 +105,15 @@ function observeScreen(input: {
     .find((variant) => variant?.targetProfile.id === profile.id);
   const variantId = existing?.id ?? stableId("variant", `${screen.id}:${profile.id}`);
   const evidenceIds = [...new Set([...(existing?.evidenceIds ?? []), ...observation.evidenceIds])];
+  const evidenceUris = [
+    ...new Set([
+      ...(existing?.evidenceUris ?? []),
+      ...observation.evidenceIds.flatMap((id) => {
+        const uri = recording.evidenceUrisById?.[id];
+        return uri ? [uri] : [];
+      }),
+    ]),
+  ];
   const variant: ScreenVariant = {
     ...entityScope(map),
     id: variantId,
@@ -115,6 +125,7 @@ function observeScreen(input: {
       volatileSignals: [],
     },
     evidenceIds,
+    ...(evidenceUris.length ? { evidenceUris } : {}),
     createdAt: existing?.createdAt ?? at,
     updatedAt: at,
     ...(existing?.baseline ? { baseline: structuredClone(existing.baseline) } : {}),
@@ -145,6 +156,19 @@ function flowTerminal(map: AppMap, flow: Flow): string | "end" {
   return terminal;
 }
 
+function flowPrefixToScreen(map: AppMap, flow: Flow, screenId: string): string[] | null {
+  if (flow.startScreenId === screenId) return [];
+  const prefix: string[] = [];
+  for (const connectionId of flow.connectionIds) {
+    const connection = map.connections[connectionId];
+    if (!connection) return null;
+    prefix.push(connectionId);
+    if (connection.destination.kind === "end") return null;
+    if (connection.destination.screenId === screenId) return prefix;
+  }
+  return null;
+}
+
 function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string, at: number): void {
   const existing = Object.values(map.flows).find((flow) =>
     flow.connectionIds.includes(connectionId),
@@ -159,6 +183,15 @@ function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string,
     flow.updatedAt = at;
     return;
   }
+  const parent = Object.values(map.flows)
+    .flatMap((candidate) => {
+      const prefix = flowPrefixToScreen(map, candidate, sourceScreenId);
+      return prefix ? [{ flow: candidate, prefix }] : [];
+    })
+    .sort(
+      (left, right) =>
+        left.flow.createdAt - right.flow.createdAt || left.flow.id.localeCompare(right.flow.id),
+    )[0];
   const id = stableId("flow", `${connectionId}:${sourceScreenId}`);
   map.flows[id] = {
     ...entityScope(map),
@@ -167,8 +200,8 @@ function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string,
       Object.keys(map.flows).length === 0
         ? "Main flow"
         : `Flow ${Object.keys(map.flows).length + 1}`,
-    startScreenId: sourceScreenId,
-    connectionIds: [connectionId],
+    startScreenId: parent?.flow.startScreenId ?? sourceScreenId,
+    connectionIds: [...(parent?.prefix ?? []), connectionId],
     createdAt: at,
     updatedAt: at,
   };

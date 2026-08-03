@@ -209,7 +209,7 @@ export async function startRunEvidence(
       ? "all"
       : "summary";
     await withTimeout(
-      device.observability.network({ ...base(), action: "log", include, limit: 1_000 }),
+      device.observability.network({ ...base(), action: "log", include, limit: 200 }),
       5_000,
       "network capture start",
     );
@@ -379,7 +379,7 @@ export async function stopRunEvidence(
           include: hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
             ? "all"
             : "summary",
-          limit: 1_000,
+          limit: 200,
         }),
         5_000,
         "network capture",

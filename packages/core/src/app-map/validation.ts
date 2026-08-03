@@ -289,7 +289,14 @@ function assertRunReferences(map: AppMap): void {
 /** Runtime validation plus a defensive clone suitable for pure reducers. */
 export function validateAppMap(value: unknown): AppMap {
   const document = objectValue(value, "App Map");
-  const input = document as unknown as AppMap;
+  // Groups were added to the schema while Relay was still pre-release. A
+  // locally persisted blank map must never make the whole library unreadable;
+  // normalize that additive collection at the validation boundary so every
+  // caller receives the same complete canonical document.
+  const input = {
+    ...document,
+    groups: document.groups ?? {},
+  } as unknown as AppMap;
   if (input.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
     appMapFail("invalid-map", `App Map schemaVersion must be ${APP_MAP_SCHEMA_VERSION}`);
   }

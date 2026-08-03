@@ -1,15 +1,52 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
 import {
   compareScreenIdentity,
   observeScreenIdentity,
+  observeVisualScreenFingerprint,
   resolveScreenIdentity,
 } from "./screen-identity.js";
 
 function observe(nodes: SnapshotNode[]) {
   return observeScreenIdentity(nodes);
 }
+
+function visualScreen(options: { top?: [number, number, number]; panelX: number }): Buffer {
+  const png = new PNG({ width: 108, height: 234 });
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const offset = (y * png.width + x) * 4;
+      const top = options.top ?? [18, 18, 18];
+      const inSystemBar = y < 12;
+      const inPanel = x >= options.panelX && x < options.panelX + 32 && y >= 22 && y < 40;
+      const colour: readonly [number, number, number] = inSystemBar
+        ? top
+        : inPanel
+          ? [232, 232, 232]
+          : [18, 18, 18];
+      png.data[offset] = colour[0];
+      png.data[offset + 1] = colour[1];
+      png.data[offset + 2] = colour[2];
+      png.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(png);
+}
+
+test("visual fallback ignores system bars but distinguishes custom-rendered screens", () => {
+  const first = observeVisualScreenFingerprint(visualScreen({ panelX: 12 }));
+  const changedClock = observeVisualScreenFingerprint(
+    visualScreen({ panelX: 12, top: [245, 80, 120] }),
+  );
+  const nextScreen = observeVisualScreenFingerprint(visualScreen({ panelX: 28 }));
+
+  assert.match(first ?? "", /^[0-9a-f]{64}$/u);
+  assert.equal(first, changedClock);
+  assert.notEqual(first, nextScreen);
+  assert.equal(observeVisualScreenFingerprint(Buffer.from("not a png")), undefined);
+});
 
 test("stable semantics match across traversal order, whitespace, and hidden nodes", () => {
   const first = observe([

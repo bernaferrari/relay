@@ -38,7 +38,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   const { method, pathname, url, request: req, response: res, scope } = context;
   if (method === "GET" && pathname === "/jobs") {
     const limit = parseLimit(url.searchParams.get("limit"), 50);
-    const full = url.searchParams.get("full") !== "0";
     const activeJobs = getActiveJobs().filter(
       (job) =>
         scope.localTrusted || (job.projectId === scope.projectId && job.ownerId === scope.subject),
@@ -49,11 +48,11 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         : listJobs(limit).filter(
             (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
           )
-      ).map((job) => (full ? job : summarizeJob(job))),
+      ).map(summarizeJob),
       // `active` remains a compatibility convenience; `activeJobs` is the
       // truthful capacity-aware view.
-      active: activeJobs.at(-1) ?? null,
-      activeJobs,
+      active: activeJobs.length ? summarizeJob(activeJobs.at(-1)!) : null,
+      activeJobs: activeJobs.map(summarizeJob),
     });
     return true;
   }

@@ -111,7 +111,6 @@ describe("runRecipeStep tap gestures", () => {
       {
         platform: "android",
         serial: "recipe-runner-test",
-        device: "recipe-runner-test",
         x: 190,
         y: 380,
       },
@@ -135,7 +134,6 @@ describe("runRecipeStep tap gestures", () => {
     assert.deepEqual(holds[0], {
       platform: "android",
       serial: "recipe-runner-test",
-      device: "recipe-runner-test",
       ref: "@e53",
       durationMs: 900,
     });
@@ -179,7 +177,6 @@ describe("runRecipeStep swipe", () => {
       {
         platform: "android",
         serial: "recipe-runner-test",
-        device: "recipe-runner-test",
         from: { x: 10, y: 20 },
         to: { x: 190, y: 380 },
         durationMs: 330,
@@ -305,10 +302,30 @@ describe("runRecipeStep expect-screen", () => {
             snapshot: () => Promise.resolve({ nodes: [{ role: "button", label: "Try again" }] }),
           }),
           { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
-          noLog,
+          { ...noLog, observeVisualFingerprint: () => Promise.resolve("c".repeat(64)) },
         ),
       /reached a different screen instead of "Home"/,
     );
+  });
+
+  it("accepts a visual alias when native semantics cannot identify the screen", async () => {
+    const visualFingerprint = "b".repeat(64);
+    const lines: string[] = [];
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) }),
+      {
+        kind: "expect-screen",
+        screenId: "canvas",
+        screenTitle: "Canvas",
+        fingerprint: "a".repeat(64),
+        aliases: [visualFingerprint],
+      },
+      {
+        log: (line) => lines.push(line),
+        observeVisualFingerprint: () => Promise.resolve(visualFingerprint),
+      },
+    );
+    assert.deepEqual(lines, ["screen: reached Canvas"]);
   });
 });
 

@@ -68,6 +68,10 @@ function context(eventId: string, revision = 0, at = 10): AppMapMutationContext 
   };
 }
 
+function mapScope(map: AppMap) {
+  return { organizationId: map.organizationId, projectId: map.projectId, appMapId: map.id };
+}
+
 test("commits a recording as one immutable App Map revision", () => {
   const input = mapFixture();
   const result = commitAppMapRecording(
@@ -81,6 +85,11 @@ test("commits a recording as one immutable App Map revision", () => {
       before: observation("before", beforeFingerprint, "evidence-before"),
       after: observation("after", afterFingerprint, "evidence-after"),
       evidenceIds: ["evidence-before", "evidence-video", "evidence-after"],
+      evidenceUrisById: {
+        "evidence-before": "relay-evidence://sha256/before/screenshot",
+        "evidence-video": "relay-evidence://sha256/video/video",
+        "evidence-after": "relay-evidence://sha256/after/screenshot",
+      },
     },
     context("event-1"),
   );
@@ -90,6 +99,16 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(result.appMap.revision, 1);
   assert.equal(Object.keys(result.appMap.screens).length, 2);
   assert.equal(Object.keys(result.appMap.screenVariants).length, 2);
+  const variants = Object.values(result.appMap.screenVariants);
+  assert.deepEqual(
+    variants.find((variant) => variant.observation?.fingerprint === beforeFingerprint)
+      ?.evidenceUris,
+    ["relay-evidence://sha256/before/screenshot"],
+  );
+  assert.deepEqual(
+    variants.find((variant) => variant.observation?.fingerprint === afterFingerprint)?.evidenceUris,
+    ["relay-evidence://sha256/after/screenshot"],
+  );
   assert.equal(Object.keys(result.appMap.flows).length, 1);
   const connection = result.appMap.connections[result.connectionId];
   assert.equal(connection?.state, "ready");
@@ -189,4 +208,80 @@ test("represents an observe-only recording as a passive transition", () => {
     { id: "passive-take-passive", kind: "passive", reason: "observe-only" },
   ]);
   assert.deepEqual(connection?.destination, { kind: "end" });
+});
+
+test("new branch flows retain the complete path from the map entry", () => {
+  const map = mapFixture();
+  map.screens.start = {
+    ...mapScope(map),
+    id: "start",
+    title: "Start",
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.screens.middle = {
+    ...mapScope(map),
+    id: "middle",
+    title: "Middle",
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.screens.finish = {
+    ...mapScope(map),
+    id: "finish",
+    title: "Finish",
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.connections.enter = {
+    ...mapScope(map),
+    id: "enter",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "middle" },
+    state: "ready",
+    actions: [{ id: "enter-action", kind: "back" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.connections.finish = {
+    ...mapScope(map),
+    id: "finish",
+    fromScreenId: "middle",
+    destination: { kind: "screen", screenId: "finish" },
+    state: "ready",
+    actions: [{ id: "finish-action", kind: "back" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.flows.main = {
+    ...mapScope(map),
+    id: "main",
+    name: "Main",
+    startScreenId: "start",
+    connectionIds: ["enter", "finish"],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "branch-session",
+      sourceScreenId: "middle",
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      takeId: "branch-take",
+      takeRevision: 1,
+      actions: [action("branch")],
+      after: observation("branch-after", afterFingerprint, "branch-evidence"),
+      evidenceIds: ["branch-evidence"],
+    },
+    context("branch-event"),
+  );
+
+  const branch = Object.values(result.appMap.flows).find((flow) => flow.id !== "main");
+  assert.equal(branch?.startScreenId, "start");
+  assert.deepEqual(branch?.connectionIds, ["enter", result.connectionId]);
 });

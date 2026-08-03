@@ -12,8 +12,18 @@ import type {
 
 export type AppMapProjectionChange = AppMapBatchChange;
 
+function comparable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(comparable);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, comparable(item)]),
+  );
+}
+
 function same(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
 }
 
 function flowPath(graph: CanvasGraph, startScreenId: string): string[] {
@@ -132,15 +142,21 @@ export function planAppMapProjection(input: {
   }
 
   for (const item of graph.transitions) {
-    const actions = transitionActions(item, stepsById);
+    const existing = appMap.connections[item.id];
+    // The canvas is a spatial projection, not an execution editor. Existing
+    // actions and review state are canonical App Map data and may have richer
+    // recording evidence than the currently open UI has loaded.
+    const actions = existing
+      ? structuredClone(existing.actions)
+      : transitionActions(item, stepsById);
     const value = {
       fromScreenId: item.fromScreenId,
       destination: structuredClone(item.destination),
       ...(item.label ? { label: item.label } : {}),
-      state: item.state === "recorded" ? ("ready" as const) : ("draft" as const),
+      state:
+        existing?.state ?? (item.state === "recorded" ? ("ready" as const) : ("draft" as const)),
       actions,
     };
-    const existing = appMap.connections[item.id];
     if (!existing) {
       changes.push({
         kind: "connection.create",
@@ -173,12 +189,15 @@ export function planAppMapProjection(input: {
   }
 
   for (const item of graph.flows) {
+    const existing = appMap.flows[item.id];
     const flow: Flow = {
       ...scope,
       id: item.id,
       name: item.name,
       startScreenId: item.screenId,
-      connectionIds: flowPath(graph, item.screenId),
+      // A graph node only knows where a Flow begins. Branch-aware canonical
+      // paths cannot be reconstructed by following visually unique edges.
+      connectionIds: existing ? [...existing.connectionIds] : flowPath(graph, item.screenId),
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     };
@@ -225,13 +244,22 @@ export function mergeAppMapProjection(
         mode,
         ...(connection.label ? { label: connection.label } : {}),
         state: connection.state === "ready" ? ("recorded" as const) : ("needs-recording" as const),
+        ...(connection.state === "ready"
+          ? {
+              review: {
+                status: "verified" as const,
+                updatedAt: connection.updatedAt,
+                verifiedAt: connection.updatedAt,
+              },
+            }
+          : {}),
         kind: "forward" as const,
         createdAt: connection.createdAt,
         updatedAt: connection.updatedAt,
       };
     });
   const flows = Object.values(appMap.flows)
-    .sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
     .map((flow) => ({
       id: flow.id,
       name: flow.name,

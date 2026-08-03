@@ -310,7 +310,7 @@ type SpecificOperationMap = {
     };
   };
   "job.list": {
-    input: { full?: boolean; limit?: number };
+    input: { limit?: number };
     output: { jobs: JobSummaryDto[]; active?: JobSummaryDto | null };
   };
   "job.get": { input: { jobId: string }; output: { job: OperationRecord } };

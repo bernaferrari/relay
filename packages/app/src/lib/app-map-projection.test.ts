@@ -122,6 +122,70 @@ test("does not erase agent-owned entities or emit unchanged canvas fields", () =
   assert.ok(projected.screens.agent);
 });
 
+test("canvas persistence never rewrites executable actions or branch paths", () => {
+  const projected = structuredClone(map);
+  projected.screens.start = {
+    id: "start",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    title: "Welcome",
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  projected.screens.home = {
+    ...projected.screens.start,
+    id: "home",
+    title: "Home",
+    createdAt: 2,
+    updatedAt: 2,
+  };
+  projected.connections.continue = {
+    id: "continue",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "home" },
+    state: "ready",
+    actions: [
+      {
+        id: "recording:take-1",
+        kind: "recorded",
+        takeId: "take-1",
+        takeRevision: 2,
+        steps: [{ id: "tap-continue", kind: "tap", target: { label: "Continue" } }],
+        evidenceIds: ["frame-1"],
+      },
+    ],
+    createdAt: 3,
+    updatedAt: 3,
+  };
+  projected.flows.main = {
+    id: "main",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    name: "Main",
+    startScreenId: "start",
+    connectionIds: ["continue", "branch-after-continue"],
+    createdAt: 1,
+    updatedAt: 3,
+  };
+
+  assert.deepEqual(
+    planAppMapProjection({
+      appMap: projected,
+      graph,
+      positions: {},
+      // Simulate reopening before the editor has loaded canonical Take steps.
+      recipeSteps: [],
+    }),
+    [],
+  );
+});
+
 test("persists captured evidence with a new screen and refreshes an existing screen", () => {
   const first = planAppMapProjection({
     appMap: map,
@@ -163,7 +227,7 @@ test("persists captured evidence with a new screen and refreshes an existing scr
   ]);
 });
 
-test("projects canonical changes back without inventing verification evidence", () => {
+test("projects canonical ready connections as runnable canvas paths", () => {
   const projected = structuredClone(map);
   projected.revision = 4;
   projected.screens.start = {
@@ -220,6 +284,6 @@ test("projects canonical changes back without inventing verification evidence", 
     projected,
   );
   assert.deepEqual(metadata.positions.home, { x: 360, y: 48 });
-  assert.equal(metadata.graph?.transitions[0]?.review, undefined);
+  assert.equal(metadata.graph?.transitions[0]?.review?.status, "verified");
   assert.equal(metadata.graph?.flows[0]?.screenId, "start");
 });

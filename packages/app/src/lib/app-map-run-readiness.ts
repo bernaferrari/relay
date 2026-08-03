@@ -13,8 +13,22 @@ type AppMapRunSelection = {
   transitionId?: string | null;
 };
 
+function entryScreenId(graph: CanvasGraph): string | undefined {
+  const destinations = new Set(
+    graph.transitions.flatMap((transition) =>
+      transition.destination.kind === "screen" ? [transition.destination.screenId] : [],
+    ),
+  );
+  const flowStarts = [...new Set(graph.flows.map((flow) => flow.screenId))];
+  const roots = flowStarts.filter((screenId) => !destinations.has(screenId));
+  if (roots.length === 1) return roots[0];
+  return [...graph.flows].sort(
+    (left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id),
+  )[0]?.screenId;
+}
+
 function pathToScreen(graph: CanvasGraph, screenId: string): string[] | null {
-  const start = graph.flows[0]?.screenId;
+  const start = entryScreenId(graph);
   if (!start) return null;
   if (start === screenId) return [];
 
@@ -45,7 +59,7 @@ function pathToScreen(graph: CanvasGraph, screenId: string): string[] | null {
 }
 
 function inferredPath(graph: CanvasGraph): { path: string[] | null; reason?: string } {
-  const start = graph.flows[0]?.screenId;
+  const start = entryScreenId(graph);
   if (!start) return { path: null, reason: "Capture the entry screen first" };
 
   const path: string[] = [];

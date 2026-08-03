@@ -50,9 +50,9 @@ export function AppMapGroupsLayer(props: {
                   tabIndex={0}
                   data-app-map-group-id={group.id}
                   class={cn(
-                    "group/map-group absolute z-0 rounded-[14px] bg-[color-mix(in_srgb,var(--product-accent-soft)_34%,transparent)] outline outline-1 outline-[color-mix(in_srgb,var(--v2-border-border-strong)_48%,transparent)] transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_46%,transparent)] hover:outline-[var(--v2-border-border-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
+                    "group/map-group absolute z-0 rounded-[14px] bg-transparent outline outline-1 outline-transparent transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] hover:outline-[color-mix(in_srgb,var(--v2-border-border-strong)_58%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                     selected() &&
-                      "bg-[color-mix(in_srgb,var(--product-accent-soft)_54%,transparent)] outline-2 outline-[var(--text-interactive-base)] shadow-[0_10px_30px_rgb(0_0_0/5%)]",
+                      "bg-[color-mix(in_srgb,var(--product-accent-soft)_18%,transparent)] outline-2 outline-[var(--text-interactive-base)]",
                   )}
                   style={{
                     transform: `translate3d(${bounds().left}px, ${bounds().top}px, 0)`,
@@ -79,7 +79,12 @@ export function AppMapGroupsLayer(props: {
                     }
                   }}
                 >
-                  <header class="absolute top-3 left-3 flex h-7 max-w-[calc(100%-24px)] items-center gap-1.5">
+                  <header
+                    class={cn(
+                      "absolute top-2.5 left-2.5 flex h-7 max-w-[calc(100%-20px)] items-center gap-1.5 rounded-[7px] bg-[var(--map-control-surface)] px-2 opacity-0 shadow-[var(--map-elevation-control)] transition-opacity duration-150 group-hover/map-group:opacity-100 group-focus-within/map-group:opacity-100",
+                      selected() && "opacity-100",
+                    )}
+                  >
                     <Icon name="group" size={13} class="shrink-0 text-[var(--text-weak)]" />
                     <Show
                       when={props.renamingGroupId === group.id}

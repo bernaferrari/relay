@@ -89,11 +89,11 @@ test("invoke derives path, query, and method from the operation registry", async
     },
   );
 
-  await client.invoke("job.list", { full: false, limit: 12 });
+  await client.invoke("job.list", { limit: 12 });
   await client.invoke("job.get", { jobId: "abc" });
 
   assert.equal(requests[0]?.method, "GET");
-  assert.equal(requests[0]?.url, "https://relay.test/jobs?full=false&limit=12");
+  assert.equal(requests[0]?.url, "https://relay.test/jobs?limit=12");
   assert.equal(requests[1]?.url, "https://relay.test/jobs/abc");
 });
 

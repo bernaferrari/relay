@@ -781,24 +781,59 @@ export function AppMapWorkspace(props: {
       setCaseStackBusy(false);
     }
   };
-  const graphRunReadiness = createMemo(() =>
+  const baseGraphRunReadiness = createMemo(() =>
     appMapRunReadiness({
       graph: graph(),
-      recipeSteps: draft.steps(),
+      recipeSteps: [
+        ...draft.steps(),
+        ...Object.values(activeAppMap()?.connections ?? {}).flatMap((connection) =>
+          connection.actions.flatMap((action) => (action.kind === "recorded" ? action.steps : [])),
+        ),
+      ],
       selection: {
         screenId: selectedNodeId(),
         transitionId: selectedConnectionId(),
       },
     }),
   );
-  const runCanvasGraph = () => {
+  const runnableFlow = createMemo(() => {
+    const map = activeAppMap();
+    const path = baseGraphRunReadiness().transitionPath;
+    if (!map || !path?.length) return undefined;
+    return Object.values(map.flows).find(
+      (flow) =>
+        flow.connectionIds.length === path.length &&
+        flow.connectionIds.every((connectionId, index) => connectionId === path[index]),
+    );
+  });
+  const graphRunReadiness = createMemo(() => {
+    const readiness = baseGraphRunReadiness();
+    if (!readiness.ready || runnableFlow()) return readiness;
+    return {
+      ...readiness,
+      ready: false,
+      reason: "Select the last screen in a path to run that flow",
+      label: "Run flow" as const,
+    };
+  });
+  const runCanvasGraph = async () => {
     const appMap = activeAppMap();
-    const flow = appMap ? Object.values(appMap.flows)[0] : undefined;
+    const flow = runnableFlow();
     if (!appMap || !flow) {
       toast("Add and verify a connection before running this flow", "info");
       return;
     }
-    void server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
+    const serial = server.selectedDevice();
+    if (!serial) {
+      toast("Choose a device before running this flow", "info");
+      return;
+    }
+    await server.setSelectedDevice(serial);
+    if (!server.selectedLeaseId()) {
+      toast(server.liveCaptureIssue() || "This device is not available for control yet", "warning");
+      return;
+    }
+    await server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
   };
   const refreshMapScreenshots = () => {
     if (!graphRunReadiness().ready) {
@@ -806,7 +841,7 @@ export function AppMapWorkspace(props: {
       return;
     }
     toast("Replaying the flow to capture fresh screenshots", "info");
-    runCanvasGraph();
+    void runCanvasGraph();
   };
   const reusableBehaviors = createMemo(() =>
     server
@@ -1257,7 +1292,7 @@ export function AppMapWorkspace(props: {
       !props.captureStartOnReady ||
       loadedAppMapId() !== appMapId ||
       hasMap() ||
-      !canRecord() ||
+      !targetIsReady(selectedDevice(), server.health() === "online") ||
       startCaptureBusy()
     )
       return;
@@ -2224,7 +2259,9 @@ export function AppMapWorkspace(props: {
                       draft.steps()[node.representativeStepIndex],
                     ) || variantOrientationEvidence(activeAppMap(), node.id)
                   }
-                  isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
+                  isFlowStart={(node) =>
+                    !connections().some((connection) => connection.toScreenId === node.id)
+                  }
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
                   connectionRunState={(connectionId) =>
                     runProjection().transitions[connectionId]?.state

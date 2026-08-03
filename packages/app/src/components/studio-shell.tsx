@@ -353,6 +353,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       run: graphRunReadiness(),
       serverOnline: server.health() === "online",
       device: selectedDeviceReadiness(),
+      running: server.running(),
     }),
   );
   const graphBlockedReason = () => {
