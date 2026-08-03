@@ -1,10 +1,273 @@
 import type { CommandFlags } from '../../core/dispatch.ts';
-import type { ReplayPlanDigestMetadata } from '../../replay/plan-digest.ts';
-import type { ReplayScriptMetadata } from '@agent-device/ad-script';
-import type { DaemonResponse } from '../types.ts';
+import type {
+  DaemonInvokeFn,
+  DaemonRequest,
+  DaemonResponse,
+  SessionAction,
+  SessionState,
+} from '../types.ts';
+import type { SessionStore } from '../session-store.ts';
+import type { ReplayCoordinator } from '../session-replay-coordinator.ts';
 import { errorResponse } from './response.ts';
+import { buildReplayScriptPlatformFlags } from '../replay-device-selection.ts';
+import {
+  inspectAdReplay,
+  type AdReplayManifest,
+  type AdReplayVarSources,
+} from '@agent-device/ad-replay';
+import {
+  collectReplayShellEnv,
+  parseReplayCliEnvEntries,
+  readReplayCliEnvEntries,
+  readReplayShellEnvSource,
+  type ReplayScriptMetadata,
+} from '@agent-device/ad-script';
+import { resolveReplayFormat } from '../../replay/format.ts';
+import { buildReplayBuiltinVars } from './session-replay-vars.ts';
+import { runTypedMaestroReplayFile } from './session-replay-maestro-runtime.ts';
+import type { ReplayTestAttemptStepSink } from '@agent-device/replay-test';
 
-export function buildReplayMetadataFlags(
+/**
+ * #1555 P5 (decomposition): `runReplayScriptFile`'s (`session-replay-runtime.ts`) plan-side
+ * helpers — everything that inspects the script, resolves its `--from`/`--plan-digest` entry
+ * point, and routes a Maestro-format request, before any session-mutating work begins. Extracted
+ * verbatim; `buildReplayMetadataFlags` (below) was already here from the #1555 review pass — see
+ * its own comment for why it, alone among the digest/resume math, stayed daemon-side.
+ */
+
+/**
+ * `runReplayScriptFile`'s own parameter shape, named here (rather than derived at the call site
+ * via `Parameters<typeof runReplayScriptFile>`) so `routeMaestroReplay` below can reference it
+ * without importing back from `session-replay-runtime.ts` — that direction would be a cycle now
+ * that the Maestro routing decision lives in this module instead of alongside the function it
+ * routes for. `session-replay-runtime.ts` imports this type instead of restating the params.
+ */
+export type ReplayScriptFileParams = {
+  req: DaemonRequest;
+  sessionName: string;
+  logPath: string;
+  sessionStore: SessionStore;
+  tracePath?: string;
+  /**
+   * Per-attempt step sink supplied by the replay-test scheduler through its host (#1478 P3).
+   * Threaded alongside `tracePath` rather than read from request-global storage, so a direct
+   * `replay` simply has no sink and emits nothing.
+   */
+  onStep?: ReplayTestAttemptStepSink;
+  invoke: DaemonInvokeFn;
+};
+
+/**
+ * Routes a Maestro-format request to the typed Maestro engine, rejecting
+ * `--keep-session` (native-`.ad`-only lifecycle) and an active `.ad`
+ * `--save-script` repair boundary first. Returns `undefined` for a non-Maestro
+ * request so `runReplayScriptFile` continues down the native `.ad` path —
+ * extracted from `runReplayScriptFile` itself (fallow complexity) rather than
+ * split further, since every branch here is this one routing decision.
+ */
+export async function routeMaestroReplay(params: {
+  resolved: string;
+  req: DaemonRequest;
+  keepSession: boolean;
+  coordinator: ReplayCoordinator;
+  maestroParams: ReplayScriptFileParams;
+}): Promise<DaemonResponse | undefined> {
+  const { resolved, req, keepSession, coordinator, maestroParams } = params;
+  if (resolveReplayFormat(resolved, req.flags?.replayBackend) !== 'maestro') return undefined;
+  if (keepSession) {
+    return errorResponse(
+      'INVALID_ARGS',
+      '--keep-session is supported only for native .ad replay; Maestro YAML owns its lifecycle.',
+    );
+  }
+  if (coordinator.view()?.repairBoundary !== undefined) {
+    return errorResponse(
+      'INVALID_ARGS',
+      'This session has an active .ad --save-script repair run; finish it with replay --from or close before running Maestro YAML.',
+    );
+  }
+  return await runTypedMaestroReplayFile(maestroParams);
+}
+
+export type PreparedReplayPlan = {
+  replayReq: DaemonRequest;
+  actions: SessionAction[];
+  actionLines: number[];
+  actionSourcePaths: (string | undefined)[] | undefined;
+  planDigest: string;
+  preEntrySession: SessionState | undefined;
+  entryIndex: number;
+  /**
+   * `${VAR}` scope INPUTS — plain data, never a built `ReplayVarScope`
+   * (#1555 review P1, "move variable semantics/planning behind the replay
+   * entrypoint"): `runAdReplay` builds the scope and performs every
+   * interpolation itself now.
+   */
+  varSources: AdReplayVarSources;
+  actionTracePath: string | undefined;
+};
+
+export function prepareReplayPlan(params: {
+  req: DaemonRequest;
+  sessionName: string;
+  sessionStore: SessionStore;
+  tracePath: string | undefined;
+  resolved: string;
+  coordinator: ReplayCoordinator;
+}): { ok: true; value: PreparedReplayPlan } | { ok: false; response: DaemonResponse } {
+  const { req, sessionName, sessionStore, tracePath, resolved, coordinator } = params;
+  const backendRejection = validateReplayBackendFlag(req);
+  if (backendRejection) return { ok: false, response: backendRejection };
+
+  const { manifest, replayReq } = inspectReplayPlanManifest(req, resolved);
+  const { metadata, actions, actionLines, actionSourcePaths, planDigest } = manifest;
+  const preEntrySession = sessionStore.get(sessionName);
+  const entryIndexResult = resolveReplayPlanEntryIndex({
+    req,
+    coordinator,
+    manifest,
+    preEntrySession,
+  });
+  if (!entryIndexResult.ok) return { ok: false, response: entryIndexResult.response };
+
+  return {
+    ok: true,
+    value: {
+      replayReq,
+      actions,
+      actionLines,
+      actionSourcePaths,
+      planDigest,
+      preEntrySession,
+      entryIndex: entryIndexResult.value,
+      varSources: buildPreparedReplayVarSources({
+        req,
+        replayReq,
+        sessionName,
+        resolved,
+        metadata,
+      }),
+      actionTracePath: tracePath ?? preEntrySession?.trace?.outPath,
+    },
+  };
+}
+
+/**
+ * #1555 P1: the authoritative rejection for an unrecognized --replay-backend
+ * value. Extraction moved `.ad` inspection to `inspectAdReplay`, which never
+ * receives flags — restoring the check here (the one caller of
+ * `inspectAdReplay` that reaches this point with a non-Maestro request)
+ * matches `src/compat/replay-input.ts`'s `parseReplayInput` exactly, byte for
+ * byte, before any plan/session work begins. `replayBackend: 'maestro'` still
+ * passes here because `runReplayScriptFile` has already routed a real
+ * Maestro-format request to `runTypedMaestroReplayFile` above; only a
+ * stray/unknown value reaches this branch.
+ */
+function validateReplayBackendFlag(req: DaemonRequest): DaemonResponse | undefined {
+  if (req.flags?.replayBackend && req.flags.replayBackend !== 'maestro') {
+    return errorResponse(
+      'INVALID_ARGS',
+      `Unsupported replay backend "${req.flags.replayBackend}".`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * #1555 P1 (digest/resume behind runAdReplay): `digestFlags` is the raw
+ * request-level platform/target override — `inspectAdReplay` applies the
+ * SAME precedence (flag, then a script-declared platform, then the `context`
+ * header) internally that this call site used to apply itself via
+ * `readEffectiveReplayPlanDigestMetadata(replayReq.flags)`.
+ */
+function inspectReplayPlanManifest(
+  req: DaemonRequest,
+  resolved: string,
+): { manifest: AdReplayManifest; replayReq: DaemonRequest } {
+  const manifest = inspectAdReplay(resolved, {
+    platform: req.flags?.platform,
+    target: req.flags?.target,
+  });
+  const replayReq = applyReplayMetadata(
+    { ...req, flags: buildReplayScriptPlatformFlags(req.flags, manifest.actions) },
+    manifest.metadata,
+  );
+  return { manifest, replayReq };
+}
+
+function resolveReplayPlanEntryIndex(params: {
+  req: DaemonRequest;
+  coordinator: ReplayCoordinator;
+  manifest: AdReplayManifest;
+  preEntrySession: SessionState | undefined;
+}): { ok: true; value: number } | { ok: false; response: DaemonResponse } {
+  const { req, coordinator, manifest, preEntrySession } = params;
+  const entryIndex = manifest.resolveEntryIndex({
+    from: req.flags?.replayFrom,
+    digest: req.flags?.replayPlanDigest,
+    pendingRecordAndHeal: coordinator.view()?.pendingRecordAndHeal,
+    sessionActionsLength: preEntrySession?.actions.length ?? 0,
+  });
+  if (!entryIndex.ok) {
+    return { ok: false, response: errorResponse('INVALID_ARGS', entryIndex.message) };
+  }
+  return { ok: true, value: entryIndex.value };
+}
+
+function applyReplayMetadata(
+  req: DaemonRequest,
+  metadata: AdReplayManifest['metadata'],
+): DaemonRequest {
+  if (!metadata.platform && !metadata.target) return req;
+  return { ...req, flags: buildReplayMetadataFlags(req.flags, metadata) };
+}
+
+/**
+ * The `${VAR}` scope's raw INPUTS — builtins (this request's session/
+ * platform/target/device/artifacts-dir), the script's own `env` header, the
+ * shell's `AD_VAR_*` entries, and `-e KEY=VALUE` CLI entries — read here,
+ * once, from the request/process. `runAdReplay` is the one place these are
+ * merged into an actual scope and used to resolve an action (#1555 review
+ * P1); this function stops at collecting the plain data.
+ */
+function buildPreparedReplayVarSources(params: {
+  req: DaemonRequest;
+  replayReq: DaemonRequest;
+  sessionName: string;
+  resolved: string;
+  metadata: AdReplayManifest['metadata'];
+}): AdReplayVarSources {
+  const { req, replayReq, sessionName, resolved, metadata } = params;
+  return {
+    builtins: buildReplayBuiltinVars({
+      req: replayReq,
+      sessionName,
+      metadata,
+      resolvedPath: resolved,
+    }),
+    fileEnv: metadata.env,
+    shellEnv: collectReplayShellEnv(readReplayShellEnvSource(req.flags?.replayShellEnv)),
+    cliEnv: parseReplayCliEnvEntries(readReplayCliEnvEntries(req.flags?.replayEnv)),
+  };
+}
+
+/**
+ * #1555 review P1 ("digest/resume must also occur behind runAdReplay"): the
+ * `--from`/`--plan-digest` resume-point math (`resolveReplayEntryIndex`) and
+ * the digest-metadata reader that fed it (`readEffectiveReplayPlanDigestMetadata`,
+ * `PendingRecordAndHeal`) moved into `@agent-device/ad-replay` —
+ * `inspectAdReplay`'s manifest now exposes the digest as `planDigest` and the
+ * resume math as a `resolveEntryIndex` closure, both computed from the SAME
+ * effective platform/target precedence this file used to apply itself. Only
+ * `buildReplayMetadataFlags` stays here: it builds the REQUEST's flags (used
+ * throughout `runReplayScriptFile`, not just for the digest), which is a
+ * daemon/wire concern the manifest has no reason to own.
+ *
+ * Module-private as of the #1555 P5 decomposition: its one caller,
+ * `applyReplayMetadata`, now lives in this same file (it used to live in
+ * `session-replay-runtime.ts`).
+ */
+function buildReplayMetadataFlags(
   flags: CommandFlags | undefined,
   metadata: ReplayScriptMetadata,
 ): CommandFlags {
@@ -17,182 +280,4 @@ export function buildReplayMetadataFlags(
       ? { target: metadata.target }
       : {}),
   };
-}
-
-/** The digest binds the same platform/target values the replay invokes with. */
-export function readEffectiveReplayPlanDigestMetadata(
-  flags: CommandFlags | undefined,
-): ReplayPlanDigestMetadata {
-  return {
-    platform: typeof flags?.platform === 'string' ? flags.platform : undefined,
-    target: typeof flags?.target === 'string' ? flags.target : undefined,
-  };
-}
-
-type ReplayEntryIndexResult = { ok: true; value: number } | { ok: false; response: DaemonResponse };
-
-/**
- * The session-side state that gates an EMPTY-TAIL resume (`--from actionCount
- * + 1`). Stamped for `record-and-heal`, and per #1262 also for
- * `caution`/`manual`'s record-and-heal-shaped alternate repair (their own
- * unshifted `resume.from` is unaffected by this watermark).
- */
-export type PendingRecordAndHeal = { expectedFrom: number; actionsCountAtDivergence: number };
-
-/**
- * Resolves `--from`/`--plan-digest` into a 0-based loop entry index before
- * any device action. `--from` is 1-based and matches divergence step indices.
- *
- * `pendingRecordAndHeal`/`sessionActionsLength` gate the ONE ordinal beyond
- * the plan's end (`actionCount + 1`): ADR 0012 decision 6, R2's `record-and-heal`
- * repair — and, per #1262, `caution`/`manual`'s record-and-heal-SHAPED
- * alternate repair — resumes past the plan's LAST step once the agent
- * performs the diverged step's intent as a recorded action, and that resume
- * must execute zero device actions before reaching the normal completion
- * path. That allowance is scoped to the EXACT session + target that actually
- * produced it (the `ReplayCoordinator`'s `stampCorrectiveWatermark`, `session-replay-coordinator.ts`, #1478 P4b),
- * and only once a new action proves the corrective press happened — never a
- * blanket "one past the end is fine" for any session, which would let an
- * unrelated or blind `--from actionCount + 1` silently skip the plan's tail
- * and commit an unfinished repair. `caution`/`manual`'s OWN `resume.from`
- * (the failed step's own index, unshifted) stays legal unconditionally
- * regardless of this watermark — it is always `<= actionCount`, never the
- * one-past-the-end ordinal this gate concerns.
- */
-export function resolveReplayEntryIndex(
-  flags: CommandFlags | undefined,
-  actionCount: number,
-  planDigest: string,
-  pendingRecordAndHeal: PendingRecordAndHeal | undefined,
-  sessionActionsLength: number,
-): ReplayEntryIndexResult {
-  const from = flags?.replayFrom;
-  const digest = flags?.replayPlanDigest;
-  if (from === undefined && digest === undefined) return { ok: true, value: 0 };
-  if (from === undefined || digest === undefined) {
-    return invalidReplayEntryIndex(
-      'replay --from requires --plan-digest (and --plan-digest requires --from).',
-    );
-  }
-  const message = validateReplayResumeRequest({
-    from,
-    digest,
-    planDigest,
-    actionCount,
-    pendingRecordAndHeal,
-    sessionActionsLength,
-  });
-  return message ? invalidReplayEntryIndex(message) : { ok: true, value: from - 1 };
-}
-
-function invalidReplayEntryIndex(message: string): ReplayEntryIndexResult {
-  return { ok: false, response: errorResponse('INVALID_ARGS', message) };
-}
-
-/** A single sub-check of a `--from` resume request; `undefined` means "no objection". */
-type ReplayResumeCheck = () => string | undefined;
-
-function validateReplayResumeRequest(params: {
-  from: number;
-  digest: string;
-  planDigest: string;
-  actionCount: number;
-  pendingRecordAndHeal: PendingRecordAndHeal | undefined;
-  sessionActionsLength: number;
-}): string | undefined {
-  const { from, digest, planDigest, actionCount, pendingRecordAndHeal, sessionActionsLength } =
-    params;
-  const checks: ReplayResumeCheck[] = [
-    () => describeOutOfRangeResumeFrom({ from, actionCount, pendingRecordAndHeal }),
-    () => describeUnperformedRecordAndHeal({ from, pendingRecordAndHeal, sessionActionsLength }),
-    () => describeStaleResumeDigest(digest, planDigest),
-  ];
-  for (const check of checks) {
-    const message = check();
-    if (message) return message;
-  }
-  return undefined;
-}
-
-/**
- * `actionCount + 1` (one past the plan's end) is a legal EMPTY-TAIL resume
- * ONLY when it matches THIS session's own record-and-heal-shaped divergence
- * watermark (the `ReplayCoordinator`'s `stampCorrectiveWatermark`,
- * `session-replay-coordinator.ts`, #1478 P4b — stamped for `record-and-heal`, and per #1262 also for `caution`/`manual`'s
- * recorded-action alternate) — never a blanket "one past the end is fine" for
- * any session or repair kind. Absent a matching watermark, `actionCount + 1`
- * is exactly as out-of-range as any other ordinal beyond the plan.
- */
-function describeOutOfRangeResumeFrom(params: {
-  from: number;
-  actionCount: number;
-  pendingRecordAndHeal: PendingRecordAndHeal | undefined;
-}): string | undefined {
-  const { from, actionCount, pendingRecordAndHeal } = params;
-  const isAuthorizedEmptyTail =
-    from === actionCount + 1 &&
-    pendingRecordAndHeal !== undefined &&
-    pendingRecordAndHeal.expectedFrom === from;
-  const inRange =
-    Number.isInteger(from) && from >= 1 && (from <= actionCount || isAuthorizedEmptyTail);
-  return inRange
-    ? undefined
-    : `replay --from ${from} is out of range for a ${actionCount}-step plan.`;
-}
-
-/**
- * A `from` matching a pending record-and-heal-shaped watermark — in-range
- * (mid-plan, `record-and-heal` only) or the empty-tail boundary the range
- * check above authorizes (`record-and-heal`, or per #1262 also
- * `caution`/`manual`'s alternate repair, which is ONLY ever stamped at that
- * boundary — see the `ReplayCoordinator`'s `stampCorrectiveWatermark`,
- * `session-replay-coordinator.ts`) — requires proof the agent actually performed
- * the diverged step: the session's recorded action count must have grown
- * since the divergence. Without that proof, this would silently resume past
- * an unrepaired step instead of rejecting. `caution`/`manual`'s own
- * `resume.from` stays at the failed step unchanged and is never subject to
- * this check (it never matches `expectedFrom`, which only ever targets
- * `failedIndex + 1`), so the message below is intentionally hint-neutral.
- *
- * #1271 stage 2 (ADR 0012 amendment): this same growth check is now also the
- * repair-segment empty-heal guard. Observation-only actions
- * (`snapshot`/`get`/`is`/`find`) are, by default, excluded from
- * `session.actions` while repair-armed (`isExcludedRepairSegmentObservation`,
- * `session-action-recorder.ts`), so a repair segment containing ONLY
- * unrecorded diagnostic reads never grows `sessionActionsLength` either —
- * this check refuses it exactly as it already refused "no corrective press
- * happened," converting the corrective-read case's one silent-failure mode
- * (an excluded read silently missing from the heal) into this same loud
- * rejection. The message therefore names `--record` alongside the existing
- * `--no-record` mention, since the missing corrective action may have been a
- * read rather than a press.
- */
-function describeUnperformedRecordAndHeal(params: {
-  from: number;
-  pendingRecordAndHeal: PendingRecordAndHeal | undefined;
-  sessionActionsLength: number;
-}): string | undefined {
-  const { from, pendingRecordAndHeal, sessionActionsLength } = params;
-  if (
-    pendingRecordAndHeal?.expectedFrom !== from ||
-    sessionActionsLength !== pendingRecordAndHeal.actionsCountAtDivergence
-  ) {
-    return undefined;
-  }
-  return (
-    `replay --from ${from} continues a record-and-heal-shaped repair, but no corrective action was ` +
-    "recorded in this repair segment; press the correct control via a blessed @ref from the divergence's " +
-    'screen.refs (recorded, no --no-record) — or, if your corrective action was a read ' +
-    '(get/is/find/snapshot), re-run it with --record so it lands in the heal — before resuming with ' +
-    `--from ${from}.`
-  );
-}
-
-function describeStaleResumeDigest(digest: string, planDigest: string): string | undefined {
-  if (digest === planDigest) return undefined;
-  return (
-    'replay --plan-digest does not match the current plan digest; the script, its includes, or its ' +
-    'platform-conditioned expansion changed since the divergence report was generated. Run a fresh full ' +
-    'replay to get a new digest.'
-  );
 }

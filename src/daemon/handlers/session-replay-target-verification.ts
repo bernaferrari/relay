@@ -1,15 +1,21 @@
 import type { ResponseLevel } from '@agent-device/kernel/contracts';
 import type { DaemonError } from '@agent-device/kernel/errors';
+import type { Platform, PublicPlatform } from '@agent-device/kernel/device';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { displayLabel, formatRole } from '../../snapshot/snapshot-lines.ts';
-import { formatDivergenceActionLabel } from '@agent-device/ad-script';
-import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
 import {
-  collectReplayScrubbableVarValues,
-  resolveReplayAction,
-  type ReplayVarScope,
-} from '../../replay/vars.ts';
-import { annotationLocalIdentity, type LocalIdentity } from '../../replay/target-identity.ts';
+  annotationLocalIdentity,
+  formatDivergenceActionLabel,
+  type LocalIdentity,
+} from '@agent-device/ad-script';
+import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
+import type {
+  AdReplayScrubValue,
+  AdReplayTargetBindingEvidence,
+  AdReplayTargetClassification,
+  AdReplayVerificationEntry,
+  ReplaySelectorPort,
+} from '@agent-device/ad-replay';
 import {
   createReplayDivergenceSanitizer,
   type ReplayDivergence,
@@ -21,21 +27,20 @@ import {
   readNodeStructuralDenotation,
   REPLAY_TARGET_GUARD_MISMATCH_REASON,
   WAIT_LANDMARK_MISMATCH_REASON,
-  type ReplayTargetGuardDenotation,
 } from '../../replay/target-identity-node.ts';
 import { resolveTargetIdentityVerification } from '../../core/command-descriptor/registry.ts';
 import { parseWaitPositionals } from '../../core/wait-positionals.ts';
-import type { DaemonResponse, SessionAction } from '../types.ts';
+import type { DaemonResponse, SessionAction, SessionState } from '../types.ts';
 import type { SessionStore } from '../session-store.ts';
 import type { ReplayResumeStamper } from '../session-replay-coordinator.ts';
 import type { InternalObservationEvidence } from '../internal-observation.ts';
 import { boundedLocalIdentity } from '../session-target-evidence.ts';
-import { tryParseSelectorChain } from '../../selectors/index.ts';
 import {
   buildDivergenceScreen,
   captureDivergenceObservation,
   resolveSuggestionMatchingConfig,
   toReplayRepairHintCapture,
+  type DivergenceObservation,
 } from './session-replay-divergence.ts';
 import { boundReplayDivergenceForSession } from './session-replay-divergence-publication.ts';
 import {
@@ -44,48 +49,58 @@ import {
 } from './session-replay-repair-hint.ts';
 import { buildReplayDivergenceFailureResponse } from './session-replay-runtime-failure-response.ts';
 import { buildAndPersistReplayDivergenceResume } from './session-replay-resume.ts';
-import {
-  classifyReplayTarget,
-  firstAncestryMismatch,
-  identityFieldMismatches,
-} from './session-replay-target-classification.ts';
+import { classifyReplayTarget } from './session-replay-target-classification.ts';
 import { extractReplayTargetToken, readRefLabel } from './session-replay-target-token.ts';
 
 // ---------------------------------------------------------------------------
-// Daemon-level orchestration: capture, session, wire shaping.
+// #1555 review R3 ("target verification must happen INSIDE the engine"): the
+// verify-then-dispatch DECISION flow (the four `@agent-device/ad-replay`
+// policy functions, `planPostResolutionTargetVerification` /
+// `planPreDispatchTargetVerification` / `deriveReplayTargetGuardMismatchEvidence`
+// / `deriveWaitLandmarkMismatchEvidence`) lives entirely inside the engine's
+// step loop (`packages/ad-replay/src/internal/verify-dispatch.ts`,
+// `verifyAndDispatchStep`) — this module never imports those four DECISION
+// functions. It does import the package's neutral VOCABULARY types
+// (`AdReplayVerificationEntry`/`AdReplayTargetClassification`/
+// `AdReplayTargetBindingEvidence`, #1555 structural-quality review, "typed
+// façade replaces the zero-type rule") so the values it builds/routes are the
+// engine's own shapes, not a hand-shadowed daemon twin. This module
+// implements only the narrow `AdReplayStepRuntime` capabilities the engine
+// loop drives:
+//
+//  - `resolveTargetVerificationEntry` — routing (registry lookup, session
+//    read, wait-form parse, token extraction) for `beginTargetVerification`.
+//  - `classifyPreDispatchTarget` — tree matching for `classifyTarget`.
+//  - `buildRecordedUnverifiableFailureResponse` /
+//    `buildTargetBindingFailureResponse` /
+//    `buildPostDispatchTargetBindingFailureResponse` — capture + wire-shaping
+//    for the `build*Failure` capabilities.
+//  - `isReplayTargetGuardMismatchResponse` / `isWaitLandmarkMismatchResponse`
+//    — post-dispatch refusal-marker detection for `dispatchStep`.
+//
+// `session-replay-runtime-engine-adapter.ts`'s `createAdReplayStepRuntime` is
+// the thin adapter that wires these into the `AdReplayStepRuntime` object and
+// supplies the per-request context (resume stamper, artifact accumulator,
+// side-map response holder) these functions need but do not own — as of the
+// #1555 review's second pass, that context no longer includes a
+// `ReplayVarScope`: the engine builds and owns the scope itself.
 // ---------------------------------------------------------------------------
 
 /**
- * Post-resolution guard payload for a verified action: dispatch re-resolves
- * with its own occlusion/visibility guards, and its winner must carry
- * `expected` (the verified member's identity) or the interaction layer
- * refuses pre-action (`assertExpectedResolvedTarget`, resolution.ts).
- * `matchCount` is verification's recorded-selector match count, carried so
- * the resulting identity-mismatch divergence satisfies decision 3's
- * matchCount presence rule.
+ * #1555 structural-quality review ("unify on the engine's types"): this
+ * module used to declare its own `ReplayVerifiedTargetGuard` — structurally
+ * identical to (but a separate nominal declaration from)
+ * `@agent-device/ad-replay`'s `AdReplayVerifiedTargetGuard` — so it now
+ * imports the engine's type directly instead of maintaining a shadow copy
+ * that could silently drift. `ReplayTargetGuardDenotation`
+ * (`target-identity-node.ts`) stays the concrete producer type for
+ * `expected`; it is structurally assignable to `AdReplayVerifiedTargetGuard['expected']`
+ * (both `{ identity: LocalIdentity; structural: { documentOrder: number;
+ * sibling: number } }`) without a name-level dependency between the two
+ * files.
  */
-export type ReplayVerifiedTargetGuard = {
-  expected: ReplayTargetGuardDenotation;
-  matchCount: number;
-};
 
-export type ReplayTargetVerificationOutcome =
-  | {
-      verified: true;
-      guard?: ReplayVerifiedTargetGuard;
-      /**
-       * #1349 post-resolution phase (`wait`): the recorded landmark to thread
-       * into the command's own resolution (`internal.replayLandmarkGuard`).
-       * `verified: true` here means only "nothing to refuse pre-dispatch" —
-       * the identity check runs inside the wait's polling loop, and the step
-       * loop converts its timeout refusal into an identity-mismatch
-       * divergence (`buildWaitLandmarkMismatchResponse`).
-       */
-      deferredLandmark?: TargetAnnotationV1;
-    }
-  | { verified: false; response: DaemonResponse };
-
-type TargetBindingDivergenceContext = {
+export type TargetBindingDivergenceContext = {
   recorded: TargetAnnotationV1;
   action: SessionAction;
   step: number;
@@ -98,7 +113,15 @@ type TargetBindingDivergenceContext = {
   /** #1478 P4b: the request's bound resume-stamping capability — never a second-constructed coordinator. */
   resumeStamper: ReplayResumeStamper;
   responseLevel: ResponseLevel | undefined;
-  scrubVars: ReturnType<typeof collectReplayScrubbableVarValues>;
+  /**
+   * #1555 structural-quality review ("scrub values — one name"): the
+   * engine's own `AdReplayScrubValue` shape — never a second, separately-
+   * named `ReturnType<typeof collectReplayScrubbableVarValues>` derivation
+   * for the identical concept. Readonly-compatible with the engine's
+   * `readonly AdReplayScrubValue[]` capability parameters, so no daemon call
+   * site needs a `[...scrubVars]` copy to satisfy this field.
+   */
+  scrubVars: readonly AdReplayScrubValue[];
   /** ADR 0012 step 5: the full top-level plan + its digest, for `resume`. */
   planActions: SessionAction[];
   planDigest: string;
@@ -109,8 +132,8 @@ type TargetBindingDivergenceBuilt = {
   kind: ReplayDivergenceTargetBindingKind;
   matchCount: number | undefined;
   observed: LocalIdentity | undefined;
-  candidateNodes: SnapshotNode[];
-  mismatches: string[];
+  candidateNodes: readonly SnapshotNode[];
+  mismatches: readonly string[];
   causeCode: string;
   causeMessage: string;
   causeHint?: string;
@@ -210,88 +233,79 @@ function buildTargetBindingDivergenceResponse(
   });
 }
 
-type ReplayTargetDivergenceParams = {
-  action: SessionAction;
-  scope: ReplayVarScope;
-  sourcePath: string;
-  sourceLine: number;
-  replayPath: string;
-  step: number;
+/**
+ * #1555 structural-quality review ("make the engine evidence types
+ * readonly-compatible with daemon consumers so no copy translator is
+ * needed"): this module used to declare its own `TargetBindingFailureEvidence`
+ * — structurally identical to `@agent-device/ad-replay`'s
+ * `AdReplayTargetBindingEvidence` except for mutable vs. readonly array
+ * fields — so a `toDaemonEvidence` translator in
+ * `session-replay-runtime-engine-adapter.ts` had to copy every call. Every
+ * builder below now accepts the engine's own (readonly) evidence type
+ * directly; `TargetBindingDivergenceBuilt` above is readonly-compatible too,
+ * so the adapter passes the engine's value straight through.
+ */
+
+/** Assembles a target-binding divergence from already-computed `evidence` and a capture `observation`. */
+export function buildTargetBindingFailureResponse(
+  context: TargetBindingDivergenceContext,
+  evidence: AdReplayTargetBindingEvidence,
+  observation: DivergenceObservation,
+): DaemonResponse {
+  const sanitize = createReplayDivergenceSanitizer(context.scrubVars);
+  return buildTargetBindingDivergenceResponse(context, {
+    kind: evidence.kind,
+    matchCount: evidence.matchCount,
+    observed: evidence.observed,
+    candidateNodes: evidence.candidateNodes,
+    mismatches: evidence.mismatches,
+    causeCode: evidence.causeCode,
+    causeMessage: evidence.causeMessage,
+    ...(evidence.causeHint !== undefined ? { causeHint: evidence.causeHint } : {}),
+    screen: buildDivergenceScreen(observation, sanitize),
+    publicationEvidence: publicationEvidenceFrom(observation),
+    repairCapture: toReplayRepairHintCapture(observation),
+  });
+}
+
+async function captureFreshObservation(params: {
+  session: SessionState | undefined;
   sessionName: string;
   sessionStore: SessionStore;
-  /** #1478 P4b: the request's bound resume-stamping capability — never a second-constructed coordinator. */
-  resumeStamper: ReplayResumeStamper;
   logPath: string;
-  artifactPaths: string[];
-  responseLevel: ResponseLevel | undefined;
-  planActions: SessionAction[];
-  planDigest: string;
-  signal?: AbortSignal;
-};
+  action: SessionAction;
+  unavailableHint: string;
+}): Promise<DivergenceObservation> {
+  const { session, sessionName, sessionStore, logPath, action, unavailableHint } = params;
+  return session
+    ? await captureDivergenceObservation({ session, sessionName, sessionStore, logPath, action })
+    : { state: 'unavailable', reason: 'no-session', hint: unavailableHint };
+}
 
-export async function verifyReplayActionTarget(
-  params: ReplayTargetDivergenceParams,
-): Promise<ReplayTargetVerificationOutcome> {
-  const {
-    action,
-    scope,
-    sourcePath,
-    sourceLine,
-    replayPath,
-    step,
-    sessionName,
-    sessionStore,
-    resumeStamper,
-    logPath,
-    artifactPaths,
-    responseLevel,
-    planActions,
-    planDigest,
-    signal,
-  } = params;
-
-  const recorded = action.targetEvidence;
-  if (!recorded) return { verified: true };
-
-  const session = sessionStore.get(sessionName);
-  if (!session) return { verified: true };
-
-  // Resolved ONLY to extract the match token below — never serialized onto
-  // the wire (the response is always built from the ORIGINAL `action`, like
-  // every other replay divergence, so an expanded `${VAR}` never leaks
-  // through an un-scrubbed positional).
-  const resolvedAction = resolveReplayAction(action, scope, { file: sourcePath, line: sourceLine });
-
-  const scrubVars = collectReplayScrubbableVarValues(scope);
-  const sanitize = createReplayDivergenceSanitizer(scrubVars);
-  const context: TargetBindingDivergenceContext = {
-    recorded,
-    action,
-    step,
-    sourcePath,
-    sourceLine,
-    replayPath,
-    artifactPaths,
-    sessionName,
-    sessionStore,
-    resumeStamper,
-    responseLevel,
-    scrubVars,
-    planActions,
-    planDigest,
-    signal,
-  };
-  const buildRecordedUnverifiableResponse = async (): Promise<DaemonResponse> => {
-    // Decision 3 path 1: a recorded-`unverifiable` annotation fires before
-    // any resolution — matchCount is omitted (never computed).
-    const observation = await captureDivergenceObservation({
-      session,
-      sessionName,
-      sessionStore,
-      logPath,
-      action,
-    });
-    return buildTargetBindingDivergenceResponse(context, {
+/**
+ * Decision 3 path 1: a recorded-`unverifiable` annotation fires before any
+ * resolution — matchCount is omitted (never computed). Its own fresh capture,
+ * independent of any earlier pre-dispatch capture (this path never reaches
+ * one).
+ */
+export async function buildRecordedUnverifiableFailureResponse(
+  context: TargetBindingDivergenceContext,
+  params: {
+    session: SessionState | undefined;
+    sessionName: string;
+    sessionStore: SessionStore;
+    logPath: string;
+    action: SessionAction;
+  },
+): Promise<DaemonResponse> {
+  const observation = await captureFreshObservation({
+    ...params,
+    unavailableHint:
+      'The session closed before a screen could be captured to verify the recorded target evidence.',
+  });
+  return buildTargetBindingFailureResponse(
+    context,
+    {
       kind: 'identity-unverifiable',
       matchCount: undefined,
       observed: undefined,
@@ -300,83 +314,126 @@ export async function verifyReplayActionTarget(
       causeCode: 'IDENTITY_UNVERIFIABLE',
       causeMessage:
         'The recorded target evidence could not verify itself when it was captured (a structural capture anomaly), so replay cannot trust it before acting.',
-      screen: buildDivergenceScreen(observation, sanitize),
-      publicationEvidence: publicationEvidenceFrom(observation),
-      repairCapture: toReplayRepairHintCapture(observation),
-    });
-  };
+    },
+    observation,
+  );
+}
 
-  // #1349 post-resolution phase (`wait`): NEVER the generic pre-dispatch
-  // resolution below — an absent landmark is a wait's expected starting
-  // condition, so refusing on the current screen would break polling. Only
-  // path 1 (recorded-`unverifiable`, no resolution involved) refuses up
-  // front; a verifiable landmark is deferred into the wait's own loop.
+/**
+ * Post-dispatch identity-mismatch shaping (the guard mismatch and wait's
+ * landmark mismatch): its own FRESH capture — the screen may have changed
+ * since dispatch, so this never reuses the pre-dispatch capture.
+ */
+export async function buildPostDispatchTargetBindingFailureResponse(
+  context: TargetBindingDivergenceContext,
+  evidence: AdReplayTargetBindingEvidence,
+  params: {
+    session: SessionState | undefined;
+    sessionName: string;
+    sessionStore: SessionStore;
+    logPath: string;
+    action: SessionAction;
+  },
+): Promise<DaemonResponse> {
+  const observation = await captureFreshObservation({
+    ...params,
+    unavailableHint: 'The session closed before a post-failure screen could be captured.',
+  });
+  return buildTargetBindingFailureResponse(context, evidence, observation);
+}
+
+function publicationEvidenceFrom(
+  observation: DivergenceObservation,
+): InternalObservationEvidence | undefined {
+  return observation.state === 'available' ? observation.evidence : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// `beginTargetVerification` routing: which verification phase (if any) one
+// step's recorded target evidence enters. Mirrors the pre-#1555-R3 daemon
+// orchestrator's own routing exactly — only called when
+// `action.targetEvidence` is present (the engine checks that itself).
+//
+// #1555 structural-quality review ("unify on the engine's types"): returns
+// `@agent-device/ad-replay`'s own `AdReplayVerificationEntry` directly — this
+// module used to declare a separate, structurally-identical
+// `TargetVerificationEntry`.
+// ---------------------------------------------------------------------------
+
+/**
+ * #1349 post-resolution phase (`wait`): NEVER the generic pre-dispatch
+ * resolution — an absent landmark is a wait's expected starting condition.
+ * Otherwise the ordinary pre-dispatch gate: the resolved-target token (scope
+ * var-substituted, matching what the real dispatch would resolve) and the
+ * session's platform.
+ *
+ * #1555 review P1 (second pass, "move variable semantics/planning behind the
+ * replay entrypoint"): `resolvedAction` arrives already interpolated — the
+ * engine's own ONE resolution of this step (`runAdReplay`), never a second,
+ * daemon-side `resolveReplayAction` call over a `scope` this module used to
+ * hold. `action` (the recorded original) is used only for the command-kind
+ * check below; `resolvedAction` is used only to extract the match
+ * token/wait-form below, never serialized onto the wire (a target-binding
+ * response is always built from the ORIGINAL `action`, like every other
+ * replay divergence, so an expanded `${VAR}` never leaks through an
+ * un-scrubbed positional).
+ */
+export function resolveTargetVerificationEntry(params: {
+  action: SessionAction;
+  resolvedAction: SessionAction;
+  sessionName: string;
+  sessionStore: SessionStore;
+  port: ReplaySelectorPort;
+}): AdReplayVerificationEntry {
+  const { action, resolvedAction, sessionName, sessionStore, port } = params;
+  const session = sessionStore.get(sessionName);
+  if (!session) return { kind: 'inactive' };
   if (resolveTargetIdentityVerification(action.command) === 'post-resolution') {
     const parsed = parseWaitPositionals(resolvedAction.positionals ?? []);
-    // Only a selector wait names a landmark; an annotation on any other wait
-    // form is inert, like an old reader.
-    if (parsed?.kind !== 'selector') return { verified: true };
-    if (recorded.verification === 'unverifiable') {
-      return { verified: false, response: await buildRecordedUnverifiableResponse() };
-    }
-    return { verified: true, deferredLandmark: recorded };
+    return { kind: 'post-resolution', isSelectorWait: parsed?.kind === 'selector' };
   }
-
-  const token = extractReplayTargetToken(resolvedAction);
-  if (token === undefined) return { verified: true };
-  if (!token.startsWith('@') && !tryParseSelectorChain(token)) {
+  return {
+    kind: 'pre-dispatch',
     // A malformed recorded selector is not this module's concern — the real
     // dispatch will parse (and fail) it the same way an unannotated action
-    // would.
-    return { verified: true };
-  }
+    // would; `extractReplayTargetToken` returning a token here is not proof
+    // it parses (the engine's pre-dispatch plan runs that check itself).
+    token: extractReplayTargetToken(resolvedAction, port),
+    platform: session.device.platform,
+  };
+}
 
-  if (recorded.verification === 'unverifiable') {
-    return { verified: false, response: await buildRecordedUnverifiableResponse() };
-  }
+// ---------------------------------------------------------------------------
+// `classifyTarget`: resolves the recorded target against an already-captured
+// tree using the SAME lookup/matching a real dispatch would.
+//
+// #1555 structural-quality review ("unify on the engine's types"): returns
+// `@agent-device/ad-replay`'s own `AdReplayTargetClassification` directly —
+// this module used to declare a separate, structurally-identical
+// `TargetClassificationOutcome` (with its own `ReplayVerifiedTargetGuard`
+// for the verified branch).
+// ---------------------------------------------------------------------------
 
-  // #1385: this is the pre-dispatch gate a step right after `open --relaunch`
-  // can race — the app may still be launching/mounting when this capture
-  // lands, producing a transient `capture-failed` / `sparse-snapshot`
-  // verdict that is not a real divergence. Bounded retry rides out that
-  // transition instead of failing closed on the first unlucky capture.
-  const observation = await captureDivergenceObservation({
-    session,
-    sessionName,
-    sessionStore,
-    logPath,
-    action,
-    retryLaunchRace: true,
-  });
-  if (observation.state !== 'available') {
-    return {
-      verified: false,
-      response: buildTargetBindingDivergenceResponse(context, {
-        kind: 'identity-unverifiable',
-        matchCount: undefined,
-        observed: undefined,
-        candidateNodes: [],
-        mismatches: [],
-        causeCode: 'IDENTITY_UNVERIFIABLE',
-        causeMessage: `Could not capture a fresh snapshot to verify the recorded target before acting (${observation.reason}).`,
-        causeHint: observation.hint,
-        screen: buildDivergenceScreen(observation, sanitize),
-        repairCapture: toReplayRepairHintCapture(observation),
-      }),
-    };
-  }
-
+export function classifyPreDispatchTarget(params: {
+  recorded: TargetAnnotationV1;
+  token: string;
+  action: SessionAction;
+  nodes: SnapshotNode[];
+  platform: Platform | PublicPlatform;
+  port: ReplaySelectorPort;
+}): AdReplayTargetClassification {
+  const { recorded, token, action, nodes, platform, port } = params;
   const config = resolveSuggestionMatchingConfig(action);
   const classification = classifyReplayTarget({
     recorded,
     token,
-    nodes: observation.nodes,
-    platform: session.device.platform,
+    nodes,
+    platform,
     refLabel: readRefLabel(action),
     requireRect: config.requiresRect,
     allowDisambiguation: config.allowDisambiguation,
+    port,
   });
-
   if (classification.verified) {
     return {
       verified: true,
@@ -386,29 +443,23 @@ export async function verifyReplayActionTarget(
         // different duplicate that shares the same {id, role, label}.
         expected: {
           identity: boundedLocalIdentity(classification.winnerNode),
-          structural: readNodeStructuralDenotation(classification.winnerNode, observation.nodes),
+          structural: readNodeStructuralDenotation(classification.winnerNode, nodes),
         },
         matchCount: classification.matchCount,
       },
     };
   }
-
   return {
     verified: false,
-    response: buildTargetBindingDivergenceResponse(context, {
-      kind: classification.kind,
-      matchCount: classification.matchCount,
-      observed: classification.observedNode
-        ? boundedLocalIdentity(classification.observedNode)
-        : undefined,
-      candidateNodes: classification.candidateNodes,
-      mismatches: classification.mismatches,
-      causeCode: classification.causeCode,
-      causeMessage: classification.causeMessage,
-      screen: buildDivergenceScreen(observation, sanitize),
-      publicationEvidence: observation.evidence,
-      repairCapture: toReplayRepairHintCapture(observation),
-    }),
+    kind: classification.kind,
+    matchCount: classification.matchCount,
+    observed: classification.observedNode
+      ? boundedLocalIdentity(classification.observedNode)
+      : undefined,
+    candidateNodes: classification.candidateNodes,
+    mismatches: classification.mismatches,
+    causeCode: classification.causeCode,
+    causeMessage: classification.causeMessage,
   };
 }
 
@@ -419,202 +470,22 @@ export async function verifyReplayActionTarget(
 // from the verified member even after verification passed. The interaction
 // layer cross-checks the two identities pre-action
 // (`assertExpectedResolvedTarget`, resolution.ts) and refuses with the
-// marker below; the replay loop converts that refusal into an
-// identity-mismatch target-binding divergence here.
+// marker below; `dispatchStep` detects the refusal and reports it to the
+// engine as a neutral `guard-mismatch`/`landmark-mismatch` outcome.
 // ---------------------------------------------------------------------------
 
 export function isReplayTargetGuardMismatchResponse(response: DaemonResponse): boolean {
   return !response.ok && response.error.details?.reason === REPLAY_TARGET_GUARD_MISMATCH_REASON;
 }
 
-type PostDispatchMismatchParams = ReplayTargetDivergenceParams & {
-  failedResponse: DaemonResponse;
-};
-
-type PostDispatchMismatchEvidence = {
-  matchCount: number | undefined;
-  observed: LocalIdentity | undefined;
-  mismatches: string[];
-  causeMessage: string;
-};
-
 /**
- * The shared post-dispatch identity-mismatch shaping: both refusal markers —
- * the guard mismatch and wait's landmark refusal — arrive as a failed dispatch
- * response whose details carry the observed evidence, and both become the same
- * bounded identity-mismatch divergence around their marker-specific evidence.
+ * #1349: `wait`'s post-resolution landmark timeout refusal — candidates
+ * matched the recorded selector during polling, but none carried the
+ * recorded landmark identity. `dispatchStep` detects this the same way as
+ * the guard-mismatch marker above.
  */
-async function buildPostDispatchIdentityMismatchResponse(
-  params: PostDispatchMismatchParams,
-  deriveEvidence: (
-    recorded: TargetAnnotationV1,
-    details: Record<string, unknown> | undefined,
-  ) => PostDispatchMismatchEvidence,
-): Promise<DaemonResponse> {
-  const { action, scope, failedResponse, sessionName, sessionStore, logPath } = params;
-  // The refusal markers are only ever attached to an annotated action; fall
-  // back to the original failure if the invariant is somehow violated.
-  const recorded = action.targetEvidence;
-  if (!recorded) return failedResponse;
-
-  const scrubVars = collectReplayScrubbableVarValues(scope);
-  const sanitize = createReplayDivergenceSanitizer(scrubVars);
-  const details = failedResponse.ok ? undefined : failedResponse.error.details;
-  const evidence = deriveEvidence(recorded, details);
-
-  const session = sessionStore.get(sessionName);
-  const observation = session
-    ? await captureDivergenceObservation({ session, sessionName, sessionStore, logPath, action })
-    : ({
-        state: 'unavailable',
-        reason: 'no-session',
-        hint: 'The session closed before a post-failure screen could be captured.',
-      } as const);
-
-  return buildTargetBindingDivergenceResponse(
-    {
-      recorded,
-      action,
-      step: params.step,
-      sourcePath: params.sourcePath,
-      sourceLine: params.sourceLine,
-      replayPath: params.replayPath,
-      artifactPaths: params.artifactPaths,
-      sessionName,
-      sessionStore,
-      resumeStamper: params.resumeStamper,
-      responseLevel: params.responseLevel,
-      scrubVars,
-      planActions: params.planActions,
-      planDigest: params.planDigest,
-      signal: params.signal,
-    },
-    {
-      kind: 'identity-mismatch',
-      matchCount: evidence.matchCount,
-      observed: evidence.observed,
-      candidateNodes: [],
-      mismatches: evidence.mismatches,
-      causeCode: 'IDENTITY_MISMATCH',
-      causeMessage: evidence.causeMessage,
-      screen: buildDivergenceScreen(observation, sanitize),
-      publicationEvidence: publicationEvidenceFrom(observation),
-      repairCapture: toReplayRepairHintCapture(observation),
-    },
-  );
-}
-
-function publicationEvidenceFrom(
-  observation: Awaited<ReturnType<typeof captureDivergenceObservation>>,
-): InternalObservationEvidence | undefined {
-  return observation.state === 'available' ? observation.evidence : undefined;
-}
-
-export async function buildReplayTargetGuardMismatchResponse(
-  params: PostDispatchMismatchParams & { guard: ReplayVerifiedTargetGuard },
-): Promise<DaemonResponse> {
-  return await buildPostDispatchIdentityMismatchResponse(params, (recorded, details) => {
-    const observed = readGuardMismatchObservedIdentity(details?.observed);
-    // The guard fires even when local identity is identical (a same-identity
-    // duplicate resolved by structural position) — surface the structural
-    // difference so `mismatches` is never empty on a real divergence.
-    const structuralMismatch = describeStructuralMismatch(
-      details?.expectedStructural,
-      details?.observedStructural,
-    );
-    return {
-      matchCount: params.guard.matchCount,
-      observed,
-      mismatches: [
-        ...(observed ? identityFieldMismatches(recorded, observed) : []),
-        ...(structuralMismatch ? [structuralMismatch] : []),
-      ],
-      causeMessage:
-        'Dispatch resolution (with occlusion/visibility guards) resolved a different element than pre-action verification isolated; the action was not sent.',
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// #1349 deferred (post-resolution) landmark verification for `wait`: the
-// polling loop refuses at its deadline when selector candidates appeared but
-// none carried the recorded landmark identity; the replay loop converts that
-// refusal into an identity-mismatch target-binding divergence here. A plain
-// wait timeout (the selector never matched at all) is NOT this marker — it
-// stays an ordinary action-failure divergence, because "the landmark never
-// appeared" needs a state repair, not an identity repair.
-// ---------------------------------------------------------------------------
-
 export function isWaitLandmarkMismatchResponse(response: DaemonResponse): boolean {
   return !response.ok && response.error.details?.reason === WAIT_LANDMARK_MISMATCH_REASON;
-}
-
-export async function buildWaitLandmarkMismatchResponse(
-  params: PostDispatchMismatchParams,
-): Promise<DaemonResponse> {
-  return await buildPostDispatchIdentityMismatchResponse(params, (recorded, details) => {
-    const observed = readGuardMismatchObservedIdentity(details?.observed);
-    const observedAncestry = readAncestryEntries(details?.observedAncestry);
-    return {
-      matchCount: typeof details?.matchCount === 'number' ? details.matchCount : undefined,
-      observed,
-      mismatches: observed
-        ? [
-            ...identityFieldMismatches(recorded, observed),
-            ...firstAncestryMismatch(recorded.ancestry, observedAncestry),
-          ]
-        : [],
-      causeMessage:
-        'Candidates matched the recorded wait selector during polling, but none carried the recorded landmark identity before the timeout; the wait did not report success.',
-    };
-  });
-}
-
-/** The wait refusal's `observedAncestry` entries, defensively re-read off error details. */
-function readAncestryEntries(value: unknown): { role: string; label?: string }[] {
-  if (!Array.isArray(value)) return [];
-  const entries: { role: string; label?: string }[] = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
-    const record = entry as Record<string, unknown>;
-    if (typeof record.role !== 'string') return [];
-    entries.push({
-      role: record.role,
-      ...(typeof record.label === 'string' ? { label: record.label } : {}),
-    });
-  }
-  return entries;
-}
-
-function readGuardMismatchObservedIdentity(value: unknown): LocalIdentity | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  if (typeof record.role !== 'string') return undefined;
-  return {
-    ...(typeof record.id === 'string' ? { id: record.id } : {}),
-    role: record.role,
-    ...(typeof record.label === 'string' ? { label: record.label } : {}),
-  };
-}
-
-/** A `position:` mismatch line from the guard's structural denotations, when both are present and differ. */
-function describeStructuralMismatch(expected: unknown, observed: unknown): string | undefined {
-  const e = readStructuralDenotation(expected);
-  const o = readStructuralDenotation(observed);
-  if (!e || !o) return undefined;
-  if (e.documentOrder === o.documentOrder && e.sibling === o.sibling) return undefined;
-  return `position: recorded=doc${e.documentOrder}/sibling${e.sibling} observed=doc${o.documentOrder}/sibling${o.sibling}`;
-}
-
-function readStructuralDenotation(
-  value: unknown,
-): { documentOrder: number; sibling: number } | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  if (typeof record.documentOrder !== 'number' || typeof record.sibling !== 'number') {
-    return undefined;
-  }
-  return { documentOrder: record.documentOrder, sibling: record.sibling };
 }
 
 function sanitizeIdentity(
