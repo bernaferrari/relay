@@ -209,34 +209,5 @@ export function AppMapToolbar(props: {
   );
 }
 
-export function AppMapZoomControls(props: {
-  percentage: number;
-  onZoomOut: () => void;
-  onZoomIn: () => void;
-  onFit: () => void;
-}) {
-  return (
-    <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-[10px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[12px] max-[900px]:right-2 max-[900px]:bottom-[calc(68px+env(safe-area-inset-bottom))]">
-      <button
-        type="button"
-        class={mapControlButton}
-        aria-label="Zoom out"
-        onClick={props.onZoomOut}
-      >
-        −
-      </button>
-      <span class="min-w-9 text-center font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
-        {props.percentage}%
-      </span>
-      <button type="button" class={mapControlButton} aria-label="Zoom in" onClick={props.onZoomIn}>
-        +
-      </button>
-      <button type="button" class={mapControlButton} aria-label="Fit map" onClick={props.onFit}>
-        Fit
-      </button>
-    </div>
-  );
-}
-
 const mapControlButton =
   "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)] disabled:cursor-not-allowed disabled:opacity-35";

@@ -36,9 +36,17 @@ import {
   canvasEdgeGeometry,
   clampCanvasScale,
   fitCanvasViewport,
+  SCREEN_CARD_HEIGHT,
+  SCREEN_CARD_WIDTH,
   type CanvasPoint,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
+import {
+  centerCanvasViewport,
+  minimapPoint,
+  minimapViewportBounds,
+  minimapWorldPoint,
+} from "../lib/app-map-minimap";
 import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { deviceReadiness } from "../lib/device-readiness";
 import { projectAppMapRun } from "../lib/app-map-run-projection";
@@ -50,12 +58,8 @@ import { AppMapEmptyState } from "./app-map-capture-review";
 import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
-import {
-  AppMapOverviewToolbar,
-  AppMapToolbar,
-  AppMapZoomControls,
-  type AppMapWorkspaceView,
-} from "./app-map-toolbar";
+import { AppMapOverviewToolbar, AppMapToolbar, type AppMapWorkspaceView } from "./app-map-toolbar";
+import { AppMapMinimap } from "./app-map-minimap";
 import { AppMapBrowseView } from "./app-map-browse-view";
 import { AppMapAgentPanel } from "./app-map-agent-panel";
 import { canvasWheelAction, createAppMapEventOrchestration } from "./app-map-events";
@@ -256,8 +260,10 @@ export function AppMapWorkspace(props: {
     error?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
+  const [canvasClientSize, setCanvasClientSize] = createSignal({ width: 0, height: 0 });
   const [, setLocalCursor] = createSignal<CanvasPoint | undefined>();
   let canvas: HTMLElement | undefined;
+  let canvasResizeObserver: ResizeObserver | undefined;
   let pan: { x: number; y: number; view: CanvasViewport } | undefined;
   let nodeDrag:
     | { id: string; x: number; y: number; origin: CanvasPoint; moved: boolean }
@@ -280,6 +286,21 @@ export function AppMapWorkspace(props: {
   let initiallyFittedAppMapId = "";
   let destinationResolvedForTake = "";
   let captureCloseTimer: number | undefined;
+
+  const observeCanvas = (element: HTMLElement) => {
+    canvas = element;
+    canvasResizeObserver?.disconnect();
+    setCanvasClientSize({ width: element.clientWidth, height: element.clientHeight });
+    if (typeof ResizeObserver === "undefined") return;
+    canvasResizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      setCanvasClientSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      });
+    });
+    canvasResizeObserver.observe(element);
+  };
 
   const closeCapturePanel = () => {
     if (!captureOpen() || captureClosing()) return;
@@ -594,6 +615,78 @@ export function AppMapWorkspace(props: {
   const bounds = createMemo(() =>
     canvasBounds(tree().nodes, canvasState().notes ?? [], positionFor),
   );
+  const minimapNodes = createMemo(() => {
+    const content = bounds();
+    return [
+      ...tree().nodes.map((node) => {
+        const position = positionFor(node);
+        const point = minimapPoint(
+          {
+            x: position.x + SCREEN_CARD_WIDTH / 2,
+            y: position.y + SCREEN_CARD_HEIGHT / 2,
+          },
+          content,
+        );
+        return {
+          id: node.id,
+          kind: "screen" as const,
+          x: point.x,
+          y: point.y,
+          selected: selectedNodeId() === node.id,
+          state: runProjection().screens[node.id]?.state,
+        };
+      }),
+      ...(canvasState().notes ?? []).map((note) => {
+        const point = minimapPoint({ x: note.x + 110, y: note.y + 66 }, content);
+        return {
+          id: note.id,
+          kind: "note" as const,
+          x: point.x,
+          y: point.y,
+          selected: false,
+        };
+      }),
+    ];
+  });
+  const minimapEdges = createMemo(() => {
+    const content = bounds();
+    const nodes = new Map(tree().nodes.map((node) => [node.id, node]));
+    return connections().flatMap((connection) => {
+      const from = nodes.get(connection.fromScreenId);
+      const to = nodes.get(connection.toScreenId);
+      if (!from || !to) return [];
+      const fromPosition = positionFor(from);
+      const toPosition = positionFor(to);
+      const start = minimapPoint(
+        {
+          x: fromPosition.x + SCREEN_CARD_WIDTH / 2,
+          y: fromPosition.y + SCREEN_CARD_HEIGHT / 2,
+        },
+        content,
+      );
+      const end = minimapPoint(
+        {
+          x: toPosition.x + SCREEN_CARD_WIDTH / 2,
+          y: toPosition.y + SCREEN_CARD_HEIGHT / 2,
+        },
+        content,
+      );
+      return [
+        {
+          id: connection.id,
+          x1: start.x,
+          y1: start.y,
+          x2: end.x,
+          y2: end.y,
+          selected: selectedConnectionId() === connection.id,
+          state: runProjection().transitions[connection.id]?.state,
+        },
+      ];
+    });
+  });
+  const minimapViewport = createMemo(() =>
+    minimapViewportBounds(view(), canvasClientSize(), bounds()),
+  );
   const presenceGeometry = createMemo(() => ({
     screenPositions: Object.fromEntries(
       tree().nodes.map((node) => [node.id, { ...positionFor(node) }]),
@@ -799,6 +892,7 @@ export function AppMapWorkspace(props: {
     onCleanup(() => {
       window.removeEventListener("relay:choose-target-set", chooseFromShell);
       window.removeEventListener("relay:toggle-map-history", toggleHistoryFromShell);
+      canvasResizeObserver?.disconnect();
     });
   });
   const decideProposal = async (proposalId: string, decision: "approve" | "reject") => {
@@ -1408,9 +1502,7 @@ export function AppMapWorkspace(props: {
     >
       <Show when={appMapLoadState().status === "ready" && !reviewingTake()}>
         <section
-          ref={(element) => {
-            canvas = element;
-          }}
+          ref={observeCanvas}
           class={cn(
             "relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden",
             canvasTool() === "hand" ? "cursor-grab active:cursor-grabbing" : "cursor-default",
@@ -1925,11 +2017,27 @@ export function AppMapWorkspace(props: {
                 }}
                 onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
               />
-              <AppMapZoomControls
-                percentage={Math.round(view().scale * 100)}
+              <AppMapMinimap
+                scale={view().scale}
+                nodes={minimapNodes()}
+                edges={minimapEdges()}
+                viewport={minimapViewport()}
+                shiftForSidePanel={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
+                wideDevice={deviceCompanionOrientation() === "landscape"}
                 onZoomOut={() => zoom(-0.1)}
                 onZoomIn={() => zoom(0.1)}
                 onFit={fit}
+                onNavigate={(ratio) => {
+                  const element = canvas;
+                  if (!element) return;
+                  setView((current) =>
+                    centerCanvasViewport(
+                      current,
+                      { width: element.clientWidth, height: element.clientHeight },
+                      minimapWorldPoint(ratio, bounds()),
+                    ),
+                  );
+                }}
               />
             </Show>
           </Show>
