@@ -197,6 +197,30 @@ export type AndroidSnapshotFreshness = {
 export type PostGestureStabilization = {
   action: string;
   markedAt: number;
+  /**
+   * Pre-gesture interaction-surface signature, captured from the session's
+   * last-known snapshot before the gesture dispatched (no extra capture — see
+   * `markPostGestureStabilization`). Populated only when
+   * `requiresPostGestureBaselineDistrust` is true for the session's device
+   * (Apple mobile only, #1542 defect 2): a post-gesture quiet-poll match that
+   * still equals this baseline is a stale-but-internally-consistent AX read,
+   * not proof the screen settled. Android's persistent helper clears its a11y
+   * cache before every capture (#1254/#1259) and needs no baseline check.
+   */
+  baselineSignature?: Array<{
+    key: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    /**
+     * False for structurally fixed elements (the viewport root, keyboard
+     * chrome) whose rect is invariant regardless of any gesture — shared
+     * evidence limited to these never counts toward a baseline match. See
+     * `classifyBaselineSurfaceEvidence` in interaction-outcome-policy.ts.
+     */
+    discriminating: boolean;
+  }>;
 };
 
 export type PendingInteractionOutcome = {
@@ -212,6 +236,7 @@ export type PendingInteractionOutcome = {
     y: number;
     width: number;
     height: number;
+    discriminating: boolean;
   }>;
 };
 
