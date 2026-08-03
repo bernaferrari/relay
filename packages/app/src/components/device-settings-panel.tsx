@@ -8,7 +8,7 @@ const labelClass = "text-12-medium text-text-strong";
 const inputClass =
   "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
 
-export function DeviceSettingsPanel(props: { onDone: () => void }) {
+export function DeviceSettingsPanel() {
   const server = useServer();
   const platform = usePlatform();
   const [appleTeamId, setAppleTeamId] = createSignal("");
@@ -260,19 +260,13 @@ export function DeviceSettingsPanel(props: { onDone: () => void }) {
                       </p>
                     </div>
                   </div>
-                  <div class="mt-3 flex items-center gap-3">
-                    <Button size="sm" type="button" onClick={props.onDone}>
-                      Done
-                    </Button>
-                    <span class="text-11-regular text-text-weak">
-                      You can control it before recording.
-                    </span>
+                  <div class="mt-2 flex justify-end">
                     <button
-                      class="ml-auto shrink-0 text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                      class="min-h-8 shrink-0 rounded-lg px-2 text-12-medium text-text-weak transition-colors duration-150 hover:bg-surface-base-hover hover:text-text-strong"
                       type="button"
                       onClick={() => setAppleAdvancedOpen((open) => !open)}
                     >
-                      Change
+                      Change setup
                     </button>
                   </div>
                 </div>

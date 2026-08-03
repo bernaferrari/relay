@@ -16,7 +16,6 @@ import { Icon } from "./icon";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { Button } from "@relay/ui/button";
 import { IconButton } from "@relay/ui/icon-button";
-import { Switch } from "@relay/ui/switch";
 import { useCommand } from "../context/command";
 import { usePlatform } from "../context/platform";
 import { sentenceForStep } from "../lib/step-sentence";
@@ -44,6 +43,12 @@ import {
   liveInspectionPolicy,
 } from "../lib/live-inspection-policy";
 import { DeviceVideoStream } from "./device-video-stream";
+import {
+  companionFramePresentation,
+  companionImageLayout,
+  companionLogicalViewport,
+  companionOrientationEdge,
+} from "./app-map-device-companion-geometry";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
 import { StepPlaybackPreview } from "./step-playback-preview";
@@ -70,6 +75,7 @@ export function DeviceStage(_props: {
   /** The App Map owns the authoritative stream lifecycle while its device
    * companion is open. Keep transient frame misses in a loading state. */
   preparing?: boolean;
+  onOrientation?: (orientation: "portrait" | "landscape" | "square" | "unknown") => void;
 }) {
   const server = useServer();
   const rec = useRecorder();
@@ -422,6 +428,9 @@ export function DeviceStage(_props: {
   }
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const [frameRatio, setFrameRatio] = createSignal(9 / 19.5);
+  const [liveImageDimensions, setLiveImageDimensions] = createSignal<
+    { width: number; height: number } | undefined
+  >();
   function updateFrameAspect(width: number, height: number): void {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
     setFrameAspect(`${width} / ${height}`);
@@ -969,8 +978,8 @@ export function DeviceStage(_props: {
     if (wheelEndTimer) clearTimeout(wheelEndTimer);
     if (feedbackTimer) clearTimeout(feedbackTimer);
   });
-  /** The mirrored device is always interactive. Recording is one independent
-   *  switch that decides whether those interactions are also saved as steps. */
+  /** The mirrored device is always interactive. Recording is an explicit
+   *  start/stop action that decides whether interactions are also saved. */
   function toggleRecording(): void {
     setPicker(null);
     if (rec.recording()) void rec.stopRecording();
@@ -1096,6 +1105,41 @@ export function DeviceStage(_props: {
       ? (server.devices().find((device) => device.serial === selected) ?? null)
       : null;
   };
+  const liveImagePresentation = createMemo(() => {
+    const frame = liveImageDimensions();
+    if (!frame || stageView() !== "live" || !liveFrameSrc()) return undefined;
+    const nodes = server.snapshot()?.nodes;
+    const logicalViewport = companionLogicalViewport(nodes);
+    const pointScale = logicalViewport
+      ? Math.max(frame.width, frame.height) /
+        Math.max(logicalViewport.width, logicalViewport.height)
+      : 1;
+    return companionFramePresentation({
+      frame,
+      logicalViewport:
+        logicalViewport && Number.isFinite(pointScale)
+          ? {
+              width: logicalViewport.width * pointScale,
+              height: logicalViewport.height * pointScale,
+            }
+          : undefined,
+      platform: currentDevice()?.platform,
+      edge: companionOrientationEdge(nodes, logicalViewport),
+    });
+  });
+  const liveImageLayout = createMemo(() => {
+    const presentation = liveImagePresentation();
+    return presentation ? companionImageLayout(presentation) : undefined;
+  });
+  createEffect(() => {
+    const presentation = liveImagePresentation();
+    if (!presentation) {
+      _props.onOrientation?.("unknown");
+      return;
+    }
+    updateFrameAspect(presentation.dimensions.width, presentation.dimensions.height);
+    _props.onOrientation?.(presentation.orientation);
+  });
   const targetReady = () => targetIsReady(currentDevice(), server.health() === "online");
   const supportsH264Stream = () => currentDevice()?.platform === "android";
   const usesScreenshotPreview = () => !supportsH264Stream() || videoFailed();
@@ -1279,6 +1323,20 @@ export function DeviceStage(_props: {
    * Never stack workbench light-theme color recipes on the frame.
    */
   const phoneShell = "phone-bezel relative rounded-[21px] bg-[var(--phone-bezel)] p-px";
+  const liveImageStyle = () => {
+    const layout = liveImageLayout();
+    if (!layout || layout.rotationDegrees === 0) return undefined;
+    return {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: `${layout.widthPercent}%`,
+      height: `${layout.heightPercent}%`,
+      "max-width": "none",
+      "transform-origin": "center",
+      transform: `translate(-50%, -50%) rotate(${layout.rotationDegrees}deg)`,
+    } as const;
+  };
 
   return (
     <section
@@ -1679,13 +1737,21 @@ export function DeviceStage(_props: {
                     aria-label="Interactive device screen"
                     data-live-frame={stageView() === "live" && liveFrameSrc() ? "true" : undefined}
                     src={displayImageSrc()}
+                    style={liveImageStyle()}
                     draggable={false}
                     tabindex={0}
                     onClick={chooseRecordedNode}
                     onLoad={(e) => {
                       const img = e.currentTarget;
                       if (img.naturalWidth && img.naturalHeight) {
-                        updateFrameAspect(img.naturalWidth, img.naturalHeight);
+                        if (stageView() === "live" && liveFrameSrc()) {
+                          setLiveImageDimensions({
+                            width: img.naturalWidth,
+                            height: img.naturalHeight,
+                          });
+                        } else {
+                          updateFrameAspect(img.naturalWidth, img.naturalHeight);
+                        }
                       }
                     }}
                     onPointerDown={(e) => {
@@ -2183,48 +2249,45 @@ export function DeviceStage(_props: {
       {/* Device-only utilities stay outside embedded capture, where the
           recording bar is the single source of control. */}
       <Show when={targetReady() && !embeddedRecordingControls()}>
-        <div class="z-[2] mt-3 flex h-9 items-center justify-center gap-1.5 text-text-base">
+        <div class="z-[2] mt-3 flex min-h-10 items-center justify-center text-text-base">
           <Show when={stageView() === "live"}>
-            <label
-              class={cn(
-                "inline-flex h-8 cursor-pointer items-center justify-center gap-2.5 px-1.5 text-12-medium select-none",
-                "transition-colors duration-150",
-                rec.recording() ? "text-text-strong" : "text-text-base hover:text-text-strong",
-              )}
-              data-tip={rec.recording() ? "Stop recording steps" : "Record interactions as steps"}
-            >
-              <span class="w-[58px] text-right">{rec.recording() ? "Recording" : "Record"}</span>
-              <Switch
-                checked={rec.recording()}
-                aria-label="Record interactions as steps"
-                onCheckedChange={() => toggleRecording()}
-              />
-            </label>
-            <Show when={rec.recording()}>
-              <div class="flex h-8 min-w-0 items-center rounded-md bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                <input
-                  class="h-full w-32 min-w-0 bg-transparent px-2 text-[11px] font-medium text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
-                  aria-label="Current recording task"
-                  value={rec.recordingGroup()}
-                  placeholder="Task name"
-                  onInput={(event) => rec.setRecordingGroup(event.currentTarget.value)}
-                />
-                <button
-                  type="button"
-                  class="grid size-8 shrink-0 place-items-center rounded-r-md text-[var(--text-weak)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.97]"
-                  aria-label="Start a new recording task"
-                  data-tip="Start a new task"
-                  onClick={() => rec.startNextRecordingGroup()}
-                >
-                  <Icon name="plus" size={14} />
-                </button>
-              </div>
-            </Show>
-            <div class="flex items-center gap-0.5">
+            <div class="flex items-center gap-1 rounded-[11px] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--map-elevation-control)]">
+              <Button
+                variant={rec.recording() ? "danger" : "primary"}
+                size="md"
+                class="min-w-[104px] gap-2 rounded-lg"
+                aria-label={rec.recording() ? "Stop recording interactions" : "Record interactions"}
+                onClick={toggleRecording}
+                data-tip={rec.recording() ? "Stop recording steps" : "Record interactions as steps"}
+              >
+                <Icon name={rec.recording() ? "square" : "circle"} size={10} />
+                {rec.recording() ? "Stop" : "Record"}
+              </Button>
+              <Show when={rec.recording()}>
+                <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+                  <input
+                    class="h-full w-32 min-w-0 bg-transparent px-2.5 text-[12px] font-medium text-[var(--text-strong)] outline-none placeholder:text-text-weak"
+                    aria-label="Current recording task"
+                    value={rec.recordingGroup()}
+                    placeholder="Task name"
+                    onInput={(event) => rec.setRecordingGroup(event.currentTarget.value)}
+                  />
+                  <button
+                    type="button"
+                    class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-text-strong active:scale-[0.97]"
+                    aria-label="Start a new recording task"
+                    data-tip="Start a new task"
+                    onClick={() => rec.startNextRecordingGroup()}
+                  >
+                    <Icon name="plus" size={14} />
+                  </button>
+                </div>
+              </Show>
+              <span class="mx-0.5 h-5 w-px bg-border-weak-base" aria-hidden="true" />
               <IconButton
                 variant="ghost"
                 size="normal"
-                class="rounded-md"
+                class="!size-9 rounded-lg"
                 data-tip="Screenshot (⌘⇧S)"
                 aria-label="Capture screenshot"
                 disabled={server.busyCapture()}
@@ -2240,7 +2303,7 @@ export function DeviceStage(_props: {
               <IconButton
                 variant="ghost"
                 size="normal"
-                class="rounded-md"
+                class="!size-9 rounded-lg"
                 data-tip="Copy screenshot"
                 aria-label="Copy screenshot to clipboard"
                 disabled={server.busyCapture()}
@@ -2252,7 +2315,7 @@ export function DeviceStage(_props: {
                 <IconButton
                   variant="ghost"
                   size="normal"
-                  class="rounded-md hover:text-icon-critical-base"
+                  class="!size-9 rounded-lg hover:text-icon-critical-base"
                   data-tip="Clear frames"
                   aria-label="Clear frames"
                   onClick={() => server.clearFrames()}

@@ -287,11 +287,6 @@ export function MapLibrary(props: {
           >
             <Icon name="plus" size={14} />
             <span class="text-[12px] font-semibold">New map</span>
-            <Icon
-              name="arrow-right"
-              size={13}
-              class="opacity-65 transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/record:translate-x-px"
-            />
           </button>
           <input
             ref={(element) => (importInput = element)}
@@ -505,7 +500,7 @@ function statusTint(status: string): string {
 }
 
 function appMapIcon(appMap: MapLibraryItem): IconName {
-  if (appMap.connectionCount > 0) return "move";
+  if (appMap.connectionCount > 0) return "map";
   if (appMap.screenCount > 0) return "smartphone";
   return "circle";
 }

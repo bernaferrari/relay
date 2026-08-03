@@ -23,6 +23,7 @@ export function AppMapDeviceCompanion(props: {
   onOpenTargets: () => void;
   onRecord: () => void;
   onStop: () => void;
+  onOrientation?: (orientation: DeviceCompanionOrientation) => void;
 }) {
   const [renderedOrientation, setRenderedOrientation] =
     createSignal<DeviceCompanionOrientation>("unknown");
@@ -68,7 +69,10 @@ export function AppMapDeviceCompanion(props: {
       <DeviceCompanionStage
         onOpenTargets={props.onOpenTargets}
         preparing={props.status.kind === "progress"}
-        onOrientation={setRenderedOrientation}
+        onOrientation={(orientation) => {
+          setRenderedOrientation(orientation);
+          props.onOrientation?.(orientation);
+        }}
       />
       <Show
         when={props.recording ? props.take : null}

@@ -10,6 +10,8 @@ export function AppMapOverviewToolbar(props: {
   connectionCount: number;
   view: AppMapWorkspaceView;
   proposalCount: number;
+  shiftForDevice: boolean;
+  wideDevice: boolean;
   onOpenProposals: () => void;
   onViewChange: (view: AppMapWorkspaceView) => void;
 }) {
@@ -36,7 +38,14 @@ export function AppMapOverviewToolbar(props: {
 
   return (
     <header
-      class="absolute top-3 left-1/2 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] max-[620px]:top-2"
+      class={cn(
+        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] transition-[left] duration-180 ease-out motion-reduce:transition-none max-[900px]:left-1/2 max-[620px]:top-2",
+        props.shiftForDevice
+          ? props.wideDevice
+            ? "left-[calc((100%-548px)/2)]"
+            : "left-[calc((100%-388px)/2)]"
+          : "left-1/2",
+      )}
       aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "connection" : "connections"}`}
     >
       <div class="flex items-center gap-0.5" role="tablist" aria-label="App Map view">
@@ -79,6 +88,7 @@ export function AppMapToolbar(props: {
   tool: AppMapCanvasTool;
   deviceOpen: boolean;
   shiftForDevice: boolean;
+  wideDevice: boolean;
   explorationState: "idle" | "running" | "stopping" | "complete" | "error";
   explorationCount: number;
   onToolChange: (tool: AppMapCanvasTool) => void;
@@ -92,7 +102,11 @@ export function AppMapToolbar(props: {
     <div
       class={cn(
         "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px]",
-        props.shiftForDevice ? "left-[calc((100%-388px)/2)] max-[900px]:left-1/2" : "left-1/2",
+        props.shiftForDevice
+          ? props.wideDevice
+            ? "left-[calc((100%-548px)/2)] max-[900px]:left-1/2"
+            : "left-[calc((100%-388px)/2)] max-[900px]:left-1/2"
+          : "left-1/2",
       )}
       role="toolbar"
       aria-label="Map editing tools"

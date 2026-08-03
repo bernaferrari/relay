@@ -930,7 +930,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
             </Show>
 
             <Show when={section() === "devices"}>
-              <DeviceSettingsPanel onDone={props.onClose} />
+              <DeviceSettingsPanel />
             </Show>
 
             <Show when={section() === "server"}>
@@ -1027,9 +1027,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
               </section>
               <div class={rowCls}>
                 <div class={rowCopyCls}>
-                  <span class={rowTitleCls}>Prod account match</span>
+                  <span class={rowTitleCls}>Production account domain</span>
                   <span class={rowDescCls}>
-                    The account the *-prod tests target (e.g. gmail.com).
+                    Use this domain when a test needs the production account set.
                   </span>
                 </div>
                 <div class="max-w-[240px] min-w-0 flex-1">

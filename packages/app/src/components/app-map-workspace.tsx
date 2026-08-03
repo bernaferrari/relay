@@ -256,6 +256,9 @@ export function AppMapWorkspace(props: {
   const [caseStackBusy, setCaseStackBusy] = createSignal(false);
   const [captureOpen, setCaptureOpen] = createSignal(false);
   const [captureClosing, setCaptureClosing] = createSignal(false);
+  const [deviceCompanionOrientation, setDeviceCompanionOrientation] = createSignal<
+    "portrait" | "landscape" | "square" | "unknown"
+  >("unknown");
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
   const [reviewStepIndex, setReviewStepIndex] = createSignal(0);
   const [reviewDestination, setReviewDestination] = createSignal<TakeDestination>({
@@ -1702,6 +1705,8 @@ export function AppMapWorkspace(props: {
             connectionCount={connections().length}
             view={workspaceView()}
             proposalCount={pendingProposals().length}
+            shiftForDevice={captureOpen() && Boolean(selectedDevice())}
+            wideDevice={deviceCompanionOrientation() === "landscape"}
             onViewChange={(next) => {
               setWorkspaceView(next);
               setHistoryOpen(false);
@@ -1976,6 +1981,9 @@ export function AppMapWorkspace(props: {
                       }}
                       replay={{
                         state: replayStateFor(connection()),
+                        canEditActions: draft
+                          .steps()
+                          .some((step) => step.id === connection().stepId),
                         ...(replayErrorFor(connection())
                           ? { error: replayErrorFor(connection()) }
                           : {}),
@@ -1986,7 +1994,8 @@ export function AppMapWorkspace(props: {
                           const index = draft
                             .steps()
                             .findIndex((step) => step.id === connection().stepId);
-                          if (index >= 0) selectStep(index);
+                          if (index < 0) return;
+                          selectStep(index);
                           props.onOpenActions();
                         },
                       }}
@@ -2013,6 +2022,7 @@ export function AppMapWorkspace(props: {
                 tool={canvasTool()}
                 deviceOpen={captureOpen()}
                 shiftForDevice={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
+                wideDevice={deviceCompanionOrientation() === "landscape"}
                 explorationState={agentExploration.state()}
                 explorationCount={agentExploration.workers().length}
                 onToolChange={setCanvasTool}
@@ -2119,6 +2129,7 @@ export function AppMapWorkspace(props: {
             recordFromHere();
           }}
           onStop={() => void recorder.stopRecording()}
+          onOrientation={setDeviceCompanionOrientation}
         />
       </Show>
       <Show when={appMapLoadState().status !== "ready"}>

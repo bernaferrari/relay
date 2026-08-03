@@ -448,6 +448,7 @@ export function ConnectionInspector(props: {
   replay: {
     state: "idle" | "running" | "passed" | "failed";
     error?: string;
+    canEditActions: boolean;
     onRun: () => void;
     onRewrite: () => void;
     onSaveReusable: () => void;
@@ -595,13 +596,15 @@ export function ConnectionInspector(props: {
                   : "Replay and verify"}
             </Button>
             <div class="flex flex-wrap items-center gap-1">
-              <button
-                type="button"
-                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                onClick={props.replay.onSelectStep}
-              >
-                <Icon name="arrow-right" size={10} /> Actions
-              </button>
+              <Show when={props.replay.canEditActions}>
+                <button
+                  type="button"
+                  class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                  onClick={props.replay.onSelectStep}
+                >
+                  <Icon name="arrow-right" size={10} /> Edit actions
+                </button>
+              </Show>
               <button
                 type="button"
                 class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
@@ -614,7 +617,7 @@ export function ConnectionInspector(props: {
                 class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onSaveReusable}
               >
-                <Icon name="copy" size={10} /> Save behavior
+                <Icon name="copy" size={10} /> Save as routine
               </button>
               <Show when={props.connection.source === "authored"}>
                 <button

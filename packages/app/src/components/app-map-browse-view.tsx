@@ -138,7 +138,13 @@ export function AppMapBrowseView(props: {
 
         <Show
           when={props.mode === "screens"}
-          fallback={<CoverageTable rows={filteredRows()} onOpenRun={props.onOpenRun} />}
+          fallback={
+            <CoverageTable
+              rows={filteredRows()}
+              hasAnyRuns={rows().length > 0}
+              onOpenRun={props.onOpenRun}
+            />
+          }
         >
           <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),260px))] items-start gap-x-6 gap-y-8">
             <For
@@ -354,7 +360,11 @@ function actorForRun(run: PersistedRun): string {
   );
 }
 
-function CoverageTable(props: { rows: CoverageRow[]; onOpenRun: (runId: string) => void }) {
+function CoverageTable(props: {
+  rows: CoverageRow[];
+  hasAnyRuns: boolean;
+  onOpenRun: (runId: string) => void;
+}) {
   const visibleRows = () => props.rows.slice(0, 200);
 
   return (
@@ -362,9 +372,13 @@ function CoverageTable(props: { rows: CoverageRow[]; onOpenRun: (runId: string) 
       when={props.rows.length}
       fallback={
         <BrowseEmpty
-          icon="play"
-          title="No matching runs"
-          body="Run this App Map on one device or a target set. Each target will appear as its own result."
+          icon={props.hasAnyRuns ? "search" : "clock"}
+          title={props.hasAnyRuns ? "No runs match these filters" : "No runs yet"}
+          body={
+            props.hasAnyRuns
+              ? "Try broader filters or clear the search."
+              : "Run this map on one device or a target set. Each target will keep its own result."
+          }
         />
       }
     >
@@ -449,7 +463,7 @@ function FilterSelect(props: {
 }
 
 function BrowseEmpty(props: {
-  icon: "search" | "play";
+  icon: "search" | "play" | "clock";
   title: string;
   body: string;
   actionLabel?: string;

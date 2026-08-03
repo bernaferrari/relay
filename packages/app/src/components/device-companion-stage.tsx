@@ -1,12 +1,6 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import {
-  companionFramePresentation,
-  companionImageLayout,
-  companionLogicalViewport,
-  companionOrientationEdge,
-} from "./app-map-device-companion-geometry";
 import { DeviceStage } from "./stage";
 
 export type DeviceCompanionOrientation = "portrait" | "landscape" | "square" | "unknown";
@@ -23,114 +17,9 @@ export function DeviceCompanionStage(props: {
   onOrientation?: (orientation: DeviceCompanionOrientation) => void;
 }) {
   const server = useServer();
-  let host: HTMLDivElement | undefined;
-  const [sourceDimensions, setSourceDimensions] = createSignal<
-    { width: number; height: number } | undefined
-  >();
-  const selectedDevice = createMemo(() =>
-    server.devices().find((device) => device.serial === server.selectedDevice()),
-  );
-  const presentation = createMemo(() => {
-    const frame = sourceDimensions();
-    const nodes = server.snapshot()?.nodes;
-    const logicalViewport = companionLogicalViewport(nodes);
-    const pointScale =
-      frame && logicalViewport
-        ? Math.max(frame.width, frame.height) /
-          Math.max(logicalViewport.width, logicalViewport.height)
-        : 1;
-    return companionFramePresentation({
-      frame,
-      logicalViewport:
-        logicalViewport && Number.isFinite(pointScale)
-          ? {
-              width: logicalViewport.width * pointScale,
-              height: logicalViewport.height * pointScale,
-            }
-          : undefined,
-      platform: selectedDevice()?.platform,
-      edge: companionOrientationEdge(nodes, logicalViewport),
-    });
-  });
-
-  function present(image: HTMLImageElement): void {
-    const displayingLiveFrame = image.dataset.liveFrame === "true";
-    if (displayingLiveFrame && image.naturalWidth && image.naturalHeight) {
-      const current = sourceDimensions();
-      if (current?.width !== image.naturalWidth || current.height !== image.naturalHeight) {
-        setSourceDimensions({ width: image.naturalWidth, height: image.naturalHeight });
-      }
-    }
-    const framePresentation = displayingLiveFrame
-      ? presentation()
-      : companionFramePresentation({
-          frame:
-            image.naturalWidth && image.naturalHeight
-              ? { width: image.naturalWidth, height: image.naturalHeight }
-              : undefined,
-          logicalViewport: undefined,
-          platform: selectedDevice()?.platform,
-          edge: undefined,
-        });
-    props.onOrientation?.(framePresentation?.orientation ?? "unknown");
-    const chrome = image.closest<HTMLElement>("[data-device-chrome]");
-    if (!framePresentation || !chrome) return;
-
-    const layout = companionImageLayout(framePresentation);
-    chrome.style.aspectRatio = layout.aspectRatio;
-    if (framePresentation.rotation === "none") {
-      for (const property of [
-        "position",
-        "left",
-        "top",
-        "width",
-        "height",
-        "max-width",
-        "transform",
-        "transform-origin",
-      ]) {
-        image.style.removeProperty(property);
-      }
-      return;
-    }
-
-    image.style.position = "absolute";
-    image.style.left = "50%";
-    image.style.top = "50%";
-    image.style.width = `${layout.widthPercent}%`;
-    image.style.height = `${layout.heightPercent}%`;
-    image.style.maxWidth = "none";
-    image.style.transformOrigin = "center";
-    image.style.transform = `translate(-50%, -50%) rotate(${layout.rotationDegrees}deg)`;
-  }
-
-  function normalize(): void {
-    const image = host?.querySelector<HTMLImageElement>(
-      'img[aria-label="Interactive device screen"]',
-    );
-    if (image) present(image);
-  }
-
-  onMount(() => {
-    const onFrameLoad = (event: Event) => {
-      if (event.target instanceof HTMLImageElement) normalize();
-    };
-    host?.addEventListener("load", onFrameLoad, true);
-    normalize();
-    onCleanup(() => host?.removeEventListener("load", onFrameLoad, true));
-  });
-  createEffect(() => {
-    const trigger = `${server.liveFrame()?.capturedAt ?? ""}:${server.snapshot()?.capturedAt ?? ""}:${presentation()?.rotation ?? ""}`;
-    queueMicrotask(() => {
-      if (trigger) normalize();
-    });
-  });
 
   return (
     <div
-      ref={(element) => {
-        host = element;
-      }}
       class={cn(
         "relative z-0 min-h-0 flex-1 overflow-hidden bg-[color-mix(in_srgb,var(--v2-background-bg-base)_76%,var(--map-canvas))]",
         "[&>section]:!p-4",
@@ -142,6 +31,7 @@ export function DeviceCompanionStage(props: {
         onOpenTargets={props.onOpenTargets}
         recordingControls="embedded"
         preparing={props.preparing}
+        onOrientation={props.onOrientation}
       />
       <Show when={server.health() !== "online" && server.liveFrame()?.base64}>
         <div class="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-4">
