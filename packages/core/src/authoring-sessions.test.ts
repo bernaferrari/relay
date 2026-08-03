@@ -9,6 +9,7 @@ import {
   AuthoringSessionStore,
   AuthoringStateError,
   assertAuthoringTransition,
+  recordedPauseDuration,
   type AuthoringRuntime,
 } from "./authoring-sessions.js";
 import { runWithOperationContext, type OperationContext } from "./operation-context.js";
@@ -167,6 +168,15 @@ test("state machine permits only explicit lifecycle edges", () => {
   }
 });
 
+test("recorded pauses ignore scheduling noise, stay readable, and bound forgotten recordings", () => {
+  assert.equal(recordedPauseDuration(199), 0);
+  assert.equal(recordedPauseDuration(224), 200);
+  assert.equal(recordedPauseDuration(226), 250);
+  assert.equal(recordedPauseDuration(1_234), 1_250);
+  assert.equal(recordedPauseDuration(90_000), 30_000);
+  assert.equal(recordedPauseDuration(Number.NaN), 0);
+});
+
 test("sessions on different explicit targets progress independently", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     const first = await createReadySession(store, runtime, appMapId);
@@ -238,6 +248,41 @@ test("the session routes every supported control and evidence-only interaction",
     assert.equal(revision.actions[6]?.steps.length, 0);
     assert.equal(revision.actions[6]?.label, "Checkpoint");
     assert.ok(revision.actions.every((action) => action.evidenceIds.length > 0));
+  });
+});
+
+test("human pauses become editable replay steps instead of hidden timing", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 230));
+    session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
+    session = await store.stop(session.id, runtime);
+
+    const revision = session.take!.revisions.at(-1)!;
+    const pause = revision.actions.find((action) => action.label === "Recorded pause");
+    assert.ok(pause);
+    assert.equal(pause.steps[0]?.kind, "sleep");
+    assert.ok(pause.steps[0]?.kind === "sleep" && pause.steps[0].ms >= 200);
+
+    session = await store.replace(session.id, pause.id, { kind: "wait", ms: 100 });
+    const editedPause = session
+      .take!.revisions.at(-1)!
+      .actions.find((action) => action.id === pause.id);
+    assert.equal(editedPause?.label, undefined);
+    assert.deepEqual(editedPause?.steps, [
+      { id: `${pause.id}-step-1`, group: "Settings", kind: "sleep", ms: 100 },
+    ]);
+
+    runtime.screen = "destination";
+    session = await store.replay(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+    assert.ok(runtime.replayed.at(-1)?.some((step) => step.kind === "sleep"));
   });
 });
 

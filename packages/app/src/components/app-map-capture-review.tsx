@@ -77,7 +77,9 @@ export type TakeReviewSidebarProps = {
 
 export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
   const count = () => props.take.actions.length;
-  const actionLabel = () => `${count()} action${count() === 1 ? "" : "s"}`;
+  const actionLabel = () => `${count()} timeline item${count() === 1 ? "" : "s"}`;
+  const hasRecordedTiming = () =>
+    props.take.actions.some((action) => action.label === "Recorded pause");
   const [selectedActionId, setSelectedActionId] = createSignal(
     props.take.actionIds[props.selectedIndex] ?? props.take.actions[0]?.id,
   );
@@ -165,14 +167,14 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
     >
       <header class="shrink-0 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
         <span class="text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-          Capture
+          Transition
         </span>
         <strong class="mt-1 block text-[15px] font-semibold tracking-[-0.018em] text-[var(--text-strong)]">
-          Review this take
+          Review recording
         </strong>
         <p class="m-0 mt-1 text-[11px]/[1.45] text-[var(--text-weak)]">
-          {actionLabel()} from {props.sourceTitle}. Fix anything accidental, then replay the exact
-          connection you want to keep.
+          {actionLabel()} from {props.sourceTitle}. Edit actions and timing, then replay exactly
+          what you want to keep.
         </p>
       </header>
 
@@ -238,6 +240,15 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                 }
               : {})}
           />
+          <Show when={hasRecordedTiming()}>
+            <div class="mt-2 flex items-start gap-2 rounded-[8px] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--text-weak)]">
+              <Icon name="clock" size={12} class="mt-0.5 shrink-0" />
+              <span>
+                Pauses are saved as Wait steps. Shorten or remove any pause that makes replay feel
+                slow.
+              </span>
+            </div>
+          </Show>
           <Show when={props.onReplaceAction ? selectedAction() : undefined}>
             {(action) => (
               <TakeActionEditor
@@ -349,7 +360,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             {pendingMutation()
               ? "Relay is saving this action before it can be tested."
               : reviewInvalidated()
-                ? "You changed this take. Replay the edited actions before approving the connection."
+                ? "You changed this recording. Replay the edited actions before approving the connection."
                 : canApprove()
                   ? "Approve it if the device reached the right screen."
                   : props.replayState === "failed"
@@ -380,7 +391,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             : props.replayState === "running"
               ? "Replaying…"
               : reviewInvalidated()
-                ? "Replay edited take"
+                ? "Replay edits"
                 : props.replayState === "failed"
                   ? "Try again"
                   : "Replay on device"}
@@ -390,7 +401,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             Discard
           </button>
           <button type="button" class={secondaryButton} onClick={props.onRewrite}>
-            <Icon name="refresh" size={11} /> Rewrite connection
+            <Icon name="refresh" size={11} /> Record again
           </button>
         </div>
       </footer>

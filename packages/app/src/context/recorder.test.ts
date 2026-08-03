@@ -171,3 +171,56 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
   assert.deepEqual(take.actionIds, ["grouped-action", "grouped-action"]);
   assert.equal(take.steps.length, 2);
 });
+
+test("Take projection keeps recorded pauses visible and editable", () => {
+  const session: AuthoringSession = {
+    schemaVersion: 1,
+    id: "session-timing",
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:me",
+    actorKind: "human",
+    appMapId: "map-a",
+    state: "reviewing",
+    target: { kind: "device", platform: "android", targetId: "device-a" },
+    leaseId: "lease-1",
+    expectedAppMapRevision: 1,
+    createdAt: 1,
+    updatedAt: 1_250,
+    take: {
+      id: "take-timing",
+      state: "reviewing",
+      createdAt: 1,
+      updatedAt: 1_250,
+      currentRevision: 1,
+      replayAttempts: [],
+      revisions: [
+        {
+          id: "revision-timing",
+          takeId: "take-timing",
+          revision: 1,
+          createdAt: 1_250,
+          createdBy: "human:me",
+          reason: "recording",
+          evidence: [],
+          actions: [
+            {
+              id: "pause-action",
+              source: "captured",
+              label: "Recorded pause",
+              recordedAt: 0,
+              startedAt: 0,
+              finishedAt: 1_250,
+              steps: [{ kind: "sleep", ms: 1_250 }],
+              evidenceIds: [],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const take = projectTake(session, (uri) => uri);
+  assert.equal(take?.actions[0]?.label, "Recorded pause");
+  assert.deepEqual(take?.steps, [{ kind: "sleep", ms: 1_250 }]);
+});

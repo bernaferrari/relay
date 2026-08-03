@@ -125,6 +125,11 @@ export function TakeActionList(props: {
                           Edited together as one recorded action
                         </span>
                       </Show>
+                      <Show when={action.label === "Recorded pause"}>
+                        <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                          Recorded timing · edit or remove
+                        </span>
+                      </Show>
                     </span>
                   </button>
                   <Show when={props.onReorder && selected()}>

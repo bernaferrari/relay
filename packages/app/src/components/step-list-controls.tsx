@@ -218,7 +218,7 @@ export function AddMenu(props: {
                 class="size-2 justify-self-center rounded-full bg-[var(--icon-critical-base)]"
                 aria-hidden="true"
               />
-              <span class="truncate">Record on device</span>
+              <span class="truncate">Record transition</span>
             </button>
             <div class="my-1 h-px bg-border-weak-base" />
           </Show>

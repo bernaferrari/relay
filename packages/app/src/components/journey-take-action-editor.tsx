@@ -269,17 +269,26 @@ export function TakeActionEditor(props: {
           if (interaction.kind !== "wait") return null;
           return (
             <label class={label}>
-              Wait (ms)
-              <input
-                class={field}
-                type="number"
-                min={0}
-                value={interaction.ms}
-                disabled={props.pending}
-                onInput={(event) =>
-                  setDraft({ ...interaction, ms: Number(event.currentTarget.value) })
-                }
-              />
+              Wait time
+              <span class="relative block">
+                <input
+                  class={cn(field, "pr-9 tabular-nums")}
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={Number((interaction.ms / 1_000).toFixed(2))}
+                  disabled={props.pending}
+                  onInput={(event) =>
+                    setDraft({
+                      ...interaction,
+                      ms: Math.max(0, Math.round(Number(event.currentTarget.value) * 1_000)),
+                    })
+                  }
+                />
+                <span class="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-[10.5px] text-[var(--text-weak)]">
+                  sec
+                </span>
+              </span>
             </label>
           );
         })()}

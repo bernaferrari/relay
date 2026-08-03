@@ -610,7 +610,7 @@ export function ConnectionInspector(props: {
                 class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onRewrite}
               >
-                <Icon name="refresh" size={10} /> Rewrite
+                <Icon name="refresh" size={10} /> Record again
               </button>
               <button
                 type="button"
@@ -636,7 +636,7 @@ export function ConnectionInspector(props: {
       >
         <div class="mt-3 grid gap-2">
           <Button variant="primary" size="lg" class="w-full" onClick={props.setup.onRecord}>
-            <Icon name="smartphone" size={11} /> Record on device
+            <Icon name="smartphone" size={11} /> Record transition
           </Button>
           <button
             type="button"

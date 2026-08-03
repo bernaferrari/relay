@@ -78,6 +78,23 @@ const TRANSITIONS: Record<AuthoringSessionState, readonly AuthoringSessionState[
   cancelled: [],
 };
 
+const RECORDED_PAUSE_THRESHOLD_MS = 200;
+const RECORDED_PAUSE_QUANTUM_MS = 50;
+const RECORDED_PAUSE_MAX_MS = 30_000;
+
+/**
+ * Human timing is part of a recording, but sub-frame scheduling noise is not.
+ * Keep meaningful pauses explicit and editable while bounding accidental idle
+ * time so a forgotten recording cannot produce an unusably long replay.
+ */
+export function recordedPauseDuration(durationMs: number): number {
+  if (!Number.isFinite(durationMs) || durationMs < RECORDED_PAUSE_THRESHOLD_MS) return 0;
+  return Math.min(
+    RECORDED_PAUSE_MAX_MS,
+    Math.round(durationMs / RECORDED_PAUSE_QUANTUM_MS) * RECORDED_PAUSE_QUANTUM_MS,
+  );
+}
+
 export function assertAuthoringTransition(
   from: AuthoringSessionState,
   to: AuthoringSessionState,
@@ -379,10 +396,33 @@ function actionSource(interaction: AuthoringInteraction): AuthoringAction["sourc
   return "captured";
 }
 
+function recordedPauseAction(input: {
+  durationMs: number;
+  finishedAt: number;
+  evidenceIds?: string[];
+  group?: string;
+}): AuthoringAction | undefined {
+  const durationMs = recordedPauseDuration(input.durationMs);
+  if (durationMs === 0) return undefined;
+  const actionId = `action-${randomUUID()}`;
+  return {
+    id: actionId,
+    source: "captured",
+    label: "Recorded pause",
+    recordedAt: input.finishedAt - durationMs,
+    startedAt: input.finishedAt - durationMs,
+    finishedAt: input.finishedAt,
+    steps: stepsForInteraction({ kind: "wait", ms: durationMs }, actionId, input.group),
+    evidenceIds: [...(input.evidenceIds ?? [])],
+  };
+}
+
 async function finishRecording(
   session: AuthoringSession,
   runtime: AuthoringRuntime,
+  idleStartedAt?: number,
 ): Promise<AuthoringSession> {
+  const stoppedAt = now();
   const captured = await persistObservation(await runtime.observe(session));
   const video = await runtime.stopVideo?.(session);
   const before = currentRevision(session).before?.capturedAt ?? captured.observation.capturedAt;
@@ -399,19 +439,31 @@ async function finishRecording(
         }),
       ]
     : [];
-  session = nextRevision(session, "recording", (revision) => ({
-    ...revision,
-    evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
-    after: captured.observation,
-    ...(videoEvidence[0]
-      ? {
-          videoClip: {
-            startMs: 0,
-            endMs: videoEndMs,
-          },
-        }
-      : {}),
-  }));
+  session = nextRevision(session, "recording", (revision) => {
+    const previousAction = revision.actions.at(-1);
+    const trailingPause = previousAction
+      ? recordedPauseAction({
+          durationMs: stoppedAt - (idleStartedAt ?? previousAction.finishedAt),
+          finishedAt: stoppedAt,
+          evidenceIds: previousAction.evidenceIds,
+          group: session.group,
+        })
+      : undefined;
+    return {
+      ...revision,
+      actions: trailingPause ? [...revision.actions, trailingPause] : revision.actions,
+      evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
+      after: captured.observation,
+      ...(videoEvidence[0]
+        ? {
+            videoClip: {
+              startMs: 0,
+              endMs: videoEndMs,
+            },
+          }
+        : {}),
+    };
+  });
   if (video?.warning) session.error = video.warning;
   return session;
 }
@@ -443,6 +495,7 @@ function nextRevision(
 
 export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
+  readonly #recordingReadyAt = new Map<string, number>();
 
   async list(projectId = context().projectId): Promise<AuthoringSession[]> {
     return (await this.#all()).filter((item) => item.projectId === projectId);
@@ -627,7 +680,9 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "recording");
+      const idleStartedAt = this.#recordingReadyAt.get(id);
       const startedAt = now();
+      const previousAction = currentRevision(session).actions.at(-1);
       if (
         !["steps", "reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
         !("applied" in interaction && interaction.applied)
@@ -637,13 +692,16 @@ export class AuthoringSessionStore {
         await runtime.execute(session, interaction);
       }
       const captured = await persistObservation(await runtime.observe(session));
+      // Finish after Relay has captured the resulting state. The next gap then
+      // measures human idle time, not device execution or evidence I/O.
+      const finishedAt = now();
       const actionId = `action-${randomUUID()}`;
       const action: AuthoringAction = {
         id: actionId,
         source: actionSource(interaction),
         recordedAt: startedAt,
         startedAt,
-        finishedAt: now(),
+        finishedAt,
         steps: stepsForInteraction(interaction, actionId, session.group),
         evidenceIds: captured.evidence.map((item) => item.id),
         ...((interaction.kind === "observe" || interaction.kind === "screenshot") &&
@@ -653,24 +711,38 @@ export class AuthoringSessionStore {
             ? { label: interaction.label }
             : {}),
       };
-      return nextRevision(session, "recording", (revision) => ({
-        ...revision,
-        actions: [...revision.actions, action],
-        evidence: [...revision.evidence, ...captured.evidence],
-        after: captured.observation,
-      }));
+      return nextRevision(session, "recording", (revision) => {
+        const pause = previousAction
+          ? recordedPauseAction({
+              durationMs: startedAt - (idleStartedAt ?? previousAction.finishedAt),
+              finishedAt: startedAt,
+              evidenceIds: previousAction.evidenceIds,
+              group: session.group,
+            })
+          : undefined;
+        return {
+          ...revision,
+          actions: [...revision.actions, ...(pause ? [pause] : []), action],
+          evidence: [...revision.evidence, ...captured.evidence],
+          after: captured.observation,
+        };
+      });
     });
   }
 
   async stop(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      requireState(session, "recording");
-      session = await finishRecording(session, runtime);
-      session = transition(session, "reviewing");
-      session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
-      return session;
-    });
+    try {
+      return await this.#mutate(id, async (session) => {
+        assertOwner(session);
+        requireState(session, "recording");
+        session = await finishRecording(session, runtime, this.#recordingReadyAt.get(id));
+        session = transition(session, "reviewing");
+        session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
+        return session;
+      });
+    } finally {
+      this.#recordingReadyAt.delete(id);
+    }
   }
 
   async trim(
@@ -755,6 +827,7 @@ export class AuthoringSessionStore {
                 ...action,
                 source: actionSource(interaction),
                 steps: stepsForInteraction(interaction, action.id, session.group),
+                label: undefined,
                 ...((interaction.kind === "observe" || interaction.kind === "screenshot") &&
                 interaction.label
                   ? { label: interaction.label }
@@ -915,23 +988,27 @@ export class AuthoringSessionStore {
   }
 
   async cancel(id: string, runtime?: AuthoringRuntime): Promise<AuthoringSession> {
-    return this.#mutate(id, async (session) => {
-      assertOwner(session);
-      if (session.state === "committed" || session.state === "cancelled") return session;
-      if (session.state === "recording") {
-        if (!runtime) {
-          throw new AuthoringStateError(
-            "Cancelling an active recording requires target reconciliation",
-          );
+    try {
+      return await this.#mutate(id, async (session) => {
+        assertOwner(session);
+        if (session.state === "committed" || session.state === "cancelled") return session;
+        if (session.state === "recording") {
+          if (!runtime) {
+            throw new AuthoringStateError(
+              "Cancelling an active recording requires target reconciliation",
+            );
+          }
+          session = await finishRecording(session, runtime, this.#recordingReadyAt.get(id));
         }
-        session = await finishRecording(session, runtime);
-      }
-      session = transition(session, "cancelled");
-      if (session.take) {
-        session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
-      }
-      return session;
-    });
+        session = transition(session, "cancelled");
+        if (session.take) {
+          session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
+        }
+        return session;
+      });
+    } finally {
+      this.#recordingReadyAt.delete(id);
+    }
   }
 
   async cleanup(id: string): Promise<void> {
@@ -1021,6 +1098,8 @@ export class AuthoringSessionStore {
       if (!current) throw new AuthoringStateError("Authoring Session not found");
       const next = await operation(clone(current));
       await atomicSessionWrite(next);
+      if (next.state === "recording") this.#recordingReadyAt.set(id, now());
+      else if (current.state === "recording") this.#recordingReadyAt.delete(id);
       if (current.state !== "committed" && next.state === "committed") committedEvent(next);
       else sessionEvent(next);
       return clone(next);
