@@ -10,6 +10,53 @@ extension RunnerTests {
   /// apps where the AX surface is genuinely unavailable.
   static let privateAXSnapshotDepthLadder = [56, 40, 24, 12]
 
+  /// Ladder rungs for one capture. A remembered accepted depth (recorded when a prior capture's
+  /// deep request was rejected) drops the rungs above it, so the known-rejected deep request is
+  /// not re-paid on every capture of the same screen class.
+  static func privateAXAttemptDepths(requestedDepth: Int, rememberedDepth: Int?) -> [Int] {
+    var depths = [requestedDepth]
+    depths.append(contentsOf: privateAXSnapshotDepthLadder.filter { $0 < requestedDepth })
+    guard let remembered = rememberedDepth, remembered < requestedDepth else { return depths }
+    return depths.filter { $0 <= remembered }
+  }
+
+  func rememberPrivateAXAcceptedDepth(bundleId: String?, processIdentifier: Int?, depth: Int) {
+    // No PID means no way to notice a relaunch later; record nothing rather than risk serving
+    // a stale shallow rung to a fresh process.
+    guard let processIdentifier else { return }
+    privateAXAcceptedDepthLock.lock()
+    privateAXAcceptedDepthBundleId = bundleId
+    privateAXAcceptedDepthProcessIdentifier = processIdentifier
+    privateAXAcceptedDepth = depth
+    privateAXAcceptedDepthUntil = Date().addingTimeInterval(snapshotXCTestChannelPenaltyDuration)
+    privateAXAcceptedDepthLock.unlock()
+    NSLog("AGENT_DEVICE_RUNNER_PRIVATE_AX_DEPTH_REMEMBERED depth=%ld bundle=%@", depth, bundleId ?? "")
+  }
+
+  func rememberedPrivateAXAcceptedDepth(bundleId: String?, processIdentifier: Int?) -> Int? {
+    privateAXAcceptedDepthLock.lock()
+    defer { privateAXAcceptedDepthLock.unlock() }
+    guard Date() < privateAXAcceptedDepthUntil else { return nil }
+    guard privateAXAcceptedDepthBundleId == bundleId else { return nil }
+    guard let processIdentifier, privateAXAcceptedDepthProcessIdentifier == processIdentifier else {
+      return nil
+    }
+    return privateAXAcceptedDepth
+  }
+
+  func clearPrivateAXAcceptedDepth(reason: String) {
+    privateAXAcceptedDepthLock.lock()
+    let hadMemory = privateAXAcceptedDepth != nil && Date() < privateAXAcceptedDepthUntil
+    privateAXAcceptedDepthBundleId = nil
+    privateAXAcceptedDepthProcessIdentifier = nil
+    privateAXAcceptedDepth = nil
+    privateAXAcceptedDepthUntil = .distantPast
+    privateAXAcceptedDepthLock.unlock()
+    if hadMemory {
+      NSLog("AGENT_DEVICE_RUNNER_PRIVATE_AX_DEPTH_MEMORY_CLEARED reason=%@", reason)
+    }
+  }
+
   func privateAXSnapshotCapture(
     app: XCUIApplication,
     options: SnapshotOptions,
@@ -17,9 +64,18 @@ extension RunnerTests {
   ) -> SnapshotBackendCapture? {
     #if os(iOS) && targetEnvironment(simulator)
       let requestedDepth = options.depth ?? 64
-      var attemptDepths = [requestedDepth]
-      attemptDepths.append(
-        contentsOf: Self.privateAXSnapshotDepthLadder.filter { $0 < requestedDepth }
+      // An explicit --depth request is honored as asked; only default-depth captures consult
+      // (and feed) the accepted-depth memory.
+      let rememberedDepth =
+        options.depth == nil
+        ? rememberedPrivateAXAcceptedDepth(
+          bundleId: currentBundleId,
+          processIdentifier: currentAppProcessIdentifier
+        )
+        : nil
+      let attemptDepths = Self.privateAXAttemptDepths(
+        requestedDepth: requestedDepth,
+        rememberedDepth: rememberedDepth
       )
       var response: [String: Any] = [:]
       var effectiveDepth = requestedDepth
@@ -51,6 +107,16 @@ extension RunnerTests {
       guard response["ok"] as? Bool == true else {
         NSLog("AGENT_DEVICE_RUNNER_PRIVATE_AX_SNAPSHOT_FAILED=%@", lastError)
         return nil
+      }
+      // Only a capture that actually descended records memory: a first-rung success on a
+      // remembered depth deliberately does NOT refresh the TTL, so expiry re-probes the full
+      // requested depth once per window instead of capping this screen class forever.
+      if options.depth == nil, effectiveDepth != attemptDepths.first {
+        rememberPrivateAXAcceptedDepth(
+          bundleId: currentBundleId,
+          processIdentifier: currentAppProcessIdentifier,
+          depth: effectiveDepth
+        )
       }
       guard let root = response["root"] as? [String: Any] else {
         NSLog("AGENT_DEVICE_RUNNER_PRIVATE_AX_SNAPSHOT_FAILED=missing root")
@@ -89,9 +155,17 @@ extension RunnerTests {
     #endif
   }
 
+  /// The viewport read is XCTest main-thread work — the exact channel the penalty marks as
+  /// grinding on this screen class. Under penalty it reliably burns its full timeout and
+  /// falls back anyway (~1s added to every private AX capture on the Bluesky bench feed),
+  /// so honor the penalty here the same way capture plans do.
+  func shouldReadPrivateAXViewportViaXCTest() -> Bool {
+    !hasAbandonedTreeCapture() && !isSnapshotXCTestChannelPenalized(bundleId: currentBundleId)
+  }
+
   private func privateAXSnapshotViewport(app: XCUIApplication, rootFrame: CGRect) -> CGRect {
     let fallback = rootFrame.isEmpty ? CGRect.infinite : rootFrame
-    guard !hasAbandonedTreeCapture() else {
+    guard shouldReadPrivateAXViewportViaXCTest() else {
       return fallback
     }
     do {
@@ -237,6 +311,75 @@ extension RunnerTests {
 // MARK: - In-bundle unit tests
 
 extension RunnerTests {
+  func testPrivateAXAttemptDepthsAppliesRememberedDepth() {
+    XCTAssertEqual(
+      Self.privateAXAttemptDepths(requestedDepth: 64, rememberedDepth: nil),
+      [64, 56, 40, 24, 12]
+    )
+    XCTAssertEqual(
+      Self.privateAXAttemptDepths(requestedDepth: 64, rememberedDepth: 56),
+      [56, 40, 24, 12]
+    )
+    XCTAssertEqual(Self.privateAXAttemptDepths(requestedDepth: 64, rememberedDepth: 12), [12])
+    // Remembered at/above the requested depth changes nothing.
+    XCTAssertEqual(
+      Self.privateAXAttemptDepths(requestedDepth: 64, rememberedDepth: 64),
+      [64, 56, 40, 24, 12]
+    )
+    // A shallower explicit request keeps its own rungs; deeper stale memory is ignored.
+    XCTAssertEqual(Self.privateAXAttemptDepths(requestedDepth: 24, rememberedDepth: 56), [24, 12])
+  }
+
+  func testPrivateAXAcceptedDepthMemoryMatchesBundleProcessAndExpires() {
+    defer { clearPrivateAXAcceptedDepth(reason: "test-cleanup") }
+
+    rememberPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: 111, depth: 56)
+    XCTAssertEqual(
+      rememberedPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: 111),
+      56
+    )
+    XCTAssertNil(rememberedPrivateAXAcceptedDepth(bundleId: "com.other.app", processIdentifier: 111))
+    // A relaunch changes the PID; the new process must re-probe the full depth even inside the
+    // TTL, and an unknown current PID (post-invalidation) must never match.
+    XCTAssertNil(rememberedPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: 222))
+    XCTAssertNil(rememberedPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: nil))
+
+    // Expired memory stops applying (the expiry re-probes the full requested depth).
+    privateAXAcceptedDepthUntil = Date(timeIntervalSinceNow: -1)
+    XCTAssertNil(rememberedPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: 111))
+  }
+
+  func testPrivateAXAcceptedDepthMemoryRequiresProcessIdentifierToRecord() {
+    defer { clearPrivateAXAcceptedDepth(reason: "test-cleanup") }
+
+    rememberPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: nil, depth: 56)
+    XCTAssertNil(
+      rememberedPrivateAXAcceptedDepth(bundleId: "xyz.blueskyweb.app", processIdentifier: nil)
+    )
+  }
+
+  func testViewportReadSkippedWhileXCTestChannelPenalized() {
+    // Pins the viewport fast path (#1587 review): every penalized private AX capture used to burn
+    // the full 1s main-thread timeout on a doomed viewport read before falling back.
+    currentBundleId = "xyz.blueskyweb.app"
+    defer {
+      currentBundleId = nil
+      clearSnapshotXCTestChannelPenalty(reason: "test-cleanup")
+      abandonedTreeCaptureCount = 0
+    }
+
+    XCTAssertTrue(shouldReadPrivateAXViewportViaXCTest())
+
+    penalizeSnapshotXCTestChannel(bundleId: "xyz.blueskyweb.app", reason: "test")
+    XCTAssertFalse(shouldReadPrivateAXViewportViaXCTest())
+
+    clearSnapshotXCTestChannelPenalty(reason: "test")
+    XCTAssertTrue(shouldReadPrivateAXViewportViaXCTest())
+
+    abandonedTreeCaptureCount = 1
+    XCTAssertFalse(shouldReadPrivateAXViewportViaXCTest())
+  }
+
   func testPrivateAXScopeSelectsSubtreeNotMatchingLabels() {
     let tree: [String: Any] = [
       "type": 1, "label": "App",
