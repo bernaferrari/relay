@@ -1263,4 +1263,37 @@ describe("runRecipeStep conversational evidence", () => {
       "idle-visible",
     ]);
   });
+
+  it("does not reuse an already-visible completion control from the previous response", async () => {
+    const owner = job();
+    const logs: string[] = [];
+    let sample = 0;
+    const device = stubDevice({
+      wait: () => new Promise((resolve) => setTimeout(resolve, 25)),
+      snapshot: () => {
+        sample += 1;
+        const generating = sample === 2;
+        return Promise.resolve({
+          nodes: generating ? [] : [{ identifier: "response.done", label: "Regenerate" }],
+        });
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-response",
+        target: { identifier: "response.done" },
+        idleTarget: { identifier: "response.done" },
+        timeoutMs: 2_000,
+        stableForMs: 500,
+      },
+      { log: (message) => logs.push(message), job: owner },
+    );
+
+    assert.ok(!logs.some((message) => message.includes("content already complete")));
+    const evidence = owner.artifacts.find((item) => item.kind === "response-completion");
+    assert.equal((evidence?.data as { status?: string } | undefined)?.status, "complete");
+    assert.ok(sample >= 3, "the waiter should observe the completion control leave and return");
+  });
 });

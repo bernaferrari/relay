@@ -132,6 +132,15 @@ function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
   ].join("\n");
 }
 
+function sameTarget(left: StepTarget, right: StepTarget): boolean {
+  return (
+    left.identifier === right.identifier &&
+    left.ref === right.ref &&
+    left.label === right.label &&
+    left.text === right.text
+  );
+}
+
 function localizedStringKeyLabel(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return /^LocalizedStringKey\(key: "([^"]+)"/u.exec(value)?.[1];
@@ -231,12 +240,20 @@ async function waitForResponseCompletion(
   const initiallyIdle = step.idleTarget
     ? initialNodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
     : false;
+  const completionTargetIsIdle = Boolean(
+    step.idleTarget && sameTarget(step.target, step.idleTarget),
+  );
+  let sawIdleLeave = !initiallyIdle;
   // Physical-device snapshots can be slower than a short model response. If
   // the first post-action sample already contains content and the independent
   // idle signal, the response completed before Relay could observe it growing.
   // Treat that as a started response instead of waiting for an impossible
-  // second content transition.
-  let startedAt: number | undefined = initialText && initiallyIdle ? beganAt : undefined;
+  // second content transition. A target that is also the idle signal is not
+  // independent, though: it may be left over from the previous response. In
+  // that case require the control to leave and return so an old response can
+  // never satisfy a new wait immediately.
+  let startedAt: number | undefined =
+    initialText && initiallyIdle && !completionTargetIsIdle ? beganAt : undefined;
   let stableSince: number | undefined = startedAt;
   let samples = 1;
   let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
@@ -273,8 +290,17 @@ async function waitForResponseCompletion(
     samples += 1;
     const text = textForTarget(nodes, step.target);
     const changedFromInitial = text.length > 0 && text !== initialText;
+    const idleVisible = step.idleTarget
+      ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
+      : false;
+    if (step.idleTarget && !idleVisible) sawIdleLeave = true;
 
-    if (!startedAt && (changedFromInitial || (!initialText && text.length > 0))) {
+    if (
+      !startedAt &&
+      (changedFromInitial ||
+        (!initialText && text.length > 0) ||
+        (completionTargetIsIdle && sawIdleLeave && idleVisible && text.length > 0))
+    ) {
       startedAt = capturedAt;
       stableSince = capturedAt;
       ctx.log(`response completion: content started (${text.length} characters)`);
@@ -284,9 +310,6 @@ async function waitForResponseCompletion(
       const stable = Boolean(text && stableSince && capturedAt - stableSince >= stableForMs);
       const busyGone = step.busyTarget
         ? !nodes.some((node) => nodeMatchesTarget(node, step.busyTarget!))
-        : false;
-      const idleVisible = step.idleTarget
-        ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
         : false;
       lastSignals = [
         "response-started",
