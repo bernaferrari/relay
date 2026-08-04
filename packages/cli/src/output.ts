@@ -12,6 +12,30 @@ function line(stream: Writable, value: unknown): void {
   stream.write(`${JSON.stringify(value)}\n`);
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function shellArgument(value: string): string {
+  return /^[A-Za-z0-9_./:@-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function recoveryDetails(details: unknown): { message?: string; command?: string } {
+  const body = record(details);
+  const message = typeof body?.recovery === "string" ? body.recovery : undefined;
+  const action = record(body?.recoveryAction);
+  const cli = record(action?.cli);
+  const argv = Array.isArray(cli?.argv)
+    ? cli.argv.filter((value): value is string => typeof value === "string")
+    : [];
+  return {
+    ...(message ? { message } : {}),
+    ...(argv.length ? { command: ["relay", ...argv].map(shellArgument).join(" ") } : {}),
+  };
+}
+
 export class CliOutput {
   constructor(
     private readonly mode: OutputMode,
@@ -64,9 +88,18 @@ export class CliOutput {
       type: "error",
       ok: false,
       ...(operationId ? { operationId } : {}),
-      error: { message: error.message, exitCode: error.exitCode },
+      error: {
+        message: error.message,
+        exitCode: error.exitCode,
+        ...(error.details !== undefined ? { details: error.details } : {}),
+      },
     } as const;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
-    if (!this.quiet) this.streams.stderr.write(`relay: ${error.message}\n`);
+    if (!this.quiet) {
+      this.streams.stderr.write(`relay: ${error.message}\n`);
+      const recovery = recoveryDetails(error.details);
+      if (recovery.message) this.streams.stderr.write(`Recovery: ${recovery.message}\n`);
+      if (recovery.command) this.streams.stderr.write(`Try: ${recovery.command}\n`);
+    }
   }
 }

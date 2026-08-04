@@ -39,11 +39,19 @@ function isTimeout(error: unknown): boolean {
   return error instanceof Error && error.name === "TimeoutError";
 }
 
+function errorCode(body: unknown): string | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body) || !("code" in body)) return;
+  return typeof body.code === "string" ? body.code : undefined;
+}
+
 export function classifyError(error: unknown): CliError {
   if (error instanceof CliError) return error;
   if (isAbort(error)) return new CliError("Operation cancelled", ExitCode.cancellation);
   if (isTimeout(error)) return new CliError("Server request timed out", ExitCode.connection);
   if (error instanceof ApiError) {
+    if (errorCode(error.body)?.startsWith("TARGET_CONTROL_LEASE_")) {
+      return new CliError(error.message, ExitCode.conflict, error.body);
+    }
     if (error.status === 401 || error.status === 403) {
       return new CliError(error.message, ExitCode.auth, error.body);
     }

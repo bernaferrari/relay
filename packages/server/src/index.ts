@@ -1090,15 +1090,15 @@ async function handleRequest(
       };
       if (body.confirm !== true)
         throw new HttpError(403, "Explicit takeover confirmation required");
-      if (!Number.isFinite(body.expiresAt) || !body.reason?.trim()) {
-        throw new HttpError(400, "expiresAt and reason are required");
+      if (!body.reason?.trim()) {
+        throw new HttpError(400, "A takeover reason is required");
       }
       try {
         json(res, 200, {
           lease: await takeOverDeviceLease(takeoverLeaseMatch.id!, {
             projectId: scope.projectId,
             ownerId: currentOperationContext()!.actorId,
-            expiresAt: body.expiresAt!,
+            expiresAt: body.expiresAt ?? now() + 15 * 60_000,
             reason: body.reason,
           }),
         });

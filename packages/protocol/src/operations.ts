@@ -771,13 +771,14 @@ type SpecificOperationMap = {
     output: { leases: DeviceLeaseDto[] };
   };
   "lease.create": {
-    input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "expiresAt">;
+    input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial"> &
+      Partial<Pick<DeviceLeaseDto, "expiresAt">>;
     output: { lease: DeviceLeaseDto };
   };
   "lease.takeover": {
     input: {
       leaseId: string;
-      expiresAt: number;
+      expiresAt?: number;
       reason: string;
       confirm: true;
     };
@@ -1004,11 +1005,22 @@ const leaseListInputParser = objectParser<OperationInput<"lease.list">>(
   },
 );
 
+const leaseCreateInputParser = objectParser<OperationInput<"lease.create">>(
+  "lease create input",
+  (input) => {
+    string(input.poolId, "lease create poolId");
+    string(input.deviceSerial, "lease create deviceSerial");
+    if (input.expiresAt !== undefined && number(input.expiresAt, "lease create expiresAt") <= 0) {
+      fail("lease create expiresAt", "must be positive");
+    }
+  },
+);
+
 const leaseTakeoverInputParser = objectParser<OperationInput<"lease.takeover">>(
   "lease takeover input",
   (input) => {
     string(input.leaseId, "lease takeover leaseId");
-    if (number(input.expiresAt, "lease takeover expiresAt") <= 0) {
+    if (input.expiresAt !== undefined && number(input.expiresAt, "lease takeover expiresAt") <= 0) {
       fail("lease takeover expiresAt", "must be positive");
     }
     string(input.reason, "lease takeover reason");
@@ -2113,6 +2125,7 @@ export const operationDefinitions = [
   }),
   command("lease.create", "Lease target", "POST", "/device-leases", {
     confirmation: "confirm",
+    input: leaseCreateInputParser,
     output: objectFieldParser("lease response", "lease"),
   }),
   command("lease.takeover", "Take over target lease", "POST", "/device-leases/:leaseId/takeover", {

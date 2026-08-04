@@ -61,6 +61,9 @@ test("GET /activity lists durable scoped semantic operations without persisting 
         }),
       });
       assert.equal(response.status, 200);
+      // Consume each response before issuing the next command so the server's
+      // terminal Activity event is queued in the same order as its request.
+      await response.json();
     }
 
     const firstResponse = await fetch(`${baseUrl}/activity?limit=2`, {

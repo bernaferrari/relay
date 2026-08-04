@@ -187,11 +187,11 @@ test("an explicitly confirmed lease takeover hands control to the requesting act
     );
     const handedOff = await agent.takeOverLease({
       leaseId: original.lease.id,
-      expiresAt: Date.now() + 120_000,
       reason: "User delegated this unattended run",
       confirm: true,
     });
     assert.equal(handedOff.lease.ownerId, "agent:mapper");
+    assert.ok(handedOff.lease.expiresAt > Date.now());
     assert.equal(handedOff.lease.handoffFromLeaseId, original.lease.id);
     const history = await agent.invoke("lease.list", { status: "all" });
     assert.equal(

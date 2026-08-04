@@ -363,17 +363,10 @@ export class RelayClient {
   leases(): Promise<{ leases: DeviceLease[] }> {
     return this.invoke("lease.list", {}) as Promise<{ leases: DeviceLease[] }>;
   }
-  lease(
-    input: Pick<DeviceLease, "poolId" | "deviceSerial" | "expiresAt">,
-  ): Promise<{ lease: DeviceLease }> {
+  lease(input: OperationInput<"lease.create">): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.create", input) as Promise<{ lease: DeviceLease }>;
   }
-  takeOverLease(input: {
-    leaseId: string;
-    expiresAt: number;
-    reason: string;
-    confirm: true;
-  }): Promise<{ lease: DeviceLease }> {
+  takeOverLease(input: OperationInput<"lease.takeover">): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.takeover", input) as Promise<{ lease: DeviceLease }>;
   }
   releaseLease(id: string): Promise<{ lease: DeviceLease }> {

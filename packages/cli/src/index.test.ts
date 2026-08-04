@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { RelayClient } from "@relay/client";
+import { ApiError, RelayClient } from "@relay/client";
 import type { EventEnvelope, OperationId } from "@relay/protocol";
 import { ExitCode } from "./errors.js";
 import { runCli } from "./index.js";
@@ -133,6 +133,11 @@ test("friendly command families invoke through the operation client", async () =
       argv: ["policy", "privacy", "update", "--input", '{"enabled":true}'],
       operationId: "workspace.privacy.update",
       input: { enabled: true },
+    },
+    {
+      argv: ["lease", "create", "ipad-1"],
+      operationId: "lease.create",
+      input: { poolId: "local", deviceSerial: "ipad-1" },
     },
   ];
 
@@ -347,6 +352,22 @@ test("root and family help are useful without creating a client", async () => {
     {
       argv: ["activity", "--help"],
       matches: [/activity list/, /limit \(number, optional\)/, /activity follow/],
+    },
+    {
+      argv: ["device", "--help"],
+      matches: [
+        /device interact <serial>/,
+        /active exclusive lease owned by the same --actor/,
+        /relay lease create 00008110 --actor agent:mapper/,
+      ],
+    },
+    {
+      argv: ["lease", "--help"],
+      matches: [
+        /lease create <serial>/,
+        /defaults to 15 minutes from now/,
+        /same --actor for subsequent device input/,
+      ],
     },
   ];
 
@@ -818,9 +839,42 @@ test("structured operation failures use a non-zero exit instead of a false succe
     error: {
       message: "the system Copy action did not appear",
       exitCode: ExitCode.validation,
+      details: { ok: false, error: "the system Copy action did not appear" },
     },
   });
   assert.match(io.stderr(), /the system Copy action did not appear/);
+});
+
+test("structured recovery is machine-readable and useful in the human CLI", async () => {
+  const io = capture();
+  const details = {
+    code: "TARGET_CONTROL_LEASE_REQUIRED",
+    recovery: "Create a 15-minute exclusive lease with this same actor, then retry.",
+    recoveryAction: {
+      operationId: "lease.create",
+      input: { poolId: "local", deviceSerial: "ipad-1" },
+      cli: { argv: ["lease", "create", "ipad-1", "--actor", "agent:mapper"] },
+    },
+  };
+  const code = await runCli(
+    ["device", "interact", "ipad-1", "--input", '{"kind":"label","label":"Continue"}', "--json"],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        invoke: async () => {
+          throw new ApiError(403, "Take control before sending device input", details);
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.conflict);
+  assert.deepEqual(JSON.parse(io.stdout()).error.details, details);
+  assert.match(io.stderr(), /Recovery: Create a 15-minute exclusive lease/u);
+  assert.match(io.stderr(), /Try: relay lease create ipad-1 --actor agent:mapper/u);
 });
 
 test("failed watched jobs use a non-zero exit", async () => {

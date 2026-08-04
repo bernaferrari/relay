@@ -40,6 +40,30 @@ test("runtime parsers reject malformed input and output", () => {
       }),
     /confirm/u,
   );
+  assert.deepEqual(
+    operationDefinition("lease.takeover").input.parse({
+      leaseId: "lease-one",
+      reason: "User approved the handoff",
+      confirm: true,
+    }),
+    { leaseId: "lease-one", reason: "User approved the handoff", confirm: true },
+  );
+  assert.deepEqual(
+    operationDefinition("lease.create").input.parse({
+      poolId: "local",
+      deviceSerial: "ipad-1",
+    }),
+    { poolId: "local", deviceSerial: "ipad-1" },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("lease.create").input.parse({
+        poolId: "local",
+        deviceSerial: "ipad-1",
+        expiresAt: -1,
+      }),
+    /expiresAt/u,
+  );
 });
 
 test("capability manifest is serializable and contains no parser functions", () => {

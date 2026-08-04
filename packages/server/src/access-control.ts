@@ -17,7 +17,8 @@ export async function assertTargetControl(
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
   const at = now();
-  const active = (await listDeviceLeases(scope.projectId)).find(
+  const leases = await listDeviceLeases(scope.projectId);
+  const active = leases.find(
     (lease) =>
       lease.deviceSerial === targetId &&
       lease.ownerId === operation.actorId &&
@@ -31,7 +32,40 @@ export async function assertTargetControl(
       target: targetId,
       result: "deny",
     });
-    throw new HttpError(403, "An active lease owned by this caller is required for target control");
+    const conflicting = leases.find(
+      (lease) =>
+        lease.deviceSerial === targetId && lease.status === "leased" && lease.expiresAt > at,
+    );
+    if (conflicting) {
+      throw new HttpError(403, "This target is currently controlled by another actor", {
+        code: "TARGET_CONTROL_LEASE_CONFLICT",
+        targetId,
+        actorId: operation.actorId,
+        activeLease: {
+          id: conflicting.id,
+          ownerId: conflicting.ownerId,
+          expiresAt: conflicting.expiresAt,
+        },
+        recovery:
+          "Observation remains available. Wait for the lease to expire or request an explicit, audited takeover before sending input.",
+        recoveryAction: {
+          operationId: "lease.takeover",
+          input: { leaseId: conflicting.id },
+        },
+      });
+    }
+    throw new HttpError(403, "Take control of this target before sending device input", {
+      code: "TARGET_CONTROL_LEASE_REQUIRED",
+      targetId,
+      actorId: operation.actorId,
+      recovery:
+        "Create a 15-minute exclusive lease with this same actor, then retry the control command.",
+      recoveryAction: {
+        operationId: "lease.create",
+        input: { poolId: "local", deviceSerial: targetId },
+        cli: { argv: ["lease", "create", targetId, "--actor", operation.actorId] },
+      },
+    });
   }
   setOperationLease(active.id);
   recordAudit(scope, {

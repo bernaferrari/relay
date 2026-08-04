@@ -9,6 +9,11 @@ test("errors map to stable exit codes", () => {
   assert.equal(classifyError(new ApiError(401, "unauthorized")).exitCode, ExitCode.auth);
   assert.equal(classifyError(new ApiError(422, "invalid")).exitCode, ExitCode.validation);
   assert.equal(classifyError(new ApiError(409, "stale")).exitCode, ExitCode.conflict);
+  assert.equal(
+    classifyError(new ApiError(403, "lease required", { code: "TARGET_CONTROL_LEASE_REQUIRED" }))
+      .exitCode,
+    ExitCode.conflict,
+  );
   assert.equal(classifyError(new ApiError(500, "broken")).exitCode, ExitCode.server);
   assert.equal(
     classifyError(new DOMException("cancelled", "AbortError")).exitCode,

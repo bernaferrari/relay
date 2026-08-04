@@ -206,6 +206,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           description: "Semantic interaction kind",
         },
       ],
+      examples: [
+        "relay lease create 00008110 --actor agent:mapper",
+        'relay device interact 00008110 --actor agent:mapper --input \'{"kind":"label","label":"Continue"}\'',
+      ],
+      note: "Device input requires an active exclusive lease owned by the same --actor. Observation and screenshots remain shareable.",
     }),
   ),
   mapped(
@@ -224,6 +229,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "x", type: "number", required: true, description: "Normalized x coordinate" },
         { name: "y", type: "number", required: true, description: "Normalized y coordinate" },
       ],
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
     }),
   ),
   mapped(
@@ -242,6 +248,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "text", type: "string", description: "Required when kind is text" },
         { name: "key", type: "enter | backspace", description: "Required when kind is key" },
       ],
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
     }),
   ),
   mapped(
@@ -256,6 +263,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "scrollX", type: "number", required: true, description: "Horizontal delta" },
         { name: "scrollY", type: "number", required: true, description: "Vertical delta" },
       ],
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
     }),
   ),
   mapped(
@@ -305,7 +313,45 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       },
     ),
   ),
-  mapped("lease.create", path("lease create")),
+  mapped(
+    "lease.create",
+    path(
+      "lease create",
+      ["deviceSerial"],
+      { poolId: "local" },
+      {
+        summary: "Take exclusive control of a local device for 15 minutes",
+        argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+        inputHelp: [
+          {
+            name: "expiresAt",
+            type: "number",
+            description: "Optional Unix time in milliseconds; defaults to 15 minutes from now",
+          },
+        ],
+        examples: [
+          "relay lease create 00008110 --actor human:bernardo",
+          "relay lease create emulator-5554 --actor agent:mapper --json",
+        ],
+        note: "Use the same --actor for subsequent device input. Read-only observation and screenshots do not require a lease.",
+      },
+    ),
+    path("lease create-in-pool", ["poolId", "deviceSerial"], undefined, {
+      summary: "Take exclusive control of a device from a named pool for 15 minutes",
+      argumentHelp: [
+        { name: "pool", type: "string", description: "Device-pool identifier" },
+        { name: "serial", type: "string", description: "Connected device serial" },
+      ],
+      inputHelp: [
+        {
+          name: "expiresAt",
+          type: "number",
+          description: "Optional Unix time in milliseconds; defaults to 15 minutes from now",
+        },
+      ],
+      examples: ["relay lease create-in-pool cloud-ios iphone-16 --actor agent:mapper"],
+    }),
+  ),
   mapped(
     "lease.takeover",
     path("lease takeover", ["leaseId"], undefined, {
@@ -314,7 +360,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "leaseId", type: "string", description: "Exact active lease to replace" },
       ],
       inputHelp: [
-        { name: "expiresAt", type: "number", required: true, description: "New lease expiry" },
+        {
+          name: "expiresAt",
+          type: "number",
+          description: "Optional new lease expiry; defaults to 15 minutes from now",
+        },
         { name: "reason", type: "string", required: true, description: "Auditable handoff reason" },
         { name: "confirm", type: "true", required: true, description: "Explicit user approval" },
       ],
