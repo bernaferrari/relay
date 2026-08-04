@@ -302,6 +302,16 @@ function rawTap(x: number, y: number, serial?: string): void {
   const args = ["-s", serial, "shell", "input", "tap", String(x), String(y)];
   execFileSync("adb", args, { timeout: 5000 });
 }
+
+/** Raw adb key input — keeps keyboard control available without a live stream. */
+function rawKey(key: "enter" | "backspace", serial?: string): void {
+  if (!serial) throw new Error("Explicit Android target serial is required");
+  const keyCode = key === "enter" ? "KEYCODE_ENTER" : "KEYCODE_DEL";
+  execFileSync("adb", ["-s", serial, "shell", "input", "keyevent", keyCode], {
+    timeout: 5000,
+  });
+}
+
 /** Raw adb input swipe — works without a session, on any app. */
 function rawSwipe(
   from: { x: number; y: number },
@@ -1077,6 +1087,7 @@ export type InteractInput =
       to: { x: number; y: number };
       durationMs?: number;
     }
+  | { kind: "key"; key: "enter" | "backspace" }
   | { kind: "type"; text: string };
 
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
@@ -1092,6 +1103,10 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
       }
       if (input.kind === "swipe") {
         rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
+        return;
+      }
+      if (input.kind === "key") {
+        rawKey(input.key, context.serial);
         return;
       }
     }

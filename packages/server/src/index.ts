@@ -248,6 +248,8 @@ function discoveryInteraction(input: InteractInput): {
       };
     case "type":
       return { kind: "type", label: "Type text", text: input.text };
+    case "key":
+      return { kind: "manual", label: `Press ${input.key}` };
   }
 }
 
@@ -1695,7 +1697,22 @@ async function handleRequest(
       }
 
       await assertTargetControl(scope, serial);
-      await injectAndroidKey(serial, input);
+      try {
+        // The live H.264 stream is the lowest-latency path when the device
+        // stage is open. Keep the CLI usable without that optional stream by
+        // falling back to the shared semantic device adapter.
+        await injectAndroidKey(serial, input);
+      } catch (error) {
+        if (!(error instanceof HttpError) || !/control is not ready/i.test(error.message)) {
+          throw error;
+        }
+        await interact(
+          input.kind === "text"
+            ? { kind: "type", text: input.text }
+            : { kind: "key", key: input.key },
+          { serial },
+        );
+      }
       json(res, 200, { ok: true });
       return;
     }

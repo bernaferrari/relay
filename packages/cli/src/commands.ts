@@ -201,7 +201,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       inputHelp: [
         {
           name: "kind",
-          type: "identifier | label | point | ref | find | text-match | swipe | type",
+          type: "identifier | label | point | ref | find | text-match | swipe | key | type",
           required: true,
           description: "Semantic interaction kind",
         },
