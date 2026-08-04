@@ -17,18 +17,18 @@ import {
   type TrimAuthoringTakeInput,
 } from "./authoring.js";
 import type {
-  AddScreenInput,
   AppMap,
   AppMapBatchChange,
   AppMapCompiledFlow,
   AppMapPatch,
   CaseStack,
-  Connection,
+  CreateConnectionInput,
+  CreateScreenInput,
   ConnectionPatch,
-  Flow,
   MapGroup,
   Proposal,
   Routine,
+  SaveFlowInput,
   Screen,
   ScreenVariant,
   UpdateScreenInput,
@@ -432,7 +432,12 @@ type SpecificOperationMap = {
     output: { appMap: AppMap };
   };
   "app-map.screen.add": {
-    input: { appMapId: string; expectedRevision: number; eventId?: string; input: AddScreenInput };
+    input: {
+      appMapId: string;
+      expectedRevision: number;
+      eventId?: string;
+      screen: CreateScreenInput;
+    };
     output: { appMap: AppMap };
   };
   "app-map.screen.capture": {
@@ -468,7 +473,12 @@ type SpecificOperationMap = {
     output: { appMap: AppMap };
   };
   "app-map.connection.create": {
-    input: { appMapId: string; expectedRevision: number; eventId?: string; connection: Connection };
+    input: {
+      appMapId: string;
+      expectedRevision: number;
+      eventId?: string;
+      connection: CreateConnectionInput;
+    };
     output: { appMap: AppMap };
   };
   "app-map.connection.update": {
@@ -505,7 +515,7 @@ type SpecificOperationMap = {
       flowId: string;
       expectedRevision: number;
       eventId?: string;
-      flow: Flow;
+      flow: SaveFlowInput;
     };
     output: { appMap: AppMap };
   };
@@ -1259,6 +1269,70 @@ function appMapMutationParser<Id extends OperationId>(
     if (nested) record(input[nested], `${description} ${nested}`);
   });
 }
+
+const appMapScreenAddParser = objectParser<OperationInput<"app-map.screen.add">>(
+  "screen addition",
+  (input) => {
+    string(input.appMapId, "screen addition appMapId");
+    number(input.expectedRevision, "screen addition expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "screen addition eventId");
+    const screen = record(input.screen, "screen addition screen");
+    string(screen.id, "screen addition screen id");
+    string(screen.title, "screen addition screen title");
+    if (screen.description !== undefined) string(screen.description, "screen addition description");
+    if (screen.identity !== undefined) record(screen.identity, "screen addition identity");
+    if (screen.position !== undefined) record(screen.position, "screen addition position");
+  },
+);
+
+const appMapConnectionCreateParser = objectParser<OperationInput<"app-map.connection.create">>(
+  "connection creation",
+  (input) => {
+    string(input.appMapId, "connection creation appMapId");
+    number(input.expectedRevision, "connection creation expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "connection creation eventId");
+    const connection = record(input.connection, "connection creation connection");
+    string(connection.id, "connection creation id");
+    string(connection.fromScreenId, "connection creation fromScreenId");
+    const destination = record(connection.destination, "connection creation destination");
+    if (destination.kind !== "screen" && destination.kind !== "end") {
+      fail("connection creation destination kind", "must be screen or end");
+    }
+    if (destination.kind === "screen") {
+      string(destination.screenId, "connection creation destination screenId");
+    }
+    if (connection.label !== undefined) string(connection.label, "connection creation label");
+    if (connection.caseStackId !== undefined)
+      string(connection.caseStackId, "connection creation caseStackId");
+    if (
+      connection.state !== undefined &&
+      connection.state !== "draft" &&
+      connection.state !== "ready"
+    ) {
+      fail("connection creation state", "must be draft or ready");
+    }
+    if (connection.actions !== undefined && !Array.isArray(connection.actions)) {
+      fail("connection creation actions", "must be an array");
+    }
+  },
+);
+
+const appMapFlowSaveParser = objectParser<OperationInput<"app-map.flow.save">>(
+  "Flow save",
+  (input) => {
+    string(input.appMapId, "Flow save appMapId");
+    string(input.flowId, "Flow save flowId");
+    number(input.expectedRevision, "Flow save expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "Flow save eventId");
+    const flow = record(input.flow, "Flow save flow");
+    string(flow.name, "Flow save name");
+    string(flow.startScreenId, "Flow save startScreenId");
+    if (!Array.isArray(flow.connectionIds)) fail("Flow save connectionIds", "must be an array");
+    for (const connectionId of flow.connectionIds as unknown[]) {
+      string(connectionId, "Flow save connectionId");
+    }
+  },
+);
 
 const appMapOutputParser = objectFieldParser<{ appMap: AppMap }>("App Map response", "appMap");
 
@@ -2092,7 +2166,7 @@ export const operationDefinitions = [
   }),
   command("app-map.screen.add", "Add App Map screen", "POST", "/app-maps/:appMapId/screens", {
     category: "authoring",
-    input: appMapMutationParser<"app-map.screen.add">("screen addition", "input"),
+    input: appMapScreenAddParser,
     output: appMapOutputParser,
   }),
   command(
@@ -2140,7 +2214,7 @@ export const operationDefinitions = [
     "/app-maps/:appMapId/connections",
     {
       category: "authoring",
-      input: appMapMutationParser<"app-map.connection.create">("connection creation", "connection"),
+      input: appMapConnectionCreateParser,
       output: appMapOutputParser,
     },
   ),
@@ -2196,7 +2270,7 @@ export const operationDefinitions = [
   ),
   command("app-map.flow.save", "Save App Map Flow", "PUT", "/app-maps/:appMapId/flows/:flowId", {
     category: "authoring",
-    input: appMapMutationParser<"app-map.flow.save">("Flow save", "flow", ["flowId"]),
+    input: appMapFlowSaveParser,
     output: appMapOutputParser,
   }),
   command("app-map.flow.run", "Run App Map flow", "POST", "/app-maps/:appMapId/flows/:flowId/run", {

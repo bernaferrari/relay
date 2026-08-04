@@ -208,10 +208,22 @@ async function waitForResponseCompletion(
   const initialNodes = await snapshot(device);
   const initialText = textForTarget(initialNodes, step.target);
   let previousText = initialText;
-  let startedAt: number | undefined;
-  let stableSince: number | undefined;
+  const initiallyIdle = step.idleTarget
+    ? initialNodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
+    : false;
+  // Physical-device snapshots can be slower than a short model response. If
+  // the first post-action sample already contains content and the independent
+  // idle signal, the response completed before Relay could observe it growing.
+  // Treat that as a started response instead of waiting for an impossible
+  // second content transition.
+  let startedAt: number | undefined = initialText && initiallyIdle ? beganAt : undefined;
+  let stableSince: number | undefined = startedAt;
   let samples = 1;
-  let lastSignals: string[] = [];
+  let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
+
+  if (startedAt) {
+    ctx.log(`response completion: content already complete (${initialText.length} characters)`);
+  }
 
   const record = (status: "complete" | "timeout", completedAt: number, text: string) => {
     ctx.job?.artifacts.push({

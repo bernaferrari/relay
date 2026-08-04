@@ -999,4 +999,40 @@ describe("runRecipeStep conversational evidence", () => {
       "idle-visible",
     ]);
   });
+
+  it("accepts a response that completed before the first physical-device sample", async () => {
+    const owner = job();
+    const logs: string[] = [];
+    const device = stubDevice({
+      wait: () => new Promise((resolve) => setTimeout(resolve, 25)),
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            { ref: "@answer", label: "Assistant response", value: "hello" },
+            { identifier: "response.done", label: "Regenerate" },
+          ],
+        }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-response",
+        target: { ref: "@answer" },
+        idleTarget: { identifier: "response.done" },
+        timeoutMs: 2_000,
+        stableForMs: 500,
+      },
+      { log: (message) => logs.push(message), job: owner },
+    );
+
+    assert.ok(logs.some((message) => message.includes("content already complete")));
+    const evidence = owner.artifacts.find((item) => item.kind === "response-completion");
+    assert.equal((evidence?.data as { status?: string } | undefined)?.status, "complete");
+    assert.deepEqual((evidence?.data as { signals?: string[] } | undefined)?.signals, [
+      "response-started",
+      "text-stable",
+      "idle-visible",
+    ]);
+  });
 });

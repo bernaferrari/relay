@@ -264,6 +264,16 @@ export type ConnectionPatch = {
   actions?: ActionSpec[];
 };
 
+/** Public intent-level inputs. Relay owns scope and audit timestamps so a
+ * human, CLI, or agent never has to manufacture persistence metadata. */
+export type CreateScreenInput = Pick<Screen, "id" | "title"> &
+  Partial<Pick<Screen, "description" | "identity" | "position">>;
+
+export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
+  Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions">>;
+
+export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds">;
+
 /** One atomic, reviewable authoring change. The desktop, CLI, HTTP API, and
  * agents use this same vocabulary so a canvas gesture cannot partially save. */
 export type AppMapBatchChange =

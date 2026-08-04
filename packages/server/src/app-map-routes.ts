@@ -329,7 +329,22 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       screenAdd.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => addAppMapScreen(map, body.input, context),
+      (map, context) =>
+        addAppMapScreen(
+          map,
+          {
+            screen: {
+              ...body.screen,
+              organizationId: map.organizationId,
+              projectId: map.projectId,
+              appMapId: map.id,
+              variantIds: [],
+              createdAt: context.at,
+              updatedAt: context.at,
+            },
+          },
+          context,
+        ),
     );
     json(response, 200, { appMap });
     return true;
@@ -454,7 +469,21 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       connectionCreate.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => connectAppMapScreens(map, body.connection, context),
+      (map, context) =>
+        connectAppMapScreens(
+          map,
+          {
+            ...body.connection,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            state: body.connection.state ?? "ready",
+            actions: body.connection.actions ?? [],
+            createdAt: context.at,
+            updatedAt: context.at,
+          },
+          context,
+        ),
     );
     json(response, 200, { appMap });
     return true;
@@ -541,13 +570,27 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.flow.save">,
       "appMapId" | "flowId"
     >;
-    if (body.flow.id !== flowSave.flowId) throw new HttpError(400, "Flow id must match the route");
     const appMap = await applyMutation(
       scope,
       flowSave.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => saveAppMapFlow(map, body.flow, context),
+      (map, context) => {
+        const existing = map.flows[flowSave.flowId!];
+        return saveAppMapFlow(
+          map,
+          {
+            ...body.flow,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            id: flowSave.flowId!,
+            createdAt: existing?.createdAt ?? context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
     );
     json(response, 200, { appMap });
     return true;

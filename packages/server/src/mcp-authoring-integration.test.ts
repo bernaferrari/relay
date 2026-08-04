@@ -201,6 +201,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-mcp-authoring-"));
   const environment = {
     PATH: process.env.PATH,
+    AGENT_DEVICE_STATE_DIR: process.env.AGENT_DEVICE_STATE_DIR,
     RELAY_WORKSPACE_ROOT: process.env.RELAY_WORKSPACE_ROOT,
     RELAY_STATE_DIR: process.env.RELAY_STATE_DIR,
     RELAY_RECIPES_DIR: process.env.RELAY_RECIPES_DIR,
@@ -208,6 +209,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
   };
   const fakeAdbBin = await installFakeAdb(root);
   process.env.PATH = `${fakeAdbBin}:${environment.PATH ?? ""}`;
+  process.env.AGENT_DEVICE_STATE_DIR = join(root, "agent-device");
   process.env.RELAY_WORKSPACE_ROOT = root;
   process.env.RELAY_STATE_DIR = join(root, "state");
   process.env.RELAY_RECIPES_DIR = join(root, "recipes");
@@ -223,6 +225,16 @@ test("MCP agent authors a transition observed by an app client", async () => {
       host: "127.0.0.1",
       port: 0,
       authoringRuntime: runtime,
+      captureTargetScreenshot: async (options) => ({
+        serial: options?.serial,
+        capturedAt: Date.now(),
+        mime: "image/png",
+        base64: pngBase64,
+        path: join(root, "capture.png"),
+        bytes: Buffer.from(pngBase64, "base64").byteLength,
+        width: 1,
+        height: 1,
+      }),
     });
     const serverUrl = `http://127.0.0.1:${relayServer.port}`;
     const sharedConnection = {

@@ -193,6 +193,8 @@ export type StartServerOptions = {
   authoringRuntime?: AuthoringRuntime;
   /** Test seam for the host-owned Android stream transport. */
   liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
+  /** Test seam for target observation without starting a device daemon. */
+  captureTargetScreenshot?: typeof captureScreenshot;
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
 };
 
@@ -335,6 +337,7 @@ async function handleRequest(
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
   liveVideoStream = streamAndroidVideo,
+  captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
 ): Promise<void> {
   const method = req.method ?? "GET";
@@ -1549,7 +1552,7 @@ async function handleRequest(
       const jobId = url.searchParams.get("jobId") ?? undefined;
       const ephemeral = url.searchParams.get("ephemeral") === "1";
       assertTargetObservation(scope, serial);
-      const shot = await captureScreenshot({
+      const shot = await captureTargetScreenshot({
         serial,
         caption: caption ?? undefined,
         jobId,
@@ -1878,18 +1881,13 @@ async function handleRequest(
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
-  // Settings are applied once in the server process, rather than requiring a
-  // person to export device-specific variables before launching Relay.
-  const deviceSetup = await loadDeviceSetup();
-  // agent-device snapshots its signing environment when its daemon starts. A
-  // daemon left behind by a terminal command can therefore disagree with the
-  // Apple team Relay shows in Settings. Server startup is already a runtime
-  // boundary, so reconcile that helper before any recovered or new session can
-  // inherit stale signing values.
-  if (deviceSetup.ios) {
-    await restartAgentDeviceDaemonForSetup();
-    resetDeviceClients();
-  }
+  // Apply saved signing settings to this process. Do not restart an existing
+  // device helper merely because Relay's UI restarted: that helper may own the
+  // only controllable session on a now-locked unattended iPad. agent-device
+  // already replaces itself lazily when its effective code/signing signature
+  // truly differs. The settings mutation route still performs an explicit
+  // restart because the person intentionally changed teams there.
+  await loadDeviceSetup();
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
@@ -1942,6 +1940,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       sse,
       opts.authoringRuntime,
       opts.liveVideoStream,
+      opts.captureTargetScreenshot,
       opts.targetRuntime,
     );
   });

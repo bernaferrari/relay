@@ -47,17 +47,9 @@ test("App Map operations are equivalent for human and agent actors", async () =>
         appMapId: "store",
         expectedRevision: 0,
         eventId: "agent-add-welcome",
-        input: {
-          screen: {
-            id: "welcome",
-            organizationId: "acme",
-            projectId: "mobile",
-            appMapId: "store",
-            title: "Welcome",
-            variantIds: [],
-            createdAt: 100,
-            updatedAt: 100,
-          },
+        screen: {
+          id: "welcome",
+          title: "Welcome",
         },
       },
       { requestId: "request-agent-add-welcome" },
@@ -371,32 +363,26 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     await client.invoke("app-map.screen.add", {
       appMapId: "store",
       expectedRevision: 0,
-      input: {
-        screen: {
-          ...scoped("welcome"),
-          title: "Welcome",
-          identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
-          variantIds: [],
-        },
+      screen: {
+        id: "welcome",
+        title: "Welcome",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
       },
     });
     await client.invoke("app-map.screen.add", {
       appMapId: "store",
       expectedRevision: 1,
-      input: {
-        screen: {
-          ...scoped("home"),
-          title: "Home",
-          identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
-          variantIds: [],
-        },
+      screen: {
+        id: "home",
+        title: "Home",
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
       },
     });
     await client.invoke("app-map.connection.create", {
       appMapId: "store",
       expectedRevision: 2,
       connection: {
-        ...scoped("continue"),
+        id: "continue",
         fromScreenId: "welcome",
         destination: { kind: "screen", screenId: "home" },
         state: "ready",
@@ -439,7 +425,6 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
       flowId: "main",
       expectedRevision: 4,
       flow: {
-        ...scoped("main"),
         name: "Main",
         startScreenId: "welcome",
         connectionIds: ["continue"],

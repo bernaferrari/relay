@@ -3,7 +3,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, readdir, stat, rename, unlink, open } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
@@ -107,7 +107,14 @@ function slug(s: string): string {
 export function runsRoot(): string {
   const env = process.env.RELAY_RUNS_DIR?.trim();
   if (env) return env;
+  const state = process.env.RELAY_STATE_DIR?.trim();
+  if (state) return join(state, "runs");
   return join(findWorkspaceRoot(), "runs");
+}
+
+function belongsToRunStore(root: string, dir: string): boolean {
+  const path = relative(root, dir);
+  return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
 
 export function formatRunFolder(
@@ -337,9 +344,10 @@ async function persistRunOnce(job: TestJob): Promise<PersistedRun> {
     await syncPath(dir);
     // The catalog is a rebuildable accelerator. The immutable manifest remains
     // authoritative if indexing is interrupted.
-    await indexRun(runsRoot(), payload as unknown as Record<string, unknown>).catch(
-      () => undefined,
-    );
+    const root = runsRoot();
+    if (belongsToRunStore(root, dir)) {
+      await indexRun(root, payload as unknown as Record<string, unknown>).catch(() => undefined);
+    }
   } finally {
     await Promise.all(Object.values(temporary).map((path) => unlink(path).catch(() => undefined)));
   }

@@ -14,6 +14,14 @@ import type { TestJob } from "./session.js";
 import { runWithTargetContext } from "./target-context.js";
 
 const testTarget = { kind: "device", platform: "android", serial: "run-evidence-test" } as const;
+const previousSuiteRunsRoot = process.env.RELAY_RUNS_DIR;
+const suiteRunsRoot = await mkdtemp(join(tmpdir(), "relay-evidence-suite-"));
+process.env.RELAY_RUNS_DIR = suiteRunsRoot;
+test.after(async () => {
+  if (previousSuiteRunsRoot === undefined) delete process.env.RELAY_RUNS_DIR;
+  else process.env.RELAY_RUNS_DIR = previousSuiteRunsRoot;
+  await rm(suiteRunsRoot, { recursive: true, force: true });
+});
 const startRunEvidence: typeof startRunEvidenceWithoutContext = (...args) =>
   runWithTargetContext(testTarget, () => startRunEvidenceWithoutContext(...args));
 const stopRunEvidence: typeof stopRunEvidenceWithoutContext = (...args) =>

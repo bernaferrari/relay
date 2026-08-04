@@ -63,7 +63,9 @@ import {
   isIosSessionBindingError,
   isRecoverableIosRuntimeError,
   recoverIosRuntime,
+  recoverIosRuntimeSession,
   type IosRuntimeRecoveryResult,
+  type IosRuntimeSessionRecovery,
 } from "./ios-runtime-recovery.js";
 
 /**
@@ -119,14 +121,7 @@ export function resetIosRunnerState(): void {
   iosRuntimeRecoveries.clear();
 }
 
-export type TargetRuntimeRecovery = IosRuntimeRecoveryResult & {
-  session: {
-    status: "restored" | "unavailable";
-    app?: string;
-    fallback?: boolean;
-    detail: string;
-  };
-};
+export type TargetRuntimeRecovery = IosRuntimeSessionRecovery;
 
 /** Shared UI/CLI/MCP recovery operation for attached Apple hardware. */
 export async function recoverTargetRuntime(
@@ -138,43 +133,21 @@ export async function recoverTargetRuntime(
     throw new Error("Automatic runtime recovery is currently available for Apple devices only");
   }
   return runWithTargetContext(target.context, async () => {
-    const host = await recoverIosHostRuntime(serial, cause, true);
-    iosRunnerPreparations.delete(serial);
-    iosRunnerFailures.delete(serial);
-    if (!host.ready) {
-      return {
-        ...host,
-        session: {
-          status: "unavailable",
-          detail: "Apple device services still cannot reach this iPad.",
-        },
-      };
-    }
-    try {
+    const inspect = async () => {
       await ensureIosRunnerPrepared(target.device, serial);
-      const restored = await restoreIosAppSession(target.device, serial);
-      return {
-        ...host,
-        ready: true,
-        session: {
-          status: "restored",
-          ...restored,
-          detail: restored.fallback
-            ? "Relay restored device control at the Home Screen."
-            : "Relay restored the app that was active in this workspace.",
-        },
-      };
-    } catch (error) {
-      const normalized = await diagnoseIosRunnerError(error, serial);
-      return {
-        ...host,
-        ready: false,
-        session: {
-          status: "unavailable",
-          detail: normalized.message,
-        },
-      };
-    }
+      return restoreIosAppSession(target.device, serial);
+    };
+    return recoverIosRuntimeSession(
+      serial,
+      inspect,
+      async (sessionError) => {
+        const host = await recoverIosHostRuntime(serial, cause ?? sessionError, true);
+        iosRunnerPreparations.delete(serial);
+        iosRunnerFailures.delete(serial);
+        return host;
+      },
+      async (error) => (await diagnoseIosRunnerError(error, serial)).message,
+    );
   });
 }
 

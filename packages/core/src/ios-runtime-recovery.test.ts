@@ -1,11 +1,101 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  confirmIosRuntimeSession,
   isRecoverableIosRuntimeError,
   isIosSessionBindingError,
   recoverIosRuntime,
+  recoverIosRuntimeSession,
   type IosRuntimeRecoveryDependencies,
 } from "./ios-runtime-recovery.js";
+
+test("trusts a working runner when Apple's bounded health probe times out", async () => {
+  const result = await confirmIosRuntimeSession(
+    {
+      serial: "ipad",
+      recovered: true,
+      ready: false,
+      actions: [],
+      summary: "The developer service did not respond.",
+    },
+    async () => ({ app: "Grok" }),
+    async () => "unavailable",
+  );
+
+  assert.equal(result.ready, true);
+  assert.equal(result.session.status, "restored");
+  assert.equal(result.session.app, "Grok");
+  assert.match(result.summary, /health check timed out/i);
+});
+
+test("keeps recovery unavailable when runner confirmation also fails", async () => {
+  const result = await confirmIosRuntimeSession(
+    {
+      serial: "ipad",
+      recovered: true,
+      ready: false,
+      actions: [],
+      summary: "The developer service did not respond.",
+    },
+    async () => {
+      throw new Error("runner unavailable");
+    },
+    async (error) => `diagnosed: ${String(error)}`,
+  );
+
+  assert.equal(result.ready, false);
+  assert.equal(result.session.status, "unavailable");
+  assert.match(result.session.detail, /runner unavailable/);
+});
+
+test("preserves a working unattended runner without invoking host repair", async () => {
+  let repairs = 0;
+  const result = await recoverIosRuntimeSession(
+    "ipad",
+    async () => ({ app: "Grok" }),
+    async () => {
+      repairs += 1;
+      throw new Error("repair must not run");
+    },
+    async () => "unavailable",
+  );
+
+  assert.equal(repairs, 0);
+  assert.equal(result.ready, true);
+  assert.equal(result.recovered, false);
+  assert.equal(result.session.app, "Grok");
+  assert.match(result.summary, /already ready/i);
+});
+
+test("repairs only after session inspection fails, then confirms the runner", async () => {
+  let inspections = 0;
+  let repairs = 0;
+  const result = await recoverIosRuntimeSession(
+    "ipad",
+    async () => {
+      inspections += 1;
+      if (inspections === 1) throw new Error("runner connection closed");
+      return { app: "Grok" };
+    },
+    async (cause) => {
+      repairs += 1;
+      assert.match(String(cause), /connection closed/);
+      return {
+        serial: "ipad",
+        recovered: true,
+        ready: true,
+        actions: [],
+        summary: "repaired",
+      };
+    },
+    async () => "unavailable",
+  );
+
+  assert.equal(inspections, 2);
+  assert.equal(repairs, 1);
+  assert.equal(result.ready, true);
+  assert.equal(result.session.status, "restored");
+});
 
 const coreDevice =
   "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/XPCServices/CoreDeviceService.xpc/Contents/MacOS/CoreDeviceService";
@@ -82,7 +172,7 @@ test("preserves an unverifiable lock instead of deleting user state", async () =
   assert.equal(result.actions[0]?.status, "skipped");
 });
 
-test("an explicit recovery reconciles the Relay daemon even when the device probe is healthy", async () => {
+test("an explicit recovery reconciles the Relay daemon without restarting healthy CoreDevice", async () => {
   let restarts = 0;
   const terminated: number[] = [];
   const probes: string[][] = [];
@@ -107,12 +197,14 @@ test("an explicit recovery reconciles the Relay daemon even when the device prob
     }),
   );
   assert.equal(restarts, 1);
-  assert.deepEqual(terminated, [71]);
+  assert.deepEqual(terminated, []);
   assert.equal(result.ready, true);
   assert.equal(result.actions[0]?.kind, "agent-device");
-  assert.equal(result.actions[1]?.kind, "core-device");
-  assert.equal(result.actions[1]?.status, "completed");
-  assert.equal(probes.length, 2);
+  assert.equal(
+    result.actions.some((action) => action.kind === "core-device"),
+    false,
+  );
+  assert.equal(probes.length, 1);
   assert.deepEqual(probes[0]?.slice(0, 4), ["devicectl", "device", "info", "processes"]);
 });
 

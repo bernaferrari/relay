@@ -443,7 +443,37 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
-  mapped("app-map.screen.add", path("screen add", ["appMapId"])),
+  mapped(
+    "app-map.screen.add",
+    path("screen add", ["appMapId"], undefined, {
+      summary: "Add a named screen without persistence metadata",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "screen.id",
+          type: "string",
+          required: true,
+          description: "Stable screen identifier",
+        },
+        {
+          name: "screen.title",
+          type: "string",
+          required: true,
+          description: "Human-readable screen name",
+        },
+        { name: "screen.position", type: "{x,y}", description: "Optional canvas position" },
+      ],
+      examples: [
+        'relay screen add checkout --input \'{"expectedRevision":2,"screen":{"id":"confirmation","title":"Confirmation","position":{"x":640,"y":240}}}\'',
+      ],
+    }),
+  ),
   mapped(
     "app-map.screen.capture",
     path("screen capture", ["appMapId"], undefined, {
@@ -478,7 +508,48 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
-  mapped("app-map.connection.create", path("connect create", ["appMapId"])),
+  mapped(
+    "app-map.connection.create",
+    path("connect create", ["appMapId"], undefined, {
+      summary: "Connect two screens with optional replayable actions",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "connection.id",
+          type: "string",
+          required: true,
+          description: "Stable connection identifier",
+        },
+        {
+          name: "connection.fromScreenId",
+          type: "string",
+          required: true,
+          description: "Source screen",
+        },
+        {
+          name: "connection.destination",
+          type: "{kind,screenId?}",
+          required: true,
+          description: "Screen or end destination",
+        },
+        { name: "connection.label", type: "string", description: "Action-oriented label" },
+        {
+          name: "connection.actions",
+          type: "array",
+          description: "Optional declarative or recorded actions",
+        },
+      ],
+      examples: [
+        'relay connect create checkout --input \'{"expectedRevision":3,"connection":{"id":"submit-order","fromScreenId":"cart","destination":{"kind":"screen","screenId":"confirmation"},"label":"Submit order"}}\'',
+      ],
+    }),
+  ),
   mapped(
     "app-map.connection.update",
     path("connect update", ["appMapId", "connectionId"]),
@@ -487,7 +558,45 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
   mapped("app-map.group.save", path("group save", ["appMapId", "groupId"])),
   mapped("app-map.group.remove", path("group remove", ["appMapId", "groupId"])),
-  mapped("app-map.flow.save", path("flow save", ["appMapId", "flowId"])),
+  mapped(
+    "app-map.flow.save",
+    path("flow save", ["appMapId", "flowId"], undefined, {
+      summary: "Save a reusable path; Relay owns scope and timestamps",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "flowId", type: "string", description: "Stable flow identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "flow.name",
+          type: "string",
+          required: true,
+          description: "Human-readable flow name",
+        },
+        {
+          name: "flow.startScreenId",
+          type: "string",
+          required: true,
+          description: "Starting screen",
+        },
+        {
+          name: "flow.connectionIds",
+          type: "string[]",
+          required: true,
+          description: "Ordered connection path",
+        },
+      ],
+      examples: [
+        'relay flow save checkout purchase --input \'{"expectedRevision":4,"flow":{"name":"Purchase","startScreenId":"cart","connectionIds":["submit-order"]}}\'',
+      ],
+    }),
+  ),
   mapped("app-map.flow.remove", path("flow remove", ["appMapId", "flowId"])),
   mapped("app-map.case-stack.save", path("case-stack save", ["appMapId", "caseStackId"])),
   mapped(

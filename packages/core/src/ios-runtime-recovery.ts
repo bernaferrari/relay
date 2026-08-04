@@ -23,6 +23,86 @@ export type IosRuntimeRecoveryResult = {
   summary: string;
 };
 
+export type IosRuntimeSessionRecovery = IosRuntimeRecoveryResult & {
+  session: {
+    status: "restored" | "unavailable";
+    app?: string;
+    fallback?: boolean;
+    detail: string;
+  };
+};
+
+/**
+ * Preserve a working XCTest session. Recovery is a repair path, not a reset
+ * button: restarting CoreDevice can turn an unattended, controllable iPad into
+ * a locked device that cannot reconnect until a person returns.
+ */
+export async function recoverIosRuntimeSession(
+  serial: string,
+  inspect: () => Promise<{ app?: string; fallback?: boolean }>,
+  repair: (cause: unknown) => Promise<IosRuntimeRecoveryResult>,
+  diagnose: (error: unknown) => Promise<string>,
+): Promise<IosRuntimeSessionRecovery> {
+  try {
+    const restored = await inspect();
+    return {
+      serial,
+      recovered: false,
+      ready: true,
+      actions: [],
+      summary: "Relay device control is already ready.",
+      session: {
+        status: "restored",
+        ...restored,
+        detail: restored.fallback
+          ? "Relay restored device control at the Home Screen."
+          : "Relay restored the app that was active in this workspace.",
+      },
+    };
+  } catch (cause) {
+    const host = await repair(cause);
+    return confirmIosRuntimeSession(host, inspect, diagnose);
+  }
+}
+
+/**
+ * A bounded CoreDevice probe can time out while an already-installed XCTest
+ * runner is usable. Confirm readiness with the operation Relay actually needs
+ * before telling humans or agents that the device is unavailable.
+ */
+export async function confirmIosRuntimeSession(
+  host: IosRuntimeRecoveryResult,
+  restore: () => Promise<{ app?: string; fallback?: boolean }>,
+  diagnose: (error: unknown) => Promise<string>,
+): Promise<IosRuntimeSessionRecovery> {
+  try {
+    const restored = await restore();
+    return {
+      ...host,
+      ready: true,
+      summary: host.ready
+        ? host.summary
+        : "Relay restored device control after Apple’s health check timed out.",
+      session: {
+        status: "restored",
+        ...restored,
+        detail: restored.fallback
+          ? "Relay restored device control at the Home Screen."
+          : "Relay restored the app that was active in this workspace.",
+      },
+    };
+  } catch (error) {
+    return {
+      ...host,
+      ready: false,
+      session: {
+        status: "unavailable",
+        detail: await diagnose(error),
+      },
+    };
+  }
+}
+
 type ProcessObservation = {
   alive: boolean;
   startTime?: string;
@@ -252,11 +332,11 @@ export async function recoverIosRuntime(
     `relay-ios-health-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
   );
   let probe = await deps.run("xcrun", probeArgs(input.serial, output), 15_000);
-  // A forced repair is deliberately deeper than the passive health check.
-  // CoreDevice can answer `info details` while its app/process services remain
-  // wedged after an interrupted XCTest launch. Restart only the exact verified
-  // CoreDeviceService process so the next request gets a clean service graph.
-  if (input.force === true || (!probeHealthy(probe) && coreDeviceFailure(probe))) {
+  // A forced repair may restart CoreDevice after a failed bounded probe, but
+  // never tears down a service that just proved healthy. This matters for
+  // unattended physical devices: once their working runner is removed, a
+  // locked screen can prevent developer services from reconnecting.
+  if (!probeHealthy(probe) && (input.force === true || coreDeviceFailure(probe))) {
     actions.push(await restartCoreDevice(deps));
     probe = await deps.run("xcrun", probeArgs(input.serial, output), 15_000);
   }

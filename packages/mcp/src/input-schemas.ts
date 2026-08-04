@@ -85,6 +85,13 @@ const destination = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("end") }).strict(),
 ]);
 
+const connectionDestination = z.discriminatedUnion("kind", [
+  z
+    .object({ kind: z.literal("screen"), screenId: identifier("Destination screen identifier") })
+    .strict(),
+  z.object({ kind: z.literal("end") }).strict(),
+]);
+
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
@@ -236,7 +243,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       appMapId: identifier("App Map identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
-      input: unknownRecord.describe("Screen and optional variants to add"),
+      screen: z
+        .object({
+          id: identifier("Stable screen identifier"),
+          title: text("Screen name"),
+          description: z.string().optional(),
+          identity: unknownRecord.describe("Optional observed screen identity").optional(),
+          position: point.describe("Optional canvas position").optional(),
+        })
+        .strict(),
     })
     .strict(),
   "app-map.screen.update": z
@@ -261,7 +276,17 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       appMapId: identifier("App Map identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
-      connection: unknownRecord.describe("Normalized App Map connection"),
+      connection: z
+        .object({
+          id: identifier("Stable connection identifier"),
+          fromScreenId: identifier("Source screen identifier"),
+          destination: connectionDestination,
+          label: z.string().optional(),
+          caseStackId: identifier("Optional case stack identifier").optional(),
+          state: z.enum(["draft", "ready"]).optional(),
+          actions: z.array(unknownRecord).describe("Optional action specifications").optional(),
+        })
+        .strict(),
     })
     .strict(),
   "app-map.connection.update": z
@@ -287,7 +312,13 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       flowId: identifier("Flow identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
-      flow: unknownRecord.describe("Normalized App Map flow"),
+      flow: z
+        .object({
+          name: text("Flow name"),
+          startScreenId: identifier("Starting screen identifier"),
+          connectionIds: z.array(identifier("Connection identifier")),
+        })
+        .strict(),
     })
     .strict(),
   "app-map.flow.remove": z

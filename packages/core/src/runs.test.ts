@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { TestJob } from "./session.js";
-import { listPersistedRuns, persistRun, readPersistedRun, writeFramePng } from "./runs.js";
+import {
+  listPersistedRuns,
+  listRunSummaries,
+  persistRun,
+  readPersistedRun,
+  runsRoot,
+  writeFramePng,
+} from "./runs.js";
 
 function job(root: string, status: TestJob["status"] = "ok"): TestJob {
   const at = Date.now();
@@ -33,6 +40,39 @@ function job(root: string, status: TestJob["status"] = "ok"): TestJob {
     evidencePolicy: { schemaVersion: 1, sensitive: {} },
   };
 }
+
+test("run storage follows an explicit Relay state boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-state-runs-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  delete process.env.RELAY_RUNS_DIR;
+  try {
+    assert.equal(runsRoot(), join(root, "runs"));
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("finalizing an external run cannot contaminate the active run catalog", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-store-"));
+  const external = await mkdtemp(join(tmpdir(), "relay-external-run-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    await persistRun(job(join(external, "run")));
+    assert.deepEqual(await listRunSummaries(), []);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+    await rm(external, { recursive: true, force: true });
+  }
+});
 
 test("persisted runs resolve their full ID when folders use a short suffix", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-runs-"));

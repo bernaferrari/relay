@@ -10,7 +10,7 @@
     "dev": "tsx src/index.ts",
     "postinstall": "fetch-scrcpy-server 2.5",
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --import ./scripts/test-environment.mjs --test src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
