@@ -143,15 +143,20 @@ export function ScreenCard(props: {
     >
       <Show when={props.selected && props.showActions !== false && !props.editing}>
         <div
-          class="absolute top-[30px] z-30 flex w-12 flex-col items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
+          role="toolbar"
+          aria-label={`${props.title} screen actions`}
+          data-app-map-screen-actions
+          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
           <button
             type="button"
-            class="app-map-icon-button"
+            class="inline-flex min-h-11 min-w-[82px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2 text-[11px] font-medium text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--text-interactive-base))] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)]"
             aria-label={`Open details for ${props.title}`}
-            title="Open details"
-            data-tip="Details · Enter"
+            aria-expanded="true"
+            aria-controls={`app-map-screen-details-${props.node.id}`}
+            data-app-map-details-trigger
+            title="Open details · Enter"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -159,11 +164,13 @@ export function ScreenCard(props: {
             }}
           >
             <Icon name="info" size={13} />
+            <span>Details</span>
           </button>
           <button
             type="button"
             class="app-map-icon-button"
             aria-label={`Rename ${props.title}`}
+            title="Rename · F2"
             data-tip="Rename · F2"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -177,6 +184,7 @@ export function ScreenCard(props: {
             type="button"
             class="app-map-icon-button"
             aria-label={`Connect from ${props.title}`}
+            title="Add connection"
             data-tip="Add connection"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -479,17 +487,22 @@ export function ScreenInspector(props: {
     <Show when={props.node}>
       {(_node) => (
         <aside
+          id={`app-map-screen-details-${_node().id}`}
+          data-app-map-screen-inspector
           class="absolute top-16 right-3 z-30 w-[min(328px,calc(100%-24px))] overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
           aria-label={`Details for ${props.title}`}
         >
           <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
-            <div>
-              <span class="block text-[10px] font-medium text-[var(--text-weak)]">
-                Screen details
+            <div class="flex min-w-0 items-start gap-2">
+              <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                <Icon name="info" size={12} />
               </span>
-              <strong class="mt-1 block text-[12.5px] font-semibold text-[var(--text-strong)]">
-                {props.title}
-              </strong>
+              <div class="min-w-0">
+                <span class="block text-[10px] font-medium text-[var(--text-weak)]">Details</span>
+                <strong class="mt-1 block text-[12.5px] font-semibold text-[var(--text-strong)]">
+                  {props.title}
+                </strong>
+              </div>
             </div>
             <div class="flex items-center gap-1">
               <button
