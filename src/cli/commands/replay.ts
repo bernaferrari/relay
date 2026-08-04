@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { exportReplayActionsToMaestro } from '@agent-device/maestro';
+import { exportReplayActionsToMaestro, MAESTRO_SELECTOR_PROJECTION } from '@agent-device/maestro';
 import { AppError } from '@agent-device/kernel/errors';
 import { parseReplayScriptDetailed, readReplayScriptMetadata } from '@agent-device/ad-script';
-import { parseSelectorChain } from '../../selectors/index.ts';
+import { projectSelectorExpression } from '@agent-device/selectors';
 import { resolveUserPath } from '../../utils/path-resolution.ts';
 import { writeCommandOutput } from './shared.ts';
 import type { ClientCommandHandler } from './router-types.ts';
@@ -44,7 +44,8 @@ async function handleReplayExportCommand({
   const result = exportReplayActionsToMaestro(parsed.actions, {
     actionLines: parsed.actionLines,
     metadata: readReplayScriptMetadata(script),
-    parseSelector: parseSelectorChain,
+    resolveSelector: (expression) =>
+      projectSelectorExpression(expression, MAESTRO_SELECTOR_PROJECTION),
   });
   const outputPath = typeof flags.out === 'string' ? resolveUserPath(flags.out) : undefined;
   if (outputPath) {

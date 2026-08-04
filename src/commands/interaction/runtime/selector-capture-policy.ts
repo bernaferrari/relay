@@ -1,26 +1,18 @@
-import type { IsPredicate } from '../../../selectors/predicates.ts';
-import type { SelectorChain } from '../../../selectors/parse.ts';
-
-export type SelectorCapturePolicyInput = {
-  predicate?: IsPredicate;
-  selectorChain?: SelectorChain | null;
-};
+import type { IsPredicate } from '@agent-device/selectors';
 
 export type SelectorCapturePolicy = {
   includeRects: boolean;
   interactiveOnly: boolean;
 };
 
-export function deriveSelectorCapturePolicy(
-  input: SelectorCapturePolicyInput,
-): SelectorCapturePolicy {
-  const includeRects = predicateNeedsRects(input.predicate);
+/**
+ * What a selector read needs from its capture. Only `is` narrows this: the two
+ * geometry predicates need rects, and every other selector read — including
+ * every `find`, `wait`, and bare-selector lookup — takes the same default.
+ */
+export function deriveSelectorCapturePolicy(predicate?: IsPredicate): SelectorCapturePolicy {
   return {
-    includeRects,
+    includeRects: predicate === 'visible' || predicate === 'hidden',
     interactiveOnly: false,
   };
-}
-
-function predicateNeedsRects(predicate: IsPredicate | undefined): boolean {
-  return predicate === 'visible' || predicate === 'hidden';
 }
