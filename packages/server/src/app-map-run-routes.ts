@@ -8,6 +8,7 @@ import {
   currentOperationContext,
   enqueueJob,
   listDevices,
+  listDeviceLeases,
   listTargets,
   prepareCaseStackMatrix,
   readAppMap,
@@ -21,6 +22,33 @@ import type { OperationInput } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
+
+type ObservedTarget = {
+  serial: string;
+  connectionState?: string;
+  booted?: boolean | null;
+};
+
+/**
+ * Return the actionable state for an explicit device serial. An empty
+ * discovery result is intentionally `unknown`: a provider may be temporarily
+ * unavailable, and an existing lease is still allowed to queue a job for a
+ * remote/test target. Once discovery has returned a non-empty inventory,
+ * however, a missing serial is definitively disconnected.
+ */
+export function explicitTargetAvailability(
+  serial: string,
+  devices: ObservedTarget[],
+): "connected" | "not-ready" | "missing" | "unknown" {
+  if (devices.length === 0) return "unknown";
+  const device = devices.find((candidate) => candidate.serial === serial);
+  if (!device) return "missing";
+  if (device.connectionState === "offline" || device.connectionState === "unauthorized") {
+    return "not-ready";
+  }
+  if (device.booted === false) return "not-ready";
+  return "connected";
+}
 
 export type AppMapRunRouteContext = {
   method: string;
@@ -47,6 +75,44 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   >;
   const targetId = body.browserTargetId?.trim() || body.serial?.trim();
   if (!targetId) throw new HttpError(400, "Choose a target before running this flow");
+
+  // A stale physical serial should not produce a lease-recovery message. A
+  // valid existing lease remains authoritative for remote and test-double
+  // targets, so only preflight when this actor does not already hold one.
+  if (body.serial?.trim()) {
+    const operation = currentOperationContext();
+    const activeLease = operation
+      ? (await listDeviceLeases(input.scope.projectId)).some(
+          (lease) =>
+            lease.deviceSerial === targetId &&
+            lease.ownerId === operation.actorId &&
+            lease.status === "leased" &&
+            lease.expiresAt > Date.now(),
+        )
+      : false;
+    if (!activeLease) {
+      const availability = explicitTargetAvailability(
+        targetId,
+        await listDevices().catch(() => []),
+      );
+      if (availability === "missing") {
+        throw new HttpError(409, `Target ${targetId} is not connected`, {
+          code: "TARGET_NOT_CONNECTED",
+          targetId,
+          recovery: "Connect the device, unlock it, and refresh the target list before retrying.",
+          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
+        });
+      }
+      if (availability === "not-ready") {
+        throw new HttpError(409, `Target ${targetId} is not ready for control`, {
+          code: "TARGET_NOT_READY",
+          targetId,
+          recovery: "Unlock or authorize the device, then refresh the target list before retrying.",
+          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
+        });
+      }
+    }
+  }
   await assertTargetControl(input.scope, targetId);
 
   const map = await readAppMap(input.scope.projectId, appMapId);

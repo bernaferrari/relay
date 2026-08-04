@@ -11,6 +11,29 @@ import {
   setDiscoveryStatus,
 } from "@relay/core";
 import { startServer } from "./index.js";
+import { explicitTargetAvailability } from "./app-map-run-routes.js";
+
+test("explicit target preflight distinguishes disconnected and not-ready devices", () => {
+  assert.equal(explicitTargetAvailability("phone-1", []), "unknown");
+  assert.equal(
+    explicitTargetAvailability("phone-1", [
+      { serial: "phone-2", booted: true, connectionState: "connected" },
+    ]),
+    "missing",
+  );
+  assert.equal(
+    explicitTargetAvailability("phone-1", [
+      { serial: "phone-1", booted: true, connectionState: "offline" },
+    ]),
+    "not-ready",
+  );
+  assert.equal(
+    explicitTargetAvailability("phone-1", [
+      { serial: "phone-1", booted: true, connectionState: "connected" },
+    ]),
+    "connected",
+  );
+});
 
 test("App Map operations are equivalent for human and agent actors", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-server-"));
