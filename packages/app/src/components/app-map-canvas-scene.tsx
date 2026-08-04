@@ -47,6 +47,7 @@ export type AppMapCanvasSceneProps = {
   imageFor: (node: MapTreeNode) => string;
   orientationEvidenceFor: (node: MapTreeNode) => ScreenshotOrientationEvidence | undefined;
   isFlowStart: (node: MapTreeNode) => boolean;
+  detailsOpen: boolean;
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
   connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
@@ -394,6 +395,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               geometry={geometryForNode(node)}
               src={() => props.imageFor(node)}
               orientationEvidence={props.orientationEvidenceFor(node)}
+              detailsOpen={props.detailsOpen && node.id === props.selectedNodeId}
               sourceAnchor={selectedConnectionAnchor()}
               onSelect={(event) => props.onSelectNode(node, event)}
               onContextMenu={(event) => props.onNodeContextMenu(event, node)}

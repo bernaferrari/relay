@@ -78,6 +78,7 @@ export function ScreenCard(props: {
   orientationEvidence?: ScreenshotOrientationEvidence;
   /** The selected recorded connection's source target, if one exists. */
   sourceAnchor?: CanvasInteractionAnchor;
+  detailsOpen?: boolean;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
   onContextMenu: (event: MouseEvent) => void;
@@ -152,8 +153,12 @@ export function ScreenCard(props: {
           <button
             type="button"
             class="inline-flex min-h-11 min-w-[82px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2 text-[11px] font-medium text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--text-interactive-base))] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)]"
-            aria-label={`Open details for ${props.title}`}
-            aria-expanded="true"
+            aria-label={
+              props.detailsOpen
+                ? `Details open for ${props.title}`
+                : `Open details for ${props.title}`
+            }
+            aria-expanded={props.detailsOpen === true}
             aria-controls={`app-map-screen-details-${props.node.id}`}
             data-app-map-details-trigger
             title="Open details · Enter"
@@ -202,7 +207,7 @@ export function ScreenCard(props: {
           width: `${props.geometry.frameWidth}px`,
           "justify-self": "center",
         }}
-        data-tip="Click to inspect · Enter for details"
+        data-tip="Click to inspect · Enter opens details"
       >
         <Show
           when={props.editing}
@@ -562,7 +567,7 @@ export function ScreenInspector(props: {
               {props.connections.length} {props.connections.length === 1 ? "path" : "paths"} out
             </span>
             <i class="size-0.5 rounded-full bg-current opacity-60" />
-            <span>Enter for details · F2 to rename</span>
+            <span>Enter opens details · F2 renames</span>
           </div>
           <Show when={props.flowSetup}>
             {(flowSetup) => (

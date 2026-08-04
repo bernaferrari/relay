@@ -2444,6 +2444,7 @@ export function AppMapWorkspace(props: {
                       draft.steps()[node.representativeStepIndex],
                     ) || variantOrientationEvidence(activeAppMap(), node.id)
                   }
+                  detailsOpen={screenInspectorOpen()}
                   isFlowStart={(node) =>
                     !connections().some((connection) => connection.toScreenId === node.id)
                   }
