@@ -11,6 +11,7 @@ import {
 import { makeSnapshotState } from '../../../__tests__/test-utils/index.ts';
 import { ref, selector } from './selector-read-utils.ts';
 import { buildSettleTailEntries, NEVER_SETTLED_HINT } from './settle.ts';
+import { readSnapshotQualityVerdict } from '../../../snapshot/snapshot-quality.ts';
 
 // #1101 --settle: quiet-window settle loop composition on the interaction
 // commands. Budgets are injected (fake clock) — no real waiting.
@@ -205,6 +206,47 @@ test('private-ax recovery resets the settle budget once', async () => {
   assert.equal(settle.settled, true);
   assert.ok(settle.diff);
   assert.equal(captures, 4);
+});
+
+test('penalty-deferred private-ax captures do not reset the settle budget', async () => {
+  // Same shape as the reset test above, but the verdict says the circuit breaker PRE-selected
+  // private AX ('deferred'): the capture paid no grind, so the loop keeps its original budget
+  // and times out instead of being extended.
+  const before = buttonSnapshot();
+  const deferredAfter = welcomeSnapshot();
+  // Parsed from a raw runner-wire object on purpose: if 'deferred' is ever dropped from the
+  // accepted reason-code set, the parser strips it, the reset fires again, and this test fails.
+  deferredAfter.snapshotQuality = readSnapshotQualityVerdict({
+    state: 'recovered',
+    backend: 'private-ax',
+    reasonCode: 'deferred',
+    reason: 'XCTest-backed snapshot tiers were deferred after recent slow accessibility work',
+  });
+  assert.equal(deferredAfter.snapshotQuality?.reasonCode, 'deferred');
+  let captures = 0;
+  const clock = createFakeClock();
+  const device = createSettleDevice({
+    stored: before,
+    clock,
+    captureSnapshot: () => {
+      captures += 1;
+      if (captures === 1) return { snapshot: before };
+      if (captures === 2) {
+        clock.advance(900);
+      }
+      return { snapshot: deferredAfter };
+    },
+  });
+
+  const result = await device.interactions.press(selector('label=Continue'), {
+    session: 'default',
+    settle: { quietMs: 500, timeoutMs: 1_000 },
+  });
+
+  const settle = result.settle;
+  assert.ok(settle);
+  assert.equal(settle.settled, false);
+  assert.equal(settle.hint, NEVER_SETTLED_HINT);
 });
 
 test('a broken settle capture never fails the action', async () => {
