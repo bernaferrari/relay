@@ -56,7 +56,29 @@ export function patchScreen(
     if (existing && existing.screenId !== screenId) {
       appMapFail("duplicate-id", `Variant ${variant.id} belongs to another screen`);
     }
-    draft.screenVariants[variant.id] = structuredClone(variant);
+    // A variant is an accumulating runtime record. Canvas projections and
+    // agent patches may only know the fields they are changing, so replacing
+    // the whole value here could silently discard its canonical preview,
+    // baseline, or older evidence. Removing a variant remains the explicit
+    // way to discard that record.
+    draft.screenVariants[variant.id] = existing
+      ? {
+          ...structuredClone(existing),
+          ...structuredClone(variant),
+          evidenceIds: [...new Set([...existing.evidenceIds, ...variant.evidenceIds])],
+          ...((existing.evidenceUris?.length || variant.evidenceUris?.length) && {
+            evidenceUris: [
+              ...new Set([...(existing.evidenceUris ?? []), ...(variant.evidenceUris ?? [])]),
+            ],
+          }),
+          ...(variant.screenshotUri === undefined && existing.screenshotUri
+            ? { screenshotUri: existing.screenshotUri }
+            : {}),
+          ...(variant.baseline === undefined && existing.baseline
+            ? { baseline: structuredClone(existing.baseline) }
+            : {}),
+        }
+      : structuredClone(variant);
     variantIds.add(variant.id);
   }
   screen.title = input.patch.title ?? screen.title;

@@ -5,6 +5,7 @@ import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
+import type { ScreenCardGeometry } from "../lib/app-map-canvas-layout";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
@@ -68,6 +69,7 @@ export function ScreenCard(props: {
   editing: boolean;
   runState?: AppMapRunPresentationState;
   position: { x: number; y: number };
+  geometry: ScreenCardGeometry;
   src: () => string;
   orientationEvidence?: ScreenshotOrientationEvidence;
   showActions?: boolean;
@@ -101,10 +103,14 @@ export function ScreenCard(props: {
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
       class={cn(
-        "group/screen absolute grid h-[204px] w-[240px] grid-rows-[24px_174px] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
+        "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
         props.selected && "z-20",
       )}
-      style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
+      style={{
+        transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)`,
+        height: `${props.geometry.height}px`,
+        "--screen-frame-height": `${props.geometry.frameHeight}px`,
+      }}
       onClick={props.onSelect}
       onContextMenu={props.onContextMenu}
       onDblClick={(event) => {
@@ -130,7 +136,10 @@ export function ScreenCard(props: {
       onPointerDown={props.onPointerDown}
     >
       <Show when={props.selected && props.showActions !== false && !props.editing}>
-        <div class="absolute top-[30px] left-[calc(100%+10px)] z-30 flex w-12 flex-col items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]">
+        <div
+          class="absolute top-[30px] z-30 flex w-12 flex-col items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
+          style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
+        >
           <button
             type="button"
             class="app-map-icon-button"
@@ -231,10 +240,19 @@ export function ScreenCard(props: {
               "grid min-h-0 place-items-center overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-base)] text-center transition-[box-shadow,transform] duration-150",
               frameStateClass(),
             )}
+            style={{
+              width: `${props.geometry.frameWidth}px`,
+              "justify-self": "center",
+            }}
           >
-            <div class="grid size-9 place-items-center rounded-[10px] text-[var(--text-weak)] opacity-70 transition-[background-color,color,opacity] duration-150 group-hover/screen:bg-[var(--v2-background-bg-layer-02)] group-hover/screen:text-[var(--text-base)] group-hover/screen:opacity-100">
-              <Icon name="camera" size={15} />
-              <span class="sr-only">No screenshot yet</span>
+            <div class="grid max-w-[156px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-150 group-hover/screen:text-[var(--text-base)]">
+              <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--v2-background-bg-layer-02)]">
+                <Icon name="camera" size={14} />
+              </span>
+              <span class="text-[10.5px] font-medium text-[var(--text-base)]">
+                Preview not captured
+              </span>
+              <span class="text-[9px]/[1.35]">Select this screen, then press S</span>
             </div>
           </div>
         }
@@ -246,6 +264,10 @@ export function ScreenCard(props: {
               "min-h-0 overflow-hidden rounded-[9px] bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-150",
               frameStateClass(),
             )}
+            style={{
+              width: `${props.geometry.frameWidth}px`,
+              "justify-self": "center",
+            }}
           >
             <OrientedScreenshot
               src={src()}
@@ -260,9 +282,13 @@ export function ScreenCard(props: {
       <button
         type="button"
         class={cn(
-          "app-map-connect-handle group absolute top-[117px] right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
+          "app-map-connect-handle group absolute z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
           props.selected && "opacity-100",
         )}
+        style={{
+          left: `${props.geometry.frameLeft + props.geometry.frameWidth - 22}px`,
+          top: `${props.geometry.frameTop + props.geometry.frameHeight / 2}px`,
+        }}
         aria-label={`Connect ${props.title} to another screen`}
         title="Drag to connect, or press Enter"
         onPointerDown={(event) => {

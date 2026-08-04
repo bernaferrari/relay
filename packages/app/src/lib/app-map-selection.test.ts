@@ -37,9 +37,9 @@ test("temporary multi-selection gets a close collective outline", () => {
     left: 94,
     top: 94,
     right: 586,
-    bottom: 330,
+    bottom: 356,
     width: 492,
-    height: 236,
+    height: 262,
   });
 });
 

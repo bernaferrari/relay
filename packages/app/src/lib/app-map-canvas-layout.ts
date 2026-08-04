@@ -13,17 +13,62 @@ export type CanvasBounds = {
 };
 
 /** Shared geometry for the App Map canvas and collaboration presence. */
-// Screen nodes represent one logical app state that may have phone, tablet,
-// and desktop variants. A neutral 4:3 evidence tile is therefore clearer than
-// pretending every state is a tall phone frame.
+// Positions reserve one stable slot so mixed phone and tablet maps remain easy
+// to arrange. The visual frame inside that slot follows its captured viewport.
 export const SCREEN_CARD_WIDTH = 240;
-export const SCREEN_CARD_HEIGHT = 204;
+export const SCREEN_CARD_HEIGHT = 230;
 export const SCREEN_FRAME_TOP = 30;
-export const SCREEN_FRAME_HEIGHT = 174;
+export const SCREEN_FRAME_HEIGHT = 200;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
 const BRANCH_COLUMN_GAP = 136;
 const BRANCH_ROW_GAP = 48;
+
+export type ScreenCardGeometry = {
+  width: number;
+  height: number;
+  frameLeft: number;
+  frameTop: number;
+  frameWidth: number;
+  frameHeight: number;
+};
+
+/** Preserve the target's real silhouette without allowing an extreme viewport
+ * to destabilize the graph. Unknown screens keep the neutral preview used by
+ * uncaptured states; known phones and tablets fit inside the same layout slot. */
+export function screenCardGeometry(evidence?: {
+  logicalViewport?: { width: number; height: number };
+}): ScreenCardGeometry {
+  const viewport = evidence?.logicalViewport;
+  if (!viewport?.width || !viewport.height) {
+    return {
+      width: SCREEN_CARD_WIDTH,
+      height: 204,
+      frameLeft: 0,
+      frameTop: SCREEN_FRAME_TOP,
+      frameWidth: SCREEN_CARD_WIDTH,
+      frameHeight: 174,
+    };
+  }
+  const ratio = viewport.width / viewport.height;
+  const boundedRatio = Math.min(2, Math.max(0.46, ratio));
+  const frameWidth =
+    boundedRatio >= SCREEN_CARD_WIDTH / SCREEN_FRAME_HEIGHT
+      ? SCREEN_CARD_WIDTH
+      : SCREEN_FRAME_HEIGHT * boundedRatio;
+  const frameHeight =
+    boundedRatio >= SCREEN_CARD_WIDTH / SCREEN_FRAME_HEIGHT
+      ? SCREEN_CARD_WIDTH / boundedRatio
+      : SCREEN_FRAME_HEIGHT;
+  return {
+    width: SCREEN_CARD_WIDTH,
+    height: SCREEN_FRAME_TOP + frameHeight,
+    frameLeft: (SCREEN_CARD_WIDTH - frameWidth) / 2,
+    frameTop: SCREEN_FRAME_TOP,
+    frameWidth,
+    frameHeight,
+  };
+}
 
 function overlapsScreen(left: CanvasPoint, right: CanvasPoint): boolean {
   return !(
@@ -140,6 +185,7 @@ export function canvasEdgeGeometry(
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
   nodeIndex?: ReadonlyMap<string, MapTreeNode>,
+  geometryFor?: (node: MapTreeNode) => ScreenCardGeometry,
 ): { path: string; labelPoint: CanvasPoint } {
   const byId = nodeIndex ?? new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
@@ -147,11 +193,13 @@ export function canvasEdgeGeometry(
   if (!from || !to) return { path: "", labelPoint: { x: 0, y: 0 } };
   const fromPosition = positionFor(from);
   const toPosition = positionFor(to);
+  const fromGeometry = geometryFor?.(from) ?? screenCardGeometry();
+  const toGeometry = geometryFor?.(to) ?? screenCardGeometry();
   if (edge.kind === "return") {
-    const startX = fromPosition.x + SCREEN_CARD_WIDTH / 2;
-    const startY = fromPosition.y + SCREEN_FRAME_TOP;
-    const endX = toPosition.x + SCREEN_CARD_WIDTH / 2;
-    const endY = toPosition.y + SCREEN_FRAME_TOP;
+    const startX = fromPosition.x + fromGeometry.frameLeft + fromGeometry.frameWidth / 2;
+    const startY = fromPosition.y + fromGeometry.frameTop;
+    const endX = toPosition.x + toGeometry.frameLeft + toGeometry.frameWidth / 2;
+    const endY = toPosition.y + toGeometry.frameTop;
     const railY = Math.min(startY, endY) - 34;
     return {
       path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
@@ -161,10 +209,10 @@ export function canvasEdgeGeometry(
       },
     };
   }
-  const startX = fromPosition.x + SCREEN_CARD_WIDTH;
-  const startY = fromPosition.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
-  const endX = toPosition.x;
-  const endY = toPosition.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
+  const startX = fromPosition.x + fromGeometry.frameLeft + fromGeometry.frameWidth;
+  const startY = fromPosition.y + fromGeometry.frameTop + fromGeometry.frameHeight / 2;
+  const endX = toPosition.x + toGeometry.frameLeft;
+  const endY = toPosition.y + toGeometry.frameTop + toGeometry.frameHeight / 2;
   return {
     path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}`,
     labelPoint: {
@@ -179,11 +227,13 @@ export function draftCanvasConnectionPath(
   point: CanvasPoint,
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
+  geometryFor?: (node: MapTreeNode) => ScreenCardGeometry,
 ): string {
   const from = nodes.find((node) => node.id === fromId);
   if (!from) return "";
   const origin = positionFor(from);
-  const startX = origin.x + SCREEN_CARD_WIDTH;
-  const startY = origin.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
+  const geometry = geometryFor?.(from) ?? screenCardGeometry();
+  const startX = origin.x + geometry.frameLeft + geometry.frameWidth;
+  const startY = origin.y + geometry.frameTop + geometry.frameHeight / 2;
   return `M ${startX} ${startY} C ${startX + 48} ${startY}, ${point.x - 48} ${point.y}, ${point.x} ${point.y}`;
 }

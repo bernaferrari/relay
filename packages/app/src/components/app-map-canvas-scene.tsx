@@ -6,6 +6,7 @@ import {
   draftCanvasConnectionPath,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
+  screenCardGeometry,
   type CanvasPoint,
 } from "../lib/app-map-canvas-layout";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -128,6 +129,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   );
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
+  const geometryForNode = (node: MapTreeNode) =>
+    screenCardGeometry(props.orientationEvidenceFor(node));
   const geometries = createMemo(
     () =>
       new Map(
@@ -142,6 +145,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             props.nodes,
             props.positionFor,
             nodeIndex(),
+            geometryForNode,
           ),
         ]),
       ),
@@ -308,6 +312,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 preview().point,
                 props.nodes,
                 props.positionFor,
+                geometryForNode,
               )}
               class="pointer-events-none fill-none stroke-[var(--text-interactive-base)] [stroke-dasharray:5_5]"
               stroke-width="2"
@@ -379,6 +384,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             editing={props.renamingNodeId === node.id}
             runState={props.screenRunState(node.id)}
             position={props.positionFor(node)}
+            geometry={geometryForNode(node)}
             src={() => props.imageFor(node)}
             orientationEvidence={props.orientationEvidenceFor(node)}
             onSelect={(event) => props.onSelectNode(node, event)}

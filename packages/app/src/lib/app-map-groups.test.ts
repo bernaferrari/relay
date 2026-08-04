@@ -12,9 +12,9 @@ test("groups auto-wrap every member with a label gutter", () => {
     left: 72,
     top: 48,
     right: 608,
-    bottom: 372,
+    bottom: 398,
     width: 536,
-    height: 324,
+    height: 350,
   });
 });
 
@@ -24,9 +24,9 @@ test("a Group follows a member moved far away without changing membership", () =
     left: 312,
     top: 88,
     right: 1168,
-    bottom: 1132,
+    bottom: 1158,
     width: 856,
-    height: 1044,
+    height: 1070,
   });
   assert.deepEqual(group.screenIds, ["root", "account"]);
 });

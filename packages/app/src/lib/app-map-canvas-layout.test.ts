@@ -7,6 +7,7 @@ import {
   fitCanvasViewport,
   nextBranchPosition,
   openCanvasViewport,
+  screenCardGeometry,
   SCREEN_CARD_WIDTH,
 } from "./app-map-canvas-layout";
 
@@ -42,6 +43,32 @@ test("canvas geometry is total while a graph is mid-edit", () => {
   );
 });
 
+test("screen previews preserve phone and tablet viewport silhouettes", () => {
+  const phone = screenCardGeometry({ logicalViewport: { width: 1080, height: 2340 } });
+  const tablet = screenCardGeometry({ logicalViewport: { width: 1112, height: 834 } });
+
+  assert.ok(phone.frameHeight > phone.frameWidth);
+  assert.ok(tablet.frameWidth > tablet.frameHeight);
+  assert.equal(phone.frameHeight, 200);
+  assert.equal(tablet.frameWidth, SCREEN_CARD_WIDTH);
+  assert.ok(phone.frameLeft > 0);
+});
+
+test("connections attach to the visible screen frame instead of its layout slot", () => {
+  const phoneGeometry = () =>
+    screenCardGeometry({ logicalViewport: { width: 1080, height: 2340 } });
+  const path = canvasEdgeGeometry(
+    { from: "start", to: "settings", kind: "forward" },
+    [start, settings],
+    (node) => node,
+    undefined,
+    phoneGeometry,
+  ).path;
+  const rightEdge = phoneGeometry().frameLeft + phoneGeometry().frameWidth;
+
+  assert.match(path, new RegExp(`^M ${rightEdge}`));
+});
+
 test("fit keeps a graph visible with stable canvas padding", () => {
   const view = fitCanvasViewport({ width: 800, height: 600 }, { width: 1200, height: 800 });
   assert.ok(view.scale > 0 && view.scale <= 1);
@@ -72,7 +99,7 @@ test("opening a tall map keeps screen labels readable while Fit remains exact", 
 test("keyboard-created branches occupy the nearest open sibling row", () => {
   const source = { x: 0, y: 0 };
   const branchX = 376;
-  const branchY = 252;
+  const branchY = 278;
   assert.deepEqual(nextBranchPosition(source, [source]), { x: branchX, y: 0 });
   assert.deepEqual(nextBranchPosition(source, [source, { x: branchX, y: 0 }]), {
     x: branchX,

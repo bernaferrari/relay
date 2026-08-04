@@ -328,9 +328,14 @@ function ScreenTile(props: {
         <Show
           when={props.image}
           fallback={
-            <div class="grid size-9 place-items-center rounded-[10px] text-[var(--text-weak)] opacity-70 transition-[background-color,color,opacity] duration-150 group-hover:bg-[var(--v2-background-bg-layer-02)] group-hover:text-[var(--text-base)] group-hover:opacity-100">
-              <Icon name="camera" size={15} />
-              <span class="sr-only">No screenshot yet</span>
+            <div class="grid max-w-[170px] justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors duration-150 group-hover:text-[var(--text-base)]">
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-layer-02)]">
+                <Icon name="camera" size={15} />
+              </span>
+              <span class="text-[11px] font-medium text-[var(--text-base)]">
+                Preview not captured
+              </span>
+              <span class="text-[9.5px]/[1.35]">Open this screen to capture it</span>
             </div>
           }
         >

@@ -549,6 +549,46 @@ test("updates screen fields and normalized variants, including explicit field re
   assert.equal(next.screens.home?.identity, undefined);
 });
 
+test("updating a variant preserves durable preview, baseline, and prior evidence", () => {
+  const input = mapFixture();
+  const existing = input.screenVariants["variant-home"]!;
+  existing.evidenceIds = ["semantic-before", "screenshot-before"];
+  existing.evidenceUris = [
+    "relay-evidence://semantic-before",
+    "relay-evidence://screenshot-before",
+  ];
+  existing.screenshotUri = "relay-evidence://screenshot-before";
+
+  const incoming = structuredClone(existing);
+  incoming.evidenceIds = ["semantic-after", "screenshot-after"];
+  incoming.evidenceUris = ["relay-evidence://semantic-after", "relay-evidence://screenshot-after"];
+  delete incoming.screenshotUri;
+  delete incoming.baseline;
+
+  const next = updateAppMapScreen(
+    input,
+    "home",
+    { patch: {}, upsertVariants: [incoming] },
+    context(input, "event-preserve-variant-evidence"),
+  );
+  const updated = next.screenVariants["variant-home"]!;
+
+  assert.deepEqual(updated.evidenceIds, [
+    "semantic-before",
+    "screenshot-before",
+    "semantic-after",
+    "screenshot-after",
+  ]);
+  assert.deepEqual(updated.evidenceUris, [
+    "relay-evidence://semantic-before",
+    "relay-evidence://screenshot-before",
+    "relay-evidence://semantic-after",
+    "relay-evidence://screenshot-after",
+  ]);
+  assert.equal(updated.screenshotUri, "relay-evidence://screenshot-before");
+  assert.deepEqual(updated.baseline, existing.baseline);
+});
+
 test("screen removal is safe and explains connections, flows, assertions, and proposals that block it", () => {
   const connected = mapFixture();
   expectError(
