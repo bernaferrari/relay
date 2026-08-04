@@ -74,6 +74,7 @@ class FakeRuntime implements AuthoringRuntime {
 
   async replay(_session: AuthoringSession, steps: RecipeStep[]) {
     this.replayed.push(structuredClone(steps));
+    if (steps.length > 0) this.screen = "destination";
   }
 
   async startVideo() {}
@@ -424,6 +425,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
     assert.equal(inspected.session.take?.state, "reviewing");
     assert.equal(inspected.session.take?.revisions.at(-1)?.actions[0]?.steps[0]?.kind, "key");
 
+    runtime.screen = "source";
     const replayResult = callResult(
       await callTool(mcp, "relay_authoring_take_replay", { sessionId }),
     );

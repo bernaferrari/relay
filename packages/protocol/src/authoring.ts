@@ -103,6 +103,8 @@ export type AuthoringReplayAttempt = {
   finishedAt: number;
   outcome: "passed" | "failed" | "cancelled";
   evidence: AuthoringEvidence[];
+  before?: AuthoringObservation;
+  after?: AuthoringObservation;
   error?: string;
 };
 

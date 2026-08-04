@@ -41,7 +41,9 @@ import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readines
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
-import { targetIsReady } from "../lib/target-presentation";
+import { addCanvasStartScreen, emptyCanvasGraph } from "../lib/app-map-canvas-graph";
+import { planAppMapProjection } from "../lib/app-map-projection";
+import { screenVariantForCapture } from "../lib/app-map-capture";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -93,7 +95,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
   const [devicePanelOpen, setDevicePanelOpen] = createSignal(readRememberedDevicePanelPreference());
   const [creatingBlankMap, setCreatingBlankMap] = createSignal(false);
-  const [captureStartOnReady, setCaptureStartOnReady] = createSignal(false);
   const [addNoteOnReady, setAddNoteOnReady] = createSignal(false);
   const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
     visible: false,
@@ -327,11 +328,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
   });
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
-  const selectedTargetCanCapture = () =>
-    targetIsReady(
-      server.devices().find((candidate) => candidate.serial === server.selectedDevice()),
-      server.health() === "online",
-    );
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
     if (selectedMap()) {
@@ -369,6 +365,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       }
       if (action.kind === "open-device") {
         if (!devicePanelOpen()) toggleDevicePanel();
+        return;
+      }
+      if (action.kind === "cancel") {
+        const active = server.activeJob();
+        // The running summary can briefly arrive before the detailed jobs
+        // list. The server's active-cancel operation remains authoritative in
+        // that gap, so Stop must never turn into a no-op.
+        void server.cancelJob(active?.id);
         return;
       }
       if (action.kind === "blocked") {
@@ -428,20 +432,53 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   async function captureFirstScreenFromBlankMap(): Promise<void> {
-    if (creatingBlankMap() || !selectedTargetCanCapture()) {
-      if (!selectedTargetCanCapture()) openDevicePicker();
+    const canCapture =
+      selectedTargetIsReady() && Boolean(server.selectedLeaseId()) && !server.controlIssue();
+    if (creatingBlankMap() || !canCapture) {
+      if (!canCapture) openDevicePicker();
       return;
     }
     setCreatingBlankMap(true);
-    setCaptureStartOnReady(true);
-    const saved = await createCanonicalMap(false);
-    if (!saved) {
-      setCaptureStartOnReady(false);
+    let createdMap: AppMap | null = null;
+    try {
+      const title = nextUntitledMapTitle(server.appMaps());
+      createdMap = await server.createAppMap(crypto.randomUUID(), title);
+      const captured = await recorder.captureStartScreen(createdMap.id);
+      if (!captured) throw new Error("Relay could not capture the current screen");
+
+      const added = addCanvasStartScreen(emptyCanvasGraph(), captured.observation);
+      const variant = screenVariantForCapture(added.screen.id, captured);
+      const changes = planAppMapProjection({
+        appMap: createdMap,
+        graph: added.graph,
+        positions: {},
+        recipeSteps: [],
+        variantsByScreen: { [added.screen.id]: [variant] },
+      });
+      const committed = await server.runAction("app-map.commit", {
+        appMapId: createdMap.id,
+        expectedRevision: createdMap.revision,
+        summary: "Captured the first screen",
+        changes,
+      });
+      await server.refreshAppMaps();
+      server.setSelectedAppMapId(committed.appMap.id);
+      setArea("tests");
+      setStudioView("map");
+      setSettingsOpen(false);
+      setNavOpen(false);
+      toast("Start screen added", "success");
+    } catch (error) {
+      if (createdMap) {
+        await server
+          .runAction("app-map.remove", { appMapId: createdMap.id })
+          .catch(() => undefined);
+        await server.refreshAppMaps().catch(() => undefined);
+      }
+      toast(error instanceof Error ? error.message : String(error), "warning");
+    } finally {
       setCreatingBlankMap(false);
-      return;
     }
-    // AppMapWorkspace completes the capture after its canonical document has
-    // loaded. Until then the progress state prevents duplicate files/captures.
   }
 
   async function addFirstNoteToBlankMap(): Promise<void> {
@@ -598,29 +635,29 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     >
       <div class={shellDragStrip} aria-hidden="true" />
 
-      <MapLibrary
-        open={navOpen()}
-        onClose={closeLibrary}
-        area={libraryArea()}
-        onArea={(nextArea) => {
-          setArea(nextArea);
-          // Run history already owns its own filters and result list. Keeping
-          // the navigator's second copy open makes the same runs compete in
-          // two columns, so the report surface takes focus immediately.
-          if (nextArea === "runs") setNavOpen(false);
-        }}
-        query={query()}
-        onQuery={setQuery}
-        items={mapItems()}
-        selectedId={server.selectedAppMapId()}
-        onSelect={openRecipe}
-        onDelete={deleteMap}
-        onCreate={startNewMap}
-        onOpenRun={(id) => server.setSelectedJobId(id)}
-        onImport={importTestYaml}
-        onOpenSettings={() => props.onOpenSettings()}
-      />
       <Show when={navOpen()}>
+        <MapLibrary
+          open
+          onClose={closeLibrary}
+          area={libraryArea()}
+          onArea={(nextArea) => {
+            setArea(nextArea);
+            // Run history already owns its own filters and result list. Keeping
+            // the navigator's second copy open makes the same runs compete in
+            // two columns, so the report surface takes focus immediately.
+            if (nextArea === "runs") setNavOpen(false);
+          }}
+          query={query()}
+          onQuery={setQuery}
+          items={mapItems()}
+          selectedId={server.selectedAppMapId()}
+          onSelect={openRecipe}
+          onDelete={deleteMap}
+          onCreate={startNewMap}
+          onOpenRun={(id) => server.setSelectedJobId(id)}
+          onImport={importTestYaml}
+          onOpenSettings={() => props.onOpenSettings()}
+        />
         <button
           type="button"
           class="fixed inset-0 z-[70] cursor-default bg-black/10 backdrop-blur-[1px]"
@@ -943,35 +980,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <Suspense fallback={<WorkspaceLoading label="map" />}>
                       <AppMapWorkspace
                         navigatorOpen={navOpen()}
-                        captureStartOnReady={captureStartOnReady()}
                         addNoteOnReady={addNoteOnReady()}
-                        onCaptureStartHandled={(success, appMapId) => {
-                          setCaptureStartOnReady(false);
-                          setCreatingBlankMap(false);
-                          if (success) return;
-                          // A failed first capture should return to the same
-                          // unsaved canvas, not manufacture an empty draft.
-                          void (async () => {
-                            const appMap = await server.loadAppMap(appMapId).catch(() => null);
-                            if (
-                              !appMap ||
-                              Object.keys(appMap.screens).length > 0 ||
-                              Object.keys(appMap.connections).length > 0 ||
-                              Object.keys(appMap.notes).length > 0
-                            )
-                              return;
-                            await server.runAction("app-map.remove", { appMapId });
-                            await server.refreshAppMaps();
-                            if (server.selectedAppMapId() === appMapId) {
-                              server.setSelectedAppMapId(null);
-                            }
-                          })().catch((error) =>
-                            toast(
-                              error instanceof Error ? error.message : String(error),
-                              "warning",
-                            ),
-                          );
-                        }}
                         onAddNoteHandled={() => {
                           setAddNoteOnReady(false);
                           setCreatingBlankMap(false);

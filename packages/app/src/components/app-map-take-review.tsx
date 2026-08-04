@@ -57,7 +57,16 @@ export function AppMapTakeReview(props: AppMapTakeReviewProps) {
           take={props.take}
           selectedIndex={props.selectedIndex}
           onSelect={props.onSelect}
-          screenshotFor={(_, index) => props.take.stepEvidenceUrls[index] ?? ""}
+          screenshotFor={(_, index) =>
+            props.take.stepEvidenceUrls[index] ??
+            props.take.destinationEvidenceUrl ??
+            props.take.sourceEvidenceUrl ??
+            ""
+          }
+          orientationEvidence={{
+            logicalViewport: props.take.destinationViewport ?? props.take.sourceViewport,
+            platform: props.take.platform,
+          }}
           videoSrc={props.take.videoEvidenceUrl}
           clip={props.take.videoClip}
           onClip={props.onClip}

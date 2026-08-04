@@ -90,6 +90,7 @@ import type {
   LocalSchedule,
 } from "../lib/api-types";
 import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
+import { mergeAuthoringSessionProjections } from "../lib/authoring-session-projection";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -148,6 +149,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
     const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
+    let authoringProjectionVersion = 0;
+    let authoringRefreshVersion = 0;
     // Reopen the last App Map like a document editor. Hardware selection and
     // the live-device panel remain separate state, so resuming the canvas does
     // not imply that a recording has started.
@@ -175,6 +178,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [showOverlays, setShowOverlays] = createSignal(true);
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
+    // Observation is shareable, control is exclusive. Keep those states
+    // separate so a successful screenshot poll cannot turn a view-only target
+    // back into a misleading green “Live” state.
+    const [controlIssue, setControlIssue] = createSignal<string | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
     const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
     const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
@@ -623,6 +630,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     function projectAuthoringSession(session: AuthoringSession): AuthoringSession {
+      authoringProjectionVersion += 1;
       setAuthoringSessions((current) => [
         session,
         ...current.filter((item) => item.id !== session.id),
@@ -632,8 +640,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function refreshAuthoringSessions(): Promise<AuthoringSession[]> {
       if (!client) await resolveConnection();
+      const refreshVersion = ++authoringRefreshVersion;
+      const projectionVersion = authoringProjectionVersion;
       const result = await client!.authoringSessions();
-      setAuthoringSessions(result.sessions);
+      if (refreshVersion !== authoringRefreshVersion) return result.sessions;
+      setAuthoringSessions((current) =>
+        projectionVersion === authoringProjectionVersion
+          ? result.sessions
+          : mergeAuthoringSessionProjections(current, result.sessions),
+      );
       return result.sessions;
     }
 
@@ -727,7 +742,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function replayAuthoringTake(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.replayAuthoringTake(id)).session);
+      // Attached Apple hardware may need to serialize action, snapshot, and
+      // screenshot evidence through one runner. Replays share the same honest
+      // long-operation budget as observation and Stop instead of failing at
+      // the generic 30-second request deadline while the device is healthy.
+      return projectAuthoringSession(
+        (await client!.replayAuthoringTake(id, AbortSignal.timeout(120_000))).session,
+      );
     }
 
     async function commitAuthoringSession(
@@ -1112,6 +1133,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           setRunning(false);
           void refreshJobs();
           void refreshRuns();
+          // The terminal event is emitted immediately before the atomic run
+          // bundle commit. A single eager refresh can therefore observe the
+          // previous catalog forever. Reconcile once more after persistence
+          // without making the normal polling loop continuously scan runs.
+          setTimeout(() => void refreshRuns(), 300);
           void captureUiScreenshot(
             ev.ok || ev.healed ? `${ev.action} · done` : `${ev.action} · failed`,
             ev.jobId as string,
@@ -1220,7 +1246,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function selectDeviceRemote(serial: string | null) {
-      if (serial !== selectedDevice()) {
+      const previousSerial = selectedDevice();
+      const targetChanged = serial !== previousSerial;
+      if (targetChanged) {
         // Live pixels and the accessibility tree are target-specific. Clear
         // them before accepting a new target so the stage never renders a
         // convincing but stale screen while the new target is starting.
@@ -1236,12 +1264,34 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       );
       if (!client || !connection) return;
       try {
-        if (selectedLeaseId()) {
-          await client.releaseLease(selectedLeaseId()!).catch(() => undefined);
-          setSelectedLeaseId(null);
+        const currentLeaseId = selectedLeaseId();
+        const leases = (await client.leases()).leases;
+        const activeCurrentLease = currentLeaseId
+          ? leases.find(
+              (lease) =>
+                lease.id === currentLeaseId &&
+                lease.ownerId === connection!.actorId &&
+                lease.status === "leased" &&
+                lease.expiresAt > Date.now(),
+            )
+          : undefined;
+
+        // Re-selecting a target is the normal way taps, recording, and replay
+        // verify control. It must be idempotent: releasing and recreating a
+        // lease on every interaction filled the activity store and introduced
+        // a race where the next request arrived between both operations.
+        if (activeCurrentLease?.deviceSerial === serial) {
+          setControlIssue(null);
+          return;
         }
+
+        if (activeCurrentLease && (targetChanged || activeCurrentLease.deviceSerial !== serial)) {
+          await client.releaseLease(activeCurrentLease.id).catch(() => undefined);
+        }
+        setSelectedLeaseId(null);
+        setControlIssue(null);
+
         if (serial && selectedDeviceAvailable) {
-          const leases = (await client.leases()).leases;
           const active = leases.find(
             (lease) =>
               lease.deviceSerial === serial &&
@@ -1256,12 +1306,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
               lease.expiresAt > Date.now(),
           );
           if (!active && occupied) {
-            setLiveCaptureIssue("This device is open in another Relay window.");
+            setControlIssue("This device is being controlled in another Relay window.");
             setSelectedLeaseId(null);
             return;
-          }
-          if (liveCaptureIssue() === "This device is open in another Relay window.") {
-            setLiveCaptureIssue(null);
           }
           setSelectedLeaseId(
             active?.id ??
@@ -1269,7 +1316,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
                 await client.lease({
                   poolId: "local",
                   deviceSerial: serial,
-                  expiresAt: Date.now() + 24 * 60 * 60_000,
+                  // A crashed or closed renderer should never lock a device
+                  // for an entire day. Interactions revalidate and reacquire
+                  // this short lease transparently.
+                  expiresAt: Date.now() + 15 * 60_000,
                 })
               ).lease.id,
           );
@@ -1508,6 +1558,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       stopPlayback();
       eventAbort?.abort();
       if (eventReconnectTimer) clearTimeout(eventReconnectTimer);
+      const leaseId = selectedLeaseId();
+      if (client && leaseId) void client.releaseLease(leaseId).catch(() => undefined);
     });
 
     async function cancelJobRemote(jobId?: string) {
@@ -1664,6 +1716,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSensitiveEvidenceConsent: updateSensitiveEvidenceConsent,
       selectedDevice,
       selectedLeaseId,
+      controlIssue,
       setSelectedDevice: selectDeviceRemote,
       bootDevice: bootDeviceRemote,
       bootingSerial,

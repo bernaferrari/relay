@@ -53,6 +53,7 @@ class FakeRuntime implements AuthoringRuntime {
 
   async replay(_session: AuthoringSession, steps: RecipeStep[]) {
     this.replayed.push(structuredClone(steps));
+    if (steps.length > 0) this.screen = "destination";
   }
 
   async startVideo() {}
@@ -212,6 +213,7 @@ test("CLI authoring commands commit a fake transition visible to another client"
     assert.equal(interacted.session.take?.revisions.at(-1)?.actions.length, 1);
     const stopped = await runJsonCommand(["session", "stop", sessionId], cliConnection);
     assert.equal(stopped.session.state, "reviewing");
+    runtime.screen = "source";
     const replayed = await runJsonCommand(["take", "replay", sessionId], cliConnection);
     assert.equal(replayed.session.take?.replayAttempts.at(-1)?.outcome, "passed");
     const committed = await runJsonCommand(

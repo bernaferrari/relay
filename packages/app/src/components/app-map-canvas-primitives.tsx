@@ -80,6 +80,7 @@ export function ScreenCard(props: {
   onConnectKeyboard: () => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
 }) {
+  let connectorPointerStart: { x: number; y: number } | undefined;
   const frameStateClass = () =>
     props.runState === "failed"
       ? "ring-2 ring-[var(--icon-critical-base)]"
@@ -129,7 +130,7 @@ export function ScreenCard(props: {
       onPointerDown={props.onPointerDown}
     >
       <Show when={props.selected && props.showActions !== false && !props.editing}>
-        <div class="absolute bottom-[calc(100%+10px)] left-1/2 z-30 flex min-h-10 -translate-x-1/2 items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]">
+        <div class="absolute top-[30px] left-[calc(100%+10px)] z-30 flex w-12 flex-col items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]">
           <button
             type="button"
             class="app-map-icon-button"
@@ -189,6 +190,7 @@ export function ScreenCard(props: {
             onClick={(event) => event.stopPropagation()}
             onBlur={(event) => props.onCommitRename(event.currentTarget.value)}
             onKeyDown={(event) => {
+              event.stopPropagation();
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
                 event.preventDefault();
@@ -263,8 +265,18 @@ export function ScreenCard(props: {
         )}
         aria-label={`Connect ${props.title} to another screen`}
         title="Drag to connect, or press Enter"
-        onPointerDown={props.onConnectStart}
-        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => {
+          connectorPointerStart = { x: event.clientX, y: event.clientY };
+          props.onConnectStart(event);
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          const start = connectorPointerStart;
+          connectorPointerStart = undefined;
+          if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 6) {
+            props.onConnectKeyboard();
+          }
+        }}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();

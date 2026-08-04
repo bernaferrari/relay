@@ -105,6 +105,7 @@ export function AppMapGroupsLayer(props: {
                           props.onCommitGroupRename(group, event.currentTarget.value)
                         }
                         onKeyDown={(event) => {
+                          event.stopPropagation();
                           if (event.key === "Enter") event.currentTarget.blur();
                           if (event.key === "Escape") {
                             event.preventDefault();
@@ -145,10 +146,10 @@ export function AppMapGroupsLayer(props: {
         }
       >
         <div
-          class="absolute z-30 flex min-h-10 -translate-x-1/2 items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
+          class="absolute z-30 flex min-h-10 flex-col items-stretch gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
           style={{
-            left: `${selectedGroupGeometry()!.left + selectedGroupGeometry()!.width / 2}px`,
-            top: `${selectedGroupGeometry()!.top - 48}px`,
+            left: `${selectedGroupGeometry()!.left + selectedGroupGeometry()!.width + 12}px`,
+            top: `${selectedGroupGeometry()!.top + 30}px`,
           }}
         >
           <button
@@ -182,10 +183,10 @@ export function AppMapGroupsLayer(props: {
       <Show when={props.selectedScreenIds.size > 1 && selectionGeometry()}>
         {(bounds) => (
           <div
-            class="absolute z-30 flex min-h-10 -translate-x-1/2 items-center rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
+            class="absolute z-30 flex min-h-10 items-center rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
             style={{
-              left: `${bounds().left + bounds().width / 2}px`,
-              top: `${bounds().top - 48}px`,
+              left: `${bounds().left + bounds().width + 12}px`,
+              top: `${bounds().top + 30}px`,
             }}
           >
             <button

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   companionFooterMode,
+  companionDisplayedPointToLogical,
   companionFramePresentation,
   companionImageLayout,
+  companionLogicalRectToDisplayed,
   companionLogicalViewport,
   companionOrientationEdge,
 } from "./app-map-device-companion-geometry";
@@ -56,6 +58,28 @@ test("keeps correctly oriented and non-iOS frames unchanged", () => {
       orientation: "portrait",
       rotation: "none",
     },
+  );
+});
+
+test("maps input and accessibility overlays through a left-rotated iPad frame", () => {
+  assert.deepEqual(companionDisplayedPointToLogical({ x: 0.2, y: 0.7 }, "left"), {
+    x: 0.30000000000000004,
+    y: 0.2,
+  });
+  assert.deepEqual(
+    companionLogicalRectToDisplayed({ x: 0.25, y: 0.1, width: 0.5, height: 0.2 }, "left"),
+    { x: 0.1, y: 0.25, width: 0.2, height: 0.5 },
+  );
+});
+
+test("maps input and accessibility overlays through a right-rotated iPad frame", () => {
+  assert.deepEqual(companionDisplayedPointToLogical({ x: 0.2, y: 0.7 }, "right"), {
+    x: 0.7,
+    y: 0.8,
+  });
+  assert.deepEqual(
+    companionLogicalRectToDisplayed({ x: 0.25, y: 0.1, width: 0.5, height: 0.2 }, "right"),
+    { x: 0.7, y: 0.25, width: 0.2, height: 0.5 },
   );
 });
 

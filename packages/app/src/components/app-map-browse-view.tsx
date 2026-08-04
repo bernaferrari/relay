@@ -3,6 +3,7 @@ import type { AppMap, Screen } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
+import { appMapIdForJob } from "../lib/run-presentation";
 import {
   browseOutcomeLabel,
   deriveAppMapAreas,
@@ -20,6 +21,7 @@ export function AppMapBrowseView(props: {
   appMap: AppMap;
   runs: readonly PersistedRun[];
   recipeId: string;
+  targetNameForId: (targetId: string) => string | undefined;
   deviceOpen: boolean;
   imageForScreen: (screenId: string) => string;
   orientationEvidenceForScreen: (screenId: string) => ScreenshotOrientationEvidence | undefined;
@@ -70,7 +72,9 @@ export function AppMapBrowseView(props: {
       }))
       .filter((area) => area.screenIds.length > 0);
   });
-  const rows = createMemo(() => coverageRows(props.appMap, props.runs, props.recipeId));
+  const rows = createMemo(() =>
+    coverageRows(props.appMap, props.runs, props.recipeId, props.targetNameForId),
+  );
   const screenFiltersActive = () =>
     Boolean(query().trim()) || screenPlatform() !== "all" || baseline() !== "all";
   const clearScreenFilters = () => {
@@ -396,7 +400,8 @@ type CoverageRow = {
 function coverageRows(
   appMap: AppMap,
   runs: readonly PersistedRun[],
-  recipeId: string,
+  appMapId: string,
+  targetNameForId: (targetId: string) => string | undefined,
 ): CoverageRow[] {
   const canonical = Object.values(appMap.targetResults).map((result) => {
     const connection = result.connectionId ? appMap.connections[result.connectionId] : undefined;
@@ -416,7 +421,10 @@ function coverageRows(
   });
   const canonicalIds = new Set(canonical.map((row) => row.id));
   const persisted = runs
-    .filter((run) => run.action === recipeId && !canonicalIds.has(run.id))
+    // App Map execution uses a private, revisioned recipe id. Comparing that
+    // full action to the durable map id made successful runs disappear from
+    // Coverage even though their reports were persisted correctly.
+    .filter((run) => appMapIdForJob(run) === appMapId && !canonicalIds.has(run.id))
     .map((run) => {
       const platform =
         run.targetProfile?.platform ??
@@ -425,7 +433,10 @@ function coverageRows(
         id: run.id,
         label: run.title ?? run.recipeSnapshot?.title ?? "App Map run",
         actor: actorForRun(run),
-        target: run.targetProfile?.name ?? run.serial ?? platformName(platform),
+        target:
+          run.targetProfile?.name ??
+          (run.serial ? targetNameForId(run.serial) : undefined) ??
+          platformName(platform),
         platform,
         outcome: runOutcome(run),
         finishedAt: run.finishedAt ?? run.writtenAt,

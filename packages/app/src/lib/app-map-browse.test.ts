@@ -100,4 +100,24 @@ describe("deriveAppMapAreas", () => {
       screenIds: ["settings", "notifications", "privacy"],
     });
   });
+
+  it("shows a grouped entry screen before later-selected members", () => {
+    const input = projection();
+    input.groups = {
+      settings: {
+        ...scope,
+        id: "settings",
+        name: "Settings",
+        screenIds: ["privacy", "notifications", "settings", "home"],
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    };
+    assert.deepEqual(deriveAppMapAreas(input)[0]?.screenIds, [
+      "home",
+      "privacy",
+      "notifications",
+      "settings",
+    ]);
+  });
 });

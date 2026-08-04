@@ -13,6 +13,7 @@ import type {
   AuthoringTakeRevision,
   CreateAuthoringSessionInput,
   RecipeStep,
+  ScreenIdentityObservation,
 } from "@relay/protocol";
 import { serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
@@ -22,6 +23,8 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
+import type { SnapshotNode } from "./device.js";
+import { observeScreenIdentity, resolveScreenIdentity } from "./screen-identity.js";
 
 export class AuthoringStateError extends Error {
   readonly status = 409;
@@ -80,7 +83,10 @@ const TRANSITIONS: Record<AuthoringSessionState, readonly AuthoringSessionState[
 
 const RECORDED_PAUSE_THRESHOLD_MS = 200;
 const RECORDED_PAUSE_QUANTUM_MS = 50;
-const RECORDED_PAUSE_MAX_MS = 30_000;
+// Recorded timing should preserve the cadence of a deliberate interaction,
+// not turn the time somebody spent inspecting the canvas into a very slow
+// replay. Longer waits remain available as explicit editable steps.
+const RECORDED_PAUSE_MAX_MS = 10_000;
 
 /**
  * Human timing is part of a recording, but sub-frame scheduling noise is not.
@@ -134,10 +140,10 @@ function currentRevision(session: AuthoringSession): AuthoringTakeRevision {
   return revision;
 }
 
-async function expectedReplayFingerprints(
+async function expectedReplayScreen(
   session: AuthoringSession,
   revision: AuthoringTakeRevision,
-): Promise<string[]> {
+): Promise<{ fingerprints: string[]; observations: ScreenIdentityObservation[] }> {
   const appMap = await readAppMap(session.projectId, session.appMapId);
   if (!appMap) throw new AuthoringStateError("App Map no longer exists");
   const configured =
@@ -145,11 +151,11 @@ async function expectedReplayFingerprints(
     (session.pendingConnectionId
       ? appMap.connections[session.pendingConnectionId]?.destination
       : undefined);
-  if (configured?.kind === "end") return [];
+  if (configured?.kind === "end") return { fingerprints: [], observations: [] };
   if (configured?.kind === "screen") {
     const screen = appMap.screens[configured.screenId];
     if (!screen) throw new AuthoringStateError("Expected destination screen no longer exists");
-    return [
+    const fingerprints = [
       screen.identity?.fingerprint,
       ...(screen.identity?.aliases ?? []),
       ...screen.variantIds.flatMap((variantId) => {
@@ -157,8 +163,109 @@ async function expectedReplayFingerprints(
         return fingerprint ? [fingerprint] : [];
       }),
     ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
+    // A planned destination intentionally has no identity yet. Its recorded
+    // final observation is still authoritative and must be verified before
+    // the placeholder can become a real screen.
+    const observations = screen.variantIds.flatMap((variantId) => {
+      const observation = appMap.screenVariants[variantId]?.observation;
+      return observation ? [observation] : [];
+    });
+    if (fingerprints.length > 0 || observations.length > 0) {
+      return { fingerprints, observations };
+    }
+    const fallback = revision.reason === "recording" ? revision.after : undefined;
+    const semantic = semanticObservation(fallback);
+    return {
+      fingerprints: fallback?.screen.fingerprint ? [fallback.screen.fingerprint] : [],
+      observations: semantic ? [semantic] : [],
+    };
   }
-  return revision.after?.screen.fingerprint ? [revision.after.screen.fingerprint] : [];
+  const semantic = semanticObservation(revision.after);
+  return {
+    fingerprints: revision.after?.screen.fingerprint ? [revision.after.screen.fingerprint] : [],
+    observations: semantic ? [semantic] : [],
+  };
+}
+
+async function expectedSourceScreen(session: AuthoringSession): Promise<{
+  title: string;
+  fingerprints: string[];
+  observations: ScreenIdentityObservation[];
+} | null> {
+  const appMap = await readAppMap(session.projectId, session.appMapId);
+  if (!appMap) throw new AuthoringStateError("App Map no longer exists");
+  const sourceScreenId =
+    session.sourceScreenId ??
+    (session.pendingConnectionId
+      ? appMap.connections[session.pendingConnectionId]?.fromScreenId
+      : undefined);
+  if (!sourceScreenId) return null;
+  const screen = appMap.screens[sourceScreenId];
+  if (!screen) throw new AuthoringStateError("Source screen no longer exists");
+  const fingerprints = [
+    screen.identity?.fingerprint,
+    ...(screen.identity?.aliases ?? []),
+    ...screen.variantIds.flatMap((variantId) => {
+      const fingerprint = appMap.screenVariants[variantId]?.observation?.fingerprint;
+      return fingerprint ? [fingerprint] : [];
+    }),
+  ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
+  const observations = screen.variantIds.flatMap((variantId) => {
+    const observation = appMap.screenVariants[variantId]?.observation;
+    return observation ? [observation] : [];
+  });
+  return { title: screen.title, fingerprints: [...new Set(fingerprints)], observations };
+}
+
+function semanticObservation(
+  observation: AuthoringObservation | undefined,
+): ScreenIdentityObservation | undefined {
+  if (!observation?.nodes?.length) return undefined;
+  return observeScreenIdentity(observation.nodes as SnapshotNode[]);
+}
+
+function semanticsMatch(
+  observed: AuthoringObservation,
+  expected: readonly ScreenIdentityObservation[],
+): boolean {
+  const semantic = semanticObservation(observed);
+  if (!semantic || expected.length === 0) return false;
+  return (
+    resolveScreenIdentity(
+      semantic,
+      expected.map((observation, index) => ({ id: `expected-${index}`, observation })),
+    ).kind === "existing"
+  );
+}
+
+async function assertExpectedSource(
+  session: AuthoringSession,
+  observed: AuthoringObservation,
+  fallback?: AuthoringObservation,
+  activity: "recording" | "replaying" = "recording",
+): Promise<void> {
+  const expected = await expectedSourceScreen(session);
+  const fingerprints = expected?.fingerprints.length
+    ? expected.fingerprints
+    : fallback?.screen.fingerprint
+      ? [fallback.screen.fingerprint]
+      : [];
+  const expectedSemantics = expected?.observations.length
+    ? expected.observations
+    : semanticObservation(fallback)
+      ? [semanticObservation(fallback)!]
+      : [];
+  if (
+    (fingerprints.length === 0 && expectedSemantics.length === 0) ||
+    fingerprints.includes(observed.screen.fingerprint) ||
+    semanticsMatch(observed, expectedSemantics)
+  )
+    return;
+  throw new AuthoringStateError(
+    expected
+      ? `Navigate the device to “${expected.title}” before ${activity} this connection`
+      : "Return the device to the recorded source screen before replaying this connection",
+  );
 }
 
 function requireState(
@@ -418,7 +525,6 @@ function recordedPauseAction(input: {
 async function finishRecording(
   session: AuthoringSession,
   runtime: AuthoringRuntime,
-  idleStartedAt?: number,
 ): Promise<AuthoringSession> {
   const stoppedAt = now();
   // Seal the transport before asking the target for its final state. On a
@@ -443,18 +549,12 @@ async function finishRecording(
       ]
     : [];
   session = nextRevision(session, "recording", (revision) => {
-    const previousAction = revision.actions.at(-1);
-    const trailingPause = previousAction
-      ? recordedPauseAction({
-          durationMs: stoppedAt - (idleStartedAt ?? previousAction.finishedAt),
-          finishedAt: stoppedAt,
-          evidenceIds: previousAction.evidenceIds,
-          group: session.group,
-        })
-      : undefined;
     return {
       ...revision,
-      actions: trailingPause ? [...revision.actions, trailingPause] : revision.actions,
+      // Pauses are meaningful only between two recorded actions. Time spent
+      // inspecting the result and reaching for Stop is authoring overhead,
+      // not executable behavior, and must never slow every replay.
+      actions: revision.actions,
       evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
       after: captured.observation,
       ...(videoEvidence[0]
@@ -681,6 +781,7 @@ export class AuthoringSessionStore {
       let captured;
       try {
         captured = await persistObservation(await runtime.observe(session));
+        await assertExpectedSource(session, captured.observation);
         await runtime.startVideo?.(session);
       } catch (error) {
         const failed = transition(session, "failed");
@@ -779,7 +880,7 @@ export class AuthoringSessionStore {
       return await this.#mutate(id, async (session) => {
         assertOwner(session);
         requireState(session, "recording");
-        session = await finishRecording(session, runtime, this.#recordingReadyAt.get(id));
+        session = await finishRecording(session, runtime);
         session = transition(session, "reviewing");
         session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
         return session;
@@ -891,7 +992,10 @@ export class AuthoringSessionStore {
       const startedAt = now();
       let outcome: AuthoringReplayAttempt["outcome"] = "passed";
       let error: string | undefined;
+      const source = await persistObservation(await runtime.observe(session));
+      let sourceMismatch = false;
       try {
+        await assertExpectedSource(session, source.observation, revision.before, "replaying");
         await runtime.replay(
           session,
           revision.actions.flatMap((action) => action.steps),
@@ -899,13 +1003,20 @@ export class AuthoringSessionStore {
       } catch (caught) {
         outcome = "failed";
         error = caught instanceof Error ? caught.message : String(caught);
+        sourceMismatch = /before recording|before replaying/.test(error);
       }
-      const captured = await persistObservation(await runtime.observe(session));
+      const captured = sourceMismatch
+        ? source
+        : await persistObservation(await runtime.observe(session));
       if (outcome === "passed") {
-        const expected = await expectedReplayFingerprints(session, revision);
-        if (expected.length > 0 && !expected.includes(captured.observation.screen.fingerprint)) {
+        const expected = await expectedReplayScreen(session, revision);
+        if (
+          (expected.fingerprints.length > 0 || expected.observations.length > 0) &&
+          !expected.fingerprints.includes(captured.observation.screen.fingerprint) &&
+          !semanticsMatch(captured.observation, expected.observations)
+        ) {
           outcome = "failed";
-          error = `Replay reached a different screen (expected ${expected[0]}, received ${captured.observation.screen.fingerprint})`;
+          error = `Replay reached a different screen (expected ${expected.fingerprints[0] ?? "the approved destination"}, received ${captured.observation.screen.fingerprint})`;
         }
       }
       const attempt: AuthoringReplayAttempt = {
@@ -915,7 +1026,9 @@ export class AuthoringSessionStore {
         startedAt,
         finishedAt: now(),
         outcome,
-        evidence: captured.evidence,
+        before: source.observation,
+        after: captured.observation,
+        evidence: [...source.evidence, ...(captured === source ? [] : captured.evidence)],
         ...(error ? { error } : {}),
       };
       return {
@@ -986,9 +1099,15 @@ export class AuthoringSessionStore {
               takeRevision: revision.revision,
               actions: revision.actions,
               before: revision.before,
-              after: revision.after,
+              // The reviewed replay is the authoritative result of the exact
+              // actions being committed. This is especially important when a
+              // person trims or rewrites a planned connection: the original
+              // recording may have ended on a different screen, while the
+              // successful replay is the state they explicitly approved.
+              after: latestAttempt.after ?? revision.after,
               evidenceIds: [...new Set(evidence.map((item) => item.id))],
               evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
+              evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
             },
             {
               expectedRevision: session.expectedAppMapRevision,
@@ -1043,7 +1162,7 @@ export class AuthoringSessionStore {
               "Cancelling an active recording requires target reconciliation",
             );
           }
-          session = await finishRecording(session, runtime, this.#recordingReadyAt.get(id));
+          session = await finishRecording(session, runtime);
         }
         session = transition(session, "cancelled");
         if (session.take) {

@@ -26,7 +26,7 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..20d1c0083acb264c26e5fae6fa4598c1
    // MARK: - Recording
  
    func captureRunnerFrame() -> RunnerImage? {
-@@ -58,6 +63,64 @@ extension RunnerTests {
+@@ -58,6 +63,67 @@ extension RunnerTests {
      activeRecording = nil
    }
  
@@ -37,7 +37,10 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..20d1c0083acb264c26e5fae6fa4598c1
 +  /// a session ends causes iOS to report unbounded Documents & Data usage. Cleanup is
 +  /// deliberately scoped to our timestamped PNG and MP4 names so unrelated XCTest
 +  /// temporary files are never touched.
-+  func cleanupStaleRunnerArtifacts(keeping retainedFileName: String? = nil) {
++  func cleanupStaleRunnerArtifacts(
++    keeping retainedFileName: String? = nil,
++    includeRecordings: Bool = false
++  ) {
 +    let fileManager = FileManager.default
 +    let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 +    let entries: [URL]
@@ -70,7 +73,7 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..20d1c0083acb264c26e5fae6fa4598c1
 +      guard
 +        isRegularFile,
 +        fileName != retainedFileName,
-+        isManagedRecording || isManagedScreenshot
++        isManagedScreenshot || (includeRecordings && isManagedRecording)
 +      else {
 +        continue
 +      }
@@ -91,14 +94,39 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..20d1c0083acb264c26e5fae6fa4598c1
    func resolveRecordingOutPath(_ requestedOutPath: String) -> String {
  #if os(macOS)
      if requestedOutPath.hasPrefix("/") {
-@@ -67,6 +130,7 @@ extension RunnerTests {
+@@ -67,6 +133,7 @@ extension RunnerTests {
      let fileName = URL(fileURLWithPath: requestedOutPath).lastPathComponent
      let fallbackName = "agent-device-recording-\(Int(Date().timeIntervalSince1970 * 1000)).mp4"
      let safeFileName = fileName.isEmpty ? fallbackName : fileName
-+    cleanupStaleRunnerArtifacts(keeping: safeFileName)
++    cleanupStaleRunnerArtifacts(keeping: safeFileName, includeRecordings: true)
      return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
    }
- 
+
+diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
+--- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
++++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
+@@ -808,16 +808,8 @@ extension RunnerTests {
+   func synthesizedTapAt(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
+ #if os(iOS)
+-    let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
+-    let point = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: app.frame, interfaceOrientation: orientation)
+-    if let message = RunnerSynthesizedGesture.synthesizeTap(
+-      withApplication: app,
+-      x: Double(point.x),
+-      y: Double(point.y)
+-    ) {
+-      return .unsupported(
+-        message: message,
+-        hint: "Falling back to XCTest coordinate tap may be slower and can still need a healthy accessibility tree."
+-      )
+-    }
+-    return .performed
++    // Private XCTest event synthesis can report success without delivering a touch to
++    // SpringBoard on physical iPads. The public coordinate API uses the same logical
++    // points as the accessibility snapshot and lets XCTest own orientation conversion,
++    // so a successful response also means the device received the gesture.
++    return tapAt(app: app, x: x, y: y)
+ #elseif os(tvOS)
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 index 4aa404a6b9a711aea54a539a8be75ad5c972d14e..94ec33fe759720b61214c38191145601db5d00f7 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift

@@ -69,7 +69,7 @@ test("a ready map and device produce the run action", () => {
   );
 });
 
-test("an active replay replaces the run action with honest progress", () => {
+test("an active replay can always be stopped", () => {
   assert.deepEqual(
     appMapPrimaryAction({
       saveState: "saved",
@@ -79,10 +79,10 @@ test("an active replay replaces the run action with honest progress", () => {
       running: true,
     }),
     {
-      kind: "blocked",
-      label: "Running…",
-      reason: "Relay is replaying this flow on the selected device",
-      icon: "refresh",
+      kind: "cancel",
+      label: "Stop run",
+      reason: "Stop the current replay",
+      icon: "x",
     },
   );
 });

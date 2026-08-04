@@ -103,6 +103,13 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   });
   assert.deepEqual(root.steps, [
     {
+      id: "relay-source-checkout",
+      kind: "expect-screen",
+      screenId: "welcome",
+      screenTitle: "Welcome",
+      fingerprint: "a".repeat(64),
+    },
+    {
       id: "relay-action-use-sign-in",
       kind: "module",
       recipeId: routineId,
@@ -120,8 +127,9 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.deepEqual(plan.recipes[routineId]!.steps, [
     { id: "relay-action-enter-email", kind: "type", text: "{{email}}" },
   ]);
-  assert.deepEqual(plan.connections[0]!.compiledStepRange, [0, 3]);
-  assert.equal(root.stepProvenance[2]!.origin, "destination");
+  assert.deepEqual(plan.connections[0]!.compiledStepRange, [1, 4]);
+  assert.equal(root.stepProvenance[0]!.origin, "source");
+  assert.equal(root.stepProvenance[3]!.origin, "destination");
 });
 
 test("refuses to run drafts and unverifiable destinations", () => {
@@ -141,7 +149,7 @@ test("refuses to run drafts and unverifiable destinations", () => {
   );
 });
 
-test("keeps passive transitions executable by verifying only their destination", () => {
+test("keeps passive transitions executable by verifying source and destination", () => {
   const map = fixture();
   map.connections["open-home"]!.actions = [
     { id: "automatic", kind: "passive", reason: "automatic" },
@@ -149,6 +157,16 @@ test("keeps passive transitions executable by verifying only their destination",
   const plan = compileAppMapFlow(map, "checkout");
   assert.deepEqual(
     plan.recipes[plan.rootRecipeId]!.steps.map((step) => step.kind),
-    ["expect-screen"],
+    ["expect-screen", "expect-screen"],
+  );
+});
+
+test("refuses to run when the flow entry screen has no approved identity", () => {
+  const map = fixture();
+  delete map.screens.welcome!.identity;
+  assert.throws(
+    () => compileAppMapFlow(map, "checkout"),
+    (error: unknown) =>
+      error instanceof AppMapCompileError && error.code === "missing-screen-identity",
   );
 });

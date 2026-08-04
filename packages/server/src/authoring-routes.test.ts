@@ -69,7 +69,7 @@ test("browser authoring observation stays on the explicit browser adapter path",
   );
 });
 
-test("physical Apple authoring reads evidence through one runner channel", async () => {
+test("physical Apple authoring freezes visible evidence before inspecting the runner", async () => {
   const order: string[] = [];
   const session = {
     target: { kind: "device", platform: "ios", targetId: "ipad-a" },
@@ -107,7 +107,7 @@ test("physical Apple authoring reads evidence through one runner channel", async
     },
   });
 
-  assert.deepEqual(order, ["snapshot:start", "snapshot:end", "screenshot"]);
+  assert.deepEqual(order, ["screenshot", "snapshot:start", "snapshot:end"]);
 });
 
 test("Authoring Sessions require an explicit actor-owned target lease and remain observable", async () => {

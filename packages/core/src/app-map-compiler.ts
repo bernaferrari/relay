@@ -221,6 +221,17 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     steps: [],
     stepProvenance: [],
   };
+  const source = map.screens[flow.startScreenId]!;
+  const sourceStep = screenExpectation(source, `relay-source-${flow.id}`);
+  root.steps.push(sourceStep);
+  root.stepProvenance.push({
+    recipeId: rootRecipeId,
+    stepIndex: 0,
+    stepId: sourceStep.id!,
+    origin: "source",
+    ownerKind: "flow",
+    ownerId: flow.id,
+  });
   const connections: AppMapCompiledFlow["connections"] = [];
   const caseStackIds = new Set<string>();
   let terminal: AppMapCompiledFlow["terminal"] = {

@@ -32,6 +32,7 @@ export type AppMapRecordingInput = {
   after?: AuthoringObservation;
   evidenceIds: string[];
   evidenceUrisById?: Record<string, string>;
+  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string };
@@ -114,6 +115,11 @@ function observeScreen(input: {
       }),
     ]),
   ];
+  const screenshotUri = observation.evidenceIds.flatMap((id) => {
+    if (recording.evidenceKindsById?.[id] !== "screenshot") return [];
+    const uri = recording.evidenceUrisById?.[id];
+    return uri ? [uri] : [];
+  })[0];
   const variant: ScreenVariant = {
     ...entityScope(map),
     id: variantId,
@@ -126,6 +132,9 @@ function observeScreen(input: {
     },
     evidenceIds,
     ...(evidenceUris.length ? { evidenceUris } : {}),
+    ...(screenshotUri || existing?.screenshotUri
+      ? { screenshotUri: screenshotUri ?? existing!.screenshotUri }
+      : {}),
     createdAt: existing?.createdAt ?? at,
     updatedAt: at,
     ...(existing?.baseline ? { baseline: structuredClone(existing.baseline) } : {}),

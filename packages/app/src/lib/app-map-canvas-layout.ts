@@ -19,6 +19,37 @@ export const SCREEN_FRAME_TOP = 30;
 export const SCREEN_FRAME_HEIGHT = 320;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
+const BRANCH_COLUMN_GAP = 120;
+const BRANCH_ROW_GAP = 40;
+
+function overlapsScreen(left: CanvasPoint, right: CanvasPoint): boolean {
+  return !(
+    left.x + SCREEN_CARD_WIDTH + BRANCH_COLUMN_GAP <= right.x ||
+    right.x + SCREEN_CARD_WIDTH + BRANCH_COLUMN_GAP <= left.x ||
+    left.y + SCREEN_CARD_HEIGHT + BRANCH_ROW_GAP <= right.y ||
+    right.y + SCREEN_CARD_HEIGHT + BRANCH_ROW_GAP <= left.y
+  );
+}
+
+/**
+ * Finds the nearest clean slot in the next column for a keyboard-created
+ * branch. Alternating below and above keeps siblings near their source while
+ * guaranteeing that a second destination never lands directly on the first.
+ */
+export function nextBranchPosition(
+  source: CanvasPoint,
+  occupied: readonly CanvasPoint[],
+): CanvasPoint {
+  const x = source.x + SCREEN_CARD_WIDTH + BRANCH_COLUMN_GAP;
+  const row = SCREEN_CARD_HEIGHT + BRANCH_ROW_GAP;
+  for (let index = 0; index < 1_000; index += 1) {
+    const direction = index === 0 ? 0 : index % 2 === 1 ? 1 : -1;
+    const distance = index === 0 ? 0 : Math.ceil(index / 2);
+    const candidate = { x, y: source.y + direction * distance * row };
+    if (!occupied.some((position) => overlapsScreen(candidate, position))) return candidate;
+  }
+  return { x, y: source.y + occupied.length * row };
+}
 
 export function clampCanvasScale(value: number): number {
   return Math.min(MAX_CANVAS_SCALE, Math.max(MIN_CANVAS_SCALE, value));

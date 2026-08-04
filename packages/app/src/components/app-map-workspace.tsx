@@ -10,7 +10,7 @@ import type {
   ScreenVariant,
 } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useRecorder, type CapturedStartScreen } from "../context/recorder";
+import { useRecorder } from "../context/recorder";
 import { useServer, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -35,10 +35,12 @@ import {
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
+import { screenVariantForCapture } from "../lib/app-map-capture";
 import {
   canvasBounds,
   canvasEdgeGeometry,
   clampCanvasScale,
+  nextBranchPosition,
   fitCanvasViewport,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
@@ -116,8 +118,6 @@ export function AppMapWorkspace(props: {
   onOpenVariables: () => void;
   onOpenRun?: (id: string) => void;
   navigatorOpen?: boolean;
-  captureStartOnReady?: boolean;
-  onCaptureStartHandled?: (success: boolean, appMapId: string) => void;
   addNoteOnReady?: boolean;
   onAddNoteHandled?: () => void;
 }) {
@@ -223,7 +223,8 @@ export function AppMapWorkspace(props: {
     if (readiness.kind === "capture-error") return "capture-error";
     return "ready";
   };
-  const canRecord = () => recordState() === "ready";
+  const canRecord = () =>
+    recordState() === "ready" && Boolean(server.selectedLeaseId()) && !server.controlIssue();
   const livePanelStatus = () => {
     const device = selectedDevice();
     const liveFrame = server.liveFrame();
@@ -240,6 +241,8 @@ export function AppMapWorkspace(props: {
       serverOnline: server.health() === "online",
       discovering: server.deviceDiscoveryStatus() === "scanning",
       recording: recorder.recording(),
+      controlReady: Boolean(server.selectedLeaseId()),
+      controlIssue: server.controlIssue(),
     });
   };
   const liveScreenSrc = createMemo(() => {
@@ -353,6 +356,7 @@ export function AppMapWorkspace(props: {
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
   let destinationResolvedForTake = "";
+  let replayHydratedForTakeRevision = "";
   let captureCloseTimer: number | undefined;
   let pointerMoveFrame: number | undefined;
   let pendingPointerMove: { x: number; y: number } | undefined;
@@ -546,17 +550,43 @@ export function AppMapWorkspace(props: {
     const take = recorder.take();
     const lastIndex = Math.max(0, (take?.state === "review" ? take.steps.length : 1) - 1);
     setReviewStepIndex((index) => Math.min(lastIndex, Math.max(0, index)));
-    if ((take?.id ?? null) !== takeReplay().takeId) {
-      setTakeReplay({ takeId: take?.id ?? null, state: "idle" });
-    }
+    const key = take
+      ? `${take.id}:${take.revision}:${take.latestReplay?.outcome ?? "none"}:${take.latestReplay?.error ?? ""}`
+      : "";
+    if (replayHydratedForTakeRevision === key) return;
+    replayHydratedForTakeRevision = key;
+    const replay = take?.state === "review" ? take.latestReplay : undefined;
+    setTakeReplay(
+      replay?.outcome === "passed"
+        ? { takeId: take?.id ?? null, state: "passed" }
+        : replay?.outcome === "failed"
+          ? {
+              takeId: take?.id ?? null,
+              state: "failed",
+              ...(replay.error ? { error: replay.error } : {}),
+            }
+          : { takeId: take?.id ?? null, state: "idle" },
+    );
   });
 
   createEffect(() => {
     const take = recorder.take();
-    if (!take || take.state !== "review" || destinationResolvedForTake === take.id) return;
-    destinationResolvedForTake = take.id;
+    if (!take || take.state !== "review" || loadedAppMapId() !== take.appMapId) return;
     const match = screenForObservation(graph(), take.destinationObservation);
-    setReviewDestination(match ? { kind: "screen", screenId: match.id } : { kind: "new-screen" });
+    const plannedConnectionId = take.pendingConnectionId ?? pendingConnectionId;
+    const planned = plannedConnectionId
+      ? connections().find((connection) => connection.id === plannedConnectionId)
+      : undefined;
+    const key = `${take.id}:${take.revision}:${planned?.id ?? "unplanned"}`;
+    if (destinationResolvedForTake === key) return;
+    destinationResolvedForTake = key;
+    setReviewDestination(
+      match
+        ? { kind: "screen", screenId: match.id }
+        : planned
+          ? { kind: "screen", screenId: planned.toScreenId }
+          : { kind: "new-screen" },
+    );
   });
 
   createEffect(() => {
@@ -830,7 +860,12 @@ export function AppMapWorkspace(props: {
     }
     await server.setSelectedDevice(serial);
     if (!server.selectedLeaseId()) {
-      toast(server.liveCaptureIssue() || "This device is not available for control yet", "warning");
+      toast(
+        server.controlIssue() ||
+          server.liveCaptureIssue() ||
+          "This device is not available for control yet",
+        "warning",
+      );
       return;
     }
     await server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
@@ -1200,38 +1235,6 @@ export function AppMapWorkspace(props: {
       setProposalBusyId();
     }
   };
-  const variantForCapture = (screenId: string, captured: CapturedStartScreen): ScreenVariant => {
-    const at = captured.observation.capturedAt;
-    const targetId = captured.targetProfile.targetId;
-    const variantId = `variant:${screenId}:${captured.targetProfile.platform}:${targetId}`;
-    return {
-      id: variantId,
-      ...captured.mapScope,
-      screenId,
-      targetProfile: structuredClone(captured.targetProfile),
-      observation: {
-        fingerprint: captured.observation.fingerprint,
-        nodes: captured.semanticNodes.slice(0, 256).map((node) => ({
-          role: typeof node.role === "string" && node.role.trim() ? node.role : "unknown",
-          ...(typeof node.label === "string" ? { label: node.label } : {}),
-          ...(typeof node.value === "string" ? { value: node.value } : {}),
-          ...(typeof node.identifier === "string" ? { identifier: node.identifier } : {}),
-          ...(typeof node.enabled === "boolean" ? { enabled: node.enabled } : {}),
-          ...(typeof node.selected === "boolean" ? { selected: node.selected } : {}),
-          ...(typeof node.focused === "boolean" ? { focused: node.focused } : {}),
-          ...(typeof node.hittable === "boolean" ? { hittable: node.hittable } : {}),
-          ...(typeof node.depth === "number" && Number.isFinite(node.depth)
-            ? { depth: node.depth }
-            : {}),
-        })),
-        volatileSignals: [],
-      },
-      evidenceIds: [...new Set(captured.evidenceIds)],
-      evidenceUris: [...new Set(captured.evidenceUris)],
-      createdAt: at,
-      updatedAt: at,
-    };
-  };
   const useCurrentScreenAsStart = async (): Promise<boolean> => {
     if (startCaptureBusy() || hasMap()) return false;
     setStartCaptureBusy(true);
@@ -1239,7 +1242,7 @@ export function AppMapWorkspace(props: {
       const captured = await recorder.captureStartScreen();
       if (!captured || hasMap()) return false;
       const added = addCanvasStartScreen(graph(), captured.observation);
-      const variant = variantForCapture(added.screen.id, captured);
+      const variant = screenVariantForCapture(added.screen.id, captured);
       persistMetadata(withCanvasGraph(canvasState(), added.graph), {
         variantsByScreen: { [added.screen.id]: [variant] },
       });
@@ -1267,7 +1270,7 @@ export function AppMapWorkspace(props: {
       const captured = await recorder.captureStartScreen();
       if (!captured) return;
       const added = addCanvasScreen(graph(), captured.observation);
-      const variant = variantForCapture(added.screen.id, captured);
+      const variant = screenVariantForCapture(added.screen.id, captured);
       persistMetadata(withCanvasGraph(canvasState(), added.graph), {
         variantsByScreen: { [added.screen.id]: [variant] },
       });
@@ -1283,24 +1286,6 @@ export function AppMapWorkspace(props: {
       setStartCaptureBusy(false);
     }
   };
-  let automaticStartCaptureHandledFor = "";
-  createEffect(() => {
-    const appMapId = server.selectedAppMapId();
-    if (
-      !appMapId ||
-      automaticStartCaptureHandledFor === appMapId ||
-      !props.captureStartOnReady ||
-      loadedAppMapId() !== appMapId ||
-      hasMap() ||
-      !targetIsReady(selectedDevice(), server.health() === "online") ||
-      startCaptureBusy()
-    )
-      return;
-    automaticStartCaptureHandledFor = appMapId;
-    void useCurrentScreenAsStart().then((success) =>
-      props.onCaptureStartHandled?.(success, appMapId),
-    );
-  });
   const addNote = () => {
     const element = canvas;
     const current = view();
@@ -1327,15 +1312,29 @@ export function AppMapWorkspace(props: {
     addNote();
     props.onAddNoteHandled?.();
   });
-  const canReplayOnDevice = () => {
-    if (canRecord()) return true;
+  const canReplayOnDevice = async () => {
+    // Replay performs its own authoritative observation. Requiring a cached
+    // live PNG here traps physical-iPad reviews after Stop, precisely when the
+    // exclusive runner has released and the cached preview may be absent.
+    let device = selectedDevice();
+    if (!targetIsReady(device, server.health() === "online")) {
+      await server.refreshDevices();
+      device = selectedDevice();
+    }
+    if (targetIsReady(device, server.health() === "online") && device) {
+      // A long review or renderer refresh may outlive its short control lease.
+      // Re-selecting the same target is an idempotent lease refresh; the
+      // person should not have to leave review and choose the iPad again.
+      if (!server.selectedLeaseId()) await server.setSelectedDevice(device.serial);
+      if (server.selectedLeaseId() && !server.controlIssue()) return true;
+    }
     toast("Choose a ready device before trying this connection", "info");
     openDevicePicker();
     return false;
   };
   const replayTake = async () => {
     const take = recorder.take();
-    if (!take || !canReplayOnDevice()) return;
+    if (!take || !(await canReplayOnDevice())) return;
     setTakeReplay({ takeId: take.id, state: "running" });
     let passed = false;
     let error: string | undefined;
@@ -1396,6 +1395,7 @@ export function AppMapWorkspace(props: {
     await recorder.discardTake();
     recordingSourceScreenId = sourceScreenId;
     recorder.setRecordingSourceScreen(sourceScreenId ?? undefined);
+    pendingConnectionId = take.pendingConnectionId ?? pendingConnectionId;
     recorder.setRecordingTransition(pendingConnectionId ?? undefined);
     const source = tree().nodes.find((node) => node.id === sourceScreenId);
     if (source) recorder.setRecordingGroup(titleFor(source));
@@ -1423,15 +1423,20 @@ export function AppMapWorkspace(props: {
       return;
     }
     if (state !== "ready") {
-      // A selected iPad that is still preparing is not a device-picker
-      // problem. Keep its current readiness explanation on the canvas rather
-      // than opening a second, contradictory flow.
+      // Recording is one intent, even when the live frame is still arriving.
+      // Show the selected device's truthful progress in place and continue
+      // automatically once it becomes controllable; never make the person
+      // click Record a second time after "Starting live view" finishes.
       if (
         state === "enable-developer-mode" ||
         state === "preparing-ios" ||
-        state === "preparing-screen"
-      )
+        state === "preparing-screen" ||
+        state === "checking-ios"
+      ) {
+        setCaptureOpen(true);
+        setWaitingForRecordTarget(true);
         return;
+      }
       recordRequestedAfterDeviceSelection = true;
       openDevicePicker();
       return;
@@ -1618,12 +1623,15 @@ export function AppMapWorkspace(props: {
   const createKeyboardDestination = (fromScreenId: string) => {
     const source = tree().nodes.find((node) => node.id === fromScreenId);
     if (!source) return;
-    const position = positionFor(source);
+    const position = nextBranchPosition(
+      positionFor(source),
+      tree().nodes.map((node) => positionFor(node)),
+    );
     const next = addPlannedScreenConnection(
       canvasState(),
       {
         fromScreenId,
-        position: { x: position.x + 300, y: position.y },
+        position,
       },
       Date.now(),
       draft.steps(),
@@ -2113,7 +2121,10 @@ export function AppMapWorkspace(props: {
                     mode={workspaceView() === "coverage" ? "coverage" : "screens"}
                     appMap={appMap()}
                     runs={server.persistedRuns()}
-                    recipeId={server.selectedAppMapId() ?? appMap().id}
+                    recipeId={appMap().id}
+                    targetNameForId={(targetId) =>
+                      server.devices().find((target) => target.serial === targetId)?.name
+                    }
                     deviceOpen={captureOpen()}
                     imageForScreen={(screenId) => {
                       const node = tree().nodes.find((candidate) => candidate.id === screenId);
@@ -2679,6 +2690,18 @@ export function AppMapWorkspace(props: {
                     : "Rewrite"
                   : "Record"
           }
+          recordContextLabel={
+            selectedConnection()
+              ? (() => {
+                  const connection = selectedConnection()!;
+                  const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
+                  const target = tree().nodes.find((node) => node.id === connection.toScreenId);
+                  return source && target ? `${titleFor(source)} → ${titleFor(target)}` : undefined;
+                })()
+              : selectedNode()
+                ? `From ${titleFor(selectedNode()!)}`
+                : undefined
+          }
           captureContextLabel={captureContextLabel()}
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}
@@ -2830,7 +2853,7 @@ function variantScreenshotUrl(
   screenId: string,
 ): string {
   const variant = latestScreenVariant(appMap, screenId);
-  const uri = variant?.evidenceUris?.find((item) => item.startsWith("relay-evidence://"));
+  const uri = variant?.screenshotUri;
   return uri ? server.authoringEvidenceUrl(uri, "image/png") : "";
 }
 

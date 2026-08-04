@@ -406,7 +406,7 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     assert.equal(result.plan.flow.id, "main");
     assert.deepEqual(
       result.plan.recipes[result.plan.rootRecipeId]!.steps.map((step) => step.kind),
-      ["tap", "expect-screen"],
+      ["expect-screen", "tap", "expect-screen"],
     );
     assert.equal((result.job as { projectId?: string }).projectId, "mobile");
     assert.equal(result.jobs.length, 5);

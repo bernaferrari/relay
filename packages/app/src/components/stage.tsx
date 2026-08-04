@@ -45,8 +45,10 @@ import {
 } from "../lib/live-inspection-policy";
 import { DeviceVideoStream } from "./device-video-stream";
 import {
+  companionDisplayedPointToLogical,
   companionFramePresentation,
   companionImageLayout,
+  companionLogicalRectToDisplayed,
   companionLogicalViewport,
   companionOrientationEdge,
 } from "./app-map-device-companion-geometry";
@@ -138,10 +140,18 @@ export function DeviceStage(_props: {
     token: number;
     step: RecipeStep;
   } | null>(null);
-  const liveControlActive = () => rec.interacting() && stageView() === "live";
+  const liveViewActive = () => rec.interacting() && stageView() === "live";
+  const liveControlActive = () => liveViewActive() && Boolean(server.selectedLeaseId());
   // A live surface must never borrow an old recording frame. That made the
   // device look awake while it was actually locked or had switched targets.
-  const frame = () => (liveControlActive() ? (server.liveFrame() ?? undefined) : undefined);
+  const frame = () => (liveViewActive() ? (server.liveFrame() ?? undefined) : undefined);
+  const recordingEvidenceSrc = createMemo(() => {
+    if (!rec.recording()) return "";
+    const take = rec.take();
+    return take?.destinationEvidenceUrl ?? take?.sourceEvidenceUrl ?? "";
+  });
+  const liveSurfaceSrc = () => liveFrameSrc() || recordingEvidenceSrc();
+  const liveInteractionSurfaceAvailable = () => liveViewActive() && Boolean(liveSurfaceSrc());
   const recordedEvidenceSrc = createMemo(() => {
     // A playback request owns both the marker and its screenshot. Using the
     // focused step alone can pair a preview marker with a frame from a run or
@@ -174,7 +184,7 @@ export function DeviceStage(_props: {
     }
 
     if (stageView() === "live") {
-      return liveFrameSrc();
+      return liveSurfaceSrc();
     }
     const recorded = recordedEvidenceSrc();
     if (recorded) return recorded;
@@ -429,6 +439,7 @@ export function DeviceStage(_props: {
   }
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const [frameRatio, setFrameRatio] = createSignal(9 / 19.5);
+  const [liveImageRotation, setLiveImageRotation] = createSignal<"none" | "left" | "right">("none");
   const [liveImageDimensions, setLiveImageDimensions] = createSignal<
     { width: number; height: number } | undefined
   >();
@@ -523,11 +534,20 @@ export function DeviceStage(_props: {
     const n = pickerNode();
     const b = server.snapshot()?.bounds;
     if (!n?.rect || !b) return null;
+    const rect = companionLogicalRectToDisplayed(
+      {
+        x: n.rect.x / b.width,
+        y: n.rect.y / b.height,
+        width: n.rect.width / b.width,
+        height: n.rect.height / b.height,
+      },
+      liveImageRotation(),
+    );
     return {
-      left: `${(n.rect.x / b.width) * 100}%`,
-      top: `${(n.rect.y / b.height) * 100}%`,
-      width: `${(n.rect.width / b.width) * 100}%`,
-      height: `${(n.rect.height / b.height) * 100}%`,
+      left: `${rect.x * 100}%`,
+      top: `${rect.y * 100}%`,
+      width: `${rect.width * 100}%`,
+      height: `${rect.height * 100}%`,
     };
   });
 
@@ -596,7 +616,11 @@ export function DeviceStage(_props: {
     await rec.flushType();
     setPicker(null);
     // feedback for deliberate picker taps too
-    setTapFeedback({ x: p.fx * 100, y: p.fy * 100 });
+    const displayed = companionLogicalRectToDisplayed(
+      { x: p.fx, y: p.fy, width: 0, height: 0 },
+      liveImageRotation(),
+    );
+    setTapFeedback({ x: displayed.x * 100, y: displayed.y * 100 });
     if (feedbackTimer) clearTimeout(feedbackTimer);
     feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
@@ -717,7 +741,7 @@ export function DeviceStage(_props: {
   let snapRefreshTimer: number | undefined;
 
   const livePaused = () =>
-    !liveControlActive() ||
+    !liveViewActive() ||
     !tabVisible() ||
     server.health() !== "online" ||
     picker() !== null ||
@@ -726,15 +750,27 @@ export function DeviceStage(_props: {
 
   async function tickLiveFrame(): Promise<void> {
     if (livePaused() || frameRequestsInFlight >= 1) return;
+    // A physical Apple target serves pixels and accessibility through the same
+    // XCTest runner. Overlapping those requests repeatedly interrupts
+    // xcodebuild and makes a healthy device look disconnected.
+    if (targetIsPhysicalIos(currentDevice()) && snapInFlight) return;
     frameRequestsInFlight += 1;
     try {
       await server.pollLiveFrame();
     } finally {
       frameRequestsInFlight -= 1;
+      if (targetIsPhysicalIos(currentDevice()) && snapQueued) {
+        snapQueued = false;
+        scheduleLiveSnapshot();
+      }
     }
   }
   async function tickLiveSnapshot(): Promise<void> {
     if (livePaused()) return;
+    if (targetIsPhysicalIos(currentDevice()) && frameRequestsInFlight > 0) {
+      snapQueued = true;
+      return;
+    }
     if (snapInFlight) {
       snapQueued = true;
       return;
@@ -755,10 +791,13 @@ export function DeviceStage(_props: {
     if (snapRefreshTimer) clearTimeout(snapRefreshTimer);
     snapRefreshTimer = window.setTimeout(() => {
       snapRefreshTimer = undefined;
-      void tickLiveSnapshot();
+      const snapshot = tickLiveSnapshot();
       // Keep a slow fallback responsive to deliberate device input without
       // restoring the old permanent eight-images-per-second hot loop.
-      if (usesScreenshotPreview()) void tickLiveFrame();
+      if (usesScreenshotPreview()) {
+        if (targetIsPhysicalIos(currentDevice())) void snapshot.then(() => tickLiveFrame());
+        else void tickLiveFrame();
+      }
     }, delayMs);
   }
 
@@ -785,6 +824,8 @@ export function DeviceStage(_props: {
       : null;
     const isReady = targetIsReady(device, server.health() === "online");
     if (!isReady || device?.platform !== "ios") {
+      completedIosSetupCheck = "";
+      resumedIosPreview = "";
       setIosSetupState("idle");
       return;
     }
@@ -849,8 +890,11 @@ export function DeviceStage(_props: {
     if (resumedIosPreview === resumeKey) return;
     resumedIosPreview = resumeKey;
     server.clearLiveCaptureIssue();
-    if (liveControlActive()) {
-      void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+    if (liveViewActive()) {
+      // The Apple runner is exclusive. Establish pixels first, then semantic
+      // inspection; parallel setup requests can restart the runner we just
+      // prepared.
+      void tickLiveFrame().then(() => tickLiveSnapshot());
     }
   });
 
@@ -880,7 +924,7 @@ export function DeviceStage(_props: {
 
   createEffect(() => {
     const policy = liveInspectionPolicy(
-      liveControlActive(),
+      liveViewActive(),
       usesScreenshotPreview(),
       physicalIosRecording(),
     );
@@ -935,16 +979,25 @@ export function DeviceStage(_props: {
     const n = hoverNode();
     const b = server.snapshot()?.bounds;
     if (!n?.rect || !b) return null;
-    const leftPct = (n.rect.x / b.width) * 100;
-    const topPct = (n.rect.y / b.height) * 100;
-    const heightPct = (n.rect.height / b.height) * 100;
+    const rect = companionLogicalRectToDisplayed(
+      {
+        x: n.rect.x / b.width,
+        y: n.rect.y / b.height,
+        width: n.rect.width / b.width,
+        height: n.rect.height / b.height,
+      },
+      liveImageRotation(),
+    );
+    const leftPct = rect.x * 100;
+    const topPct = rect.y * 100;
+    const heightPct = rect.height * 100;
     const label = (n.label ?? n.value ?? n.identifier ?? "").trim() || n.role || "element";
     const ref = n.ref ? (n.ref.startsWith("@") ? n.ref : `@${n.ref}`) : "";
     return {
       rect: {
         left: `${leftPct}%`,
         top: `${topPct}%`,
-        width: `${(n.rect.width / b.width) * 100}%`,
+        width: `${rect.width * 100}%`,
         height: `${heightPct}%`,
       },
       chip: {
@@ -965,13 +1018,16 @@ export function DeviceStage(_props: {
     const rect = img.getBoundingClientRect();
     hoverRaf = requestAnimationFrame(() => {
       hoverRaf = 0;
-      const fx = (cx - rect.left) / rect.width;
-      const fy = (cy - rect.top) / rect.height;
-      if (fx < 0 || fx > 1 || fy < 0 || fy > 1) {
+      const displayed = {
+        x: (cx - rect.left) / rect.width,
+        y: (cy - rect.top) / rect.height,
+      };
+      if (displayed.x < 0 || displayed.x > 1 || displayed.y < 0 || displayed.y > 1) {
         setHoverPoint(null);
         return;
       }
-      setHoverPoint({ fx, fy });
+      const logical = companionDisplayedPointToLogical(displayed, liveImageRotation());
+      setHoverPoint({ fx: logical.x, fy: logical.y });
     });
   }
   function clearHover(): void {
@@ -1003,7 +1059,15 @@ export function DeviceStage(_props: {
   //    The completed gesture is still classified as tap/swipe for recording,
   //    with the old one-shot interaction retained as an automatic fallback.
   //    Right-click opens the picker for deliberate strategy selection.
-  let down: { fx: number; fy: number; t: number; pointerId: number } | null = null;
+  let down: {
+    fx: number;
+    fy: number;
+    displayFx: number;
+    displayFy: number;
+    t: number;
+    pointerId: number;
+  } | null = null;
+  let lastLivePointerActionAt = -Infinity;
   let touchChain = Promise.resolve(false);
   let pendingMove: { fx: number; fy: number; pointerId: number } | null = null;
   let moveRaf = 0;
@@ -1013,6 +1077,21 @@ export function DeviceStage(_props: {
   let wheelSent = false;
   let wheelRaf = 0;
   let wheelEndTimer: number | undefined;
+
+  function companionPointerPoint(
+    element: HTMLElement,
+    clientX: number,
+    clientY: number,
+  ): { fx: number; fy: number; displayFx: number; displayFy: number } {
+    const rect = element.getBoundingClientRect();
+    const displayFx = (clientX - rect.left) / rect.width;
+    const displayFy = (clientY - rect.top) / rect.height;
+    const logical = companionDisplayedPointToLogical(
+      { x: displayFx, y: displayFy },
+      liveImageRotation(),
+    );
+    return { fx: logical.x, fy: logical.y, displayFx, displayFy };
+  }
 
   function queueTouch(
     action: "down" | "move" | "up" | "cancel",
@@ -1070,11 +1149,14 @@ export function DeviceStage(_props: {
     wheelBurst = null;
     wheelEndTimer = undefined;
     if (!burst) return;
-    const from = { x: 0.5, y: 0.5 };
-    const to = {
+    const displayedFrom = { x: 0.5, y: 0.5 };
+    const displayedTo = {
       x: 0.5 - Math.max(-0.28, Math.min(0.28, burst.dx / 600)),
       y: 0.5 - Math.max(-0.28, Math.min(0.28, burst.dy / 600)),
     };
+    const rotation = liveImageRotation();
+    const from = companionDisplayedPointToLogical(displayedFrom, rotation);
+    const to = companionDisplayedPointToLogical(displayedTo, rotation);
     const durationMs = Math.round(Math.max(80, Math.min(performance.now() - burst.startedAt, 600)));
     void wheelChain.then((live) =>
       rec.driveSwipe(from, to, durationMs, live).then(() => {
@@ -1086,8 +1168,12 @@ export function DeviceStage(_props: {
   /** Open the element picker at a client point (right-click inspection path). */
   function openPickerAt(img: HTMLImageElement, clientX: number, clientY: number): void {
     const r = img.getBoundingClientRect();
-    const fx = (clientX - r.left) / r.width;
-    const fy = (clientY - r.top) / r.height;
+    const logical = companionDisplayedPointToLogical(
+      { x: (clientX - r.left) / r.width, y: (clientY - r.top) / r.height },
+      liveImageRotation(),
+    );
+    const fx = logical.x;
+    const fy = logical.y;
     const node = nodeAtPoint(server.snapshot(), fx, fy);
     const s = stageEl?.getBoundingClientRect();
     const snap = server.snapshot();
@@ -1122,9 +1208,10 @@ export function DeviceStage(_props: {
   };
   const liveImagePresentation = createMemo(() => {
     const frame = liveImageDimensions();
-    if (!frame || stageView() !== "live" || !liveFrameSrc()) return undefined;
+    if (!frame || stageView() !== "live" || !liveSurfaceSrc()) return undefined;
     const nodes = server.snapshot()?.nodes;
-    const logicalViewport = companionLogicalViewport(nodes);
+    const recordedViewport = rec.recording() ? rec.take()?.sourceViewport : undefined;
+    const logicalViewport = companionLogicalViewport(nodes) ?? recordedViewport;
     const pointScale = logicalViewport
       ? Math.max(frame.width, frame.height) /
         Math.max(logicalViewport.width, logicalViewport.height)
@@ -1149,15 +1236,18 @@ export function DeviceStage(_props: {
   createEffect(() => {
     const presentation = liveImagePresentation();
     if (!presentation) {
+      setLiveImageRotation("none");
       _props.onOrientation?.("unknown");
       return;
     }
+    setLiveImageRotation(presentation.rotation);
     updateFrameAspect(presentation.dimensions.width, presentation.dimensions.height);
     _props.onOrientation?.(presentation.orientation);
   });
   const targetReady = () => targetIsReady(currentDevice(), server.health() === "online");
   const supportsH264Stream = () => currentDevice()?.platform === "android";
-  const usesScreenshotPreview = () => !supportsH264Stream() || videoFailed();
+  const usesScreenshotPreview = () =>
+    !supportsH264Stream() || videoFailed() || !server.selectedLeaseId();
   const physicalIosRecording = () => rec.recording() && targetIsPhysicalIos(currentDevice());
   let physicalIosRecordingWasActive = false;
   createEffect(() => {
@@ -1166,7 +1256,7 @@ export function DeviceStage(_props: {
       // Any capture failure immediately preceding the take belongs to the old
       // preview attempt, not to the recording that now owns the runner.
       server.clearLiveCaptureIssue();
-    } else if (physicalIosRecordingWasActive && liveControlActive()) {
+    } else if (physicalIosRecordingWasActive && liveViewActive()) {
       // Stop completes server-side before the projected session leaves the
       // recording state, so it is safe to refresh both pixels and semantics.
       void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
@@ -1798,7 +1888,32 @@ export function DeviceStage(_props: {
                     style={liveImageStyle()}
                     draggable={false}
                     tabindex={0}
-                    onClick={chooseRecordedNode}
+                    onClick={(e) => {
+                      chooseRecordedNode();
+                      // Pointer capture is the best path for real drags, but
+                      // assistive technology, browser automation, and some
+                      // embedded Chromium input sources can emit a click
+                      // without delivering a matching pointer-up to Solid.
+                      // Treat that click as a tap unless pointer-up already
+                      // handled it. This keeps human and agent input on the
+                      // same recorder operation instead of maintaining a
+                      // private automation-only path.
+                      if (stageView() !== "live") return;
+                      if (!liveInteractionSurfaceAvailable()) return;
+                      if (!liveControlActive()) return;
+                      if (e.detail === 0) return;
+                      if (performance.now() - lastLivePointerActionAt < 250) return;
+                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
+                      down = null;
+                      pendingMove = null;
+                      lastLivePointerActionAt = performance.now();
+                      setTapFeedback({ x: point.displayFx * 100, y: point.displayFy * 100 });
+                      if (feedbackTimer) clearTimeout(feedbackTimer);
+                      feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+                      void rec.driveTap(point.fx, point.fy).then(() => {
+                        if (rec.interacting()) scheduleLiveSnapshot();
+                      });
+                    }}
                     onLoad={(e) => {
                       const img = e.currentTarget;
                       if (img.naturalWidth && img.naturalHeight) {
@@ -1825,12 +1940,16 @@ export function DeviceStage(_props: {
                         }
                         return;
                       }
-                      if (!frame() || !liveControlActive() || e.button !== 0) return;
+                      if (
+                        !liveInteractionSurfaceAvailable() ||
+                        !liveControlActive() ||
+                        e.button !== 0
+                      )
+                        return;
                       e.currentTarget.focus({ preventScroll: true });
-                      const r = e.currentTarget.getBoundingClientRect();
+                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
                       down = {
-                        fx: (e.clientX - r.left) / r.width,
-                        fy: (e.clientY - r.top) / r.height,
+                        ...point,
                         t: e.timeStamp,
                         pointerId: e.pointerId,
                       };
@@ -1844,10 +1963,10 @@ export function DeviceStage(_props: {
                       }
                       const start = down;
                       if (!start || start.pointerId !== e.pointerId) return;
-                      const r = e.currentTarget.getBoundingClientRect();
+                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
                       pendingMove = {
-                        fx: (e.clientX - r.left) / r.width,
-                        fy: (e.clientY - r.top) / r.height,
+                        fx: point.fx,
+                        fy: point.fy,
                         pointerId: e.pointerId,
                       };
                       if (!moveRaf) {
@@ -1870,21 +1989,23 @@ export function DeviceStage(_props: {
                         }
                         return;
                       }
-                      if (!frame() || !liveControlActive()) return;
+                      if (!liveInteractionSurfaceAvailable() || !liveControlActive()) return;
                       const start = down;
                       if (!start || start.pointerId !== e.pointerId || e.button !== 0) return;
                       const r = e.currentTarget.getBoundingClientRect();
-                      const fx = (e.clientX - r.left) / r.width;
-                      const fy = (e.clientY - r.top) / r.height;
+                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
+                      const fx = point.fx;
+                      const fy = point.fy;
                       flushPendingMove(e.pointerId);
                       down = null;
                       const appliedLive = queueTouch("up", fx, fy);
-                      const dx = (fx - start.fx) * r.width;
-                      const dy = (fy - start.fy) * r.height;
+                      const dx = (point.displayFx - start.displayFx) * r.width;
+                      const dy = (point.displayFy - start.displayFy) * r.height;
                       if (Math.hypot(dx, dy) < 6) {
                         // tap → direct action, no picker
                         // show brief physical feedback at tap location
-                        setTapFeedback({ x: start.fx * 100, y: start.fy * 100 });
+                        setTapFeedback({ x: start.displayFx * 100, y: start.displayFy * 100 });
+                        lastLivePointerActionAt = performance.now();
                         if (feedbackTimer) clearTimeout(feedbackTimer);
                         feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
@@ -1927,15 +2048,17 @@ export function DeviceStage(_props: {
                       cancelGesture(e.pointerId);
                     }}
                     onWheel={(e) => {
-                      if (!frame() || !liveControlActive() || down) return;
+                      if (!liveInteractionSurfaceAvailable() || !liveControlActive() || down)
+                        return;
                       e.preventDefault();
                       e.currentTarget.focus({ preventScroll: true });
                       const r = e.currentTarget.getBoundingClientRect();
                       const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
                       const dx = e.deltaX * scale;
                       const dy = e.deltaY * scale;
-                      const fx = (e.clientX - r.left) / r.width;
-                      const fy = (e.clientY - r.top) / r.height;
+                      const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
+                      const fx = point.fx;
+                      const fy = point.fy;
                       if (!wheelBurst) {
                         wheelBurst = { startedAt: performance.now(), dx: 0, dy: 0 };
                         wheelSent = false;
@@ -1958,7 +2081,7 @@ export function DeviceStage(_props: {
                     }}
                     onContextMenu={(e) => {
                       // Right-click = deliberate inspection / strategy selection.
-                      if (!frame() || !liveControlActive()) return;
+                      if (!liveInteractionSurfaceAvailable() || !liveControlActive()) return;
                       e.preventDefault();
                       openPickerAt(e.currentTarget, e.clientX, e.clientY);
                     }}

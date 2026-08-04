@@ -7,6 +7,7 @@ import {
   captureSnapshot,
   createDevice,
   getBrowserDevice,
+  listDevices,
   observeVisualScreenFingerprint,
   runRecipeStep,
   runWithTargetContext,
@@ -27,10 +28,25 @@ import type {
   ReplaceAuthoringActionInput,
   TrimAuthoringTakeInput,
 } from "@relay/protocol";
-import { assertTargetLease } from "./access-control.js";
+import { assertTargetControl, assertTargetLease } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { isFinalizedMp4, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
 import type { RequestContext } from "./security.js";
+
+// XCTest video recording owns the command channel on attached Apple hardware:
+// any tap, snapshot, or text command restarts the runner and destroys the
+// movie. Simulator video uses a separate transport and remains fully
+// interactive. Physical devices therefore capture deterministic actions plus
+// before/after evidence; this is both more useful and dramatically smaller
+// than an unbounded, non-interactive XCTest movie.
+const evidenceOnlyIosSessions = new Set<string>();
+
+async function usesExclusivePhysicalIosRunner(session: AuthoringSession): Promise<boolean> {
+  if (session.target.kind !== "device" || session.target.platform !== "ios") return false;
+  const devices = await listDevices().catch(() => []);
+  const target = devices.find((device) => device.serial === session.target.targetId);
+  return !target || !/simulator/i.test(target.kind ?? "");
+}
 
 function targetContext(target: AuthoringTarget) {
   return target.kind === "browser"
@@ -57,7 +73,12 @@ const authoringObservationDependencies: AuthoringObservationDependencies = {
   resolveDevice: deviceFor,
   captureSnapshot: (device) => captureSnapshot({ device }),
   captureScreenshot: (device) =>
-    captureScreenshot({ device, caption: "Authoring evidence", ephemeral: true }),
+    captureScreenshot({
+      device,
+      caption: "Authoring evidence",
+      ephemeral: true,
+      includeScreenMatch: false,
+    }),
 };
 
 export async function captureAuthoringObservation(
@@ -73,7 +94,15 @@ export async function captureAuthoringObservation(
     // path because their capture transports are independent.
     const [snapshot, screenshot] =
       session.target.kind === "device" && session.target.platform === "ios"
-        ? [await dependencies.captureSnapshot(device), await dependencies.captureScreenshot(device)]
+        ? await (async () => {
+            // Freeze the pixels first. Native inspection uses the XCTest
+            // command channel and may need to recover a missing app session;
+            // evidence must still describe what was visibly on the device
+            // when this observation began.
+            const screenshot = await dependencies.captureScreenshot(device);
+            const snapshot = await dependencies.captureSnapshot(device);
+            return [snapshot, screenshot] as const;
+          })()
         : await Promise.all([
             dependencies.captureSnapshot(device),
             dependencies.captureScreenshot(device),
@@ -164,6 +193,10 @@ function runtime(): AuthoringRuntime {
     },
     async startVideo(session) {
       if (session.target.kind === "device" && session.target.platform === "ios") {
+        if (await usesExclusivePhysicalIosRunner(session)) {
+          evidenceOnlyIosSessions.add(session.id);
+          return;
+        }
         const take = await startIosVideoTake(session.target.targetId);
         if (take.warning) {
           await stopIosVideoTake(session.target.targetId);
@@ -173,6 +206,7 @@ function runtime(): AuthoringRuntime {
     },
     async stopVideo(session) {
       if (session.target.kind !== "device" || session.target.platform !== "ios") return {};
+      if (evidenceOnlyIosSessions.delete(session.id)) return {};
       const take = await stopIosVideoTake(session.target.targetId);
       if (!take) return { warning: "No active Apple video recording was found." };
       let data: Buffer | undefined;
@@ -198,7 +232,16 @@ function runtime(): AuthoringRuntime {
 
 async function controlledSession(scope: RequestContext, sessionId: string) {
   const session = await authoringSessions.get(sessionId);
-  await assertTargetLease(scope, session.target.targetId, session.leaseId);
+  try {
+    await assertTargetLease(scope, session.target.targetId, session.leaseId);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 403) throw error;
+    // Authoring reviews intentionally outlive short exclusive leases. Accept
+    // a renewed lease only when the same operation actor currently owns the
+    // same target; this preserves exclusivity without making a person discard
+    // a good Take after reading or editing it for fifteen minutes.
+    await assertTargetControl(scope, session.target.targetId);
+  }
   return session;
 }
 

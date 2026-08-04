@@ -230,6 +230,15 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
       seen.add(uri);
     });
   }
+  if (variant.screenshotUri !== undefined) {
+    requiredText(variant.screenshotUri, `${label}.screenshotUri`, 2_048);
+    if (!variant.screenshotUri.startsWith("relay-evidence://")) {
+      appMapFail("invalid-map", `${label}.screenshotUri must be a Relay evidence resource`);
+    }
+    if (!variant.evidenceUris?.includes(variant.screenshotUri)) {
+      appMapFail("invalid-map", `${label}.screenshotUri must be included in evidenceUris`);
+    }
+  }
   if (variant.baseline) assertBaseline(variant.baseline, `${label}.baseline`);
 }
 

@@ -68,9 +68,15 @@ export function deriveAppMapAreas(input: AreaProjection): AppMapArea[] {
     (left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id),
   );
   if (explicitGroups.length) {
+    const roots = new Set(rootScreenIds(input, screens));
     const grouped = new Set(explicitGroups.flatMap((group) => group.screenIds));
     const groups = explicitGroups.flatMap((group): AppMapArea[] => {
-      const screenIds = group.screenIds.filter((id) => Boolean(input.screens[id]));
+      const screenIds = group.screenIds
+        .filter((id) => Boolean(input.screens[id]))
+        // A marquee records pointer order, which is useful for editing but not
+        // for reading a product area. Keep the map entry first so the Screens
+        // view starts where a person or agent would actually begin.
+        .sort((left, right) => Number(roots.has(right)) - Number(roots.has(left)));
       return screenIds.length
         ? [{ id: `group:${group.id}`, title: group.name, rootScreenId: screenIds[0]!, screenIds }]
         : [];

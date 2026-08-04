@@ -13,6 +13,9 @@ export type CompanionImageLayout = {
   rotationDegrees: -90 | 0 | 90;
 };
 
+export type CompanionPoint = { x: number; y: number };
+export type CompanionRect = CompanionPoint & { width: number; height: number };
+
 type SnapshotRect = CompanionDimensions & { x: number; y: number };
 
 export type CompanionSnapshotNode = {
@@ -87,6 +90,46 @@ export function companionImageLayout(
     rotationDegrees:
       presentation.rotation === "left" ? -90 : presentation.rotation === "right" ? 90 : 0,
   };
+}
+
+/**
+ * Convert a point from the pixels people see in the companion back into the
+ * logical XCTest viewport. Physical iOS screenshots can arrive in the native
+ * portrait buffer while the accessibility tree and interface are landscape;
+ * the image is rotated for presentation, so input must apply the exact inverse
+ * transform before it is sent to the device.
+ */
+export function companionDisplayedPointToLogical(
+  point: CompanionPoint,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionPoint {
+  if (rotation === "left") return { x: 1 - point.y, y: point.x };
+  if (rotation === "right") return { x: point.y, y: 1 - point.x };
+  return point;
+}
+
+/** Project a logical accessibility rectangle onto the rotated companion. */
+export function companionLogicalRectToDisplayed(
+  rect: CompanionRect,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionRect {
+  if (rotation === "left") {
+    return {
+      x: rect.y,
+      y: 1 - rect.x - rect.width,
+      width: rect.height,
+      height: rect.width,
+    };
+  }
+  if (rotation === "right") {
+    return {
+      x: 1 - rect.y - rect.height,
+      y: rect.x,
+      width: rect.height,
+      height: rect.width,
+    };
+  }
+  return rect;
 }
 
 /** Find the logical application viewport rather than the snapshot union. */

@@ -9,6 +9,7 @@ import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
 import { TakeActionEditor } from "./take-action-editor";
 import { TakeActionList } from "./take-action-list";
+import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 const controlButton =
   "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
@@ -302,7 +303,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                 invalidateReview();
               }}
             >
-              <option value="new">New screen</option>
+              <option value="new">Create captured screen</option>
               <For each={props.screens}>
                 {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
               </For>
@@ -346,12 +347,12 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             <strong class="text-[10.5px] font-semibold text-[var(--text-strong)]">
               {pendingMutation()
                 ? "Saving change…"
-                : reviewInvalidated()
-                  ? "Replay required"
-                  : canApprove()
-                    ? "Replayed successfully"
-                    : props.replayState === "failed"
-                      ? "Needs another pass"
+                : canApprove()
+                  ? "Replayed successfully"
+                  : props.replayState === "failed"
+                    ? "Needs another pass"
+                    : reviewInvalidated()
+                      ? "Replay required"
                       : props.replayState === "running"
                         ? "Replaying on device…"
                         : "Ready to test"}
@@ -360,12 +361,12 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
           <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
             {pendingMutation()
               ? "Relay is saving this action before it can be tested."
-              : reviewInvalidated()
-                ? "You changed this recording. Replay the edited actions before approving the connection."
-                : canApprove()
-                  ? "Approve it if the device reached the right screen."
-                  : props.replayState === "failed"
-                    ? props.replayError || "The connection stopped before it finished."
+              : canApprove()
+                ? "Approve it if the device reached the right screen."
+                : props.replayState === "failed"
+                  ? props.replayError || "The connection stopped before it finished."
+                  : reviewInvalidated()
+                    ? "You changed this recording. Replay the edited actions before approving the connection."
                     : "Relay will try only this connection before you add it to the map."}
           </p>
         </section>
@@ -376,7 +377,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
           type="button"
           class={cn(primaryButton, "justify-center")}
           disabled={props.replayState === "running" || pendingMutation()}
-          onClick={canApprove() ? props.onKeep : props.onReplay}
+          onClick={() => (canApprove() ? props.onKeep() : props.onReplay())}
         >
           <Icon
             name={canApprove() ? "check" : props.replayState === "running" ? "refresh" : "play"}
@@ -391,10 +392,10 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             ? "Approve connection"
             : props.replayState === "running"
               ? "Replaying…"
-              : reviewInvalidated()
-                ? "Replay edits"
-                : props.replayState === "failed"
-                  ? "Try again"
+              : props.replayState === "failed"
+                ? "Try again"
+                : reviewInvalidated()
+                  ? "Replay edits"
                   : "Replay on device"}
         </button>
         <div class="flex items-center justify-between">
@@ -417,6 +418,7 @@ export function RecordedTakePlayer(props: {
   selectedIndex: number;
   onSelect: (index: number) => void;
   screenshotFor: (step: RecipeStep | undefined, index: number) => string;
+  orientationEvidence?: ScreenshotOrientationEvidence;
   videoSrc?: string;
   clip?: RecordingClip;
   onClip?: (clip: RecordingClip) => void;
@@ -484,11 +486,11 @@ export function RecordedTakePlayer(props: {
             <Show
               when={props.videoSrc}
               fallback={
-                <img
-                  class="h-full w-full object-contain"
+                <OrientedScreenshot
+                  class="size-full object-contain"
                   src={imageSrc()}
                   alt={`Recorded screen for ${title()}`}
-                  draggable={false}
+                  evidence={props.orientationEvidence}
                 />
               }
             >

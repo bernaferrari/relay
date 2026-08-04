@@ -86,7 +86,7 @@ function classifyError(message: string): JobErrorCode {
 async function resolveDeviceMeta(
   serial?: string,
   _platform?: DevicePlatform,
-): Promise<{ deviceName?: string; deviceAvailable?: boolean }> {
+): Promise<{ deviceName?: string; deviceAvailable?: boolean; physicalIos?: boolean }> {
   if (!serial) return {};
   try {
     const client = createDevice();
@@ -99,7 +99,12 @@ async function resolveDeviceMeta(
         d.android?.serial ?? d.ios?.udid ?? d.identifiers?.serial ?? d.identifiers?.udid ?? d.id;
       return s === serial || d.id === serial;
     });
-    return { deviceName: match?.name, deviceAvailable: Boolean(match) };
+    return {
+      deviceName: match?.name,
+      deviceAvailable: Boolean(match),
+      physicalIos:
+        _platform === "ios" && Boolean(match) && !/simulator|emulator/i.test(String(match?.kind)),
+    };
   } catch {
     return {};
   }
@@ -850,12 +855,19 @@ async function executeJob(id: string): Promise<void> {
       }
       device = await getBrowserDevice(browserTarget.id);
     } else {
-      // Release stale mobile bindings so this job can bind cleanly.
-      await hardStopDeviceSession(job.targetContext);
-      resetDeviceClient(job.targetContext);
+      // A physical iOS target uses one long-lived XCTest process. Stopping it
+      // here backgrounds the app immediately before source verification and
+      // turns a valid map run into a tap on SpringBoard. Simulators and Android
+      // still benefit from releasing stale bindings between jobs.
+      if (!meta.physicalIos) {
+        await hardStopDeviceSession(job.targetContext);
+        resetDeviceClient(job.targetContext);
+      }
       device = createDevice();
     }
-    evidence = await startRunEvidence(job, device, pushLog, evidence);
+    evidence = await startRunEvidence(job, device, pushLog, evidence, {
+      physicalIos: meta.physicalIos,
+    });
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session
     let pendingCancel: Error | null = null;

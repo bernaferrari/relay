@@ -24,7 +24,9 @@ export type RunEvidenceHandle = {
   startedAt: number;
   monotonicStart: number;
   recordingStarted: boolean;
+  performanceStarted: boolean;
   logsStarted: boolean;
+  networkStarted: boolean;
   audioStarted: boolean;
   crashStarted: boolean;
   stopped: boolean;
@@ -37,7 +39,9 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
     startedAt,
     monotonicStart: performance.now(),
     recordingStarted: false,
+    performanceStarted: false,
     logsStarted: false,
+    networkStarted: false,
     audioStarted: false,
     crashStarted: false,
     stopped: false,
@@ -156,71 +160,104 @@ function failed(
   log(`warn: ${name} evidence unavailable: ${record.message}`);
 }
 
+function unsupported(
+  handle: RunEvidenceHandle,
+  name: EvidenceChannel,
+  message: string,
+  log: (line: string) => void,
+): void {
+  const record = channel(handle, name);
+  record.status = "unsupported";
+  record.message = message;
+  record.finishedAt = now();
+  event(handle, name, "capture.unsupported", { message });
+  log(`evidence: ${name} skipped — ${message}`);
+}
+
+export type RunEvidenceOptions = {
+  /** A physical Apple target shares one XCTest process for observation and
+   * control. Starting simulator-style collectors would block that process and
+   * can destroy the app state that the flow is about to verify. */
+  physicalIos?: boolean;
+};
+
 /** Start bounded automatic collectors. Their failures are recorded, not promoted to test failures. */
 export async function startRunEvidence(
   job: TestJob,
   device: Device,
   log: (line: string) => void,
   existing?: RunEvidenceHandle,
+  options: RunEvidenceOptions = {},
 ): Promise<RunEvidenceHandle> {
   const handle = existing ?? initializeRunEvidence(job);
   const startedAt = handle.startedAt;
 
-  try {
-    const performanceResult = await withTimeout(
-      device.observability.perf({ ...base() }),
-      5_000,
-      "performance capture",
-    );
-    const record = channel(handle, "performance");
-    record.status = "captured";
-    record.startedAt = startedAt;
-    record.entries += 1;
-    addArtifact(job, {
-      kind: "performance-start",
-      capturedAt: now(),
-      data: redactValue(performanceResult),
-    });
-    event(handle, "performance", "sample", performanceResult);
-  } catch (error) {
-    failed(handle, "performance", error, log);
-  }
+  if (options.physicalIos) {
+    unsupported(handle, "performance", "not available from the physical iOS runner", log);
+  } else
+    try {
+      const performanceResult = await withTimeout(
+        device.observability.perf({ ...base() }),
+        5_000,
+        "performance capture",
+      );
+      const record = channel(handle, "performance");
+      record.status = "captured";
+      record.startedAt = startedAt;
+      record.entries += 1;
+      handle.performanceStarted = true;
+      addArtifact(job, {
+        kind: "performance-start",
+        capturedAt: now(),
+        data: redactValue(performanceResult),
+      });
+      event(handle, "performance", "sample", performanceResult);
+    } catch (error) {
+      failed(handle, "performance", error, log);
+    }
 
-  try {
-    await withTimeout(
-      device.observability.logs({ ...base(), action: "start" }),
-      5_000,
-      "log capture start",
-      async () => {
-        await device.observability.logs({ ...base(), action: "stop" });
-      },
-    );
-    const record = channel(handle, "logs");
-    record.status = "captured";
-    record.startedAt = startedAt;
-    handle.logsStarted = true;
-    event(handle, "logs", "capture.started");
-  } catch (error) {
-    failed(handle, "logs", error, log);
-  }
+  if (options.physicalIos) {
+    unsupported(handle, "logs", "not available from the physical iOS runner", log);
+  } else
+    try {
+      await withTimeout(
+        device.observability.logs({ ...base(), action: "start" }),
+        5_000,
+        "log capture start",
+        async () => {
+          await device.observability.logs({ ...base(), action: "stop" });
+        },
+      );
+      const record = channel(handle, "logs");
+      record.status = "captured";
+      record.startedAt = startedAt;
+      handle.logsStarted = true;
+      event(handle, "logs", "capture.started");
+    } catch (error) {
+      failed(handle, "logs", error, log);
+    }
 
-  try {
-    const include = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
-      ? "all"
-      : "summary";
-    await withTimeout(
-      device.observability.network({ ...base(), action: "log", include, limit: 200 }),
-      5_000,
-      "network capture start",
-    );
-    const record = channel(handle, "network");
-    record.status = "captured";
-    record.startedAt = startedAt;
-    record.message = include === "all" ? "request and response bodies consented" : "summary only";
-    event(handle, "network", "capture.started", { include });
-  } catch (error) {
-    failed(handle, "network", error, log);
-  }
+  if (options.physicalIos) {
+    unsupported(handle, "network", "requires an instrumented app or proxy on physical iOS", log);
+  } else
+    try {
+      const include = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
+        ? "all"
+        : "summary";
+      await withTimeout(
+        device.observability.network({ ...base(), action: "log", include, limit: 200 }),
+        5_000,
+        "network capture start",
+      );
+      const record = channel(handle, "network");
+      record.status = "captured";
+      record.startedAt = startedAt;
+      record.message = include === "all" ? "request and response bodies consented" : "summary only";
+      handle.networkStarted = true;
+      event(handle, "network", "capture.started", { include });
+    } catch (error) {
+      failed(handle, "network", error, log);
+    }
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
     try {
@@ -270,7 +307,7 @@ export async function startRunEvidence(
     }
   }
 
-  if (visualEvidenceAllowed()) {
+  if (visualEvidenceAllowed() && !options.physicalIos) {
     try {
       const runDir = await ensureRunDir(job);
       const path = join(runDir, "video", "run.mp4");
@@ -314,6 +351,13 @@ export async function startRunEvidence(
     } catch (error) {
       failed(handle, "video", error, log);
     }
+  } else if (visualEvidenceAllowed() && options.physicalIos) {
+    unsupported(
+      handle,
+      "video",
+      "full-flow video is unavailable; recorded transitions keep their own takes",
+      log,
+    );
   }
 
   return handle;
@@ -329,25 +373,26 @@ export async function stopRunEvidence(
   handle.stopped = true;
 
   if (device) {
-    try {
-      const performanceResult = await withTimeout(
-        device.observability.perf({ ...base() }),
-        5_000,
-        "performance capture",
-      );
-      const record = channel(handle, "performance");
-      record.status = record.status === "failed" ? "partial" : "captured";
-      record.entries += 1;
-      record.finishedAt = now();
-      addArtifact(job, {
-        kind: "performance-end",
-        capturedAt: now(),
-        data: redactValue(performanceResult),
-      });
-      event(handle, "performance", "sample", performanceResult);
-    } catch (error) {
-      failed(handle, "performance", error, log);
-    }
+    if (handle.performanceStarted)
+      try {
+        const performanceResult = await withTimeout(
+          device.observability.perf({ ...base() }),
+          5_000,
+          "performance capture",
+        );
+        const record = channel(handle, "performance");
+        record.status = record.status === "failed" ? "partial" : "captured";
+        record.entries += 1;
+        record.finishedAt = now();
+        addArtifact(job, {
+          kind: "performance-end",
+          capturedAt: now(),
+          data: redactValue(performanceResult),
+        });
+        event(handle, "performance", "sample", performanceResult);
+      } catch (error) {
+        failed(handle, "performance", error, log);
+      }
 
     if (handle.logsStarted) {
       try {
@@ -371,33 +416,34 @@ export async function stopRunEvidence(
       }
     }
 
-    try {
-      const result = await withTimeout(
-        device.observability.network({
-          ...base(),
-          action: "dump",
-          include: hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
-            ? "all"
-            : "summary",
-          limit: 200,
-        }),
-        5_000,
-        "network capture",
-      );
-      const data = redactValue(result);
-      addArtifact(job, { kind: "network", capturedAt: now(), data });
-      const record = channel(handle, "network");
-      record.status = "captured";
-      record.startedAt = handle.startedAt;
-      record.finishedAt = now();
-      record.entries = entryCount(result);
-      record.bytes = byteCount(data);
-      record.dropped = droppedCount(result);
-      if (record.dropped > 0) record.status = "partial";
-      event(handle, "network", "capture.stopped", { entries: record.entries });
-    } catch (error) {
-      failed(handle, "network", error, log);
-    }
+    if (handle.networkStarted)
+      try {
+        const result = await withTimeout(
+          device.observability.network({
+            ...base(),
+            action: "dump",
+            include: hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
+              ? "all"
+              : "summary",
+            limit: 200,
+          }),
+          5_000,
+          "network capture",
+        );
+        const data = redactValue(result);
+        addArtifact(job, { kind: "network", capturedAt: now(), data });
+        const record = channel(handle, "network");
+        record.status = "captured";
+        record.startedAt = handle.startedAt;
+        record.finishedAt = now();
+        record.entries = entryCount(result);
+        record.bytes = byteCount(data);
+        record.dropped = droppedCount(result);
+        if (record.dropped > 0) record.status = "partial";
+        event(handle, "network", "capture.stopped", { entries: record.entries });
+      } catch (error) {
+        failed(handle, "network", error, log);
+      }
 
     if (handle.crashStarted) {
       try {

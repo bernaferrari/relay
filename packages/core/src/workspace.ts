@@ -64,6 +64,16 @@ const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
 
+async function openIosControlSurface(device: Device, serial: string): Promise<void> {
+  await device.apps.open({
+    platform: "ios",
+    udid: serial,
+    app: "com.apple.springboard",
+    relaunch: false,
+    noRecord: true,
+  });
+}
+
 /** Forget runner preparation state after the Apple account or team changes. */
 export function resetIosRunnerState(): void {
   iosRunnerPreparations.clear();
@@ -81,19 +91,6 @@ function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> 
   if (existing) return existing;
 
   const preparation = prepareIosRunner(device, { udid: serial })
-    .then(async () => {
-      // Preparing XCTest only installs the helper; it does not create the app
-      // session required by screenshots and input. SpringBoard is the stable,
-      // system-owned control surface for a device that has no app selected yet.
-      // From there a human or agent can launch the app it wants to exercise.
-      await device.apps.open({
-        platform: "ios",
-        udid: serial,
-        app: "com.apple.springboard",
-        relaunch: false,
-        noRecord: true,
-      });
-    })
     .then(() => {
       iosRunnerFailures.delete(serial);
     })
@@ -131,15 +128,22 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
       context.platform === "ios" &&
       context.serial
     ) {
-      // The helper can outlive Relay while its app session is closed (or be
-      // closed by another client). Re-open the control surface once and retry
-      // instead of surfacing an implementation detail to the user.
-      iosRunnerPreparations.delete(context.serial);
-      iosRunnerFailures.delete(context.serial);
+      // Preparing a runner must never background the app a person is testing.
+      // Only open SpringBoard after the command channel explicitly reports
+      // that no app session exists, then retry the original operation once.
       await ensureIosRunnerPrepared(device, context.serial);
+      await openIosControlSurface(device, context.serial);
       return await op();
     }
     if (/already bound/i.test(msg) && !getExecutingJobId()) {
+      if (context.kind === "device" && context.platform === "ios") {
+        // A physical Apple target has one long-lived XCTest process. Releasing
+        // the SDK session here also kills an active screen recorder and loses
+        // its container-scoped MP4. Preserve the runner and surface the real
+        // selector conflict; callers can correct their request without
+        // destroying the device state they are trying to inspect.
+        throw err;
+      }
       await hardStopDeviceSession(context).catch(() => undefined);
       return await op();
     }

@@ -18,6 +18,7 @@ export function AppMapDeviceCompanion(props: {
   captureBusy: boolean;
   canRecord: boolean;
   recordLabel: string;
+  recordContextLabel: string | undefined;
   captureContextLabel: string | undefined;
   onClose: () => void;
   onOpenTargets: () => void;
@@ -78,11 +79,26 @@ export function AppMapDeviceCompanion(props: {
         when={props.recording ? props.take : null}
         fallback={
           <Show when={footerMode() !== "hidden"}>
-            <footer class="flex min-h-[68px] shrink-0 items-center justify-center border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-4">
+            <footer
+              class={cn(
+                "flex min-h-[68px] shrink-0 items-center border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-4",
+                props.recordContextLabel ? "justify-between gap-3" : "justify-center",
+              )}
+            >
+              <Show when={props.recordContextLabel}>
+                <div class="grid min-w-0 gap-0.5">
+                  <span class="text-[9.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
+                    Next action
+                  </span>
+                  <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                    {props.recordContextLabel}
+                  </strong>
+                </div>
+              </Show>
               <Button
                 variant="primary"
                 size="lg"
-                class="min-w-[148px]"
+                class={props.recordContextLabel ? "min-w-[116px]" : "min-w-[148px]"}
                 disabled={footerMode() === "busy"}
                 aria-busy={footerMode() === "busy"}
                 onClick={props.onRecord}

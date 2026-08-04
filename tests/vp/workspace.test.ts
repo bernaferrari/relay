@@ -42,7 +42,9 @@ describe("Relay workspace verification", () => {
     );
     expect(patch).toContain('private static let managedScreenshotPrefix = "screenshot-"');
     expect(patch).toContain("cleanupStaleRunnerArtifacts()");
-    expect(patch).toContain("cleanupStaleRunnerArtifacts(keeping: safeFileName)");
+    expect(patch).toContain(
+      "cleanupStaleRunnerArtifacts(keeping: safeFileName, includeRecordings: true)",
+    );
     expect(patch).toContain("cleanupStaleRunnerArtifacts(keeping: fileName)");
     expect(patch).toContain("try fileManager.removeItem(at: entry)");
   });

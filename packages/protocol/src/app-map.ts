@@ -96,6 +96,9 @@ export type ScreenVariant = AppMapEntity & {
    * remain separate from short stable identifiers so maps are both strict and
    * reopenable without renderer-owned blob URLs. */
   evidenceUris?: string[];
+  /** The canonical visual preview. Evidence lists may also contain semantic
+   * snapshots or video, so renderers must never guess from array order. */
+  screenshotUri?: string;
   baseline?: BaselineProvenance;
 };
 
@@ -175,8 +178,8 @@ export type AppMapCompiledStepProvenance = {
   recipeId: string;
   stepIndex: number;
   stepId: string;
-  origin: "action" | "destination";
-  ownerKind: "connection" | "routine";
+  origin: "source" | "action" | "destination";
+  ownerKind: "flow" | "connection" | "routine";
   ownerId: string;
   actionId?: string;
 };

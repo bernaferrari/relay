@@ -4,10 +4,54 @@ import type { SnapshotNode, SnapshotState } from "../lib/api-types";
 import type { AuthoringSession } from "@relay/protocol";
 import {
   buildTapTarget,
+  physicalIosTapStep,
   projectTake,
   selectProjectedAuthoringSession,
   semanticTapNode,
 } from "./recorder";
+
+test("physical iOS falls back to coordinates for duplicate non-hittable labels", () => {
+  const settings: SnapshotNode = {
+    index: 2,
+    ref: "@e52",
+    label: "Settings",
+    hittable: false,
+    rect: { x: 617, y: 231.5, width: 68.5, height: 87.5 },
+  };
+  const snapshot: SnapshotState = {
+    capturedAt: 1,
+    nodes: [{ index: 1, ref: "@e29", label: "Settings", hittable: false }, settings],
+    interactive: [],
+    bounds: { width: 834, height: 1112 },
+  };
+  const target = buildTapTarget(snapshot.bounds, settings, 651 / 834, 275 / 1112);
+
+  assert.deepEqual(physicalIosTapStep(snapshot, settings, target), {
+    kind: "point",
+    x: 651,
+    y: 275,
+  });
+});
+
+test("physical iOS prefers a uniquely hittable element reference", () => {
+  const button: SnapshotNode = {
+    index: 1,
+    ref: "@e7",
+    label: "General",
+    hittable: true,
+  };
+  const snapshot: SnapshotState = {
+    capturedAt: 1,
+    nodes: [button],
+    interactive: [button],
+    bounds: { width: 834, height: 1112 },
+  };
+
+  assert.deepEqual(
+    physicalIosTapStep(snapshot, button, buildTapTarget(snapshot.bounds, button, 0.5, 0.5)),
+    { kind: "ref", ref: "@e7" },
+  );
+});
 
 test("resource identifiers are not recorded as accessibility labels", () => {
   assert.deepEqual(
@@ -121,6 +165,33 @@ test("a failed authoring attempt does not remain the active recorder", () => {
   );
 });
 
+test("a locally completed session closes immediately while a stale refresh is in flight", () => {
+  const reviewing: AuthoringSession = {
+    schemaVersion: 1,
+    id: "reviewing",
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:me",
+    actorKind: "human",
+    appMapId: "map-a",
+    state: "reviewing",
+    target: { kind: "device", platform: "ios", targetId: "ipad" },
+    leaseId: "lease-one",
+    expectedAppMapRevision: 1,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  assert.equal(
+    selectProjectedAuthoringSession([reviewing], {
+      appMapId: "map-a",
+      targetId: "ipad",
+      actorId: "human:me",
+      dismissedSessionIds: new Set([reviewing.id]),
+    }),
+    null,
+  );
+});
+
 test("Take projection preserves canonical zero-step and grouped action boundaries", () => {
   const session: AuthoringSession = {
     schemaVersion: 1,
@@ -134,6 +205,7 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
     target: { kind: "device", platform: "android", targetId: "device-a" },
     leaseId: "lease-1",
     expectedAppMapRevision: 1,
+    pendingConnectionId: "connection-planned",
     createdAt: 1,
     updatedAt: 4,
     take: {
@@ -142,7 +214,27 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
       createdAt: 1,
       updatedAt: 4,
       currentRevision: 1,
-      replayAttempts: [],
+      replayAttempts: [
+        {
+          id: "replay-old-revision",
+          takeId: "take-1",
+          takeRevision: 2,
+          startedAt: 3,
+          finishedAt: 4,
+          outcome: "failed",
+          evidence: [],
+          error: "Old revision failed",
+        },
+        {
+          id: "replay-current",
+          takeId: "take-1",
+          takeRevision: 1,
+          startedAt: 4,
+          finishedAt: 5,
+          outcome: "passed",
+          evidence: [],
+        },
+      ],
       revisions: [
         {
           id: "revision-1",
@@ -151,7 +243,46 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
           createdAt: 4,
           createdBy: "human:me",
           reason: "recording",
-          evidence: [],
+          evidence: [
+            {
+              id: "before-shot",
+              kind: "screenshot",
+              capturedAt: 1,
+              uri: "relay://before.png",
+              mime: "image/png",
+            },
+            {
+              id: "after-shot",
+              kind: "screenshot",
+              capturedAt: 3,
+              uri: "relay://after.png",
+              mime: "image/png",
+            },
+          ],
+          before: {
+            id: "before-observation",
+            capturedAt: 1,
+            screen: {
+              id: "screen-before",
+              fingerprint: "before",
+              capturedAt: 1,
+              source: "recording",
+            },
+            evidenceIds: ["before-shot"],
+            bounds: { width: 834, height: 1112 },
+          },
+          after: {
+            id: "after-observation",
+            capturedAt: 3,
+            screen: {
+              id: "screen-after",
+              fingerprint: "after",
+              capturedAt: 3,
+              source: "recording",
+            },
+            evidenceIds: ["after-shot"],
+            bounds: { width: 834, height: 1112 },
+          },
           actions: [
             {
               id: "observe-action",
@@ -181,7 +312,7 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
     },
   };
 
-  const take = projectTake(session, (uri) => uri);
+  const take = projectTake(session, (uri) => `evidence:${uri}`);
   assert.ok(take);
   assert.equal(take.actions.length, 2);
   assert.deepEqual(
@@ -197,6 +328,11 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
   );
   assert.deepEqual(take.actionIds, ["grouped-action", "grouped-action"]);
   assert.equal(take.steps.length, 2);
+  assert.equal(take.pendingConnectionId, "connection-planned");
+  assert.equal(take.sourceEvidenceUrl, "evidence:relay://before.png");
+  assert.equal(take.destinationEvidenceUrl, "evidence:relay://after.png");
+  assert.deepEqual(take.sourceViewport, { width: 834, height: 1112 });
+  assert.deepEqual(take.latestReplay, { outcome: "passed" });
 });
 
 test("Take projection keeps recorded pauses visible and editable", () => {

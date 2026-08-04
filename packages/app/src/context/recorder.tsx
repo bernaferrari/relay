@@ -39,8 +39,14 @@ export type RecordingTake = {
   revision: number;
   appMapId: string;
   sourceScreenId?: string;
+  pendingConnectionId?: string;
   sourceObservation?: AuthoringScreenObservation;
   destinationObservation?: AuthoringScreenObservation;
+  sourceEvidenceUrl?: string;
+  destinationEvidenceUrl?: string;
+  sourceViewport?: { width: number; height: number };
+  destinationViewport?: { width: number; height: number };
+  platform: "android" | "ios" | "browser";
   startedAt: number;
   finishedAt?: number;
   group: string;
@@ -51,6 +57,7 @@ export type RecordingTake = {
   state: "recording" | "review";
   videoEvidenceUrl?: string;
   videoClip?: AuthoringVideoClip;
+  latestReplay?: { outcome: "passed" | "failed" | "cancelled"; error?: string };
 };
 
 export type RecordingIssue = { kind: "setup" | "screen"; message: string };
@@ -116,6 +123,37 @@ export function semanticTapNode(
   );
 }
 
+/**
+ * XCTest can expose duplicate, non-hittable accessibility nodes for one
+ * visible SpringBoard icon. Pressing either label still resolves as a
+ * successful command, but it does not mutate the screen. Treat semantics as
+ * an optimization only when the captured node proves it is actionable;
+ * otherwise preserve the exact point the person selected.
+ */
+export function physicalIosTapStep(
+  snapshot: SnapshotState,
+  node: SnapshotNode | null,
+  target: StepTarget,
+):
+  | { kind: "ref"; ref: string }
+  | { kind: "label"; label: string }
+  | { kind: "point"; x: number; y: number }
+  | null {
+  if (node?.hittable === true && target.ref) return { kind: "ref", ref: target.ref };
+
+  if (target.label && node?.hittable !== false) {
+    const normalized = target.label.trim().toLocaleLowerCase();
+    const matches =
+      snapshot?.nodes.filter(
+        (candidate) =>
+          (candidate.label ?? candidate.value ?? "").trim().toLocaleLowerCase() === normalized,
+      ).length ?? 0;
+    if (matches === 1) return { kind: "label", label: target.label };
+  }
+
+  return target.point ? { kind: "point", x: target.point.x, y: target.point.y } : null;
+}
+
 function sessionRevision(session: AuthoringSession) {
   const take = session.take;
   return take?.revisions.find((revision) => revision.revision === take.currentRevision);
@@ -124,6 +162,25 @@ function sessionRevision(session: AuthoringSession) {
 function projectedObservation(value: AuthoringObservation): AuthoringScreenObservation | undefined {
   if (!value || typeof value !== "object" || !("screen" in value)) return undefined;
   return structuredClone(value.screen);
+}
+
+export function snapshotFromAuthoringSession(session: AuthoringSession): SnapshotState {
+  const revision = sessionRevision(session);
+  const observation = revision?.after ?? revision?.before;
+  if (!observation?.bounds || !observation.nodes?.length) return null;
+  const nodes = observation.nodes.map((node) => structuredClone(node) as SnapshotNode);
+  return {
+    serial: session.target.targetId,
+    capturedAt: observation.capturedAt,
+    nodes,
+    interactive: nodes.filter(
+      (node) => node.hittable !== false && node.enabled !== false && Boolean(node.rect),
+    ),
+    bounds: { ...observation.bounds },
+    inspectable: true,
+    source: "sdk",
+    inspectionState: "active",
+  };
 }
 
 export function projectTake(
@@ -158,14 +215,31 @@ export function projectTake(
     }
   }
   const video = revision.evidence.find((item) => item.kind === "video");
+  const screenshotFor = (observation: AuthoringObservation | undefined) => {
+    const screenshot = observation?.evidenceIds
+      .map((id) => evidenceById.get(id))
+      .find((item) => item?.kind === "screenshot");
+    return screenshot ? evidenceUrl(screenshot.uri, screenshot.mime) : undefined;
+  };
+  const sourceEvidenceUrl = screenshotFor(revision.before);
+  const destinationEvidenceUrl = screenshotFor(revision.after);
+  const latestReplay = take.replayAttempts
+    .filter((attempt) => attempt.takeRevision === revision.revision)
+    .at(-1);
   return {
     id: take.id,
     sessionId: session.id,
     revision: revision.revision,
     appMapId: session.appMapId,
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
+    ...(session.pendingConnectionId ? { pendingConnectionId: session.pendingConnectionId } : {}),
     ...(revision.before ? { sourceObservation: projectedObservation(revision.before) } : {}),
     ...(revision.after ? { destinationObservation: projectedObservation(revision.after) } : {}),
+    ...(sourceEvidenceUrl ? { sourceEvidenceUrl } : {}),
+    ...(destinationEvidenceUrl ? { destinationEvidenceUrl } : {}),
+    ...(revision.before?.bounds ? { sourceViewport: { ...revision.before.bounds } } : {}),
+    ...(revision.after?.bounds ? { destinationViewport: { ...revision.after.bounds } } : {}),
+    platform: session.target.platform,
     startedAt: take.createdAt,
     ...(session.state !== "recording" ? { finishedAt: take.updatedAt } : {}),
     group: session.group ?? "",
@@ -176,6 +250,14 @@ export function projectTake(
     state: session.state === "recording" ? "recording" : "review",
     ...(video ? { videoEvidenceUrl: evidenceUrl(video.uri, video.mime) } : {}),
     ...(revision.videoClip ? { videoClip: { ...revision.videoClip } } : {}),
+    ...(latestReplay
+      ? {
+          latestReplay: {
+            outcome: latestReplay.outcome,
+            ...(latestReplay.error ? { error: latestReplay.error } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -189,12 +271,18 @@ function issueFromSession(session: AuthoringSession | null): RecordingIssue | nu
 
 export function selectProjectedAuthoringSession(
   sessions: readonly AuthoringSession[],
-  input: { appMapId: string | null; targetId: string | null; actorId: string },
+  input: {
+    appMapId: string | null;
+    targetId: string | null;
+    actorId: string;
+    dismissedSessionIds?: ReadonlySet<string>;
+  },
 ): AuthoringSession | null {
   const relevant = sessions
     .filter(
       (session) =>
         session.appMapId === input.appMapId &&
+        !input.dismissedSessionIds?.has(session.id) &&
         // Failed attempts remain in Activity, but they no longer own the
         // recorder or their expired lease after the workspace recovers.
         !["committed", "cancelled", "failed"].includes(session.state) &&
@@ -210,7 +298,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
   init: () => {
     const server = useServer();
     const [interacting, setInteracting] = createSignal(false);
+    const [localArming, setLocalArming] = createSignal(false);
     const [pendingGroup, setPendingGroup] = createSignal("");
+    const [dismissedSessionIds, setDismissedSessionIds] = createSignal<ReadonlySet<string>>(
+      new Set(),
+    );
     const [pendingSourceScreenId, setPendingSourceScreenId] = createSignal<string>();
     const [pendingConnectionId, setPendingTransitionId] = createSignal<string>();
 
@@ -219,6 +311,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         appMapId: server.selectedAppMapId(),
         targetId: server.selectedDevice(),
         actorId: server.actorId(),
+        dismissedSessionIds: dismissedSessionIds(),
       }),
     );
     const ownsActiveSession = () => activeSession()?.actorId === server.actorId();
@@ -227,7 +320,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return session ? projectTake(session, server.authoringEvidenceUrl) : null;
     });
     const recording = createMemo(() => activeSession()?.state === "recording");
-    const arming = createMemo(() => activeSession()?.state === "preparing");
+    const arming = createMemo(() => localArming() || activeSession()?.state === "preparing");
     const recordingIssue = createMemo(() => issueFromSession(activeSession()));
     const recordingGroup = createMemo(() => activeSession()?.group ?? pendingGroup());
 
@@ -265,7 +358,18 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return server.selectedLeaseId();
     }
 
-    async function enterRecordMode(): Promise<boolean> {
+    async function ensureDirectControl(): Promise<boolean> {
+      const serial = server.selectedDevice();
+      if (!serial) return false;
+      if (await ensureControlLease(serial)) return true;
+      toast(
+        server.controlIssue() || "Device control is not available yet. Try again in a moment.",
+        "warning",
+      );
+      return false;
+    }
+
+    async function enterRecordModeCore(): Promise<boolean> {
       const existing = activeSession();
       if (existing) {
         if (!ownsActiveSession()) {
@@ -336,10 +440,22 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
     }
 
+    async function enterRecordMode(): Promise<boolean> {
+      if (localArming()) return false;
+      setLocalArming(true);
+      try {
+        return await enterRecordModeCore();
+      } finally {
+        setLocalArming(false);
+      }
+    }
+
     /** Capture the current target through the authoritative observation
      * boundary, without opening a video transport. The canvas receives
      * identity + durable evidence without inventing an executable action. */
-    async function captureStartScreen(): Promise<CapturedStartScreen | null> {
+    async function captureStartScreen(
+      appMapIdOverride?: string,
+    ): Promise<CapturedStartScreen | null> {
       if (activeSession()) {
         toast("Finish the current recording before choosing a start screen", "info");
         return null;
@@ -349,7 +465,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return null;
       }
-      const appMapId = server.selectedAppMapId();
+      const appMapId = appMapIdOverride ?? server.selectedAppMapId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
@@ -449,51 +565,63 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     async function driveTap(fx: number, fy: number, alreadyApplied = false): Promise<boolean> {
       if (server.health() !== "online") return false;
-      await flushType();
-      const snapshot = server.snapshot() ?? (await server.captureUiSnapshot());
-      if (!hasUsableDeviceBounds(snapshot)) {
-        toast("Relay needs an inspectable device screen for this gesture", "warning");
-        return alreadyApplied;
-      }
-      const node = nodeAtPoint(snapshot, fx, fy);
-      const target = buildTapTarget(snapshot.bounds, semanticTapNode(snapshot, node), fx, fy);
-      const physicalIosTarget = targetIsPhysicalIos(
-        server.devices().find((device) => device.serial === server.selectedDevice()),
-      )
-        ? {
-            ...(target.label ? { label: target.label } : {}),
-            ...(target.point ? { point: target.point } : {}),
-          }
-        : target;
-      const session = activeSession();
-      if (session?.state === "recording" && ownsActiveSession()) {
-        await server.interactAuthoringSession(session.id, {
-          kind: "tap",
-          target: physicalIosTarget,
-          ...(alreadyApplied ? { applied: true } : {}),
-        });
-        return true;
-      }
-      if (alreadyApplied) return true;
-      // Match Relay's resolver policy: deterministic semantic identity first,
-      // then human-readable intent, with coordinates only as the final escape
-      // hatch. Coordinate-first taps were visibly highlighted correctly yet
-      // missed on rotated physical iPads.
-      if (
-        targetIsPhysicalIos(
+      try {
+        const session = activeSession();
+        const recordingHere = session?.state === "recording" && ownsActiveSession();
+        // A recording session already owns and validates the device lease. Its
+        // interaction endpoint is the authoritative execute + record boundary;
+        // acquiring a second direct-control path here can race the session and
+        // leave a physical iOS tap focused in the UI but absent from the take.
+        if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
+        await flushType();
+        const snapshot = recordingHere
+          ? snapshotFromAuthoringSession(session)
+          : (server.snapshot() ?? (await server.captureUiSnapshot()));
+        if (!hasUsableDeviceBounds(snapshot)) {
+          toast("Relay needs an inspectable device screen for this gesture", "warning");
+          return alreadyApplied;
+        }
+        const node = nodeAtPoint(snapshot, fx, fy);
+        const semanticNode = semanticTapNode(snapshot, node);
+        const target = buildTapTarget(snapshot.bounds, semanticNode, fx, fy);
+        const physicalIos = targetIsPhysicalIos(
           server.devices().find((device) => device.serial === server.selectedDevice()),
-        )
-      ) {
+        );
+        const physicalIosStep = physicalIosTapStep(snapshot, semanticNode, target);
+        const physicalIosTarget = physicalIos
+          ? physicalIosStep?.kind === "ref"
+            ? { ref: physicalIosStep.ref, ...(target.point ? { point: target.point } : {}) }
+            : physicalIosStep?.kind === "label"
+              ? { label: physicalIosStep.label, ...(target.point ? { point: target.point } : {}) }
+              : target.point
+                ? { point: target.point }
+                : target
+          : target;
+        if (recordingHere && session) {
+          await server.interactAuthoringSession(session.id, {
+            kind: "tap",
+            target: physicalIosTarget,
+            ...(alreadyApplied ? { applied: true } : {}),
+          });
+          return true;
+        }
+        if (alreadyApplied) return true;
+        // Match Relay's resolver policy: deterministic semantic identity first,
+        // then human-readable intent, with coordinates only as the final escape
+        // hatch. Coordinate-first taps were visibly highlighted correctly yet
+        // missed on rotated physical iPads.
+        if (physicalIos) {
+          return physicalIosStep ? server.interactStep(physicalIosStep) : false;
+        }
+        if (target.ref) return server.interactStep({ kind: "ref", ref: target.ref });
         if (target.label) return server.interactStep({ kind: "label", label: target.label });
         return target.point
           ? server.interactStep({ kind: "point", x: target.point.x, y: target.point.y })
           : false;
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "warning");
+        return false;
       }
-      if (target.ref) return server.interactStep({ kind: "ref", ref: target.ref });
-      if (target.label) return server.interactStep({ kind: "label", label: target.label });
-      return target.point
-        ? server.interactStep({ kind: "point", x: target.point.x, y: target.point.y })
-        : false;
     }
 
     async function driveSwipe(
@@ -503,40 +631,49 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       alreadyApplied = false,
     ): Promise<boolean> {
       if (server.health() !== "online") return false;
-      await flushType();
-      const snapshot = server.snapshot() ?? (await server.captureUiSnapshot());
-      if (!hasUsableDeviceBounds(snapshot)) return alreadyApplied;
-      const pin = {
-        anchor: { horizontal: "left" as const, vertical: "top" as const },
-        referenceBounds: { ...snapshot.bounds },
-      };
-      const interaction: AuthoringInteraction = {
-        kind: "swipe",
-        from: {
-          x: Math.round(from.x * snapshot.bounds.width),
-          y: Math.round(from.y * snapshot.bounds.height),
-          ...pin,
-        },
-        to: {
-          x: Math.round(to.x * snapshot.bounds.width),
-          y: Math.round(to.y * snapshot.bounds.height),
-          ...pin,
-        },
-        durationMs,
-        ...(alreadyApplied ? { applied: true } : {}),
-      };
-      const session = activeSession();
-      if (session?.state === "recording" && ownsActiveSession()) {
-        await server.interactAuthoringSession(session.id, interaction);
-        return true;
+      try {
+        const session = activeSession();
+        const recordingHere = session?.state === "recording" && ownsActiveSession();
+        if (!recordingHere && !alreadyApplied && !(await ensureDirectControl())) return false;
+        await flushType();
+        const snapshot = recordingHere
+          ? snapshotFromAuthoringSession(session)
+          : (server.snapshot() ?? (await server.captureUiSnapshot()));
+        if (!hasUsableDeviceBounds(snapshot)) return alreadyApplied;
+        const pin = {
+          anchor: { horizontal: "left" as const, vertical: "top" as const },
+          referenceBounds: { ...snapshot.bounds },
+        };
+        const interaction: AuthoringInteraction = {
+          kind: "swipe",
+          from: {
+            x: Math.round(from.x * snapshot.bounds.width),
+            y: Math.round(from.y * snapshot.bounds.height),
+            ...pin,
+          },
+          to: {
+            x: Math.round(to.x * snapshot.bounds.width),
+            y: Math.round(to.y * snapshot.bounds.height),
+            ...pin,
+          },
+          durationMs,
+          ...(alreadyApplied ? { applied: true } : {}),
+        };
+        if (recordingHere && session) {
+          await server.interactAuthoringSession(session.id, interaction);
+          return true;
+        }
+        if (alreadyApplied) return true;
+        return server.interactStep({
+          kind: "swipe",
+          from: interaction.from,
+          to: interaction.to,
+          durationMs,
+        });
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "warning");
+        return false;
       }
-      if (alreadyApplied) return true;
-      return server.interactStep({
-        kind: "swipe",
-        from: interaction.from,
-        to: interaction.to,
-        durationMs,
-      });
     }
 
     async function recordPick(
@@ -550,10 +687,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     ): Promise<void> {
       const session = activeSession();
       if (!session || session.state !== "recording" || !ownsActiveSession()) return;
-      const snapshot = server.snapshot() ?? (await server.captureUiSnapshot());
+      const snapshot =
+        snapshotFromAuthoringSession(session) ??
+        server.snapshot() ??
+        (await server.captureUiSnapshot());
       if (!hasUsableDeviceBounds(snapshot)) return;
       const target = targetFromStrategy(strategy, fx, fy, snapshot.bounds, anchor);
-      await server.interactAuthoringSession(session.id, { kind: "tap", target });
+      try {
+        await server.interactAuthoringSession(session.id, { kind: "tap", target });
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "warning");
+      }
     }
 
     async function replayTake(): Promise<boolean> {
@@ -573,12 +717,26 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     ): Promise<AuthoringSession | null> {
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return null;
-      const committed = await server.commitAuthoringSession(session.id, input);
-      setPendingSourceScreenId(undefined);
-      setPendingTransitionId(undefined);
-      setPendingGroup("");
-      toast("Connection added to the map", "success");
-      return committed;
+      // Approval is a local decision, so close the transient review surface
+      // immediately. App-map refreshes can take a few seconds on attached iOS
+      // hardware and must not make a successful click look ignored. Restore
+      // the session only when persistence actually fails.
+      setDismissedSessionIds((current) => new Set([...current, session.id]));
+      try {
+        const committed = await server.commitAuthoringSession(session.id, input);
+        setPendingSourceScreenId(undefined);
+        setPendingTransitionId(undefined);
+        setPendingGroup("");
+        toast("Connection added to the map", "success");
+        return committed;
+      } catch (error) {
+        setDismissedSessionIds((current) => {
+          const next = new Set(current);
+          next.delete(session.id);
+          return next;
+        });
+        throw error;
+      }
     }
 
     async function discardTake(): Promise<void> {
@@ -586,6 +744,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!session || !ownsActiveSession()) return;
       if (session.state === "reviewing") await server.discardAuthoringSession(session.id);
       else await server.cancelAuthoringSession(session.id);
+      setDismissedSessionIds((current) => new Set([...current, session.id]));
       setPendingSourceScreenId(undefined);
       setPendingTransitionId(undefined);
       setPendingGroup("");
@@ -666,7 +825,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     function queueDeviceKey(
       input: { kind: "text"; text: string } | { kind: "key"; key: "enter" | "backspace" },
     ): void {
-      typeDelivery = typeDelivery.then(() => server.keyDevice(input));
+      typeDelivery = typeDelivery.then(async () => {
+        if (!(await ensureDirectControl())) return false;
+        return server.keyDevice(input);
+      });
     }
 
     function scheduleTypeFlush(): void {

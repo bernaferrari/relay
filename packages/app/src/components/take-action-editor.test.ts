@@ -126,11 +126,17 @@ test("replacement validation blocks incomplete or unsafe action drafts", () => {
 
 test("Take editing surfaces use focused transitions and accessible target sizes", async () => {
   const sources = await Promise.all(
-    ["take-action-list.tsx", "take-action-editor.tsx"].map((file) =>
+    ["take-action-list.tsx", "take-action-editor.tsx", "app-map-capture-review.tsx"].map((file) =>
       readFile(new URL(file, import.meta.url), "utf8"),
     ),
   );
   assert.ok(sources.every((source) => !source.includes("transition-all")));
   assert.match(sources[0]!, /size-11/);
   assert.match(sources[1]!, /h-11/);
+  // The label and action must read the same current signal. Binding one
+  // handler at mount made an "Approve" button keep replaying forever.
+  assert.match(
+    sources[2]!,
+    /onClick=\{\(\) => \(canApprove\(\) \? props\.onKeep\(\) : props\.onReplay\(\)\)\}/,
+  );
 });

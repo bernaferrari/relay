@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MapTreeNode } from "./app-map-tree";
-import { canvasBounds, canvasEdgeGeometry, fitCanvasViewport } from "./app-map-canvas-layout";
+import {
+  canvasBounds,
+  canvasEdgeGeometry,
+  fitCanvasViewport,
+  nextBranchPosition,
+} from "./app-map-canvas-layout";
 
 const start: MapTreeNode = {
   // Geometry is independent from persistence and target dimensions.
@@ -50,4 +55,17 @@ test("fit includes content positioned left and above the world origin", () => {
   const view = fitCanvasViewport({ width: 1000, height: 720 }, bounds);
   assert.ok(negative.x * view.scale + view.x >= 0);
   assert.ok(negative.y * view.scale + view.y >= 0);
+});
+
+test("keyboard-created branches occupy the nearest open sibling row", () => {
+  const source = { x: 0, y: 0 };
+  assert.deepEqual(nextBranchPosition(source, [source]), { x: 300, y: 0 });
+  assert.deepEqual(nextBranchPosition(source, [source, { x: 300, y: 0 }]), {
+    x: 300,
+    y: 390,
+  });
+  assert.deepEqual(nextBranchPosition(source, [source, { x: 300, y: 0 }, { x: 300, y: 390 }]), {
+    x: 300,
+    y: -390,
+  });
 });

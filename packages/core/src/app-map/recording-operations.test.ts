@@ -90,6 +90,11 @@ test("commits a recording as one immutable App Map revision", () => {
         "evidence-video": "relay-evidence://sha256/video/video",
         "evidence-after": "relay-evidence://sha256/after/screenshot",
       },
+      evidenceKindsById: {
+        "evidence-before": "screenshot",
+        "evidence-video": "video",
+        "evidence-after": "screenshot",
+      },
     },
     context("event-1"),
   );
@@ -108,6 +113,11 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.deepEqual(
     variants.find((variant) => variant.observation?.fingerprint === afterFingerprint)?.evidenceUris,
     ["relay-evidence://sha256/after/screenshot"],
+  );
+  assert.equal(
+    variants.find((variant) => variant.observation?.fingerprint === beforeFingerprint)
+      ?.screenshotUri,
+    "relay-evidence://sha256/before/screenshot",
   );
   assert.equal(Object.keys(result.appMap.flows).length, 1);
   const connection = result.appMap.connections[result.connectionId];

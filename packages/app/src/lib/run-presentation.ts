@@ -1,8 +1,10 @@
 import type { JobInfo } from "./api-types";
 
+type AppMapRunIdentity = Pick<JobInfo, "action" | "artifacts">;
+
 /** App Map execution compiles to a private recipe id. Reports must navigate
  * back to the durable map, never expose that generated recipe as a document. */
-export function appMapIdForJob(job: JobInfo): string | null {
+export function appMapIdForJob(job: AppMapRunIdentity): string | null {
   const plan = job.artifacts?.find((artifact) => artifact.kind === "app-map-flow-plan")?.data;
   if (plan && typeof plan === "object" && !Array.isArray(plan)) {
     const appMapId = (plan as { appMapId?: unknown }).appMapId;

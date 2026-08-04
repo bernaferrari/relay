@@ -6,6 +6,7 @@ import { Icon } from "./icon";
 export type AppMapDeviceStatus = {
   label: string;
   kind: "idle" | "progress" | "ready" | "recording" | "attention";
+  detail?: string;
 };
 
 /** Convert readiness into one mutually exclusive status. Keeping this here
@@ -17,6 +18,8 @@ export function appMapDeviceStatus(input: {
   serverOnline: boolean;
   discovering?: boolean;
   recording?: boolean;
+  controlReady?: boolean;
+  controlIssue?: string | null;
 }): AppMapDeviceStatus {
   if (input.recording) return { label: "Recording", kind: "recording" };
   if (!input.deviceSelected && input.serverOnline && input.discovering) {
@@ -26,6 +29,9 @@ export function appMapDeviceStatus(input: {
   if (!input.serverOnline) return { label: "Relay offline", kind: "attention" };
   switch (input.readiness.kind) {
     case "ready":
+      if (input.controlIssue)
+        return { label: "View only", kind: "attention", detail: input.controlIssue };
+      if (input.controlReady === false) return { label: "Connecting control", kind: "progress" };
       return { label: "Live", kind: "ready" };
     case "checking-ios":
       return { label: "Checking device", kind: "progress" };
@@ -53,6 +59,7 @@ export function DeviceStatusLabel(props: { status: AppMapDeviceStatus }) {
       class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
       role="status"
       aria-live="polite"
+      data-tip={props.status.detail}
     >
       <Show
         when={props.status.kind === "progress"}

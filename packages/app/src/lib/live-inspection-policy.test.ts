@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIVE_FALLBACK_FRAME_INTERVAL_MS, liveInspectionPolicy } from "./live-inspection-policy";
+import {
+  LIVE_FALLBACK_FRAME_INTERVAL_MS,
+  LIVE_SNAPSHOT_INTERVAL_MS,
+  liveInspectionPolicy,
+} from "./live-inspection-policy";
 
 test("PNG fallback never runs at video-frame cadence", () => {
-  assert.ok(LIVE_FALLBACK_FRAME_INTERVAL_MS >= 1_000);
+  assert.ok(LIVE_FALLBACK_FRAME_INTERVAL_MS >= 2_000);
+});
+
+test("background accessibility inspection leaves room for physical-device input", () => {
+  assert.ok(LIVE_SNAPSHOT_INTERVAL_MS >= LIVE_FALLBACK_FRAME_INTERVAL_MS * 2);
 });
 
 test("healthy video keeps accessibility inspection live without PNG polling", () => {

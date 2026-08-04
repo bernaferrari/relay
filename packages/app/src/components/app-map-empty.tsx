@@ -3,7 +3,6 @@ import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
-import { targetIsReady } from "../lib/target-presentation";
 import { DeviceStatusLabel, appMapDeviceStatus } from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 import { Icon } from "./icon";
@@ -38,16 +37,16 @@ export function EmptyAppMap(props: {
         (!server.liveFrame()?.serial || server.liveFrame()?.serial === device()?.serial),
     }),
   );
-  // A still capture uses the shared observation channel and remains available
-  // while the interactive stream is connecting. Only recording needs live
-  // video readiness.
-  const ready = () => targetIsReady(device(), server.health() === "online");
+  const ready = () =>
+    readiness().kind === "ready" && Boolean(server.selectedLeaseId()) && !server.controlIssue();
   const status = () =>
     appMapDeviceStatus({
       readiness: readiness(),
       deviceSelected: Boolean(device()),
       serverOnline: server.health() === "online",
       discovering: server.deviceDiscoveryStatus() === "scanning",
+      controlReady: Boolean(server.selectedLeaseId()),
+      controlIssue: server.controlIssue(),
     });
 
   return (
@@ -114,23 +113,39 @@ export function EmptyAppMap(props: {
             preparing={status().kind === "progress"}
             onOrientation={setDeviceOrientation}
           />
-          <Show when={ready() || props.creating}>
+          <Show when={ready() || props.creating || server.controlIssue()}>
             <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
-              <Button
-                variant="primary"
-                size="lg"
-                disabled={props.creating}
-                aria-busy={props.creating}
-                onClick={props.onCaptureFirstScreen}
+              <Show
+                when={server.controlIssue()}
+                fallback={
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    disabled={props.creating || !ready()}
+                    aria-busy={props.creating}
+                    onClick={props.onCaptureFirstScreen}
+                  >
+                    <Show
+                      when={props.creating}
+                      fallback={<i class="size-2 rounded-full bg-current" aria-hidden="true" />}
+                    >
+                      <Icon name="refresh" size={14} class="ui-refresh-spin" />
+                    </Show>
+                    {props.creating ? "Capturing…" : "Capture first screen"}
+                  </Button>
+                }
               >
-                <Show
-                  when={props.creating}
-                  fallback={<i class="size-2 rounded-full bg-current" aria-hidden="true" />}
-                >
-                  <Icon name="refresh" size={14} class="ui-refresh-spin" />
-                </Show>
-                {props.creating ? "Capturing…" : "Capture first screen"}
-              </Button>
+                <div class="flex min-w-0 items-center gap-3 text-[11px] text-[var(--text-weak)]">
+                  <span class="truncate">Controlled in another window</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void server.setSelectedDevice(device()?.serial ?? null)}
+                  >
+                    Check again
+                  </Button>
+                </div>
+              </Show>
             </footer>
           </Show>
         </aside>

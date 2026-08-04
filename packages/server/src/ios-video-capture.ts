@@ -31,7 +31,6 @@ export function isFinalizedMp4(data: Buffer): boolean {
 const takesById = new Map<string, IosVideoTake>();
 const activeTakeBySerial = new Map<string, string>();
 const DEFAULT_READY_TAKE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
-
 function id(): string {
   return `ios-take-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -85,22 +84,18 @@ async function finishDeviceRecording(take: IosVideoTake): Promise<{
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/(?:no active recording|runner session restarted during recording)/i.test(message)) {
-      throw error;
-    }
-
-    // The daemon can disappear after it has flushed the local file, or before
-    // the first frame reaches disk. Neither case should trap the authoring
-    // session in Recording forever: preserve evidence when present and finish
-    // gracefully with an explicit warning when it is not.
+    // Video is supplemental evidence. A provider, copy, finalization, or
+    // runner failure must never trap the canonical transition in Recording.
+    // Preserve a host artifact when one exists and return a precise warning;
+    // Stop can then capture the destination and move into review normally.
     const preserved = await access(take.path)
       .then(() => true)
       .catch(() => false);
     return {
       path: take.path,
       warning: preserved
-        ? "Recording was interrupted when Relay restarted; preserved video may end early."
-        : "Recording was interrupted before its video could be saved.",
+        ? `Video capture ended early (${message}); the saved transition is still reviewable.`
+        : `Video capture was unavailable (${message}); the actions and destination screen were still saved.`,
     };
   }
 }

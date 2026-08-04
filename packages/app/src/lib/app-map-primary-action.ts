@@ -2,10 +2,10 @@ import type { DeviceReadiness } from "./device-readiness";
 import type { AppMapRunReadiness } from "./app-map-run-readiness";
 
 export type AppMapPrimaryAction = {
-  kind: "run" | "choose-device" | "open-device" | "blocked";
+  kind: "run" | "cancel" | "choose-device" | "open-device" | "blocked";
   label: string;
   reason: string;
-  icon: "play" | "smartphone" | "refresh" | "alert";
+  icon: "play" | "x" | "smartphone" | "refresh" | "alert";
 };
 
 /**
@@ -38,10 +38,10 @@ export function appMapPrimaryAction(input: {
   }
   if (input.running) {
     return {
-      kind: "blocked",
-      label: "Running…",
-      reason: "Relay is replaying this flow on the selected device",
-      icon: "refresh",
+      kind: "cancel",
+      label: "Stop run",
+      reason: "Stop the current replay",
+      icon: "x",
     };
   }
   if (!input.run.ready) {

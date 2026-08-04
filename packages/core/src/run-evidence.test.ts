@@ -157,6 +157,66 @@ test("run evidence keeps the run healthy when a recorder reports no encoder", as
   assert.equal(job.status, "running");
 });
 
+test("physical iOS skips collectors that compete with its XCTest control session", async () => {
+  const calls: string[] = [];
+  const device = {
+    observability: {
+      perf: async () => {
+        calls.push("perf");
+        return {};
+      },
+      logs: async () => {
+        calls.push("logs");
+        return {};
+      },
+      network: async () => {
+        calls.push("network");
+        return {};
+      },
+    },
+    recording: {
+      record: async () => {
+        calls.push("video");
+        return {};
+      },
+    },
+  } as unknown as Device;
+  const target = { kind: "device", platform: "ios", serial: "physical-ipad" } as const;
+  const job = {
+    id: "physical-ios-evidence",
+    action: "settings",
+    platform: "ios",
+    targetContext: target,
+    status: "running",
+    queuedAt: Date.now(),
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Settings",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  } as TestJob;
+
+  const handle = await runWithTargetContext(target, () =>
+    startRunEvidenceWithoutContext(job, device, () => undefined, undefined, {
+      physicalIos: true,
+    }),
+  );
+  await runWithTargetContext(target, () =>
+    stopRunEvidenceWithoutContext(handle, job, device, () => undefined),
+  );
+
+  assert.deepEqual(calls, []);
+  for (const name of ["performance", "logs", "network", "video"] as const) {
+    assert.equal(handle.manifest.channels[name].status, "unsupported");
+  }
+});
+
 test("consent grants activate audio, crash, and network-body collectors", async () => {
   const networkIncludes: string[] = [];
   const device = {
