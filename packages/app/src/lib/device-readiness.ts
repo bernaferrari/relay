@@ -70,7 +70,15 @@ export function deviceReadiness(
 ): DeviceReadiness {
   if (!device) return { kind: "choose-device" };
 
-  if (!targetIsReady(device, serverOnline)) {
+  // Transport availability takes precedence over stale Apple setup metadata.
+  // A disconnected iPad should never be described as merely preparing because
+  // its last discovery snapshot happened to lack developer services.
+  if (
+    !serverOnline ||
+    device.booted === false ||
+    device.connectionState === "unauthorized" ||
+    device.connectionState === "offline"
+  ) {
     return {
       kind: "device-unavailable",
       title: `Reconnect ${device.name ?? "device"}`,

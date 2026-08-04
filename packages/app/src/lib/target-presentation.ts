@@ -22,7 +22,9 @@ export function targetIsReady(target: DeviceInfo | null | undefined, online: boo
     Boolean(target) &&
     target?.booted !== false &&
     target?.connectionState !== "unauthorized" &&
-    target?.connectionState !== "offline"
+    target?.connectionState !== "offline" &&
+    target?.developerMode !== "disabled" &&
+    target?.developerServicesAvailable !== false
   );
 }
 
@@ -57,13 +59,17 @@ export function presentTarget(target: DeviceInfo): TargetPresentation {
       ? "Authorize on phone"
       : target.connectionState === "offline"
         ? "Reconnect device"
-        : target.booted === false
-          ? "Unavailable"
-          : target.platform === "browser"
-            ? "Ready"
-            : target.kind?.toLowerCase().includes("simulator")
-              ? "Simulator ready"
-              : "Connected";
+        : target.platform === "ios" && target.developerMode === "disabled"
+          ? "Turn on Developer Mode"
+          : target.platform === "ios" && target.developerServicesAvailable === false
+            ? "Preparing for control"
+            : target.booted === false
+              ? "Unavailable"
+              : target.platform === "browser"
+                ? "Ready"
+                : target.kind?.toLowerCase().includes("simulator")
+                  ? "Simulator ready"
+                  : "Connected";
 
   return {
     displayName: cleaned(target.name) ?? defaultName,

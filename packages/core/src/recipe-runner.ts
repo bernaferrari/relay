@@ -14,6 +14,7 @@ import {
   pressIdentifier,
   pressRef,
   pressLabel,
+  pressMatchingText,
   findClick,
   pressPoint,
   pressText,
@@ -532,6 +533,14 @@ async function tapTarget(
     });
   if (target.label)
     attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!, repeated) });
+  // Accessibility bridges can expose the same visible control as a text node
+  // instead of a native label selector. Keep the direct selector fast, then
+  // use the current snapshot as a bounded coordinate fallback before giving up.
+  if (target.label)
+    attempts.push({
+      strategy: "snapshot-label",
+      run: () => pressMatchingText(device, target.label!),
+    });
   if (target.label && region && selectedPlatform() === "ios") {
     attempts.push({
       strategy: "snapshot-region",

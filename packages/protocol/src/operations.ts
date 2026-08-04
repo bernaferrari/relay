@@ -232,6 +232,9 @@ export type DeviceSummary = {
   platform: "android" | "ios" | "browser";
   connectionState?: string;
   osVersion?: string;
+  /** Physical Apple targets expose these when CoreDevice can inspect them. */
+  developerMode?: "enabled" | "disabled";
+  developerServicesAvailable?: boolean;
 };
 
 export type ActionSummary = {

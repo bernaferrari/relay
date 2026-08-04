@@ -142,6 +142,39 @@ describe("runRecipeStep tap gestures", () => {
     ]);
   });
 
+  it("falls back from a stale native label selector to the visible snapshot node", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      find: async () => {
+        throw new Error("label selector unavailable");
+      },
+      press: async (options) => {
+        presses.push(options);
+        if ((options as { selector?: string }).selector === 'label="New conversation"') {
+          throw new Error("native label unavailable");
+        }
+        return {};
+      },
+      snapshot: async () => ({
+        nodes: [
+          {
+            label: "New conversation",
+            role: "button",
+            hittable: true,
+            rect: { x: 100, y: 200, width: 120, height: 48 },
+          },
+        ],
+      }),
+    });
+
+    await runRecipeStep(device, { kind: "tap", target: { label: "New conversation" } }, noLog);
+
+    assert.deepEqual(presses, [
+      { platform: "android", serial: "recipe-runner-test", selector: 'label="New conversation"' },
+      { platform: "android", serial: "recipe-runner-test", x: 160, y: 224 },
+    ]);
+  });
+
   it("uses the driver's native repeated gesture for multi-taps", async () => {
     const presses: unknown[] = [];
     const device = stubDevice({
@@ -265,7 +298,7 @@ describe("runRecipeStep tap gestures", () => {
 });
 
 describe("runRecipeStep text entry", () => {
-  it("replaces an existing field without keyboard-selection choreography", async () => {
+  it("uses the native replacement adapter for non-Android fields", async () => {
     const fills: unknown[] = [];
     const types: unknown[] = [];
     const device = stubDevice({
@@ -278,7 +311,7 @@ describe("runRecipeStep text entry", () => {
         return Promise.resolve({});
       },
     });
-    await runRecipeStep(
+    await runIosRecipeStep(
       device,
       {
         kind: "type",
@@ -290,16 +323,16 @@ describe("runRecipeStep text entry", () => {
     );
     assert.deepEqual(fills, [
       {
-        platform: "android",
-        serial: "recipe-runner-test",
+        platform: "ios",
+        udid: "recipe-runner-ios-test",
         selector: 'id="message-field"',
         text: "x",
       },
     ]);
     assert.deepEqual(types, [
       {
-        platform: "android",
-        serial: "recipe-runner-test",
+        platform: "ios",
+        udid: "recipe-runner-ios-test",
         text: "\b",
       },
     ]);

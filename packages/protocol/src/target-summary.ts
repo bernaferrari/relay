@@ -2,7 +2,16 @@ import type { DeviceSummary } from "./operations.js";
 
 export type DeviceCatalogSummary = Pick<
   DeviceSummary,
-  "id" | "serial" | "name" | "kind" | "booted" | "platform" | "connectionState" | "osVersion"
+  | "id"
+  | "serial"
+  | "name"
+  | "kind"
+  | "booted"
+  | "platform"
+  | "connectionState"
+  | "osVersion"
+  | "developerMode"
+  | "developerServicesAvailable"
 >;
 
 /** Keep an agent's default device catalog focused on hardware it can act on.
@@ -40,6 +49,10 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       platform: device.platform,
       ...(device.connectionState ? { connectionState: device.connectionState } : {}),
       ...(device.osVersion ? { osVersion: device.osVersion } : {}),
+      ...(device.developerMode ? { developerMode: device.developerMode } : {}),
+      ...(device.developerServicesAvailable !== undefined
+        ? { developerServicesAvailable: device.developerServicesAvailable }
+        : {}),
     })),
     hiddenUnavailableCount: devices.length - available.length,
   };

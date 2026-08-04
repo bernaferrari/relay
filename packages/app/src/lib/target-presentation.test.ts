@@ -117,6 +117,29 @@ test("shares one readiness rule across recording and discovery", () => {
   assert.equal(targetIsReady(null, true), false);
 });
 
+test("does not call an Apple device ready before automation services are available", () => {
+  const target = {
+    serial: "ipad",
+    name: "iPad Pro",
+    platform: "ios" as const,
+    kind: "Physical device",
+    booted: true,
+    developerServicesAvailable: false,
+  };
+  assert.equal(targetIsReady(target, true), false);
+  assert.equal(presentTarget(target).statusLabel, "Preparing for control");
+  assert.equal(deviceReadiness(target, true).kind, "ios-preparing");
+  assert.equal(targetIsReady({ ...target, developerMode: "disabled" }, true), false);
+  assert.equal(
+    presentTarget({ ...target, developerMode: "disabled" }).statusLabel,
+    "Turn on Developer Mode",
+  );
+  assert.equal(
+    deviceReadiness({ ...target, connectionState: "offline" }, true).kind,
+    "device-unavailable",
+  );
+});
+
 test("prefers a controllable target instead of selecting the first stopped simulator", () => {
   assert.equal(
     preferredTargetSerial([
