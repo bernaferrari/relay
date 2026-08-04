@@ -2333,7 +2333,11 @@ export function AppMapWorkspace(props: {
                       setHistoryOpen(false);
                       setAgentOpen(true);
                     }}
-                    canRefreshScreenshots={graphRunReadiness().ready}
+                    refreshScreenshotsHint={
+                      graphRunReadiness().ready
+                        ? "Replay the flow and compare fresh captures with approved baselines"
+                        : graphRunReadiness().reason
+                    }
                     onRefreshScreenshots={refreshMapScreenshots}
                   />
                 )}

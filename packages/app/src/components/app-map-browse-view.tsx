@@ -32,7 +32,7 @@ export function AppMapBrowseView(props: {
   onCaptureScreen: () => void;
   onOpenAgent: () => void;
   onRefreshScreenshots: () => void;
-  canRefreshScreenshots: boolean;
+  refreshScreenshotsHint?: string;
 }) {
   const [screenQuery, setScreenQuery] = createSignal("");
   const [coverageQuery, setCoverageQuery] = createSignal("");
@@ -131,8 +131,10 @@ export function AppMapBrowseView(props: {
               <Button
                 variant="secondary"
                 size="md"
-                disabled={!props.canRefreshScreenshots}
-                data-tip="Replay the flow and compare fresh captures with approved baselines"
+                data-tip={
+                  props.refreshScreenshotsHint ??
+                  "Replay the flow and compare fresh captures with approved baselines"
+                }
                 onClick={props.onRefreshScreenshots}
               >
                 <Icon name="camera" size={13} /> Refresh screenshots

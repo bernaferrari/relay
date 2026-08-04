@@ -14,7 +14,7 @@ import {
   type ExecutionMomentState,
 } from "../lib/execution-moments";
 import { eyebrow } from "../lib/ui";
-import { friendlyError } from "./run-summary";
+import { friendlyError } from "../lib/run-failure-presentation";
 import { Icon } from "./icon";
 
 function stateTone(state: ExecutionMomentState): string {

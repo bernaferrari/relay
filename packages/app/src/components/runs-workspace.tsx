@@ -11,7 +11,8 @@ import {
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
-import { RunSummary, friendlyError, readableFailure } from "./run-summary";
+import { RunSummary } from "./run-summary";
+import { friendlyError, readableFailure } from "../lib/run-failure-presentation";
 import { Icon } from "./icon";
 import { StatusChip, jobStatusChip } from "./status-chip";
 import { EmptyState } from "./empty-state";
@@ -623,7 +624,7 @@ export function RunsWorkspace(props: {
                         total: reviewCompletion()?.total ?? 0,
                         selectedIndex: initialRunReviewStep(job()),
                         failureLabel: job().failureCategory
-                          ? readableFailure(job().failureCategory!)
+                          ? readableFailure(job().failureCategory!, job().error)
                           : "Stopped",
                       })}
                     </strong>

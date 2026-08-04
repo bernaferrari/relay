@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import { useServer, type JobInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
@@ -11,6 +11,18 @@ export function RunBrowser(props: {
   onSelect: (job: JobInfo) => void;
 }) {
   const server = useServer();
+  const [query, setQuery] = createSignal("");
+  const filteredRows = createMemo(() => {
+    const needle = query().trim().toLocaleLowerCase();
+    if (!needle) return props.rows;
+    return props.rows.filter((job) => {
+      const recipe = server.recipes().find((item) => item.id === job.action);
+      const status = jobStatusChip(job.status);
+      return [job.title, recipe?.title, titleize(job.action), status.label]
+        .filter(Boolean)
+        .some((value) => value!.toLocaleLowerCase().includes(needle));
+    });
+  });
   return (
     <aside
       class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[1180px]:hidden"
@@ -19,14 +31,31 @@ export function RunBrowser(props: {
       <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3.5">
         <div>
           <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">Runs</strong>
-          <small class="text-[10px] text-[var(--text-weak)]">{props.rows.length} saved</small>
+          <small class="text-[10px] text-[var(--text-weak)]">
+            {query().trim()
+              ? `${filteredRows().length} of ${props.rows.length}`
+              : props.rows.length}{" "}
+            {props.rows.length === 1 ? "run" : "runs"}
+          </small>
         </div>
         <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
           <Icon name="wave" size={14} />
         </span>
       </header>
+      <label class="relative mx-2 mt-2 block shrink-0">
+        <span class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-[var(--text-weak)]">
+          <Icon name="search" size={13} />
+        </span>
+        <span class="sr-only">Search runs</span>
+        <input
+          class="h-8 w-full rounded-lg border border-transparent bg-[var(--v2-background-bg-layer-01)] pr-2.5 pl-8 text-[16px] text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-02)] focus:border-[var(--v2-border-border-strong)] focus:bg-[var(--v2-background-bg-base)] min-[681px]:text-[11.5px]"
+          value={query()}
+          placeholder="Search runs"
+          onInput={(event) => setQuery(event.currentTarget.value)}
+        />
+      </label>
       <nav class="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Saved runs">
-        <For each={props.rows}>
+        <For each={filteredRows()}>
           {(job) => {
             const recipe = () => server.recipes().find((item) => item.id === job.action);
             const status = () => jobStatusChip(job.status);
@@ -72,6 +101,18 @@ export function RunBrowser(props: {
             );
           }}
         </For>
+        <Show when={filteredRows().length === 0}>
+          <div class="px-3 py-8 text-center">
+            <p class="m-0 text-[11.5px] font-medium text-[var(--text-base)]">No matching runs</p>
+            <button
+              type="button"
+              class="mt-2 min-h-8 rounded-md px-2.5 text-[11px] font-medium text-[var(--text-accent-base)] outline-none hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:ring-2 focus-visible:ring-border-strong-focus"
+              onClick={() => setQuery("")}
+            >
+              Clear search
+            </button>
+          </div>
+        </Show>
       </nav>
     </aside>
   );

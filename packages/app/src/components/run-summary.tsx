@@ -6,6 +6,7 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
 import { mono, productStatus } from "../lib/ui";
+import { friendlyError, readableFailure } from "../lib/run-failure-presentation";
 
 type RunSummaryProps = {
   job: JobInfo;
@@ -57,7 +58,10 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
       </div>
       <dl class="m-0 grid grid-cols-1">
         <Show when={job().failureCategory}>
-          <Fact label="Why it stopped" value={readableFailure(job().failureCategory!)} />
+          <Fact
+            label="Why it stopped"
+            value={readableFailure(job().failureCategory!, job().error)}
+          />
         </Show>
         <Fact label="Duration" value={fmtDur(job(), props.clock) || "—"} />
         <Fact label="Device" value={props.targetLabel} />
@@ -167,40 +171,6 @@ function readableOutcome(value: string): string {
     default:
       return titleize(value);
   }
-}
-
-export function readableFailure(value: string): string {
-  const labels: Record<string, string> = {
-    environment: "Setup",
-    "target-state": "App state",
-    locator: "Target not found",
-    action: "Action",
-    completion: "Response timeout",
-    extraction: "Could not read response",
-    "deterministic-assertion": "Expected check",
-    "semantic-assertion": "Answer check",
-    "visual-assertion": "Visual check",
-    "judge-uncertainty": "Needs review",
-    "harness-defect": "Test system",
-  };
-  return labels[value] ?? titleize(value);
-}
-
-export function friendlyError(value: string): string {
-  const message = value.trim();
-  if (/already bound|already in use|session .* bound/i.test(message)) {
-    return "This target is already in use by another session. Stop that session or choose a different target.";
-  }
-  if (/server.*offline|connection refused|failed to fetch|network request failed/i.test(message)) {
-    return "Relay could not reach the target service. Start it, then try again.";
-  }
-  if (/unknown target|target.*not found|no such device/i.test(message)) {
-    return "The selected target is no longer available. Choose another target and try again.";
-  }
-  if (/timed out|timeout/i.test(message)) {
-    return "The target did not respond in time. Check the app state and try again.";
-  }
-  return message;
 }
 
 function durationDelta(current: JobInfo, previous: JobInfo): string {
