@@ -17,6 +17,7 @@ import {
   reviewGraphTransition,
   withCanvasGraph,
 } from "./app-map-canvas-graph";
+import type { CanvasInteractionAnchor } from "./app-map-canvas-layout";
 
 /**
  * The executable recipe and the visual prototype deliberately meet here, in
@@ -31,7 +32,92 @@ export type CanvasConnection = PrototypeConnection & {
   kind: "forward" | "return";
   mode?: CanvasTransition["mode"];
   review?: ConnectionTakeReview;
+  /** Derived from recorded evidence; absent for planned or non-targeted work. */
+  sourceAnchor?: CanvasInteractionAnchor;
 };
+
+function normalizedAnchorForStep(
+  step: RecipeStep | undefined,
+): CanvasInteractionAnchor | undefined {
+  if (step?.kind !== "tap") return undefined;
+  const evidence = step.evidence;
+  const inferredBounds = evidence?.nodes
+    ?.map((candidate) => candidate.rect)
+    .filter((rect): rect is NonNullable<typeof rect> => Boolean(rect))
+    .sort((left, right) => right.width * right.height - left.width * left.height)[0];
+  const bounds =
+    evidence?.deviceBounds ??
+    step.target.point?.referenceBounds ??
+    (inferredBounds
+      ? {
+          width: inferredBounds.x + inferredBounds.width,
+          height: inferredBounds.y + inferredBounds.height,
+        }
+      : undefined);
+  if (!bounds?.width || !bounds.height) return undefined;
+
+  const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+  const matchesTarget = (candidate: NonNullable<typeof evidence>["node"]) => {
+    if (!candidate) return false;
+    if (step.target.identifier && candidate.identifier === step.target.identifier) return true;
+    if (step.target.ref && candidate.ref === step.target.ref) return true;
+    if (
+      step.target.label &&
+      (candidate.label === step.target.label || candidate.value === step.target.label)
+    ) {
+      return true;
+    }
+    if (
+      step.target.text &&
+      (candidate.value === step.target.text || candidate.label === step.target.text)
+    ) {
+      return true;
+    }
+    return false;
+  };
+  const node = [evidence?.node, ...(evidence?.nodes ?? [])].find(
+    (candidate) => Boolean(candidate?.rect) && matchesTarget(candidate),
+  );
+  const rect = node?.rect;
+  const point =
+    evidence?.pointer ??
+    step.target.point ??
+    (rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : undefined);
+  if (!point) return undefined;
+
+  const normalizedPoint = {
+    x: clamp(point.x, bounds.width) / bounds.width,
+    y: clamp(point.y, bounds.height) / bounds.height,
+  };
+  const normalizedRect = rect
+    ? {
+        x: clamp(rect.x, bounds.width) / bounds.width,
+        y: clamp(rect.y, bounds.height) / bounds.height,
+        width:
+          (clamp(rect.x + rect.width, bounds.width) - clamp(rect.x, bounds.width)) / bounds.width,
+        height:
+          (clamp(rect.y + rect.height, bounds.height) - clamp(rect.y, bounds.height)) /
+          bounds.height,
+      }
+    : undefined;
+
+  return {
+    point: normalizedPoint,
+    ...(normalizedRect?.width && normalizedRect.height ? { rect: normalizedRect } : {}),
+  };
+}
+
+function sourceAnchorForSteps(
+  steps: RecipeStep[],
+  stepIds: readonly string[],
+  fallback?: RecipeStep,
+): CanvasInteractionAnchor | undefined {
+  const ordered = stepIds
+    .map((stepId) => steps.find((step) => step.id === stepId))
+    .filter((step): step is RecipeStep => Boolean(step));
+  const firstTap = ordered.find((step) => step.kind === "tap") ?? fallback;
+  return normalizedAnchorForStep(firstTap);
+}
 
 export function canvasConnections(
   tree: MapTree,
@@ -45,6 +131,7 @@ export function canvasConnections(
       if (transition.destination.kind !== "screen") return [];
       const stepId = transition.stepIds[0];
       const step = steps.find((candidate) => candidate.id === stepId);
+      const sourceAnchor = sourceAnchorForSteps(steps, transition.stepIds, step);
       return [
         {
           id: transition.id,
@@ -57,6 +144,7 @@ export function canvasConnections(
           ...(transition.videoClip ? { videoClip: { ...transition.videoClip } } : {}),
           ...(transition.mode ? { mode: transition.mode } : {}),
           ...(transition.review ? { review: { ...transition.review } } : {}),
+          ...(sourceAnchor ? { sourceAnchor } : {}),
           label: transition.label || (step ? transitionLabel(step) : "Record action"),
           state: transition.state,
           createdAt: transition.createdAt,
@@ -82,6 +170,7 @@ export function canvasConnections(
     const saved = authored.get(edge.id);
     authored.delete(edge.id);
     const step = steps[edge.stepIndex];
+    const sourceAnchor = normalizedAnchorForStep(step);
     return {
       id: edge.id,
       fromScreenId: edge.from,
@@ -91,6 +180,7 @@ export function canvasConnections(
       ...(saved?.takeId ? { takeId: saved.takeId } : {}),
       ...(saved?.videoTakeId ? { videoTakeId: saved.videoTakeId } : {}),
       ...(saved?.videoClip ? { videoClip: { ...saved.videoClip } } : {}),
+      ...(sourceAnchor ? { sourceAnchor } : {}),
       label: saved?.label?.trim() || metadata.edgeLabels[edge.id] || transitionLabel(step!),
       state: "recorded",
       createdAt: saved?.createdAt ?? 0,

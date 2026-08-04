@@ -8,6 +8,8 @@ import {
   nextBranchPosition,
   openCanvasViewport,
   screenCardGeometry,
+  SCREEN_FRAME_HEIGHT,
+  SCREEN_FRAME_MIN_WIDTH,
   SCREEN_CARD_WIDTH,
 } from "./app-map-canvas-layout";
 
@@ -48,11 +50,11 @@ test("screen previews preserve phone and tablet viewport silhouettes", () => {
   const tablet = screenCardGeometry({ logicalViewport: { width: 1112, height: 834 } });
 
   assert.ok(phone.frameHeight > phone.frameWidth);
-  assert.equal(phone.frameWidth, 112);
+  assert.equal(phone.frameWidth, SCREEN_FRAME_MIN_WIDTH);
   assert.ok(phone.mediaWidth < phone.frameWidth);
   assert.equal(phone.mediaHeight, phone.frameHeight);
   assert.ok(tablet.frameWidth > tablet.frameHeight);
-  assert.equal(phone.frameHeight, 200);
+  assert.equal(phone.frameHeight, SCREEN_FRAME_HEIGHT);
   assert.equal(tablet.frameWidth, SCREEN_CARD_WIDTH);
   assert.equal(tablet.mediaWidth, tablet.frameWidth);
   assert.ok(phone.frameLeft > 0);
@@ -71,6 +73,20 @@ test("connections attach to the visible screen frame instead of its layout slot"
   const rightEdge = phoneGeometry().frameLeft + phoneGeometry().frameWidth;
 
   assert.match(path, new RegExp(`^M ${rightEdge}`));
+});
+
+test("recorded connections can leave from the captured interaction point", () => {
+  const path = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.25, y: 0.7 } },
+    },
+    [start, settings],
+    (node) => node,
+  ).path;
+  assert.match(path, /^M 60 151\.8 C/);
 });
 
 test("fit keeps a graph visible with stable canvas padding", () => {

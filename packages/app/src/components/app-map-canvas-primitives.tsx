@@ -5,7 +5,7 @@ import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
-import type { ScreenCardGeometry } from "../lib/app-map-canvas-layout";
+import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
@@ -72,6 +72,8 @@ export function ScreenCard(props: {
   geometry: ScreenCardGeometry;
   src: () => string;
   orientationEvidence?: ScreenshotOrientationEvidence;
+  /** The selected recorded connection's source target, if one exists. */
+  sourceAnchor?: CanvasInteractionAnchor;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
   onContextMenu: (event: MouseEvent) => void;
@@ -270,7 +272,7 @@ export function ScreenCard(props: {
             }}
           >
             <div
-              class="mx-auto min-h-0"
+              class="relative mx-auto min-h-0"
               style={{
                 width: `${props.geometry.mediaWidth}px`,
                 height: `${props.geometry.mediaHeight}px`,
@@ -283,6 +285,36 @@ export function ScreenCard(props: {
                 class="size-full object-contain object-top"
                 evidence={props.orientationEvidence}
               />
+              <Show when={props.sourceAnchor}>
+                {(anchor) => (
+                  <div
+                    class="pointer-events-none absolute inset-0 z-[2]"
+                    aria-label="Recorded interaction target"
+                    data-recorded-map-target
+                  >
+                    <Show when={anchor().rect}>
+                      {(rect) => (
+                        <div
+                          class="absolute rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/14%)]"
+                          style={{
+                            left: `${rect().x * 100}%`,
+                            top: `${rect().y * 100}%`,
+                            width: `${rect().width * 100}%`,
+                            height: `${rect().height * 100}%`,
+                          }}
+                        />
+                      )}
+                    </Show>
+                    <span
+                      class="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--v2-background-bg-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
+                      style={{
+                        left: `${anchor().point.x * 100}%`,
+                        top: `${anchor().point.y * 100}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </Show>
             </div>
           </div>
         )}

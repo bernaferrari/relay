@@ -3,6 +3,16 @@ import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
 export type CanvasViewport = CanvasPoint & { scale: number };
+/**
+ * A recorded interaction projected into the visible screen preview.
+ * Coordinates are normalized so the map remains correct across screenshot
+ * sizes and device targets. This is derived presentation data, never canvas
+ * layout state.
+ */
+export type CanvasInteractionAnchor = {
+  point: CanvasPoint;
+  rect?: { x: number; y: number; width: number; height: number };
+};
 export type CanvasBounds = {
   left: number;
   top: number;
@@ -14,17 +24,13 @@ export type CanvasBounds = {
 
 /** Shared geometry for the App Map canvas and collaboration presence. */
 // Positions reserve one stable slot so mixed phone and tablet maps remain easy
-// to arrange. The visual frame inside that slot follows its captured viewport.
+// to arrange. The visible frame follows the captured viewport inside that
+// stable slot, so phones remain phones and tablets remain tablets.
 export const SCREEN_CARD_WIDTH = 240;
 export const SCREEN_CARD_HEIGHT = 230;
 export const SCREEN_FRAME_TOP = 30;
 export const SCREEN_FRAME_HEIGHT = 200;
-/**
- * A map is a visual index, not a physical-device shelf. Extremely narrow
- * portrait screenshots become unreadable when their exact width is used as
- * the whole node, so the well gets a little breathing room while the media
- * inside it remains pixel-accurate.
- */
+/** Keep very narrow phone previews legible without changing their media ratio. */
 export const SCREEN_FRAME_MIN_WIDTH = 112;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
@@ -195,7 +201,12 @@ export function openCanvasViewport(
 }
 
 export function canvasEdgeGeometry(
-  edge: { from: string; to: string; kind: "forward" | "return" },
+  edge: {
+    from: string;
+    to: string;
+    kind: "forward" | "return";
+    sourceAnchor?: CanvasInteractionAnchor;
+  },
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
   nodeIndex?: ReadonlyMap<string, MapTreeNode>,
@@ -223,8 +234,19 @@ export function canvasEdgeGeometry(
       },
     };
   }
-  const startX = fromPosition.x + fromGeometry.frameLeft + fromGeometry.frameWidth;
-  const startY = fromPosition.y + fromGeometry.frameTop + fromGeometry.frameHeight / 2;
+  const sourceAnchor = edge.sourceAnchor;
+  const startX =
+    fromPosition.x +
+    fromGeometry.frameLeft +
+    (sourceAnchor
+      ? Math.max(0, Math.min(1, sourceAnchor.point.x)) * fromGeometry.frameWidth
+      : fromGeometry.frameWidth);
+  const startY =
+    fromPosition.y +
+    fromGeometry.frameTop +
+    (sourceAnchor
+      ? Math.max(0, Math.min(1, sourceAnchor.point.y)) * fromGeometry.frameHeight
+      : fromGeometry.frameHeight / 2);
   const endX = toPosition.x + toGeometry.frameLeft;
   const endY = toPosition.y + toGeometry.frameTop + toGeometry.frameHeight / 2;
   return {

@@ -85,6 +85,45 @@ test("derived connections retain the runnable action identity", () => {
   assert.equal(connection?.source, "derived");
 });
 
+test("recorded connections derive a normalized source target from tap evidence", () => {
+  const sourceStep: RecipeStep = {
+    id: "source-tap",
+    kind: "tap",
+    target: { label: "Open", point: { x: 200, y: 400 } },
+    evidence: {
+      id: "source-evidence",
+      recordedAt: 1,
+      deviceBounds: { width: 1_000, height: 2_000 },
+      pointer: { x: 220, y: 420 },
+      node: {
+        label: "Open",
+        role: "button",
+        rect: { x: 120, y: 360, width: 240, height: 120 },
+      },
+    },
+  };
+  const nextStep: RecipeStep = {
+    id: "next",
+    kind: "sleep",
+    ms: 200,
+    evidence: {
+      id: "next-evidence",
+      recordedAt: 2,
+      screenshot: { recipeId: "take", id: "next", capturedAt: 2, mime: "image/png", sha256: "n" },
+    },
+  };
+  const tree = buildMapTree([sourceStep, nextStep]);
+  const connection = canvasConnections(tree, [sourceStep, nextStep], {
+    ...metadata,
+    graph: undefined,
+  } as AppMapCanvasState)[0];
+
+  assert.deepEqual(connection?.sourceAnchor, {
+    point: { x: 0.22, y: 0.21 },
+    rect: { x: 0.12, y: 0.18, width: 0.24, height: 0.06 },
+  });
+});
+
 test("planned connections are reversible and become recorded only after a stable step id exists", () => {
   const tree = buildMapTree(steps);
   const [from, to] = tree.nodes;

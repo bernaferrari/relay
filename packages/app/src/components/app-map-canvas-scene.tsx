@@ -141,6 +141,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               from: connection.fromScreenId,
               to: connection.toScreenId,
               kind: connection.kind,
+              sourceAnchor: connection.sourceAnchor,
             },
             props.nodes,
             props.positionFor,
@@ -374,29 +375,37 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       />
 
       <For each={visibleNodes()}>
-        {(node) => (
-          <ScreenCard
-            node={node}
-            isFlowStart={props.isFlowStart(node)}
-            title={props.titleFor(node)}
-            selected={selectedNodeIds().has(node.id)}
-            showActions={props.selectedNodeIds.length === 1 && props.selectedNodeId === node.id}
-            editing={props.renamingNodeId === node.id}
-            runState={props.screenRunState(node.id)}
-            position={props.positionFor(node)}
-            geometry={geometryForNode(node)}
-            src={() => props.imageFor(node)}
-            orientationEvidence={props.orientationEvidenceFor(node)}
-            onSelect={(event) => props.onSelectNode(node, event)}
-            onContextMenu={(event) => props.onNodeContextMenu(event, node)}
-            onRename={() => props.onRenameNode(node)}
-            onOpenDetails={() => props.onOpenNodeDetails(node)}
-            onCommitRename={(title) => props.onCommitNodeRename(node, title)}
-            onConnectStart={(event) => props.onConnectStart(event, node)}
-            onConnectKeyboard={() => props.onConnectKeyboard(node)}
-            onPointerDown={(event) => props.onNodePointerDown(event, node)}
-          />
-        )}
+        {(node) => {
+          const selectedConnectionAnchor = () =>
+            props.connections.find(
+              (connection) =>
+                connection.id === props.selectedConnectionId && connection.fromScreenId === node.id,
+            )?.sourceAnchor;
+          return (
+            <ScreenCard
+              node={node}
+              isFlowStart={props.isFlowStart(node)}
+              title={props.titleFor(node)}
+              selected={selectedNodeIds().has(node.id)}
+              showActions={props.selectedNodeIds.length === 1 && props.selectedNodeId === node.id}
+              editing={props.renamingNodeId === node.id}
+              runState={props.screenRunState(node.id)}
+              position={props.positionFor(node)}
+              geometry={geometryForNode(node)}
+              src={() => props.imageFor(node)}
+              orientationEvidence={props.orientationEvidenceFor(node)}
+              sourceAnchor={selectedConnectionAnchor()}
+              onSelect={(event) => props.onSelectNode(node, event)}
+              onContextMenu={(event) => props.onNodeContextMenu(event, node)}
+              onRename={() => props.onRenameNode(node)}
+              onOpenDetails={() => props.onOpenNodeDetails(node)}
+              onCommitRename={(title) => props.onCommitNodeRename(node, title)}
+              onConnectStart={(event) => props.onConnectStart(event, node)}
+              onConnectKeyboard={() => props.onConnectKeyboard(node)}
+              onPointerDown={(event) => props.onNodePointerDown(event, node)}
+            />
+          );
+        }}
       </For>
 
       <Show when={props.keyboardConnectionSourceId}>
