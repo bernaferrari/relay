@@ -14,7 +14,7 @@ import { startServer } from "./index.js";
 import { explicitTargetAvailability } from "./app-map-run-routes.js";
 
 test("explicit target preflight distinguishes disconnected and not-ready devices", () => {
-  assert.equal(explicitTargetAvailability("phone-1", []), "unknown");
+  assert.equal(explicitTargetAvailability("phone-1", []), "missing");
   assert.equal(
     explicitTargetAvailability("phone-1", [
       { serial: "phone-2", booted: true, connectionState: "connected" },
@@ -463,7 +463,7 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
         connectionIds: ["continue"],
       },
     });
-    await client.invoke("lease.create", {
+    const virtualLease = await client.invoke("lease.create", {
       poolId: "local",
       deviceSerial: "virtual-target",
       expiresAt: Date.now() + 60_000,
@@ -514,6 +514,36 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     );
     assert.equal(connectionResult.jobs.length, 5);
     assert.equal(JSON.stringify(connectionResult).includes("person@example.test"), false);
+
+    // A lease is the explicit escape hatch used by remote workers and test
+    // doubles. Once it is gone, a stale serial must fail before the case stack
+    // expands or any child job is enqueued.
+    await client.invoke("lease.release", { leaseId: virtualLease.lease.id });
+    const jobsBeforeStaleTarget = await client.invoke("job.list", { limit: 100 });
+    await assert.rejects(
+      client.invoke("app-map.connection.run", {
+        appMapId: "store",
+        connectionId: "continue",
+        serial: "virtual-target",
+        platform: "android",
+        targetKind: "device",
+        variables: { login_email: "person@example.test" },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.ok(error.status === 409 || error.status === 503);
+        const body = error.body as { code?: string } | undefined;
+        assert.ok(
+          body?.code === "TARGET_NOT_CONNECTED" || body?.code === "TARGET_DISCOVERY_UNAVAILABLE",
+        );
+        return true;
+      },
+    );
+    const jobsAfterStaleTarget = await client.invoke("job.list", { limit: 100 });
+    assert.deepEqual(
+      jobsAfterStaleTarget.jobs.map((job) => job.id),
+      jobsBeforeStaleTarget.jobs.map((job) => job.id),
+    );
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

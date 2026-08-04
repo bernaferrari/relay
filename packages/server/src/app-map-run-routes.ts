@@ -30,17 +30,17 @@ type ObservedTarget = {
 };
 
 /**
- * Return the actionable state for an explicit device serial. An empty
- * discovery result is intentionally `unknown`: a provider may be temporarily
- * unavailable, and an existing lease is still allowed to queue a job for a
- * remote/test target. Once discovery has returned a non-empty inventory,
- * however, a missing serial is definitively disconnected.
+ * Return the actionable state for an explicit device serial. This helper is
+ * called only after discovery has completed successfully. An empty inventory
+ * therefore means that there is no local device to run against; remote/test
+ * targets remain supported through an explicit active lease, which is checked
+ * by the route before this helper is used.
  */
 export function explicitTargetAvailability(
   serial: string,
   devices: ObservedTarget[],
-): "connected" | "not-ready" | "missing" | "unknown" {
-  if (devices.length === 0) return "unknown";
+): "connected" | "not-ready" | "missing" {
+  if (devices.length === 0) return "missing";
   const device = devices.find((candidate) => candidate.serial === serial);
   if (!device) return "missing";
   if (device.connectionState === "offline" || device.connectionState === "unauthorized") {
@@ -79,6 +79,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   // A stale physical serial should not produce a lease-recovery message. A
   // valid existing lease remains authoritative for remote and test-double
   // targets, so only preflight when this actor does not already hold one.
+  let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
   if (body.serial?.trim()) {
     const operation = currentOperationContext();
     const activeLease = operation
@@ -91,10 +92,19 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         )
       : false;
     if (!activeLease) {
-      const availability = explicitTargetAvailability(
-        targetId,
-        await listDevices().catch(() => []),
-      );
+      try {
+        observedDevices = await listDevices();
+      } catch (error) {
+        throw new HttpError(503, "Relay cannot verify the selected device", {
+          code: "TARGET_DISCOVERY_UNAVAILABLE",
+          targetId,
+          detail: error instanceof Error ? error.message : String(error),
+          recovery:
+            "Reconnect the device or restart Relay, then refresh the target list before retrying.",
+          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
+        });
+      }
+      const availability = explicitTargetAvailability(targetId, observedDevices);
       if (availability === "missing") {
         throw new HttpError(409, `Target ${targetId} is not connected`, {
           code: "TARGET_NOT_CONNECTED",
@@ -188,7 +198,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   ];
   const safeMatrix = matrix ? redactRunMatrix(matrix, definitions.value) : undefined;
   const targetProfile = (
-    await buildTargetProfiles({ devices: await listDevices(), targets: await listTargets() })
+    await buildTargetProfiles({
+      devices: observedDevices ?? (await listDevices().catch(() => [])),
+      targets: await listTargets(),
+    })
   ).find((profile) => profile.targetId === targetId);
   const jobs = cases.map((item) => {
     const variables = { ...constantVariables, ...item.values };
