@@ -6,7 +6,11 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
 import { mono, productStatus } from "../lib/ui";
-import { friendlyError, readableFailure } from "../lib/run-failure-presentation";
+import {
+  canFixFailureInTest,
+  friendlyError,
+  readableFailure,
+} from "../lib/run-failure-presentation";
 
 type RunSummaryProps = {
   job: JobInfo;
@@ -116,7 +120,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           </For>
         </div>
       </Show>
-      <Show when={job().status === "error" || job().status === "cancelled"}>
+      <Show when={job().status === "error" && canFixFailureInTest(job().failureCategory)}>
         <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
           <Button variant="secondary" size="lg" onClick={() => props.onOpenRecipe(job().action)}>
             <span>Fix in test</span>

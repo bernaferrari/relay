@@ -37,6 +37,7 @@ export function VisualDiffReview(props: {
   loading: boolean;
   onReview: (action: VisualReviewAction) => void;
   onPolicyChange: (regions: VisualRegion[]) => void;
+  baselineApprovalAllowed: boolean;
   approving?: boolean;
   policyBusy?: boolean;
 }) {
@@ -75,23 +76,28 @@ export function VisualDiffReview(props: {
                 </span>
                 <div class="min-w-0">
                   <strong class="block text-[13px] font-semibold text-text-strong">
-                    Set the first approved version
+                    {props.baselineApprovalAllowed
+                      ? "Set the first approved version"
+                      : "Finish the run before approving"}
                   </strong>
                   <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
-                    Approve this completed run once. Relay will compare future runs only with this
-                    target and keep the approval author and evidence.
+                    {props.baselineApprovalAllowed
+                      ? "Approve this completed run once. Relay will compare future runs only with this target and keep the approval author and evidence."
+                      : "A baseline must come from a completed run. Fix or retry this run, then approve its captured screens."}
                   </p>
                 </div>
               </div>
-              <Button
-                variant="primary"
-                size="lg"
-                class="w-fit self-start"
-                disabled={props.loading || props.approving}
-                onClick={() => props.onReview("approve-new-baseline")}
-              >
-                <Icon name="check" size={13} /> Use this run as baseline
-              </Button>
+              <Show when={props.baselineApprovalAllowed}>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  class="w-fit self-start"
+                  disabled={props.loading || props.approving}
+                  onClick={() => props.onReview("approve-new-baseline")}
+                >
+                  <Icon name="check" size={13} /> Use this run as baseline
+                </Button>
+              </Show>
             </div>
           }
         >

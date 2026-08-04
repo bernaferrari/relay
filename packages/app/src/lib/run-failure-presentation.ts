@@ -1,5 +1,20 @@
 import { titleize } from "./job";
 
+const TEST_FIXABLE_FAILURES = new Set([
+  "target-state",
+  "locator",
+  "action",
+  "completion",
+  "extraction",
+  "deterministic-assertion",
+  "semantic-assertion",
+  "visual-assertion",
+]);
+
+export function canFixFailureInTest(value?: string): boolean {
+  return Boolean(value && TEST_FIXABLE_FAILURES.has(value));
+}
+
 export function readableFailure(value: string, error?: string): string {
   if (
     value === "environment" &&

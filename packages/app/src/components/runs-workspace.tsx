@@ -51,6 +51,7 @@ import type {
 } from "@relay/protocol";
 import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
+import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-readiness";
 import {
   EvidenceList,
   RunLogsEvidence,
@@ -206,9 +207,10 @@ export function RunsWorkspace(props: {
   });
   createEffect(() => {
     const job = selected();
-    if (tab() !== "visual" || !job?.persisted) {
+    if (tab() !== "visual" || !job?.persisted || !hasVisualRunFrames(job.frames ?? [])) {
       setDurableVisualComparison(null);
       setVisualDecision(null);
+      setVisualLoading(false);
       return;
     }
     setVisualLoading(true);
@@ -823,16 +825,35 @@ export function RunsWorkspace(props: {
                       </p>
                     }
                   >
-                    <VisualDiffReview
-                      comparison={durableVisualComparison()}
-                      current={job() as PersistedRun}
-                      decision={visualDecision()}
-                      loading={visualLoading()}
-                      approving={approvingVisualBaseline()}
-                      policyBusy={visualPolicyBusy()}
-                      onReview={(action) => void reviewCurrentVisual(action)}
-                      onPolicyChange={(regions) => void updateVisualPolicy(regions)}
-                    />
+                    <Show
+                      when={hasVisualRunFrames(job().frames ?? [])}
+                      fallback={
+                        <div class="grid gap-1.5 rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3.5">
+                          <strong class="text-[13px] font-semibold text-text-strong">
+                            No screens to compare
+                          </strong>
+                          <p class="m-0 text-[11px]/[1.45] text-text-weak">
+                            This run ended before Relay captured a screen. Reconnect the target and
+                            retry before creating or comparing a visual baseline.
+                          </p>
+                        </div>
+                      }
+                    >
+                      <VisualDiffReview
+                        comparison={durableVisualComparison()}
+                        current={job() as PersistedRun}
+                        decision={visualDecision()}
+                        loading={visualLoading()}
+                        approving={approvingVisualBaseline()}
+                        policyBusy={visualPolicyBusy()}
+                        baselineApprovalAllowed={canApproveVisualBaseline(
+                          job().status,
+                          job().frames ?? [],
+                        )}
+                        onReview={(action) => void reviewCurrentVisual(action)}
+                        onPolicyChange={(regions) => void updateVisualPolicy(regions)}
+                      />
+                    </Show>
                   </Show>
                 </Show>
                 <Show when={tab() === "network"}>
@@ -853,7 +874,7 @@ export function RunsWorkspace(props: {
                         ].includes(item.kind),
                       ) ?? []
                     }
-                    empty="No conversational evidence yet. Add Extract, Check content, or Evaluate response steps."
+                    empty="No checks were recorded for this run. Add an assertion to verify a screen, element, text, timing, or response."
                   />
                 </Show>
                 <Show when={tab() === "logs"}>

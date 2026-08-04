@@ -2,6 +2,10 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import type { EvidenceChannelRecord, RunEvidenceQuery } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { titleize } from "../lib/job";
+import {
+  evidenceChannelIsInspectable,
+  evidenceChannelNote,
+} from "../lib/run-evidence-presentation";
 import { Icon, type IconName } from "./icon";
 
 export function EvidenceList(props: {
@@ -85,10 +89,7 @@ function EvidenceChannelBanner(props: {
         <span class="mt-0.5 block text-[10.5px] leading-[1.4] text-text-weaker">
           {props.loading
             ? "Refreshing structured evidence…"
-            : (props.note ??
-              (props.channel
-                ? `${props.channel.entries} entr${props.channel.entries === 1 ? "y" : "ies"} captured`
-                : "This collector did not report a result for the run."))}
+            : evidenceChannelNote(props.channel, props.note)}
         </span>
       </div>
       <span
@@ -118,6 +119,9 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
       : entries;
   });
   const channel = () => props.evidence?.channels.network;
+  const networkEntries = () => props.evidence?.network.length ?? 0;
+  const inspectable = () =>
+    evidenceChannelIsInspectable(channel(), networkEntries(), props.loading);
   return (
     <div>
       <EvidenceChannelBanner
@@ -132,13 +136,15 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
         }
       />
       <Show
-        when={props.evidence}
+        when={props.evidence && inspectable()}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
-            {props.loading
-              ? "Preparing network evidence…"
-              : "No structured network evidence is available for this run."}
-          </div>
+          <Show when={!props.evidence}>
+            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+              {props.loading
+                ? "Preparing network evidence…"
+                : "No structured network evidence is available for this run."}
+            </div>
+          </Show>
         }
       >
         <div class="mb-2 flex items-center gap-2">
@@ -239,6 +245,14 @@ export function RunLogsEvidence(props: {
   const [filter, setFilter] = createSignal("");
   const [source, setSource] = createSignal<"device" | "relay">("device");
   const deviceLogs = createMemo(() => props.evidence?.logs ?? []);
+  const relayChannel = (): EvidenceChannelRecord => ({
+    channel: "logs",
+    status: "captured",
+    entries: props.orchestrationLogs.length,
+    bytes: props.orchestrationLogs.reduce((total, message) => total + message.length, 0),
+    dropped: 0,
+    redactions: 0,
+  });
   const rows = createMemo(() => {
     const query = filter().trim().toLowerCase();
     const entries =
@@ -252,15 +266,20 @@ export function RunLogsEvidence(props: {
           }));
     return query ? entries.filter((entry) => entry.message.toLowerCase().includes(query)) : entries;
   });
+  const deviceInspectable = () =>
+    evidenceChannelIsInspectable(props.evidence?.channels.logs, deviceLogs().length, props.loading);
+  const activeSourceInspectable = () => source() === "relay" || deviceInspectable();
   return (
     <div>
       <EvidenceChannelBanner
         title={source() === "device" ? "Device logs" : "Relay execution log"}
-        channel={source() === "device" ? props.evidence?.channels.logs : undefined}
+        channel={source() === "device" ? props.evidence?.channels.logs : relayChannel()}
         loading={props.loading}
         note={
           source() === "device"
-            ? "Captured from the target while the run was active."
+            ? deviceInspectable()
+              ? "Captured from the target while the run was active."
+              : undefined
             : "Orchestration messages from Relay; separate from device output."
         }
       />
@@ -287,31 +306,35 @@ export function RunLogsEvidence(props: {
             </button>
           ))}
         </div>
-        <div class="relative min-w-[180px] flex-1">
-          <Icon
-            name="search"
-            size={13}
-            class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-weaker"
-          />
-          <input
-            value={filter()}
-            onInput={(event) => setFilter(event.currentTarget.value)}
-            placeholder="Filter log messages"
-            aria-label="Filter log messages"
-            class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
-          />
-        </div>
+        <Show when={activeSourceInspectable()}>
+          <div class="relative min-w-[180px] flex-1">
+            <Icon
+              name="search"
+              size={13}
+              class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-weaker"
+            />
+            <input
+              value={filter()}
+              onInput={(event) => setFilter(event.currentTarget.value)}
+              placeholder="Filter log messages"
+              aria-label="Filter log messages"
+              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+            />
+          </div>
+        </Show>
       </div>
       <Show
-        when={rows().length > 0}
+        when={activeSourceInspectable() && rows().length > 0}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
-            {props.loading
-              ? "Preparing device logs…"
-              : source() === "device"
-                ? "No device logs were captured for this run."
-                : "No Relay messages were recorded."}
-          </div>
+          <Show when={activeSourceInspectable()}>
+            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+              {props.loading
+                ? "Preparing device logs…"
+                : source() === "device"
+                  ? "No device logs were observed during this run."
+                  : "No Relay messages were recorded."}
+            </div>
+          </Show>
         }
       >
         <div class="max-h-[480px] overflow-auto rounded-xl border border-border-weak-base bg-v2-background-bg-deep">
@@ -354,22 +377,34 @@ export function RunPerformanceEvidence(props: {
   loading: boolean;
 }) {
   const samples = () => props.evidence?.performance ?? [];
+  const inspectable = () =>
+    evidenceChannelIsInspectable(
+      props.evidence?.channels.performance,
+      samples().length,
+      props.loading,
+    );
   return (
     <div>
       <EvidenceChannelBanner
         title="Performance samples"
         channel={props.evidence?.channels.performance}
         loading={props.loading}
-        note="Run-level samples are shown with their collector phase and provenance. Deeper traces remain downloadable artifacts."
+        note={
+          inspectable()
+            ? "Run-level samples are shown with their collector phase and provenance. Deeper traces remain downloadable artifacts."
+            : undefined
+        }
       />
       <Show
-        when={samples().length > 0}
+        when={inspectable() && samples().length > 0}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
-            {props.loading
-              ? "Preparing performance evidence…"
-              : "No performance samples were captured for this run."}
-          </div>
+          <Show when={inspectable()}>
+            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+              {props.loading
+                ? "Preparing performance evidence…"
+                : "No performance samples were observed during this run."}
+            </div>
+          </Show>
         }
       >
         <div class="grid gap-2">
