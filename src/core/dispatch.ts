@@ -511,14 +511,31 @@ async function handleIosKeyboardCommand(
     { command: 'keyboardDismiss', appBundleId: context?.appBundleId },
     runnerCtx,
   );
+  const mechanism =
+    typeof result.keyboardDismissMechanism === 'string'
+      ? result.keyboardDismissMechanism
+      : undefined;
   return {
     platform: 'ios',
     action: 'dismiss',
     wasVisible: result.wasVisible,
     dismissed: result.dismissed,
     visible: result.visible,
-    ...successText(result.dismissed ? 'Keyboard dismissed' : 'Keyboard already hidden'),
+    mechanism,
+    ...successText(iosKeyboardDismissMessage(result.dismissed === true, mechanism)),
   };
+}
+
+// Discloses which mechanism actually resigned the keyboard (#1598): a
+// Discloses that the keyboard's own dismiss key did the work (#1598); a bare
+// "dismissed" would leave the caller unable to tell a vouched-for control tap
+// from app-side coincidence.
+function iosKeyboardDismissMessage(dismissed: boolean, mechanism: string | undefined): string {
+  if (!dismissed) return 'Keyboard already hidden';
+  if (mechanism === 'dismissKey') {
+    return 'Keyboard dismissed via its dismiss key';
+  }
+  return 'Keyboard dismissed';
 }
 
 async function handleSettingsCommand(

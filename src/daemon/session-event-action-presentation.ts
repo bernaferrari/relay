@@ -193,15 +193,16 @@ function buildClipboardActionSummary(result: Record<string, unknown>): string {
 function buildKeyboardActionSummary(result: Record<string, unknown>): string {
   const action = readSessionEventString(result.action);
   if (!action || !isKeyboardAction(action)) return 'Used keyboard';
-  if (action === 'dismiss') {
-    return readBoolean(result.dismissed) === false
-      ? 'Keyboard was already hidden'
-      : 'Dismissed keyboard';
-  }
+  if (action === 'dismiss') return buildKeyboardDismissSummary(result);
   if (action === 'enter' || action === 'return') return 'Pressed keyboard return';
   const visible = readBoolean(result.visible);
   if (visible === undefined) return 'Inspected keyboard';
   return visible ? 'Keyboard is visible' : 'Keyboard is hidden';
+}
+
+function buildKeyboardDismissSummary(result: Record<string, unknown>): string {
+  if (readBoolean(result.dismissed) === false) return 'Keyboard was already hidden';
+  return 'Dismissed keyboard';
 }
 
 function buildKeyboardActionDetails(result: Record<string, unknown>): Record<string, unknown> {
@@ -213,6 +214,7 @@ function buildKeyboardActionDetails(result: Record<string, unknown>): Record<str
     wasVisible: readBoolean(result.wasVisible),
     dismissed: readBoolean(result.dismissed),
     attempts: readSessionEventNumber(result.attempts),
+    mechanism: readEnum(result.mechanism, ['dismissKey']),
   });
 }
 

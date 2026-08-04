@@ -26,4 +26,11 @@ export type KeyboardCommandResult = {
   focusedResourceId?: string;
   inputOwner?: 'app' | 'ime' | 'unknown';
   message?: string;
+  /** iOS `dismiss` only (#1598): which mechanism actually resigned the
+   *  keyboard — 'dismissKey' (tapped the keyboard's own Hide/Dismiss/Done
+   *  key). Generic background-tap dismissal is deliberately unsupported
+   *  (#1606 review): no query can prove a coordinate is side-effect-free,
+   *  so the runner only ever taps the keyboard's own control. Absent when
+   *  the keyboard was not dismissed. */
+  mechanism?: 'dismissKey';
 };
