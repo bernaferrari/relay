@@ -132,6 +132,45 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.equal(root.stepProvenance[3]!.origin, "destination");
 });
 
+test("runs explicit Flow setup before verifying the entry screen", () => {
+  const map = fixture();
+  map.routines["start-clean"] = {
+    ...entity("start-clean"),
+    name: "Start clean",
+    parameters: [{ name: "entry", required: true }],
+    actions: [{ id: "compose", kind: "tap", target: { identifier: "{{entry}}" } }],
+  };
+  map.flows.checkout!.setup = {
+    routineId: "start-clean",
+    bindings: { entry: "grok-compose" },
+  };
+
+  const plan = compileAppMapFlow(map, "checkout");
+  const root = plan.recipes[plan.rootRecipeId]!;
+  assert.deepEqual(plan.flow.setup, {
+    routineId: "start-clean",
+    bindings: { entry: "grok-compose" },
+  });
+  assert.deepEqual(root.steps.slice(0, 2), [
+    {
+      id: "relay-setup-checkout",
+      kind: "module",
+      recipeId: "app-map:map-1:routine:start-clean:r7",
+      bindings: { entry: "grok-compose" },
+    },
+    {
+      id: "relay-source-checkout",
+      kind: "expect-screen",
+      screenId: "welcome",
+      screenTitle: "Welcome",
+      fingerprint: "a".repeat(64),
+    },
+  ]);
+  assert.equal(root.stepProvenance[0]!.origin, "setup");
+  assert.equal(root.stepProvenance[1]!.origin, "source");
+  assert.deepEqual(plan.connections[0]!.compiledStepRange, [2, 5]);
+});
+
 test("refuses to run drafts and unverifiable destinations", () => {
   const draft = fixture();
   draft.connections["open-home"]!.state = "draft";

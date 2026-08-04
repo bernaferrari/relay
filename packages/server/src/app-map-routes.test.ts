@@ -420,13 +420,23 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
         maxCases: 10,
       },
     });
+    await client.invoke("app-map.routine.save", {
+      appMapId: "store",
+      routineId: "start-clean",
+      expectedRevision: 4,
+      routine: {
+        name: "Start clean",
+        actions: [{ id: "new-conversation", kind: "tap", target: { identifier: "grok-compose" } }],
+      },
+    });
     await client.invoke("app-map.flow.save", {
       appMapId: "store",
       flowId: "main",
-      expectedRevision: 4,
+      expectedRevision: 5,
       flow: {
         name: "Main",
         startScreenId: "welcome",
+        setup: { routineId: "start-clean" },
         connectionIds: ["continue"],
       },
     });
@@ -445,11 +455,12 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
       variables: { login_email: "person@example.test" },
     });
     assert.equal(result.plan.appMapId, "store");
-    assert.equal(result.plan.appMapRevision, 5);
+    assert.equal(result.plan.appMapRevision, 6);
     assert.equal(result.plan.flow.id, "main");
+    assert.equal(result.plan.flow.setup?.routineId, "start-clean");
     assert.deepEqual(
       result.plan.recipes[result.plan.rootRecipeId]!.steps.map((step) => step.kind),
-      ["expect-screen", "tap", "expect-screen"],
+      ["module", "expect-screen", "tap", "expect-screen"],
     );
     assert.equal((result.job as { projectId?: string }).projectId, "mobile");
     assert.equal(result.jobs.length, 5);

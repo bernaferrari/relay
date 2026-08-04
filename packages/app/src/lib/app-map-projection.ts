@@ -195,6 +195,9 @@ export function planAppMapProjection(input: {
       id: item.id,
       name: item.name,
       startScreenId: item.screenId,
+      ...(item.setup || existing?.setup
+        ? { setup: structuredClone(item.setup ?? existing!.setup) }
+        : {}),
       // A graph node only knows where a Flow begins. Branch-aware canonical
       // paths cannot be reconstructed by following visually unique edges.
       connectionIds: existing ? [...existing.connectionIds] : flowPath(graph, item.screenId),
@@ -264,6 +267,7 @@ export function mergeAppMapProjection(
       id: flow.id,
       name: flow.name,
       screenId: flow.startScreenId,
+      ...(flow.setup ? { setup: structuredClone(flow.setup) } : {}),
       createdAt: flow.createdAt,
       updatedAt: flow.updatedAt,
     }));

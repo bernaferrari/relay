@@ -266,6 +266,7 @@ test("projects canonical ready connections as runnable canvas paths", () => {
     appMapId: "store",
     name: "Main",
     startScreenId: "start",
+    setup: { routineId: "start-clean", bindings: { account: "qa" } },
     connectionIds: ["continue"],
     createdAt: 1,
     updatedAt: 3,
@@ -286,4 +287,17 @@ test("projects canonical ready connections as runnable canvas paths", () => {
   assert.deepEqual(metadata.positions.home, { x: 360, y: 48 });
   assert.equal(metadata.graph?.transitions[0]?.review?.status, "verified");
   assert.equal(metadata.graph?.flows[0]?.screenId, "start");
+  assert.deepEqual(metadata.graph?.flows[0]?.setup, {
+    routineId: "start-clean",
+    bindings: { account: "qa" },
+  });
+  assert.deepEqual(
+    planAppMapProjection({
+      appMap: projected,
+      graph: metadata.graph!,
+      positions: metadata.positions,
+      recipeSteps: [],
+    }),
+    [],
+  );
 });

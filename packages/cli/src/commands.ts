@@ -591,6 +591,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           required: true,
           description: "Ordered connection path",
         },
+        {
+          name: "flow.setup",
+          type: "{routineId,bindings?}",
+          description: "Optional auditable Routine to reach the entry screen before verification",
+        },
       ],
       examples: [
         'relay flow save checkout purchase --input \'{"expectedRevision":4,"flow":{"name":"Purchase","startScreenId":"cart","connectionIds":["submit-order"]}}\'',
@@ -620,7 +625,39 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       behavior: "job-start-watch",
     }),
   ),
-  mapped("app-map.routine.save", path("routine save", ["appMapId", "routineId"])),
+  mapped(
+    "app-map.routine.save",
+    path("routine save", ["appMapId", "routineId"], undefined, {
+      summary: "Save reusable actions without persistence metadata",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "routineId", type: "string", description: "Stable Routine identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "routine.name",
+          type: "string",
+          required: true,
+          description: "Human-readable Routine name",
+        },
+        {
+          name: "routine.actions",
+          type: "array",
+          required: true,
+          description: "Reusable action specifications",
+        },
+      ],
+      examples: [
+        'relay routine save grok start-clean --input \'{"expectedRevision":5,"routine":{"name":"Start clean","actions":[{"id":"new","kind":"tap","target":{"identifier":"grok-compose"}}]}}\'',
+      ],
+    }),
+  ),
   mapped("app-map.routine.remove", path("routine remove", ["appMapId", "routineId"])),
   mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
   mapped(

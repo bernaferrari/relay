@@ -171,6 +171,9 @@ export type Routine = AppMapEntity & {
 export type Flow = AppMapEntity & {
   name: string;
   startScreenId: string;
+  /** Optional, explicit preparation executed before Relay verifies the entry
+   * screen. This is auditable setup, never silent start-state healing. */
+  setup?: { routineId: string; bindings?: Record<string, string> };
   connectionIds: string[];
 };
 
@@ -178,7 +181,7 @@ export type AppMapCompiledStepProvenance = {
   recipeId: string;
   stepIndex: number;
   stepId: string;
-  origin: "source" | "action" | "destination";
+  origin: "setup" | "source" | "action" | "destination";
   ownerKind: "flow" | "connection" | "routine";
   ownerId: string;
   actionId?: string;
@@ -208,7 +211,7 @@ export type AppMapCompiledFlow = {
   schemaVersion: 1;
   appMapId: string;
   appMapRevision: number;
-  flow: Pick<Flow, "id" | "name" | "startScreenId">;
+  flow: Pick<Flow, "id" | "name" | "startScreenId" | "setup">;
   rootRecipeId: string;
   recipes: Record<string, AppMapCompiledRecipe>;
   connections: AppMapCompiledConnection[];
@@ -272,7 +275,11 @@ export type CreateScreenInput = Pick<Screen, "id" | "title"> &
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
   Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions">>;
 
-export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds">;
+export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
+  Partial<Pick<Routine, "description" | "parameters">>;
+
+export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds"> &
+  Partial<Pick<Flow, "setup">>;
 
 /** One atomic, reviewable authoring change. The desktop, CLI, HTTP API, and
  * agents use this same vocabulary so a canvas gesture cannot partially save. */
@@ -387,9 +394,9 @@ export type AppMapMutationContext = {
 };
 
 export type RoutineUsageReference = {
-  ownerKind: "connection" | "routine";
+  ownerKind: "connection" | "routine" | "flow";
   ownerId: string;
-  actionId: string;
+  actionId?: string;
 };
 
 export type RoutineImpactPreview = {
@@ -524,6 +531,7 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         id: flow.id,
         name: flow.name,
         startScreenId: flow.startScreenId,
+        ...(flow.setup ? { setup: flow.setup } : {}),
         connectionIds: flow.connectionIds,
       })),
       counts: {

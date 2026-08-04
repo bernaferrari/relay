@@ -689,14 +689,28 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.routine.save">,
       "appMapId" | "routineId"
     >;
-    if (body.routine.id !== routineSave.routineId)
-      throw new HttpError(400, "Routine id must match the route");
     const appMap = await applyMutation(
       scope,
       routineSave.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => saveAppMapRoutine(map, body.routine, context),
+      (map, context) => {
+        const existing = map.routines[routineSave.routineId!];
+        return saveAppMapRoutine(
+          map,
+          {
+            ...body.routine,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            id: routineSave.routineId!,
+            parameters: body.routine.parameters ?? [],
+            createdAt: existing?.createdAt ?? context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
     );
     json(response, 200, { appMap });
     return true;

@@ -412,6 +412,18 @@ test("rejects routine cycles, missing routine references, and missing asserted s
   )!.routineId = "missing";
   expectError("missing-reference", () => validateAppMap(missingRoutine), /missing routine/u);
 
+  const missingSetup = mapFixture();
+  missingSetup.flows.main!.setup = { routineId: "missing" };
+  expectError("missing-reference", () => validateAppMap(missingSetup), /missing setup Routine/u);
+
+  const missingSetupBinding = mapFixture();
+  missingSetupBinding.flows.main!.setup = { routineId: "sign-in" };
+  expectError(
+    "missing-reference",
+    () => validateAppMap(missingSetupBinding),
+    /required parameter email on setup Routine/u,
+  );
+
   const missingBinding = mapFixture();
   const invocation = missingBinding.connections["open-home"]!.actions.find(
     (action) => action.kind === "routine",
@@ -645,6 +657,10 @@ test("all mutations reject stale revisions and duplicate activity IDs", () => {
 
 test("previews direct and transitive routine impact in deterministic order", () => {
   const input = mapFixture();
+  input.flows.main!.setup = {
+    routineId: "sign-in",
+    bindings: { email: "setup@example.test" },
+  };
   input.routines.wrapper = routine("wrapper", [
     { id: "wrapper-call", kind: "routine", routineId: "sign-in", bindings: { email: "{{email}}" } },
   ]);
@@ -679,6 +695,7 @@ test("previews direct and transitive routine impact in deterministic order", () 
     directUsages: [
       { ownerKind: "connection", ownerId: "direct", actionId: "direct-use" },
       { ownerKind: "connection", ownerId: "open-home", actionId: "routine" },
+      { ownerKind: "flow", ownerId: "main" },
       { ownerKind: "routine", ownerId: "wrapper", actionId: "wrapper-call" },
     ],
     affectedRoutineIds: ["checkout", "wrapper"],
@@ -819,6 +836,15 @@ test("saves and removes reusable Flows and Routines through revisioned operation
     context(withoutFlow, "save-routine", withoutFlow.updatedAt + 1),
   );
   assert.equal(withRoutine.routines[helper.id]?.actions[0]?.kind, "back");
+  const referencedRoutine = structuredClone(withRoutine);
+  referencedRoutine.flows.main!.setup = { routineId: helper.id };
+  expectError("in-use", () =>
+    removeAppMapRoutine(
+      referencedRoutine,
+      helper.id,
+      context(referencedRoutine, "remove-referenced-routine", referencedRoutine.updatedAt + 1),
+    ),
+  );
   const withoutRoutine = removeAppMapRoutine(
     withRoutine,
     helper.id,

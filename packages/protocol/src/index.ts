@@ -906,6 +906,8 @@ export type CanvasFlow = {
   id: string;
   name: string;
   screenId: string;
+  /** Canonical App Map Routine executed before checking this entry screen. */
+  setup?: { routineId: string; bindings?: Record<string, string> };
   /** Optional named target set. The same canonical route is replayed against
    * every profile in the set; device-specific forks remain exceptional. */
   targetSetId?: string;

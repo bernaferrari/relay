@@ -27,8 +27,8 @@ import type {
   ConnectionPatch,
   MapGroup,
   Proposal,
-  Routine,
   SaveFlowInput,
+  SaveRoutineInput,
   Screen,
   ScreenVariant,
   UpdateScreenInput,
@@ -588,7 +588,7 @@ type SpecificOperationMap = {
       routineId: string;
       expectedRevision: number;
       eventId?: string;
-      routine: Routine;
+      routine: SaveRoutineInput;
     };
     output: { appMap: AppMap };
   };
@@ -1327,10 +1327,32 @@ const appMapFlowSaveParser = objectParser<OperationInput<"app-map.flow.save">>(
     const flow = record(input.flow, "Flow save flow");
     string(flow.name, "Flow save name");
     string(flow.startScreenId, "Flow save startScreenId");
+    if (flow.setup !== undefined) {
+      const setup = record(flow.setup, "Flow save setup");
+      string(setup.routineId, "Flow save setup routineId");
+      if (setup.bindings !== undefined) record(setup.bindings, "Flow save setup bindings");
+    }
     if (!Array.isArray(flow.connectionIds)) fail("Flow save connectionIds", "must be an array");
     for (const connectionId of flow.connectionIds as unknown[]) {
       string(connectionId, "Flow save connectionId");
     }
+  },
+);
+
+const appMapRoutineSaveParser = objectParser<OperationInput<"app-map.routine.save">>(
+  "Routine save",
+  (input) => {
+    string(input.appMapId, "Routine save appMapId");
+    string(input.routineId, "Routine save routineId");
+    number(input.expectedRevision, "Routine save expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "Routine save eventId");
+    const routine = record(input.routine, "Routine save routine");
+    string(routine.name, "Routine save name");
+    if (routine.description !== undefined) string(routine.description, "Routine save description");
+    if (routine.parameters !== undefined && !Array.isArray(routine.parameters)) {
+      fail("Routine save parameters", "must be an array");
+    }
+    if (!Array.isArray(routine.actions)) fail("Routine save actions", "must be an array");
   },
 );
 
@@ -2342,7 +2364,7 @@ export const operationDefinitions = [
     "/app-maps/:appMapId/routines/:routineId",
     {
       category: "authoring",
-      input: appMapMutationParser<"app-map.routine.save">("Routine save", "routine", ["routineId"]),
+      input: appMapRoutineSaveParser,
       output: appMapOutputParser,
     },
   ),

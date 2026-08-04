@@ -225,6 +225,38 @@ function assertFlows(map: AppMap): void {
     if (names.has(flow.name))
       appMapFail("duplicate-id", `More than one flow is named ${flow.name}`);
     names.add(flow.name);
+    if (flow.setup) {
+      const routine = map.routines[flow.setup.routineId];
+      if (!routine) {
+        appMapFail(
+          "missing-reference",
+          `Flow ${flow.id} references missing setup Routine ${flow.setup.routineId}`,
+        );
+      }
+      const parameters = new Map(
+        routine.parameters.map((parameter) => [parameter.name, parameter]),
+      );
+      for (const name of Object.keys(flow.setup.bindings ?? {})) {
+        if (!parameters.has(name)) {
+          appMapFail(
+            "missing-reference",
+            `Flow ${flow.id} binds unknown parameter ${name} on setup Routine ${routine.id}`,
+          );
+        }
+      }
+      for (const parameter of routine.parameters) {
+        if (
+          parameter.required &&
+          parameter.default === undefined &&
+          flow.setup.bindings?.[parameter.name] === undefined
+        ) {
+          appMapFail(
+            "missing-reference",
+            `Flow ${flow.id} does not bind required parameter ${parameter.name} on setup Routine ${routine.id}`,
+          );
+        }
+      }
+    }
     let current: { kind: "screen"; screenId: string } | { kind: "end" } = {
       kind: "screen",
       screenId: flow.startScreenId,

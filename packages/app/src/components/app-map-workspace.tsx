@@ -1,5 +1,6 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
+  ActionSpec,
   AppMap,
   AppMapBatchChange,
   CaseExpansionStrategy,
@@ -18,7 +19,6 @@ import { type MapTreeNode } from "../lib/app-map-tree";
 import {
   addPlannedConnection,
   addPlannedScreenConnection,
-  attachTransitionSteps,
   canvasConnections,
   removeAuthoredConnection,
   reviewTransition,
@@ -716,8 +716,86 @@ export function AppMapWorkspace(props: {
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
+  const selectedEntryFlows = createMemo(() => {
+    const map = activeAppMap();
+    const screenId = selectedNodeId();
+    return map && screenId
+      ? Object.values(map.flows).filter((flow) => flow.startScreenId === screenId)
+      : [];
+  });
+  const selectedFlowSetup = createMemo(() => {
+    const flows = selectedEntryFlows();
+    if (!flows.length) return undefined;
+    const values = new Set(flows.map((flow) => flow.setup?.routineId ?? ""));
+    return {
+      flowCount: flows.length,
+      mixed: values.size > 1,
+      routineId: values.size === 1 ? [...values][0] || undefined : undefined,
+      routines: Object.values(activeAppMap()?.routines ?? {})
+        .filter((routine) =>
+          routine.parameters.every(
+            (parameter) => !parameter.required || parameter.default !== undefined,
+          ),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((routine) => ({ id: routine.id, name: routine.name })),
+    };
+  });
   const canonicalConnectionFor = (connection: CanvasConnection) =>
     activeAppMap()?.connections[connection.id];
+  const setSelectedFlowSetup = async (routineId?: string) => {
+    const map = activeAppMap();
+    const flows = selectedEntryFlows();
+    if (!map || !flows.length) return;
+    const at = Date.now();
+    const routine = routineId ? map.routines[routineId] : undefined;
+    const defaultBindings = routine
+      ? Object.fromEntries(
+          routine.parameters.flatMap((parameter) =>
+            parameter.default === undefined ? [] : [[parameter.name, parameter.default]],
+          ),
+        )
+      : undefined;
+    try {
+      await server.runAction("app-map.commit", {
+        appMapId: map.id,
+        expectedRevision: map.revision,
+        summary: routineId
+          ? `Prepare ${flows.length === 1 ? flows[0]!.name : `${flows.length} flows`} with ${routine!.name}`
+          : `Remove before-run setup from ${flows.length === 1 ? flows[0]!.name : `${flows.length} flows`}`,
+        changes: flows.map((flow) => {
+          const { setup: _setup, ...withoutSetup } = flow;
+          const existingSetup = flow.setup;
+          const bindings =
+            existingSetup && existingSetup.routineId === routineId
+              ? existingSetup.bindings
+              : defaultBindings;
+          return {
+            kind: "flow.save" as const,
+            flow: {
+              ...withoutSetup,
+              ...(routineId
+                ? {
+                    setup: {
+                      routineId,
+                      ...(Object.keys(bindings ?? {}).length ? { bindings } : {}),
+                    },
+                  }
+                : {}),
+              updatedAt: at,
+            },
+          };
+        }),
+      });
+      await server.refreshAppMaps();
+      toast(
+        routineId ? `Runs will start with ${routine!.name}` : "Before-run setup removed",
+        "success",
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  };
   const caseStackFor = (connection: CanvasConnection) => {
     const map = activeAppMap();
     const id = canonicalConnectionFor(connection)?.caseStackId;
@@ -878,22 +956,15 @@ export function AppMapWorkspace(props: {
     void runCanvasGraph();
   };
   const reusableBehaviors = createMemo(() =>
-    server
-      .recipes()
-      .filter(
-        (recipe) =>
-          recipe.source === "custom" &&
-          recipe.id !== server.selectedAppMapId() &&
-          (recipe.description?.startsWith("Reusable connection behavior") ||
-            recipe.description?.startsWith("Reusable transition behavior")) &&
-          recipe.steps.length > 0,
-      )
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, 8)
-      .map((recipe) => ({
-        id: recipe.id,
-        label: recipe.title,
-        actionCount: recipe.steps.length,
+    Object.values(activeAppMap()?.routines ?? {})
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((routine) => ({
+        id: routine.id,
+        label: routine.name,
+        actionCount: routine.actions.reduce(
+          (count, action) => count + (action.kind === "recorded" ? action.steps.length : 1),
+          0,
+        ),
       })),
   );
   const bounds = createMemo(() =>
@@ -1479,27 +1550,64 @@ export function AppMapWorkspace(props: {
     recorder.setRecordingTransition(connection.id);
     recordFromNode(screen);
   };
-  const attachBehaviorStep = (
+  const appendConnectionAction = async (
     connection: CanvasConnection,
-    step: RecipeStep,
-    mode: "interaction" | "automatic" | "reusable",
+    action: ActionSpec,
+    confirmation: string,
   ) => {
-    const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
-    const inserted = draft.appendSteps([
-      { ...step, ...(source ? { group: titleFor(source) } : {}) } as RecipeStep,
-    ]);
-    if (!inserted.length) return;
-    persistMetadata(
-      attachTransitionSteps(canvasState(), connection.id, inserted, mode, Date.now()),
-    );
-    setTransitionReplay({ connectionId: connection.id, state: "idle" });
+    const map = activeAppMap();
+    const canonical = canonicalConnectionFor(connection);
+    if (!map || !canonical) {
+      toast("This connection is still syncing. Try again in a moment.", "info");
+      return;
+    }
+    try {
+      await server.runAction("app-map.connection.update", {
+        appMapId: map.id,
+        connectionId: canonical.id,
+        expectedRevision: map.revision,
+        patch: {
+          state: "ready",
+          actions: [...canonical.actions, action],
+        },
+      });
+      await server.refreshAppMaps();
+      setTransitionReplay({ connectionId: connection.id, state: "idle" });
+      toast(confirmation, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   };
   const attachBackBehavior = (connection: CanvasConnection) =>
-    attachBehaviorStep(connection, { kind: "key", key: "back" }, "interaction");
+    appendConnectionAction(
+      connection,
+      { id: `back-${crypto.randomUUID()}`, kind: "back" },
+      "Back added to this connection",
+    );
   const attachAutomaticBehavior = (connection: CanvasConnection) =>
-    attachBehaviorStep(connection, { kind: "sleep", ms: 750 }, "automatic");
-  const attachReusableBehavior = (connection: CanvasConnection, recipeId: string) =>
-    attachBehaviorStep(connection, { kind: "module", recipeId }, "reusable");
+    appendConnectionAction(
+      connection,
+      { id: `passive-${crypto.randomUUID()}`, kind: "passive", reason: "automatic" },
+      "Marked as an automatic transition",
+    );
+  const attachReusableBehavior = async (connection: CanvasConnection, routineId: string) => {
+    const map = activeAppMap();
+    const canonical = canonicalConnectionFor(connection);
+    if (!map || !canonical || !map.routines[routineId]) return;
+    if (
+      canonical.actions.some(
+        (action) => action.kind === "routine" && action.routineId === routineId,
+      )
+    ) {
+      toast(`${map.routines[routineId]!.name} is already used here`, "info");
+      return;
+    }
+    await appendConnectionAction(
+      connection,
+      { id: `routine-${crypto.randomUUID()}`, kind: "routine", routineId },
+      `Applied ${map.routines[routineId]!.name}`,
+    );
+  };
   const stepsForConnection = (connection: CanvasConnection) => {
     const byId = new Map(draft.steps().flatMap((step) => (step.id ? [[step.id, step]] : [])));
     return connection.stepIds.flatMap((id) => {
@@ -1591,21 +1699,41 @@ export function AppMapWorkspace(props: {
     });
   };
   const saveReusableBehavior = async (connection: CanvasConnection) => {
-    const steps = stepsForConnection(connection).map((step) => {
-      const copy = structuredClone(step);
-      delete copy.id;
-      return copy;
-    });
-    if (!steps.length) return;
+    const map = activeAppMap();
+    if (!map) return;
+    const canonical = canonicalConnectionFor(connection);
+    const actions: ActionSpec[] = canonical?.actions.length
+      ? structuredClone(canonical.actions)
+      : [
+          {
+            id: `recorded-${crypto.randomUUID()}`,
+            kind: "recorded",
+            takeId: connection.takeId ?? connection.id,
+            takeRevision: 1,
+            steps: stepsForConnection(connection).map((step) => structuredClone(step)),
+            evidenceIds: [],
+          },
+        ];
+    if (!actions.some((action) => action.kind !== "recorded" || action.steps.length > 0)) return;
     const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
     const target = tree().nodes.find((node) => node.id === connection.toScreenId);
     const title = `${source ? titleFor(source) : "Screen"} → ${target ? titleFor(target) : "Next screen"}`;
-    const saved = await server.saveRecipeRemote({
-      title,
-      description: "Reusable connection behavior · saved from the App Map",
-      steps,
-    });
-    if (saved) toast(`Saved “${saved.title}” as a reusable behavior`, "success");
+    try {
+      await server.runAction("app-map.routine.save", {
+        appMapId: map.id,
+        routineId: `routine-${crypto.randomUUID()}`,
+        expectedRevision: map.revision,
+        routine: {
+          name: title,
+          description: "Reusable behavior saved from the App Map",
+          actions,
+        },
+      });
+      await server.refreshAppMaps();
+      toast(`Saved “${title}” as a Routine`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   };
   const beginConnection = (event: PointerEvent, fromScreenId: string) => {
     const element = canvas;
@@ -2517,6 +2645,8 @@ export function AppMapWorkspace(props: {
                       connections={connections().filter(
                         (connection) => connection.fromScreenId === selectedNode()?.id,
                       )}
+                      flowSetup={selectedFlowSetup()}
+                      onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
                       onSelectConnection={(connection) => {
                         setSelectedConnectionId(connection.id);
                         setSelectedNodeId(null);

@@ -1,5 +1,5 @@
 import { appMapFail } from "./errors.js";
-import type { AppMap, RoutineImpactPreview } from "./model.js";
+import type { AppMap, RoutineImpactPreview, RoutineUsageReference } from "./model.js";
 import { actionOwners, validateAppMap } from "./validation.js";
 import { identifier } from "./validation-shapes.js";
 
@@ -9,20 +9,24 @@ export function previewRoutineImpact(value: AppMap, routineId: string): RoutineI
   if (!map.routines[routineId]) {
     appMapFail("missing-reference", `Routine ${routineId} does not exist`);
   }
-  const directUsages = actionOwners(map)
-    .flatMap((owner) =>
+  const directUsages: RoutineUsageReference[] = [
+    ...actionOwners(map).flatMap((owner) =>
       owner.actions.flatMap((action) =>
         action.kind === "routine" && action.routineId === routineId
           ? [{ ownerKind: owner.ownerKind, ownerId: owner.ownerId, actionId: action.id }]
           : [],
       ),
-    )
-    .sort(
-      (left, right) =>
-        left.ownerKind.localeCompare(right.ownerKind) ||
-        left.ownerId.localeCompare(right.ownerId) ||
-        left.actionId.localeCompare(right.actionId),
-    );
+    ),
+    ...Object.values(map.flows).flatMap((flow) =>
+      flow.setup?.routineId === routineId ? [{ ownerKind: "flow" as const, ownerId: flow.id }] : [],
+    ),
+  ];
+  directUsages.sort(
+    (left, right) =>
+      left.ownerKind.localeCompare(right.ownerKind) ||
+      left.ownerId.localeCompare(right.ownerId) ||
+      (left.actionId ?? "").localeCompare(right.actionId ?? ""),
+  );
 
   const affectedRoutines = new Set([routineId]);
   let changed = true;
@@ -51,7 +55,11 @@ export function previewRoutineImpact(value: AppMap, routineId: string): RoutineI
     .sort();
   const connectionSet = new Set(affectedConnectionIds);
   const affectedFlowIds = Object.values(map.flows)
-    .filter((flow) => flow.connectionIds.some((connectionId) => connectionSet.has(connectionId)))
+    .filter(
+      (flow) =>
+        (flow.setup !== undefined && affectedRoutines.has(flow.setup.routineId)) ||
+        flow.connectionIds.some((connectionId) => connectionSet.has(connectionId)),
+    )
     .map((flow) => flow.id)
     .sort();
   return {

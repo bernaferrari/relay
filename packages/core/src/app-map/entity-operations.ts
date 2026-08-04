@@ -200,6 +200,7 @@ export function removeAppMapRoutine(
   const routine = map.routines[routineId];
   if (!routine) appMapFail("missing-reference", `Routine ${routineId} does not exist`);
   const used =
+    Object.values(map.flows).some((flow) => flow.setup?.routineId === routineId) ||
     Object.values(map.connections).some((connection) =>
       connection.actions.some(
         (action) => action.kind === "routine" && action.routineId === routineId,

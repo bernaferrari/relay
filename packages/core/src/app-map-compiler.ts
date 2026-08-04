@@ -226,12 +226,31 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     steps: [],
     stepProvenance: [],
   };
+  if (flow.setup) {
+    ensureRoutine(flow.setup.routineId);
+    const step = {
+      id: `relay-setup-${flow.id}`,
+      kind: "module" as const,
+      recipeId: recipeId(map, "routine", flow.setup.routineId),
+      ...(flow.setup.bindings ? { bindings: structuredClone(flow.setup.bindings) } : {}),
+    };
+    root.steps.push(step);
+    root.stepProvenance.push({
+      recipeId: rootRecipeId,
+      stepIndex: 0,
+      stepId: step.id,
+      origin: "setup",
+      ownerKind: "flow",
+      ownerId: flow.id,
+    });
+  }
   const source = map.screens[flow.startScreenId]!;
   const sourceStep = screenExpectation(map, source, `relay-source-${flow.id}`);
+  const sourceStepIndex = root.steps.length;
   root.steps.push(sourceStep);
   root.stepProvenance.push({
     recipeId: rootRecipeId,
-    stepIndex: 0,
+    stepIndex: sourceStepIndex,
     stepId: sourceStep.id!,
     origin: "source",
     ownerKind: "flow",
@@ -300,7 +319,12 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     schemaVersion: 1,
     appMapId: map.id,
     appMapRevision: map.revision,
-    flow: { id: flow.id, name: flow.name, startScreenId: flow.startScreenId },
+    flow: {
+      id: flow.id,
+      name: flow.name,
+      startScreenId: flow.startScreenId,
+      ...(flow.setup ? { setup: structuredClone(flow.setup) } : {}),
+    },
     rootRecipeId,
     recipes,
     connections,

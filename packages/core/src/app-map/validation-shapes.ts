@@ -307,6 +307,18 @@ export function assertFlow(flow: Flow, scope: AppMapScope, label: string): void 
   assertEntity(flow, scope, label);
   requiredText(flow.name, `${label}.name`);
   identifier(flow.startScreenId, `${label}.startScreenId`);
+  if (flow.setup !== undefined) {
+    objectValue(flow.setup, `${label}.setup`);
+    identifier(flow.setup.routineId, `${label}.setup.routineId`);
+    if (flow.setup.bindings !== undefined) {
+      objectValue(flow.setup.bindings, `${label}.setup.bindings`);
+      for (const [name, value] of Object.entries(flow.setup.bindings)) {
+        identifier(name, `${label}.setup.bindings key`);
+        if (typeof value !== "string")
+          appMapFail("invalid-map", `${label}.setup.bindings.${name} must be a string`);
+      }
+    }
+  }
   stringArray(flow.connectionIds, `${label}.connectionIds`);
 }
 

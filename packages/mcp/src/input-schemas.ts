@@ -316,6 +316,13 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         .object({
           name: text("Flow name"),
           startScreenId: identifier("Starting screen identifier"),
+          setup: z
+            .object({
+              routineId: identifier("Before-run Routine identifier"),
+              bindings: z.record(z.string(), z.string()).optional(),
+            })
+            .strict()
+            .optional(),
           connectionIds: z.array(identifier("Connection identifier")),
         })
         .strict(),
@@ -373,7 +380,14 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       routineId: identifier("Routine identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
-      routine: unknownRecord.describe("Normalized reusable routine"),
+      routine: z
+        .object({
+          name: text("Routine name"),
+          description: z.string().optional(),
+          parameters: z.array(unknownRecord).optional(),
+          actions: z.array(unknownRecord).describe("Reusable action specifications"),
+        })
+        .strict(),
     })
     .strict(),
   "app-map.routine.remove": z

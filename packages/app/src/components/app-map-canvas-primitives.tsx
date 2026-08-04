@@ -373,6 +373,13 @@ export function ScreenInspector(props: {
   node: MapTreeNode | null;
   title: string;
   connections: CanvasConnection[];
+  flowSetup?: {
+    flowCount: number;
+    mixed: boolean;
+    routineId?: string;
+    routines: Array<{ id: string; name: string }>;
+  };
+  onFlowSetup: (routineId?: string) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -410,6 +417,47 @@ export function ScreenInspector(props: {
               </button>
             </div>
           </div>
+          <Show when={props.flowSetup}>
+            {(flowSetup) => (
+              <div class="mt-2 grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-2">
+                <div class="flex items-baseline justify-between gap-3">
+                  <label
+                    for="screen-flow-setup"
+                    class="text-[10px] font-medium text-[var(--text-weak)]"
+                  >
+                    Before run
+                  </label>
+                  <span class="text-[9.5px] text-[var(--text-weak)]">
+                    {flowSetup().flowCount} {flowSetup().flowCount === 1 ? "flow" : "flows"}
+                  </span>
+                </div>
+                <select
+                  id="screen-flow-setup"
+                  class="h-10 w-full rounded-[8px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[11px] text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--v2-border-border-strong)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
+                  value={flowSetup().mixed ? "__mixed__" : (flowSetup().routineId ?? "")}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    if (value !== "__mixed__") props.onFlowSetup(value || undefined);
+                  }}
+                >
+                  <Show when={flowSetup().mixed}>
+                    <option value="__mixed__" disabled>
+                      Mixed setup
+                    </option>
+                  </Show>
+                  <option value="">Verify current screen</option>
+                  <For each={flowSetup().routines}>
+                    {(routine) => <option value={routine.id}>{routine.name}</option>}
+                  </For>
+                </select>
+                <p class="m-0 text-[10px]/[1.4] text-[var(--text-weak)]">
+                  {flowSetup().routineId && !flowSetup().mixed
+                    ? "Relay runs this Routine, then verifies the entry screen."
+                    : "Runs begin by verifying that this screen is already open."}
+                </p>
+              </div>
+            )}
+          </Show>
           <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
             <span class="px-1.5 pb-0.5 text-[10px] font-medium text-[var(--text-weak)]">
               Paths from this screen
