@@ -48,9 +48,13 @@ test("screen previews preserve phone and tablet viewport silhouettes", () => {
   const tablet = screenCardGeometry({ logicalViewport: { width: 1112, height: 834 } });
 
   assert.ok(phone.frameHeight > phone.frameWidth);
+  assert.equal(phone.frameWidth, 112);
+  assert.ok(phone.mediaWidth < phone.frameWidth);
+  assert.equal(phone.mediaHeight, phone.frameHeight);
   assert.ok(tablet.frameWidth > tablet.frameHeight);
   assert.equal(phone.frameHeight, 200);
   assert.equal(tablet.frameWidth, SCREEN_CARD_WIDTH);
+  assert.equal(tablet.mediaWidth, tablet.frameWidth);
   assert.ok(phone.frameLeft > 0);
 });
 

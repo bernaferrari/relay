@@ -19,6 +19,13 @@ export const SCREEN_CARD_WIDTH = 240;
 export const SCREEN_CARD_HEIGHT = 230;
 export const SCREEN_FRAME_TOP = 30;
 export const SCREEN_FRAME_HEIGHT = 200;
+/**
+ * A map is a visual index, not a physical-device shelf. Extremely narrow
+ * portrait screenshots become unreadable when their exact width is used as
+ * the whole node, so the well gets a little breathing room while the media
+ * inside it remains pixel-accurate.
+ */
+export const SCREEN_FRAME_MIN_WIDTH = 112;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
 const BRANCH_COLUMN_GAP = 136;
@@ -31,6 +38,8 @@ export type ScreenCardGeometry = {
   frameTop: number;
   frameWidth: number;
   frameHeight: number;
+  mediaWidth: number;
+  mediaHeight: number;
 };
 
 /** Preserve the target's real silhouette without allowing an extreme viewport
@@ -48,25 +57,30 @@ export function screenCardGeometry(evidence?: {
       frameTop: SCREEN_FRAME_TOP,
       frameWidth: SCREEN_CARD_WIDTH,
       frameHeight: 174,
+      mediaWidth: SCREEN_CARD_WIDTH,
+      mediaHeight: 174,
     };
   }
   const ratio = viewport.width / viewport.height;
   const boundedRatio = Math.min(2, Math.max(0.46, ratio));
-  const frameWidth =
+  const mediaWidth =
     boundedRatio >= SCREEN_CARD_WIDTH / SCREEN_FRAME_HEIGHT
       ? SCREEN_CARD_WIDTH
       : SCREEN_FRAME_HEIGHT * boundedRatio;
-  const frameHeight =
+  const mediaHeight =
     boundedRatio >= SCREEN_CARD_WIDTH / SCREEN_FRAME_HEIGHT
       ? SCREEN_CARD_WIDTH / boundedRatio
       : SCREEN_FRAME_HEIGHT;
+  const frameWidth = Math.max(SCREEN_FRAME_MIN_WIDTH, mediaWidth);
   return {
     width: SCREEN_CARD_WIDTH,
-    height: SCREEN_FRAME_TOP + frameHeight,
+    height: SCREEN_FRAME_TOP + mediaHeight,
     frameLeft: (SCREEN_CARD_WIDTH - frameWidth) / 2,
     frameTop: SCREEN_FRAME_TOP,
     frameWidth,
-    frameHeight,
+    frameHeight: mediaHeight,
+    mediaWidth,
+    mediaHeight,
   };
 }
 

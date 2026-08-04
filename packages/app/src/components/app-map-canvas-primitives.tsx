@@ -269,13 +269,21 @@ export function ScreenCard(props: {
               "justify-self": "center",
             }}
           >
-            <OrientedScreenshot
-              src={src()}
-              alt={`Recorded ${props.title} screen`}
-              loading="lazy"
-              class="size-full object-contain object-top"
-              evidence={props.orientationEvidence}
-            />
+            <div
+              class="mx-auto min-h-0"
+              style={{
+                width: `${props.geometry.mediaWidth}px`,
+                height: `${props.geometry.mediaHeight}px`,
+              }}
+            >
+              <OrientedScreenshot
+                src={src()}
+                alt={`Recorded ${props.title} screen`}
+                loading="lazy"
+                class="size-full object-contain object-top"
+                evidence={props.orientationEvidence}
+              />
+            </div>
           </div>
         )}
       </Show>
