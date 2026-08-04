@@ -39,6 +39,13 @@ export function printHumanError(
   if (normalized.hint) {
     process.stderr.write(`Hint: ${normalized.hint}\n`);
   }
+  // #1597: printed unconditionally (not gated behind --debug), same as the
+  // divergence report below — an agent must see the candidate refs without a
+  // follow-up round trip.
+  const ambiguousMatchLines = formatAmbiguousMatchCandidateLines(normalized.details);
+  if (ambiguousMatchLines.length > 0) {
+    process.stderr.write(`${ambiguousMatchLines.join('\n')}\n`);
+  }
   if (normalized.diagnosticId) {
     process.stderr.write(`Diagnostic ID: ${normalized.diagnosticId}\n`);
   }
@@ -54,6 +61,39 @@ export function printHumanError(
   if (options.showDetails && normalized.details) {
     process.stderr.write(`${JSON.stringify(normalized.details, null, 2)}\n`);
   }
+}
+
+// #1597: shared by printHumanError (CLI) and formatToolErrorText (MCP,
+// src/mcp/tool-error.ts) so an AMBIGUOUS_MATCH's candidate refs render
+// identically on every text surface, never only in --json/--debug. Reads
+// `details.candidates` (pre-rendered snapshot-lines, capped at
+// AMBIGUOUS_MATCH_CANDIDATE_LIMIT by buildAmbiguousMatchError,
+// src/daemon/handlers/find.ts) and `details.matches` (the true total) to
+// compute the "+N more" marker for whatever the cap omitted.
+//
+// `details.candidates` is NOT unique to that one producer: the device-domain
+// AMBIGUOUS_MATCH/APP_NOT_INSTALLED resolvers (findBootedAppleSimulatorWithApp,
+// src/core/dispatch-resolve.ts) reuse the same key for `{ id, name }` device
+// objects, and never set `details.matches` at all. Both guards below —
+// numeric `matches` and every candidate being a pre-rendered string — must
+// hold together, or this renders "[object Object]" for that shape instead of
+// silently rendering nothing (its prior, pre-#1597 behavior).
+export function formatAmbiguousMatchCandidateLines(
+  details: Record<string, unknown> | undefined,
+): string[] {
+  const candidates = details?.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  if (typeof details?.matches !== 'number') return [];
+  if (!candidates.every((candidate): candidate is string => typeof candidate === 'string')) {
+    return [];
+  }
+  const totalMatches = details.matches;
+  const remaining = totalMatches - candidates.length;
+  return [
+    'Candidates:',
+    ...candidates.map((candidate) => `  ${candidate}`),
+    ...(remaining > 0 ? [`  +${remaining} more`] : []),
+  ];
 }
 
 type SnapshotDiffLine = {
