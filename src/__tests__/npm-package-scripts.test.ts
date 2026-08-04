@@ -16,6 +16,10 @@ const packageSmokeWorkflow = fs.readFileSync(
   path.join(repoRoot, '.github', 'workflows', 'package-smoke.yml'),
   'utf8',
 );
+const packagedCliWorkflow = fs.readFileSync(
+  path.join(repoRoot, '.github', 'workflows', 'ci.yml'),
+  'utf8',
+);
 
 function script(name: string): string {
   const value = packageJson.scripts[name];
@@ -55,10 +59,11 @@ test('Fallow exposes one changed-code gate and an explicit full-tree audit', () 
   assert.equal(script('fallow:all'), 'fallow --summary');
 });
 
-test('the npm package build covers every package-owned build output', () => {
+// `check:package` verifies the tarball, so it has to observe every build output the package ships —
+// it runs last, after the Apple and Android payloads exist, not next to the JS build.
+test('the npm package build covers every package-owned build output, then verifies the result', () => {
   assert.deepEqual(script('package:npm').split(' && '), [
     'pnpm build',
-    'pnpm check:bundle-dependencies',
     'pnpm build:xcuitest:ios',
     'pnpm build:xcuitest:macos',
     'pnpm build:xcuitest:tvos',
@@ -66,10 +71,40 @@ test('the npm package build covers every package-owned build output', () => {
     'pnpm build:macos-helper:clean',
     'pnpm package:apple-runner:npm',
     'pnpm build:android',
+    'pnpm check:package',
   ]);
 
   assert.deepEqual(script('build:android').split(' && '), [
     'pnpm package:android-snapshot-helper:npm',
     'pnpm package:android-ime-helper:npm',
   ]);
+});
+
+// Behavior of the closure audit is pinned by fixtures in
+// scripts/__tests__/package-closure-audit.test.ts, which can fail a malformed package the way no
+// test of the real gate can. That leaves the wiring: the audit and both runtime probes have to stay
+// wired into the gate, or the fixtures would keep passing while the tarball went unchecked.
+test('the package gate runs the closure audit and both runtime probes', () => {
+  const gate = fs.readFileSync(path.join(repoRoot, 'scripts', 'check-package.ts'), 'utf8');
+  for (const call of [
+    'auditDependencyClosure(installedRoot, manifest)',
+    'importEveryExport(manifest)',
+    'smokeTestBin(installedRoot, manifest)',
+  ]) {
+    assert.ok(gate.includes(call), `scripts/check-package.ts must still call ${call}`);
+  }
+});
+
+// The gate reads the packed tarball, so `prepack` is the last point where a broken package can still
+// be stopped. Publishing runs it; nothing else guarantees the tarball is ever verified.
+test('publishing cannot skip the package gate', () => {
+  assert.match(script('package:npm'), /pnpm check:package$/);
+  assert.match(script('check:tooling'), /pnpm check:package$/);
+  // The minimum-Node job runs the script directly — the repo's pinned pnpm needs a newer Node than
+  // the floor that job covers — so it must still name the same entry point the script does.
+  assert.match(script('check:package'), /scripts\/check-package\.ts$/);
+  assert.match(
+    packagedCliWorkflow,
+    /run: node --experimental-strip-types scripts\/check-package\.ts/,
+  );
 });
