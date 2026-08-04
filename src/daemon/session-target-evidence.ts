@@ -24,24 +24,22 @@ import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { resolveRectCenter } from '../utils/rect-center.ts';
 import { findNearestScrollableContainer } from './snapshot-presentation/tree.ts';
 import {
-  demoteNonUniqueLocalIdentity,
-  readNodeLocalIdentity,
-  siblingOrdinal,
-} from '../replay/target-identity-node.ts';
-import {
-  buildAncestryChain,
-  buildIndexMap,
-  filterIdentitySet,
-} from '../replay/target-evidence-tree.ts';
-import {
   classifyTargetBindingMatch,
+  demoteNonUniqueLocalIdentity,
   matchesLocalIdentity,
+  readNodeLocalIdentity,
   serializeTargetAnnotationV1,
+  siblingOrdinal,
   utf8ByteLength,
   type LocalIdentity,
   TARGET_ANNOTATION_MAX_ANCESTRY,
   TARGET_ANNOTATION_MAX_PAYLOAD_BYTES,
 } from '@agent-device/ad-script';
+import {
+  buildAncestryChain,
+  buildIndexMap,
+  filterIdentitySet,
+} from '../replay/target-evidence-tree.ts';
 import type {
   TargetAncestryEntry,
   TargetAnnotationV1,
@@ -72,7 +70,11 @@ export function computeTargetEvidence(
   const { node, preActionNodes: nodes } = capture;
   if (typeof node.index !== 'number') return undefined;
   const byIndex = buildIndexMap(nodes);
-  const identity = demoteNonUniqueId(boundedLocalIdentity(node), nodes);
+  // #1269: a shared framework resource id (Android's `android:id/title` on
+  // every list row is the measured case) is not selective — demote it to
+  // role+label via the same shared predicate `buildSelectorChainForNode`
+  // keys off, so the identity tuple and the selector chain never disagree.
+  const identity = demoteNonUniqueLocalIdentity(boundedLocalIdentity(node), nodes);
   if (mode === 'landmark' && identity.id === undefined && identity.label === undefined) {
     return undefined;
   }
@@ -227,28 +229,6 @@ type DisambiguationDomain = {
   orderedRegion: SnapshotNode[];
   viewportOrder: number;
 };
-
-/**
- * ADR 0012 decision 3 amendment (#1269): an id is identity only when it
- * uniquely denotes the target in the record-time tree. `boundedLocalIdentity`
- * reads a node's id unconditionally, but a shared framework resource id
- * (Android's `android:id/title` matching every list row is the measured
- * case — #1269) is not selective: on replay the id-led identity set spans
- * every row, position drifts, and verification correctly refuses a
- * confident bind. `idMatchCountInTree` — the SAME predicate
- * `buildSelectorChainForNode` uses for the selector chain — counts nodes
- * sharing this canonical id across the whole tree; when more than one, fall
- * back to role+label, exactly the identity an unrecorded id already computes.
- * Both sites sharing one predicate is what keeps the tuple and the chain from
- * disagreeing (demoting one but not the other). The rule is capture-time
- * uniqueness, not an id-namespace heuristic: a reused RN `FlatList` `testID`
- * hits the same demotion on iOS. Delegates to the shared
- * `demoteNonUniqueLocalIdentity` (`target-identity-node.ts`), which #1280's
- * press-retarget check also uses.
- */
-function demoteNonUniqueId(identity: LocalIdentity, nodes: readonly SnapshotNode[]): LocalIdentity {
-  return demoteNonUniqueLocalIdentity(identity, nodes);
-}
 
 function computeDisambiguationDomain(params: {
   nodes: readonly SnapshotNode[];
