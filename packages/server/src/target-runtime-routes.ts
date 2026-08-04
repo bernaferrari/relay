@@ -81,7 +81,10 @@ export async function handleTargetRuntimeRoute(context: {
       (candidate) => candidate.serial === serial,
     );
     if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
-    const relaunch = body.relaunch !== false;
+    // Bringing an app to the foreground is the safe, unsurprising default.
+    // Physical iOS devices can reject termination when the requested app is
+    // not currently running, which previously made a normal launch fail.
+    const relaunch = body.relaunch === true;
     await runtime.launchApp({ serial, platform: device.platform, app, relaunch });
     json(response, 200, {
       launched: { serial, app, platform: device.platform, launchedAt: Date.now() },

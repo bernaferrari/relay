@@ -253,6 +253,61 @@ export function InteractionStepEditors(props: StepEditorFamilyProps): JSX.Elemen
         })()}
       </Show>
 
+      <Show when={kind() === "expect-set"}>
+        {(() => {
+          const s = props.step();
+          if (s.kind !== "expect-set") return null;
+          let inputEl: HTMLInputElement | undefined;
+          createEffect(() => {
+            if (props.autofocus()) {
+              inputEl?.focus();
+              props.onAutofocused();
+            }
+          });
+          return (
+            <div class="flex min-w-0 flex-col gap-2">
+              <div class={propRow}>
+                <span class={fieldLabel}>Element group</span>
+                <input
+                  ref={(el) => {
+                    inputEl = el;
+                  }}
+                  class={cn(valueCls, mono)}
+                  type="text"
+                  placeholder="menu.option."
+                  value={s.identifierPrefix}
+                  onInput={(event) => onEdit({ ...s, identifierPrefix: event.currentTarget.value })}
+                  spellcheck={false}
+                />
+              </div>
+              <div class="grid grid-cols-[132px_minmax(0,1fr)] items-start gap-2.5">
+                <span class={fieldLabel}>Expected options</span>
+                <textarea
+                  class={cn(
+                    fieldInput,
+                    mono,
+                    "min-h-24 min-w-0 resize-y px-2 py-1.5 leading-relaxed",
+                  )}
+                  aria-label="Expected options, one per line"
+                  placeholder={"Camera\nPhoto or Video\nFiles"}
+                  value={s.labels.join("\n")}
+                  onInput={(event) =>
+                    onEdit({
+                      ...s,
+                      labels: event.currentTarget.value
+                        .split("\n")
+                        .map((label) => label.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  spellcheck={false}
+                />
+              </div>
+            </div>
+          );
+        })()}
+      </Show>
+
       <Show when={kind() === "pause"}>
         {(() => {
           const s = props.step();

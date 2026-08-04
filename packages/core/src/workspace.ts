@@ -2,18 +2,20 @@
  * Live device workspace helpers for the testing shell:
  * snapshot UI tree, screenshot, basic interactions.
  */
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
+import { PNG } from "pngjs";
 import {
   type DevicePlatform,
   base,
   center,
   createDevice,
   findClick,
+  pressIdentifier,
   pressLabel,
   pressMatchingText,
   pressPoint,
@@ -37,6 +39,10 @@ import {
   type AdbDeviceObservation,
 } from "./adb-devices.js";
 import {
+  androidSnapshotApplication,
+  androidSnapshotMatchesForeground,
+  captureAndroidForegroundApp,
+  captureAndroidInspectionState,
   captureAndroidUiSnapshotWithState,
   type AndroidInspectionState,
 } from "./android-ui-snapshot.js";
@@ -289,14 +295,6 @@ function rawSwipe(
   if (!serial) throw new Error("Explicit Android target serial is required");
   const inputArgs = adbSwipeInputArgs(from, to, durationMs);
   const args = ["-s", serial, "shell", ...inputArgs];
-  execFileSync("adb", args, { timeout: 8000 });
-}
-
-/** Raw adb text input — keeps manual mirroring alive without an SDK app session. */
-function rawType(text: string, serial?: string): void {
-  if (!serial) throw new Error("Explicit Android target serial is required");
-  const encoded = text.replaceAll(" ", "%s");
-  const args = ["-s", serial, "shell", "input", "text", encoded];
   execFileSync("adb", args, { timeout: 8000 });
 }
 
@@ -648,7 +646,12 @@ export type SnapshotPayload = {
   /** Capture implementation, useful for diagnostics without leaking host details to UI logic. */
   source: "sdk" | "android-system";
   inspectionState?: AndroidInspectionState;
-  screenIdentity: import("@relay/protocol").ScreenIdentity;
+  foregroundApp?: string;
+  treeApp?: string;
+  bindingState?: "matched" | "rebound" | "unavailable";
+  /** Full normalized identity lets UI and agents explain and reuse a match;
+   * a digest alone is not enough to repair an older visual-only baseline. */
+  screenIdentity: import("@relay/protocol").ScreenIdentityObservation;
 };
 
 export type IosSnapshotGeometry = {
@@ -683,17 +686,6 @@ export function inferIosSnapshotGeometry(nodes: SnapshotNode[]): IosSnapshotGeom
     rotation: nativeWindow && logicalWidth > logicalHeight ? "left" : "none",
     logicalWidth,
     logicalHeight,
-  };
-}
-
-export function iosDriverPoint(
-  point: { x: number; y: number },
-  geometry: IosSnapshotGeometry,
-): { x: number; y: number } {
-  if (geometry.rotation === "none") return point;
-  return {
-    x: geometry.logicalHeight - point.y,
-    y: point.x,
   };
 }
 
@@ -763,7 +755,13 @@ async function snapshotThroughSdk(
 
 type SnapshotCapture = Pick<
   SnapshotPayload,
-  "nodes" | "inspectable" | "source" | "inspectionState"
+  | "nodes"
+  | "inspectable"
+  | "source"
+  | "inspectionState"
+  | "foregroundApp"
+  | "treeApp"
+  | "bindingState"
 >;
 
 async function snapshotForTarget(
@@ -799,14 +797,73 @@ async function snapshotForTarget(
     };
   }
 
-  // An app-bound SDK snapshot can retain Always-On Display or app content while
-  // the lock screen owns the pixels. This system provider exposes that state
-  // explicitly so the renderer clears inspection instead of guessing.
+  // Android allows only one UiAutomationService. An active agent-device
+  // session owns it, so launching a separate `uiautomator dump` is rejected by
+  // Android and produces an empty tree. Read lock state independently, then
+  // prefer the hierarchy from the session that already owns automation.
+  const inspectionState = await captureAndroidInspectionState(target.context.serial);
+  const foregroundApp = await captureAndroidForegroundApp(target.context.serial);
+  if (inspectionState !== "active") {
+    return {
+      nodes: [],
+      inspectable: false,
+      source: "android-system",
+      inspectionState,
+      foregroundApp,
+      bindingState: "unavailable",
+    };
+  }
+
+  try {
+    let nodes = await snapshotThroughSdk(target.device, interactiveOnly);
+    let treeApp = androidSnapshotApplication(nodes);
+    if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {
+      return {
+        nodes,
+        inspectable: true,
+        source: "sdk",
+        inspectionState,
+        foregroundApp,
+        treeApp,
+        bindingState: "matched",
+      };
+    }
+    if (foregroundApp && treeApp && foregroundApp !== treeApp) {
+      await target.device.apps.open({
+        platform: "android",
+        serial: target.context.serial,
+        app: foregroundApp,
+        relaunch: false,
+        noRecord: true,
+      });
+      nodes = await snapshotThroughSdk(target.device, interactiveOnly);
+      treeApp = androidSnapshotApplication(nodes);
+      if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {
+        return {
+          nodes,
+          inspectable: true,
+          source: "sdk",
+          inspectionState,
+          foregroundApp,
+          treeApp,
+          bindingState: "rebound",
+        };
+      }
+    }
+  } catch {
+    // A session is optional for manual mirroring. If it is unavailable, the
+    // dependency-free system provider still works when no other automation
+    // client owns Android's service.
+  }
+
   const snapshot = await captureAndroidUiSnapshotWithState(target.context.serial);
   return {
     ...snapshot,
-    inspectable: snapshot.inspectionState === "active",
+    inspectable: snapshot.inspectionState === "active" && snapshot.nodes.length > 0,
     source: "android-system",
+    foregroundApp,
+    treeApp: androidSnapshotApplication(snapshot.nodes),
+    bindingState: "unavailable",
   };
 }
 
@@ -853,7 +910,7 @@ export async function captureSnapshot(opts?: {
       nodes,
       interactive,
       bounds,
-      screenIdentity: { schemaVersion: 1, fingerprint: observedIdentity.fingerprint },
+      screenIdentity: observedIdentity,
       ...capture,
     };
   });
@@ -868,6 +925,7 @@ export type ScreenshotPayload = {
   bytes: number;
   width?: number;
   height?: number;
+  foregroundApp?: string;
   screenMatch?: {
     fingerprint: string;
     matchedScreenId: string | null;
@@ -885,6 +943,46 @@ function pngDimensions(bytes: Buffer): { width: number; height: number } | undef
   return width > 0 && height > 0 ? { width, height } : undefined;
 }
 
+/** Normalize portrait transport pixels to the logical landscape viewport.
+ * XCTest can expose correct landscape coordinates while returning a sideways
+ * PNG. Persisting those bytes would make canvas previews and visual regions
+ * disagree with every semantic target. */
+export function normalizeScreenshotToBounds(
+  bytes: Buffer,
+  bounds?: { width: number; height: number },
+): Buffer {
+  const dimensions = pngDimensions(bytes);
+  const boundsLandscape = bounds ? bounds.width > bounds.height : false;
+  const pixelsLandscape = dimensions ? dimensions.width > dimensions.height : false;
+  if (
+    !bounds ||
+    !dimensions ||
+    boundsLandscape === pixelsLandscape ||
+    bounds.width === bounds.height ||
+    dimensions.width === dimensions.height
+  ) {
+    return bytes;
+  }
+
+  let source: PNG;
+  try {
+    source = PNG.sync.read(bytes);
+  } catch {
+    return bytes;
+  }
+  const destination = new PNG({ width: source.height, height: source.width });
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      const sourceOffset = (source.width * y + x) << 2;
+      const destinationX = y;
+      const destinationY = source.width - x - 1;
+      const destinationOffset = (destination.width * destinationY + destinationX) << 2;
+      source.data.copy(destination.data, destinationOffset, sourceOffset, sourceOffset + 4);
+    }
+  }
+  return PNG.sync.write(destination);
+}
+
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
@@ -897,6 +995,12 @@ export async function captureScreenshot(opts?: {
 }): Promise<ScreenshotPayload> {
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
+    const foregroundApp =
+      target.context.kind === "device" &&
+      target.context.platform === "android" &&
+      target.context.serial
+        ? await captureAndroidForegroundApp(target.context.serial)
+        : undefined;
     const parent = join(tmpdir(), "relay");
     await mkdir(parent, { recursive: true, mode: 0o700 });
     const dir = await mkdtemp(join(parent, "shot-"));
@@ -922,14 +1026,37 @@ export async function captureScreenshot(opts?: {
         throw error;
       }
     }
-    const buf = await readFile(path);
+    let buf = await readFile(path);
+    let semanticNodes: SnapshotNode[] | undefined;
+    if (context.kind === "device" && context.platform === "ios" && context.serial) {
+      let geometry = iosSnapshotGeometryBySerial.get(context.serial);
+      if (!geometry) {
+        try {
+          semanticNodes = (await snapshotForTarget(target, false)).nodes;
+          geometry = inferIosSnapshotGeometry(semanticNodes);
+          if (geometry) iosSnapshotGeometryBySerial.set(context.serial, geometry);
+        } catch {
+          // A screenshot remains useful when semantic inspection is temporarily unavailable.
+        }
+      }
+      if (geometry) {
+        const normalized = normalizeScreenshotToBounds(buf, {
+          width: geometry.logicalWidth,
+          height: geometry.logicalHeight,
+        });
+        if (normalized !== buf) {
+          buf = Buffer.from(normalized);
+          await writeFile(path, buf);
+        }
+      }
+    }
     const base64 = buf.toString("base64");
     const dimensions = pngDimensions(buf);
     let screenMatch: ScreenshotPayload["screenMatch"];
     if (opts?.includeScreenMatch !== false) {
       try {
-        const semantic = await snapshotForTarget(target, false);
-        const identity = observeScreenIdentity(semantic.nodes);
+        semanticNodes ??= (await snapshotForTarget(target, false)).nodes;
+        const identity = observeScreenIdentity(semanticNodes);
         if (identity.fingerprint) {
           screenMatch = {
             fingerprint: identity.fingerprint,
@@ -967,6 +1094,7 @@ export async function captureScreenshot(opts?: {
       path,
       bytes: buf.byteLength,
       ...dimensions,
+      ...(foregroundApp ? { foregroundApp } : {}),
       ...(screenMatch ? { screenMatch } : {}),
       jobId,
       framePath,
@@ -1022,6 +1150,7 @@ export async function cleanupScreenshot(path: string): Promise<void> {
 }
 
 export type InteractInput =
+  | { kind: "identifier"; identifier: string }
   | { kind: "label"; label: string }
   | { kind: "point"; x: number; y: number }
   | { kind: "ref"; ref: string }
@@ -1050,60 +1179,33 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
         rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
         return;
       }
-      if (input.kind === "type") {
-        rawType(input.text, context.serial);
-        return;
-      }
     }
     try {
       await withSession(target.device, async () => {
-        let resolvedInput = input;
-        if (
-          context.kind === "device" &&
-          context.platform === "ios" &&
-          (input.kind === "point" || input.kind === "swipe")
-        ) {
-          let geometry = iosSnapshotGeometryBySerial.get(context.serial);
-          if (!geometry) {
-            geometry = inferIosSnapshotGeometry(await snapshotThroughSdk(target.device, false));
-            if (geometry) iosSnapshotGeometryBySerial.set(context.serial, geometry);
-          }
-          if (geometry && input.kind === "point") {
-            resolvedInput = { kind: "point", ...iosDriverPoint(input, geometry) };
-          } else if (geometry && input.kind === "swipe") {
-            resolvedInput = {
-              ...input,
-              from: iosDriverPoint(input.from, geometry),
-              to: iosDriverPoint(input.to, geometry),
-            };
-          }
-        }
-        switch (resolvedInput.kind) {
+        switch (input.kind) {
+          case "identifier":
+            await pressIdentifier(target.device, input.identifier);
+            return;
           case "label":
-            await pressLabel(target.device, resolvedInput.label);
+            await pressLabel(target.device, input.label);
             return;
           case "point":
-            await pressPoint(target.device, resolvedInput.x, resolvedInput.y);
+            await pressPoint(target.device, input.x, input.y);
             return;
           case "ref":
-            await pressRef(target.device, resolvedInput.ref);
+            await pressRef(target.device, input.ref);
             return;
           case "find":
-            await findClick(target.device, resolvedInput.query);
+            await findClick(target.device, input.query);
             return;
           case "text-match":
-            await pressMatchingText(target.device, resolvedInput.match);
+            await pressMatchingText(target.device, input.match);
             return;
           case "swipe":
-            await swipeGesture(
-              target.device,
-              resolvedInput.from,
-              resolvedInput.to,
-              resolvedInput.durationMs ?? 250,
-            );
+            await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
             return;
           case "type":
-            await typeText(target.device, resolvedInput.text);
+            await typeText(target.device, input.text);
             return;
         }
       });

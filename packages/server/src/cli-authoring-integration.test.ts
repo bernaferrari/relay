@@ -10,6 +10,7 @@ import type { AuthoringRuntime } from "@relay/core";
 import type {
   AuthoringInteraction,
   AuthoringSession,
+  AuthoringSessionSummary,
   EventEnvelope,
   RecipeStep,
 } from "@relay/protocol";
@@ -80,7 +81,7 @@ function captureStreams() {
 async function runJsonCommand(
   command: readonly string[],
   connection: { server: string; projectId: string; actorId: string },
-): Promise<{ session: AuthoringSession }> {
+): Promise<{ session: AuthoringSessionSummary }> {
   const capture = captureStreams();
   const code = await runCli(
     [
@@ -104,7 +105,7 @@ async function runJsonCommand(
   const terminal = JSON.parse(capture.stdout()) as {
     type: string;
     ok: boolean;
-    result: { session: AuthoringSession };
+    result: { session: AuthoringSessionSummary };
   };
   assert.equal(terminal.type, "result");
   assert.equal(terminal.ok, true);
@@ -210,12 +211,12 @@ test("CLI authoring commands commit a fake transition visible to another client"
     const started = await runJsonCommand(["session", "start", sessionId], cliConnection);
     assert.equal(started.session.state, "recording");
     const interacted = await runJsonCommand(["session", "back", sessionId], cliConnection);
-    assert.equal(interacted.session.take?.revisions.at(-1)?.actions.length, 1);
+    assert.equal(interacted.session.take?.actionCount, 1);
     const stopped = await runJsonCommand(["session", "stop", sessionId], cliConnection);
     assert.equal(stopped.session.state, "reviewing");
     runtime.screen = "source";
     const replayed = await runJsonCommand(["take", "replay", sessionId], cliConnection);
-    assert.equal(replayed.session.take?.replayAttempts.at(-1)?.outcome, "passed");
+    assert.equal(replayed.session.take?.latestReplay?.outcome, "passed");
     const committed = await runJsonCommand(
       [
         "session",

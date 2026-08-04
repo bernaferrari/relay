@@ -136,6 +136,33 @@ test("resource transport cannot bypass the registry for mutations", async () => 
   );
 });
 
+test("configured request timeout still applies when a caller supplies a cancellation signal", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      timeoutMs: 5,
+      fetch: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    },
+  );
+
+  await assert.rejects(
+    () => client.invoke("system.health.get", {}, { signal: new AbortController().signal }),
+    (error: unknown) => error instanceof DOMException && error.name === "TimeoutError",
+  );
+});
+
 test("event streams parse canonical envelopes, deduplicate cursors, and surface gaps", async () => {
   let request: Request | undefined;
   const base = {

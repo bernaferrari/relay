@@ -72,20 +72,20 @@ test("GET /activity lists durable scoped semantic operations without persisting 
     assert.ok(first.nextCursor);
     assert.deepEqual(
       first.items.map((item) => item.requestId),
-      ["request-2", "request-1"],
+      ["request-2", "request-2"],
     );
     assert.deepEqual(
       {
-        actorId: first.items[0]?.actorId,
-        actorKind: first.items[0]?.actorKind,
-        operationId: first.items[0]?.operationId,
-        eventType: first.items[0]?.eventType,
-        resourceKind: first.items[0]?.resourceKind,
-        resourceId: first.items[0]?.resourceId,
-        summary: first.items[0]?.summary,
-        correlationId: first.items[0]?.correlationId,
-        causationId: first.items[0]?.causationId,
-        sessionId: first.items[0]?.sessionId,
+        actorId: first.items[1]?.actorId,
+        actorKind: first.items[1]?.actorKind,
+        operationId: first.items[1]?.operationId,
+        eventType: first.items[1]?.eventType,
+        resourceKind: first.items[1]?.resourceKind,
+        resourceId: first.items[1]?.resourceId,
+        summary: first.items[1]?.summary,
+        correlationId: first.items[1]?.correlationId,
+        causationId: first.items[1]?.causationId,
+        sessionId: first.items[1]?.sessionId,
       },
       {
         actorId: "agent:activity-test",
@@ -100,6 +100,19 @@ test("GET /activity lists durable scoped semantic operations without persisting 
         sessionId: "session-activity",
       },
     );
+    assert.deepEqual(
+      {
+        eventType: first.items[0]?.eventType,
+        outcome: first.items[0]?.outcome,
+        statusCode: first.items[0]?.statusCode,
+      },
+      {
+        eventType: "operation.succeeded",
+        outcome: "succeeded",
+        statusCode: 200,
+      },
+    );
+    assert.ok((first.items[0]?.durationMs ?? -1) >= 0);
 
     const second = (await (
       await fetch(`${baseUrl}/activity?limit=2&cursor=${first.nextCursor}`, {
@@ -108,9 +121,20 @@ test("GET /activity lists durable scoped semantic operations without persisting 
     ).json()) as ActivityPage;
     assert.deepEqual(
       second.items.map((item) => item.requestId),
-      ["request-0"],
+      ["request-1", "request-1"],
     );
-    assert.equal(second.nextCursor, undefined);
+    assert.ok(second.nextCursor);
+
+    const third = (await (
+      await fetch(`${baseUrl}/activity?limit=2&cursor=${second.nextCursor}`, {
+        headers: scopeHeaders("project-a"),
+      })
+    ).json()) as ActivityPage;
+    assert.deepEqual(
+      third.items.map((item) => item.requestId),
+      ["request-0", "request-0"],
+    );
+    assert.equal(third.nextCursor, undefined);
 
     const otherProject = (await (
       await fetch(`${baseUrl}/activity`, { headers: scopeHeaders("project-b") })
@@ -139,7 +163,7 @@ test("GET /activity lists durable scoped semantic operations without persisting 
     const afterRestart = (await (
       await fetch(`${baseUrl}/activity`, { headers: scopeHeaders("project-a") })
     ).json()) as ActivityPage;
-    assert.equal(afterRestart.items.length, 3);
+    assert.equal(afterRestart.items.length, 6);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

@@ -66,7 +66,13 @@ export type AuthoringAction = {
 
 export type AuthoringInteraction =
   | { kind: "tap"; target: StepTarget; applied?: boolean }
-  | { kind: "type"; text: string; target?: StepTarget; applied?: boolean }
+  | {
+      kind: "type";
+      text: string;
+      target?: StepTarget;
+      mode?: "append" | "replace";
+      applied?: boolean;
+    }
   | {
       kind: "swipe";
       from: { x: number; y: number };
@@ -79,7 +85,7 @@ export type AuthoringInteraction =
   | { kind: "observe"; label?: string }
   | { kind: "screenshot"; label?: string }
   | { kind: "reusable"; recipeId: string; bindings?: Record<string, string> }
-  | { kind: "steps"; steps: RecipeStep[]; label?: string };
+  | { kind: "steps"; steps: RecipeStep[]; label?: string; applied?: boolean };
 
 export type AuthoringTakeRevision = {
   id: string;
@@ -180,6 +186,103 @@ export type CommitAuthoringSessionInput = AuthoringSessionRef & {
 
 export type AuthoringSessionResponse = { session: AuthoringSession };
 export type AuthoringSessionListResponse = { sessions: AuthoringSession[] };
+
+export type AuthoringSessionSummary = {
+  id: string;
+  actorId: string;
+  actorKind: "human" | "agent" | "system";
+  appMapId: string;
+  state: AuthoringSessionState;
+  target: AuthoringTarget;
+  sourceScreenId?: string;
+  committedConnectionId?: string;
+  error?: string;
+  take?: {
+    id: string;
+    state: AuthoringTake["state"];
+    revision: number;
+    actionCount: number;
+    evidenceCount: number;
+    actions: Array<{ id: string; label?: string; stepCount: number }>;
+    latestReplay?: {
+      id: string;
+      outcome: AuthoringReplayAttempt["outcome"];
+      takeRevision: number;
+      durationMs: number;
+      error?: string;
+    };
+  };
+};
+
+/** Progressive-disclosure representation for CLI and MCP mutations.
+ * Full revisions, semantic trees, and evidence stay available through the
+ * explicit session-get operation instead of being repeated after every tap. */
+export function summarizeAuthoringSession(session: AuthoringSession): AuthoringSessionSummary {
+  const take = session.take;
+  const revision = take?.revisions.find((item) => item.revision === take.currentRevision);
+  const replay = take?.replayAttempts.at(-1);
+  return {
+    id: session.id,
+    actorId: session.actorId,
+    actorKind: session.actorKind,
+    appMapId: session.appMapId,
+    state: session.state,
+    target: structuredClone(session.target),
+    ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
+    ...(session.committedConnectionId
+      ? { committedConnectionId: session.committedConnectionId }
+      : {}),
+    ...(session.error ? { error: session.error } : {}),
+    ...(take
+      ? {
+          take: {
+            id: take.id,
+            state: take.state,
+            revision: take.currentRevision,
+            actionCount: revision?.actions.length ?? 0,
+            evidenceCount: revision?.evidence.length ?? 0,
+            actions: (revision?.actions ?? []).map((action) => ({
+              id: action.id,
+              ...(action.label ? { label: action.label } : {}),
+              stepCount: action.steps.length,
+            })),
+            ...(replay
+              ? {
+                  latestReplay: {
+                    id: replay.id,
+                    outcome: replay.outcome,
+                    takeRevision: replay.takeRevision,
+                    durationMs: Math.max(0, replay.finishedAt - replay.startedAt),
+                    ...(replay.error ? { error: replay.error } : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+export function summarizeAuthoringOperationResult(operationId: string, result: unknown): unknown {
+  if (operationId === "authoring.session.get") return result;
+  if (operationId === "authoring.session.list") {
+    try {
+      return {
+        sessions: parseAuthoringSessionListResponse(result).sessions.map(summarizeAuthoringSession),
+      };
+    } catch {
+      return result;
+    }
+  }
+  if (!operationId.startsWith("authoring.")) {
+    return result;
+  }
+  try {
+    return { session: summarizeAuthoringSession(parseAuthoringSessionResponse(result).session) };
+  } catch {
+    return result;
+  }
+}
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

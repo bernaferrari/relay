@@ -30,7 +30,12 @@ test("browser authoring observation stays on the explicit browser adapter path",
         bounds: { width: 1280, height: 800 },
         inspectable: true,
         source: "sdk",
-        screenIdentity: { schemaVersion: 1, fingerprint: "browser-screen" },
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "browser-screen",
+          nodes: [],
+          volatileSignals: [],
+        },
       };
     },
     async captureScreenshot(device) {
@@ -91,7 +96,12 @@ test("physical Apple authoring freezes visible evidence before inspecting the ru
         bounds: { width: 834, height: 1194 },
         inspectable: true,
         source: "sdk",
-        screenIdentity: { schemaVersion: 1, fingerprint: "ipad-screen" },
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "ipad-screen",
+          nodes: [],
+          volatileSignals: [],
+        },
       };
     },
     async captureScreenshot() {

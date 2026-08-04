@@ -197,6 +197,7 @@ export function targetNodeIndex(
 ): number {
   const hierarchy = targetHierarchy(evidence);
   const exact = hierarchy.findIndex((node) => {
+    if (target.identifier && node.identifier === target.identifier) return true;
     if (target.ref && node.ref === target.ref) return true;
     if (target.label && (node.label === target.label || node.value === target.label)) return true;
     if (target.text && (node.value === target.text || node.label === target.text)) return true;

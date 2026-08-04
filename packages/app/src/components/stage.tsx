@@ -570,6 +570,7 @@ export function DeviceStage(_props: {
   };
 
   function strategyLabel(strategy: PickStrategy): string {
+    if (strategy.kind === "identifier") return "Stable identifier";
     if (strategy.kind === "ref") return "Element reference";
     if (strategy.kind === "label") return "Accessibility label";
     if (strategy.kind === "text") return "Visible text";
@@ -577,6 +578,7 @@ export function DeviceStage(_props: {
   }
 
   function strategyValue(strategy: PickStrategy): string {
+    if (strategy.kind === "identifier") return strategy.identifier;
     if (strategy.kind === "ref") return strategy.ref;
     if (strategy.kind === "label") return strategy.label;
     if (strategy.kind === "text") return strategy.text;
@@ -633,13 +635,15 @@ export function DeviceStage(_props: {
       return;
     }
     const body =
-      strategy.kind === "ref"
-        ? ({ kind: "ref", ref: strategy.ref } as const)
-        : strategy.kind === "label"
-          ? ({ kind: "label", label: strategy.label } as const)
-          : strategy.kind === "text"
-            ? ({ kind: "text-match", match: strategy.text } as const)
-            : ({ kind: "point", x: strategy.x, y: strategy.y } as const);
+      strategy.kind === "identifier"
+        ? ({ kind: "identifier", identifier: strategy.identifier } as const)
+        : strategy.kind === "ref"
+          ? ({ kind: "ref", ref: strategy.ref } as const)
+          : strategy.kind === "label"
+            ? ({ kind: "label", label: strategy.label } as const)
+            : strategy.kind === "text"
+              ? ({ kind: "text-match", match: strategy.text } as const)
+              : ({ kind: "point", x: strategy.x, y: strategy.y } as const);
     let ok = await server.interactStep(body, `tap ${strategy.describe}`);
     // chosen strategy failed (likely no session) — fall back to a coordinate tap
     if (!ok && strategy.kind !== "point") {

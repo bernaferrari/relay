@@ -2,10 +2,12 @@ import type http from "node:http";
 import {
   AppMapDomainError,
   addAppMapScreen,
+  authoringSessions,
   approveAppMapProposal,
   attachAppMapCaseStack,
   connectAppMapScreens,
   commitAppMapChanges,
+  commitAppMapScreenCapture,
   createAppMap,
   currentOperationContext,
   deleteAppMap,
@@ -13,6 +15,7 @@ import {
   formatAppMapYaml,
   importAppMap,
   listAppMaps,
+  listDevices,
   mutateStoredAppMap,
   now,
   proposalFromDiscovery,
@@ -38,7 +41,9 @@ import {
   type AppMap,
   type AppMapMutationContext,
 } from "@relay/core";
-import type { OperationInput } from "@relay/protocol";
+import type { AuthoringSession, OperationInput, TargetProfile } from "@relay/protocol";
+import { assertTargetLease } from "./access-control.js";
+import { createAuthoringRuntime } from "./authoring-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -141,6 +146,40 @@ async function applyRebasableMutation(
     }
     throw error;
   }
+}
+
+function currentTakeRevision(session: AuthoringSession) {
+  const take = session.take;
+  return take?.revisions.find((revision) => revision.revision === take.currentRevision);
+}
+
+async function profileForCapture(
+  target: OperationInput<"app-map.screen.capture">["target"],
+  observedAt: number,
+): Promise<TargetProfile> {
+  if (target.kind === "device") {
+    const device = (await listDevices()).find((item) => item.serial === target.targetId);
+    return {
+      id: `device:${target.targetId}`,
+      targetId: target.targetId,
+      source: "device",
+      platform: target.platform,
+      name: device?.name?.trim() || target.targetId,
+      ...(device?.kind ? { model: device.kind } : {}),
+      ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
+      capabilities: ["snapshot", "screenshot"],
+      observedAt,
+    };
+  }
+  return {
+    id: `browser:${target.targetId}`,
+    targetId: target.targetId,
+    source: "browser",
+    platform: "browser",
+    name: target.targetId,
+    capabilities: ["snapshot", "screenshot"],
+    observedAt,
+  };
 }
 
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
@@ -293,6 +332,80 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       (map, context) => addAppMapScreen(map, body.input, context),
     );
     json(response, 200, { appMap });
+    return true;
+  }
+
+  const screenCapture = matchPath(pathname, "/app-maps/:appMapId/screens/capture");
+  if (method === "POST" && screenCapture) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.screen.capture">,
+      "appMapId"
+    >;
+    await assertTargetLease(scope, body.target.targetId, body.leaseId);
+    const current = await readAppMap(scope.projectId, screenCapture.appMapId!);
+    if (!current) throw new HttpError(404, `App Map ${screenCapture.appMapId} not found`);
+    if (current.revision !== body.expectedRevision) {
+      throw new HttpError(409, "App Map changed before the screen could be captured", {
+        code: "revision-conflict",
+        recovery: "Reload the App Map and retry against its current revision.",
+        current,
+      });
+    }
+
+    let session: AuthoringSession | undefined;
+    try {
+      session = await authoringSessions.create({
+        appMapId: current.id,
+        target: body.target,
+        leaseId: body.leaseId,
+        expectedAppMapRevision: body.expectedRevision,
+      });
+      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      const revision = currentTakeRevision(session);
+      if (!revision?.before) throw new HttpError(502, "The target returned no screen observation");
+      const profile = await profileForCapture(body.target, revision.before.capturedAt);
+      let capturedScreenId = "";
+      let capturedVariantId = "";
+      let created = false;
+      const appMap = await applyMutation(
+        scope,
+        current.id,
+        body.expectedRevision,
+        body.eventId,
+        (map, context) => {
+          const result = commitAppMapScreenCapture(
+            map,
+            {
+              target: body.target,
+              targetProfile: profile,
+              observation: revision.before!,
+              evidenceUrisById: Object.fromEntries(
+                revision.evidence.map((item) => [item.id, item.uri]),
+              ),
+              evidenceKindsById: Object.fromEntries(
+                revision.evidence.map((item) => [item.id, item.kind]),
+              ),
+              ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+              ...(body.position ? { position: body.position } : {}),
+            },
+            context,
+          );
+          capturedScreenId = result.screenId;
+          capturedVariantId = result.variantId;
+          created = result.created;
+          return result.appMap;
+        },
+      );
+      json(response, 200, {
+        appMapId: appMap.id,
+        appMapRevision: appMap.revision,
+        screen: appMap.screens[capturedScreenId],
+        variant: appMap.screenVariants[capturedVariantId],
+        created,
+      });
+    } finally {
+      if (session) await authoringSessions.cleanup(session.id).catch(() => undefined);
+    }
     return true;
   }
 

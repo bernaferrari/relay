@@ -1,4 +1,5 @@
 export type InteractiveStep =
+  | { kind: "identifier"; identifier: string }
   | { kind: "ref"; ref: string }
   | { kind: "label"; label: string }
   | { kind: "text-match"; match: string }
@@ -13,6 +14,8 @@ export type InteractiveStep =
 
 export function interactionBody(step: InteractiveStep): Record<string, unknown> {
   switch (step.kind) {
+    case "identifier":
+      return { kind: "identifier", identifier: step.identifier };
     case "ref":
       return { kind: "ref", ref: step.ref };
     case "label":

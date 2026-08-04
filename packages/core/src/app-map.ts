@@ -28,8 +28,13 @@ export {
 } from "./app-map/entity-operations.js";
 export { serializeAppMap } from "./app-map/serialization.js";
 export { proposalFromDiscovery } from "./app-map/observation-proposal.js";
-export { commitAppMapRecording } from "./app-map/recording-operations.js";
+export {
+  commitAppMapRecording,
+  commitAppMapScreenCapture,
+} from "./app-map/recording-operations.js";
 export type {
   AppMapRecordingInput,
   AppMapRecordingResult,
+  AppMapScreenCaptureInput,
+  AppMapScreenCaptureResult,
 } from "./app-map/recording-operations.js";

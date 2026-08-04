@@ -34,8 +34,15 @@ function relativeDifference(a: number, b: number): number {
 }
 
 function dimensionsMatch(a: CompanionDimensions, b: CompanionDimensions): boolean {
+  // Screenshots are pixels while XCTest geometry is points (commonly 2× or
+  // 3×). Orientation depends on shape, so accept a consistent display scale
+  // instead of requiring both coordinate systems to use identical units.
+  const widthScale = a.width / b.width;
+  const heightScale = a.height / b.height;
   return (
-    relativeDifference(a.width, b.width) <= 0.08 && relativeDifference(a.height, b.height) <= 0.08
+    VALID_DIMENSION(widthScale) &&
+    VALID_DIMENSION(heightScale) &&
+    relativeDifference(widthScale, heightScale) <= 0.08
   );
 }
 

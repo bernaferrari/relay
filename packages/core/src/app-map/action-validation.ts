@@ -29,11 +29,12 @@ function assertPoint(value: StepPoint, label: string): void {
 
 function assertTarget(value: StepTarget, label: string): void {
   objectValue(value, label);
+  optionalText(value.identifier, `${label}.identifier`);
   optionalText(value.ref, `${label}.ref`);
   optionalText(value.label, `${label}.label`);
   optionalText(value.text, `${label}.text`);
   if (value.point) assertPoint(value.point, `${label}.point`);
-  if (!value.ref && !value.label && !value.text && !value.point) {
+  if (!value.identifier && !value.ref && !value.label && !value.text && !value.point) {
     appMapFail("invalid-map", `${label} must contain a semantic or coordinate target`);
   }
 }

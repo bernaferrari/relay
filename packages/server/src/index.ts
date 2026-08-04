@@ -162,7 +162,11 @@ import {
   serverOperationManifest,
 } from "./operations.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
-import { handleActivityRoute, recordOperationActivity } from "./activity-routes.js";
+import {
+  flushOperationActivity,
+  handleActivityRoute,
+  recordOperationActivity,
+} from "./activity-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import {
@@ -200,11 +204,23 @@ export type StartedServer = {
 function discoveryInteraction(input: InteractInput): {
   kind: "tap" | "type" | "scroll" | "back" | "manual";
   label?: string;
-  target?: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+  target?: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  };
   text?: string;
   direction?: "up" | "down";
 } {
   switch (input.kind) {
+    case "identifier":
+      return {
+        kind: "tap",
+        label: input.identifier,
+        target: { identifier: input.identifier },
+      };
     case "label":
       return { kind: "tap", label: input.label, target: { label: input.label } };
     case "ref":
@@ -365,7 +381,7 @@ async function handleRequest(
     }
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
-    if (operation) await recordOperationActivity({ operation, pathname, scope });
+    if (operation) await recordOperationActivity({ operation, pathname, scope, response: res });
     if (await handleAppMapRunRoute({ method, pathname, request: req, response: res, scope }))
       return;
     if (await handleAppMapRoute({ method, pathname, request: req, response: res, scope })) return;
@@ -1027,7 +1043,11 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/device-leases") {
-      json(res, 200, { leases: await listDeviceLeases(scope.projectId) });
+      const status = url.searchParams.get("status") ?? "active";
+      const leases = await listDeviceLeases(scope.projectId);
+      json(res, 200, {
+        leases: status === "all" ? leases : leases.filter((lease) => lease.status === "leased"),
+      });
       return;
     }
 
@@ -1905,12 +1925,14 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   return {
     port,
     host,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
         scheduler.close();
         sse.close();
         server.close((err) => (err ? reject(err) : resolve()));
-      }),
+      });
+      await flushOperationActivity();
+    },
   };
 }
 

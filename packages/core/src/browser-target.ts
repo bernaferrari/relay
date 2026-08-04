@@ -383,6 +383,25 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         }
         return { ok: true };
       },
+      fill: async (input: {
+        text: string;
+        ref?: string;
+        selector?: string;
+        x?: number;
+        y?: number;
+      }) => {
+        const page = await activePage(session);
+        if (input.ref || input.selector) {
+          await (await locatorFor(page, input)).fill(input.text);
+        } else if (input.x !== undefined && input.y !== undefined) {
+          await page.mouse.click(input.x, input.y);
+          await page.keyboard.press("ControlOrMeta+A");
+          await page.keyboard.insertText(input.text);
+        } else {
+          throw new Error("replace text requires a target");
+        }
+        return { ok: true };
+      },
       type: async (input: { text: string; ref?: string; selector?: string }) => {
         const page = await activePage(session);
         if (input.ref || input.selector) await (await locatorFor(page, input)).fill(input.text);

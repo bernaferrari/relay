@@ -47,6 +47,7 @@ test("global configuration uses CLI over environment over defaults", () => {
   assert.equal(fromEnvironment.config.connection.url, "https://env.example");
   assert.equal(fromEnvironment.config.connection.projectId, "env-project");
   assert.equal(fromEnvironment.config.connection.organizationId, "local");
+  assert.equal(fromEnvironment.config.timeoutMs, 120_000);
 });
 
 test("credential source reads a named environment variable and redacts its value", () => {

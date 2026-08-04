@@ -6,6 +6,8 @@ import {
   canvasEdgeGeometry,
   fitCanvasViewport,
   nextBranchPosition,
+  openCanvasViewport,
+  SCREEN_CARD_WIDTH,
 } from "./app-map-canvas-layout";
 
 const start: MapTreeNode = {
@@ -36,7 +38,7 @@ test("canvas geometry is total while a graph is mid-edit", () => {
       [start, settings],
       (node) => node,
     ).path,
-    /^M 180 190 C/,
+    new RegExp(`^M ${SCREEN_CARD_WIDTH} 117 C`),
   );
 });
 
@@ -57,15 +59,27 @@ test("fit includes content positioned left and above the world origin", () => {
   assert.ok(negative.y * view.scale + view.y >= 0);
 });
 
+test("opening a tall map keeps screen labels readable while Fit remains exact", () => {
+  const content = { left: 0, top: -630, width: 1104, height: 1576 };
+  const fitted = fitCanvasViewport({ width: 1440, height: 716 }, content);
+  const opened = openCanvasViewport({ width: 1440, height: 716 }, content);
+  assert.ok(fitted.scale < 0.55);
+  assert.equal(opened.scale, 0.55);
+  assert.ok(Number.isFinite(opened.x));
+  assert.ok(Number.isFinite(opened.y));
+});
+
 test("keyboard-created branches occupy the nearest open sibling row", () => {
   const source = { x: 0, y: 0 };
-  assert.deepEqual(nextBranchPosition(source, [source]), { x: 300, y: 0 });
-  assert.deepEqual(nextBranchPosition(source, [source, { x: 300, y: 0 }]), {
-    x: 300,
-    y: 390,
+  const branchX = 376;
+  const branchY = 252;
+  assert.deepEqual(nextBranchPosition(source, [source]), { x: branchX, y: 0 });
+  assert.deepEqual(nextBranchPosition(source, [source, { x: branchX, y: 0 }]), {
+    x: branchX,
+    y: branchY,
   });
-  assert.deepEqual(nextBranchPosition(source, [source, { x: 300, y: 0 }, { x: 300, y: 390 }]), {
-    x: 300,
-    y: -390,
-  });
+  assert.deepEqual(
+    nextBranchPosition(source, [source, { x: branchX, y: 0 }, { x: branchX, y: branchY }]),
+    { x: branchX, y: -branchY },
+  );
 });

@@ -3,7 +3,7 @@ import { UsageError } from "./errors.js";
 
 export type CliExclusionReason = "ui-only" | "internal" | "unsafe";
 
-export type CommandBehavior = "event-stream" | "job-watch" | "screenshot";
+export type CommandBehavior = "event-stream" | "job-start-watch" | "job-watch" | "screenshot";
 
 export type CommandArgumentHelp = {
   name: string;
@@ -163,6 +163,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "serial", type: "string", description: "Connected device serial" },
         { name: "app", type: "string", description: "App name, package, or bundle identifier" },
       ],
+      inputHelp: [
+        {
+          name: "relaunch",
+          type: "boolean",
+          description: "Terminate first for a clean launch; defaults to false",
+        },
+      ],
       examples: [
         "relay device launch emulator-5554 com.example.app",
         "relay device launch 00008110 Settings",
@@ -194,7 +201,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       inputHelp: [
         {
           name: "kind",
-          type: "label | point | ref | find | text-match | swipe | type",
+          type: "identifier | label | point | ref | find | text-match | swipe | type",
           required: true,
           description: "Semantic interaction kind",
         },
@@ -279,7 +286,25 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("device-pool.save", path("device-pool save")),
   mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
   mapped("target-worker.list", path("target worker list")),
-  mapped("lease.list", path("lease list")),
+  mapped(
+    "lease.list",
+    path(
+      "lease list",
+      [],
+      { status: "active" },
+      {
+        summary: "List active target leases",
+      },
+    ),
+    path(
+      "lease history",
+      [],
+      { status: "all" },
+      {
+        summary: "List active and historical target leases",
+      },
+    ),
+  ),
   mapped("lease.create", path("lease create")),
   mapped("lease.release", path("lease release", ["leaseId"])),
 
@@ -405,6 +430,38 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
+  mapped(
+    "app-map.screen.capture",
+    path("screen capture", ["appMapId"], undefined, {
+      summary: "Save the current target screen to an App Map",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: "Explicit device or browser target",
+        },
+        {
+          name: "leaseId",
+          type: "string",
+          required: true,
+          description: "Exclusive control lease for the target",
+        },
+        { name: "title", type: "string", description: "Optional title for a new screen" },
+        { name: "position", type: "{x,y}", description: "Optional initial canvas position" },
+      ],
+      examples: [
+        'relay screen capture onboarding --input \'{"expectedRevision":0,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>"}\'',
+      ],
+    }),
+  ),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
   mapped("app-map.connection.create", path("connect create", ["appMapId"])),
@@ -437,6 +494,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "platform", type: "android | ios", description: "Device platform" },
       ],
       examples: ['relay flow run checkout main --input \'{"serial":"emulator-5554"}\''],
+      behavior: "job-start-watch",
     }),
   ),
   mapped("app-map.routine.save", path("routine save", ["appMapId", "routineId"])),
@@ -476,6 +534,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           required: true,
           description: "Current map revision",
         },
+        {
+          name: "sourceScreenId",
+          type: "string",
+          description: "Mapped source screen when automatic matching is uncertain",
+        },
+        {
+          name: "pendingConnectionId",
+          type: "string",
+          description: "Existing connection this recording should complete",
+        },
+        {
+          name: "group",
+          type: "string",
+          description: "Optional visual Group for newly captured screens",
+        },
       ],
     }),
     path("proposal create", [], undefined, {
@@ -490,6 +563,52 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           required: true,
           description: "Current map revision",
         },
+        {
+          name: "sourceScreenId",
+          type: "string",
+          description: "Mapped source screen when automatic matching is uncertain",
+        },
+        {
+          name: "pendingConnectionId",
+          type: "string",
+          description: "Existing connection this proposal should complete",
+        },
+        {
+          name: "group",
+          type: "string",
+          description: "Optional visual Group for newly captured screens",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.begin",
+    path("session begin", [], undefined, {
+      summary: "Create a session, observe the target, and start recording",
+    }),
+    path("proposal begin", [], undefined, {
+      summary: "Begin a ready-to-record proposal in one operation",
+      inputHelp: [
+        { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
+        { name: "target", type: "object", required: true, description: "Device or browser target" },
+        { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
+        {
+          name: "expectedAppMapRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+        {
+          name: "sourceScreenId",
+          type: "string",
+          description: "Mapped source screen when automatic matching is uncertain",
+        },
+        {
+          name: "pendingConnectionId",
+          type: "string",
+          description: "Existing connection this proposal should complete",
+        },
+        { name: "group", type: "string", description: "Optional visual Group" },
       ],
     }),
   ),

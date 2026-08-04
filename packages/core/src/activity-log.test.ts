@@ -49,6 +49,10 @@ test("Activity history survives a new store instance with semantic attribution i
         beforeRevision: 4,
         afterRevision: 5,
         evidenceIds: ["screenshot-a", "screenshot-a", "video-a"],
+        outcome: "failed",
+        durationMs: 1_234,
+        statusCode: 422,
+        errorCode: "HTTP_422",
       },
       context,
     );
@@ -69,6 +73,10 @@ test("Activity history survives a new store instance with semantic attribution i
         beforeRevision: page.items[0]?.beforeRevision,
         afterRevision: page.items[0]?.afterRevision,
         evidenceIds: page.items[0]?.evidenceIds,
+        outcome: page.items[0]?.outcome,
+        durationMs: page.items[0]?.durationMs,
+        statusCode: page.items[0]?.statusCode,
+        errorCode: page.items[0]?.errorCode,
       },
       {
         actorId: "agent:indexer",
@@ -82,6 +90,10 @@ test("Activity history survives a new store instance with semantic attribution i
         beforeRevision: 4,
         afterRevision: 5,
         evidenceIds: ["screenshot-a", "video-a"],
+        outcome: "failed",
+        durationMs: 1_234,
+        statusCode: 422,
+        errorCode: "HTTP_422",
       },
     );
   } finally {

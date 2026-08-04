@@ -40,6 +40,14 @@ export type ActivityRecord = ActivityScope & {
   beforeRevision?: number;
   afterRevision?: number;
   evidenceIds?: string[];
+  /** Terminal operation outcome. Requested events intentionally omit it. */
+  outcome?: "succeeded" | "failed" | "cancelled";
+  /** Wall-clock duration from request acceptance to response completion. */
+  durationMs?: number;
+  /** HTTP is a transport detail, but its bounded status is safe and useful evidence. */
+  statusCode?: number;
+  /** Stable, non-sensitive recovery key such as HTTP_422 or CLIENT_DISCONNECTED. */
+  errorCode?: string;
 };
 
 export type AppendActivityInput = {
@@ -51,6 +59,10 @@ export type AppendActivityInput = {
   beforeRevision?: number;
   afterRevision?: number;
   evidenceIds?: readonly string[];
+  outcome?: ActivityRecord["outcome"];
+  durationMs?: number;
+  statusCode?: number;
+  errorCode?: string;
 };
 
 export type ListActivityInput = Partial<ActivityScope> & {
@@ -96,6 +108,14 @@ function boundedText(value: string, label: string, max = MAX_IDENTIFIER_LENGTH):
 }
 
 function revision(value: number | undefined, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function nonNegativeInteger(value: number | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`${label} must be a non-negative safe integer`);
@@ -165,7 +185,18 @@ function parseActivityRecord(value: unknown, scope: ActivityScope): ActivityReco
     (input.evidenceIds !== undefined &&
       (!Array.isArray(input.evidenceIds) ||
         input.evidenceIds.length > MAX_EVIDENCE_IDS ||
-        input.evidenceIds.some((item) => !isStoredText(item))))
+        input.evidenceIds.some((item) => !isStoredText(item)))) ||
+    (input.outcome !== undefined &&
+      input.outcome !== "succeeded" &&
+      input.outcome !== "failed" &&
+      input.outcome !== "cancelled") ||
+    (input.durationMs !== undefined &&
+      (!Number.isSafeInteger(input.durationMs) || input.durationMs < 0)) ||
+    (input.statusCode !== undefined &&
+      (!Number.isSafeInteger(input.statusCode) ||
+        input.statusCode < 100 ||
+        input.statusCode > 599)) ||
+    !isOptionalStoredText(input.errorCode)
   ) {
     return null;
   }
@@ -220,6 +251,12 @@ export class ActivityLog {
     const leaseId = optionalText(operation.leaseId, "leaseId");
     const beforeRevision = revision(input.beforeRevision, "beforeRevision");
     const afterRevision = revision(input.afterRevision, "afterRevision");
+    const durationMs = nonNegativeInteger(input.durationMs, "durationMs");
+    const statusCode = nonNegativeInteger(input.statusCode, "statusCode");
+    if (statusCode !== undefined && (statusCode < 100 || statusCode > 599)) {
+      throw new TypeError("statusCode must be between 100 and 599");
+    }
+    const errorCode = optionalText(input.errorCode, "errorCode");
     const record: ActivityRecord = {
       schemaVersion: 1,
       activityId: randomUUID(),
@@ -241,6 +278,10 @@ export class ActivityLog {
       ...(beforeRevision !== undefined ? { beforeRevision } : {}),
       ...(afterRevision !== undefined ? { afterRevision } : {}),
       ...(evidenceIds?.length ? { evidenceIds } : {}),
+      ...(input.outcome ? { outcome: input.outcome } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(statusCode !== undefined ? { statusCode } : {}),
+      ...(errorCode ? { errorCode } : {}),
     };
     if (!Number.isFinite(record.timestamp) || record.timestamp < 0) {
       throw new TypeError("timestamp must be a non-negative finite number");

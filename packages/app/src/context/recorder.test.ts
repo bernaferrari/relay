@@ -53,7 +53,7 @@ test("physical iOS prefers a uniquely hittable element reference", () => {
   );
 });
 
-test("resource identifiers are not recorded as accessibility labels", () => {
+test("resource identifiers are recorded as stable targets, not accessibility labels", () => {
   assert.deepEqual(
     buildTapTarget(
       { width: 100, height: 200 },
@@ -62,6 +62,7 @@ test("resource identifiers are not recorded as accessibility labels", () => {
       0.5,
     ),
     {
+      identifier: "com.example:id/random_42",
       ref: "@e9",
       point: {
         x: 25,
@@ -136,6 +137,32 @@ test("remote authoring activity is visible without replacing local App Map or Ta
   );
   assert.equal(projected?.id, "remote");
   assert.equal(selectedTarget, "device-a");
+});
+
+test("a collaborator's stopped Take never replaces the local canvas", () => {
+  const remote = {
+    schemaVersion: 1,
+    id: "remote-review",
+    organizationId: "local",
+    projectId: "default",
+    actorId: "agent:indexer",
+    actorKind: "agent",
+    appMapId: "map-a",
+    state: "reviewing",
+    target: { kind: "device", platform: "android", targetId: "device-a" },
+    leaseId: "lease-remote",
+    expectedAppMapRevision: 1,
+    createdAt: 1,
+    updatedAt: 2,
+  } satisfies AuthoringSession;
+  assert.equal(
+    selectProjectedAuthoringSession([remote], {
+      appMapId: "map-a",
+      targetId: "device-a",
+      actorId: "human:me",
+    }),
+    null,
+  );
 });
 
 test("a failed authoring attempt does not remain the active recorder", () => {

@@ -55,7 +55,7 @@ function targetFrom(step: RecipeStep): StepTarget {
 }
 
 function hasTarget(target: StepTarget): boolean {
-  return Boolean(target.ref || target.label || target.text || target.point);
+  return Boolean(target.identifier || target.ref || target.label || target.text || target.point);
 }
 
 function swipePoints(
@@ -116,10 +116,13 @@ export function convertStepAction(step: RecipeStep, kind: EditableActionKind): R
         kind,
         text: step.kind === "type" ? step.text : "",
         ...(hasTarget(target) ? { target } : {}),
+        ...(step.kind === "type" && step.mode ? { mode: step.mode } : {}),
         ...withMetadata,
       };
     case "expect":
       return { kind, target, condition: "visible", ...withMetadata };
+    case "expect-set":
+      return { kind, identifierPrefix: "", labels: [], ...withMetadata };
     case "wait-for":
       return { kind, target, timeoutMs: 5_000, ...withMetadata };
     case "sleep":

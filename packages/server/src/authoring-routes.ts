@@ -6,8 +6,10 @@ import {
   captureScreenshot,
   captureSnapshot,
   createDevice,
+  describeRecipeStep,
   getBrowserDevice,
   listDevices,
+  normalizeScreenshotToBounds,
   observeVisualScreenFingerprint,
   runRecipeStep,
   runWithTargetContext,
@@ -107,7 +109,10 @@ export async function captureAuthoringObservation(
             dependencies.captureSnapshot(device),
             dependencies.captureScreenshot(device),
           ]);
-    const screenshotBytes = Buffer.from(screenshot.base64, "base64");
+    const screenshotBytes = normalizeScreenshotToBounds(
+      Buffer.from(screenshot.base64, "base64"),
+      snapshot.bounds,
+    );
     // Authoring always has a screenshot, while native semantics can disappear
     // between two captures on real devices (notably Samsung Settings and
     // custom-rendered apps). Keep one identity modality for the whole Take so
@@ -137,6 +142,7 @@ function executableInteraction(interaction: AuthoringInteraction): RecipeStep[] 
           kind: "type",
           text: interaction.text,
           ...(interaction.target ? { target: structuredClone(interaction.target) } : {}),
+          ...(interaction.mode ? { mode: interaction.mode } : {}),
         },
       ];
     case "swipe":
@@ -155,20 +161,30 @@ function executableInteraction(interaction: AuthoringInteraction): RecipeStep[] 
     case "observe":
     case "screenshot":
     case "reusable":
-    case "steps":
       return [];
+    case "steps":
+      return structuredClone(interaction.steps);
   }
 }
 
-function runtime(): AuthoringRuntime {
+export function createAuthoringRuntime(): AuthoringRuntime {
   const executeSteps = async (session: AuthoringSession, steps: RecipeStep[]) => {
     const device = await deviceFor(session);
+    const variables: Record<string, string> = {};
+    const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
     await runWithTargetContext(targetContext(session.target), async () => {
-      for (const step of steps) {
+      for (const [index, step] of steps.entries()) {
         if (step.kind === "pause") {
           throw new Error("Pause steps cannot execute inside a Take replay");
         }
-        await runRecipeStep(device, step, { log: () => undefined });
+        try {
+          await runRecipeStep(device, step, { log: () => undefined, variables, artifacts });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Step ${index + 1} (${describeRecipeStep(step)}): ${message}`, {
+            cause: error,
+          });
+        }
       }
     });
   };
@@ -275,6 +291,22 @@ export async function handleAuthoringRoute(input: {
       json(response, 201, { session: await authoringSessions.create(value) });
       return true;
     }
+    if (method === "POST" && pathname === "/authoring-sessions/begin") {
+      const value = await body<CreateAuthoringSessionInput>(request);
+      await assertTargetLease(scope, value.target.targetId, value.leaseId);
+      const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
+      const created = await authoringSessions.create(value);
+      try {
+        await authoringSessions.observe(created.id, authoringRuntime);
+        json(response, 201, {
+          session: await authoringSessions.start(created.id, authoringRuntime),
+        });
+      } catch (error) {
+        await authoringSessions.cancel(created.id, authoringRuntime).catch(() => undefined);
+        throw error;
+      }
+      return true;
+    }
 
     const sessionMatch = matchPath(pathname, "/authoring-sessions/:sessionId");
     if (method === "GET" && sessionMatch) {
@@ -297,7 +329,7 @@ export async function handleAuthoringRoute(input: {
     } else {
       await authoringSessions.get(sessionId);
     }
-    const authoringRuntime = input.authoringRuntime ?? runtime();
+    const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
     if (action === "observe") {
       await body(request);
       json(response, 200, {
@@ -341,7 +373,24 @@ export async function handleAuthoringRoute(input: {
     }
     if (action === "replay") {
       await body(request);
-      json(response, 200, { session: await authoringSessions.replay(sessionId, authoringRuntime) });
+      const session = await authoringSessions.replay(sessionId, authoringRuntime);
+      const attempt = session.take?.replayAttempts.at(-1);
+      if (attempt?.outcome === "failed") {
+        throw new HttpError(422, attempt.error ?? "Proposal replay failed", {
+          code: "REPLAY_FAILED",
+          sessionId,
+          replayId: attempt.id,
+          recovery: "Return the target to the recorded source screen, then replay again.",
+        });
+      }
+      if (attempt?.outcome === "cancelled") {
+        throw new HttpError(409, "Proposal replay was cancelled", {
+          code: "REPLAY_CANCELLED",
+          sessionId,
+          replayId: attempt.id,
+        });
+      }
+      json(response, 200, { session });
       return true;
     }
     if (action === "commit") {

@@ -1,5 +1,10 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from "node:url";
+import {
+  summarizeAppMapOperationResult,
+  summarizeAuthoringOperationResult,
+  summarizeExecutionOperationResult,
+} from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
 import { classifyError, ExitCode } from "./errors.js";
@@ -80,10 +85,31 @@ async function watchJob(
     const result = await invokeOperation(client, operationId, input, signal);
     if (signal.aborted) throw abortError();
     const status = jobStatus(result);
-    output.snapshot(operationId, result);
+    output.snapshot(operationId, summarizeExecutionOperationResult(operationId, result));
     if (terminalJobStatuses.has(status)) return result;
     await waitForPoll(pollIntervalMs, signal);
   }
+}
+
+function startedJobId(response: unknown): string {
+  if (!response || typeof response !== "object" || !("job" in response)) {
+    throw new Error("Malformed execution response: expected { job: { id: string } }");
+  }
+  const job = response.job;
+  if (!job || typeof job !== "object" || !("id" in job) || typeof job.id !== "string") {
+    throw new Error("Malformed execution response: expected { job: { id: string } }");
+  }
+  return job.id;
+}
+
+function summarizeResult(operationId: string, result: unknown): unknown {
+  return summarizeExecutionOperationResult(
+    operationId,
+    summarizeAppMapOperationResult(
+      operationId,
+      summarizeAuthoringOperationResult(operationId, result),
+    ),
+  );
 }
 
 function fallbackMode(argv: readonly string[]): OutputMode {
@@ -134,14 +160,27 @@ export async function runCli(
           output,
           dependencies.pollIntervalMs ?? 250,
         );
-        output.result(operationId, result);
+        output.result(operationId, summarizeResult(operationId, result));
+      } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
+        output.progress(operationId, "invoking");
+        const started = await invokeOperation(client, operationId, parsed.input, abort.signal);
+        output.snapshot(operationId, summarizeResult(operationId, started));
+        const result = await watchJob(
+          client,
+          "job.get",
+          { jobId: startedJobId(started) },
+          abort.signal,
+          output,
+          dependencies.pollIntervalMs ?? 250,
+        );
+        output.result(operationId, summarizeResult("job.get", result));
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
         } else {
-          output.result(operationId, result);
+          output.result(operationId, summarizeResult(operationId, result));
         }
       }
       return ExitCode.success;

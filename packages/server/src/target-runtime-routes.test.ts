@@ -184,6 +184,12 @@ test("launches an arbitrary app through the leased target session", async () => 
     },
   });
   try {
+    const defaultResponse = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "Grok" }),
+    });
+    assert.equal(defaultResponse.status, 200);
     const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
       method: "POST",
       headers: headers("target.app.launch"),
@@ -191,6 +197,7 @@ test("launches an arbitrary app through the leased target session", async () => 
     });
     assert.equal(response.status, 200);
     assert.deepEqual(launched, [
+      { serial: "ipad-1", platform: "ios", app: "Grok", relaunch: false },
       { serial: "ipad-1", platform: "ios", app: "Settings", relaunch: false },
     ]);
     const body = (await response.json()) as {

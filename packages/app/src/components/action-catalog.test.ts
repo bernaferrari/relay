@@ -10,6 +10,7 @@ const expectedKinds: RecipeStep["kind"][] = [
   "swipe",
   "key",
   "expect",
+  "expect-set",
   "wait-for",
   "sleep",
   "pause",

@@ -9,6 +9,7 @@ import {
   type AuthoringInteraction,
   type AuthoringSessionListResponse,
   type AuthoringSessionResponse,
+  type AuthoringTarget,
   type CommitAuthoringSessionInput,
   type CreateAuthoringSessionInput,
   type ReorderAuthoringTakeInput,
@@ -28,6 +29,8 @@ import type {
   MapGroup,
   Proposal,
   Routine,
+  Screen,
+  ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
 import type {
@@ -432,6 +435,24 @@ type SpecificOperationMap = {
     input: { appMapId: string; expectedRevision: number; eventId?: string; input: AddScreenInput };
     output: { appMap: AppMap };
   };
+  "app-map.screen.capture": {
+    input: {
+      appMapId: string;
+      expectedRevision: number;
+      eventId?: string;
+      target: AuthoringTarget;
+      leaseId: string;
+      title?: string;
+      position?: { x: number; y: number };
+    };
+    output: {
+      appMapId: string;
+      appMapRevision: number;
+      screen: Screen;
+      variant: ScreenVariant;
+      created: boolean;
+    };
+  };
   "app-map.screen.update": {
     input: {
       appMapId: string;
@@ -613,6 +634,10 @@ type SpecificOperationMap = {
     input: CreateAuthoringSessionInput;
     output: AuthoringSessionResponse;
   };
+  "authoring.session.begin": {
+    input: CreateAuthoringSessionInput;
+    output: AuthoringSessionResponse;
+  };
   "authoring.session.observe": {
     input: { sessionId: string };
     output: AuthoringSessionResponse;
@@ -701,7 +726,10 @@ type SpecificOperationMap = {
     input: Record<string, never>;
     output: { workers: TargetWorkerStatus[] };
   };
-  "lease.list": { input: Record<string, never>; output: { leases: DeviceLeaseDto[] } };
+  "lease.list": {
+    input: { status?: "active" | "all" };
+    output: { leases: DeviceLeaseDto[] };
+  };
   "lease.create": {
     input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "expiresAt">;
     output: { lease: DeviceLeaseDto };
@@ -917,6 +945,15 @@ const runListInputParser = objectParser<OperationInput<"run.list">>("run list in
   }
   if (input.appMapId !== undefined) string(input.appMapId, "run list App Map id");
 });
+
+const leaseListInputParser = objectParser<OperationInput<"lease.list">>(
+  "lease list input",
+  (input) => {
+    if (input.status !== undefined && input.status !== "active" && input.status !== "all") {
+      fail("lease list status", "must be active or all");
+    }
+  },
+);
 
 const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) => {
   string(input.jobId, "job id");
@@ -1204,6 +1241,45 @@ function appMapMutationParser<Id extends OperationId>(
 
 const appMapOutputParser = objectFieldParser<{ appMap: AppMap }>("App Map response", "appMap");
 
+const appMapScreenCaptureParser = objectParser<OperationInput<"app-map.screen.capture">>(
+  "App Map screen capture",
+  (input) => {
+    string(input.appMapId, "App Map screen capture appMapId");
+    number(input.expectedRevision, "App Map screen capture expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "App Map screen capture eventId");
+    string(input.leaseId, "App Map screen capture leaseId");
+    const target = record(input.target, "App Map screen capture target");
+    if (target.kind !== "device" && target.kind !== "browser") {
+      fail("App Map screen capture target kind", "must be device or browser");
+    }
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      fail("App Map screen capture target platform", "must be android, ios, or browser");
+    }
+    string(target.targetId, "App Map screen capture targetId");
+    if (input.title !== undefined) string(input.title, "App Map screen capture title");
+    if (input.position !== undefined) {
+      const position = record(input.position, "App Map screen capture position");
+      number(position.x, "App Map screen capture position x");
+      number(position.y, "App Map screen capture position y");
+    }
+  },
+);
+
+const appMapScreenCaptureOutputParser = objectParser<OperationOutput<"app-map.screen.capture">>(
+  "App Map screen capture response",
+  (output) => {
+    string(output.appMapId, "App Map screen capture response appMapId");
+    number(output.appMapRevision, "App Map screen capture response revision");
+    record(output.screen, "App Map screen capture response screen");
+    record(output.variant, "App Map screen capture response variant");
+    boolean(output.created, "App Map screen capture response created");
+  },
+);
+
 const observationProposalInputParser = objectParser<OperationInput<"app-map.observations.propose">>(
   "observation proposal",
   (input) => {
@@ -1452,6 +1528,10 @@ const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
     if (number(input.expectedAppMapRevision, "expectedAppMapRevision") < 0) {
       fail("expectedAppMapRevision", "must be non-negative");
     }
+    if (input.sourceScreenId !== undefined) string(input.sourceScreenId, "sourceScreenId");
+    if (input.pendingConnectionId !== undefined)
+      string(input.pendingConnectionId, "pendingConnectionId");
+    if (input.group !== undefined) string(input.group, "group");
   },
 );
 
@@ -1467,6 +1547,14 @@ function assertAuthoringInteraction(value: unknown): void {
     case "type":
       string(interaction.text, "type text");
       if (interaction.target !== undefined) record(interaction.target, "type target");
+      if (
+        interaction.mode !== undefined &&
+        interaction.mode !== "append" &&
+        interaction.mode !== "replace"
+      )
+        fail("type mode", "must be append or replace");
+      if (interaction.mode === "replace" && interaction.target === undefined)
+        fail("type target", "is required in replace mode");
       return;
     case "swipe":
       record(interaction.from, "swipe from");
@@ -1832,7 +1920,7 @@ export const operationDefinitions = [
     ),
   }),
   query("lease.list", "List target leases", "/device-leases", {
-    input: emptyInputParser,
+    input: leaseListInputParser,
     output: arrayFieldParser("leases response", "leases"),
   }),
   command("lease.create", "Lease target", "POST", "/device-leases", {
@@ -1981,6 +2069,19 @@ export const operationDefinitions = [
     input: appMapMutationParser<"app-map.screen.add">("screen addition", "input"),
     output: appMapOutputParser,
   }),
+  command(
+    "app-map.screen.capture",
+    "Capture current target as an App Map screen",
+    "POST",
+    "/app-maps/:appMapId/screens/capture",
+    {
+      category: "authoring",
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+      input: appMapScreenCaptureParser,
+      output: appMapScreenCaptureOutputParser,
+    },
+  ),
   command(
     "app-map.screen.update",
     "Update App Map screen",
@@ -2226,6 +2327,19 @@ export const operationDefinitions = [
     targetCapabilities: ["snapshot", "screenshot"],
     lease: "exclusive",
   }),
+  command(
+    "authoring.session.begin",
+    "Create and Start Authoring Take",
+    "POST",
+    "/authoring-sessions/begin",
+    {
+      category: "authoring",
+      input: createAuthoringSessionParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+    },
+  ),
   command(
     "authoring.session.observe",
     "Observe Authoring Target",

@@ -41,9 +41,6 @@ import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readines
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
-import { addCanvasStartScreen, emptyCanvasGraph } from "../lib/app-map-canvas-graph";
-import { planAppMapProjection } from "../lib/app-map-projection";
-import { screenVariantForCapture } from "../lib/app-map-capture";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -443,26 +440,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     try {
       const title = nextUntitledMapTitle(server.appMaps());
       createdMap = await server.createAppMap(crypto.randomUUID(), title);
-      const captured = await recorder.captureStartScreen(createdMap.id);
+      const captured = await recorder.captureMapScreen(createdMap.id, { title: "Start" });
       if (!captured) throw new Error("Relay could not capture the current screen");
-
-      const added = addCanvasStartScreen(emptyCanvasGraph(), captured.observation);
-      const variant = screenVariantForCapture(added.screen.id, captured);
-      const changes = planAppMapProjection({
-        appMap: createdMap,
-        graph: added.graph,
-        positions: {},
-        recipeSteps: [],
-        variantsByScreen: { [added.screen.id]: [variant] },
-      });
-      const committed = await server.runAction("app-map.commit", {
-        appMapId: createdMap.id,
-        expectedRevision: createdMap.revision,
-        summary: "Captured the first screen",
-        changes,
-      });
       await server.refreshAppMaps();
-      server.setSelectedAppMapId(committed.appMap.id);
+      server.setSelectedAppMapId(captured.appMap.id);
       setArea("tests");
       setStudioView("map");
       setSettingsOpen(false);

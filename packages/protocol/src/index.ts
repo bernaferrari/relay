@@ -4,6 +4,7 @@ export * from "./coordination.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
+export * from "./execution-summary.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
 import type { RecipeStep } from "./recipes.js";
@@ -617,7 +618,13 @@ export type DiscoveryControl = {
   id: string;
   label: string;
   role?: string;
-  target: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+  target: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  };
 };
 
 /** Cross-profile coverage for an intentionally shared Discovery Map name. */
@@ -645,7 +652,13 @@ export type ObservedTransition = {
   toScreenId?: string;
   kind: "tap" | "type" | "scroll" | "back" | "manual";
   label?: string;
-  target?: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+  target?: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  };
   text?: string;
   direction?: "up" | "down";
   capturedAt: number;

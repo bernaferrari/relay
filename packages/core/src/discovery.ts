@@ -178,17 +178,19 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
   return nodes
     .filter(
       (node) =>
-        node.visibleToUser !== false && node.enabled !== false && (node.hittable || node.ref),
+        node.visibleToUser !== false &&
+        node.enabled !== false &&
+        (node.hittable || node.identifier || node.ref),
     )
     .flatMap((node, index) => {
       const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
       if (!label || unsafeControlText(label)) return [];
-      const target = node.ref
-        ? { ref: node.ref }
-        : node.label
-          ? { label: node.label }
-          : node.identifier
-            ? { text: node.identifier }
+      const target = node.identifier
+        ? { identifier: node.identifier }
+        : node.ref
+          ? { ref: node.ref }
+          : node.label
+            ? { label: node.label }
             : undefined;
       if (!target) return [];
       const key = JSON.stringify(target);

@@ -165,6 +165,7 @@ export function shortLabel(n: SnapshotNode | null | undefined): string {
 
 /** Strategy option the picker offers for a node. */
 export type PickStrategy =
+  | { id: "identifier"; kind: "identifier"; identifier: string; describe: string }
   | { id: "ref"; kind: "ref"; ref: string; describe: string }
   | { id: "label"; kind: "label"; label: string; describe: string }
   | { id: "text"; kind: "text"; text: string; describe: string }
@@ -198,6 +199,14 @@ export function strategiesFor(
   const x = Math.round(fx * w);
   const y = Math.round(fy * h);
 
+  if (node?.identifier) {
+    out.push({
+      id: "identifier",
+      kind: "identifier",
+      identifier: node.identifier,
+      describe: `ID ${node.identifier}`,
+    });
+  }
   if (node?.ref) {
     const ref = node.ref.startsWith("@") ? node.ref : `@${node.ref}`;
     out.push({ id: "ref", kind: "ref", ref, describe: ref });
@@ -250,6 +259,8 @@ export function targetFromStrategy(
     ...(bounds ? { referenceBounds: { ...bounds } } : {}),
   };
   switch (strategy.kind) {
+    case "identifier":
+      return { identifier: strategy.identifier, point };
     case "ref":
       return { ref: strategy.ref, point };
     case "label":

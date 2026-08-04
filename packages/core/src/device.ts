@@ -68,6 +68,7 @@ export type Device = {
     longPress: (
       options: Parameters<NativeDevice["interactions"]["longPress"]>[0],
     ) => Promise<unknown>;
+    fill: (options: Parameters<NativeDevice["interactions"]["fill"]>[0]) => Promise<unknown>;
     type: (options: Parameters<NativeDevice["interactions"]["type"]>[0]) => Promise<unknown>;
     find: (options: Parameters<NativeDevice["interactions"]["find"]>[0]) => Promise<unknown>;
     scroll: (options: Parameters<NativeDevice["interactions"]["scroll"]>[0]) => Promise<unknown>;
@@ -141,6 +142,8 @@ export type SnapshotNode = {
   index?: number;
   depth?: number;
   parentIndex?: number;
+  /** Owning Android package when the provider exposes multi-window nodes. */
+  bundleId?: string;
 };
 
 // One client per explicit target preserves SDK session reuse without binding
@@ -307,25 +310,69 @@ export async function openUrl(device: Device, url: string): Promise<void> {
   await sleep(2500, device);
 }
 
-export async function pressLabel(device: Device, label: string): Promise<void> {
+export type RepeatedPress = {
+  count?: number;
+  intervalMs?: number;
+  doubleTap?: boolean;
+};
+
+export async function pressLabel(
+  device: Device,
+  label: string,
+  repeated?: RepeatedPress,
+): Promise<void> {
   await controlled(() =>
     device.interactions.press({
       ...base(),
       selector: `label="${label}"`,
+      ...repeated,
     }),
   );
 }
 
-export async function pressPoint(device: Device, x: number, y: number): Promise<void> {
-  await controlled(() => device.interactions.press({ ...base(), x, y }));
+export async function pressIdentifier(
+  device: Device,
+  identifier: string,
+  repeated?: RepeatedPress,
+): Promise<void> {
+  await controlled(() =>
+    device.interactions.press({
+      ...base(),
+      selector: `id="${identifier.replaceAll('"', '\\"')}"`,
+      ...repeated,
+    }),
+  );
+}
+
+export async function pressPoint(
+  device: Device,
+  x: number,
+  y: number,
+  repeated?: RepeatedPress,
+): Promise<void> {
+  await controlled(() => device.interactions.press({ ...base(), x, y, ...repeated }));
 }
 
 export async function longPressTarget(
   device: Device,
-  target: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } },
+  target: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  },
   durationMs = 700,
 ): Promise<void> {
-  if (target.ref) {
+  if (target.identifier) {
+    await controlled(() =>
+      device.interactions.longPress({
+        ...base(),
+        selector: `id="${target.identifier!.replaceAll('"', '\\"')}"`,
+        durationMs,
+      }),
+    );
+  } else if (target.ref) {
     await controlled(() =>
       device.interactions.longPress({
         ...base(),
@@ -549,7 +596,150 @@ export async function swipeGesture(
   await controlled(() => device.interactions.swipe({ ...base(), from, to, durationMs }));
 }
 
+export type AndroidTextPasteAdapter = {
+  readClipboard: () => Promise<string>;
+  writeClipboard: (text: string) => Promise<void>;
+  paste: () => Promise<void>;
+};
+
+const ANDROID_IME_PACKAGES = new Set([
+  "com.google.android.inputmethod.latin",
+  "com.samsung.android.honeyboard",
+  "com.touchtype.swiftkey",
+  "com.microsoft.swiftkey",
+]);
+
+const ANDROID_SHELL_META = /[\\'"`$&;|<>()[\]{}*?!#~]/g;
+
+/** Escape one logical text payload for agent-device's adb-shell fallback.
+ * Spaces and line breaks remain logical here: agent-device owns their Android
+ * `%s` and Enter translation after this remote-shell safety layer. */
+export function escapeAndroidShellText(text: string): string {
+  return text.replace(ANDROID_SHELL_META, "\\$&");
+}
+
+/**
+ * Paste exact Android text without routing it through `adb shell input text`.
+ *
+ * Android's shell command cannot reliably represent quotes, Unicode, or newlines.
+ * The clipboard channel preserves the payload byte-for-byte; restoring the previous
+ * value keeps a Relay action from unexpectedly replacing the person's clipboard.
+ */
+export async function pasteAndroidText(
+  text: string,
+  adapter: AndroidTextPasteAdapter,
+): Promise<void> {
+  let previousClipboard: string | undefined;
+  try {
+    previousClipboard = await adapter.readClipboard();
+  } catch {
+    // Clipboard reads can be restricted while writes and paste remain available.
+  }
+
+  await adapter.writeClipboard(text);
+  try {
+    await adapter.paste();
+  } finally {
+    if (previousClipboard !== undefined) {
+      await adapter.writeClipboard(previousClipboard).catch(() => undefined);
+    }
+  }
+}
+
+/** Read the visible IME keys rather than guessing whether auto-capitalization
+ * is active. SwiftKey exposes shifted letter keys as "capital A", while
+ * common Android keyboards expose unshifted keys as one lowercase letter. */
+export function androidKeyboardShifted(nodes: SnapshotNode[]): boolean | undefined {
+  const labels = nodes
+    .filter((node) => {
+      const owner = node.bundleId?.toLowerCase();
+      const identifierOwner = node.identifier?.split(":id/")[0]?.toLowerCase();
+      return Boolean(
+        (owner && ANDROID_IME_PACKAGES.has(owner)) ||
+        (identifierOwner && ANDROID_IME_PACKAGES.has(identifierOwner)),
+      );
+    })
+    .map((node) => node.label?.trim())
+    .filter((label): label is string => Boolean(label));
+  if (labels.some((label) => /^capital [a-z]$/i.test(label))) return true;
+  if (labels.filter((label) => /^[a-z]$/.test(label)).length >= 8) return false;
+  return undefined;
+}
+
+function firstCasedCharacter(text: string): string | undefined {
+  return Array.from(text).find(
+    (character) => character.toLocaleLowerCase() !== character.toLocaleUpperCase(),
+  );
+}
+
+async function typeAndroidShellTextExactly(
+  device: Device,
+  serial: string,
+  text: string,
+): Promise<void> {
+  const lines = text.split("\n");
+  for (const [index, line] of lines.entries()) {
+    const firstCased = firstCasedCharacter(line);
+    if (firstCased && firstCased === firstCased.toLocaleLowerCase()) {
+      const shifted = await snapshot(device)
+        .then(androidKeyboardShifted)
+        .catch(() => undefined);
+      if (shifted) {
+        await raceCancel(
+          execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_SHIFT_LEFT"]),
+        );
+      }
+    }
+    if (line) {
+      await device.interactions.type({ ...base(), text: escapeAndroidShellText(line) });
+    }
+    if (index < lines.length - 1) {
+      await raceCancel(
+        execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"]),
+      );
+    }
+  }
+}
+
 export async function typeText(device: Device, text: string): Promise<void> {
+  if (selectedPlatform() === "android") {
+    // Test doubles and older agent-device clients may not expose clipboard
+    // control. Keep their deterministic fallback while production Android
+    // clients use paste so the IME cannot autocorrect or capitalize input.
+    if (typeof device.command.clipboard !== "function") {
+      await controlled(() =>
+        device.interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
+      );
+      return;
+    }
+    const serial = targetIdentity();
+    try {
+      await controlled(() =>
+        pasteAndroidText(text, {
+          readClipboard: async () => {
+            const result = await device.command.clipboard({ ...base(), action: "read" });
+            if (result.action !== "read") {
+              throw new Error("clipboard read returned an unexpected result");
+            }
+            return result.text;
+          },
+          writeClipboard: async (value) => {
+            await device.command.clipboard({ ...base(), action: "write", text: value });
+          },
+          paste: async () => {
+            await raceCancel(
+              execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+            );
+          },
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/clipboard .*not supported|unsupported.*clipboard/i.test(message)) throw error;
+      await controlled(() => typeAndroidShellTextExactly(device, serial, text));
+    }
+    return;
+  }
   await controlled(() => device.interactions.type({ ...base(), text }));
 }
 
@@ -561,9 +751,86 @@ export async function pressKey(device: Device, key: "back" | "home"): Promise<vo
   }
 }
 
-export async function pressRef(device: Device, ref: string): Promise<void> {
+export async function pressRef(
+  device: Device,
+  ref: string,
+  repeated?: RepeatedPress,
+): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
-  await controlled(() => device.interactions.press({ ...base(), ref: normalized }));
+  await controlled(() => device.interactions.press({ ...base(), ref: normalized, ...repeated }));
+}
+
+export async function pressText(
+  device: Device,
+  text: string,
+  repeated?: RepeatedPress,
+): Promise<void> {
+  await controlled(() =>
+    device.interactions.press({
+      ...base(),
+      selector: `label*="${text.replaceAll('"', '\\"')}"`,
+      ...repeated,
+    }),
+  );
+}
+
+export async function replaceText(
+  device: Device,
+  target: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  },
+  text: string,
+): Promise<void> {
+  const interactionTarget = target.identifier
+    ? { selector: `id="${target.identifier.replaceAll('"', '\\"')}"` }
+    : target.ref
+      ? { ref: target.ref.startsWith("@") ? target.ref : `@${target.ref}` }
+      : target.label
+        ? { selector: `label="${target.label.replaceAll('"', '\\"')}"` }
+        : target.text
+          ? { selector: `label*="${target.text.replaceAll('"', '\\"')}"` }
+          : target.point
+            ? { x: target.point.x, y: target.point.y }
+            : undefined;
+  if (!interactionTarget) throw new Error("replace text requires a target");
+  await replaceTextValue(text, {
+    fill: async (value) => {
+      await controlled(() =>
+        device.interactions.fill({ ...base(), ...interactionTarget, text: value }),
+      );
+    },
+    type: async (value) => {
+      await controlled(() => device.interactions.type({ ...base(), text: value }));
+    },
+  });
+}
+
+export type TextReplacementAdapter = {
+  fill: (text: string) => Promise<void>;
+  type: (text: string) => Promise<void>;
+};
+
+/**
+ * Replace a field even when the desired value is empty.
+ *
+ * agent-device deliberately rejects an empty fill at its public boundary.
+ * Replacing with one harmless character and deleting it uses the same native
+ * text events a person produces and avoids platform-specific select-all logic.
+ */
+export async function replaceTextValue(
+  text: string,
+  adapter: TextReplacementAdapter,
+): Promise<void> {
+  if (text.length > 0) {
+    await adapter.fill(text);
+    return;
+  }
+  await adapter.fill("x");
+  await adapter.type("\b");
 }
 
 export async function findClick(

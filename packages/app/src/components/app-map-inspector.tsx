@@ -73,17 +73,19 @@ function hasEditableTarget(step: RecipeStep): step is TargetStep {
 }
 
 function targetText(target: StepTarget): string {
-  return target.label ?? target.text ?? target.ref ?? "";
+  return target.label ?? target.text ?? target.identifier ?? target.ref ?? "";
 }
 
 function patchReadableTarget(target: StepTarget, value: string): StepTarget {
-  const key: "label" | "text" | "ref" = target.label
+  const key: "identifier" | "label" | "text" | "ref" = target.label
     ? "label"
     : target.text
       ? "text"
-      : target.ref
-        ? "ref"
-        : "label";
+      : target.identifier
+        ? "identifier"
+        : target.ref
+          ? "ref"
+          : "label";
   return { ...target, [key]: value };
 }
 
@@ -99,6 +101,7 @@ type TargetChoice = {
 };
 
 function targetValue(strategy: Strategy, target: StepTarget): string {
+  if (strategy === "identifier") return target.identifier ?? "";
   if (strategy === "label") return `“${target.label ?? ""}”`;
   if (strategy === "text") return `“${target.text ?? ""}”`;
   if (strategy === "ref") return target.ref ?? "";
@@ -107,6 +110,7 @@ function targetValue(strategy: Strategy, target: StepTarget): string {
 
 function targetMatches(strategy: Strategy, target: StepTarget, candidate: StepTarget): boolean {
   if (defaultStrategy(target) !== strategy) return false;
+  if (strategy === "identifier") return target.identifier === candidate.identifier;
   if (strategy === "label") return target.label === candidate.label;
   if (strategy === "text") return target.text === candidate.text;
   if (strategy === "ref") return target.ref === candidate.ref;
@@ -118,6 +122,7 @@ function choicesForTargetStep(
   node: RecordedNodeEvidence | undefined,
 ): TargetChoice[] {
   const title: Record<Exclude<Strategy, "point">, string> = {
+    identifier: "Stable identifier",
     label: "Accessibility label",
     text: "Visible text",
     ref: "UI element",
@@ -137,12 +142,18 @@ function choicesForTargetStep(
   if (node) {
     const label = (node.label ?? node.value ?? "").trim();
     const text = (node.value ?? "").trim();
+    if (node.identifier)
+      push("identifier", {
+        identifier: node.identifier,
+        ...(fallbackPoint ? { point: fallbackPoint } : {}),
+      });
     if (label) push("label", { label, ...(fallbackPoint ? { point: fallbackPoint } : {}) });
     if (text && text !== label)
       push("text", { text, ...(fallbackPoint ? { point: fallbackPoint } : {}) });
     if (node.ref)
       push("ref", { ref: node.ref, ...(fallbackPoint ? { point: fallbackPoint } : {}) });
   } else {
+    if (step.target.identifier) push("identifier", { ...step.target });
     if (step.target.label) push("label", { ...step.target });
     if (step.target.text) push("text", { ...step.target });
     if (step.target.ref) push("ref", { ...step.target });
@@ -163,7 +174,8 @@ function simpleField(step: RecipeStep): {
   value: string | number;
   number?: boolean;
 } {
-  if (step.kind === "type") return { label: "Text", value: step.text };
+  if (step.kind === "type")
+    return { label: step.mode === "replace" ? "Replace text" : "Text", value: step.text };
   if (step.kind === "sleep") return { label: "Seconds", value: step.ms / 1_000, number: true };
   if (step.kind === "screenshot") return { label: "Caption", value: step.caption ?? "" };
   if (step.kind === "pause") return { label: "Message", value: step.message };

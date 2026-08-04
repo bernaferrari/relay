@@ -82,6 +82,98 @@ test("stable semantics match across traversal order, whitespace, and hidden node
   assert.equal(first.nodes.find((node) => node.role === "textbox")?.identifier, "auth.email");
 });
 
+test("Android system chrome and keyboards do not redefine an application screen", () => {
+  const app = {
+    type: "android.widget.Button",
+    label: "Continue",
+    bundleId: "com.example.app",
+    visibleToUser: true,
+  };
+  const first = observe([
+    app,
+    {
+      type: "android.widget.TextView",
+      label: "09:41",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+    },
+    {
+      type: "android.widget.Button",
+      label: "Q",
+      bundleId: "com.touchtype.swiftkey",
+      visibleToUser: true,
+    },
+  ]);
+  const second = observe([
+    app,
+    {
+      type: "android.widget.TextView",
+      label: "18:22",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+    },
+  ]);
+
+  assert.equal(first.fingerprint, second.fingerprint);
+  assert.deepEqual(first.nodes, [{ role: "android.widget.button", label: "continue" }]);
+});
+
+test("iOS keyboard and input-assistant subtrees do not redefine an application screen", () => {
+  const app: SnapshotNode[] = [
+    {
+      index: 0,
+      depth: 0,
+      type: "Application",
+      label: "Grok",
+      visibleToUser: true,
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      depth: 1,
+      type: "TextView",
+      label: "New Message",
+      identifier: "ask.toolbar.textfield",
+      visibleToUser: true,
+    },
+  ];
+  const withKeyboard = observe([
+    ...app,
+    { index: 2, parentIndex: 0, depth: 1, type: "Other", visibleToUser: true },
+    {
+      index: 3,
+      parentIndex: 2,
+      depth: 2,
+      type: "Keyboard",
+      label: "Q",
+      visibleToUser: true,
+    },
+    { index: 4, parentIndex: 3, depth: 3, type: "Key", label: "Q", visibleToUser: true },
+    {
+      index: 5,
+      parentIndex: 0,
+      depth: 1,
+      type: "Other",
+      label: "Typing Predictions",
+      identifier: "SystemInputAssistantView",
+      visibleToUser: true,
+    },
+    {
+      index: 6,
+      parentIndex: 5,
+      depth: 2,
+      type: "Button",
+      label: "Paste",
+      identifier: "assistantPaste:forEvent:",
+      visibleToUser: true,
+    },
+  ]);
+  const withoutKeyboard = observe(app);
+
+  assert.equal(withKeyboard.fingerprint, withoutKeyboard.fingerprint);
+  assert.deepEqual(withKeyboard.nodes, withoutKeyboard.nodes);
+});
+
 test("volatile clocks, dates, percentages, counters, relative times, and UUIDs retain context", () => {
   const first = observe([
     { role: "text", label: "Updated at 09:41", visibleToUser: true },

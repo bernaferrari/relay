@@ -2,6 +2,7 @@ import type http from "node:http";
 import {
   ActivityCursorError,
   appendActivity,
+  currentOperationContext,
   listActivity,
   MAX_ACTIVITY_PAGE_SIZE,
 } from "@relay/core";
@@ -10,6 +11,24 @@ import { HttpError, json } from "./http.js";
 import type { RequestContext } from "./security.js";
 
 const DEFAULT_LIMIT = 50;
+const pendingOutcomeWrites = new Set<Promise<void>>();
+
+function trackOutcomeWrite(write: Promise<unknown>): void {
+  const tracked = write
+    .then(() => undefined)
+    .catch(() => undefined)
+    .finally(() => pendingOutcomeWrites.delete(tracked));
+  pendingOutcomeWrites.add(tracked);
+}
+
+/** Wait until terminal command outcomes are durable. Server shutdown uses this
+ * boundary so a finished response can never leave an activity write racing a
+ * workspace close, test cleanup, or process handoff. */
+export async function flushOperationActivity(): Promise<void> {
+  while (pendingOutcomeWrites.size) {
+    await Promise.all(pendingOutcomeWrites);
+  }
+}
 
 export type ActivityOperationRegistration = {
   id: string;
@@ -62,19 +81,60 @@ export async function recordOperationActivity(input: {
   operation: ActivityOperationRegistration;
   pathname: string;
   scope: RequestContext;
+  response: http.ServerResponse;
 }): Promise<void> {
   if (input.operation.definition.mode !== "command") return;
+  const operationContext = currentOperationContext();
+  if (!operationContext) return;
   const resource = semanticResource(
     input.operation.id,
     input.pathname,
     input.operation.path,
     input.scope.projectId,
   );
-  await appendActivity({
-    eventType: "operation.requested",
-    resourceKind: resource.kind,
-    resourceId: resource.id,
-    summary: input.operation.definition.label,
+  await appendActivity(
+    {
+      eventType: "operation.requested",
+      resourceKind: resource.kind,
+      resourceId: resource.id,
+      summary: input.operation.definition.label,
+    },
+    operationContext,
+  );
+
+  const startedAt = Date.now();
+  let settled = false;
+  const settle = (outcome: "succeeded" | "failed" | "cancelled", statusCode?: number) => {
+    if (settled) return;
+    settled = true;
+    const errorCode =
+      outcome === "cancelled"
+        ? "CLIENT_DISCONNECTED"
+        : outcome === "failed" && statusCode
+          ? `HTTP_${statusCode}`
+          : undefined;
+    trackOutcomeWrite(
+      appendActivity(
+        {
+          eventType: `operation.${outcome}`,
+          resourceKind: resource.kind,
+          resourceId: resource.id,
+          summary: `${input.operation.definition.label} ${outcome}`,
+          outcome,
+          durationMs: Math.max(0, Date.now() - startedAt),
+          ...(statusCode ? { statusCode } : {}),
+          ...(errorCode ? { errorCode } : {}),
+        },
+        operationContext,
+      ),
+    );
+  };
+  input.response.once("finish", () => {
+    const statusCode = input.response.statusCode;
+    settle(statusCode >= 400 ? "failed" : "succeeded", statusCode);
+  });
+  input.response.once("close", () => {
+    if (!input.response.writableFinished) settle("cancelled");
   });
 }
 

@@ -11,6 +11,7 @@ import { createMcpServer, type OperationInvoker } from "@relay/mcp";
 import type {
   AuthoringInteraction,
   AuthoringSession,
+  AuthoringSessionSummary,
   EventEnvelope,
   OperationId,
   RecipeStep,
@@ -392,29 +393,29 @@ test("MCP agent authors a transition observed by an app client", async () => {
     assert.equal((await observer.invoke("authoring.session.list", {})).sessions.length, 0);
     assert.equal(runtime.observations, 0);
 
-    const createdSession = relayResult<{ session: AuthoringSession }>(
+    const createdSession = relayResult<{ session: AuthoringSessionSummary }>(
       await callTool(mcp, "relay_authoring_session_create", createInput),
     );
     const sessionId = createdSession.session.id;
     assert.equal(createdSession.session.actorId, agentActorId);
     assert.equal(createdSession.session.actorKind, "agent");
 
-    const observed = relayResult<{ session: AuthoringSession }>(
+    const observed = relayResult<{ session: AuthoringSessionSummary }>(
       await callTool(mcp, "relay_authoring_session_observe", { sessionId }),
     );
     assert.equal(observed.session.state, "ready");
-    const started = relayResult<{ session: AuthoringSession }>(
+    const started = relayResult<{ session: AuthoringSessionSummary }>(
       await callTool(mcp, "relay_authoring_session_start", { sessionId }),
     );
     assert.equal(started.session.state, "recording");
-    const interacted = relayResult<{ session: AuthoringSession }>(
+    const interacted = relayResult<{ session: AuthoringSessionSummary }>(
       await callTool(mcp, "relay_authoring_session_interact", {
         sessionId,
         interaction: { kind: "key", key: "back" },
       }),
     );
-    assert.equal(interacted.session.take?.revisions.at(-1)?.actions.length, 1);
-    const stopped = relayResult<{ session: AuthoringSession }>(
+    assert.equal(interacted.session.take?.actionCount, 1);
+    const stopped = relayResult<{ session: AuthoringSessionSummary }>(
       await callTool(mcp, "relay_authoring_session_stop", { sessionId }),
     );
     assert.equal(stopped.session.state, "reviewing");

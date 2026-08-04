@@ -6,9 +6,10 @@
  */
 import type { StepTarget } from "./api-types";
 
-export type Strategy = "ref" | "label" | "text" | "point";
+export type Strategy = "identifier" | "ref" | "label" | "text" | "point";
 
 export const STRATEGIES: { id: Strategy; label: string; placeholder: string }[] = [
+  { id: "identifier", label: "Stable ID", placeholder: "e.g. chat_text_input" },
   { id: "ref", label: "Element @ref", placeholder: "e.g. @e26" },
   { id: "label", label: "Label", placeholder: "e.g. Sign in" },
   { id: "text", label: "Text", placeholder: "e.g. Welcome back" },
@@ -17,6 +18,7 @@ export const STRATEGIES: { id: Strategy; label: string; placeholder: string }[] 
 
 export function defaultStrategy(t: StepTarget | undefined): Strategy {
   if (!t) return "label";
+  if (t.identifier) return "identifier";
   if (t.ref) return "ref";
   if (t.label) return "label";
   if (t.text) return "text";
@@ -37,7 +39,7 @@ export function fmtPoint(p?: { x: number; y: number }): string {
 }
 
 export function targetValid(t: StepTarget | undefined): boolean {
-  return Boolean(t && (t.ref || t.label || t.text || t.point));
+  return Boolean(t && (t.identifier || t.ref || t.label || t.text || t.point));
 }
 
 /**
@@ -49,6 +51,7 @@ export function detectedChain(
 ): { id: Strategy; label: string; value: string }[] {
   if (!t) return [];
   const out: { id: Strategy; label: string; value: string }[] = [];
+  if (t.identifier) out.push({ id: "identifier", label: "Stable ID", value: t.identifier });
   if (t.ref) out.push({ id: "ref", label: "Ref", value: t.ref });
   if (t.label) out.push({ id: "label", label: "A11y label", value: `"${t.label}"` });
   if (t.text) out.push({ id: "text", label: "Text", value: `"${t.text}"` });

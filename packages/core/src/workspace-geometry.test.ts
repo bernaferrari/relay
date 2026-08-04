@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
 import {
   inferIosSnapshotGeometry,
   inferSnapshotBounds,
-  iosDriverPoint,
   normalizeIosSnapshotNodes,
+  normalizeScreenshotToBounds,
 } from "./workspace.js";
 
 test("uses the XCTest application root as the logical iPad viewport", () => {
@@ -33,7 +34,6 @@ test("uses the XCTest application root as the logical iPad viewport", () => {
   assert.deepEqual(inferSnapshotBounds(nodes, "android"), { width: 1112, height: 1112 });
   const geometry = inferIosSnapshotGeometry(nodes);
   assert.deepEqual(geometry, { rotation: "left", logicalWidth: 1112, logicalHeight: 834 });
-  assert.deepEqual(iosDriverPoint({ x: 600, y: 292 }, geometry!), { x: 542, y: 600 });
 });
 
 test("normalizes XCTest child rectangles into the logical landscape viewport", () => {
@@ -88,4 +88,39 @@ test("falls back to observed extents when an iOS root is unavailable", () => {
   ];
 
   assert.deepEqual(inferSnapshotBounds(nodes, "ios"), { width: 390, height: 844 });
+});
+
+test("rotates a portrait Apple frame into its logical landscape bounds", () => {
+  const source = new PNG({ width: 2, height: 3 });
+  const colors = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 0, 255],
+    [255, 0, 255, 255],
+    [0, 255, 255, 255],
+  ];
+  colors.forEach((color, index) => source.data.set(color, index * 4));
+
+  const normalized = PNG.sync.read(
+    normalizeScreenshotToBounds(PNG.sync.write(source), { width: 3, height: 2 }),
+  );
+
+  assert.deepEqual({ width: normalized.width, height: normalized.height }, { width: 3, height: 2 });
+  assert.deepEqual(
+    [...normalized.data],
+    [
+      0, 255, 0, 255, 255, 255, 0, 255, 0, 255, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255, 255, 0,
+      255, 255,
+    ],
+  );
+});
+
+test("rotates scaled physical-iPad pixels when their orientation opposes logical bounds", () => {
+  const source = new PNG({ width: 4, height: 6 });
+  const normalized = PNG.sync.read(
+    normalizeScreenshotToBounds(PNG.sync.write(source), { width: 1112, height: 834 }),
+  );
+
+  assert.deepEqual({ width: normalized.width, height: normalized.height }, { width: 6, height: 4 });
 });

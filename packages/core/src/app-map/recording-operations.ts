@@ -4,9 +4,11 @@ import type {
   AuthoringCommitDestination,
   AuthoringObservation,
   AuthoringTarget,
-  NormalizedSemanticNode,
+  ScreenIdentityObservation,
   TargetProfile,
 } from "@relay/protocol";
+import { observeScreenIdentity } from "../screen-identity.js";
+import type { SnapshotNode } from "../device.js";
 import type {
   ActionSpec,
   AppMap,
@@ -37,6 +39,23 @@ export type AppMapRecordingInput = {
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string };
 
+export type AppMapScreenCaptureInput = {
+  target: AuthoringTarget;
+  targetProfile?: TargetProfile;
+  observation: AuthoringObservation;
+  evidenceUrisById?: Record<string, string>;
+  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  title?: string;
+  position?: { x: number; y: number };
+};
+
+export type AppMapScreenCaptureResult = {
+  appMap: AppMap;
+  screenId: string;
+  variantId: string;
+  created: boolean;
+};
+
 function stableId(prefix: string, seed: string): string {
   return `${prefix}-${createHash("sha256").update(seed).digest("hex").slice(0, 16)}`;
 }
@@ -55,31 +74,35 @@ function findObservedScreen(map: AppMap, observation?: AuthoringObservation): Sc
   );
 }
 
-function semanticNodes(observation?: AuthoringObservation): NormalizedSemanticNode[] {
-  return (observation?.nodes ?? []).slice(0, 256).map((value) => ({
-    role: typeof value.role === "string" && value.role.trim() ? value.role : "unknown",
-    ...(typeof value.label === "string" ? { label: value.label } : {}),
-    ...(typeof value.value === "string" ? { value: value.value } : {}),
-    ...(typeof value.identifier === "string" ? { identifier: value.identifier } : {}),
-    ...(typeof value.enabled === "boolean" ? { enabled: value.enabled } : {}),
-    ...(typeof value.selected === "boolean" ? { selected: value.selected } : {}),
-    ...(typeof value.focused === "boolean" ? { focused: value.focused } : {}),
-    ...(typeof value.hittable === "boolean" ? { hittable: value.hittable } : {}),
-    ...(typeof value.depth === "number" && Number.isFinite(value.depth)
-      ? { depth: value.depth }
-      : {}),
-  }));
+function semanticObservation(
+  observation?: AuthoringObservation,
+): ScreenIdentityObservation | undefined {
+  if (!observation?.nodes?.length) return undefined;
+  return observeScreenIdentity(observation.nodes.slice(0, 256) as SnapshotNode[]);
 }
 
-function targetProfile(input: AppMapRecordingInput, at: number): TargetProfile {
-  const source = input.target.kind === "browser" ? "browser" : "device";
+function targetProfile(
+  target: AuthoringTarget,
+  at: number,
+  supplied?: TargetProfile,
+  observation?: AuthoringObservation,
+): TargetProfile {
+  if (supplied) {
+    return {
+      ...structuredClone(supplied),
+      ...(!supplied.viewport && observation?.bounds ? { viewport: { ...observation.bounds } } : {}),
+      observedAt: at,
+    };
+  }
+  const source = target.kind === "browser" ? "browser" : "device";
   return {
-    id: stableId("target", `${input.target.platform}:${input.target.targetId}`),
-    targetId: input.target.targetId,
+    id: `${source}:${target.targetId}`,
+    targetId: target.targetId,
     source,
-    platform: input.target.platform,
-    name: input.target.targetId,
+    platform: target.platform,
+    name: target.targetId,
     capabilities: [],
+    ...(observation?.bounds ? { viewport: { ...observation.bounds } } : {}),
     observedAt: at,
   };
 }
@@ -88,10 +111,13 @@ function observeScreen(input: {
   map: AppMap;
   screen: Screen;
   observation?: AuthoringObservation;
-  recording: AppMapRecordingInput;
+  target: AuthoringTarget;
+  targetProfile?: TargetProfile;
+  evidenceUrisById?: Record<string, string>;
+  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
   at: number;
 }): void {
-  const { map, screen, observation, recording, at } = input;
+  const { map, screen, observation, at } = input;
   if (!observation) return;
   const fingerprint = observation.screen.fingerprint;
   const aliases = new Set(screen.identity?.aliases ?? []);
@@ -100,7 +126,7 @@ function observeScreen(input: {
   if (aliases.size) screen.identity.aliases = [...aliases].sort();
   screen.updatedAt = at;
 
-  const profile = targetProfile(recording, at);
+  const profile = targetProfile(input.target, at, input.targetProfile, observation);
   const existing = screen.variantIds
     .map((id) => map.screenVariants[id])
     .find((variant) => variant?.targetProfile.id === profile.id);
@@ -110,25 +136,26 @@ function observeScreen(input: {
     ...new Set([
       ...(existing?.evidenceUris ?? []),
       ...observation.evidenceIds.flatMap((id) => {
-        const uri = recording.evidenceUrisById?.[id];
+        const uri = input.evidenceUrisById?.[id];
         return uri ? [uri] : [];
       }),
     ]),
   ];
   const screenshotUri = observation.evidenceIds.flatMap((id) => {
-    if (recording.evidenceKindsById?.[id] !== "screenshot") return [];
-    const uri = recording.evidenceUrisById?.[id];
+    if (input.evidenceKindsById?.[id] !== "screenshot") return [];
+    const uri = input.evidenceUrisById?.[id];
     return uri ? [uri] : [];
   })[0];
+  const semantics = semanticObservation(observation);
   const variant: ScreenVariant = {
     ...entityScope(map),
     id: variantId,
     screenId: screen.id,
     targetProfile: profile,
     observation: {
-      fingerprint,
-      nodes: semanticNodes(observation),
-      volatileSignals: [],
+      fingerprint: semantics?.fingerprint ?? fingerprint,
+      nodes: semantics?.nodes ?? [],
+      volatileSignals: semantics?.volatileSignals ?? [],
     },
     evidenceIds,
     ...(evidenceUris.length ? { evidenceUris } : {}),
@@ -141,6 +168,72 @@ function observeScreen(input: {
   };
   map.screenVariants[variant.id] = variant;
   screen.variantIds = [...new Set([...screen.variantIds, variant.id])].sort();
+}
+
+/** Persist one observed app state without inventing an executable transition.
+ * This is the canonical boundary used by the canvas, CLI, and agents when
+ * they save the current device screen to an App Map. */
+export function commitAppMapScreenCapture(
+  value: AppMap,
+  input: AppMapScreenCaptureInput,
+  context: AppMapMutationContext,
+): AppMapScreenCaptureResult {
+  const existing = findObservedScreen(value, input.observation);
+  const screenId =
+    existing?.id ?? stableId("screen", `${value.id}:${input.observation.screen.fingerprint}`);
+  const created = !existing;
+  const appMap = mutateAppMap(
+    value,
+    context,
+    {
+      eventType: created ? "screen.added" : "screen.updated",
+      subject: { kind: "screen", id: screenId },
+      summary: created ? "Captured a screen" : "Refreshed a captured screen",
+    },
+    (map) => {
+      const screen =
+        map.screens[screenId] ??
+        createScreen(
+          map,
+          screenId,
+          input.title?.trim() ||
+            (Object.keys(map.screens).length === 0
+              ? "Start"
+              : `Screen ${Object.keys(map.screens).length + 1}`),
+          context.at,
+        );
+      if (created && input.position) screen.position = structuredClone(input.position);
+      observeScreen({
+        map,
+        screen,
+        observation: input.observation,
+        target: input.target,
+        ...(input.targetProfile ? { targetProfile: input.targetProfile } : {}),
+        ...(input.evidenceUrisById ? { evidenceUrisById: input.evidenceUrisById } : {}),
+        ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
+        at: context.at,
+      });
+      if (Object.keys(map.flows).length === 0) {
+        const flowId = stableId("flow", `${map.id}:main`);
+        map.flows[flowId] = {
+          ...entityScope(map),
+          id: flowId,
+          name: "Main flow",
+          startScreenId: screen.id,
+          connectionIds: [],
+          createdAt: context.at,
+          updatedAt: context.at,
+        };
+      }
+    },
+  );
+  const screen = appMap.screens[screenId]!;
+  const profile = targetProfile(input.target, context.at, input.targetProfile);
+  const variantId = screen.variantIds.find(
+    (id) => appMap.screenVariants[id]?.targetProfile.id === profile.id,
+  );
+  if (!variantId) appMapFail("invalid-map", `Captured screen ${screenId} has no target variant`);
+  return { appMap, screenId, variantId, created };
 }
 
 function createScreen(map: AppMap, id: string, title: string, at: number): Screen {
@@ -264,6 +357,38 @@ function recordedActions(input: AppMapRecordingInput): ActionSpec[] {
   ];
 }
 
+function humanizeIdentifier(identifier: string): string {
+  const ignored = new Set(["ask", "toolbar", "button", "view", "control", "action"]);
+  const words = identifier
+    .split(/[._-]+/)
+    .filter((word) => word && !ignored.has(word.toLowerCase()));
+  const phrase = words.at(-1) ?? identifier;
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpec[]): string {
+  if (actions[0]?.kind === "passive") return "Observe";
+  const steps = input.actions.flatMap((action) => action.steps);
+  const reversed = [...steps].reverse();
+  const tap = reversed.find((step) => step.kind === "tap");
+  if (tap?.kind === "tap") {
+    const target = tap.target.label ?? tap.target.text ?? tap.target.identifier;
+    if (target) {
+      if (/send(?:[._-]|$)/i.test(target)) return "Send message";
+      return tap.target.identifier && target === tap.target.identifier
+        ? humanizeIdentifier(target)
+        : target;
+    }
+  }
+  const key = reversed.find((step) => step.kind === "key");
+  if (key?.kind === "key") return key.key === "back" ? "Go back" : "Go home";
+  const app = reversed.find((step) => step.kind === "app");
+  if (app?.kind === "app" && app.action === "open") return `Open ${app.app ?? "app"}`;
+  if (steps.some((step) => step.kind === "type")) return "Enter text";
+  if (steps.some((step) => step.kind === "swipe" || step.kind === "scroll")) return "Scroll";
+  return "Continue";
+}
+
 export function commitAppMapRecording(
   value: AppMap,
   input: AppMapRecordingInput,
@@ -303,7 +428,9 @@ export function commitAppMapRecording(
         map,
         screen: source,
         observation: input.before,
-        recording: input,
+        target: input.target,
+        evidenceUrisById: input.evidenceUrisById,
+        evidenceKindsById: input.evidenceKindsById,
         at: context.at,
       });
 
@@ -341,7 +468,15 @@ export function commitAppMapRecording(
             sourceGroup.updatedAt = context.at;
           }
         }
-        observeScreen({ map, screen, observation: input.after, recording: input, at: context.at });
+        observeScreen({
+          map,
+          screen,
+          observation: input.after,
+          target: input.target,
+          evidenceUrisById: input.evidenceUrisById,
+          evidenceKindsById: input.evidenceKindsById,
+          at: context.at,
+        });
         destination = { kind: "screen", screenId: screen.id };
       }
 
@@ -351,7 +486,7 @@ export function commitAppMapRecording(
         id: connectionId,
         fromScreenId: source.id,
         destination,
-        label: pending?.label ?? (actions[0]?.kind === "passive" ? "Observe" : "Continue"),
+        label: pending?.label ?? recordedConnectionLabel(input, actions),
         state: "ready",
         actions,
         createdAt: pending?.createdAt ?? context.at,

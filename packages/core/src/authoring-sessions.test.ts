@@ -33,6 +33,10 @@ function operation(operationId = "authoring.test"): OperationContext {
 
 class FakeRuntime implements AuthoringRuntime {
   screen = "source";
+  nodesByScreen = new Map<
+    string,
+    Array<{ role: string; label?: string; identifier?: string; enabled?: boolean }>
+  >();
   observations = 0;
   lifecycle: string[] = [];
   executed: AuthoringInteraction[] = [];
@@ -49,7 +53,7 @@ class FakeRuntime implements AuthoringRuntime {
       targetId: "device-a",
       fingerprint: createHash("sha256").update(this.screen).digest("hex"),
       bounds: { width: 400, height: 800 },
-      nodes: [{ role: "button", label: this.screen }],
+      nodes: this.nodesByScreen.get(this.screen) ?? [{ role: "button", label: this.screen }],
       screenshot: { data: Buffer.from(`png:${this.screen}:${capturedAt}`), mime: "image/png" },
     };
   }
@@ -323,6 +327,39 @@ test("human pauses become editable replay steps instead of hidden timing", async
   });
 });
 
+test("agent orchestration gaps never become replay delays", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const agentOperation = {
+      ...operation("authoring.agent-pauses"),
+      actorId: "agent:test",
+      actorKind: "agent" as const,
+    };
+    await runWithOperationContext(agentOperation, async () => {
+      let session = await store.create({
+        appMapId,
+        target: { kind: "device", platform: "android", targetId: "device-a" },
+        leaseId: "lease-a",
+        expectedAppMapRevision: 0,
+        group: "Settings",
+      });
+      session = await store.observe(session.id, runtime);
+      session = await store.start(session.id, runtime);
+      session = await store.interact(
+        session.id,
+        { kind: "tap", target: { label: "Continue" } },
+        runtime,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 230));
+      session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
+
+      assert.equal(
+        session.take!.revisions.at(-1)!.actions.some((action) => action.label === "Recorded pause"),
+        false,
+      );
+    });
+  });
+});
+
 test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, and evidence", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
@@ -346,6 +383,7 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
       },
       runtime,
     );
+    assert.equal(runtime.executed.at(-1)?.kind, "steps");
     session = await store.stop(session.id, runtime);
     assert.equal(session.state, "reviewing");
     const recorded = session.take!.revisions.at(-1)!;
@@ -359,9 +397,12 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     const reversed = [...recorded.actions].reverse().map((action) => action.id);
     session = await store.reorder(session.id, reversed);
     session = await store.replace(session.id, reversed[0]!, {
-      kind: "observe",
+      kind: "steps",
       label: "Automatic",
+      applied: true,
+      steps: [{ kind: "sleep", ms: 10 }],
     });
+    assert.equal(session.take!.revisions.at(-1)?.actions[0]?.label, "Automatic");
     session = await store.trim(session.id, { actionIds: reversed.slice(0, 3), fromMs: 0 });
     assert.equal(session.take!.revisions.length, originalRevisions + 3);
     assert.equal(session.take!.revisions[originalRevisions - 1]?.actions.length, 4);
@@ -401,6 +442,48 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
       connection.actions[0]?.kind === "recorded" && connection.actions[0].evidenceIds.length > 0,
     );
     assert.equal(appMap.activity[session.id]?.eventType, "recording.committed");
+  });
+});
+
+test("replay accepts a stable application shell when generated destination content changes", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.nodesByScreen.set("destination", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "Copy message", enabled: true },
+      { role: "button", label: "Share this conversation", enabled: true },
+      { role: "text", label: "The first generated answer", enabled: true },
+    ]);
+    runtime.nodesByScreen.set("replayed-destination", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "Copy message", enabled: true },
+      { role: "button", label: "Share this conversation", enabled: true },
+      { role: "text", label: "A different generated answer", enabled: true },
+    ]);
+    runtime.nodesByScreen.set("blank-shell", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "Start new chat", enabled: true },
+      { role: "text", label: "Ask anything", enabled: true },
+    ]);
+
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "tap", target: { label: "Send" } }, runtime);
+    session = await store.stop(session.id, runtime);
+
+    runtime.screen = "source";
+    runtime.replayScreen = "replayed-destination";
+    session = await store.replay(session.id, runtime);
+
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+
+    runtime.screen = "source";
+    runtime.replayScreen = "blank-shell";
+    session = await store.replay(session.id, runtime);
+
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
   });
 });
 
@@ -580,6 +663,52 @@ test("recording from a mapped screen refuses to corrupt it with another device s
   });
 });
 
+test("recording accepts the same mapped shell when only dynamic source content changes", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.nodesByScreen.set("source", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "New conversation", enabled: true },
+      { role: "button", label: "Send", enabled: true },
+      { role: "text", label: "Suggested prompt A", enabled: true },
+    ]);
+    runtime.nodesByScreen.set("source-dynamic", [
+      { role: "header", identifier: "conversation_top_bar", enabled: true },
+      { role: "textbox", identifier: "chat_text_input", enabled: true },
+      { role: "button", label: "New conversation", enabled: true },
+      { role: "button", label: "Send", enabled: true },
+      { role: "text", label: "Suggested prompt B", enabled: true },
+    ]);
+
+    let first = await createReadySession(store, runtime, appMapId);
+    first = await store.start(first.id, runtime);
+    first = await store.interact(first.id, { kind: "key", key: "back" }, runtime);
+    first = await store.stop(first.id, runtime);
+    runtime.screen = "source";
+    first = await store.replay(first.id, runtime);
+    first = await store.commit(first.id, {});
+
+    const map = await readAppMap("project-a", appMapId);
+    assert.ok(map);
+    const sourceScreenId = map.connections[first.committedConnectionId!]?.fromScreenId;
+    assert.ok(sourceScreenId);
+
+    runtime.screen = "source-dynamic";
+    let next = await store.create({
+      appMapId,
+      target: { kind: "device", platform: "android", targetId: "device-a" },
+      leaseId: "lease-a",
+      expectedAppMapRevision: map.revision,
+      sourceScreenId,
+    });
+    next = await store.observe(next.id, runtime);
+    next = await store.start(next.id, runtime);
+
+    assert.equal(next.state, "recording");
+    assert.ok(next.take);
+  });
+});
+
 test("later atomic commits retain evidence for every existing graph connection", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let first = await createReadySession(store, runtime, appMapId);
@@ -634,11 +763,12 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
     assert.equal(recovered[0]?.state, "failed");
     assert.equal(recovered[0]?.recoverable, true);
     assert.ok(recovered[0]?.take?.revisions.at(-1)?.actions.length);
-    assert.equal(released, 1);
+    assert.equal(released, 0);
     assert.equal(reconciled, 1);
 
     session = await store.observe(session.id, runtime);
     assert.equal(session.state, "reviewing");
+    assert.equal(session.take?.state, "reviewing");
     runtime.screen = "source";
     session = await store.replay(session.id, runtime);
     await assert.rejects(
@@ -696,7 +826,7 @@ test("startup recovery scopes every persisted project without crossing project o
       recoveredA.map((session) => session.id),
       [projectA.id],
     );
-    assert.deepEqual(released, ["lease-a"]);
+    assert.equal(released.length, 0);
 
     await runWithOperationContext(projectBContext, async () => {
       assert.equal((await store.get(projectB.id)).state, "recording");
@@ -710,7 +840,7 @@ test("startup recovery scopes every persisted project without crossing project o
         [projectB.id],
       );
     });
-    assert.deepEqual(released, ["lease-a", "lease-b"]);
+    assert.deepEqual(released, []);
     assert.deepEqual(await store.recoveryScopes(), []);
   });
 });

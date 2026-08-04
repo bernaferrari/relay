@@ -155,6 +155,87 @@ function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const SYSTEM_INPUT_IDENTIFIER =
+  /^(?:systeminputassistantview|centerpageview|leftbuttonbar|assistant(?:paste:forevent:|undo|redo))$/iu;
+
+function systemInputIndexes(nodes: readonly SnapshotNode[]): Set<number> {
+  const indexed = new Map(
+    nodes.flatMap((node, offset) =>
+      node.index === undefined ? [] : [[node.index, { node, offset }] as const],
+    ),
+  );
+  const children = new Map<number, number[]>();
+  for (const node of nodes) {
+    if (node.index === undefined || node.parentIndex === undefined) continue;
+    const siblings = children.get(node.parentIndex) ?? [];
+    siblings.push(node.index);
+    children.set(node.parentIndex, siblings);
+  }
+  const roots = nodes.flatMap((node) =>
+    node.index !== undefined &&
+    (/^keyboard$/iu.test(node.type ?? node.role ?? "") ||
+      SYSTEM_INPUT_IDENTIFIER.test(node.identifier ?? ""))
+      ? [node.index]
+      : [],
+  );
+  const ignored = new Set<number>();
+  const visit = (index: number): void => {
+    if (ignored.has(index)) return;
+    ignored.add(index);
+    for (const child of children.get(index) ?? []) visit(child);
+  };
+  for (const root of roots) {
+    visit(root);
+    // XCTest wraps the Keyboard in an unlabeled/generic container. Exclude
+    // that wrapper only when the keyboard is its sole child.
+    const parentIndex = indexed.get(root)?.node.parentIndex;
+    const parent = parentIndex === undefined ? undefined : indexed.get(parentIndex)?.node;
+    if (
+      parentIndex !== undefined &&
+      parent &&
+      /^other$/iu.test(parent.type ?? parent.role ?? "") &&
+      (children.get(parentIndex)?.length ?? 0) === 1
+    ) {
+      ignored.add(parentIndex);
+    }
+  }
+  return ignored;
+}
+
+function withoutSystemInputObservation(
+  observation: ScreenIdentityObservation,
+): ScreenIdentityObservation {
+  const hasSystemInput = observation.nodes.some(
+    (node) =>
+      /^(?:keyboard|key)$/u.test(node.role) ||
+      SYSTEM_INPUT_IDENTIFIER.test(node.identifier ?? "") ||
+      node.label === "typing predictions" ||
+      node.label === "next keyboard",
+  );
+  if (!hasSystemInput) return observation;
+
+  const retained = observation.nodes.flatMap((node, index) => {
+    const systemRole = /^(?:keyboard|key)$/u.test(node.role);
+    const systemIdentifier = SYSTEM_INPUT_IDENTIFIER.test(node.identifier ?? "");
+    const systemLabel =
+      node.label === "typing predictions" ||
+      node.label === "next keyboard" ||
+      (/^(?:other|button)$/u.test(node.role) && /^(?:undo|redo|paste)$/u.test(node.label ?? ""));
+    return systemRole || systemIdentifier || systemLabel ? [] : [{ node, oldIndex: index }];
+  });
+  const indexByOld = new Map(retained.map((entry, index) => [entry.oldIndex, index]));
+  const nodes = retained.map((entry) => entry.node);
+  const volatileSignals = observation.volatileSignals.flatMap((item) => {
+    const node = indexByOld.get(item.node);
+    return node === undefined ? [] : [{ ...item, node }];
+  });
+  return {
+    fingerprint: digest(`relay-screen-identity:v1:${nodes.map(canonicalNode).join("\n")}`),
+    nodes,
+    volatileSignals,
+  };
+}
+
 /**
  * Produces a stable visual identity for screens that expose no useful native
  * semantics (custom canvases, games, system surfaces, or temporarily broken
@@ -236,7 +317,21 @@ export function observeVisualScreenFingerprint(png: Uint8Array): string | undefi
  * excluded: they are observations of a screen, not its identity.
  */
 export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIdentityObservation {
+  const ignoredSystemInput = systemInputIndexes(nodes);
+  const applicationNodes = nodes.filter(
+    (node) =>
+      node.bundleId !== "com.android.systemui" &&
+      !/^(?:com\.google\.android\.inputmethod\.latin|com\.samsung\.android\.honeyboard|com\.touchtype\.swiftkey)$/u.test(
+        node.bundleId ?? "",
+      ),
+  );
+  // Status bars, navigation bars, notifications, and keyboards are device
+  // state, not application-screen identity. Preserve all nodes for providers
+  // that do not expose package ownership.
+  const identityNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
   const entries = nodes
+    .filter((node) => identityNodes.includes(node))
+    .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))
     .filter((node) => node.visibleToUser !== false)
     .flatMap((node) => {
       const label = normalizeText(node.label, "label");
@@ -338,6 +433,8 @@ export function compareScreenIdentity(
   left: ScreenIdentityObservation,
   right: ScreenIdentityObservation,
 ): ScreenIdentityComparison {
+  left = withoutSystemInputObservation(left);
+  right = withoutSystemInputObservation(right);
   if (left.nodes.length === 0 || right.nodes.length === 0) {
     return {
       confidence: 0,

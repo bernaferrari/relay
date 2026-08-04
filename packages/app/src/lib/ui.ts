@@ -284,6 +284,7 @@ export function kindPillTone(kind: string): string {
     case "swipe":
       return "bg-surface-interactive-weak text-text-interactive-base ring-border-interactive-base/40";
     case "expect":
+    case "expect-set":
     case "expect-screen":
     case "wait-for":
       return "bg-surface-success-weak text-icon-success-base ring-border-success-base/40";

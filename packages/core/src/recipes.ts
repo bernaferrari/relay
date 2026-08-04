@@ -210,10 +210,11 @@ export function validateRecipeParameters(value: unknown): RecipeParameter[] | un
 }
 
 function targetHasStrategy(t: StepTarget): boolean {
-  return Boolean(t.ref || t.label || t.text || t.point);
+  return Boolean(t.identifier || t.ref || t.label || t.text || t.point);
 }
 
 export function describeTarget(t: StepTarget): string {
+  if (t.identifier) return `identifier ${t.identifier}`;
   if (t.ref) return `ref ${t.ref}`;
   if (t.label) return `label "${t.label}"`;
   if (t.text) return `text "${t.text}"`;
@@ -239,6 +240,10 @@ function stepErr(index: number, why: string): Error {
 function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   if (!isObject(raw)) throw stepErr(index, `${field} must be an object`);
   const t: StepTarget = {};
+  if (raw.identifier !== undefined) {
+    if (!isString(raw.identifier)) throw stepErr(index, `${field}.identifier must be a string`);
+    t.identifier = raw.identifier;
+  }
   if (raw.ref !== undefined) {
     if (!isString(raw.ref)) throw stepErr(index, `${field}.ref must be a string`);
     t.ref = raw.ref;
@@ -429,7 +434,9 @@ function parseRecordedEvidence(raw: unknown, index: number): RecordedStepEvidenc
     evidence.candidates = raw.candidates.map((candidate, i) => {
       const field = `evidence.candidates[${i}]`;
       if (!isObject(candidate)) throw stepErr(index, `${field} must be an object`);
-      if (!(["ref", "label", "text", "point"] as unknown[]).includes(candidate.strategy)) {
+      if (
+        !(["identifier", "ref", "label", "text", "point"] as unknown[]).includes(candidate.strategy)
+      ) {
         throw stepErr(index, `${field}.strategy is invalid`);
       }
       if (!isString(candidate.label)) throw stepErr(index, `${field}.label must be a string`);
@@ -527,7 +534,10 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       case "tap": {
         const target = parseTarget(raw.target, index, "target");
         if (!targetHasStrategy(target)) {
-          throw stepErr(index, "tap requires target with at least one of ref/label/text/point");
+          throw stepErr(
+            index,
+            "tap requires target with at least one of identifier/ref/label/text/point",
+          );
         }
         if (
           raw.gesture !== undefined &&
@@ -573,10 +583,17 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "type": {
         if (!isString(raw.text)) throw stepErr(index, "type requires text: string");
+        if (raw.mode !== undefined && raw.mode !== "append" && raw.mode !== "replace") {
+          throw stepErr(index, 'type.mode must be "append" or "replace"');
+        }
+        if (raw.mode === "replace" && raw.target === undefined) {
+          throw stepErr(index, "type.target is required when mode is replace");
+        }
         const step: Extract<RecipeStep, { kind: "type" }> = {
           kind: "type",
           text: raw.text,
           ...(raw.target !== undefined ? { target: parseTarget(raw.target, index, "target") } : {}),
+          ...(raw.mode !== undefined ? { mode: raw.mode as "append" | "replace" } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -648,14 +665,14 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       case "wait-for": {
         const target = parseTarget(raw.target, index, "target");
         // point-only targets can't be "waited for" (validation-time rejection)
-        if (target.point && !target.ref && !target.label && !target.text) {
+        if (target.point && !target.identifier && !target.ref && !target.label && !target.text) {
           throw stepErr(
             index,
-            "wait-for target must have ref/label/text (point-only is not waitable)",
+            "wait-for target must have identifier/ref/label/text (point-only is not waitable)",
           );
         }
         if (!targetHasStrategy(target)) {
-          throw stepErr(index, "wait-for requires target with ref/label/text");
+          throw stepErr(index, "wait-for requires target with identifier/ref/label/text");
         }
         let timeoutMs: number | undefined;
         if (raw.timeoutMs !== undefined) {
@@ -676,14 +693,14 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "wait-response": {
         const target = parseTarget(raw.target, index, "target");
-        if (!target.ref && !target.label && !target.text) {
-          throw stepErr(index, "wait-response target requires ref/label/text");
+        if (!target.identifier && !target.ref && !target.label && !target.text) {
+          throw stepErr(index, "wait-response target requires identifier/ref/label/text");
         }
         const parseOptionalSemanticTarget = (value: unknown, field: string) => {
           if (value === undefined) return undefined;
           const parsed = parseTarget(value, index, field);
-          if (!parsed.ref && !parsed.label && !parsed.text) {
-            throw stepErr(index, `${field} requires ref/label/text`);
+          if (!parsed.identifier && !parsed.ref && !parsed.label && !parsed.text) {
+            throw stepErr(index, `${field} requires identifier/ref/label/text`);
           }
           return parsed;
         };
@@ -715,14 +732,14 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       case "expect": {
         const target = parseTarget(raw.target, index, "target");
         // point-only targets can't be "expected" (validation-time rejection)
-        if (target.point && !target.ref && !target.label && !target.text) {
+        if (target.point && !target.identifier && !target.ref && !target.label && !target.text) {
           throw stepErr(
             index,
-            "expect target must have ref/label/text (point-only is not checkable)",
+            "expect target must have identifier/ref/label/text (point-only is not checkable)",
           );
         }
         if (!targetHasStrategy(target)) {
-          throw stepErr(index, "expect requires target with ref/label/text");
+          throw stepErr(index, "expect requires target with identifier/ref/label/text");
         }
         if (raw.condition !== "visible" && raw.condition !== "gone") {
           throw stepErr(index, 'expect requires condition: "visible" | "gone"');
@@ -745,6 +762,40 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "expect-set": {
+        if (!isString(raw.identifierPrefix) || !raw.identifierPrefix.trim()) {
+          throw stepErr(index, "expect-set.identifierPrefix is required");
+        }
+        if (
+          !Array.isArray(raw.labels) ||
+          raw.labels.length < 1 ||
+          raw.labels.length > 64 ||
+          !raw.labels.every((label) => isString(label) && label.trim().length > 0)
+        ) {
+          throw stepErr(index, "expect-set.labels must contain 1 to 64 non-empty labels");
+        }
+        const labels = raw.labels.map((label) => label.trim());
+        if (new Set(labels.map((label) => label.toLocaleLowerCase())).size !== labels.length) {
+          throw stepErr(index, "expect-set.labels must be unique");
+        }
+        let timeoutMs: number | undefined;
+        if (raw.timeoutMs !== undefined) {
+          if (!isNumber(raw.timeoutMs))
+            throw stepErr(index, "expect-set.timeoutMs must be a number");
+          if (raw.timeoutMs < 0) throw stepErr(index, "expect-set.timeoutMs must be >= 0");
+          if (raw.timeoutMs > MAX_WAIT_MS)
+            throw stepErr(index, `expect-set.timeoutMs must be <= ${MAX_WAIT_MS} (15 min)`);
+          timeoutMs = raw.timeoutMs;
+        }
+        out.push({
+          kind: "expect-set",
+          identifierPrefix: raw.identifierPrefix.trim(),
+          labels,
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "expect-screen": {
         if (!isString(raw.screenId) || !raw.screenId.trim()) {
           throw stepErr(index, "expect-screen.screenId is required");
@@ -763,12 +814,35 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, "expect-screen.aliases must be SHA-256 fingerprints");
         }
+        if (
+          raw.observations !== undefined &&
+          (!Array.isArray(raw.observations) ||
+            raw.observations.length > 256 ||
+            !raw.observations.every(
+              (observation) =>
+                isObject(observation) &&
+                isString(observation.fingerprint) &&
+                /^[a-f0-9]{64}$/u.test(observation.fingerprint) &&
+                Array.isArray(observation.nodes) &&
+                Array.isArray(observation.volatileSignals),
+            ))
+        ) {
+          throw stepErr(index, "expect-screen.observations must be semantic observations");
+        }
         out.push({
           kind: "expect-screen",
           screenId: raw.screenId,
           screenTitle: raw.screenTitle,
           fingerprint: raw.fingerprint,
           ...(raw.aliases?.length ? { aliases: [...raw.aliases] as string[] } : {}),
+          ...(raw.observations?.length
+            ? {
+                observations: structuredClone(raw.observations) as Extract<
+                  RecipeStep,
+                  { kind: "expect-screen" }
+                >["observations"],
+              }
+            : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -778,8 +852,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "extract.as must be a valid variable name");
         }
         const target = parseTarget(raw.target, index, "target");
-        if (!target.ref && !target.label && !target.text) {
-          throw stepErr(index, "extract target requires ref/label/text");
+        if (!target.identifier && !target.ref && !target.label && !target.text) {
+          throw stepErr(index, "extract target requires identifier/ref/label/text");
         }
         if (
           raw.role !== undefined &&
@@ -895,8 +969,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             throw stepErr(index, "pause.verifyAfter must be an object");
           }
           const target = parseTarget(raw.verifyAfter.target, index, "pause.verifyAfter.target");
-          if (!target.ref && !target.label && !target.text) {
-            throw stepErr(index, "pause.verifyAfter.target must have ref, label, or text");
+          if (!target.identifier && !target.ref && !target.label && !target.text) {
+            throw stepErr(
+              index,
+              "pause.verifyAfter.target must have identifier, ref, label, or text",
+            );
           }
           if (
             raw.verifyAfter.condition !== undefined &&
@@ -1617,6 +1694,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Wait for ${describeTarget(step.target)} to finish responding`;
     case "expect":
       return `check ${describeExpectTarget(step.target)} ${step.condition}`;
+    case "expect-set":
+      return `Check options are exactly ${step.labels.join(", ")}`;
     case "expect-screen":
       return `Reach ${step.screenTitle}`;
     case "extract":
@@ -1702,6 +1781,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "wait-response":
       return ["ai", "wait"];
     case "expect":
+    case "expect-set":
       return ["ok"];
     case "expect-screen":
       return ["ok"];

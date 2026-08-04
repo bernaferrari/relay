@@ -12,6 +12,7 @@ export function kindLabel(kind: string): string {
     tap: "Tap",
     type: "Type",
     expect: "Check",
+    "expect-set": "Options",
     extract: "Extract",
     "assert-content": "Assert",
     "evaluate-semantic": "Evaluate",
@@ -45,7 +46,8 @@ export function kindLabel(kind: string): string {
 export function kindIcon(kind: RecipeStep["kind"]): IconName {
   if (kind === "tap") return "pointer";
   if (["type", "key", "clipboard"].includes(kind)) return "keyboard";
-  if (["expect", "assert-content", "evaluate-semantic"].includes(kind)) return "check";
+  if (["expect", "expect-set", "assert-content", "evaluate-semantic"].includes(kind))
+    return "check";
   if (["wait-for", "wait-response", "sleep", "pause"].includes(kind)) return "clock";
   if (["screenshot", "extract"].includes(kind)) return "camera";
   if (["flow", "module", "branch", "repeat"].includes(kind)) return "move";
@@ -61,6 +63,7 @@ export function stepDetail(step: RecipeStep, recipes: Iterable<TitledId>): strin
     tap: ["Tap "],
     type: ["Type "],
     expect: ["Check "],
+    "expect-set": ["Check options are exactly "],
     extract: ["Extract "],
     "assert-content": ["Check "],
     "evaluate-semantic": ["Evaluate "],
@@ -142,6 +145,10 @@ export const ADD_GROUPS: AddGroup[] = [
       {
         label: "Check element is gone",
         make: () => ({ kind: "expect", target: {}, condition: "gone" }),
+      },
+      {
+        label: "Check exact option list",
+        make: () => ({ kind: "expect-set", identifierPrefix: "", labels: [] }),
       },
       {
         label: "Extract response text",

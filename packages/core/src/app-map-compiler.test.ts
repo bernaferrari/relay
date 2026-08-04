@@ -149,6 +149,38 @@ test("refuses to run drafts and unverifiable destinations", () => {
   );
 });
 
+test("compiles approved semantic variants for dynamic destination matching", () => {
+  const map = fixture();
+  const observation = {
+    fingerprint: "c".repeat(64),
+    nodes: [{ role: "button", label: "copy message", identifier: "chat.copy" }],
+    volatileSignals: [],
+  };
+  map.screens.home!.variantIds = ["home-phone"];
+  map.screenVariants["home-phone"] = {
+    ...entity("home-phone"),
+    screenId: "home",
+    targetProfile: {
+      id: "pixel",
+      targetId: "pixel",
+      source: "device",
+      platform: "android",
+      name: "Pixel",
+      capabilities: [],
+      observedAt: at,
+    },
+    observation,
+    evidenceIds: [],
+  };
+
+  const plan = compileAppMapFlow(map, "checkout");
+  const destination = plan.recipes[plan.rootRecipeId]!.steps.at(-1);
+  assert.equal(destination?.kind, "expect-screen");
+  if (destination?.kind === "expect-screen") {
+    assert.deepEqual(destination.observations, [observation]);
+  }
+});
+
 test("keeps passive transitions executable by verifying source and destination", () => {
   const map = fixture();
   map.connections["open-home"]!.actions = [

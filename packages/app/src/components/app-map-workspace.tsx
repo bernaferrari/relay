@@ -25,8 +25,6 @@ import {
   type CanvasConnection,
 } from "../lib/app-map-connection-draft";
 import {
-  addCanvasScreen,
-  addCanvasStartScreen,
   buildCanvasGraphTree,
   ensureCanvasGraph,
   removeCanvasScreen,
@@ -35,13 +33,13 @@ import {
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
-import { screenVariantForCapture } from "../lib/app-map-capture";
 import {
   canvasBounds,
   canvasEdgeGeometry,
   clampCanvasScale,
   nextBranchPosition,
   fitCanvasViewport,
+  openCanvasViewport,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   type CanvasPoint,
@@ -1001,6 +999,14 @@ export function AppMapWorkspace(props: {
     );
   };
 
+  const openAtReadableScale = () => {
+    const element = canvas;
+    if (!element || !hasCanvasContent()) return;
+    setView(
+      openCanvasViewport({ width: element.clientWidth, height: element.clientHeight }, bounds()),
+    );
+  };
+
   createEffect(() => {
     const appMapId = loadedAppMapId();
     if (!appMapId || appMapLoadState().status !== "ready" || initiallyFittedAppMapId === appMapId)
@@ -1008,7 +1014,7 @@ export function AppMapWorkspace(props: {
     // Fit an existing map once when it opens. A blank map is also marked as
     // handled so its first capture does not yank the camera away from the user.
     initiallyFittedAppMapId = appMapId;
-    if (hasCanvasContent()) requestAnimationFrame(fit);
+    if (hasCanvasContent()) requestAnimationFrame(openAtReadableScale);
   });
 
   const selectStep = (index: number) => {
@@ -1240,17 +1246,19 @@ export function AppMapWorkspace(props: {
     if (startCaptureBusy() || hasMap()) return false;
     setStartCaptureBusy(true);
     try {
-      const captured = await recorder.captureStartScreen();
-      if (!captured || hasMap()) return false;
-      const added = addCanvasStartScreen(graph(), captured.observation);
-      const variant = screenVariantForCapture(added.screen.id, captured);
-      persistMetadata(withCanvasGraph(canvasState(), added.graph), {
-        variantsByScreen: { [added.screen.id]: [variant] },
-      });
-      if (captured.screenshotUrl) {
-        setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
+      const captured = await recorder.captureMapScreen(undefined, { title: "Start" });
+      if (!captured) return false;
+      setCanvasState(mergeAppMapProjection(canvasState(), captured.appMap));
+      if (captured.variant.screenshotUri) {
+        setCapturedScreenUrls((urls) => ({
+          ...urls,
+          [captured.screen.id]: server.authoringEvidenceUrl(
+            captured.variant.screenshotUri!,
+            "image/png",
+          ),
+        }));
       }
-      setSelectedNodeId(added.screen.id);
+      setSelectedNodeId(captured.screen.id);
       setSelectedConnectionId(null);
       setCaptureOpen(false);
       toast("Start screen added", "success");
@@ -1268,21 +1276,24 @@ export function AppMapWorkspace(props: {
     }
     setStartCaptureBusy(true);
     try {
-      const captured = await recorder.captureStartScreen();
+      const captured = await recorder.captureMapScreen();
       if (!captured) return;
-      const added = addCanvasScreen(graph(), captured.observation);
-      const variant = screenVariantForCapture(added.screen.id, captured);
-      persistMetadata(withCanvasGraph(canvasState(), added.graph), {
-        variantsByScreen: { [added.screen.id]: [variant] },
-      });
-      if (captured.screenshotUrl) {
-        setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
+      const next = mergeAppMapProjection(canvasState(), captured.appMap);
+      setCanvasState(next);
+      if (captured.variant.screenshotUri) {
+        setCapturedScreenUrls((urls) => ({
+          ...urls,
+          [captured.screen.id]: server.authoringEvidenceUrl(
+            captured.variant.screenshotUri!,
+            "image/png",
+          ),
+        }));
       }
-      const node = buildCanvasGraphTree(added.graph, draft.steps()).nodes.find(
-        (candidate) => candidate.id === added.screen.id,
+      const node = buildCanvasGraphTree(next.graph ?? graph(), draft.steps()).nodes.find(
+        (candidate) => candidate.id === captured.screen.id,
       );
       if (node) selectNode(node);
-      toast(added.created ? "Screen added to the map" : "Existing screen refreshed", "success");
+      toast(captured.created ? "Screen added to the map" : "Existing screen refreshed", "success");
     } finally {
       setStartCaptureBusy(false);
     }
@@ -2670,7 +2681,7 @@ export function AppMapWorkspace(props: {
           />
         )}
       </Show>
-      <Show when={appMapLoadState().status === "ready" && captureOpen()}>
+      <Show when={appMapLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
         <AppMapDeviceCompanion
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}

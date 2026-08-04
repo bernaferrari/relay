@@ -427,3 +427,75 @@ export type AppMapErrorCode =
   | "missing-reference"
   | "in-use"
   | "proposal-state";
+
+/**
+ * Keep the common agent/terminal view of a map useful and bounded. The full
+ * App Map—including semantic trees and artifact URIs—remains available from
+ * the HTTP resource and UI client; command surfaces normally need topology.
+ */
+export function summarizeAppMapOperationResult(operationId: string, result: unknown): unknown {
+  if (!operationId.startsWith("app-map.")) return result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const appMap = (result as { appMap?: unknown }).appMap;
+  if (!appMap || typeof appMap !== "object" || Array.isArray(appMap)) return result;
+  const map = appMap as AppMap;
+  if (
+    typeof map.id !== "string" ||
+    typeof map.name !== "string" ||
+    typeof map.revision !== "number" ||
+    !map.screens ||
+    !map.connections
+  )
+    return result;
+
+  const byId = <T extends AppMapEntity>(values: Record<string, T>): T[] =>
+    Object.values(values).sort((left, right) => left.id.localeCompare(right.id));
+
+  return {
+    ...(result as Record<string, unknown>),
+    appMap: {
+      id: map.id,
+      name: map.name,
+      ...(map.description ? { description: map.description } : {}),
+      revision: map.revision,
+      screens: byId(map.screens).map((screen) => ({
+        id: screen.id,
+        title: screen.title,
+        variantCount: screen.variantIds.length,
+      })),
+      connections: byId(map.connections).map((connection) => ({
+        id: connection.id,
+        ...(connection.label ? { label: connection.label } : {}),
+        fromScreenId: connection.fromScreenId,
+        destination: connection.destination,
+        state: connection.state,
+        actionCount: connection.actions.length,
+      })),
+      groups: byId(map.groups).map((group) => ({
+        id: group.id,
+        name: group.name,
+        screenIds: group.screenIds,
+      })),
+      flows: byId(map.flows).map((flow) => ({
+        id: flow.id,
+        name: flow.name,
+        startScreenId: flow.startScreenId,
+        connectionIds: flow.connectionIds,
+      })),
+      counts: {
+        screens: Object.keys(map.screens).length,
+        variants: Object.keys(map.screenVariants).length,
+        connections: Object.keys(map.connections).length,
+        groups: Object.keys(map.groups).length,
+        caseStacks: Object.keys(map.caseStacks).length,
+        routines: Object.keys(map.routines).length,
+        flows: Object.keys(map.flows).length,
+        runs: Object.keys(map.runs).length,
+        targetResults: Object.keys(map.targetResults).length,
+        proposals: Object.keys(map.proposals).length,
+      },
+      createdAt: map.createdAt,
+      updatedAt: map.updatedAt,
+    },
+  };
+}

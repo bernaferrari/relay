@@ -34,7 +34,7 @@ export function OrientedScreenshot(props: {
   });
 
   return (
-    <span class="grid size-full min-h-0 place-items-center overflow-hidden">
+    <span class="relative block size-full min-h-0 overflow-hidden">
       <img
         src={props.src}
         alt={props.alt}
@@ -45,9 +45,12 @@ export function OrientedScreenshot(props: {
         style={
           layout()
             ? {
+                position: "absolute",
+                left: "50%",
+                top: "50%",
                 width: `${layout()!.widthPercent}%`,
                 height: `${layout()!.heightPercent}%`,
-                transform: `rotate(${layout()!.rotationDegrees}deg)`,
+                transform: `translate(-50%, -50%) rotate(${layout()!.rotationDegrees}deg)`,
                 "transform-origin": "center",
               }
             : undefined

@@ -10,17 +10,19 @@
 import type { Device } from "./device.js";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
 import {
+  pressIdentifier,
   pressRef,
   pressLabel,
   findClick,
   pressPoint,
+  pressText,
+  replaceText,
   typeText,
   pressKey,
   scrollDown,
   sleep,
   swipeGesture,
   waitFor,
-  exists,
   base,
   longPressTarget,
   clipboardWrite,
@@ -61,15 +63,28 @@ import {
 } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { evaluateSemantic } from "./evaluation.js";
-import { observeScreenIdentity, observeVisualScreenFingerprint } from "./screen-identity.js";
+import {
+  compareScreenIdentity,
+  observeScreenIdentity,
+  observeVisualScreenFingerprint,
+} from "./screen-identity.js";
 
 function nodeText(node: SnapshotNode): string[] {
+  const type = (node.type ?? node.role ?? "").toLowerCase();
+  const value = typeof node.value === "string" ? node.value.trim() : "";
+  if (["textfield", "textview", "searchfield", "securetextfield"].includes(type)) {
+    // Editable controls expose their placeholder as `label`; it is metadata,
+    // never the current content. Preserve an empty value so tests can assert
+    // that starting a new conversation really cleared the composer.
+    return [value];
+  }
   return [node.label, node.value]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
 }
 
 function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
+  if (target.identifier && node.identifier === target.identifier) return true;
   if (target.ref && node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")) return true;
   if (target.label && node.label === target.label) return true;
   if (target.text) {
@@ -94,6 +109,48 @@ function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
   return [
     ...new Set(nodes.filter((node) => nodeMatchesTarget(node, target)).flatMap(nodeText)),
   ].join("\n");
+}
+
+function localizedStringKeyLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return /^LocalizedStringKey\(key: "([^"]+)"/u.exec(value)?.[1];
+}
+
+function labelsForIdentifierPrefix(nodes: SnapshotNode[], prefix: string): string[] {
+  const byParent = new Map<number, SnapshotNode[]>();
+  for (const node of nodes) {
+    if (node.parentIndex === undefined) continue;
+    const siblings = byParent.get(node.parentIndex) ?? [];
+    siblings.push(node);
+    byParent.set(node.parentIndex, siblings);
+  }
+
+  const readableDescendant = (root: SnapshotNode): string | undefined => {
+    if (root.index === undefined) return undefined;
+    const queue = [...(byParent.get(root.index) ?? [])];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
+      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+      if (label && (type === "statictext" || type === "text" || type === "textview")) {
+        return label;
+      }
+      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
+    }
+    return undefined;
+  };
+
+  return [
+    ...new Set(
+      nodes
+        .filter((node) => node.identifier?.startsWith(prefix))
+        .map(
+          (node) =>
+            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
+        )
+        .filter((label): label is string => Boolean(label)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 }
 
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
@@ -128,9 +185,13 @@ async function resolvePointForDevice(
   device: Device,
   point: StepPoint,
 ): Promise<{ x: number; y: number }> {
-  if (!point.anchor || !point.referenceBounds) return { x: point.x, y: point.y };
-  const bounds = await runtimeBounds(device);
-  return bounds ? resolveStepPoint(point, bounds) : { x: point.x, y: point.y };
+  const logicalPoint =
+    point.anchor && point.referenceBounds
+      ? resolveStepPoint(point, (await runtimeBounds(device)) ?? point.referenceBounds)
+      : { x: point.x, y: point.y };
+  // agent-device's XCTest runner accepts logical application coordinates even
+  // when raw snapshot children arrive in a portrait-native buffer.
+  return logicalPoint;
 }
 
 async function waitForResponseCompletion(
@@ -216,13 +277,14 @@ async function waitForResponseCompletion(
   );
 }
 
-function readInput(job: TestJob | undefined, input: string): string {
-  if (!job) throw new Error("extract: conversational steps require an owning job");
+function readInput(ctx: RecipeStepContext, input: string): string {
+  const variables = ctx.job?.resolvedInputs ?? ctx.variables;
+  if (!variables) throw new Error("extract: conversational steps require an execution context");
   const key = input.replace(/^\{\{\s*|\s*\}\}$/g, "");
-  if (!Object.hasOwn(job.resolvedInputs, key)) {
+  if (!Object.hasOwn(variables, key)) {
     throw new Error(`extract: input variable is missing (${key})`);
   }
-  return job.resolvedInputs[key]!;
+  return variables[key]!;
 }
 
 export type RecipeStepContext = {
@@ -235,6 +297,11 @@ export type RecipeStepContext = {
    * captures without attaching to a job.
    */
   job?: TestJob;
+  /** Ephemeral values and evidence for authoring replay and standalone flows.
+   * They provide the same assertion semantics without inventing a persisted
+   * TestJob merely to verify a proposal. */
+  variables?: Record<string, string>;
+  artifacts?: { kind: string; capturedAt: number; data: unknown }[];
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
   /** Test seam and provider override for pixel-only destination identity. */
@@ -400,22 +467,40 @@ async function tapTarget(
   repetitions = 1,
   intervalMs = 90,
 ): Promise<string> {
+  const repeated =
+    repetitions > 1
+      ? {
+          count: repetitions,
+          intervalMs,
+          // XCTest's native doubleTap is observably different from two
+          // independent taps for text selection and zoom gestures.
+          ...(repetitions === 2 ? { doubleTap: true } : {}),
+        }
+      : undefined;
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
-  if (target.ref) attempts.push({ strategy: "ref", run: () => pressRef(device, target.ref!) });
+  if (target.identifier)
+    attempts.push({
+      strategy: "identifier",
+      run: () => pressIdentifier(device, target.identifier!, repeated),
+    });
+  if (target.ref)
+    attempts.push({ strategy: "ref", run: () => pressRef(device, target.ref!, repeated) });
   if (target.label)
-    attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!) });
-  if (target.text) attempts.push({ strategy: "text", run: () => findClick(device, target.text!) });
+    attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!, repeated) });
+  if (target.text)
+    attempts.push({
+      strategy: "text",
+      run: () =>
+        repeated ? pressText(device, target.text!, repeated) : findClick(device, target.text!),
+    });
   if (target.point) {
     const p = await resolvePointForDevice(device, target.point);
-    attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y) });
+    attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y, repeated) });
   }
   for (let i = 0; i < attempts.length; i++) {
     const a = attempts[i]!;
     try {
-      for (let repetition = 0; repetition < repetitions; repetition++) {
-        await a.run();
-        if (repetition < repetitions - 1) await sleep(intervalMs, device);
-      }
+      await a.run();
       return a.strategy;
     } catch (err) {
       if (isCancel(err)) throw err;
@@ -491,6 +576,7 @@ async function longPressRecordedTarget(
   const attempts = (
     await Promise.all(
       candidates.map(async (target) => [
+        ...(target.identifier ? [{ identifier: target.identifier }] : []),
         ...(target.ref ? [{ ref: target.ref }] : []),
         ...(target.label ? [{ label: target.label }] : []),
         ...(target.text ? [{ text: target.text }] : []),
@@ -535,22 +621,24 @@ const DEFAULT_EXPECT_TIMEOUT_MS = 5000;
  */
 function isNotFoundOrTimeout(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /\bno match\b|timed out|timeout/i.test(msg);
+  return /\bno match\b|did not match|not found|timed out|timeout/i.test(msg);
 }
 
 /**
- * True if the target's ref/label/text strategy currently resolves. Unlike the
+ * True if the target's identifier/ref/label/text strategy currently resolves. Unlike the
  * `exists` helper (which swallows every non-cancel error as `false`),
  * infrastructure failures propagate with their original message — only a
  * genuine "No match" reads as absent, so `expect ... gone` cannot pass just
  * because the device went away.
  */
 async function targetPresent(device: Device, target: StepTarget): Promise<boolean> {
-  const query = target.ref
-    ? target.ref.startsWith("@")
-      ? target.ref
-      : `@${target.ref}`
-    : (target.label ?? target.text);
+  const query = target.identifier
+    ? `id="${target.identifier.replaceAll('"', '\\"')}"`
+    : target.ref
+      ? target.ref.startsWith("@")
+        ? target.ref
+        : `@${target.ref}`
+      : (target.label ?? target.text);
   if (!query) return false;
   try {
     await cooperativeCheckpoint();
@@ -587,8 +675,13 @@ export async function runRecipeStep(
       break;
 
     case "type": {
-      if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
-      await typeText(device, step.text);
+      if (step.mode === "replace") {
+        if (!step.target) throw new Error("replace text requires a target");
+        await replaceText(device, step.target, step.text);
+      } else {
+        if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
+        await typeText(device, step.text);
+      }
       break;
     }
 
@@ -626,24 +719,29 @@ export async function runRecipeStep(
     case "wait-for": {
       const target = step.target;
       const timeout = Math.min(step.timeoutMs ?? 30_000, MAX_WAIT_MS);
-      if (target.label) {
+      if (target.identifier || target.ref) {
+        const end = Date.now() + timeout;
+        let found = false;
+        while (Date.now() < end) {
+          await cooperativeCheckpoint();
+          if (await targetPresent(device, target)) {
+            found = true;
+            break;
+          }
+          await sleep(400, device);
+        }
+        if (!found) {
+          throw new Error(
+            `wait-for: timed out waiting for ${describeTarget(target)} (${timeout}ms)`,
+          );
+        }
+      } else if (target.label) {
         await waitFor(device, { text: target.label }, timeout);
       } else if (target.text) {
         await waitFor(device, { query: target.text }, timeout);
-      } else if (target.ref) {
-        const ref = target.ref.startsWith("@") ? target.ref : `@${target.ref}`;
-        const end = Date.now() + timeout;
-        while (Date.now() < end) {
-          await cooperativeCheckpoint();
-          if (await exists(device, ref)) break;
-          await sleep(400, device);
-        }
-        if (Date.now() >= end) {
-          throw new Error(`wait-for: timed out waiting for ref ${ref} (${timeout}ms)`);
-        }
       } else {
         // Validation rejects point-only / empty targets, but guard defensively.
-        throw new Error(`wait-for: target has no ref/label/text`);
+        throw new Error(`wait-for: target has no identifier/ref/label/text`);
       }
       break;
     }
@@ -660,27 +758,25 @@ export async function runRecipeStep(
 
       if (step.condition === "visible") {
         try {
-          if (target.label) {
-            await waitFor(device, { text: target.label }, timeout);
-          } else if (target.text) {
-            await waitFor(device, { query: target.text }, timeout);
-          } else if (target.ref) {
-            const ref = target.ref.startsWith("@") ? target.ref : `@${target.ref}`;
+          if (target.identifier || target.ref) {
             const end = Date.now() + timeout;
             let found = false;
             while (Date.now() < end) {
               await cooperativeCheckpoint();
-              // targetPresent propagates infra errors (unlike `exists`).
               if (await targetPresent(device, target)) {
                 found = true;
                 break;
               }
               await sleep(400, device);
             }
-            if (!found) throw new Error(`timed out waiting for ref ${ref}`);
+            if (!found) throw new Error(`timed out waiting for ${describeTarget(target)}`);
+          } else if (target.label) {
+            await waitFor(device, { text: target.label }, timeout);
+          } else if (target.text) {
+            await waitFor(device, { query: target.text }, timeout);
           } else {
             // Validation rejects point-only / empty targets, but guard defensively.
-            throw new Error(`expect: target has no ref/label/text`);
+            throw new Error(`expect: target has no identifier/ref/label/text`);
           }
         } catch (err) {
           if (isCancel(err)) throw err;
@@ -709,10 +805,39 @@ export async function runRecipeStep(
       break;
     }
 
+    case "expect-set": {
+      const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
+      const deadline = Date.now() + timeout;
+      const expected = [...new Set(step.labels)].sort((a, b) => a.localeCompare(b));
+      let observed: string[] = [];
+      let attempt = 0;
+      while (attempt === 0 || Date.now() <= deadline) {
+        attempt += 1;
+        await cooperativeCheckpoint();
+        observed = labelsForIdentifierPrefix(await snapshot(device), step.identifierPrefix);
+        if (JSON.stringify(observed) === JSON.stringify(expected)) break;
+        if (Date.now() >= deadline) break;
+        await sleep(Math.max(0, Math.min(400, deadline - Date.now())), device);
+      }
+      if (JSON.stringify(observed) !== JSON.stringify(expected)) {
+        const missing = expected.filter((label) => !observed.includes(label));
+        const unexpected = observed.filter((label) => !expected.includes(label));
+        throw new Error(
+          `expect-set: options did not match ${step.identifierPrefix} ` +
+            `(missing: ${missing.length ? missing.join(", ") : "none"}; ` +
+            `unexpected: ${unexpected.length ? unexpected.join(", ") : "none"})`,
+        );
+      }
+      break;
+    }
+
     case "expect-screen": {
       const observed = observeScreenIdentity(await snapshot(device));
       const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
-      if (screenIdentityMatches(expected, observed.fingerprint)) {
+      const semanticMatch = (step.observations ?? []).some(
+        (observation) => compareScreenIdentity(observed, observation).decision === "match",
+      );
+      if (screenIdentityMatches(expected, observed.fingerprint) || semanticMatch) {
         log(`screen: reached ${step.screenTitle}`);
         break;
       }
@@ -747,7 +872,8 @@ export async function runRecipeStep(
     }
 
     case "extract": {
-      if (!job) throw new Error("extract: no owning job");
+      const variables = job?.resolvedInputs ?? ctx.variables;
+      if (!variables) throw new Error("extract: no execution context");
       const nodes = await snapshot(device);
       const matches = nodes.filter((node) => nodeMatchesTarget(node, step.target));
       const values = [...new Set(matches.flatMap(nodeText))];
@@ -755,8 +881,8 @@ export async function runRecipeStep(
         throw new Error(`extract: no accessible content matched ${describeTarget(step.target)}`);
       }
       const text = values.join("\n");
-      job.resolvedInputs[step.as] = text;
-      job.artifacts.push({
+      variables[step.as] = text;
+      (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "conversation-turn",
         capturedAt: now(),
         data: {
@@ -772,14 +898,14 @@ export async function runRecipeStep(
     }
 
     case "assert-content": {
-      const actual = readInput(job, step.input);
+      const actual = readInput(ctx, step.input);
       const passed =
         step.match === "exact"
           ? actual === step.expected
           : step.match === "contains"
             ? actual.includes(step.expected)
             : !actual.includes(step.expected);
-      job?.artifacts.push({
+      (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "content-assertion",
         capturedAt: now(),
         data: { input: step.input, expected: step.expected, match: step.match, passed },
@@ -794,7 +920,7 @@ export async function runRecipeStep(
     }
 
     case "evaluate-semantic": {
-      const input = readInput(job, step.input);
+      const input = readInput(ctx, step.input);
       const result = await evaluateSemantic({
         input,
         criteria: step.criteria,
@@ -802,7 +928,11 @@ export async function runRecipeStep(
         provider: step.provider,
         model: step.model,
       });
-      job?.artifacts.push({ kind: "semantic-evaluation", capturedAt: now(), data: result });
+      (job?.artifacts ?? ctx.artifacts)?.push({
+        kind: "semantic-evaluation",
+        capturedAt: now(),
+        data: result,
+      });
       log(`semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`);
       if (step.requireAgreement) {
         let second;

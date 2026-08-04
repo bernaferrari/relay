@@ -41,13 +41,17 @@ function stableStep(step: RecipeStep, actionId: string, index: number): RecipeSt
   };
 }
 
-function screenExpectation(screen: Screen, stepId: string): RecipeStep {
+function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeStep {
   if (!screen.identity) {
     fail(
       "missing-screen-identity",
       `Screen "${screen.title}" cannot be verified until it has an approved identity`,
     );
   }
+  const observations = screen.variantIds.flatMap((variantId) => {
+    const observation = map.screenVariants[variantId]?.observation;
+    return observation?.nodes.length ? [structuredClone(observation)] : [];
+  });
   return {
     id: stepId,
     kind: "expect-screen",
@@ -55,12 +59,13 @@ function screenExpectation(screen: Screen, stepId: string): RecipeStep {
     screenTitle: screen.title,
     fingerprint: screen.identity.fingerprint,
     ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
+    ...(observations.length ? { observations } : {}),
   };
 }
 
 function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec): RecipeStep {
   if (assertion.kind === "screen") {
-    return screenExpectation(map.screens[assertion.screenId]!, `relay-action-${actionId}`);
+    return screenExpectation(map, map.screens[assertion.screenId]!, `relay-action-${actionId}`);
   }
   if (assertion.kind === "target") {
     return {
@@ -222,7 +227,7 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     stepProvenance: [],
   };
   const source = map.screens[flow.startScreenId]!;
-  const sourceStep = screenExpectation(source, `relay-source-${flow.id}`);
+  const sourceStep = screenExpectation(map, source, `relay-source-${flow.id}`);
   root.steps.push(sourceStep);
   root.stepProvenance.push({
     recipeId: rootRecipeId,
@@ -267,7 +272,7 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     if (connection.destination.kind === "screen") {
       const destination = map.screens[connection.destination.screenId]!;
       const stepIndex = root.steps.length;
-      const step = screenExpectation(destination, `relay-destination-${connection.id}`);
+      const step = screenExpectation(map, destination, `relay-destination-${connection.id}`);
       root.steps.push(step);
       root.stepProvenance.push({
         recipeId: rootRecipeId,

@@ -156,7 +156,8 @@ export class RelayClient {
     if (this.connection.auth.type !== "none") {
       headers.set("Authorization", `Bearer ${this.connection.auth.token}`);
     }
-    const signal = init.signal ?? AbortSignal.timeout(this.timeoutMs);
+    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     const response = await this.fetcher(`${this.connection.url}${path}`, {
       ...init,
       headers,

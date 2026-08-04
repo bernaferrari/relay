@@ -36,6 +36,7 @@ function stubDevice(impl: {
   find?: () => Promise<unknown>;
   press?: (options: unknown) => Promise<unknown>;
   longPress?: (options: unknown) => Promise<unknown>;
+  fill?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
   swipe?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
@@ -46,6 +47,7 @@ function stubDevice(impl: {
       find: impl.find ?? (() => Promise.resolve({})),
       press: impl.press ?? (() => Promise.resolve({})),
       longPress: impl.longPress ?? (() => Promise.resolve({})),
+      fill: impl.fill ?? (() => Promise.resolve({})),
       type: impl.type ?? (() => Promise.resolve({})),
       swipe: impl.swipe ?? (() => Promise.resolve({})),
     },
@@ -57,7 +59,38 @@ function stubDevice(impl: {
 const noLog = { log: () => {} };
 
 describe("runRecipeStep tap gestures", () => {
-  it("multi-taps the same resolved target the requested number of times", async () => {
+  it("uses a stable accessibility identifier before weaker fallbacks", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: {
+          identifier: "chat_text_input",
+          label: "Ask anything",
+          point: { x: 120, y: 220 },
+        },
+      },
+      noLog,
+    );
+
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        selector: 'id="chat_text_input"',
+      },
+    ]);
+  });
+
+  it("uses the driver's native repeated gesture for multi-taps", async () => {
     const presses: unknown[] = [];
     const device = stubDevice({
       press: (options) => {
@@ -76,8 +109,47 @@ describe("runRecipeStep tap gestures", () => {
       },
       noLog,
     );
-    assert.equal(presses.length, 4);
-    assert.ok(presses.every((press) => JSON.stringify(press) === JSON.stringify(presses[0])));
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        x: 120,
+        y: 240,
+        count: 4,
+        intervalMs: 140,
+      },
+    ]);
+  });
+
+  it("uses a native double-tap so text selection is not two unrelated taps", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        gesture: "multi",
+        tapCount: 2,
+        intervalMs: 120,
+        target: { identifier: "message-field" },
+      },
+      noLog,
+    );
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        selector: 'id="message-field"',
+        count: 2,
+        intervalMs: 120,
+        doubleTap: true,
+      },
+    ]);
   });
 
   it("preserves right and bottom offsets when the runtime device is larger", async () => {
@@ -137,6 +209,48 @@ describe("runRecipeStep tap gestures", () => {
       ref: "@e53",
       durationMs: 900,
     });
+  });
+});
+
+describe("runRecipeStep text entry", () => {
+  it("replaces an existing field without keyboard-selection choreography", async () => {
+    const fills: unknown[] = [];
+    const types: unknown[] = [];
+    const device = stubDevice({
+      fill: (options) => {
+        fills.push(options);
+        return Promise.resolve({});
+      },
+      type: (options) => {
+        types.push(options);
+        return Promise.resolve({});
+      },
+    });
+    await runRecipeStep(
+      device,
+      {
+        kind: "type",
+        mode: "replace",
+        text: "",
+        target: { identifier: "message-field" },
+      },
+      noLog,
+    );
+    assert.deepEqual(fills, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        selector: 'id="message-field"',
+        text: "x",
+      },
+    ]);
+    assert.deepEqual(types, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        text: "\b",
+      },
+    ]);
   });
 });
 
@@ -226,6 +340,17 @@ describe("runRecipeStep expect — error classification", () => {
     );
   });
 
+  it('gone treats the SDK phrase "did not match" as an absent element', async () => {
+    const device = stubDevice({
+      find: () => Promise.reject(new Error("find did not match any element")),
+    });
+    await runRecipeStep(
+      device,
+      { kind: "expect", target: { identifier: "later" }, condition: "gone" },
+      noLog,
+    );
+  });
+
   it("gone propagates infrastructure errors instead of passing or asserting", async () => {
     const device = stubDevice({
       find: () => Promise.reject(new Error("no active session — run doctor")),
@@ -280,6 +405,62 @@ describe("runRecipeStep expect — error classification", () => {
   });
 });
 
+describe("runRecipeStep expect-set", () => {
+  const grokMenu = [
+    {
+      index: 1,
+      type: "Button",
+      identifier: "ask.toolbar.add.menu.camera",
+      label: 'LocalizedStringKey(key: "Camera", hasFormatting: false, arguments: [])',
+    },
+    { index: 2, parentIndex: 1, type: "Image", label: "grok-camera" },
+    { index: 3, parentIndex: 1, type: "StaticText", label: "Camera" },
+    {
+      index: 4,
+      type: "Button",
+      identifier: "ask.toolbar.add.menu.photos",
+      label: 'LocalizedStringKey(key: "Photo or Video", hasFormatting: false, arguments: [])',
+    },
+    { index: 5, parentIndex: 4, type: "StaticText", label: "Photo or Video" },
+    {
+      index: 6,
+      type: "Button",
+      identifier: "ask.toolbar.add.menu.files",
+      label: "Files",
+    },
+  ];
+
+  it("matches the complete visible option set regardless of order", async () => {
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: grokMenu }) }),
+      {
+        kind: "expect-set",
+        identifierPrefix: "ask.toolbar.add.menu.",
+        labels: ["Photo or Video", "Files", "Camera"],
+        timeoutMs: 0,
+      },
+      noLog,
+    );
+  });
+
+  it("reports missing and unexpected options together", async () => {
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes: grokMenu }) }),
+          {
+            kind: "expect-set",
+            identifierPrefix: "ask.toolbar.add.menu.",
+            labels: ["Camera", "Gallery"],
+            timeoutMs: 0,
+          },
+          noLog,
+        ),
+      /missing: Gallery; unexpected: Files, Photo or Video/,
+    );
+  });
+});
+
 describe("runRecipeStep expect-screen", () => {
   const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
   const fingerprint = observeScreenIdentity(nodes).fingerprint;
@@ -327,6 +508,34 @@ describe("runRecipeStep expect-screen", () => {
     );
     assert.deepEqual(lines, ["screen: reached Canvas"]);
   });
+
+  it("accepts an approved semantic variant when dynamic body content changes", async () => {
+    const approved = observeScreenIdentity([
+      { role: "heading", label: "Conversation", identifier: "chat.top" },
+      { role: "button", label: "Copy message", identifier: "chat.copy" },
+      { role: "text", label: "First generated answer" },
+    ]);
+    const current = [
+      { role: "heading", label: "Conversation", identifier: "chat.top" },
+      { role: "button", label: "Copy message", identifier: "chat.copy" },
+      { role: "text", label: "A different generated answer" },
+    ];
+    const lines: string[] = [];
+
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: current }) }),
+      {
+        kind: "expect-screen",
+        screenId: "conversation",
+        screenTitle: "Conversation",
+        fingerprint: "a".repeat(64),
+        observations: [approved],
+      },
+      { log: (line) => lines.push(line) },
+    );
+
+    assert.deepEqual(lines, ["screen: reached Conversation"]);
+  });
 });
 
 describe("runRecipeStep conversational evidence", () => {
@@ -362,6 +571,76 @@ describe("runRecipeStep conversational evidence", () => {
     );
     assert.equal(owner.resolvedInputs.response, "Assistant response\nParis is in France.");
     assert.equal(owner.artifacts[0]?.kind, "conversation-turn");
+  });
+
+  it("extracts an editable field's value without mixing in its placeholder label", async () => {
+    const owner = job();
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              type: "TextView",
+              identifier: "message-field",
+              label: "New Message",
+              value: "NEW",
+            },
+          ],
+        }),
+    });
+    await runRecipeStep(
+      device,
+      { kind: "extract", as: "draft", target: { identifier: "message-field" } },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(owner.resolvedInputs.draft, "NEW");
+  });
+
+  it("extracts an empty editable field as empty text rather than its placeholder", async () => {
+    const owner = job();
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              type: "TextView",
+              identifier: "message-field",
+              label: "New Message",
+            },
+          ],
+        }),
+    });
+    await runRecipeStep(
+      device,
+      { kind: "extract", as: "draft", target: { identifier: "message-field" } },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(owner.resolvedInputs.draft, "");
+  });
+
+  it("replays extraction and assertions with an ephemeral authoring context", async () => {
+    const variables: Record<string, string> = {};
+    const artifacts: TestJob["artifacts"] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [{ ref: "@answer", label: "hello" }] }),
+    });
+
+    await runRecipeStep(
+      device,
+      { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
+      { log: () => {}, variables, artifacts },
+    );
+    await runRecipeStep(
+      device,
+      { kind: "assert-content", input: "response", expected: "hello", match: "exact" },
+      { log: () => {}, variables, artifacts },
+    );
+
+    assert.equal(variables.response, "hello");
+    assert.deepEqual(
+      artifacts.map((artifact) => artifact.kind),
+      ["conversation-turn", "content-assertion"],
+    );
   });
 
   it("waits for a human checkpoint and records the handoff", async () => {

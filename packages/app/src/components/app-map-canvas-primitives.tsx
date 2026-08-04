@@ -101,7 +101,7 @@ export function ScreenCard(props: {
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
       class={cn(
-        "group/screen absolute grid h-[350px] w-[180px] grid-rows-[24px_320px] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
+        "group/screen absolute grid h-[204px] w-[240px] grid-rows-[24px_174px] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
         props.selected && "z-20",
       )}
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
@@ -260,7 +260,7 @@ export function ScreenCard(props: {
       <button
         type="button"
         class={cn(
-          "app-map-connect-handle group absolute top-[190px] right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
+          "app-map-connect-handle group absolute top-[117px] right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
           props.selected && "opacity-100",
         )}
         aria-label={`Connect ${props.title} to another screen`}

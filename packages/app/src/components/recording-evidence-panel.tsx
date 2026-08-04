@@ -12,6 +12,10 @@ import { Icon } from "./icon";
 function candidateIsActive(candidate: RecordedSelectorCandidate, target: StepTarget): boolean {
   if (defaultStrategy(target) !== candidate.strategy) return false;
   switch (candidate.strategy) {
+    case "identifier":
+      return Boolean(
+        candidate.target.identifier && candidate.target.identifier === target.identifier,
+      );
     case "ref":
       return Boolean(candidate.target.ref && candidate.target.ref === target.ref);
     case "label":
@@ -24,6 +28,7 @@ function candidateIsActive(candidate: RecordedSelectorCandidate, target: StepTar
         target.point &&
         candidate.target.point.x === target.point.x &&
         candidate.target.point.y === target.point.y &&
+        !target.identifier &&
         !target.ref &&
         !target.label &&
         !target.text,
@@ -32,6 +37,7 @@ function candidateIsActive(candidate: RecordedSelectorCandidate, target: StepTar
 }
 
 function candidateValue(candidate: RecordedSelectorCandidate): string {
+  if (candidate.target.identifier) return candidate.target.identifier;
   if (candidate.target.ref) return candidate.target.ref;
   if (candidate.target.label) return `“${candidate.target.label}”`;
   if (candidate.target.text) return `“${candidate.target.text}”`;
@@ -40,6 +46,7 @@ function candidateValue(candidate: RecordedSelectorCandidate): string {
 }
 
 function strategyLabel(strategy: RecordedSelectorCandidate["strategy"]): string {
+  if (strategy === "identifier") return "Stable ID";
   if (strategy === "ref") return "Ref";
   if (strategy === "label") return "A11y label";
   if (strategy === "point") return "X, Y";

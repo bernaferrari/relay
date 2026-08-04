@@ -4,7 +4,6 @@ import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
-import { phoneScreen } from "../lib/ui";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
 import { TakeActionEditor } from "./take-action-editor";
@@ -17,8 +16,8 @@ const primaryButton =
   "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
   "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]";
-const reviewPhoneShell =
-  "relative rounded-[21px] bg-[var(--phone-bezel)] p-[2px] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_22px_54px_-24px_rgb(0_0_0/78%)]";
+const reviewEvidenceShell =
+  "relative overflow-hidden rounded-[14px] bg-black shadow-[0_0_0_1px_var(--v2-border-border-muted),0_24px_54px_-32px_rgb(0_0_0/72%)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -303,7 +302,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                 invalidateReview();
               }}
             >
-              <option value="new">Create captured screen</option>
+              <option value="new">New screen from this capture</option>
               <For each={props.screens}>
                 {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
               </For>
@@ -429,24 +428,47 @@ export function RecordedTakePlayer(props: {
   const selectedIndex = () => Math.min(lastIndex(), Math.max(0, props.selectedIndex));
   const step = () => props.take.steps[selectedIndex()];
   const imageSrc = () => props.screenshotFor(step(), selectedIndex());
-  const title = () => (step() ? describeStep(step()!) : "No recorded action");
+  const title = () => {
+    const selected = step();
+    if (!selected) return "No recorded action";
+    if (selected.kind === "type") {
+      const verb = selected.mode === "replace" ? "Replace text" : "Type text";
+      const lines = selected.text.split("\n").length;
+      return `${verb} · ${selected.text.length} characters${lines > 1 ? ` across ${lines} lines` : ""}`;
+    }
+    const description = describeStep(selected);
+    return description.length > 120 ? `${description.slice(0, 117)}…` : description;
+  };
   const previous = () => props.onSelect(Math.max(0, selectedIndex() - 1));
   const next = () => props.onSelect(Math.min(lastIndex(), selectedIndex() + 1));
   const hasMultipleFrames = () => props.take.steps.length > 1;
+  const evidenceAspectRatio = () => {
+    const viewport = props.orientationEvidence?.logicalViewport;
+    if (!viewport || viewport.width <= 0 || viewport.height <= 0) return 9 / 19.5;
+    return viewport.width / viewport.height;
+  };
+  const evidenceShellStyle = () => {
+    const ratio = evidenceAspectRatio();
+    return {
+      "aspect-ratio": String(ratio),
+      width: ratio >= 1 ? "min(760px, calc(100% - 48px))" : "auto",
+      height: ratio >= 1 ? "auto" : "min(700px, calc(100% - 148px))",
+      "max-width": "calc(100% - 48px)",
+      "max-height": "calc(100% - 148px)",
+    };
+  };
 
   return (
     <section
-      class="relative flex h-full min-h-0 flex-col items-center justify-center overflow-hidden px-6 py-5"
+      class="relative flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-hidden px-6 py-4"
       aria-label="Recorded action preview"
     >
       <Show when={hasMultipleFrames()}>
-        <div class="absolute top-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2.5 text-[10.5px] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-          <Icon name="clock" size={12} />
-          <span>Captured frame</span>
-          <span class="text-[var(--v2-border-border-strong)]">·</span>
+        <div class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2.5 text-[10.5px] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+          <Icon name="camera" size={12} />
+          <span>Frame</span>
           <span class="font-mono tabular-nums text-[var(--text-base)]">
-            {String(selectedIndex() + 1).padStart(2, "0")} /{" "}
-            {String(props.take.steps.length).padStart(2, "0")}
+            {selectedIndex() + 1} of {props.take.steps.length}
           </span>
         </div>
       </Show>
@@ -470,19 +492,11 @@ export function RecordedTakePlayer(props: {
         }
       >
         <div
-          data-device-chrome
-          class={cn(
-            reviewPhoneShell,
-            "relative z-[1] h-[min(790px,calc(100%-136px))] max-w-[min(440px,calc(100%-56px))] shrink-0",
-          )}
-          style={{ "aspect-ratio": "9 / 19.5" }}
+          data-evidence-frame
+          class={cn(reviewEvidenceShell, "relative z-[1] shrink-0")}
+          style={evidenceShellStyle()}
         >
-          <div
-            class={cn(
-              phoneScreen,
-              "relative h-full w-full overflow-hidden rounded-[20px] bg-black",
-            )}
-          >
+          <div class="relative h-full w-full overflow-hidden bg-black">
             <Show
               when={props.videoSrc}
               fallback={
@@ -595,8 +609,8 @@ export function RecordedTakePlayer(props: {
       </Show>
 
       <Show when={hasMultipleFrames()}>
-        <div class="mt-4 flex max-w-[min(420px,100%)] flex-col items-center gap-2">
-          <span class="max-w-full truncate text-[12px] font-medium text-[var(--text-strong)]">
+        <div class="flex max-w-[min(640px,100%)] flex-col items-center gap-2">
+          <span class="max-h-9 max-w-full overflow-hidden text-center text-[11px]/[1.45] font-medium text-[var(--text-strong)]">
             {title()}
           </span>
           <div class="inline-flex items-center gap-1 rounded-[9px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] p-1 shadow-[0_2px_8px_rgb(0_0_0/12%)]">

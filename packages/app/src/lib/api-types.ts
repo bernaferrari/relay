@@ -2,7 +2,12 @@
  * Client-side shapes matching the HTTP/SSE API from @relay/server.
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
-import type { RecipeParameter, RecipeStep, ScreenIdentity, StepTarget } from "@relay/protocol";
+import type {
+  RecipeParameter,
+  RecipeStep,
+  ScreenIdentityObservation,
+  StepTarget,
+} from "@relay/protocol";
 
 export type { RunEvidenceQuery } from "@relay/protocol";
 
@@ -233,8 +238,11 @@ export type SnapshotState = {
   /** False when the device hierarchy cannot be reliably mapped onto its pixels. */
   inspectable?: boolean;
   source?: "sdk" | "android-system";
-  inspectionState?: "active" | "keyguard" | "asleep" | "unknown";
-  screenIdentity?: ScreenIdentity;
+  inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
+  foregroundApp?: string;
+  treeApp?: string;
+  bindingState?: "matched" | "rebound" | "unavailable";
+  screenIdentity?: ScreenIdentityObservation;
 } | null;
 
 export type Frame = {

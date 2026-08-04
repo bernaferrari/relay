@@ -6,6 +6,8 @@ import type {
   AuthoringScreenObservation,
   AuthoringSession,
   AuthoringVideoClip,
+  AppMap,
+  OperationOutput,
   TargetProfile,
 } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
@@ -73,6 +75,8 @@ export type CapturedStartScreen = {
   viewport?: { width: number; height: number };
 };
 
+export type CapturedMapScreen = OperationOutput<"app-map.screen.capture"> & { appMap: AppMap };
+
 export const describeStep = sentenceForStep;
 
 export function hasUsableDeviceBounds(
@@ -105,6 +109,7 @@ export function buildTapTarget(
   if (!node) return { point };
   const label = (node.label ?? node.value ?? "").trim();
   return {
+    ...(node.identifier ? { identifier: node.identifier } : {}),
     ...(node.ref ? { ref: node.ref.startsWith("@") ? node.ref : `@${node.ref}` } : {}),
     ...(label ? { label } : {}),
     point,
@@ -289,7 +294,14 @@ export function selectProjectedAuthoringSession(
         (!input.targetId || session.target.targetId === input.targetId),
     )
     .sort((left, right) => right.updatedAt - left.updatedAt);
-  return relevant.find((session) => session.actorId === input.actorId) ?? relevant[0] ?? null;
+  // A collaborator's live recording is useful shared presence. Their stopped
+  // Take is a proposal, not the local user's modal workspace: opening Relay
+  // must never trap someone in another actor's stale review.
+  return (
+    relevant.find((session) => session.actorId === input.actorId) ??
+    relevant.find((session) => session.state === "recording") ??
+    null
+  );
 }
 
 export const { use: useRecorder, provider: RecorderProvider } = createSimpleContext({
@@ -554,6 +566,58 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
     }
 
+    /** Save the current target as a canonical App Map screen through the same
+     * operation used by the CLI and MCP. Unlike captureStartScreen, this
+     * mutates the map and never creates a placeholder transition. */
+    async function captureMapScreen(
+      appMapIdOverride?: string,
+      options: { title?: string; position?: { x: number; y: number } } = {},
+    ): Promise<CapturedMapScreen | null> {
+      if (activeSession()) {
+        toast("Finish the current recording before saving another screen", "info");
+        return null;
+      }
+      if (!targetReady()) {
+        toast("Choose a ready device before saving its screen", "info");
+        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        return null;
+      }
+      const appMapId = appMapIdOverride ?? server.selectedAppMapId();
+      const device = server.devices().find((item) => item.serial === server.selectedDevice());
+      const leaseId = device ? await ensureControlLease(device.serial) : null;
+      if (!appMapId || !device || !leaseId) {
+        toast(
+          server.liveCaptureIssue() ||
+            "Device control is not available yet. Try again in a moment.",
+          "warning",
+        );
+        return null;
+      }
+      try {
+        const appMap = await server.loadAppMap(appMapId);
+        const result = await server.runAction("app-map.screen.capture", {
+          appMapId,
+          expectedRevision: appMap.revision,
+          target:
+            device.platform === "browser"
+              ? { kind: "browser", platform: "browser", targetId: device.serial }
+              : {
+                  kind: "device",
+                  platform: device.platform === "ios" ? "ios" : "android",
+                  targetId: device.serial,
+                },
+          leaseId,
+          ...(options.title?.trim() ? { title: options.title.trim() } : {}),
+          ...(options.position ? { position: options.position } : {}),
+        });
+        await server.refreshAppMaps();
+        return { ...result, appMap: await server.loadAppMap(appMapId) };
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "warning");
+        return null;
+      }
+    }
+
     async function stopRecording(): Promise<void> {
       await flushType();
       const session = activeSession();
@@ -613,6 +677,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         if (physicalIos) {
           return physicalIosStep ? server.interactStep(physicalIosStep) : false;
         }
+        if (target.identifier)
+          return server.interactStep({ kind: "identifier", identifier: target.identifier });
         if (target.ref) return server.interactStep({ kind: "ref", ref: target.ref });
         if (target.label) return server.interactStep({ kind: "label", label: target.label });
         return target.point
@@ -923,6 +989,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       startNextRecordingGroup,
       enterRecordMode,
       captureStartScreen,
+      captureMapScreen,
       stopRecording,
       driveTap,
       driveSwipe,

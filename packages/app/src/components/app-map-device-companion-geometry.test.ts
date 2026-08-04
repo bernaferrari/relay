@@ -19,10 +19,8 @@ test("corrects a native-portrait iPad capture into its logical landscape viewpor
   const edge = companionOrientationEdge(nodes, logicalViewport);
   const presentation = companionFramePresentation({
     frame: { width: 1668, height: 2220 },
-    logicalViewport: logicalViewport && {
-      width: logicalViewport.width * 2,
-      height: logicalViewport.height * 2,
-    },
+    // XCTest reports points while the screenshot is a 2× pixel buffer.
+    logicalViewport,
     platform: "ios",
     edge,
   });

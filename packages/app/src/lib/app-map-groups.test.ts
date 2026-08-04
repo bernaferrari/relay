@@ -11,10 +11,10 @@ test("groups auto-wrap every member with a label gutter", () => {
     id: "settings",
     left: 72,
     top: 48,
-    right: 548,
-    bottom: 518,
-    width: 476,
-    height: 470,
+    right: 608,
+    bottom: 372,
+    width: 536,
+    height: 324,
   });
 });
 
@@ -23,10 +23,10 @@ test("a Group follows a member moved far away without changing membership", () =
     id: "settings",
     left: 312,
     top: 88,
-    right: 1108,
-    bottom: 1278,
-    width: 796,
-    height: 1190,
+    right: 1168,
+    bottom: 1132,
+    width: 856,
+    height: 1044,
   });
   assert.deepEqual(group.screenIds, ["root", "account"]);
 });

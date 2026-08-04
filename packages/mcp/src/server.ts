@@ -1,6 +1,12 @@
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { RelayClient } from "@relay/client";
-import { operationDefinition, type OperationId } from "@relay/protocol";
+import {
+  operationDefinition,
+  summarizeAppMapOperationResult,
+  summarizeAuthoringOperationResult,
+  summarizeExecutionOperationResult,
+  type OperationId,
+} from "@relay/protocol";
 import * as z from "zod/v4";
 import type { McpConfig } from "./config.js";
 import { invalidRelayMcpInput, relayMcpError, type RelayMcpStructuredError } from "./errors.js";
@@ -251,7 +257,15 @@ async function invokeRelayTool(
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
   try {
-    return normalResult(result);
+    return normalResult(
+      summarizeExecutionOperationResult(
+        descriptor.operationId,
+        summarizeAppMapOperationResult(
+          descriptor.operationId,
+          summarizeAuthoringOperationResult(descriptor.operationId, result),
+        ),
+      ),
+    );
   } catch {
     return errorResult(
       localError(

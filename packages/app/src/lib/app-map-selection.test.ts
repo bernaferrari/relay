@@ -36,10 +36,10 @@ test("temporary multi-selection gets a close collective outline", () => {
   assert.deepEqual(selectedScreensRect(["account", "security"], positions), {
     left: 94,
     top: 94,
-    right: 526,
-    bottom: 476,
-    width: 432,
-    height: 382,
+    right: 586,
+    bottom: 330,
+    width: 492,
+    height: 236,
   });
 });
 

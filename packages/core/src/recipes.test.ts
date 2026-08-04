@@ -298,6 +298,27 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  it("preserves stable accessibility identifiers as first-class targets", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        { kind: "tap", target: { identifier: "chat_text_input" } },
+        {
+          kind: "expect",
+          target: { identifier: "conversation_top_bar" },
+          condition: "visible",
+        },
+      ]),
+      [
+        { kind: "tap", target: { identifier: "chat_text_input" } },
+        {
+          kind: "expect",
+          target: { identifier: "conversation_top_bar" },
+          condition: "visible",
+        },
+      ],
+    );
+  });
+
   it("supports explicit Android build evidence and lifecycle steps", () => {
     assert.deepEqual(
       validateRecipeSteps([
@@ -518,6 +539,29 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("accepts explicit field replacement and requires its target", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "type",
+          mode: "replace",
+          text: "",
+          target: { identifier: "message-field" },
+        },
+      ])[0],
+      {
+        kind: "type",
+        mode: "replace",
+        text: "",
+        target: { identifier: "message-field" },
+      },
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "type", mode: "replace", text: "" }]),
+      /target is required/i,
+    );
+  });
+
   it("rejects a point-only post-handoff verification target", () => {
     assert.throws(
       () =>
@@ -528,14 +572,14 @@ describe("validateRecipeSteps", () => {
             verifyAfter: { target: { point: { x: 1, y: 2 } } },
           },
         ]),
-      /pause\.verifyAfter\.target must have ref, label, or text/,
+      /pause\.verifyAfter\.target must have identifier, ref, label, or text/,
     );
   });
 
   it("rejects wait-for with point-only target", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "wait-for", target: { point: { x: 1, y: 2 } } }]),
-      /step 1: wait-for target must have ref\/label\/text/,
+      /step 1: wait-for target must have identifier\/ref\/label\/text/,
     );
   });
 
@@ -553,13 +597,45 @@ describe("validateRecipeSteps", () => {
     });
   });
 
+  it("accepts an exact, order-independent option set", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "expect-set",
+          identifierPrefix: "ask.toolbar.add.menu.",
+          labels: ["Camera", "Photo or Video", "Files"],
+          timeoutMs: 2_000,
+        },
+      ]),
+      [
+        {
+          kind: "expect-set",
+          identifierPrefix: "ask.toolbar.add.menu.",
+          labels: ["Camera", "Photo or Video", "Files"],
+          timeoutMs: 2_000,
+        },
+      ],
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "expect-set",
+            identifierPrefix: "menu.",
+            labels: ["Files", "files"],
+          },
+        ]),
+      /labels must be unique/,
+    );
+  });
+
   it("rejects expect with point-only target", () => {
     assert.throws(
       () =>
         validateRecipeSteps([
           { kind: "expect", target: { point: { x: 1, y: 2 } }, condition: "visible" },
         ]),
-      /step 1: expect target must have ref\/label\/text/,
+      /step 1: expect target must have identifier\/ref\/label\/text/,
     );
   });
 
@@ -749,6 +825,14 @@ describe("describeRecipeStep", () => {
       describeRecipeStep({ kind: "expect", target: { text: "Welcome" }, condition: "gone" }),
       'check text "Welcome" gone',
     );
+    assert.equal(
+      describeRecipeStep({
+        kind: "expect-set",
+        identifierPrefix: "menu.",
+        labels: ["Camera", "Files"],
+      }),
+      "Check options are exactly Camera, Files",
+    );
   });
 
   it("glyphsForStep maps each kind", () => {
@@ -767,6 +851,10 @@ describe("describeRecipeStep", () => {
     ]);
     assert.deepEqual(
       glyphsForStep({ kind: "expect", target: { text: "x" }, condition: "visible" }),
+      ["ok"],
+    );
+    assert.deepEqual(
+      glyphsForStep({ kind: "expect-set", identifierPrefix: "menu.", labels: ["Files"] }),
       ["ok"],
     );
     assert.deepEqual(glyphsForStep({ kind: "pause", message: "x" }), ["wait"]);

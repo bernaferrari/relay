@@ -12,6 +12,7 @@ function targetPhrase(t: StepTarget | undefined): string {
   if (!t) return "an element";
   if (t.label) return `"${t.label}"`;
   if (t.text) return `"${t.text}"`;
+  if (t.identifier) return `the ${t.identifier} element`;
   if (t.ref) return t.ref;
   if (t.point) return `${t.point.x}, ${t.point.y}`;
   return "an element";
@@ -53,7 +54,11 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "tap":
       return `${step.gesture === "multi" ? `${step.tapCount ?? 2} taps` : step.gesture === "hold" ? "Hold" : "Tap"} ${recordedTargetPhrase(step)}`;
     case "type":
-      return step.text.trim() ? `Type "${step.text}"` : "Type text";
+      return step.text.trim()
+        ? `${step.mode === "replace" ? "Replace with" : "Type"} "${step.text}"`
+        : step.mode === "replace"
+          ? "Clear text"
+          : "Type text";
     case "wait-for": {
       const to = step.timeoutMs ? ` (${fmtSeconds(step.timeoutMs)})` : "";
       return `Wait until ${targetPhrase(step.target)} appears${to}`;
@@ -67,6 +72,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       const verb = step.condition === "gone" ? "is gone" : "is visible";
       return `Check ${targetPhrase(step.target)} ${verb}${to}`;
     }
+    case "expect-set":
+      return `Check options are exactly ${step.labels.map((label) => `“${label}”`).join(", ")}`;
     case "expect-screen":
       return `Reach ${step.screenTitle}`;
     case "extract":
@@ -148,6 +155,8 @@ export function stepValid(step: RecipeStep): boolean {
     case "wait-response":
     case "expect":
       return targetValid(step.target);
+    case "expect-set":
+      return step.identifierPrefix.trim().length > 0 && step.labels.some((label) => label.trim());
     case "expect-screen":
       return Boolean(step.screenId.trim() && step.screenTitle.trim() && step.fingerprint.trim());
     case "extract":
@@ -157,7 +166,7 @@ export function stepValid(step: RecipeStep): boolean {
     case "evaluate-semantic":
       return step.input.trim().length > 0 && step.criteria.some((criterion) => criterion.trim());
     case "type":
-      return step.text.trim().length > 0;
+      return step.mode === "replace" ? targetValid(step.target ?? {}) : step.text.trim().length > 0;
     case "sleep":
       return Number.isFinite(step.ms) && step.ms >= 0;
     case "pause":
@@ -212,6 +221,8 @@ export function stepIssue(step: RecipeStep): string | null {
     case "wait-response":
     case "expect":
       return "Needs a target — a label, ref, text, or point.";
+    case "expect-set":
+      return "Needs an element group and at least one expected option.";
     case "expect-screen":
       return "Needs an expected screen identity.";
     case "extract":

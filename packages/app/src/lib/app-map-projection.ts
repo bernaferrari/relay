@@ -267,7 +267,10 @@ export function mergeAppMapProjection(
       createdAt: flow.createdAt,
       updatedAt: flow.updatedAt,
     }));
-  const positions = { ...metadata.positions };
+  // Canonical App Map positions are the only persisted geometry. Retaining
+  // recipe-era canvas metadata here made an unpositioned canonical screen
+  // inherit stale coordinates and defeated automatic layout indefinitely.
+  const positions: AppMapCanvasState["positions"] = {};
   const screenTitles = { ...metadata.screenTitles };
   for (const screen of Object.values(appMap.screens)) {
     screenTitles[screen.id] = screen.title;

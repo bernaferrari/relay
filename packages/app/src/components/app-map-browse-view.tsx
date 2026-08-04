@@ -228,7 +228,7 @@ export function AppMapBrowseView(props: {
             />
           }
         >
-          <div class="grid gap-8">
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] items-start gap-x-7 gap-y-9">
             <For
               each={filteredAreas()}
               fallback={
@@ -262,7 +262,10 @@ export function AppMapBrowseView(props: {
               {(area) => (
                 <section
                   aria-labelledby={`area-${area.id}`}
-                  class="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]"
+                  class={cn(
+                    "min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]",
+                    area.screenIds.length > 1 && "min-[980px]:col-span-2",
+                  )}
                 >
                   <header class="mb-3 flex items-baseline gap-2.5">
                     <h3
@@ -275,7 +278,7 @@ export function AppMapBrowseView(props: {
                       {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
                     </span>
                   </header>
-                  <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),260px))] items-start gap-6">
+                  <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,210px),1fr))] items-start gap-5">
                     <For each={area.screenIds}>
                       {(screenId) => {
                         const screen = () => props.appMap.screens[screenId]!;
@@ -347,7 +350,7 @@ function ScreenTile(props: {
         </Show>
         <Show when={props.targets.length > 0}>
           <span class="absolute bottom-2 left-2 inline-flex min-h-6 items-center rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] px-2 text-[9px] font-medium text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)] backdrop-blur">
-            {props.approvedTargets}/{props.targets.length} approved
+            {baselineCoverageLabel(props.approvedTargets, props.targets.length)}
           </span>
         </Show>
       </div>
@@ -613,6 +616,12 @@ function screenTargetNames(appMap: AppMap, screen: Screen): string[] {
 
 function screenApprovedTargetCount(appMap: AppMap, screen: Screen): number {
   return screen.variantIds.filter((id) => Boolean(appMap.screenVariants[id]?.baseline)).length;
+}
+
+function baselineCoverageLabel(approved: number, total: number): string {
+  if (approved <= 0) return "Needs baseline";
+  if (approved >= total) return "Approved";
+  return `${approved}/${total} approved`;
 }
 
 function connectionLabel(appMap: AppMap, connectionId: string): string {

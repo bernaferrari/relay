@@ -23,8 +23,13 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
+import { validateRecipeSteps } from "./recipes.js";
 import type { SnapshotNode } from "./device.js";
-import { observeScreenIdentity, resolveScreenIdentity } from "./screen-identity.js";
+import {
+  compareScreenIdentity,
+  observeScreenIdentity,
+  resolveScreenIdentity,
+} from "./screen-identity.js";
 
 export class AuthoringStateError extends Error {
   readonly status = 409;
@@ -238,6 +243,71 @@ function semanticsMatch(
   );
 }
 
+/**
+ * A recorded destination may contain generated copy, timestamps, or remote
+ * content that is expected to change on every replay. Exact semantics remain
+ * the first choice, but the same stable application shell is also sufficient
+ * when it has multiple matching identifiers and substantially the same role
+ * structure. This keeps chat/feed replays meaningful without weakening the
+ * stricter source-screen guard or treating a shared app root as a match.
+ */
+function replayDestinationMatches(
+  observed: AuthoringObservation,
+  expected: readonly ScreenIdentityObservation[],
+): boolean {
+  const semantic = semanticObservation(observed);
+  if (!semantic || expected.length === 0) return false;
+  return expected.some((candidate) => {
+    const comparison = compareScreenIdentity(semantic, candidate);
+    if (comparison.decision === "match") return true;
+    if (comparison.decision !== "possible") return false;
+
+    const expectedIdentifiers = new Set(
+      candidate.nodes.flatMap((node) => (node.identifier ? [node.identifier] : [])),
+    );
+    const observedIdentifiers = new Set(
+      semantic.nodes.flatMap((node) => (node.identifier ? [node.identifier] : [])),
+    );
+    const sharedIdentifiers = [...expectedIdentifiers].filter((identifier) =>
+      observedIdentifiers.has(identifier),
+    );
+    const identifierSignal = comparison.signals.find(
+      (signal) => signal.kind === "stable-identifier-overlap",
+    );
+    const roleLabelSignal = comparison.signals.find(
+      (signal) => signal.kind === "role-label-overlap",
+    );
+    const structuralSignal = comparison.signals.find(
+      (signal) => signal.kind === "structural-overlap",
+    );
+    const expectedInteractiveLabels = new Set(
+      candidate.nodes.flatMap((node) =>
+        node.label && (node.hittable || /button|imageview/u.test(node.role))
+          ? [`${node.role}\u0000${node.label}`]
+          : [],
+      ),
+    );
+    const observedInteractiveLabels = new Set(
+      semantic.nodes.flatMap((node) =>
+        node.label && (node.hittable || /button|imageview/u.test(node.role))
+          ? [`${node.role}\u0000${node.label}`]
+          : [],
+      ),
+    );
+    const sharedInteractiveLabels = [...expectedInteractiveLabels].filter((label) =>
+      observedInteractiveLabels.has(label),
+    );
+    return (
+      sharedIdentifiers.length >= 2 &&
+      sharedInteractiveLabels.length >= 2 &&
+      sharedInteractiveLabels.length / expectedInteractiveLabels.size >= 0.5 &&
+      (identifierSignal?.strength ?? 0) >= 0.8 &&
+      (roleLabelSignal?.strength ?? 0) >= 0.2 &&
+      (structuralSignal?.strength ?? 0) >= 0.6
+    );
+  });
+}
+
 async function assertExpectedSource(
   session: AuthoringSession,
   observed: AuthoringObservation,
@@ -258,7 +328,8 @@ async function assertExpectedSource(
   if (
     (fingerprints.length === 0 && expectedSemantics.length === 0) ||
     fingerprints.includes(observed.screen.fingerprint) ||
-    semanticsMatch(observed, expectedSemantics)
+    semanticsMatch(observed, expectedSemantics) ||
+    replayDestinationMatches(observed, expectedSemantics)
   )
     return;
   throw new AuthoringStateError(
@@ -447,6 +518,7 @@ function stepsForInteraction(
           kind: "type",
           text: interaction.text,
           ...(interaction.target ? { target: clone(interaction.target) } : {}),
+          ...(interaction.mode ? { mode: interaction.mode } : {}),
         },
       ];
       break;
@@ -483,7 +555,7 @@ function stepsForInteraction(
       ];
       break;
     case "steps":
-      steps = clone(interaction.steps);
+      steps = validateRecipeSteps(clone(interaction.steps));
       break;
   }
   return steps.map((step, index) => stableStep(step, actionId, index, group));
@@ -719,6 +791,9 @@ export class AuthoringSessionStore {
       }
       if (session.state === "preparing" || session.state === "failed") {
         session = transition(session, session.take ? "reviewing" : "ready");
+        if (session.take) {
+          session.take = { ...session.take, state: "reviewing", updatedAt: session.updatedAt };
+        }
         session.error = undefined;
         session.recoverable = undefined;
       }
@@ -829,7 +904,7 @@ export class AuthoringSessionStore {
       const startedAt = now();
       const previousAction = currentRevision(session).actions.at(-1);
       if (
-        !["steps", "reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
+        !["reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
         !("applied" in interaction && interaction.applied)
       ) {
         await runtime.execute(session, interaction);
@@ -857,14 +932,18 @@ export class AuthoringSessionStore {
             : {}),
       };
       return nextRevision(session, "recording", (revision) => {
-        const pause = previousAction
-          ? recordedPauseAction({
-              durationMs: startedAt - (idleStartedAt ?? previousAction.finishedAt),
-              finishedAt: startedAt,
-              evidenceIds: previousAction.evidenceIds,
-              group: session.group,
-            })
-          : undefined;
+        // Human cadence is meaningful recording data. Agent wall-clock gaps are
+        // orchestration latency (reasoning, tool round-trips, model queues), not
+        // application behavior, and must never make the saved replay slower.
+        const pause =
+          previousAction && session.actorKind === "human"
+            ? recordedPauseAction({
+                durationMs: startedAt - (idleStartedAt ?? previousAction.finishedAt),
+                finishedAt: startedAt,
+                evidenceIds: previousAction.evidenceIds,
+                group: session.group,
+              })
+            : undefined;
         return {
           ...revision,
           actions: [...revision.actions, ...(pause ? [pause] : []), action],
@@ -973,7 +1052,9 @@ export class AuthoringSessionStore {
                 source: actionSource(interaction),
                 steps: stepsForInteraction(interaction, action.id, session.group),
                 label: undefined,
-                ...((interaction.kind === "observe" || interaction.kind === "screenshot") &&
+                ...((interaction.kind === "observe" ||
+                  interaction.kind === "screenshot" ||
+                  interaction.kind === "steps") &&
                 interaction.label
                   ? { label: interaction.label }
                   : {}),
@@ -1013,7 +1094,7 @@ export class AuthoringSessionStore {
         if (
           (expected.fingerprints.length > 0 || expected.observations.length > 0) &&
           !expected.fingerprints.includes(captured.observation.screen.fingerprint) &&
-          !semanticsMatch(captured.observation, expected.observations)
+          !replayDestinationMatches(captured.observation, expected.observations)
         ) {
           outcome = "failed";
           error = `Replay reached a different screen (expected ${expected.fingerprints[0] ?? "the approved destination"}, received ${captured.observation.screen.fingerprint})`;
@@ -1242,7 +1323,13 @@ export class AuthoringSessionStore {
           next.error =
             "Relay restarted during device capture. Preserved evidence is available for review.";
         }
-        await recovery.releaseLease(next).catch(() => undefined);
+        // A preserved Take is still useful: its owner can observe the target,
+        // review the recovered actions, replay, or commit it. Keep that same
+        // exclusive lease so “recoverable” is an actionable state instead of a
+        // dead end after restart. Terminal and evidence-free sessions release it.
+        if (next.state === "committed" || !next.take) {
+          await recovery.releaseLease(next).catch(() => undefined);
+        }
         await atomicSessionWrite(next);
         if (next.state === "committed") committedEvent(next);
         else sessionEvent(next);

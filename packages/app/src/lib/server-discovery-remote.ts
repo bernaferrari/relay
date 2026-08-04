@@ -116,15 +116,17 @@ export async function approveDiscoverySuggestion(
   },
 ): Promise<void> {
   const target = input.control.target;
-  const action = target.ref
-    ? { kind: "ref", ref: target.ref }
-    : target.label
-      ? { kind: "label", label: target.label }
-      : target.text
-        ? { kind: "text-match", match: target.text }
-        : target.point
-          ? { kind: "point", x: target.point.x, y: target.point.y }
-          : null;
+  const action = target.identifier
+    ? { kind: "identifier", identifier: target.identifier }
+    : target.ref
+      ? { kind: "ref", ref: target.ref }
+      : target.label
+        ? { kind: "label", label: target.label }
+        : target.text
+          ? { kind: "text-match", match: target.text }
+          : target.point
+            ? { kind: "point", x: target.point.x, y: target.point.y }
+            : null;
   if (!action) throw new Error("suggestion has no executable target");
   await request(`/discovery/${encodeURIComponent(input.sessionId)}/interact`, {
     method: "POST",

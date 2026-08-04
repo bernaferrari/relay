@@ -38,6 +38,7 @@ export function interactionForAction(action: RecordingTakeAction): AuthoringInte
         kind: "type",
         text: step.text,
         ...(step.target ? { target: structuredClone(step.target) } : {}),
+        ...(step.mode ? { mode: step.mode } : {}),
       };
     case "swipe":
       return {
@@ -82,7 +83,11 @@ export function interactionWithKind(
     case "tap":
       return { kind, target: structuredClone(target ?? defaultTapTarget()) };
     case "type":
-      return { kind, text: "", ...(target ? { target: structuredClone(target) } : {}) };
+      return {
+        kind,
+        text: "",
+        ...(target ? { target: structuredClone(target) } : {}),
+      };
     case "swipe":
       return { kind, from: { x: 540, y: 1_600 }, to: { x: 540, y: 800 }, durationMs: 300 };
     case "key":
@@ -106,6 +111,7 @@ export function strategyForTarget(target: StepTarget | undefined): Strategy {
 
 export function targetValue(target: StepTarget | undefined, strategy: Strategy): string {
   if (!target) return "";
+  if (strategy === "identifier") return target.identifier ?? "";
   if (strategy === "ref") return target.ref ?? "";
   if (strategy === "label") return target.label ?? "";
   if (strategy === "text") return target.text ?? "";
@@ -130,6 +136,7 @@ export function targetWithStrategy(
   }
   const next: StepTarget = target?.point ? { point: structuredClone(target.point) } : {};
   const normalized = value.trim();
+  if (strategy === "identifier" && normalized) next.identifier = normalized;
   if (strategy === "ref" && normalized)
     next.ref = normalized.startsWith("@") ? normalized : `@${normalized}`;
   if (strategy === "label" && normalized) next.label = normalized;
@@ -191,5 +198,7 @@ export function describeTakeAction(action: RecordingTakeAction): string {
 }
 
 function hasTarget(target: StepTarget | undefined): boolean {
-  return Boolean(target && (target.ref || target.label || target.text || target.point));
+  return Boolean(
+    target && (target.identifier || target.ref || target.label || target.text || target.point),
+  );
 }

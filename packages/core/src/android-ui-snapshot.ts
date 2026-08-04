@@ -6,8 +6,15 @@ const execFileAsync = promisify(execFile);
 
 type Attributes = Record<string, string>;
 
+const NON_APPLICATION_PACKAGES = new Set([
+  "com.android.systemui",
+  "com.google.android.inputmethod.latin",
+  "com.samsung.android.honeyboard",
+  "com.touchtype.swiftkey",
+]);
+
 /** Whether Android's accessibility tree can be painted over the captured pixels. */
-export type AndroidInspectionState = "active" | "keyguard" | "asleep" | "unknown";
+export type AndroidInspectionState = "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
 
 /**
  * Android can expose an old or privacy-redacted accessibility hierarchy while
@@ -27,7 +34,9 @@ export function androidScreenIsInspectable(policy: string): boolean {
   return androidInspectionState(policy) === "active";
 }
 
-async function androidInspectionStateFor(serial: string): Promise<AndroidInspectionState> {
+export async function captureAndroidInspectionState(
+  serial: string,
+): Promise<AndroidInspectionState> {
   try {
     const { stdout } = await execFileAsync(
       "adb",
@@ -41,6 +50,51 @@ async function androidInspectionStateFor(serial: string): Promise<AndroidInspect
     // determine whether inspection can be shown.
     return "unknown";
   }
+}
+
+/** Parse Android's authoritative resumed activity into its owning package. */
+export function parseAndroidForegroundApp(output: string): string | undefined {
+  const activity =
+    /(?:topResumedActivity|mResumedActivity)=ActivityRecord\{[^\n]*?\bu\d+\s+([A-Za-z0-9._-]+)\//.exec(
+      output,
+    );
+  return activity?.[1];
+}
+
+/** Read the app that owns the pixels currently shown on the physical display. */
+export async function captureAndroidForegroundApp(serial: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      "adb",
+      ["-s", serial, "shell", "dumpsys", "activity", "activities"],
+      { timeout: 2_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    return parseAndroidForegroundApp(stdout);
+  } catch {
+    return undefined;
+  }
+}
+
+/** App represented by an Android hierarchy, excluding system overlays and IMEs. */
+export function androidSnapshotApplication(nodes: SnapshotNode[]): string | undefined {
+  const owners = nodes
+    .map((node) => node.bundleId?.trim())
+    .filter(
+      (owner): owner is string =>
+        typeof owner === "string" && owner.length > 0 && !NON_APPLICATION_PACKAGES.has(owner),
+    );
+  if (owners.length === 0) return undefined;
+  const counts = new Map<string, number>();
+  for (const owner of owners) counts.set(owner, (counts.get(owner) ?? 0) + 1);
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+}
+
+export function androidSnapshotMatchesForeground(
+  nodes: SnapshotNode[],
+  foregroundApp: string | undefined,
+): boolean {
+  const treeApp = androidSnapshotApplication(nodes);
+  return !foregroundApp || !treeApp || treeApp === foregroundApp;
 }
 
 function decodeXml(value: string): string {
@@ -112,6 +166,7 @@ export function parseAndroidUiSnapshot(xml: string): SnapshotNode[] {
       ...(text ? { value: text } : {}),
       ...(attrs["resource-id"] ? { identifier: attrs["resource-id"] } : {}),
       ...(attrs.class ? { role: attrs.class } : {}),
+      ...(attrs.package ? { bundleId: attrs.package } : {}),
       ...(bool(attrs.enabled) !== undefined ? { enabled: bool(attrs.enabled) } : {}),
       ...(bool(attrs.selected) !== undefined ? { selected: bool(attrs.selected) } : {}),
       ...(bool(attrs.focused) !== undefined ? { focused: bool(attrs.focused) } : {}),
@@ -142,7 +197,7 @@ export type AndroidUiSnapshot = {
 export async function captureAndroidUiSnapshotWithState(
   serial: string,
 ): Promise<AndroidUiSnapshot> {
-  const inspectionState = await androidInspectionStateFor(serial);
+  const inspectionState = await captureAndroidInspectionState(serial);
   if (inspectionState !== "active") return { nodes: [], inspectionState };
   // Android can briefly report a null accessibility root while an activity is
   // changing. Retrying here keeps that transport quirk out of the recorder and
@@ -155,17 +210,18 @@ export async function captureAndroidUiSnapshotWithState(
         { timeout: 4_500, maxBuffer: 4 * 1024 * 1024 },
       );
       const nodes = parseAndroidUiSnapshot(stdout);
-      if (nodes.length > 0 || attempt === 2) return { nodes, inspectionState };
+      if (nodes.length > 0) return { nodes, inspectionState };
+      if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
     } catch {
       // A null root is common during activity and keyguard transitions. Give
       // Android a short chance to settle, then return an empty tree so callers
       // clear their overlay rather than retaining a stale one.
-      if (attempt === 2) return { nodes: [], inspectionState };
+      if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
-  return { nodes: [], inspectionState };
+  return { nodes: [], inspectionState: "unavailable" };
 }
 
 /** Compatibility convenience for callers that only need the semantic tree. */

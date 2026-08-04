@@ -49,7 +49,10 @@ const defaults = {
   project: "default",
   actor: "human:local-cli",
   credentialSource: "env:RELAY_AUTH_TOKEN",
-  timeout: "20000",
+  // A single authoring operation can include device recovery, several gestures,
+  // assertions, and evidence capture. Keep the CLI patient by default; callers
+  // that need a tighter bound can still pass --timeout explicitly.
+  timeout: "120000",
   wait: true,
 } as const;
 

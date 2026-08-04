@@ -13,14 +13,17 @@ export type CanvasBounds = {
 };
 
 /** Shared geometry for the App Map canvas and collaboration presence. */
-export const SCREEN_CARD_WIDTH = 180;
-export const SCREEN_CARD_HEIGHT = 350;
+// Screen nodes represent one logical app state that may have phone, tablet,
+// and desktop variants. A neutral 4:3 evidence tile is therefore clearer than
+// pretending every state is a tall phone frame.
+export const SCREEN_CARD_WIDTH = 240;
+export const SCREEN_CARD_HEIGHT = 204;
 export const SCREEN_FRAME_TOP = 30;
-export const SCREEN_FRAME_HEIGHT = 320;
+export const SCREEN_FRAME_HEIGHT = 174;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
-const BRANCH_COLUMN_GAP = 120;
-const BRANCH_ROW_GAP = 40;
+const BRANCH_COLUMN_GAP = 136;
+const BRANCH_ROW_GAP = 48;
 
 function overlapsScreen(left: CanvasPoint, right: CanvasPoint): boolean {
   return !(
@@ -111,6 +114,24 @@ export function fitCanvasViewport(
     scale,
     x: Math.max(padding, (client.width - content.width * scale) / 2) - (content.left ?? 0) * scale,
     y: Math.max(padding, (client.height - content.height * scale) / 2) - (content.top ?? 0) * scale,
+  };
+}
+
+/** Initial map framing favors legibility over showing every distant branch.
+ * The minimap communicates off-screen content; explicit Fit still shows the
+ * whole graph when that overview is what the person wants. */
+export function openCanvasViewport(
+  client: { width: number; height: number },
+  content: { width: number; height: number; left?: number; top?: number },
+  minimumReadableScale = 0.55,
+): CanvasViewport {
+  const fitted = fitCanvasViewport(client, content);
+  const scale = clampCanvasScale(Math.max(fitted.scale, minimumReadableScale));
+  if (scale === fitted.scale) return fitted;
+  return {
+    scale,
+    x: client.width / 2 - ((content.left ?? 0) + content.width / 2) * scale,
+    y: client.height / 2 - ((content.top ?? 0) + content.height / 2) * scale,
   };
 }
 

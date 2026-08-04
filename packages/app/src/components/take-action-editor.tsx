@@ -64,7 +64,9 @@ export function TakeActionEditor(props: {
     setDraft((current) => {
       if (current.kind === "tap") return { ...current, target: target ?? {} };
       if (current.kind === "type")
-        return target ? { ...current, target } : { kind: "type", text: current.text };
+        return target
+          ? { ...current, target }
+          : { kind: "type", text: current.text, mode: "append" };
       return current;
     });
   }
@@ -184,6 +186,25 @@ export function TakeActionEditor(props: {
                 />
                 Type into a specific element
               </label>
+              <Show when={interaction.target}>
+                <label class={label}>
+                  Existing text
+                  <select
+                    class={field}
+                    value={interaction.mode ?? "append"}
+                    disabled={props.pending}
+                    onChange={(event) =>
+                      setDraft({
+                        ...interaction,
+                        mode: event.currentTarget.value as "append" | "replace",
+                      })
+                    }
+                  >
+                    <option value="append">Append</option>
+                    <option value="replace">Replace</option>
+                  </select>
+                </label>
+              </Show>
             </>
           );
         })()}

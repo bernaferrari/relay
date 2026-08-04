@@ -9,7 +9,7 @@ import type {
   RecordingClip,
   RecipeStep,
 } from "@relay/protocol";
-import { SCREEN_CARD_HEIGHT } from "./app-map-canvas-layout";
+import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
 /**
@@ -515,7 +515,15 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
       queue.push(screen.id);
     }
   }
-  const rowsByDepth = new Map<number, number>();
+  const screensByDepth = new Map<number, CanvasGraph["screens"]>();
+  for (const screen of graph.screens) {
+    const depth = depths.get(screen.id) ?? 0;
+    screensByDepth.set(depth, [...(screensByDepth.get(depth) ?? []), screen]);
+  }
+  const rowById = new Map<string, number>();
+  for (const screensAtDepth of screensByDepth.values()) {
+    screensAtDepth.forEach((screen, index) => rowById.set(screen.id, index));
+  }
   const nodes = graph.screens
     .map((screen) => {
       const representativeStepIndex =
@@ -523,8 +531,8 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           ? stepIndexById.get(screen.representativeStepId)
           : undefined) ?? -1;
       const depth = depths.get(screen.id) ?? 0;
-      const row = rowsByDepth.get(depth) ?? 0;
-      rowsByDepth.set(depth, row + 1);
+      const siblings = screensByDepth.get(depth) ?? [screen];
+      const row = rowById.get(screen.id) ?? 0;
       return {
         id: screen.id,
         screenKey: screen.id,
@@ -534,8 +542,10 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           (value) => value >= 0 && value < steps.length,
         ),
         depth,
-        x: depth * 304,
-        y: row * (SCREEN_CARD_HEIGHT + 32),
+        x: depth * (SCREEN_CARD_WIDTH + 136),
+        // Balance branches around their source instead of growing one long
+        // downward spine. Fit now keeps ordinary maps readable at a glance.
+        y: (row - (siblings.length - 1) / 2) * (SCREEN_CARD_HEIGHT + 48),
       };
     })
     .sort((a, b) => a.depth - b.depth || a.y - b.y);
@@ -556,7 +566,11 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           label:
             transition.label ||
             (stepIndex !== undefined ? transitionLabel(steps[stepIndex]!) : "Record action"),
-          kind: transition.kind,
+          kind:
+            (depths.get(transition.destination.screenId) ?? 0) <=
+            (depths.get(transition.fromScreenId) ?? 0)
+              ? ("return" as const)
+              : transition.kind,
         },
       ];
     }),

@@ -501,6 +501,49 @@ test("job watch --no-wait gets the job exactly once", async () => {
   });
 });
 
+test("flow run starts once, then watches that execution job", async () => {
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  let polls = 0;
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId === "app-map.flow.run") {
+        return {
+          job: { id: "flow-job", status: "running" },
+          jobs: [{ id: "flow-job", status: "running" }],
+          plan: { appMapId: "map", appMapRevision: 1, connections: [] },
+        };
+      }
+      polls += 1;
+      return { job: { id: "flow-job", status: polls === 1 ? "running" : "ok" } };
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(["flow", "run", "map", "flow", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => client,
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls, [
+    { operationId: "app-map.flow.run", input: { appMapId: "map", flowId: "flow" } },
+    { operationId: "job.get", input: { jobId: "flow-job" } },
+    { operationId: "job.get", input: { jobId: "flow-job" } },
+  ]);
+  const records = io
+    .stdout()
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(records.at(-1).operationId, "app-map.flow.run");
+  assert.deepEqual(records.at(-1).result, { job: { id: "flow-job", status: "ok" } });
+});
+
 test("run watch alias shares job polling behavior", async () => {
   const io = capture();
   let calls = 0;

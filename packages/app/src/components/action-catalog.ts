@@ -18,6 +18,7 @@ export type ActionGroup = {
 
 const labels: Partial<Record<RecipeStep["kind"], string>> = {
   expect: "Check element",
+  "expect-set": "Check option list",
   "wait-for": "Wait for element",
   "wait-response": "Wait for response",
   sleep: "Wait a duration",
@@ -38,6 +39,7 @@ const descriptions: Record<RecipeStep["kind"], string> = {
   swipe: "Drag between two points",
   key: "Navigate Back or Home",
   expect: "Verify an element is visible or gone",
+  "expect-set": "Verify the complete visible option list",
   "expect-screen": "Verify the map reached its expected screen",
   "wait-for": "Continue when an element appears",
   sleep: "Pause for a fixed time",
@@ -79,6 +81,7 @@ export const ACTION_GROUPS: ActionGroup[] = [
   group("interact", "Interact", ["tap", "type", "scroll", "swipe"]),
   group("wait-check", "Wait & check", [
     "expect",
+    "expect-set",
     "wait-for",
     "sleep",
     "pause",
