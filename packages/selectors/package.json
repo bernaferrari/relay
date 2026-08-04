@@ -1,0 +1,26 @@
+{
+  "name": "@agent-device/selectors",
+  "version": "0.0.0",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "description": "Shared selector matching, argument, and replay semantics for agent-device. `.` is string-only; `./ast` is the published parser surface behind `agent-device/selectors`.",
+  "dependencies": {
+    "@agent-device/ad-script": "workspace:*",
+    "@agent-device/contracts": "workspace:*",
+    "@agent-device/kernel": "workspace:*"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./ast": {
+      "types": "./src/ast.ts",
+      "default": "./src/ast.ts"
+    }
+  },
+  "devDependencies": {
+    "fast-check": "^4.9.0"
+  }
+}

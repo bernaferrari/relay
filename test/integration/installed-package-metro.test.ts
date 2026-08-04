@@ -323,7 +323,8 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
           },
           './metro': (mod) => mod.buildBundleUrl('https://public.example.test', 'ios'),
           './remote-config': (mod) => typeof mod,
-          './selectors': (mod) => mod.isSelectorToken('||') && typeof mod.parseSelectorChain === 'function',
+          './selectors': (mod) =>
+            mod.isSelectorToken('||') && typeof mod.parseSelectorChain === 'function',
         };
         const subpathSmokeResults = {};
         for (const subpath of Object.keys(subpathSmoke).sort()) {
