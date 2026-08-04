@@ -183,11 +183,18 @@ export function ScreenCard(props: {
           </button>
         </div>
       </Show>
-      <header class="relative flex min-w-0 items-center justify-center gap-1.5 px-0.5">
+      <header
+        class="relative flex min-w-0 items-center justify-center gap-1.5 px-0.5"
+        style={{
+          width: `${props.geometry.frameWidth}px`,
+          "justify-self": "center",
+        }}
+        data-tip="Click to inspect · Enter for details"
+      >
         <Show
           when={props.editing}
           fallback={
-            <strong class="min-w-0 max-w-[72%] truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]">
+            <strong class="min-w-0 max-w-full truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]">
               {props.title}
             </strong>
           }
@@ -438,6 +445,10 @@ export function KeyboardConnectionChooser(props: {
 export function ScreenInspector(props: {
   node: MapTreeNode | null;
   title: string;
+  image?: string;
+  orientationEvidence?: ScreenshotOrientationEvidence;
+  runState?: AppMapRunPresentationState;
+  isFlowStart?: boolean;
   connections: CanvasConnection[];
   flowSetup?: {
     flowCount: number;
@@ -453,7 +464,10 @@ export function ScreenInspector(props: {
   return (
     <Show when={props.node}>
       {(_node) => (
-        <aside class="absolute top-16 right-3 z-30 w-[min(320px,calc(100%-24px))] rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-3 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto">
+        <aside
+          class="absolute top-16 right-3 z-30 w-[min(328px,calc(100%-24px))] overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          aria-label={`Details for ${props.title}`}
+        >
           <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
             <div>
               <span class="block text-[10px] font-medium text-[var(--text-weak)]">
@@ -482,6 +496,46 @@ export function ScreenInspector(props: {
                 <Icon name="x" size={12} />
               </button>
             </div>
+          </div>
+          <Show when={props.image}>
+            {(image) => (
+              <div class="mx-1.5 mt-2 overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-deep)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+                <div class="flex h-[132px] items-center justify-center p-2">
+                  <OrientedScreenshot
+                    src={image()}
+                    alt={`Preview of ${props.title}`}
+                    class="block max-h-full max-w-full object-contain"
+                    evidence={props.orientationEvidence}
+                  />
+                </div>
+                <div class="flex min-h-8 items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-2.5 text-[10px] text-[var(--text-weak)]">
+                  <span>{props.isFlowStart ? "Entry screen" : "Observed screen"}</span>
+                  <Show when={props.runState && props.runState !== "idle"}>
+                    <span
+                      class={cn(
+                        "font-medium capitalize",
+                        props.runState === "failed"
+                          ? "text-[var(--icon-critical-base)]"
+                          : props.runState === "healed"
+                            ? "text-[var(--icon-warning-base)]"
+                            : props.runState === "passed"
+                              ? "text-[var(--icon-success-base)]"
+                              : "text-[var(--text-interactive-base)]",
+                      )}
+                    >
+                      {props.runState}
+                    </span>
+                  </Show>
+                </div>
+              </div>
+            )}
+          </Show>
+          <div class="mt-2 flex items-center gap-1.5 px-1.5 text-[10px] text-[var(--text-weak)]">
+            <span>
+              {props.connections.length} {props.connections.length === 1 ? "path" : "paths"} out
+            </span>
+            <i class="size-0.5 rounded-full bg-current opacity-60" />
+            <span>Enter for details · F2 to rename</span>
           </div>
           <Show when={props.flowSetup}>
             {(flowSetup) => (

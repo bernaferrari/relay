@@ -1,5 +1,4 @@
 import type { DeviceInfo } from "./api-types";
-import { targetIsReady } from "./target-presentation";
 
 /**
  * A single, product-facing interpretation of a selected target.  Device

@@ -2676,6 +2676,37 @@ export function AppMapWorkspace(props: {
                     <ScreenInspector
                       node={screenInspectorOpen() ? selectedNode() : null}
                       title={selectedNode() ? titleFor(selectedNode()!) : ""}
+                      image={
+                        selectedNode()
+                          ? screenshotUrl(
+                              server,
+                              draft.steps()[selectedNode()!.representativeStepIndex],
+                            ) ||
+                            capturedScreenUrls()[selectedNode()!.id] ||
+                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
+                            undefined
+                          : undefined
+                      }
+                      orientationEvidence={
+                        selectedNode()
+                          ? screenshotOrientationEvidence(
+                              server,
+                              draft.steps()[selectedNode()!.representativeStepIndex],
+                            ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
+                          : undefined
+                      }
+                      runState={
+                        selectedNode()
+                          ? runProjection().screens[selectedNode()!.id]?.state
+                          : undefined
+                      }
+                      isFlowStart={
+                        selectedNode()
+                          ? !connections().some(
+                              (connection) => connection.toScreenId === selectedNode()!.id,
+                            )
+                          : false
+                      }
                       connections={connections().filter(
                         (connection) => connection.fromScreenId === selectedNode()?.id,
                       )}
