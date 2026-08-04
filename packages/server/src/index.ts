@@ -67,6 +67,7 @@ import {
   listProjects,
   readProjectVariables,
   releaseDeviceLease,
+  takeOverDeviceLease,
   saveBuild,
   saveDevicePool,
   saveCompatibilityMatrix,
@@ -1075,6 +1076,33 @@ async function handleRequest(
       return;
     }
 
+    const takeoverLeaseMatch = matchPath(pathname, "/device-leases/:id/takeover");
+    if (method === "POST" && takeoverLeaseMatch) {
+      const body = (await parseJsonBody(req)) as {
+        expiresAt?: number;
+        reason?: string;
+        confirm?: boolean;
+      };
+      if (body.confirm !== true)
+        throw new HttpError(403, "Explicit takeover confirmation required");
+      if (!Number.isFinite(body.expiresAt) || !body.reason?.trim()) {
+        throw new HttpError(400, "expiresAt and reason are required");
+      }
+      try {
+        json(res, 200, {
+          lease: await takeOverDeviceLease(takeoverLeaseMatch.id!, {
+            projectId: scope.projectId,
+            ownerId: currentOperationContext()!.actorId,
+            expiresAt: body.expiresAt!,
+            reason: body.reason,
+          }),
+        });
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
     const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
     if (method === "POST" && releaseLeaseMatch) {
       try {
@@ -1852,7 +1880,16 @@ async function handleRequest(
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
   // Settings are applied once in the server process, rather than requiring a
   // person to export device-specific variables before launching Relay.
-  await loadDeviceSetup();
+  const deviceSetup = await loadDeviceSetup();
+  // agent-device snapshots its signing environment when its daemon starts. A
+  // daemon left behind by a terminal command can therefore disagree with the
+  // Apple team Relay shows in Settings. Server startup is already a runtime
+  // boundary, so reconcile that helper before any recovered or new session can
+  // inherit stale signing values.
+  if (deviceSetup.ios) {
+    await restartAgentDeviceDaemonForSetup();
+    resetDeviceClients();
+  }
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;

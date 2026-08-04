@@ -30,6 +30,16 @@ test("runtime parsers reject malformed input and output", () => {
     () => operationDefinition("system.health.get").output.parse({ ok: true }),
     /health/,
   );
+  assert.throws(
+    () =>
+      operationDefinition("lease.takeover").input.parse({
+        leaseId: "lease-one",
+        expiresAt: Date.now() + 60_000,
+        reason: "User delegated control",
+        confirm: false,
+      }),
+    /confirm/u,
+  );
 });
 
 test("capability manifest is serializable and contains no parser functions", () => {

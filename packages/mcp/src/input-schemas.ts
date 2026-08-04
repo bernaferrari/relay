@@ -178,6 +178,13 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       expiresAt: natural("Lease expiration timestamp"),
     })
     .strict(),
+  "lease.takeover": z
+    .object({
+      leaseId: identifier("Exact active lease being handed off"),
+      expiresAt: natural("New lease expiration timestamp"),
+      reason: text("Why control is being handed to this actor"),
+    })
+    .strict(),
   "lease.release": z.object({ leaseId: identifier("Target lease identifier") }).strict(),
   "action.run": z
     .object({ actionId: identifier("Reusable action identifier") })

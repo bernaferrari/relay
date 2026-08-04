@@ -338,6 +338,62 @@ export async function releaseDeviceLease(
   });
 }
 
+/**
+ * Atomically hand an actively leased device to another actor. The caller must
+ * name the exact lease it observed, which prevents a stale confirmation from
+ * replacing a newer owner. Both sides remain visible in lease history.
+ */
+export async function takeOverDeviceLease(
+  id: string,
+  input: {
+    projectId: string;
+    ownerId: string;
+    expiresAt: number;
+    reason: string;
+  },
+): Promise<DeviceLease> {
+  return mutate((state) => {
+    const at = now();
+    const current = state.leases.find(
+      (lease) =>
+        lease.id === id &&
+        lease.projectId === input.projectId &&
+        lease.status === "leased" &&
+        lease.expiresAt > at,
+    );
+    if (!current) throw new Error("Active device lease not found");
+    if (input.expiresAt <= at) throw new Error("Takeover expiry must be in the future");
+    const reason = input.reason.trim();
+    if (!reason) throw new Error("Takeover reason is required");
+
+    current.status = "released";
+    current.releasedAt = at;
+    const lease: DeviceLease = {
+      id: crypto.randomUUID(),
+      projectId: current.projectId,
+      poolId: current.poolId,
+      deviceSerial: current.deviceSerial,
+      ownerId: input.ownerId,
+      status: "leased",
+      leasedAt: at,
+      expiresAt: input.expiresAt,
+      handoffFromLeaseId: current.id,
+      handoffReason: reason,
+    };
+    state.leases.push(lease);
+    for (const resourceId of [current.id, lease.id]) {
+      emit({
+        type: "lease.changed",
+        at,
+        projectId: current.projectId,
+        resource: "lease",
+        resourceId,
+      });
+    }
+    return lease;
+  });
+}
+
 export async function readProjectVariables(projectId: string): Promise<Revisioned<TestVariable[]>> {
   return (await readState()).variables[projectId] ?? revisioned([]);
 }

@@ -160,7 +160,9 @@ async function clearStaleLocks(
 }
 
 function probeArgs(serial: string, output: string): string[] {
-  return ["devicectl", "device", "info", "details", "--device", serial, "--json-output", output];
+  // `info details` can succeed while the DDI process service used to install,
+  // launch, and test apps is wedged. Probe the service Relay actually needs.
+  return ["devicectl", "device", "info", "processes", "--device", serial, "--json-output", output];
 }
 
 function probeHealthy(result: CommandResult): boolean {
@@ -212,8 +214,10 @@ async function restartCoreDevice(
 function summary(ready: boolean, recovered: boolean): string {
   if (ready && recovered) return "Relay repaired the Apple device connection.";
   if (ready) return "The Apple device connection is healthy.";
-  if (recovered) return "Relay repaired local runtime state, but the iPad is not ready yet.";
-  return "The iPad still needs attention.";
+  if (recovered) {
+    return "Relay reset its local services, but the iPad developer service did not respond. Keep the iPad unlocked and reconnect it; restart the iPad if it remains unavailable.";
+  }
+  return "The iPad developer service is unavailable. Keep the iPad unlocked and reconnect it.";
 }
 
 /**
@@ -248,7 +252,11 @@ export async function recoverIosRuntime(
     `relay-ios-health-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
   );
   let probe = await deps.run("xcrun", probeArgs(input.serial, output), 15_000);
-  if (!probeHealthy(probe) && coreDeviceFailure(probe)) {
+  // A forced repair is deliberately deeper than the passive health check.
+  // CoreDevice can answer `info details` while its app/process services remain
+  // wedged after an interrupted XCTest launch. Restart only the exact verified
+  // CoreDeviceService process so the next request gets a clean service graph.
+  if (input.force === true || (!probeHealthy(probe) && coreDeviceFailure(probe))) {
     actions.push(await restartCoreDevice(deps));
     probe = await deps.run("xcrun", probeArgs(input.serial, output), 15_000);
   }

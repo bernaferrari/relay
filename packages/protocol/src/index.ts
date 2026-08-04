@@ -7,6 +7,7 @@ export * from "./app-map.js";
 export * from "./execution-summary.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
+export * from "./target-summary.js";
 import type { RecipeStep } from "./recipes.js";
 import type { ActorKind, ResourceEventPayload } from "./coordination.js";
 
@@ -735,6 +736,10 @@ export type DeviceLease = {
   leasedAt: number;
   expiresAt: number;
   releasedAt?: number;
+  /** Previous lease replaced by an explicit, audited control handoff. */
+  handoffFromLeaseId?: string;
+  /** Human-readable reason supplied by the actor taking control. */
+  handoffReason?: string;
 };
 
 export type TestVariable = {

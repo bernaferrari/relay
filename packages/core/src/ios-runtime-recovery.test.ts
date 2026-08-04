@@ -84,6 +84,8 @@ test("preserves an unverifiable lock instead of deleting user state", async () =
 
 test("an explicit recovery reconciles the Relay daemon even when the device probe is healthy", async () => {
   let restarts = 0;
+  const terminated: number[] = [];
+  const probes: string[][] = [];
   const result = await recoverIosRuntime(
     { serial: "ipad", force: true },
     dependencies({
@@ -91,11 +93,27 @@ test("an explicit recovery reconciles the Relay daemon even when the device prob
         restarts += 1;
         return true;
       },
+      run: async (command, args) => {
+        if (command === "ps") {
+          return { exitCode: 0, stdout: `71 ${coreDevice}`, stderr: "" };
+        }
+        probes.push(args);
+        return { exitCode: 0, stdout: "ready", stderr: "" };
+      },
+      terminate: async (pid) => {
+        terminated.push(pid);
+        return true;
+      },
     }),
   );
   assert.equal(restarts, 1);
+  assert.deepEqual(terminated, [71]);
   assert.equal(result.ready, true);
   assert.equal(result.actions[0]?.kind, "agent-device");
+  assert.equal(result.actions[1]?.kind, "core-device");
+  assert.equal(result.actions[1]?.status, "completed");
+  assert.equal(probes.length, 2);
+  assert.deepEqual(probes[0]?.slice(0, 4), ["devicectl", "device", "info", "processes"]);
 });
 
 test("restarts only the exact CoreDeviceService after its characteristic failure", async () => {

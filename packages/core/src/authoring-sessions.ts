@@ -1289,7 +1289,12 @@ export class AuthoringSessionStore {
     for (const current of sessions) {
       if (!["preparing", "recording", "committing"].includes(current.state)) continue;
       const session = await this.#queue.run(current.id, async () => {
-        let next = (await readStoredSession(current.id))!;
+        let next = await readStoredSession(current.id);
+        // Recovery can be requested concurrently by startup, an explicit
+        // repair, and a reconnecting UI. Re-check after entering the per-session
+        // queue because another recovery may have made this session terminal
+        // since #all() produced the outer snapshot.
+        if (!next || !["preparing", "recording", "committing"].includes(next.state)) return null;
         if (next.state === "committing") {
           const appMap = await readAppMap(next.projectId, next.appMapId);
           const committed = appMap?.activity[next.commitTransactionId ?? next.id];
@@ -1335,7 +1340,7 @@ export class AuthoringSessionStore {
         else sessionEvent(next);
         return next;
       });
-      recovered.push(session);
+      if (session) recovered.push(session);
     }
     return recovered;
   }

@@ -368,6 +368,14 @@ export class RelayClient {
   ): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.create", input) as Promise<{ lease: DeviceLease }>;
   }
+  takeOverLease(input: {
+    leaseId: string;
+    expiresAt: number;
+    reason: string;
+    confirm: true;
+  }): Promise<{ lease: DeviceLease }> {
+    return this.invoke("lease.takeover", input) as Promise<{ lease: DeviceLease }>;
+  }
   releaseLease(id: string): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.release", { leaseId: id }) as Promise<{ lease: DeviceLease }>;
   }

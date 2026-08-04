@@ -39,6 +39,7 @@ function stubDevice(impl: {
   fill?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
   swipe?: (options: unknown) => Promise<unknown>;
+  clipboard?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
 }): Device {
@@ -51,7 +52,10 @@ function stubDevice(impl: {
       type: impl.type ?? (() => Promise.resolve({})),
       swipe: impl.swipe ?? (() => Promise.resolve({})),
     },
-    command: { wait: impl.wait ?? (() => Promise.resolve({})) },
+    command: {
+      wait: impl.wait ?? (() => Promise.resolve({})),
+      ...(impl.clipboard ? { clipboard: impl.clipboard } : {}),
+    },
     capture: { snapshot: impl.snapshot ?? (() => Promise.resolve({ nodes: [] })) },
   } as unknown as Device;
 }
@@ -324,6 +328,30 @@ describe("resolveRecipeStep", () => {
     assert.equal(
       (resolveRecipeStep({ kind: "type", text: "{{missing}}" }, {}) as { text: string }).text,
       "{{missing}}",
+    );
+  });
+});
+
+describe("runRecipeStep clipboard", () => {
+  it("reports safe mismatch diagnostics without disclosing clipboard contents", async () => {
+    const observed = "private-observed-value";
+    const expected = "private-expected-value";
+    const device = stubDevice({
+      clipboard: () => Promise.resolve({ action: "read", text: observed }),
+    });
+
+    await assert.rejects(
+      runRecipeStep(device, { kind: "clipboard", action: "read", expect: expected }, noLog),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(
+          error.message,
+          /observed 22 chars, sha256:[0-9a-f]{12}; expected 22 chars, sha256:[0-9a-f]{12}/,
+        );
+        assert.equal(error.message.includes(observed), false);
+        assert.equal(error.message.includes(expected), false);
+        return true;
+      },
     );
   });
 });

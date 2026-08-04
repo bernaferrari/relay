@@ -4,6 +4,7 @@ import {
   summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
+  summarizeTargetOperationResult,
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
@@ -103,11 +104,14 @@ function startedJobId(response: unknown): string {
 }
 
 function summarizeResult(operationId: string, result: unknown): unknown {
-  return summarizeExecutionOperationResult(
+  return summarizeTargetOperationResult(
     operationId,
-    summarizeAppMapOperationResult(
+    summarizeExecutionOperationResult(
       operationId,
-      summarizeAuthoringOperationResult(operationId, result),
+      summarizeAppMapOperationResult(
+        operationId,
+        summarizeAuthoringOperationResult(operationId, result),
+      ),
     ),
   );
 }

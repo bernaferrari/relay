@@ -734,6 +734,15 @@ type SpecificOperationMap = {
     input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "expiresAt">;
     output: { lease: DeviceLeaseDto };
   };
+  "lease.takeover": {
+    input: {
+      leaseId: string;
+      expiresAt: number;
+      reason: string;
+      confirm: true;
+    };
+    output: { lease: DeviceLeaseDto };
+  };
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
 };
 
@@ -952,6 +961,18 @@ const leaseListInputParser = objectParser<OperationInput<"lease.list">>(
     if (input.status !== undefined && input.status !== "active" && input.status !== "all") {
       fail("lease list status", "must be active or all");
     }
+  },
+);
+
+const leaseTakeoverInputParser = objectParser<OperationInput<"lease.takeover">>(
+  "lease takeover input",
+  (input) => {
+    string(input.leaseId, "lease takeover leaseId");
+    if (number(input.expiresAt, "lease takeover expiresAt") <= 0) {
+      fail("lease takeover expiresAt", "must be positive");
+    }
+    string(input.reason, "lease takeover reason");
+    if (input.confirm !== true) fail("lease takeover confirm", "must be true");
   },
 );
 
@@ -1925,6 +1946,11 @@ export const operationDefinitions = [
   }),
   command("lease.create", "Lease target", "POST", "/device-leases", {
     confirmation: "confirm",
+    output: objectFieldParser("lease response", "lease"),
+  }),
+  command("lease.takeover", "Take over target lease", "POST", "/device-leases/:leaseId/takeover", {
+    confirmation: "dangerous",
+    input: leaseTakeoverInputParser,
     output: objectFieldParser("lease response", "lease"),
   }),
   command("lease.release", "Release target lease", "POST", "/device-leases/:leaseId/release", {

@@ -156,6 +156,64 @@ test("App Map operations are equivalent for human and agent actors", async () =>
   }
 });
 
+test("an explicitly confirmed lease takeover hands control to the requesting actor", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-lease-takeover-server-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const connection = {
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" as const },
+      organizationId: "local",
+      projectId: "default",
+    };
+    const human = new RelayClient({
+      ...connection,
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    const agent = new RelayClient({
+      ...connection,
+      actorId: "agent:mapper",
+      actorKind: "agent",
+    });
+    const original = await human.lease({
+      poolId: "local",
+      deviceSerial: "physical-device",
+      expiresAt: Date.now() + 60_000,
+    });
+
+    await assert.rejects(
+      agent.invoke("lease.takeover", {
+        leaseId: original.lease.id,
+        expiresAt: Date.now() + 120_000,
+        reason: "User delegated this unattended run",
+        confirm: false as never,
+      }),
+      /confirm must be true/u,
+    );
+    const handedOff = await agent.takeOverLease({
+      leaseId: original.lease.id,
+      expiresAt: Date.now() + 120_000,
+      reason: "User delegated this unattended run",
+      confirm: true,
+    });
+    assert.equal(handedOff.lease.ownerId, "agent:mapper");
+    assert.equal(handedOff.lease.handoffFromLeaseId, original.lease.id);
+    const history = await agent.invoke("lease.list", { status: "all" });
+    assert.equal(
+      history.leases.find((lease) => lease.id === original.lease.id)?.status,
+      "released",
+    );
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("App Maps export and import through their canonical YAML contract", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-yaml-"));
   const previous = process.env.RELAY_STATE_DIR;

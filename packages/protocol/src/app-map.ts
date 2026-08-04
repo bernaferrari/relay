@@ -436,6 +436,40 @@ export type AppMapErrorCode =
 export function summarizeAppMapOperationResult(operationId: string, result: unknown): unknown {
   if (!operationId.startsWith("app-map.")) return result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  if (operationId === "app-map.list") {
+    const appMaps = (result as { appMaps?: unknown }).appMaps;
+    if (!Array.isArray(appMaps)) return result;
+    const summaries = appMaps.map((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+      const map = value as AppMap;
+      if (
+        typeof map.id !== "string" ||
+        typeof map.name !== "string" ||
+        typeof map.revision !== "number" ||
+        !map.screens ||
+        !map.screenVariants ||
+        !map.connections ||
+        !map.flows
+      )
+        return undefined;
+      return {
+        id: map.id,
+        name: map.name,
+        ...(map.description ? { description: map.description } : {}),
+        revision: map.revision,
+        counts: {
+          screens: Object.keys(map.screens).length,
+          variants: Object.keys(map.screenVariants).length,
+          connections: Object.keys(map.connections).length,
+          flows: Object.keys(map.flows).length,
+        },
+        createdAt: map.createdAt,
+        updatedAt: map.updatedAt,
+      };
+    });
+    if (summaries.some((summary) => !summary)) return result;
+    return { ...(result as Record<string, unknown>), appMaps: summaries };
+  }
   const appMap = (result as { appMap?: unknown }).appMap;
   if (!appMap || typeof appMap !== "object" || Array.isArray(appMap)) return result;
   const map = appMap as AppMap;

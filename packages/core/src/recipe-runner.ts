@@ -8,6 +8,7 @@
  * (resumeJob) unblocks the checkpoint.
  */
 import type { Device } from "./device.js";
+import { createHash } from "node:crypto";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
 import {
   pressIdentifier,
@@ -1161,10 +1162,18 @@ export async function runRecipeStep(
         if (step.expect !== undefined) {
           const ok =
             step.match === "contains" ? value.includes(step.expect) : value === step.expect;
-          if (!ok)
+          if (!ok) {
+            const observedDigest = createHash("sha256").update(value).digest("hex").slice(0, 12);
+            const expectedDigest = createHash("sha256")
+              .update(step.expect)
+              .digest("hex")
+              .slice(0, 12);
             throw new Error(
-              `clipboard: ${step.match === "contains" ? "content" : "value"} did not match expectation`,
+              `clipboard: ${step.match === "contains" ? "content" : "value"} did not match expectation ` +
+                `(observed ${value.length} chars, sha256:${observedDigest}; ` +
+                `expected ${step.expect.length} chars, sha256:${expectedDigest})`,
             );
+          }
         }
       }
       break;

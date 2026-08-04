@@ -306,6 +306,20 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     ),
   ),
   mapped("lease.create", path("lease create")),
+  mapped(
+    "lease.takeover",
+    path("lease takeover", ["leaseId"], undefined, {
+      summary: "Explicitly take control from an observed active lease",
+      argumentHelp: [
+        { name: "leaseId", type: "string", description: "Exact active lease to replace" },
+      ],
+      inputHelp: [
+        { name: "expiresAt", type: "number", required: true, description: "New lease expiry" },
+        { name: "reason", type: "string", required: true, description: "Auditable handoff reason" },
+        { name: "confirm", type: "true", required: true, description: "Explicit user approval" },
+      ],
+    }),
+  ),
   mapped("lease.release", path("lease release", ["leaseId"])),
 
   mapped(

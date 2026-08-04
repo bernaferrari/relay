@@ -16,6 +16,7 @@ import {
   readAppMap,
   readProjectVariables,
   releaseDeviceLease,
+  takeOverDeviceLease,
   saveCompatibilityMatrix,
   mutateStoredAppMap,
   writeProjectVariables,
@@ -167,6 +168,56 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     );
     assert.equal((await releaseDeviceLease(lease.id)).status, "released");
     assert.equal((await listDeviceLeases("p"))[0]?.status, "released");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("device lease takeover is explicit, atomic, and preserves handoff provenance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-lease-takeover-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  try {
+    const original = await leaseDevice({
+      projectId: "p",
+      poolId: "local",
+      deviceSerial: "ABC",
+      ownerId: "human:owner",
+      expiresAt: Date.now() + 60_000,
+    });
+    await assert.rejects(
+      takeOverDeviceLease(original.id, {
+        projectId: "p",
+        ownerId: "agent:mapper",
+        expiresAt: Date.now() + 60_000,
+        reason: "  ",
+      }),
+      /reason is required/u,
+    );
+
+    const next = await takeOverDeviceLease(original.id, {
+      projectId: "p",
+      ownerId: "agent:mapper",
+      expiresAt: Date.now() + 120_000,
+      reason: "User delegated this unattended run",
+    });
+    assert.equal(next.ownerId, "agent:mapper");
+    assert.equal(next.handoffFromLeaseId, original.id);
+    assert.equal(next.handoffReason, "User delegated this unattended run");
+    const history = await listDeviceLeases("p");
+    assert.equal(history.find((lease) => lease.id === original.id)?.status, "released");
+    assert.equal(history.find((lease) => lease.id === next.id)?.status, "leased");
+    await assert.rejects(
+      takeOverDeviceLease(original.id, {
+        projectId: "p",
+        ownerId: "agent:other",
+        expiresAt: Date.now() + 120_000,
+        reason: "Stale takeover",
+      }),
+      /Active device lease not found/u,
+    );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

@@ -788,6 +788,41 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
   });
 });
 
+test("concurrent recovery is idempotent after a session becomes terminal", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+
+    let releaseFirst!: () => void;
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstEntered!: () => void;
+    const firstIsReconciling = new Promise<void>((resolve) => {
+      firstEntered = resolve;
+    });
+
+    const first = store.recover({
+      async releaseLease() {},
+      async reconcileRecording() {
+        firstEntered();
+        await firstCanFinish;
+      },
+    });
+    await firstIsReconciling;
+    const second = store.recover({ async releaseLease() {} });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    releaseFirst();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(
+      [...firstResult, ...secondResult].map((value) => value.id),
+      [session.id],
+    );
+    assert.equal((await store.get(session.id)).state, "failed");
+  });
+});
+
 test("startup recovery scopes every persisted project without crossing project ownership", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let projectA = await createReadySession(store, runtime, appMapId);

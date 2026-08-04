@@ -5,6 +5,7 @@ import {
   summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
+  summarizeTargetOperationResult,
   type OperationId,
 } from "@relay/protocol";
 import * as z from "zod/v4";
@@ -258,11 +259,14 @@ async function invokeRelayTool(
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
   try {
     return normalResult(
-      summarizeExecutionOperationResult(
+      summarizeTargetOperationResult(
         descriptor.operationId,
-        summarizeAppMapOperationResult(
+        summarizeExecutionOperationResult(
           descriptor.operationId,
-          summarizeAuthoringOperationResult(descriptor.operationId, result),
+          summarizeAppMapOperationResult(
+            descriptor.operationId,
+            summarizeAuthoringOperationResult(descriptor.operationId, result),
+          ),
         ),
       ),
     );

@@ -90,6 +90,21 @@ test("App Map command summaries preserve topology without semantic evidence", ()
   });
   assert.equal(JSON.stringify(summary).includes("Secret generated content"), false);
 
+  const catalog = summarizeAppMapOperationResult("app-map.list", { appMaps: [appMap] });
+  assert.deepEqual(catalog, {
+    appMaps: [
+      {
+        id: "map-1",
+        name: "Checkout",
+        revision: 3,
+        counts: { screens: 1, variants: 1, connections: 0, flows: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ],
+  });
+  assert.equal(JSON.stringify(catalog).includes("Secret generated content"), false);
+
   const exported = summarizeAppMapOperationResult("app-map.export", {
     appMap,
     yaml: "version: 1\n",
@@ -103,4 +118,6 @@ test("non-map operation results remain untouched", () => {
   assert.equal(summarizeAppMapOperationResult("target.list", value), value);
   const malformedMap = { appMap: { id: "map-1" }, yaml: "version: 1\n" };
   assert.equal(summarizeAppMapOperationResult("app-map.export", malformedMap), malformedMap);
+  const malformedCatalog = { appMaps: [{ id: "map-1" }] };
+  assert.equal(summarizeAppMapOperationResult("app-map.list", malformedCatalog), malformedCatalog);
 });

@@ -220,7 +220,7 @@ overrides:
   '@xhmikosr/decompress': ^10.2.1
 
 patchedDependencies:
-  agent-device@0.18.3: 3dc2fc99e69ca2f3ffee4d89b57f14dff0355e567cbc2471dad6828e44617590
+  agent-device@0.18.3: 183c14159e4d9f615cbd32348f3092793467386e9b4d0aaee2a122916a41dbed
 
 importers:
 
@@ -330,7 +330,7 @@ importers:
         version: link:../protocol
       agent-device:
         specifier: ^0.18.3
-        version: 0.18.3(patch_hash=3dc2fc99e69ca2f3ffee4d89b57f14dff0355e567cbc2471dad6828e44617590)
+        version: 0.18.3(patch_hash=183c14159e4d9f615cbd32348f3092793467386e9b4d0aaee2a122916a41dbed)
       playwright-core:
         specifier: ^1.61.1
         version: 1.61.1
@@ -4989,7 +4989,7 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  agent-device@0.18.3(patch_hash=3dc2fc99e69ca2f3ffee4d89b57f14dff0355e567cbc2471dad6828e44617590):
+  agent-device@0.18.3(patch_hash=183c14159e4d9f615cbd32348f3092793467386e9b4d0aaee2a122916a41dbed):
     dependencies:
       yaml: 2.9.0
 
