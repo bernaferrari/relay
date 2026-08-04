@@ -4,6 +4,11 @@
  * All long waits honor job cancel/pause via control.ts.
  */
 import { createAgentDeviceClient } from "agent-device";
+import {
+  readAndroidClipboardWithAdb,
+  writeAndroidClipboardWithAdb,
+  type AndroidAdbExecutor,
+} from "agent-device/android-adb";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
@@ -686,6 +691,63 @@ export function isAndroidClipboardTransportFailure(message: string): boolean {
   );
 }
 
+export function isAndroidProviderTextInjectionUnavailable(message: string): boolean {
+  return /provider-native text injection|adb-shell fallback supports ASCII text only/i.test(
+    message,
+  );
+}
+
+/**
+ * Build the small ADB contract needed by agent-device's clipboard helpers.
+ *
+ * This deliberately targets the serial explicitly instead of depending on an
+ * agent-device session. A physical Android device can remain controllable
+ * through ADB while its video/session transport is unavailable.
+ */
+function androidAdbExecutor(serial: string): AndroidAdbExecutor {
+  return async (args, options = {}) => {
+    try {
+      const result = await execFileAsync("adb", ["-s", serial, ...args], {
+        timeout: options.timeoutMs,
+        signal: options.signal,
+        maxBuffer: 20 * 1024 * 1024,
+      });
+      return {
+        exitCode: 0,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        stdoutBuffer: Buffer.from(result.stdout),
+      };
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException & {
+        stdout?: string;
+        stderr?: string;
+      };
+      const stdout = String(failure.stdout ?? "");
+      const stderr = String(failure.stderr ?? failure.message ?? "adb failed");
+      return {
+        exitCode: typeof failure.code === "number" ? failure.code : 1,
+        stdout,
+        stderr,
+        stdoutBuffer: Buffer.from(stdout),
+      };
+    }
+  };
+}
+
+async function pasteAndroidTextWithAdb(text: string, serial: string): Promise<void> {
+  const adb = androidAdbExecutor(serial);
+  await pasteAndroidText(text, {
+    readClipboard: () => readAndroidClipboardWithAdb(adb),
+    writeClipboard: (value) => writeAndroidClipboardWithAdb(adb, value),
+    paste: async () => {
+      await raceCancel(
+        execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+      );
+    },
+  });
+}
+
 /**
  * Paste exact Android text without routing it through `adb shell input text`.
  *
@@ -775,9 +837,16 @@ export async function typeText(device: Device, text: string): Promise<void> {
     // control. Keep their deterministic fallback while production Android
     // clients use paste so the IME cannot autocorrect or capitalize input.
     if (typeof device.command.clipboard !== "function") {
-      await controlled(() =>
-        device.interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
-      );
+      const serial = targetIdentity();
+      try {
+        await controlled(() => pasteAndroidTextWithAdb(text, serial));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!isAndroidClipboardTransportFailure(message)) throw error;
+        await controlled(() =>
+          device.interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
+        );
+      }
       return;
     }
     const serial = targetIdentity();
@@ -809,6 +878,16 @@ export async function typeText(device: Device, text: string): Promise<void> {
       // to make the whole interaction unusable. Fall back to the platform's
       // input channel for clipboard command failures while still surfacing
       // cancellation and unrelated session errors.
+      if (isAndroidProviderTextInjectionUnavailable(message)) {
+        try {
+          await controlled(() => pasteAndroidTextWithAdb(text, serial));
+          return;
+        } catch (fallbackError) {
+          const fallbackMessage =
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          if (!isAndroidClipboardTransportFailure(fallbackMessage)) throw fallbackError;
+        }
+      }
       if (!isAndroidClipboardTransportFailure(message)) throw error;
       await controlled(() => typeAndroidShellTextExactly(device, serial, text));
     }
@@ -871,6 +950,19 @@ export async function replaceText(
             ? { x: target.point.x, y: target.point.y }
             : undefined;
   if (!interactionTarget) throw new Error("replace text requires a target");
+
+  // Android's accessibility fill is not consistently a replacement operation.
+  // Compose fields in particular may preserve the existing value and append the
+  // new text, even though the command succeeds. Make replacement deterministic
+  // at the input boundary: focus the target, clear it with native key events,
+  // then use the normal exact-text path for the new value.
+  if (selectedPlatform() === "android") {
+    await controlled(() => device.interactions.press({ ...base(), ...interactionTarget }));
+    await clearAndroidFocusedText(targetIdentity());
+    if (text.length > 0) await typeText(device, text);
+    return;
+  }
+
   await replaceTextValue(text, {
     fill: async (value) => {
       try {
@@ -888,6 +980,47 @@ export async function replaceText(
       await controlled(() => device.interactions.type({ ...base(), text: value }));
     },
   });
+}
+
+async function clearAndroidFocusedText(serial: string): Promise<void> {
+  // Android's MOVE_END is line-aware: on a multiline Compose field it lands at
+  // the end of the current line, which leaves later lines behind. Move to the
+  // beginning of the current line, walk to the top, then move to the beginning
+  // of the whole value before deleting forward.
+  await raceCancel(
+    execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
+  );
+  await raceCancel(
+    execFileAsync("adb", [
+      "-s",
+      serial,
+      "shell",
+      "input",
+      "keyevent",
+      ...Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"),
+    ]),
+  );
+  await raceCancel(
+    execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
+  );
+
+  // Keep each invocation comfortably below shell argument limits while still
+  // clearing long prompts and pasted multiline content in a bounded way.
+  const deleteCount = 4096;
+  const chunkSize = 128;
+  for (let remaining = deleteCount; remaining > 0; remaining -= chunkSize) {
+    const count = Math.min(chunkSize, remaining);
+    await raceCancel(
+      execFileAsync("adb", [
+        "-s",
+        serial,
+        "shell",
+        "input",
+        "keyevent",
+        ...Array.from({ length: count }, () => "KEYCODE_FORWARD_DEL"),
+      ]),
+    );
+  }
 }
 
 export type TextReplacementAdapter = {

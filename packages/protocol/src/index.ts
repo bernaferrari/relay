@@ -756,6 +756,14 @@ export type TestVariable = {
 };
 
 export type CanvasPosition = { x: number; y: number };
+
+/** A recorded interaction location projected into a screen preview. Values
+ * are normalized to the captured viewport so the same evidence survives
+ * responsive cards, zoom, and different canvas layouts. */
+export type CanvasInteractionAnchor = {
+  point: CanvasPosition;
+  rect?: { x: number; y: number; width: number; height: number };
+};
 /** Non-executable context placed beside captured screens: a compact canvas
  * primitive for requirements, review decisions, or a reminder to branch. */
 export type CanvasNote = CanvasPosition & {
@@ -886,6 +894,8 @@ export type CanvasTransition = {
   /** How the transition was authored. All modes still compile to recipe steps. */
   mode?: "interaction" | "automatic" | "reusable";
   review?: ConnectionTakeReview;
+  /** The first recorded interaction target, when the take captured one. */
+  sourceAnchor?: CanvasInteractionAnchor;
   /** Where this edge came from. This makes repeated discovery imports
    * idempotent and keeps generated maps auditable without coupling execution
    * to a discovery session. */

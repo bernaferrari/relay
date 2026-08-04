@@ -7,6 +7,7 @@ import type {
   CanvasGraph,
   AppMapCanvasState,
   RecipeStep,
+  CanvasInteractionAnchor,
   ScreenVariant,
 } from "@relay/protocol";
 
@@ -24,6 +25,21 @@ function comparable(value: unknown): unknown {
 
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+}
+
+function sourceAnchorForSteps(steps: readonly RecipeStep[]): CanvasInteractionAnchor | undefined {
+  const step = steps.find((candidate) => candidate.kind === "tap");
+  if (!step || step.kind !== "tap") return undefined;
+  const point = step.target.point;
+  const bounds = point?.referenceBounds;
+  if (!point || !bounds?.width || !bounds.height) return undefined;
+  const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
+  return {
+    point: {
+      x: clamp(point.x, bounds.width) / bounds.width,
+      y: clamp(point.y, bounds.height) / bounds.height,
+    },
+  };
 }
 
 function flowPath(graph: CanvasGraph, startScreenId: string): string[] {
@@ -236,6 +252,7 @@ export function mergeAppMapProjection(
       const stepIds = stepActions.flatMap((action) =>
         action.steps.flatMap((step) => (step.id ? [step.id] : [])),
       );
+      const sourceAnchor = sourceAnchorForSteps(stepActions.flatMap((action) => action.steps));
       const evidenceIds = recordings.flatMap((action) => action.evidenceIds);
       const firstRecording = recordings[0];
       const mode = connection.actions.some((action) => action.kind === "routine")
@@ -250,6 +267,7 @@ export function mergeAppMapProjection(
         stepIds,
         ...(evidenceIds.length ? { evidenceIds: [...new Set(evidenceIds)] } : {}),
         ...(firstRecording ? { takeId: firstRecording.takeId } : {}),
+        ...(sourceAnchor ? { sourceAnchor } : {}),
         mode,
         ...(connection.label ? { label: connection.label } : {}),
         state: connection.state === "ready" ? ("recorded" as const) : ("needs-recording" as const),

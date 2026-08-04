@@ -120,6 +120,68 @@ test("read projection follows observed order instead of opaque entity ids", () =
   );
 });
 
+test("projects a recorded tap into the transition so every map view can show it", () => {
+  const observed = structuredClone(map);
+  observed.screens.start = {
+    id: "start",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    title: "Connections",
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  observed.screens.wifi = {
+    ...observed.screens.start,
+    id: "wifi",
+    title: "Wi-Fi",
+    createdAt: 2,
+    updatedAt: 2,
+  };
+  const tap = {
+    id: "tap-wifi",
+    kind: "tap" as const,
+    target: {
+      point: {
+        x: 250,
+        y: 390,
+        referenceBounds: { width: 1080, height: 2340 },
+      },
+    },
+  };
+  observed.connections.open = {
+    id: "open",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "wifi" },
+    state: "ready",
+    actions: [
+      {
+        id: "recorded-open",
+        kind: "recorded",
+        takeId: "take-open",
+        takeRevision: 1,
+        steps: [tap],
+        evidenceIds: [],
+      },
+    ],
+    createdAt: 3,
+    updatedAt: 3,
+  };
+
+  const projected = mergeAppMapProjection(
+    { schemaVersion: 1, positions: {}, edgeLabels: {}, edgeKinds: {} },
+    observed,
+  );
+
+  assert.deepEqual(projected.graph?.transitions[0]?.sourceAnchor, {
+    point: { x: 250 / 1080, y: 390 / 2340 },
+  });
+});
+
 test("does not erase agent-owned entities or emit unchanged canvas fields", () => {
   const first = planAppMapProjection({
     appMap: map,

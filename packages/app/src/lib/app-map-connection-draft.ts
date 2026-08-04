@@ -131,7 +131,8 @@ export function canvasConnections(
       if (transition.destination.kind !== "screen") return [];
       const stepId = transition.stepIds[0];
       const step = steps.find((candidate) => candidate.id === stepId);
-      const sourceAnchor = sourceAnchorForSteps(steps, transition.stepIds, step);
+      const sourceAnchor =
+        transition.sourceAnchor ?? sourceAnchorForSteps(steps, transition.stepIds, step);
       return [
         {
           id: transition.id,

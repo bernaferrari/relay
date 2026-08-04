@@ -248,6 +248,13 @@ function discoveryInteraction(input: InteractInput): {
       };
     case "type":
       return { kind: "type", label: "Type text", text: input.text };
+    case "replace":
+      return {
+        kind: "type",
+        label: "Replace text",
+        target: input.target,
+        text: input.text,
+      };
     case "key":
       return { kind: "manual", label: `Press ${input.key}` };
   }
@@ -1746,7 +1753,10 @@ async function handleRequest(
     if (method === "POST" && pathname === "/interact") {
       const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
       if (!body || typeof body !== "object" || !("kind" in body)) {
-        throw new HttpError(400, "body.kind required (label|point|ref|find|text-match|swipe|type)");
+        throw new HttpError(
+          400,
+          "body.kind required (label|point|ref|find|text-match|swipe|key|type|replace)",
+        );
       }
       const { serial, ...input } = body;
       if (getActiveJob(serial)?.status === "running") {

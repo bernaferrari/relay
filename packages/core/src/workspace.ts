@@ -19,6 +19,7 @@ import {
   pressMatchingText,
   pressPoint,
   pressRef,
+  replaceText,
   rememberedTargetApplication,
   snapshot,
   swipeGesture,
@@ -1088,7 +1089,18 @@ export type InteractInput =
       durationMs?: number;
     }
   | { kind: "key"; key: "enter" | "backspace" }
-  | { kind: "type"; text: string };
+  | { kind: "type"; text: string }
+  | {
+      kind: "replace";
+      target: {
+        identifier?: string;
+        ref?: string;
+        label?: string;
+        text?: string;
+        point?: { x: number; y: number };
+      };
+      text: string;
+    };
 
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
   const target = await resolveRuntimeTarget(opts?.serial);
@@ -1136,6 +1148,9 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
             return;
           case "type":
             await typeText(target.device, input.text);
+            return;
+          case "replace":
+            await replaceText(target.device, input.target, input.text);
             return;
         }
       });

@@ -1,4 +1,7 @@
-import type { CanvasNote } from "@relay/protocol";
+import type {
+  CanvasInteractionAnchor as ProtocolCanvasInteractionAnchor,
+  CanvasNote,
+} from "@relay/protocol";
 import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
@@ -9,10 +12,7 @@ export type CanvasViewport = CanvasPoint & { scale: number };
  * sizes and device targets. This is derived presentation data, never canvas
  * layout state.
  */
-export type CanvasInteractionAnchor = {
-  point: CanvasPoint;
-  rect?: { x: number; y: number; width: number; height: number };
-};
+export type CanvasInteractionAnchor = ProtocolCanvasInteractionAnchor;
 export type CanvasBounds = {
   left: number;
   top: number;
