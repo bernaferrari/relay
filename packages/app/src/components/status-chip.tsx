@@ -7,9 +7,9 @@ import type { JobInfo } from "../context/server";
 export type StatusChipTone = "pass" | "attention" | "fail" | "run" | "idle";
 
 const TONE_CLASS: Record<StatusChipTone, string> = {
-  pass: "bg-surface-success-weak text-icon-success-base ring-border-success-base/40",
-  attention: "bg-surface-warning-weak text-icon-warning-base ring-border-warning-base/40",
-  fail: "bg-surface-critical-weak text-icon-critical-base ring-border-critical-base/40",
+  pass: "bg-surface-success-weak text-text-success-base ring-border-success-base/40",
+  attention: "bg-surface-warning-weak text-text-warning-base ring-border-warning-base/40",
+  fail: "bg-surface-critical-weak text-text-critical-base ring-border-critical-base/40",
   run: "bg-surface-interactive-weak text-text-interactive-base ring-border-interactive-base/40",
   idle: "bg-surface-raised-strong text-text-base ring-border-weak-base",
 };

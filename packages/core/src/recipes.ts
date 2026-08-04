@@ -1184,18 +1184,28 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "clipboard": {
-        if (raw.action !== "read" && raw.action !== "write")
-          throw stepErr(index, 'clipboard requires action: "read" | "write"');
-        if (raw.action === "write" && !isString(raw.text))
-          throw stepErr(index, "clipboard write requires text: string");
+        if (!["read", "write", "paste", "copy"].includes(String(raw.action)))
+          throw stepErr(index, 'clipboard requires action: "read" | "write" | "paste" | "copy"');
+        if ((raw.action === "write" || raw.action === "paste") && !isString(raw.text))
+          throw stepErr(index, `clipboard ${raw.action} requires text: string`);
+        const target =
+          raw.action === "paste" || raw.action === "copy"
+            ? parseTarget(raw.target, index, "target")
+            : undefined;
+        if (target && !target.identifier && !target.label && !target.text)
+          throw stepErr(
+            index,
+            `clipboard ${raw.action} target requires identifier, label, or text`,
+          );
         if (raw.expect !== undefined && !isString(raw.expect))
           throw stepErr(index, "clipboard.expect must be a string");
         if (raw.match !== undefined && raw.match !== "exact" && raw.match !== "contains")
           throw stepErr(index, 'clipboard.match must be "exact" | "contains"');
         out.push({
           kind: "clipboard",
-          action: raw.action,
+          action: raw.action as "read" | "write" | "paste" | "copy",
           ...(isString(raw.text) ? { text: raw.text } : {}),
+          ...(target ? { target } : {}),
           ...(isString(raw.expect) ? { expect: raw.expect } : {}),
           ...(raw.match === "contains" || raw.match === "exact" ? { match: raw.match } : {}),
           ...(note ? { note } : {}),

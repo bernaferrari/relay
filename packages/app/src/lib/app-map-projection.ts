@@ -215,7 +215,10 @@ export function mergeAppMapProjection(
   appMap: AppMap,
 ): AppMapCanvasState {
   const screens = Object.values(appMap.screens)
-    .sort((left, right) => left.id.localeCompare(right.id))
+    // IDs are intentionally opaque and must never decide visual reading order.
+    // Preserve the order in which states were observed so sibling branches and
+    // their descendants stay aligned; stable IDs only break timestamp ties.
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
     .map((screen) => ({
       id: screen.id,
       title: screen.title,
@@ -224,10 +227,13 @@ export function mergeAppMapProjection(
       updatedAt: screen.updatedAt,
     }));
   const transitions = Object.values(appMap.connections)
-    .sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
     .map((connection) => {
+      const stepActions = connection.actions.filter(
+        (action) => action.kind === "recorded" || action.kind === "steps",
+      );
       const recordings = connection.actions.filter((action) => action.kind === "recorded");
-      const stepIds = recordings.flatMap((action) =>
+      const stepIds = stepActions.flatMap((action) =>
         action.steps.flatMap((step) => (step.id ? [step.id] : [])),
       );
       const evidenceIds = recordings.flatMap((action) => action.evidenceIds);

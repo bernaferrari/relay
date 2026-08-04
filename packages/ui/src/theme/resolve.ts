@@ -222,6 +222,13 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["text-invert-weaker"] = isDark ? neutral[7] : neutral[3];
   tokens["text-invert-strong"] = isDark ? neutral[11] : neutral[0];
   tokens["text-interactive-base"] = interactive[isDark ? 10 : 9];
+  // Semantic text is intentionally brighter/darker than the corresponding
+  // icon token. Small labels and button copy need body-text contrast against
+  // tinted status surfaces; icon ramps only need non-text contrast.
+  tokens["text-success-base"] = success[10];
+  tokens["text-warning-base"] = warning[10];
+  tokens["text-critical-base"] = error[10];
+  tokens["text-info-base"] = info[10];
   tokens["text-on-brand-base"] = on(brandb);
   tokens["text-on-interactive-base"] = on(interb);
   tokens["text-on-interactive-weak"] = on(interb);

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { mappedCommandDescriptors } from "./commands.js";
 import { parseCli, redactedConfig } from "./config.js";
@@ -246,6 +249,39 @@ test("generic invocation still requires explicit object input", () => {
     () => parseCli(["operation", "invoke", "system.health.get", "--input", "[]"], {}),
     /JSON object/,
   );
+});
+
+test("input files preserve multiline values and cannot conflict with inline JSON", () => {
+  const root = mkdtempSync(join(tmpdir(), "relay-cli-input-"));
+  const path = join(root, "input.json");
+  writeFileSync(path, JSON.stringify({ text: "alpha\nbeta\ngamma" }), "utf8");
+  try {
+    const parsed = parseCli(["operation", "invoke", "step.run", "--input-file", path], {});
+    assert.equal(parsed.command, "invoke");
+    if (parsed.command === "invoke") assert.deepEqual(parsed.input, { text: "alpha\nbeta\ngamma" });
+    assert.throws(
+      () =>
+        parseCli(["operation", "invoke", "step.run", "--input", "{}", "--input-file", path], {}),
+      /only one of --input or --input-file/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("input files resolve from the caller directory under package-manager wrappers", () => {
+  const root = mkdtempSync(join(tmpdir(), "relay-cli-caller-"));
+  const path = join(root, "input.json");
+  writeFileSync(path, '{"expectedRevision":39}', "utf8");
+  try {
+    const parsed = parseCli(["connect", "update", "map", "edge", "--input-file", "input.json"], {
+      INIT_CWD: root,
+    });
+    assert.equal(parsed.command, "invoke");
+    if (parsed.command === "invoke") assert.equal(parsed.input.expectedRevision, 39);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("target and session mutations report missing explicit identities", () => {

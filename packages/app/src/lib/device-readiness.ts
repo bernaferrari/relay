@@ -33,7 +33,7 @@ export type DeviceReadinessContext = {
 };
 
 const APPLE_SETUP_ISSUE =
-  /(developer mode|runner|signing|xcode|provision|team id|bundle id|set.?up|account)/i;
+  /(developer mode|signing|xcode|provision|team id|bundle id|set.?up|account)/i;
 
 /** Turn driver and SDK diagnostics into concise recovery guidance. Raw
  * commands, bundle identifiers, and session names belong in Activity—not in
@@ -44,6 +44,13 @@ export function presentDeviceIssue(message: string, deviceName = "the device"): 
   }
   if (/already bound|another.*session|session.*in use/i.test(message)) {
     return `Another session is using ${deviceName}. Close it or wait for it to finish, then try again.`;
+  }
+  if (
+    /artifact restored but runner did not connect|runner did not accept connection|test runner hung before establishing connection/i.test(
+      message,
+    )
+  ) {
+    return `Keep ${deviceName} unlocked and enter its passcode if iOS asks to enable UI automation, then try again.`;
   }
   if (/xcode.*not signed in|apple team|accounts settings|valid credentials/i.test(message)) {
     return "Xcode needs access to the Apple account for this iPad. Check Xcode Settings → Accounts, then try again.";

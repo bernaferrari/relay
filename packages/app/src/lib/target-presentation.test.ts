@@ -165,6 +165,14 @@ test("one session-readiness rule blocks recording for Apple setup and capture fa
   assert.equal(
     deviceReadiness(ipad, true, {
       appleSetup: { setup: { ios: {} }, checks: [] },
+      liveCaptureIssue: "artifact restored but runner did not connect",
+    }).kind,
+    "capture-error",
+    "a stopped automation session is a device action, not fake Apple setup",
+  );
+  assert.equal(
+    deviceReadiness(ipad, true, {
+      appleSetup: { setup: { ios: {} }, checks: [] },
       requireLiveScreen: true,
       liveScreenAvailable: false,
     }).kind,
@@ -203,4 +211,11 @@ test("device diagnostics are presented without SDK commands", () => {
     "Relay lost the live app connection. Keep iPad Pro unlocked, then try again.",
   );
   assert.doesNotMatch(detail, /--session|open --/);
+});
+
+test("runner startup failures explain the device-side automation permission", () => {
+  const detail = presentDeviceIssue("artifact restored but runner did not connect", "iPad Pro");
+  assert.match(detail, /iPad Pro unlocked/);
+  assert.match(detail, /passcode.*UI automation/i);
+  assert.doesNotMatch(detail, /Xcode|sign|setup/i);
 });

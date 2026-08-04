@@ -207,6 +207,9 @@ export function createAuthoringRuntime(): AuthoringRuntime {
     async replay(session, steps) {
       await executeSteps(session, steps);
     },
+    async settle(ms) {
+      await new Promise<void>((resolve) => setTimeout(resolve, ms));
+    },
     async startVideo(session) {
       if (session.target.kind === "device" && session.target.platform === "ios") {
         if (await usesExclusivePhysicalIosRunner(session)) {
@@ -297,9 +300,24 @@ export async function handleAuthoringRoute(input: {
       const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
       const created = await authoringSessions.create(value);
       try {
-        await authoringSessions.observe(created.id, authoringRuntime);
+        const observed = await authoringSessions.observe(created.id, authoringRuntime);
+        if (observed.state !== "ready") {
+          throw new HttpError(422, observed.error ?? "Relay could not read the source screen", {
+            code: "AUTHORING_SOURCE_UNAVAILABLE",
+            sessionId: created.id,
+            recovery: "Recover the selected device, then start the proposal again.",
+          });
+        }
+        const started = await authoringSessions.start(created.id, authoringRuntime);
+        if (started.state !== "recording") {
+          throw new HttpError(422, started.error ?? "Relay could not start the proposal", {
+            code: "AUTHORING_START_FAILED",
+            sessionId: created.id,
+            recovery: "Recover the selected device, then start the proposal again.",
+          });
+        }
         json(response, 201, {
-          session: await authoringSessions.start(created.id, authoringRuntime),
+          session: started,
         });
       } catch (error) {
         await authoringSessions.cancel(created.id, authoringRuntime).catch(() => undefined);

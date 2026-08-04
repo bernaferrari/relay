@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  refMatchesRecordedTarget,
   resolveRecipeStep,
   runRecipeStep as runRecipeStepWithoutContext,
 } from "./recipe-runner.js";
@@ -17,6 +18,10 @@ import { observeScreenIdentity } from "./screen-identity.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "device", platform: "android", serial: "recipe-runner-test" }, () =>
+    runRecipeStepWithoutContext(...args),
+  );
+const runIosRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
+  runWithTargetContext({ kind: "device", platform: "ios", serial: "recipe-runner-ios-test" }, () =>
     runRecipeStepWithoutContext(...args),
   );
 
@@ -63,6 +68,49 @@ function stubDevice(impl: {
 const noLog = { log: () => {} };
 
 describe("runRecipeStep tap gestures", () => {
+  it("does not tap a reused physical-iOS element reference", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({ nodes: [{ ref: "@e12", label: "Different control", enabled: true }] }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+
+    await runIosRecipeStep(
+      device,
+      { kind: "tap", target: { ref: "@e12", label: "New conversation" } },
+      noLog,
+    );
+
+    assert.deepEqual(presses, [
+      {
+        platform: "ios",
+        udid: "recipe-runner-ios-test",
+        selector: 'label="New conversation"',
+      },
+    ]);
+  });
+
+  it("validates recorded refs against stable semantics", () => {
+    assert.equal(
+      refMatchesRecordedTarget(
+        [{ ref: "@e3", identifier: "new-chat", label: "New conversation" }],
+        { ref: "e3", identifier: "new-chat", label: "New conversation" },
+      ),
+      true,
+    );
+    assert.equal(
+      refMatchesRecordedTarget([{ ref: "@e3", label: "Share" }], {
+        ref: "@e3",
+        label: "New conversation",
+      }),
+      false,
+    );
+  });
+
   it("uses a stable accessibility identifier before weaker fallbacks", async () => {
     const presses: unknown[] = [];
     const device = stubDevice({
@@ -333,6 +381,62 @@ describe("resolveRecipeStep", () => {
 });
 
 describe("runRecipeStep clipboard", () => {
+  it("uses one atomic command for system paste and copy", async () => {
+    const calls: unknown[] = [];
+    const device = stubDevice({
+      clipboard: (options) => {
+        calls.push(options);
+        const action = (options as { action: string }).action;
+        return Promise.resolve({
+          action,
+          text: "hello\nworld",
+          textLength: 11,
+          message: action === "paste" ? "Clipboard pasted" : "Clipboard copied",
+        });
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "clipboard",
+        action: "paste",
+        text: "hello\nworld",
+        target: { identifier: "message" },
+      },
+      noLog,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "clipboard",
+        action: "copy",
+        target: { identifier: "message" },
+        expect: "hello\nworld",
+      },
+      noLog,
+    );
+
+    assert.deepEqual(calls, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        action: "paste",
+        text: "hello\nworld",
+        selectorKey: "id",
+        selectorValue: "message",
+      },
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        action: "copy",
+        selectorKey: "id",
+        selectorValue: "message",
+        expectedText: "hello\nworld",
+      },
+    ]);
+  });
+
   it("reports safe mismatch diagnostics without disclosing clipboard contents", async () => {
     const observed = "private-observed-value";
     const expected = "private-expected-value";

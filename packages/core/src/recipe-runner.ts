@@ -17,6 +17,8 @@ import {
   findClick,
   pressPoint,
   pressText,
+  resolveSnapshotTargetPoint,
+  selectedPlatform,
   replaceText,
   typeText,
   pressKey,
@@ -28,6 +30,8 @@ import {
   longPressTarget,
   clipboardWrite,
   clipboardRead,
+  clipboardPaste,
+  clipboardCopy,
   changeAndroidAppBuild,
   closeApp,
   inspectAndroidApp,
@@ -93,6 +97,21 @@ function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
     return nodeText(node).some((value) => value.toLowerCase().includes(query));
   }
   return false;
+}
+
+/** XCTest element refs are snapshots of one moment, not durable selectors.
+ * Before replaying a recorded ref on physical iOS, confirm that the current
+ * node still carries the stable label or identifier captured with it. Ref
+ * reuse must fall through to semantic targeting instead of tapping whatever
+ * now happens to own the old token. */
+export function refMatchesRecordedTarget(nodes: SnapshotNode[], target: StepTarget): boolean {
+  if (!target.ref) return false;
+  const ref = target.ref.replace(/^@/, "");
+  const candidate = nodes.find((node) => node.ref?.replace(/^@/, "") === ref);
+  if (!candidate) return false;
+  if (target.identifier && candidate.identifier !== target.identifier) return false;
+  if (target.label && candidate.label !== target.label) return false;
+  return true;
 }
 
 export function screenIdentityMatches(
@@ -479,6 +498,7 @@ async function tapTarget(
   log: (line: string) => void,
   repetitions = 1,
   intervalMs = 90,
+  region?: NonNullable<RecipeStep["when"]>["region"],
 ): Promise<string> {
   const repeated =
     repetitions > 1
@@ -497,9 +517,31 @@ async function tapTarget(
       run: () => pressIdentifier(device, target.identifier!, repeated),
     });
   if (target.ref)
-    attempts.push({ strategy: "ref", run: () => pressRef(device, target.ref!, repeated) });
+    attempts.push({
+      strategy: "ref",
+      run: async () => {
+        if (
+          selectedPlatform() === "ios" &&
+          (target.identifier || target.label) &&
+          !refMatchesRecordedTarget(await snapshot(device), target)
+        ) {
+          throw new Error("recorded element reference now identifies a different control");
+        }
+        await pressRef(device, target.ref!, repeated);
+      },
+    });
   if (target.label)
     attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!, repeated) });
+  if (target.label && region && selectedPlatform() === "ios") {
+    attempts.push({
+      strategy: "snapshot-region",
+      run: async () => {
+        const point = resolveSnapshotTargetPoint(await snapshot(device), target, region);
+        if (!point) throw new Error("regional snapshot target was absent or ambiguous");
+        await pressPoint(device, point.x, point.y, repeated);
+      },
+    });
+  }
   if (target.text)
     attempts.push({
       strategy: "text",
@@ -533,6 +575,7 @@ async function tapRecordedTarget(
     target: StepTarget;
     fallbackTargets?: StepTarget[];
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
+    region?: NonNullable<RecipeStep["when"]>["region"];
   },
   ctx: RecipeStepContext,
   repetitions = 1,
@@ -552,7 +595,14 @@ async function tapRecordedTarget(
   const failures: string[] = [];
   for (const [index, candidate] of unique.entries()) {
     try {
-      const strategy = await tapTarget(device, candidate, ctx.log, repetitions, intervalMs);
+      const strategy = await tapTarget(
+        device,
+        candidate,
+        ctx.log,
+        repetitions,
+        intervalMs,
+        input.region,
+      );
       if (index > 0) {
         const configuredFallback = index < configuredTargetCount;
         ctx.job?.artifacts.push({
@@ -699,6 +749,20 @@ async function conditionalTargetPresent(
   });
 }
 
+function clipboardExpectationError(
+  observed: string,
+  expected: string,
+  match: "exact" | "contains" | undefined,
+): Error {
+  const observedDigest = createHash("sha256").update(observed).digest("hex").slice(0, 12);
+  const expectedDigest = createHash("sha256").update(expected).digest("hex").slice(0, 12);
+  return new Error(
+    `clipboard: ${match === "contains" ? "content" : "value"} did not match expectation ` +
+      `(observed ${observed.length} chars, sha256:${observedDigest}; ` +
+      `expected ${expected.length} chars, sha256:${expectedDigest})`,
+  );
+}
+
 async function runRequiredRecipeStep(
   device: Device,
   step: RecipeStep,
@@ -713,7 +777,7 @@ async function runRequiredRecipeStep(
         const multi = step.gesture === "multi";
         await tapRecordedTarget(
           device,
-          step,
+          { ...step, region: step.when?.region },
           ctx,
           multi ? (step.tapCount ?? 2) : 1,
           multi ? (step.intervalMs ?? 100) : 0,
@@ -1215,6 +1279,17 @@ async function runRequiredRecipeStep(
     case "clipboard": {
       if (step.action === "write") {
         await clipboardWrite(device, step.text ?? "");
+      } else if (step.action === "paste") {
+        await clipboardPaste(device, step.text ?? "", step.target!);
+        log(`clipboard: pasted ${step.text?.length ?? 0} character(s) through the system menu`);
+      } else if (step.action === "copy") {
+        const value = await clipboardCopy(device, step.target!, step.expect);
+        log(`clipboard: copied ${value.length} character(s) through the system menu`);
+        if (step.expect !== undefined) {
+          const ok =
+            step.match === "contains" ? value.includes(step.expect) : value === step.expect;
+          if (!ok) throw clipboardExpectationError(value, step.expect, step.match);
+        }
       } else {
         const value = await clipboardRead(device);
         log(`clipboard: read ${value.length} character(s)`);
@@ -1222,16 +1297,7 @@ async function runRequiredRecipeStep(
           const ok =
             step.match === "contains" ? value.includes(step.expect) : value === step.expect;
           if (!ok) {
-            const observedDigest = createHash("sha256").update(value).digest("hex").slice(0, 12);
-            const expectedDigest = createHash("sha256")
-              .update(step.expect)
-              .digest("hex")
-              .slice(0, 12);
-            throw new Error(
-              `clipboard: ${step.match === "contains" ? "content" : "value"} did not match expectation ` +
-                `(observed ${value.length} chars, sha256:${observedDigest}; ` +
-                `expected ${step.expect.length} chars, sha256:${expectedDigest})`,
-            );
+            throw clipboardExpectationError(value, step.expect, step.match);
           }
         }
       }

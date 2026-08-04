@@ -53,12 +53,14 @@ import {
 } from "./target-context.js";
 import { adbSwipeInputArgs } from "./adb-input.js";
 import {
+  IosDeviceAttentionError,
   IosRunnerSetupError,
   diagnoseIosRunnerError,
   prepareIosRunner,
   recordIosVideo,
 } from "./ios-device-adapter.js";
 import {
+  confirmIosRuntimeSession,
   isIosSessionBindingError,
   isRecoverableIosRuntimeError,
   recoverIosRuntime,
@@ -91,6 +93,7 @@ const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
+const IOS_DEVICE_ATTENTION_FAILURE_TTL_MS = 5 * 60_000;
 
 async function restoreIosAppSession(
   device: Device,
@@ -118,9 +121,12 @@ async function recoverIosHostRuntime(
   force = false,
 ): Promise<IosRuntimeRecoveryResult> {
   const existing = iosRuntimeRecoveries.get(serial);
-  if (existing) return existing;
-  const recovery = recoverIosRuntime({ serial, cause, force }).finally(() => {
-    iosRuntimeRecoveries.delete(serial);
+  if (existing && !force) return existing;
+  let recovery!: Promise<IosRuntimeRecoveryResult>;
+  recovery = recoverIosRuntime({ serial, cause, force }).finally(() => {
+    // A forced recovery can supersede an older poisoned attempt. Never let
+    // that older promise delete the newer recovery when it eventually settles.
+    if (iosRuntimeRecoveries.get(serial) === recovery) iosRuntimeRecoveries.delete(serial);
   });
   iosRuntimeRecoveries.set(serial, recovery);
   return recovery;
@@ -145,19 +151,37 @@ export async function recoverTargetRuntime(
     throw new Error("Automatic runtime recovery is currently available for Apple devices only");
   }
   return runWithTargetContext(target.context, async () => {
+    let device = target.device;
     const inspect = async () => {
-      await ensureIosRunnerPrepared(target.device, serial);
-      return restoreIosAppSession(target.device, serial);
+      await ensureIosRunnerPrepared(device, serial);
+      return restoreIosAppSession(device, serial);
     };
+    const repair = async (sessionError: unknown) => {
+      // Invalidate cached client work before restarting its daemon. A Device
+      // instance is bound to the daemon endpoint that existed when it was
+      // created; reusing it after restart sends confirmation to a dead socket.
+      iosRunnerPreparations.delete(serial);
+      iosRunnerFailures.delete(serial);
+      const host = await recoverIosHostRuntime(serial, cause ?? sessionError, true);
+      device = createDevice();
+      return host;
+    };
+
+    // An explicit recovery request means a caller already observed failure.
+    // Repair immediately instead of spending another command timeout proving
+    // the known-bad channel is still bad.
+    if (cause !== undefined) {
+      const host = await repair(cause);
+      return confirmIosRuntimeSession(
+        host,
+        inspect,
+        async (error) => (await diagnoseIosRunnerError(error, serial)).message,
+      );
+    }
     return recoverIosRuntimeSession(
       serial,
       inspect,
-      async (sessionError) => {
-        const host = await recoverIosHostRuntime(serial, cause ?? sessionError, true);
-        iosRunnerPreparations.delete(serial);
-        iosRunnerFailures.delete(serial);
-        return host;
-      },
+      repair,
       async (error) => (await diagnoseIosRunnerError(error, serial)).message,
     );
   });
@@ -173,7 +197,8 @@ function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> 
   const existing = iosRunnerPreparations.get(serial);
   if (existing) return existing;
 
-  const preparation = prepareIosRunner(device, { udid: serial })
+  let preparation!: Promise<void>;
+  preparation = prepareIosRunner(device, { udid: serial })
     .catch(async (error) => {
       if (!isRecoverableIosRuntimeError(error)) throw error;
       await recoverIosHostRuntime(serial, error);
@@ -183,15 +208,22 @@ function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> 
       iosRunnerFailures.delete(serial);
     })
     .catch((error) => {
-      iosRunnerPreparations.delete(serial);
-      // A missing Xcode account or a provisioning error cannot be repaired by
-      // another simultaneous screen poll. Briefly share the failure across
-      // screenshot, snapshot, and video so the stage settles on one truthful
-      // state instead of repeatedly launching xcodebuild.
-      if (error instanceof IosRunnerSetupError) {
+      if (iosRunnerPreparations.get(serial) === preparation) {
+        iosRunnerPreparations.delete(serial);
+      }
+      // Setup and device-attention failures cannot be repaired by another
+      // simultaneous screen poll. Briefly share the failure across screenshot,
+      // snapshot, and video so the stage settles on one truthful state instead
+      // of repeatedly launching xcodebuild while the person is unlocking or
+      // approving UI Automation on the iPad.
+      if (error instanceof IosRunnerSetupError || error instanceof IosDeviceAttentionError) {
         iosRunnerFailures.set(serial, {
           error,
-          expiresAt: Date.now() + IOS_RUNNER_FAILURE_TTL_MS,
+          expiresAt:
+            Date.now() +
+            (error instanceof IosDeviceAttentionError
+              ? IOS_DEVICE_ATTENTION_FAILURE_TTL_MS
+              : IOS_RUNNER_FAILURE_TTL_MS),
         });
       }
       throw error;

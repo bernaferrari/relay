@@ -89,6 +89,37 @@ test("projects a canvas into ordered granular App Map changes", () => {
   assert.deepEqual(flow?.flow.connectionIds, ["continue"]);
 });
 
+test("read projection follows observed order instead of opaque entity ids", () => {
+  const observed = structuredClone(map);
+  observed.screens["z-first"] = {
+    id: "z-first",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    title: "First observed",
+    variantIds: [],
+    createdAt: 10,
+    updatedAt: 10,
+  };
+  observed.screens["a-second"] = {
+    ...observed.screens["z-first"],
+    id: "a-second",
+    title: "Second observed",
+    createdAt: 20,
+    updatedAt: 20,
+  };
+
+  const projected = mergeAppMapProjection(
+    { schemaVersion: 1, positions: {}, edgeLabels: {}, edgeKinds: {} },
+    observed,
+  );
+
+  assert.deepEqual(
+    projected.graph?.screens.map((screen) => screen.id),
+    ["z-first", "a-second"],
+  );
+});
+
 test("does not erase agent-owned entities or emit unchanged canvas fields", () => {
   const first = planAppMapProjection({
     appMap: map,

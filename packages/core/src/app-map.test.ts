@@ -86,6 +86,19 @@ function actions(): ActionSpec[] {
       steps: [{ id: "step-1", kind: "tap", target: { label: "Continue" } }],
       evidenceIds: ["evidence-take"],
     },
+    {
+      id: "steps",
+      kind: "steps",
+      steps: [
+        {
+          id: "paste-multiline",
+          kind: "clipboard",
+          action: "paste",
+          text: "alpha\nbeta\ngamma",
+          target: { identifier: "composer" },
+        },
+      ],
+    },
     { id: "tap", kind: "tap", target: { label: "Continue" } },
     { id: "text", kind: "text", text: "Ada", target: { ref: "name" } },
     {
@@ -247,6 +260,7 @@ test("validates a normalized project map containing every action kind and return
     input.connections["open-home"]!.actions.map((action) => action.kind),
     [
       "recorded",
+      "steps",
       "tap",
       "text",
       "gesture",

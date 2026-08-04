@@ -78,6 +78,7 @@ import type {
 import type { JobSummary } from "@relay/protocol";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
+import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -467,7 +468,23 @@ export function retryJob(id: string): TestJob {
     targetProfile: parent.targetProfile,
     workerId: parent.workerId,
     workerCapacity: parent.workerCapacity,
+    artifacts: parent.artifacts,
+    projectId: parent.projectId,
+    ownerId: parent.ownerId,
   });
+}
+
+async function persistCompletedRun(job: TestJob, log: (line: string) => void): Promise<void> {
+  try {
+    const persisted = await persistRun(job);
+    await projectPersistedAppMapRun(persisted).catch((error) =>
+      log(
+        `warn: App Map run projection failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  } catch (error) {
+    log(`warn: persist run failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function openStep(
@@ -955,9 +972,7 @@ async function executeJob(id: string): Promise<void> {
       healed: job.healed,
     });
 
-    await persistRun(job).catch((err) =>
-      pushLog(`warn: persist run failed: ${err instanceof Error ? err.message : String(err)}`),
-    );
+    await persistCompletedRun(job, pushLog);
   } catch (err) {
     if (
       err instanceof JobCancelledError ||
@@ -969,11 +984,7 @@ async function executeJob(id: string): Promise<void> {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
       finalizeCancelled(job, primary());
-      await persistRun(job).catch((persistError) =>
-        pushLog(
-          `warn: persist cancelled run failed: ${persistError instanceof Error ? persistError.message : String(persistError)}`,
-        ),
-      );
+      await persistCompletedRun(job, pushLog);
       return;
     }
     await finishEvidence();
@@ -998,7 +1009,7 @@ async function executeJob(id: string): Promise<void> {
       error: message,
       durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
     });
-    await persistRun(job).catch(() => undefined);
+    await persistCompletedRun(job, pushLog);
   } finally {
     await finishEvidence();
     activeJobIds.delete(id);

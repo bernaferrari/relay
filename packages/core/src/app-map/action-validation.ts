@@ -104,6 +104,17 @@ export function assertActions(actions: ActionSpec[], label: string): void {
         }
         stringArray(action.evidenceIds, `${item}.evidenceIds`);
         break;
+      case "steps":
+        if (!Array.isArray(action.steps) || action.steps.length === 0) {
+          appMapFail("invalid-map", `${item}.steps must contain at least one step`);
+        }
+        try {
+          validateRecipeSteps(action.steps);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appMapFail("invalid-map", `${item}.steps are invalid: ${message}`);
+        }
+        break;
       case "tap":
         assertTarget(action.target, `${item}.target`);
         if (action.fallbackTargets !== undefined) {

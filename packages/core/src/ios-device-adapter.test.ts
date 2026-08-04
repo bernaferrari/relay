@@ -5,9 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   diagnoseIosRunnerError,
+  IosDeviceAttentionError,
   iosRecordingOptions,
   IosRunnerSetupError,
   normalizeIosRunnerError,
+  parseIosDeviceLockState,
 } from "./ios-device-adapter.js";
 
 test("maps signing failures to the Relay iOS setup action", () => {
@@ -92,6 +94,23 @@ test("does not relabel an app-session failure from an older signing log", async 
 test("keeps regular runner failures intact", () => {
   const original = new Error("The iPad was unplugged");
   assert.equal(normalizeIosRunnerError(original), original);
+});
+
+test("maps an interrupted physical-device automation session to an unlock action", () => {
+  const error = normalizeIosRunnerError(new Error("artifact restored but runner did not connect"));
+  assert.ok(error instanceof IosDeviceAttentionError);
+  assert.match(error.message, /reconnect its cable/i);
+  assert.doesNotMatch(error.message, /sign|setup/i);
+});
+
+test("parses CoreDevice lock state without guessing from unrelated fields", () => {
+  assert.deepEqual(parseIosDeviceLockState({ result: { passcodeRequired: true } }), {
+    locked: true,
+  });
+  assert.deepEqual(parseIosDeviceLockState({ result: { passcodeRequired: false } }), {
+    locked: false,
+  });
+  assert.equal(parseIosDeviceLockState({ result: { unlockedSinceBoot: true } }), undefined);
 });
 
 test("records a physical iPad with one canonical target selector", () => {

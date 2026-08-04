@@ -1,4 +1,6 @@
 import type { ActorKind, ServerConnection } from "@relay/protocol";
+import { readFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
 import { UsageError } from "./errors.js";
 
@@ -70,6 +72,7 @@ const valueFlags = new Set([
   "--actor",
   "--timeout",
   "--input",
+  "--input-file",
   "--file",
 ]);
 const switchFlags = new Set([
@@ -144,6 +147,24 @@ function parseInput(rawInput: string | undefined): Record<string, unknown> {
     throw new UsageError("--input must be a JSON object");
   }
   return input as Record<string, unknown>;
+}
+
+function readInput(tokens: ParsedTokens, env: Environment): Record<string, unknown> {
+  const inline = tokens.values.get("--input");
+  const file = tokens.values.get("--input-file");
+  if (inline !== undefined && file !== undefined) {
+    throw new UsageError("Use only one of --input or --input-file");
+  }
+  if (!file) return parseInput(inline);
+  const path = isAbsolute(file) ? file : resolve(env.INIT_CWD?.trim() || process.cwd(), file);
+  let contents: string;
+  try {
+    contents = readFileSync(path, "utf8");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UsageError(`Could not read --input-file ${file}: ${message}`);
+  }
+  return parseInput(contents);
 }
 
 function screenshotOutput(
@@ -243,11 +264,14 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   }
 
   const rawInput = tokens.values.get("--input");
+  const inputFile = tokens.values.get("--input-file");
   if (group === "operation") {
     if (action !== "invoke" || !operationId || extra.length > 0) {
       throw new UsageError("Expected: relay operation invoke <operationId> --input <json>");
     }
-    if (rawInput === undefined) throw new UsageError("operation invoke requires --input <json>");
+    if (rawInput === undefined && inputFile === undefined) {
+      throw new UsageError("operation invoke requires --input <json> or --input-file <path>");
+    }
     return {
       config: {
         connection,
@@ -259,7 +283,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       },
       command: "invoke",
       operationId,
-      input: parseInput(rawInput),
+      input: readInput(tokens, env),
       ...(operationId === "target.screenshot.capture" ? { behavior: "screenshot" as const } : {}),
       screenshotOutput: screenshotOutput(
         tokens,
@@ -269,7 +293,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
-  const input = parseInput(rawInput);
+  const input = readInput(tokens, env);
   const resource = resolveResourceCommand(tokens.positionals, input);
   if (resource) {
     screenshotOutput(tokens, output, false);

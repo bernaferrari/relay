@@ -115,12 +115,14 @@ import {
   readDeviceSetup,
   runWithTargetContext,
   saveAppleDeviceSetup,
+  restartAgentDeviceDaemonForBuildDrift,
   restartAgentDeviceDaemonForSetup,
   resetDeviceClients,
   resetIosRunnerState,
   authoringSessions,
   runWithOperationContext,
   readAuthoringEvidence,
+  reconcilePersistedAppMapRuns,
   type AuthoringRuntime,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
@@ -1871,7 +1873,10 @@ async function handleRequest(
       return;
     }
     if (err instanceof HttpError) {
-      json(res, err.status, err.body ?? { error: err.message });
+      // Structured context must augment the human-readable failure, never
+      // replace it. Clients key off `error`; omitting it reduced actionable
+      // replay failures to an opaque "422 Unprocessable Entity".
+      json(res, err.status, { error: err.message, ...err.body });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -1881,13 +1886,11 @@ async function handleRequest(
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
-  // Apply saved signing settings to this process. Do not restart an existing
-  // device helper merely because Relay's UI restarted: that helper may own the
-  // only controllable session on a now-locked unattended iPad. agent-device
-  // already replaces itself lazily when its effective code/signing signature
-  // truly differs. The settings mutation route still performs an explicit
-  // restart because the person intentionally changed teams there.
+  // Apply saved signing settings, then replace only a verified helper from a
+  // different installed build. A matching daemon may own the only controllable
+  // session on an unattended iPad and is deliberately preserved.
   await loadDeviceSetup();
+  await restartAgentDeviceDaemonForBuildDrift();
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
@@ -1925,6 +1928,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
         }),
     );
   }
+  // App Map run entities are a rebuildable projection of immutable reports.
+  // Reconcile before accepting requests so a crash can never leave Coverage
+  // permanently behind the Run Observatory.
+  await reconcilePersistedAppMapRuns();
   await pruneIosVideoTakes();
   assertSafeBinding(host, token);
   if (!isLoopbackHost(host) && !redaction.enabled) {

@@ -264,8 +264,9 @@ export type RecipeStep = RecipeStepMetadata &
     | { kind: "script"; source: string }
     | {
         kind: "clipboard";
-        action: "write" | "read";
+        action: "write" | "read" | "paste" | "copy";
         text?: string;
+        target?: StepTarget;
         expect?: string;
         match?: "exact" | "contains";
       }

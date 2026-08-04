@@ -119,6 +119,30 @@ test("authoring interaction aliases construct explicit session inputs", () => {
     }).input,
     { sessionId: "session-1", interaction: { kind: "tap", target: { x: 0.25, y: 0.75 } } },
   );
+  assert.deepEqual(
+    resolveCommand(["proposal", "batch", "proposal-1"], {
+      interaction: {
+        steps: [
+          { kind: "tap", target: { identifier: "send" } },
+          { kind: "sleep", ms: 1_000 },
+          { kind: "tap", target: { identifier: "stop" } },
+        ],
+        label: "Interrupt response",
+      },
+    }).input,
+    {
+      sessionId: "proposal-1",
+      interaction: {
+        kind: "steps",
+        steps: [
+          { kind: "tap", target: { identifier: "send" } },
+          { kind: "sleep", ms: 1_000 },
+          { kind: "tap", target: { identifier: "stop" } },
+        ],
+        label: "Interrupt response",
+      },
+    },
+  );
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {
@@ -129,6 +153,11 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     [
       ["connect", "update", "checkout", "continue"],
       "app-map.connection.update",
+      { appMapId: "checkout", connectionId: "continue" },
+    ],
+    [
+      ["connect", "run", "checkout", "continue"],
+      "app-map.connection.run",
       { appMapId: "checkout", connectionId: "continue" },
     ],
     [

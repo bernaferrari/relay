@@ -257,13 +257,13 @@ export function productStatus(tone: string): string {
   if (tone === "ok" || tone === "healed") {
     return cn(
       statusBase,
-      "text-icon-success-base bg-surface-success-weak ring-border-success-base/35",
+      "text-text-success-base bg-surface-success-weak ring-border-success-base/35",
     );
   }
   if (tone === "error" || tone === "cancelled") {
     return cn(
       statusBase,
-      "text-icon-critical-base bg-surface-critical-weak ring-border-critical-base/35",
+      "text-text-critical-base bg-surface-critical-weak ring-border-critical-base/35",
     );
   }
   if (tone === "running" || tone === "paused" || tone === "queued") {
@@ -287,7 +287,7 @@ export function kindPillTone(kind: string): string {
     case "expect-set":
     case "expect-screen":
     case "wait-for":
-      return "bg-surface-success-weak text-icon-success-base ring-border-success-base/40";
+      return "bg-surface-success-weak text-text-success-base ring-border-success-base/40";
     case "sleep":
     case "pause":
       return "bg-surface-warning-weak text-icon-warning-base ring-border-warning-base/40";
@@ -312,7 +312,7 @@ export function statusPillTone(tone: "pass" | "heal" | "fail" | "run" | "idle" |
     case "heal":
       return "bg-surface-success-weak text-icon-success-base ring-border-success-base/40";
     case "fail":
-      return "bg-surface-critical-weak text-icon-critical-base ring-border-critical-base/40";
+      return "bg-surface-critical-weak text-text-critical-base ring-border-critical-base/40";
     case "run":
       return "bg-surface-info-weak text-icon-info-base ring-border-info-base/40";
     default:

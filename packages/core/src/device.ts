@@ -81,7 +81,9 @@ export type Device = {
     clipboard: (
       options: Parameters<NativeDevice["command"]["clipboard"]>[0],
     ) => Promise<
-      { action: "read"; text: string } | { action: "write"; textLength: number; message: string }
+      | { action: "read"; text: string }
+      | { action: "write"; textLength: number; message: string }
+      | { action: "paste" | "copy"; text: string; textLength: number; message: string }
     >;
     appState: (options?: Parameters<NativeDevice["command"]["appState"]>[0]) => Promise<
       | {
@@ -335,13 +337,18 @@ export async function pressIdentifier(
   identifier: string,
   repeated?: RepeatedPress,
 ): Promise<void> {
-  await controlled(() =>
-    device.interactions.press({
-      ...base(),
-      selector: `id="${identifier.replaceAll('"', '\\"')}"`,
-      ...repeated,
-    }),
-  );
+  try {
+    await controlled(() =>
+      device.interactions.press({
+        ...base(),
+        selector: `id="${identifier.replaceAll('"', '\\"')}"`,
+        ...repeated,
+      }),
+    );
+  } catch (error) {
+    const point = await iosSnapshotFallbackPoint(device, { identifier }, error);
+    await pressPoint(device, point.x, point.y, repeated);
+  }
 }
 
 export async function pressPoint(
@@ -419,6 +426,61 @@ export async function clipboardWrite(device: Device, text: string): Promise<void
 export async function clipboardRead(device: Device): Promise<string> {
   const result = await controlled(() => device.command.clipboard({ ...base(), action: "read" }));
   if (result.action !== "read") throw new Error("clipboard read returned an unexpected result");
+  return result.text;
+}
+
+type AtomicClipboardTarget = {
+  identifier?: string;
+  label?: string;
+  text?: string;
+};
+
+function atomicClipboardSelector(target: AtomicClipboardTarget): {
+  selectorKey: "id" | "label" | "text";
+  selectorValue: string;
+} {
+  if (target.identifier) return { selectorKey: "id", selectorValue: target.identifier };
+  if (target.label) return { selectorKey: "label", selectorValue: target.label };
+  if (target.text) return { selectorKey: "text", selectorValue: target.text };
+  throw new Error("clipboard copy/paste requires an identifier, label, or text target");
+}
+
+/** Perform the actual iOS system Paste action before XCTest exits.
+ * Physical iOS clears runner-owned pasteboard data when a one-command test process
+ * terminates, so write and Paste must be one verified native transaction. */
+export async function clipboardPaste(
+  device: Device,
+  text: string,
+  target: AtomicClipboardTarget,
+): Promise<string> {
+  const result = await controlled(() =>
+    device.command.clipboard({
+      ...base(),
+      action: "paste",
+      text,
+      ...atomicClipboardSelector(target),
+    }),
+  );
+  if (result.action !== "paste") throw new Error("clipboard paste returned an unexpected result");
+  return result.text;
+}
+
+/** Select and copy editable text through the real iOS edit menu, then read and
+ * optionally verify it before XCTest exits. */
+export async function clipboardCopy(
+  device: Device,
+  target: AtomicClipboardTarget,
+  expectedText?: string,
+): Promise<string> {
+  const result = await controlled(() =>
+    device.command.clipboard({
+      ...base(),
+      action: "copy",
+      ...atomicClipboardSelector(target),
+      ...(expectedText !== undefined ? { expectedText } : {}),
+    }),
+  );
+  if (result.action !== "copy") throw new Error("clipboard copy returned an unexpected result");
   return result.text;
 }
 
@@ -799,9 +861,16 @@ export async function replaceText(
   if (!interactionTarget) throw new Error("replace text requires a target");
   await replaceTextValue(text, {
     fill: async (value) => {
-      await controlled(() =>
-        device.interactions.fill({ ...base(), ...interactionTarget, text: value }),
-      );
+      try {
+        await controlled(() =>
+          device.interactions.fill({ ...base(), ...interactionTarget, text: value }),
+        );
+      } catch (error) {
+        const point = await iosSnapshotFallbackPoint(device, target, error);
+        await controlled(() =>
+          device.interactions.fill({ ...base(), x: point.x, y: point.y, text: value }),
+        );
+      }
     },
     type: async (value) => {
       await controlled(() => device.interactions.type({ ...base(), text: value }));
@@ -934,6 +1003,139 @@ export function center(rect: { x: number; y: number; width: number; height: numb
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height / 2),
   };
+}
+
+type SemanticSnapshotTarget = {
+  identifier?: string;
+  ref?: string;
+  label?: string;
+  text?: string;
+};
+
+export type SnapshotTargetRegion = {
+  minX?: number;
+  maxX?: number;
+  minY?: number;
+  maxY?: number;
+};
+
+const INTERACTIVE_SNAPSHOT_ROLES = new Set([
+  "button",
+  "cell",
+  "checkbox",
+  "link",
+  "securetextfield",
+  "slider",
+  "switch",
+  "textfield",
+  "textview",
+]);
+
+/**
+ * Resolve one semantic target to a coordinate without pretending an ambiguous
+ * accessibility result is safe. Physical iOS apps occasionally expose visible
+ * controls as `hittable:false` even though XCTest can activate their bounds.
+ * Relay uses this only after a native selector reports no match.
+ */
+export function resolveSnapshotTargetPoint(
+  nodes: SnapshotNode[],
+  target: SemanticSnapshotTarget,
+  region?: SnapshotTargetRegion,
+): { x: number; y: number } | undefined {
+  const normalized = {
+    identifier: target.identifier?.trim().toLocaleLowerCase(),
+    ref: target.ref?.replace(/^@/u, "").trim().toLocaleLowerCase(),
+    label: target.label?.trim().toLocaleLowerCase(),
+    text: target.text?.trim().toLocaleLowerCase(),
+  };
+  const viewport = region
+    ? (nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")
+        ?.rect ??
+      nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window")?.rect)
+    : undefined;
+  if (region && (!viewport || viewport.width <= 0 || viewport.height <= 0)) return undefined;
+  const candidates = nodes
+    .filter((node) => {
+      if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0 || node.enabled === false) {
+        return false;
+      }
+      if (region && viewport) {
+        const point = center(node.rect);
+        const x = (point.x - viewport.x) / viewport.width;
+        const y = (point.y - viewport.y) / viewport.height;
+        if (
+          (region.minX !== undefined && x < region.minX) ||
+          (region.maxX !== undefined && x > region.maxX) ||
+          (region.minY !== undefined && y < region.minY) ||
+          (region.maxY !== undefined && y > region.maxY)
+        ) {
+          return false;
+        }
+      }
+      if (normalized.identifier) {
+        return node.identifier?.trim().toLocaleLowerCase() === normalized.identifier;
+      }
+      if (normalized.ref)
+        return node.ref?.replace(/^@/u, "").toLocaleLowerCase() === normalized.ref;
+      if (normalized.label) return node.label?.trim().toLocaleLowerCase() === normalized.label;
+      if (normalized.text) {
+        return [node.label, node.value, node.identifier].some((value) =>
+          value?.toLocaleLowerCase().includes(normalized.text!),
+        );
+      }
+      return false;
+    })
+    .map((node) => {
+      const role = (node.role ?? node.type ?? "").toLocaleLowerCase();
+      const point = center(node.rect!);
+      return {
+        node,
+        point,
+        rank: (INTERACTIVE_SNAPSHOT_ROLES.has(role) ? 4 : 0) + (node.hittable ? 2 : 0),
+        area: node.rect!.width * node.rect!.height,
+      };
+    });
+  if (candidates.length === 0) return undefined;
+
+  const bestRank = Math.max(...candidates.map((candidate) => candidate.rank));
+  const best = candidates.filter((candidate) => candidate.rank === bestRank);
+  const distinct = best.filter(
+    (candidate, index) =>
+      best.findIndex(
+        (other) =>
+          Math.abs(other.point.x - candidate.point.x) <= 4 &&
+          Math.abs(other.point.y - candidate.point.y) <= 4,
+      ) === index,
+  );
+  if (distinct.length !== 1) return undefined;
+
+  return best
+    .filter(
+      (candidate) =>
+        Math.abs(candidate.point.x - distinct[0]!.point.x) <= 4 &&
+        Math.abs(candidate.point.y - distinct[0]!.point.y) <= 4,
+    )
+    .sort(
+      (left, right) => left.area - right.area || (right.node.depth ?? 0) - (left.node.depth ?? 0),
+    )[0]?.point;
+}
+
+function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
+  if (selectedPlatform() !== "ios") return false;
+  if (error instanceof Error && error.name === "JobCancelledError") return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bno match\b|did not match|element not found|selector.*not.*element/i.test(message);
+}
+
+async function iosSnapshotFallbackPoint(
+  device: Device,
+  target: SemanticSnapshotTarget,
+  error: unknown,
+): Promise<{ x: number; y: number }> {
+  if (!canUseIosSnapshotCoordinateFallback(error)) throw error;
+  const point = resolveSnapshotTargetPoint(await snapshot(device), target);
+  if (!point) throw error;
+  return point;
 }
 
 export async function pressMatchingText(device: Device, match: string): Promise<void> {

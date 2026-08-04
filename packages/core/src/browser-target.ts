@@ -448,7 +448,18 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         await (await activePage(session)).goto(target.browser.startUrl);
         return { action: "home", message: "Home" };
       },
-      clipboard: async (input: { action: "read" | "write"; text?: string }) => {
+      clipboard: async (input: {
+        action: "read" | "write" | "paste" | "copy";
+        text?: string;
+        selectorKey?: "id" | "label" | "text" | "value";
+        selectorValue?: string;
+        expectedText?: string;
+      }) => {
+        if (input.action === "paste" || input.action === "copy") {
+          throw new Error(
+            "atomic system clipboard copy/paste currently requires a physical iOS target",
+          );
+        }
         const page = await activePage(session);
         if (input.action === "write") {
           await page.evaluate((text) => navigator.clipboard.writeText(text), input.text ?? "");

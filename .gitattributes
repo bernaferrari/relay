@@ -1,0 +1,4 @@
+# Generated unified diffs contain significant one-character context lines and
+# may preserve upstream CRLF in declaration files. Keep Git from rewriting or
+# misclassifying those patch mechanics as product-source whitespace defects.
+patches/*.patch -text whitespace=-trailing-space

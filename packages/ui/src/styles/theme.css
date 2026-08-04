@@ -175,6 +175,10 @@
   --text-invert-weaker: #ededed;
   --text-invert-strong: #fcfcfc;
   --text-interactive-base: #034cff;
+  --text-success-base: #0e7249;
+  --text-warning-base: #835513;
+  --text-critical-base: #a83002;
+  --text-info-base: #286571;
   --text-on-brand-base: rgba(0, 0, 0, 0.574);
   --text-on-interactive-base: #fcfcfc;
   --text-on-interactive-weak: rgba(0, 0, 0, 0.574);
@@ -440,6 +444,10 @@
     --text-invert-weaker: #505050;
     --text-invert-strong: #ededed;
     --text-interactive-base: #9dbefe;
+    --text-success-base: #bafdb3;
+    --text-warning-base: #ffe0a3;
+    --text-critical-base: #ffe0da;
+    --text-info-base: #c7efff;
     --text-on-brand-base: rgba(255, 255, 255, 0.603);
     --text-on-interactive-base: #ededed;
     --text-on-interactive-weak: rgba(255, 255, 255, 0.603);

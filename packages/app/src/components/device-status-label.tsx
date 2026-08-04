@@ -53,12 +53,13 @@ export function appMapDeviceStatus(input: {
 
 /** One visual language for device state: neutral progress, semantic attention,
  * and a dot only when the live state is definitive. */
-export function DeviceStatusLabel(props: { status: AppMapDeviceStatus }) {
+export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: string }) {
   return (
     <span
       class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
       role="status"
       aria-live="polite"
+      aria-label={props.label ? `${props.label}: ${props.status.label}` : undefined}
       data-tip={props.status.detail}
     >
       <Show
@@ -95,7 +96,7 @@ export function DeviceStatusLabel(props: { status: AppMapDeviceStatus }) {
           aria-hidden="true"
         />
       </Show>
-      {props.status.label}
+      <span class="truncate">{props.label ?? props.status.label}</span>
     </span>
   );
 }

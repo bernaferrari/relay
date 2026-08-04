@@ -142,6 +142,12 @@ export type ActionSpec = ActionMetadata &
         steps: RecipeStep[];
         evidenceIds: string[];
       }
+    | {
+        /** Deterministic steps authored directly by a person, agent, CLI, or
+         * MCP client. Unlike a recorded action this never invents a Take. */
+        kind: "steps";
+        steps: RecipeStep[];
+      }
     | { kind: "tap"; target: StepTarget; fallbackTargets?: StepTarget[] }
     | { kind: "text"; text: string; target?: StepTarget }
     | { kind: "gesture"; gesture: GestureSpec }
@@ -234,6 +240,20 @@ export type AppMapCompiledFlow = {
   connections: AppMapCompiledConnection[];
   caseStacks: CaseStack[];
   terminal: ConnectionDestination | { kind: "screen"; screenId: string };
+};
+
+/** Immutable execution plan for replaying one saved connection in isolation.
+ * This is intentionally distinct from a Flow: inspecting a transition must
+ * never invent a persisted path or fall back to renderer-owned draft steps. */
+export type AppMapCompiledConnectionRun = {
+  schemaVersion: 1;
+  appMapId: string;
+  appMapRevision: number;
+  connection: Pick<Connection, "id" | "fromScreenId" | "destination" | "label" | "caseStackId">;
+  rootRecipeId: string;
+  recipes: Record<string, AppMapCompiledRecipe>;
+  caseStacks: CaseStack[];
+  terminal: ConnectionDestination;
 };
 
 export type RunReference = AppMapEntity & {
@@ -343,7 +363,8 @@ export type ActivitySubjectKind =
   | "flow"
   | "routine"
   | "case-stack"
-  | "proposal";
+  | "proposal"
+  | "run";
 
 export type ActivityEvent = AppMapScope & {
   id: string;
@@ -368,6 +389,7 @@ export type ActivityEvent = AppMapScope & {
     | "case-stack.attached"
     | "case-stack.removed"
     | "recording.committed"
+    | "run.finished"
     | "proposal.submitted"
     | "proposal.approved"
     | "proposal.rejected";

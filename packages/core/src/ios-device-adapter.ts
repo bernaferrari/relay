@@ -7,10 +7,14 @@
  * Keep that distinction here so callers do not have to infer it from platform
  * names or runner errors.
  */
-import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { Device } from "./device.js";
+
+const execFileAsync = promisify(execFile);
 
 export type IosCaptureMode = "snapshot" | "recorded-video";
 
@@ -26,6 +30,64 @@ export class IosRunnerSetupError extends Error {
   constructor(readonly causeMessage: string) {
     super(iosRunnerSetupMessage(causeMessage));
     this.name = "IosRunnerSetupError";
+  }
+}
+
+export class IosDeviceAttentionError extends Error {
+  readonly code = "ios-device-attention";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "IosDeviceAttentionError";
+  }
+}
+
+export function parseIosDeviceLockState(value: unknown): { locked: boolean } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const result = (value as Record<string, unknown>).result;
+  if (!result || typeof result !== "object") return undefined;
+  const passcodeRequired = (result as Record<string, unknown>).passcodeRequired;
+  return typeof passcodeRequired === "boolean" ? { locked: passcodeRequired } : undefined;
+}
+
+/**
+ * CoreDevice can report a connected iPad while its screen is locked. Check the
+ * cheap, read-only state before starting Xcode's much slower test-runner path.
+ * Failure to read this optional signal is non-fatal; the runner remains the
+ * authoritative readiness check.
+ */
+async function assertIosDeviceReadyForAutomation(udid: string): Promise<void> {
+  const directory = await mkdtemp(join(homedir(), ".relay-ios-lock-"));
+  const output = join(directory, "lock-state.json");
+  try {
+    await execFileAsync(
+      "xcrun",
+      [
+        "devicectl",
+        "device",
+        "info",
+        "lockState",
+        "--device",
+        udid,
+        "--timeout",
+        "8",
+        "--json-output",
+        output,
+      ],
+      { timeout: 10_000, maxBuffer: 64 * 1024 },
+    );
+    const state = parseIosDeviceLockState(JSON.parse(await readFile(output, "utf8")));
+    if (state?.locked) {
+      throw new IosDeviceAttentionError(
+        "Unlock this iPad before Relay starts device control. Keep it awake until the Automation Running indicator appears.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof IosDeviceAttentionError) throw error;
+    // CoreDevice lock inspection is best-effort. Runner startup below retains
+    // the detailed native failure when this lightweight probe is unavailable.
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -126,6 +188,20 @@ async function recentIosRunnerFailure(udid?: string): Promise<string | undefined
 export function normalizeIosRunnerError(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
   if (
+    /artifact restored but runner did not connect|runner did not accept connection|test runner hung before establishing connection/i.test(
+      message,
+    )
+  ) {
+    return new IosDeviceAttentionError(
+      "iOS did not start UI Automation. Keep the iPad unlocked; reconnect its cable and approve the passcode prompt if one appears. Restart the iPad if it remains unavailable.",
+    );
+  }
+  if (/device.*locked|passcode.*required/i.test(message)) {
+    return new IosDeviceAttentionError(
+      "Unlock this iPad before Relay starts device control. Keep it awake until the Automation Running indicator appears.",
+    );
+  }
+  if (
     /provisioning profile|code sign|signing identity|apple team|AGENT_DEVICE_IOS_|build-for-testing|xcodebuild|developer mode|developer disk image|no account for team|valid credentials|no profiles? for/i.test(
       message,
     )
@@ -167,6 +243,7 @@ export async function diagnoseIosRunnerError(error: unknown, udid?: string): Pro
  */
 export async function prepareIosRunner(device: Device, selection: { udid: string }): Promise<void> {
   try {
+    await assertIosDeviceReadyForAutomation(selection.udid);
     await device.command.prepare({
       platform: "ios",
       udid: selection.udid,

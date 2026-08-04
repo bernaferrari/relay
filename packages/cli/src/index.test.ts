@@ -798,6 +798,50 @@ test("JSON failures emit exactly one terminal object and diagnostics only to std
   assert.doesNotMatch(`${io.stdout()}${io.stderr()}`, new RegExp(secret));
 });
 
+test("structured operation failures use a non-zero exit instead of a false success", async () => {
+  const io = capture();
+  const code = await runCli(["operation", "invoke", "step.run", "--input", "{}", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      invoke: async () => ({ ok: false, error: "the system Copy action did not appear" }),
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.validation);
+  assert.deepEqual(JSON.parse(io.stdout()), {
+    type: "error",
+    ok: false,
+    operationId: "step.run",
+    error: {
+      message: "the system Copy action did not appear",
+      exitCode: ExitCode.validation,
+    },
+  });
+  assert.match(io.stderr(), /the system Copy action did not appear/);
+});
+
+test("failed watched jobs use a non-zero exit", async () => {
+  const io = capture();
+  const code = await runCli(["job", "watch", "failed-job", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      invoke: async () => ({
+        job: { id: "failed-job", status: "error", error: "destination screen differed" },
+      }),
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.validation);
+  assert.equal(JSON.parse(io.stdout()).error.message, "destination screen differed");
+});
+
 test("unknown operations are usage errors without invoking a client", async () => {
   const io = capture();
   let created = false;

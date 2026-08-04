@@ -139,7 +139,7 @@
   &[data-variant="danger"] {
     border-color: color-mix(in srgb, var(--icon-critical-base) 30%, transparent);
     background-color: var(--surface-critical-weak);
-    color: var(--icon-critical-base);
+    color: var(--text-critical-base, var(--icon-critical-base));
 
     &:hover:not(:disabled) {
       background-color: color-mix(in srgb, var(--icon-critical-base) 14%, transparent);

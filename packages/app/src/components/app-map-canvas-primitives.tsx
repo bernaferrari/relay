@@ -232,9 +232,9 @@ export function ScreenCard(props: {
               frameStateClass(),
             )}
           >
-            <div class="grid justify-items-center gap-2 text-[var(--text-weak)] transition-colors group-hover/screen:text-[var(--text-base)]">
-              <Icon name="camera" size={16} />
-              <span class="text-[10.5px] font-medium">Capture preview</span>
+            <div class="grid size-9 place-items-center rounded-[10px] text-[var(--text-weak)] opacity-70 transition-[background-color,color,opacity] duration-150 group-hover/screen:bg-[var(--v2-background-bg-layer-02)] group-hover/screen:text-[var(--text-base)] group-hover/screen:opacity-100">
+              <Icon name="camera" size={15} />
+              <span class="sr-only">No screenshot yet</span>
             </div>
           </div>
         }
@@ -514,6 +514,14 @@ export function ConnectionInspector(props: {
   sourceTitle: string;
   targetTitle: string;
   actionCount?: number;
+  actions?: Array<{
+    id: string;
+    actionId: string;
+    stepId?: string;
+    label: string;
+    waitMs?: number;
+  }>;
+  onChangeWait: (actionId: string, stepId: string | undefined, waitMs: number) => void;
   setup: {
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
@@ -536,6 +544,7 @@ export function ConnectionInspector(props: {
 }) {
   const pending = () => props.connection.state === "needs-recording";
   const [optionsOpen, setOptionsOpen] = createSignal(false);
+  const [actionsOpen, setActionsOpen] = createSignal(false);
   const actionCount = () => props.actionCount ?? props.connection.stepIds.length;
   const verified = () => props.connection.review?.status === "verified";
   const failed = () => props.connection.review?.status === "failed";
@@ -552,13 +561,13 @@ export function ConnectionInspector(props: {
         <div class="flex items-center gap-1.5">
           <span
             class={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-medium",
+              "rounded-md px-2 py-0.5 text-[10px] font-medium",
               pending()
-                ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_14%,transparent)] text-[var(--icon-warning-base)]"
+                ? "bg-surface-warning-weak text-text-warning-base"
                 : verified()
-                  ? "bg-[color-mix(in_srgb,var(--icon-success-base)_14%,transparent)] text-[var(--icon-success-base)]"
+                  ? "bg-surface-success-weak text-text-success-base"
                   : failed()
-                    ? "bg-[color-mix(in_srgb,var(--icon-critical-base)_12%,transparent)] text-[var(--icon-critical-base)]"
+                    ? "bg-surface-critical-weak text-text-critical-base"
                     : props.connection.takeId || props.connection.videoTakeId
                       ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
                       : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]",
@@ -584,6 +593,65 @@ export function ConnectionInspector(props: {
           ? "Choose what should move the device to the next screen. You can record it or start with a simple behavior."
           : `${modeLabel()} · ${actionCount()} action${actionCount() === 1 ? "" : "s"}${props.connection.videoTakeId ? " · video" : ""}${props.connection.videoClip ? " · trimmed" : ""}`}
       </p>
+      <Show when={!pending() && (props.actions?.length ?? 0) > 0}>
+        <section class="mt-3 border-t border-[var(--v2-border-border-muted)] pt-2">
+          <button
+            type="button"
+            class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+            aria-expanded={actionsOpen()}
+            onClick={() => setActionsOpen((value) => !value)}
+          >
+            <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
+              <Icon name="command" size={11} />
+            </span>
+            <span class="min-w-0 flex-1">
+              <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
+                {actionCount()} action{actionCount() === 1 ? "" : "s"}
+              </strong>
+              <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                {props.actions?.[0]?.label}
+              </span>
+            </span>
+            <span class="text-[9.5px] font-medium text-[var(--text-weak)]">
+              {actionsOpen() ? "Hide" : "View"}
+            </span>
+          </button>
+          <Show when={actionsOpen()}>
+            <ol class="m-0 mt-1 grid list-none gap-1 rounded-[9px] bg-[var(--v2-background-bg-layer-01)] p-1.5">
+              <For each={props.actions}>
+                {(action, index) => (
+                  <li class="grid min-h-10 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-[7px] px-2 text-[10px] text-[var(--text-base)]">
+                    <span class="grid size-5 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] font-mono text-[8.5px] tabular-nums text-[var(--text-weak)]">
+                      {index() + 1}
+                    </span>
+                    <span class="min-w-0 leading-[1.35]">{action.label}</span>
+                    <Show when={action.waitMs !== undefined}>
+                      <label class="flex h-8 items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] px-2 text-[var(--text-weak)] focus-within:outline-2 focus-within:outline-[var(--border-focus)]">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={Number(((action.waitMs ?? 0) / 1_000).toFixed(2))}
+                          aria-label="Pause duration in seconds"
+                          class="w-10 border-0 bg-transparent p-0 text-right text-[10px] tabular-nums text-[var(--text-strong)] outline-none"
+                          onChange={(event) =>
+                            props.onChangeWait(
+                              action.actionId,
+                              action.stepId,
+                              Number(event.currentTarget.value) * 1_000,
+                            )
+                          }
+                        />
+                        <span class="ml-1 text-[9px]">s</span>
+                      </label>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ol>
+          </Show>
+        </section>
+      </Show>
       <ConnectionCaseStack {...props.cases} />
       <Show
         when={!pending() && (Boolean(props.connection.review) || props.replay.state !== "idle")}

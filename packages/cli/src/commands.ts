@@ -556,6 +556,22 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("connection update", ["appMapId", "connectionId"]),
   ),
   mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
+  mapped(
+    "app-map.connection.run",
+    path("connect run", ["appMapId", "connectionId"], undefined, {
+      summary: "Replay one saved connection and verify its destination",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "connectionId", type: "string", description: "Saved connection identifier" },
+      ],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Device serial" },
+        { name: "platform", type: "android | ios", description: "Device platform" },
+      ],
+      examples: ['relay connect run settings open-connections --input \'{"serial":"device-id"}\''],
+      behavior: "job-start-watch",
+    }),
+  ),
   mapped("app-map.group.save", path("group save", ["appMapId", "groupId"])),
   mapped("app-map.group.remove", path("group remove", ["appMapId", "groupId"])),
   mapped(
@@ -930,6 +946,30 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         summary: "Add a screenshot checkpoint",
         argumentHelp: [
           { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+      },
+    ),
+    path(
+      "proposal batch",
+      ["sessionId"],
+      { interaction: { kind: "steps" } },
+      {
+        summary: "Perform timing-sensitive steps as one recorded interaction",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+        inputHelp: [
+          {
+            name: "interaction.steps",
+            type: "object[]",
+            required: true,
+            description: "Recipe steps executed in order without CLI round trips",
+          },
+          {
+            name: "interaction.label",
+            type: "string",
+            description: "Human-readable task boundary for the recorded batch",
+          },
         ],
       },
     ),

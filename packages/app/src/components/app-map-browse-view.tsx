@@ -228,7 +228,7 @@ export function AppMapBrowseView(props: {
             />
           }
         >
-          <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] items-start gap-x-7 gap-y-9">
+          <div class="grid items-start gap-y-9">
             <For
               each={filteredAreas()}
               fallback={
@@ -262,10 +262,7 @@ export function AppMapBrowseView(props: {
               {(area) => (
                 <section
                   aria-labelledby={`area-${area.id}`}
-                  class={cn(
-                    "min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]",
-                    area.screenIds.length > 1 && "min-[980px]:col-span-2",
-                  )}
+                  class="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]"
                 >
                   <header class="mb-3 flex items-baseline gap-2.5">
                     <h3
@@ -278,7 +275,7 @@ export function AppMapBrowseView(props: {
                       {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
                     </span>
                   </header>
-                  <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,210px),1fr))] items-start gap-5">
+                  <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,210px),1fr))] items-start gap-5">
                     <For each={area.screenIds}>
                       {(screenId) => {
                         const screen = () => props.appMap.screens[screenId]!;
@@ -329,9 +326,9 @@ function ScreenTile(props: {
         <Show
           when={props.image}
           fallback={
-            <div class="grid justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors group-hover:text-[var(--text-base)]">
+            <div class="grid size-9 place-items-center rounded-[10px] text-[var(--text-weak)] opacity-70 transition-[background-color,color,opacity] duration-150 group-hover:bg-[var(--v2-background-bg-layer-02)] group-hover:text-[var(--text-base)] group-hover:opacity-100">
               <Icon name="camera" size={15} />
-              <span class="text-[10.5px] font-medium">Capture preview</span>
+              <span class="sr-only">No screenshot yet</span>
             </div>
           }
         >
@@ -648,14 +645,14 @@ function platformName(platform: "android" | "ios" | "browser"): string {
 
 function outcomePill(outcome: BrowseRunOutcome): string {
   return cn(
-    "inline-flex min-h-6 w-fit items-center rounded-full px-2 text-[9.5px] font-semibold ring-1 ring-inset",
+    "inline-flex min-h-6 w-fit items-center rounded-md px-2 text-[9.5px] font-semibold ring-1 ring-inset",
     outcome === "passed"
-      ? "bg-[color-mix(in_srgb,var(--icon-success-base)_10%,transparent)] text-[var(--icon-success-base)] ring-[color-mix(in_srgb,var(--icon-success-base)_24%,transparent)]"
+      ? "bg-surface-success-weak text-text-success-base ring-border-success-base/40"
       : outcome === "product-failure"
-        ? "bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)] text-[var(--icon-critical-base)] ring-[color-mix(in_srgb,var(--icon-critical-base)_24%,transparent)]"
+        ? "bg-surface-critical-weak text-text-critical-base ring-border-critical-base/40"
         : outcome === "harness-failure" || outcome === "uncertain"
-          ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_10%,transparent)] text-[var(--icon-warning-base)] ring-[color-mix(in_srgb,var(--icon-warning-base)_24%,transparent)]"
-          : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)] ring-[var(--v2-border-border-muted)]",
+          ? "bg-surface-warning-weak text-text-warning-base ring-border-warning-base/40"
+          : "bg-surface-raised-strong text-text-base ring-border-weak-base",
   );
 }
 

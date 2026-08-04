@@ -473,6 +473,24 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
       "[private]",
     );
     assert.equal(JSON.stringify(result).includes("person@example.test"), false);
+
+    const connectionResult = await client.invoke("app-map.connection.run", {
+      appMapId: "store",
+      connectionId: "continue",
+      serial: "virtual-target",
+      platform: "android",
+      targetKind: "device",
+      variables: { login_email: "person@example.test" },
+    });
+    assert.equal(connectionResult.plan.connection.id, "continue");
+    assert.deepEqual(
+      connectionResult.plan.recipes[connectionResult.plan.rootRecipeId]!.steps.map(
+        (step) => step.kind,
+      ),
+      ["expect-screen", "tap", "expect-screen"],
+    );
+    assert.equal(connectionResult.jobs.length, 5);
+    assert.equal(JSON.stringify(connectionResult).includes("person@example.test"), false);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

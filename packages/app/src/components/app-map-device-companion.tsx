@@ -11,6 +11,7 @@ import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-
 export function AppMapDeviceCompanion(props: {
   closing: boolean;
   deviceSelected: boolean;
+  deviceLabel?: string;
   status: AppMapDeviceStatus;
   recording: boolean;
   take: RecordingTake | null;
@@ -54,7 +55,7 @@ export function AppMapDeviceCompanion(props: {
       aria-label="Device"
     >
       <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-4">
-        <DeviceStatusLabel status={props.status} />
+        <DeviceStatusLabel status={props.status} label={props.deviceLabel ?? "Device"} />
         <Show when={!props.recording}>
           <button
             type="button"

@@ -81,7 +81,7 @@ describe("deriveAppMapAreas", () => {
     });
   });
 
-  it("uses explicit Groups before derived path organization", () => {
+  it("uses explicit Groups as durable product areas", () => {
     const input = projection();
     input.groups = {
       settings: {
@@ -93,12 +93,34 @@ describe("deriveAppMapAreas", () => {
         updatedAt: 10,
       },
     };
-    assert.deepEqual(deriveAppMapAreas(input)[0], {
-      id: "group:settings",
-      title: "Settings",
-      rootScreenId: "settings",
-      screenIds: ["settings", "notifications", "privacy"],
-    });
+    assert.deepEqual(
+      deriveAppMapAreas(input).find((area) => area.id === "group:settings"),
+      {
+        id: "group:settings",
+        title: "Settings",
+        rootScreenId: "settings",
+        screenIds: ["settings", "notifications", "privacy"],
+      },
+    );
+  });
+
+  it("keeps an ungrouped entry area before later product Groups", () => {
+    const input = projection();
+    input.groups = {
+      settings: {
+        ...scope,
+        id: "settings",
+        name: "Settings",
+        screenIds: ["settings", "notifications", "privacy"],
+        createdAt: 10,
+        updatedAt: 10,
+      },
+    };
+
+    assert.deepEqual(
+      deriveAppMapAreas(input).map((area) => area.title),
+      ["Start", "Settings", "Profile"],
+    );
   });
 
   it("shows a grouped entry screen before later-selected members", () => {

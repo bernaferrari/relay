@@ -778,6 +778,18 @@ describe("validateRecipeSteps", () => {
     const out = validateRecipeSteps([
       { kind: "clipboard", action: "write", text: "hello" },
       { kind: "clipboard", action: "read", expect: "hello", match: "exact" },
+      {
+        kind: "clipboard",
+        action: "paste",
+        text: "hello",
+        target: { identifier: "message" },
+      },
+      {
+        kind: "clipboard",
+        action: "copy",
+        target: { identifier: "message" },
+        expect: "hello",
+      },
       { kind: "app", action: "switcher" },
       { kind: "app", action: "open", url: "myapp://settings", relaunch: false },
       { kind: "device", action: "lock" },
@@ -790,7 +802,7 @@ describe("validateRecipeSteps", () => {
       { kind: "logs", action: "mark", message: "after sign in" },
       { kind: "module", recipeId: "custom-login" },
     ]);
-    assert.equal(out.length, 13);
+    assert.equal(out.length, 15);
     assert.equal(out.at(-1)?.kind, "module");
   });
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { currentTargetContext, type Device } from "@relay/core";
+import { currentTargetContext, type AuthoringRuntime, type Device } from "@relay/core";
 import type { AuthoringSession } from "@relay/protocol";
 import { captureAuthoringObservation } from "./authoring-routes.js";
 import { startServer } from "./index.js";
@@ -180,6 +180,71 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
     assert.equal((await owner.authoringSessions()).sessions.length, 0);
   } finally {
     await server.close();
+    if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous.state;
+    if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+    else process.env.RELAY_RECIPES_DIR = previous.recipes;
+    if (previous.tests === undefined) delete process.env.RELAY_TESTS_DIR;
+    else process.env.RELAY_TESTS_DIR = previous.tests;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("atomic authoring begin preserves the device failure instead of masking it as a state error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-authoring-begin-error-"));
+  const previous = {
+    workspace: process.env.RELAY_WORKSPACE_ROOT,
+    state: process.env.RELAY_STATE_DIR,
+    recipes: process.env.RELAY_RECIPES_DIR,
+    tests: process.env.RELAY_TESTS_DIR,
+  };
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_RECIPES_DIR = join(root, "recipes");
+  process.env.RELAY_TESTS_DIR = join(root, "tests");
+  const runtime: AuthoringRuntime = {
+    async observe() {
+      throw new Error("xcrun timed out after 20000ms");
+    },
+    async execute() {},
+    async replay() {},
+  };
+  const server = await startServer({ host: "127.0.0.1", port: 0, authoringRuntime: runtime });
+  const client = new RelayClient({
+    url: `http://127.0.0.1:${server.port}`,
+    auth: { type: "none" },
+    organizationId: "local",
+    projectId: "project-begin-error",
+    actorId: "agent:author",
+    actorKind: "agent",
+  });
+  try {
+    const created = await client.invoke("app-map.create", {
+      appMapId: "begin-error",
+      name: "Begin error",
+    });
+    const lease = await client.lease({
+      poolId: "authoring",
+      deviceSerial: "ipad-error",
+      expiresAt: Date.now() + 60_000,
+    });
+    await assert.rejects(
+      client.invoke("authoring.session.begin", {
+        appMapId: created.appMap.id,
+        target: { kind: "device", platform: "ios", targetId: "ipad-error" },
+        leaseId: lease.lease.id,
+        expectedAppMapRevision: created.appMap.revision,
+      }),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 422 &&
+        error.message.includes("xcrun timed out after 20000ms") &&
+        error.body?.code === "AUTHORING_SOURCE_UNAVAILABLE",
+    );
+  } finally {
+    await server.close();
+    if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;
     if (previous.state === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous.state;
     if (previous.recipes === undefined) delete process.env.RELAY_RECIPES_DIR;

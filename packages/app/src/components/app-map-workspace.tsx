@@ -55,7 +55,6 @@ import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { deviceReadiness } from "../lib/device-readiness";
 import { projectAppMapRun } from "../lib/app-map-run-projection";
 import { appMapRunReadiness } from "../lib/app-map-run-readiness";
-import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
 import { evidenceForStep } from "./take-step-presentation";
 import { AppMapEmptyState } from "./app-map-capture-review";
@@ -89,6 +88,10 @@ import {
   screenIdsInSelection,
   type CanvasSelectionRect,
 } from "../lib/app-map-selection";
+import {
+  connectionActionSummaries,
+  updateConnectionWait as updateConnectionWaitActions,
+} from "../lib/connection-action-presentation";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -301,6 +304,7 @@ export function AppMapWorkspace(props: {
     connectionId: string | null;
     state: ReplayState;
     error?: string;
+    jobId?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
   const [selectionMarquee, setSelectionMarquee] = createSignal<{
@@ -894,7 +898,9 @@ export function AppMapWorkspace(props: {
       recipeSteps: [
         ...draft.steps(),
         ...Object.values(activeAppMap()?.connections ?? {}).flatMap((connection) =>
-          connection.actions.flatMap((action) => (action.kind === "recorded" ? action.steps : [])),
+          connection.actions.flatMap((action) =>
+            action.kind === "recorded" || action.kind === "steps" ? action.steps : [],
+          ),
         ),
       ],
       selection: {
@@ -962,7 +968,9 @@ export function AppMapWorkspace(props: {
         id: routine.id,
         label: routine.name,
         actionCount: routine.actions.reduce(
-          (count, action) => count + (action.kind === "recorded" ? action.steps.length : 1),
+          (count, action) =>
+            count +
+            (action.kind === "recorded" || action.kind === "steps" ? action.steps.length : 1),
           0,
         ),
       })),
@@ -1578,6 +1586,31 @@ export function AppMapWorkspace(props: {
       toast(error instanceof Error ? error.message : String(error), "error");
     }
   };
+  const updateConnectionWait = async (
+    connection: CanvasConnection,
+    actionId: string,
+    stepId: string | undefined,
+    waitMs: number,
+  ) => {
+    const map = activeAppMap();
+    const canonical = canonicalConnectionFor(connection);
+    if (!map || !canonical) return;
+    const ms = Math.max(0, Math.round(waitMs));
+    const actions = updateConnectionWaitActions(canonical.actions, actionId, stepId, ms);
+    try {
+      await server.runAction("app-map.connection.update", {
+        appMapId: map.id,
+        connectionId: canonical.id,
+        expectedRevision: map.revision,
+        patch: { actions },
+      });
+      await server.refreshAppMaps();
+      setTransitionReplay({ connectionId: connection.id, state: "idle" });
+      toast(ms === 0 ? "Pause removed" : "Pause updated", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  };
   const attachBackBehavior = (connection: CanvasConnection) =>
     appendConnectionAction(
       connection,
@@ -1631,73 +1664,61 @@ export function AppMapWorkspace(props: {
         : undefined;
   };
   const replayConnection = async (connection: CanvasConnection) => {
-    if (!canReplayOnDevice()) return;
-    setTransitionReplay({ connectionId: connection.id, state: "running" });
-    const result = await replayTransitionSteps(stepsForConnection(connection), server.runStep);
-    if (result.ok) {
-      const destination = graph().screens.find((screen) => screen.id === connection.toScreenId);
-      const captured = await recorder.captureStartScreen();
-      const identity = destination?.identity;
-      const observedFingerprint = captured?.observation.fingerprint;
-      const reachedExpectedScreen = Boolean(
-        identity &&
-        observedFingerprint &&
-        [identity.fingerprint, ...(identity.aliases ?? [])].includes(observedFingerprint),
-      );
-      const device = selectedDevice();
-      const target = {
-        targetId: device?.serial ?? server.selectedDevice() ?? "current-device",
-        ...(device?.name ? { targetName: device.name } : {}),
-        ...(device?.platform ? { platform: device.platform } : {}),
-        status: reachedExpectedScreen ? ("passed" as const) : ("failed" as const),
-        checkedAt: Date.now(),
-        ...(observedFingerprint ? { observedFingerprint } : {}),
-        ...(!reachedExpectedScreen
-          ? {
-              error: `Reached a different screen instead of ${destination?.title ?? "the destination"}`,
-            }
-          : {}),
-      };
-      if (!reachedExpectedScreen) {
-        const error = target.error!;
-        persistMetadata(
-          reviewTransition(
-            canvasState(),
-            connection.id,
-            { status: "failed", error, targets: [target] },
-            Date.now(),
-          ),
-        );
-        setTransitionReplay({ connectionId: connection.id, state: "failed", error });
-        toast(error, "warning");
-        return;
-      }
-      persistMetadata(
-        reviewTransition(
-          canvasState(),
-          connection.id,
-          { status: "verified", targets: [target] },
-          Date.now(),
-        ),
-      );
-      setTransitionReplay({ connectionId: connection.id, state: "passed" });
-      toast("Connection verified on the device", "success");
+    if (!(await canReplayOnDevice())) return;
+    const appMap = activeAppMap();
+    const canonical = canonicalConnectionFor(connection);
+    if (!appMap || !canonical) {
+      toast("This connection is still syncing. Try again in a moment.", "info");
       return;
     }
+    setTransitionReplay({ connectionId: connection.id, state: "running" });
+    const title = `${titleFor(tree().nodes.find((node) => node.id === connection.fromScreenId)!)} → ${titleFor(tree().nodes.find((node) => node.id === connection.toScreenId)!)}`;
+    const jobId = await server.runAppMapConnectionRemote(appMap.id, canonical.id, title);
+    if (!jobId) {
+      setTransitionReplay({
+        connectionId: connection.id,
+        state: "failed",
+        error: "Relay could not start this replay",
+      });
+      return;
+    }
+    setTransitionReplay({ connectionId: connection.id, state: "running", jobId });
+  };
+  createEffect(() => {
+    const replay = transitionReplay();
+    if (!replay.jobId || !replay.connectionId) return;
+    const job = server.jobs().find((candidate) => candidate.id === replay.jobId);
+    if (!job || job.status === "queued" || job.status === "running" || job.status === "paused") {
+      return;
+    }
+    const passed = job.status === "ok" || job.status === "healed";
+    const error = passed ? undefined : job.error || "The connection did not reach its destination";
+    const device = selectedDevice();
+    const target = {
+      targetId: device?.serial ?? server.selectedDevice() ?? "current-device",
+      ...(device?.name ? { targetName: device.name } : {}),
+      ...(device?.platform ? { platform: device.platform } : {}),
+      status: passed ? ("passed" as const) : ("failed" as const),
+      checkedAt: job.finishedAt ?? Date.now(),
+      ...(error ? { error } : {}),
+    };
     persistMetadata(
       reviewTransition(
         canvasState(),
-        connection.id,
-        { status: "failed", error: result.error },
-        Date.now(),
+        replay.connectionId,
+        passed
+          ? { status: "verified", targets: [target] }
+          : { status: "failed", error: error!, targets: [target] },
+        job.finishedAt ?? Date.now(),
       ),
     );
     setTransitionReplay({
-      connectionId: connection.id,
-      state: "failed",
-      error: result.error,
+      connectionId: replay.connectionId,
+      state: passed ? "passed" : "failed",
+      ...(error ? { error } : {}),
     });
-  };
+    toast(passed ? "Connection verified on the device" : error!, passed ? "success" : "warning");
+  });
   const saveReusableBehavior = async (connection: CanvasConnection) => {
     const map = activeAppMap();
     if (!map) return;
@@ -1714,7 +1735,13 @@ export function AppMapWorkspace(props: {
             evidenceIds: [],
           },
         ];
-    if (!actions.some((action) => action.kind !== "recorded" || action.steps.length > 0)) return;
+    if (
+      !actions.some(
+        (action) =>
+          (action.kind !== "recorded" && action.kind !== "steps") || action.steps.length > 0,
+      )
+    )
+      return;
     const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
     const target = tree().nodes.find((node) => node.id === connection.toScreenId);
     const title = `${source ? titleFor(source) : "Screen"} → ${target ? titleFor(target) : "Next screen"}`;
@@ -2665,9 +2692,19 @@ export function AppMapWorkspace(props: {
                       connection={connection()}
                       actionCount={canonicalConnectionFor(connection())?.actions.reduce(
                         (count, action) =>
-                          count + (action.kind === "recorded" ? action.steps.length : 1),
+                          count +
+                          (action.kind === "recorded" || action.kind === "steps"
+                            ? action.steps.length
+                            : 1),
                         0,
                       )}
+                      actions={connectionActionSummaries(
+                        canonicalConnectionFor(connection())?.actions ?? [],
+                        activeAppMap(),
+                      )}
+                      onChangeWait={(actionId, stepId, waitMs) =>
+                        void updateConnectionWait(connection(), actionId, stepId, waitMs)
+                      }
                       sourceTitle={titleFor(
                         tree().nodes.find((node) => node.id === connection().fromScreenId)!,
                       )}
@@ -2815,6 +2852,7 @@ export function AppMapWorkspace(props: {
         <AppMapDeviceCompanion
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
+          deviceLabel={selectedDevice()?.name ?? selectedDevice()?.serial}
           status={livePanelStatus()}
           recording={recorder.recording()}
           take={recorder.take()}

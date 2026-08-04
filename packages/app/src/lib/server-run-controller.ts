@@ -5,6 +5,7 @@ import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } fr
 import type { ServerRequest } from "./server-matrix-remote";
 import {
   enqueueAppMapFlow,
+  enqueueAppMapConnection,
   enqueueMatrix,
   enqueueRecipe,
   loadMatrixReport,
@@ -36,6 +37,51 @@ type RunControllerDependencies = {
 };
 
 export function createServerRunController(deps: RunControllerDependencies) {
+  async function runAppMapConnection(
+    appMapId: string,
+    connectionId: string,
+    title: string,
+  ): Promise<string | null> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t replay yet", "warning");
+      return null;
+    }
+    const serial = deps.selectedDevice() ?? undefined;
+    if (!serial) {
+      toast("Choose a device before replaying this connection", "info");
+      return null;
+    }
+    const targetPlatform =
+      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    try {
+      await deps.captureBeforeRun(`before · ${title}`, connectionId).catch(() => undefined);
+      const { job, jobs } = await enqueueAppMapConnection(deps.request, {
+        appMapId,
+        connectionId,
+        serial,
+        ...(targetPlatform === "browser"
+          ? { targetKind: "browser" as const, browserTargetId: serial }
+          : { targetKind: "device" as const, platform: targetPlatform }),
+        variables: privateValuesForRun(deps.projectId(), deps.projectVariables()),
+      });
+      deps.setSelectedJobId(job.id);
+      deps.setSelectedAction(connectionId);
+      deps.rememberJob(job);
+      toast(
+        jobs.length > 1 ? `Replaying ${jobs.length} cases for ${title}` : `Replaying ${title}`,
+        "success",
+      );
+      void deps.refreshJobs();
+      return job.id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "warning");
+      deps.setError(message);
+      return null;
+    }
+  }
+
   async function runAppMapFlow(appMapId: string, flowId: string, title: string): Promise<void> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
@@ -177,6 +223,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
 
   return {
     runRecipe,
+    runAppMapConnection,
     runAppMapFlow,
     runCompatibilityMatrix,
     loadCompatibilityReport,

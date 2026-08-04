@@ -22,6 +22,8 @@ const globalOptions = `Global options:
   --project <id>                   Project scope (env RELAY_PROJECT_ID)
   --credential-source <source>     none or env:NAME (env RELAY_CREDENTIAL_SOURCE)
   --actor <id>                     Actor identity (env RELAY_ACTOR_ID)
+  --input <json>                   JSON object input
+  --input-file <path>              Read the same JSON object from a file
   --json | --ndjson                Machine-readable output
   --quiet                          Suppress stderr diagnostics
   --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
@@ -85,8 +87,8 @@ function renderRootHelp(): string {
   return `Relay — App Maps for humans and agents
 
 Usage:
-  relay <family> <command> [arguments] [--input <json>] [global options]
-  relay operation invoke <operationId> --input <json> [global options]
+  relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
+  relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
 
 Command families:
@@ -136,9 +138,9 @@ function renderFamilyHelp(family: string): string {
     return `Relay operation commands
 
 Usage:
-  relay operation invoke <operationId> --input <json> [global options]
+  relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
 
-Unlike friendly commands, operation invoke always requires --input.
+Unlike friendly commands, operation invoke always requires --input or --input-file.
 
 ${globalOptions}
 `;
@@ -162,7 +164,7 @@ ${globalOptions}
   return `Relay ${family} commands
 
 Usage:
-  relay ${family} <command> [arguments] [--input <json>] [global options]
+  relay ${family} <command> [arguments] [--input <json> | --input-file <path>] [global options]
 
 Commands:
 ${commands}

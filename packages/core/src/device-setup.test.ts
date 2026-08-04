@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  agentDeviceDaemonExecutable,
   agentDeviceDaemonPidsForStateDir,
   findAppleSigningIdentities,
   findXcodeProvisioningTeams,
@@ -11,6 +12,19 @@ import {
   saveAppleDeviceSetup,
   suggestAppleDeviceSetup,
 } from "./device-setup.js";
+
+test("identifies the exact installed agent-device daemon build", () => {
+  assert.equal(
+    agentDeviceDaemonExecutable(
+      "/usr/bin/node /repo/node_modules/.pnpm/agent-device@0.18.3_patch_hash=new/node_modules/agent-device/dist/src/internal/daemon.js",
+    ),
+    "/repo/node_modules/.pnpm/agent-device@0.18.3_patch_hash=new/node_modules/agent-device/dist/src/internal/daemon.js",
+  );
+  assert.equal(
+    agentDeviceDaemonExecutable("node /repo/not-agent-device/internal/daemon.js"),
+    undefined,
+  );
+});
 
 test("finds only verified agent-device daemons for the same state directory", () => {
   const output = [

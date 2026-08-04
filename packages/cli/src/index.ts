@@ -8,7 +8,7 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
-import { classifyError, ExitCode } from "./errors.js";
+import { classifyError, CliError, ExitCode } from "./errors.js";
 import { renderHelp } from "./help.js";
 import {
   createClient,
@@ -116,6 +116,43 @@ function summarizeResult(operationId: string, result: unknown): unknown {
   );
 }
 
+function failureMessage(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value && typeof value === "object" && "message" in value) {
+    const message = value.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return fallback;
+}
+
+/** Transport success is not operation success. Keep shell scripts and agents
+ * from treating a structured `{ ok: false }` result or failed job as a pass. */
+function assertOperationSucceeded(operationId: string, result: unknown): void {
+  if (!result || typeof result !== "object") return;
+  if ("ok" in result && result.ok === false) {
+    const error = "error" in result ? result.error : undefined;
+    throw new CliError(
+      failureMessage(error, `${operationId} did not complete successfully`),
+      ExitCode.validation,
+      result,
+    );
+  }
+  if ("job" in result && result.job && typeof result.job === "object" && "status" in result.job) {
+    const status = result.job.status;
+    if (status === "cancelled") {
+      throw new CliError("Operation cancelled", ExitCode.cancellation, result);
+    }
+    if (status === "error") {
+      const error = "error" in result.job ? result.job.error : undefined;
+      throw new CliError(
+        failureMessage(error, `${operationId} failed`),
+        ExitCode.validation,
+        result,
+      );
+    }
+  }
+}
+
 function fallbackMode(argv: readonly string[]): OutputMode {
   if (argv.includes("--ndjson")) return "ndjson";
   if (argv.includes("--json")) return "json";
@@ -164,6 +201,7 @@ export async function runCli(
           output,
           dependencies.pollIntervalMs ?? 250,
         );
+        assertOperationSucceeded(operationId, result);
         output.result(operationId, summarizeResult(operationId, result));
       } else if (parsed.behavior === "job-start-watch" && parsed.config.wait) {
         output.progress(operationId, "invoking");
@@ -177,10 +215,12 @@ export async function runCli(
           output,
           dependencies.pollIntervalMs ?? 250,
         );
+        assertOperationSucceeded(operationId, result);
         output.result(operationId, summarizeResult("job.get", result));
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
+        assertOperationSucceeded(operationId, result);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
         } else {

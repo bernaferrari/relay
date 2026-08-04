@@ -2,6 +2,7 @@ import type {
   ActionSpec,
   AppMap,
   AppMapCompiledFlow,
+  AppMapCompiledConnectionRun,
   AppMapCompiledRecipe,
   AppMapCompiledStepProvenance,
   AssertionSpec,
@@ -13,6 +14,7 @@ import { validateAppMap } from "./app-map.js";
 
 export type AppMapCompileErrorCode =
   | "missing-flow"
+  | "missing-connection"
   | "draft-connection"
   | "missing-screen-identity";
 
@@ -30,8 +32,37 @@ function fail(code: AppMapCompileErrorCode, message: string): never {
   throw new AppMapCompileError(code, message);
 }
 
-function recipeId(map: AppMap, kind: "flow" | "routine", id: string): string {
+function recipeId(map: AppMap, kind: "flow" | "connection" | "routine", id: string): string {
   return `app-map:${map.id}:${kind}:${id}:r${map.revision}`;
+}
+
+function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledRecipe>) {
+  const ensureRoutine = (routineId: string): void => {
+    const routine = map.routines[routineId]!;
+    const id = recipeId(map, "routine", routine.id);
+    if (recipes[id]) return;
+    // Validation rejects cycles before compilation, so this placeholder only
+    // prevents duplicate work when several owners reuse the same routine.
+    recipes[id] = {
+      id,
+      title: routine.name,
+      parameters: [],
+      steps: [],
+      stepProvenance: [],
+    };
+    recipes[id] = compileRecipe({
+      map,
+      id,
+      title: routine.name,
+      ...(routine.description ? { description: routine.description } : {}),
+      parameters: routine.parameters,
+      ownerKind: "routine",
+      ownerId: routine.id,
+      actions: routine.actions,
+      ensureRoutine,
+    });
+  };
+  return ensureRoutine;
 }
 
 function stableStep(step: RecipeStep, actionId: string, index: number): RecipeStep {
@@ -90,6 +121,8 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
   const steps: RecipeStep[] = (() => {
     switch (action.kind) {
       case "recorded":
+        return action.steps.map((step, index) => stableStep(step, action.id, index));
+      case "steps":
         return action.steps.map((step, index) => stableStep(step, action.id, index));
       case "tap":
         return [
@@ -220,31 +253,7 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
   if (!flow) fail("missing-flow", `Flow "${flowId}" does not exist`);
 
   const recipes: Record<string, AppMapCompiledRecipe> = {};
-  const ensureRoutine = (routineId: string): void => {
-    const routine = map.routines[routineId]!;
-    const id = recipeId(map, "routine", routine.id);
-    if (recipes[id]) return;
-    // Validation rejects cycles before compilation, so this placeholder only
-    // prevents duplicate work when several owners reuse the same routine.
-    recipes[id] = {
-      id,
-      title: routine.name,
-      parameters: [],
-      steps: [],
-      stepProvenance: [],
-    };
-    recipes[id] = compileRecipe({
-      map,
-      id,
-      title: routine.name,
-      ...(routine.description ? { description: routine.description } : {}),
-      parameters: routine.parameters,
-      ownerKind: "routine",
-      ownerId: routine.id,
-      actions: routine.actions,
-      ensureRoutine,
-    });
-  };
+  const ensureRoutine = routineCompiler(map, recipes);
 
   const rootRecipeId = recipeId(map, "flow", flow.id);
   const root: AppMapCompiledRecipe = {
@@ -360,5 +369,92 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
       .sort((left, right) => left.localeCompare(right))
       .map((id) => structuredClone(map.caseStacks[id]!)),
     terminal,
+  };
+}
+
+/** Compile a single canonical connection for focused replay from the UI, CLI,
+ * HTTP, or MCP. The source and destination are verified around the exact same
+ * ActionSpecs used by full-flow execution. */
+export function compileAppMapConnection(
+  mapInput: AppMap,
+  connectionId: string,
+): AppMapCompiledConnectionRun {
+  const map = validateAppMap(mapInput);
+  const connection = map.connections[connectionId];
+  if (!connection) fail("missing-connection", `Connection "${connectionId}" does not exist`);
+  if (connection.state !== "ready") {
+    fail(
+      "draft-connection",
+      `Connection "${connection.label?.trim() || connection.id}" is still a draft`,
+    );
+  }
+
+  const recipes: Record<string, AppMapCompiledRecipe> = {};
+  const ensureRoutine = routineCompiler(map, recipes);
+  const rootRecipeId = recipeId(map, "connection", connection.id);
+  const source = map.screens[connection.fromScreenId]!;
+  const sourceStep = screenExpectation(map, source, `relay-source-${connection.id}`);
+  const root: AppMapCompiledRecipe = {
+    id: rootRecipeId,
+    title: connection.label?.trim() || `${source.title} transition`,
+    parameters: [],
+    steps: [sourceStep],
+    stepProvenance: [
+      {
+        recipeId: rootRecipeId,
+        stepIndex: 0,
+        stepId: sourceStep.id!,
+        origin: "source",
+        ownerKind: "connection",
+        ownerId: connection.id,
+      },
+    ],
+  };
+  const compiled = compileRecipe({
+    map,
+    id: rootRecipeId,
+    title: root.title,
+    ownerKind: "connection",
+    ownerId: connection.id,
+    actions: connection.actions,
+    ensureRoutine,
+  });
+  for (let index = 0; index < compiled.steps.length; index += 1) {
+    const stepIndex = root.steps.length;
+    root.steps.push(compiled.steps[index]!);
+    root.stepProvenance.push({ ...compiled.stepProvenance[index]!, stepIndex });
+  }
+  if (connection.destination.kind === "screen") {
+    const destination = map.screens[connection.destination.screenId]!;
+    const step = screenExpectation(map, destination, `relay-destination-${connection.id}`);
+    root.stepProvenance.push({
+      recipeId: rootRecipeId,
+      stepIndex: root.steps.length,
+      stepId: step.id!,
+      origin: "destination",
+      ownerKind: "connection",
+      ownerId: connection.id,
+    });
+    root.steps.push(step);
+  }
+  recipes[rootRecipeId] = root;
+
+  return {
+    schemaVersion: 1,
+    appMapId: map.id,
+    appMapRevision: map.revision,
+    connection: {
+      id: connection.id,
+      fromScreenId: connection.fromScreenId,
+      destination: structuredClone(connection.destination),
+      ...(connection.label ? { label: connection.label } : {}),
+      ...(connection.caseStackId ? { caseStackId: connection.caseStackId } : {}),
+    },
+    rootRecipeId,
+    recipes,
+    caseStacks: connection.caseStackId
+      ? [structuredClone(map.caseStacks[connection.caseStackId]!)]
+      : [],
+    terminal: structuredClone(connection.destination),
   };
 }

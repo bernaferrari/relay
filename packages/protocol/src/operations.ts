@@ -19,6 +19,7 @@ import {
 import type {
   AppMap,
   AppMapBatchChange,
+  AppMapCompiledConnectionRun,
   AppMapCompiledFlow,
   AppMapPatch,
   CaseStack,
@@ -494,6 +495,35 @@ type SpecificOperationMap = {
   "app-map.connection.remove": {
     input: { appMapId: string; connectionId: string; expectedRevision: number; eventId?: string };
     output: { appMap: AppMap };
+  };
+  "app-map.connection.run": {
+    input: {
+      appMapId: string;
+      connectionId: string;
+      serial?: string;
+      platform?: "android" | "ios";
+      targetKind?: "device" | "browser";
+      browserTargetId?: string;
+      variables?: Record<string, string | string[]>;
+    };
+    output: {
+      job: OperationRecord;
+      jobs: OperationRecord[];
+      plan: AppMapCompiledConnectionRun;
+      matrix?: {
+        id: string;
+        createdAt: number;
+        seed: number;
+        strategy: "repeat" | "zip" | "cartesian" | "pairwise";
+        cases: Array<{
+          id: string;
+          name: string;
+          index: number;
+          values: Record<string, string>;
+          provenance: unknown[];
+        }>;
+      };
+    };
   };
   "app-map.group.save": {
     input: {
@@ -1253,6 +1283,47 @@ const appMapFlowRunOutputParser = objectParser<OperationOutput<"app-map.flow.run
     if (!Array.isArray(input.jobs)) fail("App Map flow run jobs", "must be an array");
     record(input.plan, "App Map flow run plan");
     if (input.matrix !== undefined) record(input.matrix, "App Map flow run matrix");
+  },
+);
+
+const appMapConnectionRunParser = objectParser<OperationInput<"app-map.connection.run">>(
+  "App Map connection run input",
+  (input) => {
+    string(input.appMapId, "App Map connection run appMapId");
+    string(input.connectionId, "App Map connection run connectionId");
+    if (input.serial !== undefined) string(input.serial, "App Map connection run serial");
+    if (input.browserTargetId !== undefined) {
+      string(input.browserTargetId, "App Map connection run browserTargetId");
+    }
+    if (input.platform !== undefined && input.platform !== "android" && input.platform !== "ios") {
+      fail("App Map connection run platform", "must be android or ios");
+    }
+    if (
+      input.targetKind !== undefined &&
+      input.targetKind !== "device" &&
+      input.targetKind !== "browser"
+    ) {
+      fail("App Map connection run targetKind", "must be device or browser");
+    }
+    if (input.variables !== undefined) {
+      for (const [name, value] of Object.entries(record(input.variables, "App Map variables"))) {
+        if (Array.isArray(value)) {
+          value.forEach((item) => string(item, `App Map variable ${name}`));
+        } else {
+          string(value, `App Map variable ${name}`);
+        }
+      }
+    }
+  },
+);
+
+const appMapConnectionRunOutputParser = objectParser<OperationOutput<"app-map.connection.run">>(
+  "App Map connection run response",
+  (input) => {
+    record(input.job, "App Map connection run job");
+    if (!Array.isArray(input.jobs)) fail("App Map connection run jobs", "must be an array");
+    record(input.plan, "App Map connection run plan");
+    if (input.matrix !== undefined) record(input.matrix, "App Map connection run matrix");
   },
 );
 
@@ -2304,6 +2375,21 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
   }),
+  command(
+    "app-map.connection.run",
+    "Replay App Map connection",
+    "POST",
+    "/app-maps/:appMapId/connections/:connectionId/run",
+    {
+      category: "execution",
+      input: appMapConnectionRunParser,
+      output: appMapConnectionRunOutputParser,
+      targetCapabilities: ["tap", "type", "scroll", "screenshot"],
+      lease: "exclusive",
+      progress: true,
+      cancellable: true,
+    },
+  ),
   command(
     "app-map.flow.remove",
     "Remove App Map Flow",

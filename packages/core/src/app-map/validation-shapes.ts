@@ -542,6 +542,7 @@ export function assertActivity(
     "case-stack.attached",
     "case-stack.removed",
     "recording.committed",
+    "run.finished",
     "proposal.submitted",
     "proposal.approved",
     "proposal.rejected",
@@ -558,7 +559,8 @@ export function assertActivity(
       event.subject.kind === "flow" ||
       event.subject.kind === "routine" ||
       event.subject.kind === "case-stack" ||
-      event.subject.kind === "proposal"
+      event.subject.kind === "proposal" ||
+      event.subject.kind === "run"
     )
   )
     appMapFail("invalid-map", `${label}.subject.kind is unsupported`);

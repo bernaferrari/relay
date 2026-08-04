@@ -100,14 +100,16 @@ export function deriveAppMapAreas(input: AreaProjection): AppMapArea[] {
         Boolean(remainderScreens[flow.startScreenId]),
       ),
     );
-    return [
-      ...groups,
-      ...deriveAppMapAreas({
-        screens: remainderScreens,
-        connections: remainderConnections,
-        flows: remainderFlows,
-      }),
-    ];
+    const remainder = deriveAppMapAreas({
+      screens: remainderScreens,
+      connections: remainderConnections,
+      flows: remainderFlows,
+    });
+    const rootGroups = groups.filter((area) => area.screenIds.some((id) => roots.has(id)));
+    const otherGroups = groups.filter((area) => !area.screenIds.some((id) => roots.has(id)));
+    const rootRemainder = remainder.filter((area) => roots.has(area.rootScreenId));
+    const otherRemainder = remainder.filter((area) => !roots.has(area.rootScreenId));
+    return [...rootGroups, ...rootRemainder, ...otherGroups, ...otherRemainder];
   }
   const destinations = screenDestinations(input.connections);
   const roots = rootScreenIds(input, screens);

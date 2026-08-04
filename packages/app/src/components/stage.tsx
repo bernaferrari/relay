@@ -1281,7 +1281,7 @@ export function DeviceStage(_props: {
       developerModeDisabled() ||
       needsIosSetup() ||
       (currentDevice()?.platform === "ios" &&
-        /(runner|signing|xcode|provision|team id|bundle id|set.?up)/i.test(issue))
+        /(signing|xcode|provision|team id|bundle id|set.?up|account)/i.test(issue))
     );
   };
   const iosSetupGuidance = () => {
@@ -1291,10 +1291,10 @@ export function DeviceStage(_props: {
     const issue = liveCaptureIssue();
     if (
       issue &&
-      /(developer mode|runner|signing|xcode|provision|team id|bundle id|set.?up)/i.test(issue)
+      /(developer mode|signing|xcode|provision|team id|bundle id|set.?up|account)/i.test(issue)
     )
       return issue;
-    return "Relay needs to finish setting up its local iPad runner before it can read the screen.";
+    return `Keep ${currentDevice()?.name ?? "the iPad"} unlocked. If iOS asks to enable UI Automation, enter its passcode.`;
   };
   const preparingIosScreen = () =>
     targetReady() &&
@@ -1369,7 +1369,7 @@ export function DeviceStage(_props: {
     if (iosDeviceSupportPending() || checkingIosSetup() || preparingIosScreen()) {
       return {
         kind: "progress",
-        title: emptyStageTitle(),
+        title: `Connecting to ${currentDevice()?.name ?? "iPad"}`,
         detail: iosSetupGuidance(),
       };
     }
@@ -1394,10 +1394,7 @@ export function DeviceStage(_props: {
           currentDevice()?.platform === "ios"
             ? `${currentDevice()?.name ?? "iPad"} isn’t ready`
             : "Device isn’t ready",
-        detail:
-          currentDevice()?.platform === "ios"
-            ? `Keep ${currentDevice()?.name ?? "the iPad"} unlocked and connected, then reconnect.`
-            : presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
+        detail: presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
         primaryAction: "retry",
         primaryLabel: "Reconnect",
       };
@@ -1410,10 +1407,13 @@ export function DeviceStage(_props: {
 
     return {
       kind: "progress",
-      title: emptyStageTitle(),
+      title:
+        currentDevice()?.platform === "ios"
+          ? `Connecting to ${currentDevice()?.name ?? "iPad"}`
+          : emptyStageTitle(),
       detail:
         currentDevice()?.platform === "ios"
-          ? "Keep the iPad unlocked while Relay prepares its first controllable screen."
+          ? `Keep ${currentDevice()?.name ?? "the iPad"} unlocked. If iOS asks to enable UI Automation, enter its passcode.`
           : "Relay is waiting for the first screen from this device.",
     };
   });

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapEntity, Connection, Routine, Screen } from "@relay/protocol";
-import { AppMapCompileError, compileAppMapFlow } from "./app-map-compiler.js";
+import {
+  AppMapCompileError,
+  compileAppMapConnection,
+  compileAppMapFlow,
+} from "./app-map-compiler.js";
 
 const at = 1_000;
 const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
@@ -142,6 +146,82 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.deepEqual(plan.connections[0]!.compiledStepRange, [1, 4]);
   assert.equal(root.stepProvenance[0]!.origin, "source");
   assert.equal(root.stepProvenance[3]!.origin, "destination");
+});
+
+test("compiles one connection from canonical actions with source and destination checks", () => {
+  const plan = compileAppMapConnection(fixture(), "open-home");
+  const root = plan.recipes[plan.rootRecipeId]!;
+
+  assert.equal(plan.rootRecipeId, "app-map:map-1:connection:open-home:r7");
+  assert.deepEqual(plan.connection, {
+    id: "open-home",
+    fromScreenId: "welcome",
+    destination: { kind: "screen", screenId: "home" },
+    caseStackId: "thinking-levels",
+  });
+  assert.deepEqual(
+    root.steps.map((step) => step.kind),
+    ["expect-screen", "module", "tap", "expect-screen"],
+  );
+  assert.deepEqual(
+    root.stepProvenance.map((item) => item.origin),
+    ["source", "action", "action", "destination"],
+  );
+  assert.deepEqual(
+    plan.caseStacks.map((stack) => stack.id),
+    ["thinking-levels"],
+  );
+});
+
+test("compiles directly authored structured steps without inventing a recording", () => {
+  const map = fixture();
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "clipboard-fidelity",
+      kind: "steps",
+      steps: [
+        {
+          id: "paste",
+          kind: "clipboard",
+          action: "paste",
+          text: "alpha\nbeta\ngamma",
+          target: { identifier: "composer" },
+        },
+        {
+          id: "copy",
+          kind: "clipboard",
+          action: "copy",
+          target: { identifier: "composer" },
+          expect: "alpha\nbeta\ngamma",
+          match: "exact",
+        },
+      ],
+    },
+  ];
+
+  const plan = compileAppMapFlow(map, "checkout");
+  const root = plan.recipes[plan.rootRecipeId]!;
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "clipboard"),
+    [
+      {
+        id: "paste",
+        kind: "clipboard",
+        action: "paste",
+        text: "alpha\nbeta\ngamma",
+        target: { identifier: "composer" },
+      },
+      {
+        id: "copy",
+        kind: "clipboard",
+        action: "copy",
+        target: { identifier: "composer" },
+        expect: "alpha\nbeta\ngamma",
+        match: "exact",
+      },
+    ],
+  );
 });
 
 test("runs explicit Flow setup before verifying the entry screen", () => {

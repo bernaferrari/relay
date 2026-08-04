@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 
@@ -369,7 +370,68 @@ export async function restartAgentDeviceDaemonForSetup(): Promise<boolean> {
     if (!alive) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+
+  // The daemon owns long-lived native child processes and can remain stuck in
+  // graceful shutdown after an Apple command times out. Every pid in this list
+  // was resolved from daemon.json or verified against this exact stateDir, so
+  // force-terminating only those processes is safer than allowing two daemons
+  // to serve the same session store concurrently.
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // A daemon can finish graceful shutdown between the checks.
+    }
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const alive = pids.some((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!alive) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   return false;
+}
+
+export function agentDeviceDaemonExecutable(command: string): string | undefined {
+  return command.match(
+    /(?:^|\s)(\S*node_modules\/agent-device\/dist\/src\/internal\/daemon\.js)(?:\s|$)/,
+  )?.[1];
+}
+
+function currentAgentDeviceDaemonExecutable(): string {
+  // createRequire works in the native ESM source and in Electron's CJS server
+  // bundle (whose build supplies import.meta.url). import.meta.resolve itself
+  // is erased by a CommonJS bundle and made packaged recovery silently wrong.
+  const entry = createRequire(import.meta.url).resolve("agent-device");
+  return join(dirname(entry), "internal", "daemon.js");
+}
+
+/** Replace an orphaned daemon from another installed agent-device build.
+ * Semver is insufficient because pnpm patches intentionally retain it while
+ * changing the native command contract. Matching builds are never disturbed. */
+export async function restartAgentDeviceDaemonForBuildDrift(): Promise<boolean> {
+  const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
+  try {
+    const value = JSON.parse(await readFile(join(stateDir, "daemon.json"), "utf8")) as {
+      pid?: unknown;
+      stateDir?: unknown;
+    };
+    if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 1)
+      return false;
+    if (typeof value.stateDir === "string" && value.stateDir !== stateDir) return false;
+    const command = await commandAvailable("ps", ["-p", String(value.pid), "-o", "command="]);
+    const running = command ? agentDeviceDaemonExecutable(command) : undefined;
+    if (!running || running === currentAgentDeviceDaemonExecutable()) return false;
+    return restartAgentDeviceDaemonForSetup();
+  } catch {
+    return false;
+  }
 }
 
 /**

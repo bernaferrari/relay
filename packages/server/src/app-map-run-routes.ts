@@ -2,9 +2,13 @@ import type http from "node:http";
 import {
   AppMapCompileError,
   RunMatrixError,
+  buildTargetProfiles,
+  compileAppMapConnection,
   compileAppMapFlow,
   currentOperationContext,
   enqueueJob,
+  listDevices,
+  listTargets,
   prepareCaseStackMatrix,
   readAppMap,
   readProjectVariables,
@@ -27,32 +31,45 @@ export type AppMapRunRouteContext = {
 };
 
 export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promise<boolean> {
-  const match = matchPath(input.pathname, "/app-maps/:appMapId/flows/:flowId/run");
-  if (input.method !== "POST" || !match) return false;
+  if (input.method !== "POST") return false;
+  const flowMatch = matchPath(input.pathname, "/app-maps/:appMapId/flows/:flowId/run");
+  const connectionMatch = matchPath(
+    input.pathname,
+    "/app-maps/:appMapId/connections/:connectionId/run",
+  );
+  if (!flowMatch && !connectionMatch) return false;
+  const appMapId = (flowMatch ?? connectionMatch)!.appMapId!;
+  const operationKind = flowMatch ? "flow" : "connection";
 
   const body = (await parseJsonBody(input.request)) as Omit<
-    OperationInput<"app-map.flow.run">,
-    "appMapId" | "flowId"
+    OperationInput<"app-map.flow.run"> | OperationInput<"app-map.connection.run">,
+    "appMapId" | "flowId" | "connectionId"
   >;
   const targetId = body.browserTargetId?.trim() || body.serial?.trim();
   if (!targetId) throw new HttpError(400, "Choose a target before running this flow");
   await assertTargetControl(input.scope, targetId);
 
-  const map = await readAppMap(input.scope.projectId, match.appMapId!);
-  if (!map) throw new HttpError(404, `App Map ${match.appMapId} not found`);
+  const map = await readAppMap(input.scope.projectId, appMapId);
+  if (!map) throw new HttpError(404, `App Map ${appMapId} not found`);
 
   let plan;
   try {
-    plan = compileAppMapFlow(map, match.flowId!);
+    plan = flowMatch
+      ? compileAppMapFlow(map, flowMatch.flowId!)
+      : compileAppMapConnection(map, connectionMatch!.connectionId!);
   } catch (error) {
     if (error instanceof AppMapCompileError) {
-      throw new HttpError(error.code === "missing-flow" ? 404 : 409, error.message, {
-        code: error.code,
-        recovery:
-          error.code === "draft-connection"
-            ? "Finish or remove the draft connection, then run the flow again."
-            : "Capture and approve the destination screen, then run the flow again.",
-      });
+      throw new HttpError(
+        error.code === "missing-flow" || error.code === "missing-connection" ? 404 : 409,
+        error.message,
+        {
+          code: error.code,
+          recovery:
+            error.code === "draft-connection"
+              ? "Finish or remove the draft connection, then run the flow again."
+              : "Capture and approve the destination screen, then run the flow again.",
+        },
+      );
     }
     throw error;
   }
@@ -104,6 +121,9 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
   ];
   const safeMatrix = matrix ? redactRunMatrix(matrix, definitions.value) : undefined;
+  const targetProfile = (
+    await buildTargetProfiles({ devices: await listDevices(), targets: await listTargets() })
+  ).find((profile) => profile.targetId === targetId);
   const jobs = cases.map((item) => {
     const variables = { ...constantVariables, ...item.values };
     return enqueueJob({
@@ -115,13 +135,18 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       platform: body.platform,
       targetKind: body.targetKind,
       browserTargetId: body.browserTargetId,
+      ...(targetProfile ? { targetProfile } : {}),
       variables,
       sensitiveInputNames: sensitiveInputNames(definitions.value, variables),
       ...(matrix
         ? { batchId: matrix.id, caseIndex: item.index, caseCount: matrix.cases.length }
         : {}),
       artifacts: [
-        { kind: "app-map-flow-plan", capturedAt: Date.now(), data: plan },
+        {
+          kind: operationKind === "flow" ? "app-map-flow-plan" : "app-map-connection-plan",
+          capturedAt: Date.now(),
+          data: plan,
+        },
         ...(safeMatrix
           ? [
               {

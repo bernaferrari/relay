@@ -53,6 +53,9 @@ export type AuthoringRuntime = {
   observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;
+  /** Allow asynchronous application and system UI to settle before Relay
+   * decides that a replay reached the wrong destination. */
+  settle?(ms: number): Promise<void>;
   startVideo?(session: AuthoringSession): Promise<void>;
   stopVideo?(
     session: AuthoringSession,
@@ -1086,16 +1089,29 @@ export class AuthoringSessionStore {
         error = caught instanceof Error ? caught.message : String(caught);
         sourceMismatch = /before recording|before replaying/.test(error);
       }
-      const captured = sourceMismatch
+      let captured = sourceMismatch
         ? source
         : await persistObservation(await runtime.observe(session));
       if (outcome === "passed") {
         const expected = await expectedReplayScreen(session, revision);
-        if (
-          (expected.fingerprints.length > 0 || expected.observations.length > 0) &&
-          !expected.fingerprints.includes(captured.observation.screen.fingerprint) &&
-          !replayDestinationMatches(captured.observation, expected.observations)
-        ) {
+        const hasExpectedDestination =
+          expected.fingerprints.length > 0 || expected.observations.length > 0;
+        const destinationMatches = () =>
+          !hasExpectedDestination ||
+          expected.fingerprints.includes(captured.observation.screen.fingerprint) ||
+          replayDestinationMatches(captured.observation, expected.observations);
+        // Native sheets, navigation animations, and streamed application
+        // responses often appear just after the input command returns. Poll a
+        // bounded 1.5 seconds rather than forcing every human or agent to
+        // discover and save arbitrary sleeps in otherwise deterministic flows.
+        if (!destinationMatches() && runtime.settle) {
+          for (const delayMs of [250, 500, 750]) {
+            await runtime.settle(delayMs);
+            captured = await persistObservation(await runtime.observe(session));
+            if (destinationMatches()) break;
+          }
+        }
+        if (!destinationMatches()) {
           outcome = "failed";
           error = `Replay reached a different screen (expected ${expected.fingerprints[0] ?? "the approved destination"}, received ${captured.observation.screen.fingerprint})`;
         }
