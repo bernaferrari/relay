@@ -532,6 +532,32 @@ describe("validateRecipeSteps", () => {
     });
   });
 
+  it("preserves ordered semantic tap fallbacks", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "tap",
+          target: { identifier: "new-conversation" },
+          fallbackTargets: [{ label: "New conversation" }, { label: "Compose" }],
+        },
+      ]),
+      [
+        {
+          kind: "tap",
+          target: { identifier: "new-conversation" },
+          fallbackTargets: [{ label: "New conversation" }, { label: "Compose" }],
+        },
+      ],
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "tap", target: { label: "Continue" }, fallbackTargets: [{}] },
+        ]),
+      /fallbackTargets\[0\].*semantic or coordinate target/,
+    );
+  });
+
   it("rejects tap with empty target, naming the step index", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tap", target: {} }]),
@@ -660,6 +686,16 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("keeps an explicit best-effort step policy", () => {
+    assert.deepEqual(validateRecipeSteps([{ kind: "sleep", ms: 10, optional: true }]), [
+      { kind: "sleep", ms: 10, optional: true },
+    ]);
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "sleep", ms: 10, optional: "yes" }]),
+      /optional must be a boolean/,
+    );
+  });
+
   it("rejects swipe missing from/to", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "swipe", to: { x: 1, y: 2 } }]),
@@ -743,7 +779,7 @@ describe("validateRecipeSteps", () => {
       { kind: "clipboard", action: "write", text: "hello" },
       { kind: "clipboard", action: "read", expect: "hello", match: "exact" },
       { kind: "app", action: "switcher" },
-      { kind: "app", action: "open", url: "myapp://settings" },
+      { kind: "app", action: "open", url: "myapp://settings", relaunch: false },
       { kind: "device", action: "lock" },
       { kind: "rotate", orientation: "landscape-left" },
       { kind: "settings", setting: "appearance", state: "dark" },

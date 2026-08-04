@@ -47,6 +47,7 @@ import {
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import { redactPrivateValue } from "./private-inputs.js";
 import { classifyRunOutcome } from "./outcomes.js";
+import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "./ios-geometry.js";
 import {
   initializeRunEvidence,
   startRunEvidence,
@@ -753,8 +754,10 @@ async function captureAutomaticState(
 ): Promise<void> {
   if (process.env.RELAY_AUTO_VISUAL_EVIDENCE === "0") return;
   if (!visualEvidenceAllowed()) return;
+  let snapshotNodes: import("./device.js").SnapshotNode[] | undefined;
   try {
     const snapshot = await device.capture.snapshot({ ...base(), interactiveOnly: false });
+    snapshotNodes = snapshot.nodes ?? [];
     job.artifacts.push({
       kind: "ui-tree",
       capturedAt: now(),
@@ -770,7 +773,19 @@ async function captureAutomaticState(
   const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
   try {
     const result = await device.capture.screenshot({ ...base(), path: temporary });
-    const encoded = result.base64 ?? (await readFile(temporary)).toString("base64");
+    let bytes: Buffer = result.base64
+      ? Buffer.from(result.base64, "base64")
+      : await readFile(temporary);
+    if (job.platform === "ios" && snapshotNodes) {
+      const geometry = inferIosSnapshotGeometry(snapshotNodes);
+      if (geometry) {
+        bytes = normalizeScreenshotToBounds(bytes, {
+          width: geometry.logicalWidth,
+          height: geometry.logicalHeight,
+        });
+      }
+    }
+    const encoded = bytes.toString("base64");
     const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`);
     step.frames.push({ ...frame, base64: undefined });
   } catch (error) {

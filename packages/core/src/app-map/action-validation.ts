@@ -51,6 +51,42 @@ export function assertActions(actions: ActionSpec[], label: string): void {
     }
     seen.add(action.id);
     optionalText(action.label, `${item}.label`);
+    if (action.optional !== undefined && typeof action.optional !== "boolean") {
+      appMapFail("invalid-map", `${item}.optional must be a boolean`);
+    }
+    if (action.when !== undefined) {
+      objectValue(action.when, `${item}.when`);
+      assertTarget(action.when.target, `${item}.when.target`);
+      if (!(action.when.condition === "present" || action.when.condition === "absent")) {
+        appMapFail("invalid-map", `${item}.when.condition is unsupported`);
+      }
+      if (action.when.region !== undefined) {
+        objectValue(action.when.region, `${item}.when.region`);
+        const values = [
+          action.when.region.minX,
+          action.when.region.maxX,
+          action.when.region.minY,
+          action.when.region.maxY,
+        ].filter((value): value is number => value !== undefined);
+        if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
+          appMapFail("invalid-map", `${item}.when.region values must be between 0 and 1`);
+        }
+        if (
+          action.when.region.minX !== undefined &&
+          action.when.region.maxX !== undefined &&
+          action.when.region.minX >= action.when.region.maxX
+        ) {
+          appMapFail("invalid-map", `${item}.when.region minX must be less than maxX`);
+        }
+        if (
+          action.when.region.minY !== undefined &&
+          action.when.region.maxY !== undefined &&
+          action.when.region.minY >= action.when.region.maxY
+        ) {
+          appMapFail("invalid-map", `${item}.when.region minY must be less than maxY`);
+        }
+      }
+    }
     switch (action.kind) {
       case "recorded":
         identifier(action.takeId, `${item}.takeId`);
@@ -70,6 +106,14 @@ export function assertActions(actions: ActionSpec[], label: string): void {
         break;
       case "tap":
         assertTarget(action.target, `${item}.target`);
+        if (action.fallbackTargets !== undefined) {
+          if (!Array.isArray(action.fallbackTargets) || action.fallbackTargets.length > 8) {
+            appMapFail("invalid-map", `${item}.fallbackTargets must contain at most 8 targets`);
+          }
+          action.fallbackTargets.forEach((target, fallbackIndex) =>
+            assertTarget(target, `${item}.fallbackTargets[${fallbackIndex}]`),
+          );
+        }
         break;
       case "text":
         if (typeof action.text !== "string")
@@ -92,6 +136,23 @@ export function assertActions(actions: ActionSpec[], label: string): void {
         break;
       case "back":
       case "home":
+        break;
+      case "app":
+        if (!(action.action === "open" || action.action === "close")) {
+          appMapFail("invalid-map", `${item}.action is unsupported`);
+        }
+        optionalText(action.app, `${item}.app`);
+        if (action.action === "open") {
+          optionalText(action.url, `${item}.url`);
+          if (action.relaunch !== undefined && typeof action.relaunch !== "boolean") {
+            appMapFail("invalid-map", `${item}.relaunch must be a boolean`);
+          }
+          if (!action.app && !action.url) {
+            appMapFail("invalid-map", `${item} must name an app or URL to open`);
+          }
+        } else if (!action.app) {
+          appMapFail("invalid-map", `${item} must name an app to close`);
+        }
         break;
       case "wait":
         safeInteger(action.ms, `${item}.ms`);

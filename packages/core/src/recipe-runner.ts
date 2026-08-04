@@ -531,6 +531,7 @@ async function tapRecordedTarget(
   device: Device,
   input: {
     target: StepTarget;
+    fallbackTargets?: StepTarget[];
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
   },
   ctx: RecipeStepContext,
@@ -539,6 +540,7 @@ async function tapRecordedTarget(
 ): Promise<void> {
   const candidates = [
     input.target,
+    ...(input.fallbackTargets ?? []),
     ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
   ];
   const unique = candidates.filter(
@@ -546,13 +548,15 @@ async function tapRecordedTarget(
       candidates.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) ===
       index,
   );
+  const configuredTargetCount = 1 + (input.fallbackTargets?.length ?? 0);
   const failures: string[] = [];
   for (const [index, candidate] of unique.entries()) {
     try {
       const strategy = await tapTarget(device, candidate, ctx.log, repetitions, intervalMs);
       if (index > 0) {
+        const configuredFallback = index < configuredTargetCount;
         ctx.job?.artifacts.push({
-          kind: "locator-heal",
+          kind: configuredFallback ? "locator-fallback" : "locator-heal",
           capturedAt: now(),
           data: {
             original: input.target,
@@ -562,7 +566,9 @@ async function tapRecordedTarget(
             persisted: false,
           },
         });
-        ctx.log(`locator: used recorded fallback ${index + 1}/${unique.length} (${strategy})`);
+        ctx.log(
+          `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${strategy})`,
+        );
       }
       return;
     } catch (error) {
@@ -577,6 +583,7 @@ async function longPressRecordedTarget(
   device: Device,
   input: {
     target: StepTarget;
+    fallbackTargets?: StepTarget[];
     evidence?: Extract<RecipeStep, { kind: "tap" }>["evidence"];
     durationMs?: number;
   },
@@ -584,6 +591,7 @@ async function longPressRecordedTarget(
 ): Promise<void> {
   const candidates = [
     input.target,
+    ...(input.fallbackTargets ?? []),
     ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
   ];
   const attempts = (
@@ -665,7 +673,33 @@ async function targetPresent(device: Device, target: StepTarget): Promise<boolea
   }
 }
 
-export async function runRecipeStep(
+async function conditionalTargetPresent(
+  device: Device,
+  condition: NonNullable<RecipeStep["when"]>,
+): Promise<boolean> {
+  if (!condition.region) return targetPresent(device, condition.target);
+  const nodes = await snapshot(device);
+  const viewport =
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "application")?.rect ??
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "window")?.rect;
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
+    throw new Error("conditional target: viewport bounds are unavailable");
+  }
+  const region = condition.region;
+  return nodes.some((node) => {
+    if (!nodeMatchesTarget(node, condition.target) || !node.rect) return false;
+    const x = (node.rect.x + node.rect.width / 2 - viewport.x) / viewport.width;
+    const y = (node.rect.y + node.rect.height / 2 - viewport.y) / viewport.height;
+    return (
+      (region.minX === undefined || x >= region.minX) &&
+      (region.maxX === undefined || x <= region.maxX) &&
+      (region.minY === undefined || y >= region.minY) &&
+      (region.maxY === undefined || y <= region.maxY)
+    );
+  });
+}
+
+async function runRequiredRecipeStep(
   device: Device,
   step: RecipeStep,
   ctx: RecipeStepContext,
@@ -845,39 +879,52 @@ export async function runRecipeStep(
     }
 
     case "expect-screen": {
-      const observed = observeScreenIdentity(await snapshot(device));
       const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
-      const semanticMatch = (step.observations ?? []).some(
-        (observation) => compareScreenIdentity(observed, observation).decision === "match",
-      );
-      if (screenIdentityMatches(expected, observed.fingerprint) || semanticMatch) {
-        log(`screen: reached ${step.screenTitle}`);
-        break;
-      }
+      const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
+      const deadline = Date.now() + timeout;
+      let observedFingerprint = "unavailable";
+      let reached = false;
+      do {
+        const observed = observeScreenIdentity(await snapshot(device));
+        const semanticMatch = (step.observations ?? []).some(
+          (observation) => compareScreenIdentity(observed, observation).decision === "match",
+        );
+        if (screenIdentityMatches(expected, observed.fingerprint) || semanticMatch) {
+          reached = true;
+          break;
+        }
 
-      // Custom-rendered and some system screens can expose an empty or
-      // unstable accessibility tree. Authoring records a stable visual alias
-      // for exactly that case, so replay must consult the same modality before
-      // rejecting an otherwise identical destination.
-      const visualFingerprint = ctx.observeVisualFingerprint
-        ? await ctx.observeVisualFingerprint()
-        : observeVisualScreenFingerprint(
-            Buffer.from(
-              (
-                await captureScreenshot({
-                  device,
-                  caption: `Verify ${step.screenTitle}`,
-                  ephemeral: true,
-                  includeScreenMatch: false,
-                })
-              ).base64,
-              "base64",
-            ),
-          );
-      if (!screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
+        // Custom-rendered and some system screens can expose an empty or
+        // unstable accessibility tree. Authoring records a stable visual alias
+        // for exactly that case, so replay consults the same modality while the
+        // destination settles instead of sampling one transition frame.
+        const visualFingerprint = ctx.observeVisualFingerprint
+          ? await ctx.observeVisualFingerprint()
+          : observeVisualScreenFingerprint(
+              Buffer.from(
+                (
+                  await captureScreenshot({
+                    device,
+                    caption: `Verify ${step.screenTitle}`,
+                    ephemeral: true,
+                    includeScreenMatch: false,
+                  })
+                ).base64,
+                "base64",
+              ),
+            );
+        observedFingerprint = visualFingerprint ?? observed.fingerprint;
+        if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
+          reached = true;
+          break;
+        }
+        if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
+      } while (Date.now() < deadline);
+
+      if (!reached) {
         throw new Error(
           `expect-screen: reached a different screen instead of "${step.screenTitle}" ` +
-            `(expected ${step.fingerprint.slice(0, 8)}, observed ${(visualFingerprint ?? observed.fingerprint).slice(0, 8)})`,
+            `(expected ${step.fingerprint.slice(0, 8)}, observed ${observedFingerprint.slice(0, 8)})`,
         );
       }
       log(`screen: reached ${step.screenTitle}`);
@@ -1202,7 +1249,12 @@ export async function runRecipeStep(
       }
       if (step.action === "open") {
         if (step.url) await openUrl(device, step.url);
-        else await openApp(device, step.app!);
+        else
+          await openApp(
+            device,
+            step.app!,
+            step.relaunch === undefined ? undefined : { relaunch: step.relaunch },
+          );
         break;
       }
 
@@ -1344,5 +1396,48 @@ export async function runRecipeStep(
       job?.artifacts.push({ kind: "device-log", capturedAt: now(), data: result });
       break;
     }
+  }
+}
+
+export async function runRecipeStep(
+  device: Device,
+  step: RecipeStep,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  if (step.when) {
+    const present = await conditionalTargetPresent(device, step.when);
+    const shouldRun = step.when.condition === "present" ? present : !present;
+    if (!shouldRun) {
+      const message = `${describeTarget(step.when.target)} is ${present ? "present" : "absent"}`;
+      ctx.log(`conditional ${step.kind}: skipped — ${message}`);
+      ctx.job?.artifacts.push({
+        kind: "conditional-step-skipped",
+        capturedAt: now(),
+        data: {
+          stepId: step.id,
+          stepKind: step.kind,
+          condition: step.when.condition,
+          target: step.when.target,
+          observed: present ? "present" : "absent",
+        },
+      });
+      return;
+    }
+  }
+  if (!step.optional) {
+    await runRequiredRecipeStep(device, step, ctx);
+    return;
+  }
+  try {
+    await runRequiredRecipeStep(device, step, ctx);
+  } catch (error) {
+    if (isCancel(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.log(`optional ${step.kind}: skipped — ${message}`);
+    ctx.job?.artifacts.push({
+      kind: "optional-step-skipped",
+      capturedAt: now(),
+      data: { stepId: step.id, stepKind: step.kind, message },
+    });
   }
 }

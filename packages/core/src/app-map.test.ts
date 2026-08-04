@@ -96,6 +96,8 @@ function actions(): ActionSpec[] {
     { id: "scroll", kind: "gesture", gesture: { kind: "scroll", direction: "down", amount: 2 } },
     { id: "back", kind: "back" },
     { id: "home", kind: "home" },
+    { id: "open-app", kind: "app", action: "open", app: "com.example.store" },
+    { id: "close-app", kind: "app", action: "close", app: "com.example.store" },
     { id: "wait", kind: "wait", ms: 500 },
     { id: "assert-screen", kind: "assertion", assertion: { kind: "screen", screenId: "home" } },
     {
@@ -251,6 +253,8 @@ test("validates a normalized project map containing every action kind and return
       "gesture",
       "back",
       "home",
+      "app",
+      "app",
       "wait",
       "assertion",
       "assertion",

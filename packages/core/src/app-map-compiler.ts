@@ -58,6 +58,7 @@ function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeS
     screenId: screen.id,
     screenTitle: screen.title,
     fingerprint: screen.identity.fingerprint,
+    timeoutMs: 5000,
     ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
     ...(observations.length ? { observations } : {}),
   };
@@ -86,64 +87,91 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
 }
 
 function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
-  switch (action.kind) {
-    case "recorded":
-      return action.steps.map((step, index) => stableStep(step, action.id, index));
-    case "tap":
-      return [
-        { id: `relay-action-${action.id}`, kind: "tap", target: structuredClone(action.target) },
-      ];
-    case "text":
-      return [
-        {
-          id: `relay-action-${action.id}`,
-          kind: "type",
-          text: action.text,
-          ...(action.target ? { target: structuredClone(action.target) } : {}),
-        },
-      ];
-    case "gesture":
-      return action.gesture.kind === "swipe"
-        ? [
-            {
-              id: `relay-action-${action.id}`,
-              kind: "swipe",
-              from: structuredClone(action.gesture.from),
-              to: structuredClone(action.gesture.to),
-              ...(action.gesture.durationMs === undefined
-                ? {}
-                : { durationMs: action.gesture.durationMs }),
-            },
-          ]
-        : [
-            {
-              id: `relay-action-${action.id}`,
-              kind: "scroll",
-              direction: action.gesture.direction,
-              ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
-            },
-          ];
-    case "back":
-    case "home":
-      return [{ id: `relay-action-${action.id}`, kind: "key", key: action.kind }];
-    case "wait":
-      return action.ms === 0
-        ? []
-        : [{ id: `relay-action-${action.id}`, kind: "sleep", ms: action.ms }];
-    case "assertion":
-      return [assertionStep(map, action.id, action.assertion)];
-    case "routine":
-      return [
-        {
-          id: `relay-action-${action.id}`,
-          kind: "module",
-          recipeId: recipeId(map, "routine", action.routineId),
-          ...(action.bindings ? { bindings: structuredClone(action.bindings) } : {}),
-        },
-      ];
-    case "passive":
-      return [];
-  }
+  const steps: RecipeStep[] = (() => {
+    switch (action.kind) {
+      case "recorded":
+        return action.steps.map((step, index) => stableStep(step, action.id, index));
+      case "tap":
+        return [
+          {
+            id: `relay-action-${action.id}`,
+            kind: "tap",
+            target: structuredClone(action.target),
+            ...(action.fallbackTargets?.length
+              ? { fallbackTargets: structuredClone(action.fallbackTargets) }
+              : {}),
+          },
+        ];
+      case "text":
+        return [
+          {
+            id: `relay-action-${action.id}`,
+            kind: "type",
+            text: action.text,
+            ...(action.target ? { target: structuredClone(action.target) } : {}),
+          },
+        ];
+      case "gesture":
+        return action.gesture.kind === "swipe"
+          ? [
+              {
+                id: `relay-action-${action.id}`,
+                kind: "swipe",
+                from: structuredClone(action.gesture.from),
+                to: structuredClone(action.gesture.to),
+                ...(action.gesture.durationMs === undefined
+                  ? {}
+                  : { durationMs: action.gesture.durationMs }),
+              },
+            ]
+          : [
+              {
+                id: `relay-action-${action.id}`,
+                kind: "scroll",
+                direction: action.gesture.direction,
+                ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
+              },
+            ];
+      case "back":
+      case "home":
+        return [{ id: `relay-action-${action.id}`, kind: "key", key: action.kind }];
+      case "app":
+        return [
+          {
+            id: `relay-action-${action.id}`,
+            kind: "app",
+            action: action.action,
+            ...(action.app ? { app: action.app } : {}),
+            ...(action.action === "open" && action.url ? { url: action.url } : {}),
+            ...(action.action === "open" && action.relaunch !== undefined
+              ? { relaunch: action.relaunch }
+              : {}),
+          },
+        ];
+      case "wait":
+        return action.ms === 0
+          ? []
+          : [{ id: `relay-action-${action.id}`, kind: "sleep", ms: action.ms }];
+      case "assertion":
+        return [assertionStep(map, action.id, action.assertion)];
+      case "routine":
+        return [
+          {
+            id: `relay-action-${action.id}`,
+            kind: "module",
+            recipeId: recipeId(map, "routine", action.routineId),
+            ...(action.bindings ? { bindings: structuredClone(action.bindings) } : {}),
+          },
+        ];
+      case "passive":
+        return [];
+    }
+  })();
+  return steps.map((step) => ({
+    ...step,
+    ...(action.optional ? { optional: true as const } : {}),
+    ...(action.when ? { when: structuredClone(action.when) } : {}),
+  }));
 }
 
 function compileRecipe(input: {

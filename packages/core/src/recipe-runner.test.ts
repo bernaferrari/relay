@@ -356,6 +356,75 @@ describe("runRecipeStep clipboard", () => {
   });
 });
 
+describe("runRecipeStep optional policy", () => {
+  it("records a skipped best-effort action without hiding cancellation", async () => {
+    const logs: string[] = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({ press: () => Promise.reject(new Error("not on this screen")) });
+
+    await runRecipeStep(
+      device,
+      { kind: "tap", target: { identifier: "sidebar.close" }, optional: true },
+      { log: (line) => logs.push(line), job },
+    );
+
+    assert.match(logs[0] ?? "", /optional tap: skipped/);
+    assert.equal(job.artifacts[0]?.kind, "optional-step-skipped");
+  });
+});
+
+describe("runRecipeStep conditional policy", () => {
+  it("skips a step when its present condition is false", async () => {
+    const logs: string[] = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    let pressed = false;
+    const device = stubDevice({
+      find: () => Promise.reject(new Error("No match")),
+      press: () => {
+        pressed = true;
+        return Promise.resolve();
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "sidebar.open" },
+        when: { target: { label: "Compose" }, condition: "present" },
+      },
+      { log: (line) => logs.push(line), job },
+    );
+
+    assert.equal(pressed, false);
+    assert.match(logs[0] ?? "", /conditional tap: skipped/);
+    assert.equal(job.artifacts[0]?.kind, "conditional-step-skipped");
+  });
+
+  it("runs a step when its absent condition is true", async () => {
+    let pressed = false;
+    const device = stubDevice({
+      find: () => Promise.reject(new Error("No match")),
+      press: () => {
+        pressed = true;
+        return Promise.resolve();
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "sidebar.open" },
+        when: { target: { label: "Compose" }, condition: "absent" },
+      },
+      noLog,
+    );
+
+    assert.equal(pressed, true);
+  });
+});
+
 describe("runRecipeStep expect — error classification", () => {
   it('gone passes when find reports "No match" (element absent)', async () => {
     const device = stubDevice({
@@ -877,6 +946,28 @@ describe("runRecipeStep conversational evidence", () => {
     const heal = owner.artifacts.at(-1);
     assert.equal(heal?.kind, "locator-heal");
     assert.equal((heal?.data as { persisted: boolean } | undefined)?.persisted, false);
+  });
+
+  it("uses explicit locator fallbacks without reporting a healed test", async () => {
+    const owner = job();
+    const used: unknown[] = [];
+    await runRecipeStep(
+      stubDevice({
+        press: async (options) => {
+          used.push(options);
+          if ((options as { ref?: string }).ref) throw new Error("not present");
+          return {};
+        },
+      }),
+      {
+        kind: "tap",
+        target: { ref: "@missing" },
+        fallbackTargets: [{ label: "New conversation" }],
+      },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(used.length, 2);
+    assert.equal(owner.artifacts.at(-1)?.kind, "locator-fallback");
   });
 
   it("binds declared reusable-flow inputs without leaking them into the parent", async () => {

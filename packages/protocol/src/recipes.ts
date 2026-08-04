@@ -133,6 +133,14 @@ export type RecipeStepMetadata = {
   /** Immutable screen/UI-tree context captured when this step was recorded. */
   evidence?: RecordedStepEvidence;
   note?: string;
+  /** Best-effort setup/cleanup step. Cancellation always remains fatal. */
+  optional?: boolean;
+  /** Run this step only when the target is currently present or absent. */
+  when?: {
+    target: StepTarget;
+    condition: "present" | "absent";
+    region?: { minX?: number; maxX?: number; minY?: number; maxY?: number };
+  };
 };
 
 export type RecipeStep = RecipeStepMetadata &
@@ -140,6 +148,9 @@ export type RecipeStep = RecipeStepMetadata &
     | {
         kind: "tap";
         target: StepTarget;
+        /** Ordered semantic alternatives for the same intent. The runner only
+         * tries these when the primary target cannot be acted on. */
+        fallbackTargets?: StepTarget[];
         gesture?: "single" | "multi" | "hold";
         tapCount?: number;
         intervalMs?: number;
@@ -196,6 +207,9 @@ export type RecipeStep = RecipeStepMetadata &
         screenTitle: string;
         fingerprint: string;
         aliases?: string[];
+        /** Allow navigation and rendering to settle before declaring that the
+         * destination differs. Each observation remains evidence. */
+        timeoutMs?: number;
         /** Approved semantic observations let dynamic screens retain one
          * identity while their body content changes between executions. */
         observations?: ScreenIdentityObservation[];
@@ -269,6 +283,7 @@ export type RecipeStep = RecipeStepMetadata &
           | "uninstall";
         app?: string;
         url?: string;
+        relaunch?: boolean;
         artifact?: string;
         as?: string;
         version?: string;

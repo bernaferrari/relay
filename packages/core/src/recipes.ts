@@ -496,9 +496,17 @@ function parseStepMetadata(
   group?: string;
   evidence?: RecordedStepEvidence;
   note?: string;
+  optional?: boolean;
+  when?: RecipeStep["when"];
 } {
-  const metadata: { id?: string; group?: string; evidence?: RecordedStepEvidence; note?: string } =
-    {};
+  const metadata: {
+    id?: string;
+    group?: string;
+    evidence?: RecordedStepEvidence;
+    note?: string;
+    optional?: boolean;
+    when?: RecipeStep["when"];
+  } = {};
   if (raw.id !== undefined) {
     if (!isString(raw.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(raw.id)) {
       throw stepErr(index, "id must use letters, numbers, hyphens, and underscores only");
@@ -513,6 +521,45 @@ function parseStepMetadata(
   }
   if (raw.evidence !== undefined) metadata.evidence = parseRecordedEvidence(raw.evidence, index);
   if (isString(raw.note) && raw.note.trim()) metadata.note = raw.note;
+  if (raw.optional !== undefined) {
+    if (typeof raw.optional !== "boolean") throw stepErr(index, "optional must be a boolean");
+    metadata.optional = raw.optional;
+  }
+  if (raw.when !== undefined) {
+    if (!isObject(raw.when)) throw stepErr(index, "when must be an object");
+    if (!(raw.when.condition === "present" || raw.when.condition === "absent")) {
+      throw stepErr(index, 'when.condition must be "present" or "absent"');
+    }
+    const target = parseTarget(raw.when.target, index, "when.target");
+    if (!target.identifier && !target.ref && !target.label && !target.text) {
+      throw stepErr(index, "when.target must contain identifier, ref, label, or text");
+    }
+    let region: NonNullable<RecipeStep["when"]>["region"];
+    if (raw.when.region !== undefined) {
+      if (!isObject(raw.when.region)) throw stepErr(index, "when.region must be an object");
+      const parsed: NonNullable<RecipeStep["when"]>["region"] = {};
+      for (const key of ["minX", "maxX", "minY", "maxY"] as const) {
+        const value = raw.when.region[key];
+        if (value === undefined) continue;
+        if (!isNumber(value) || value < 0 || value > 1) {
+          throw stepErr(index, `when.region.${key} must be between 0 and 1`);
+        }
+        parsed[key] = value;
+      }
+      if (parsed.minX !== undefined && parsed.maxX !== undefined && parsed.minX >= parsed.maxX) {
+        throw stepErr(index, "when.region.minX must be less than maxX");
+      }
+      if (parsed.minY !== undefined && parsed.maxY !== undefined && parsed.minY >= parsed.maxY) {
+        throw stepErr(index, "when.region.minY must be less than maxY");
+      }
+      region = parsed;
+    }
+    metadata.when = {
+      target,
+      condition: raw.when.condition,
+      ...(region ? { region } : {}),
+    };
+  }
   return metadata;
 }
 
@@ -538,6 +585,22 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             index,
             "tap requires target with at least one of identifier/ref/label/text/point",
           );
+        }
+        let fallbackTargets: StepTarget[] | undefined;
+        if (raw.fallbackTargets !== undefined) {
+          if (!Array.isArray(raw.fallbackTargets) || raw.fallbackTargets.length > 8) {
+            throw stepErr(index, "tap.fallbackTargets must contain at most 8 targets");
+          }
+          fallbackTargets = raw.fallbackTargets.map((fallback, fallbackIndex) => {
+            const parsed = parseTarget(fallback, index, `fallbackTargets[${fallbackIndex}]`);
+            if (!targetHasStrategy(parsed)) {
+              throw stepErr(
+                index,
+                `tap.fallbackTargets[${fallbackIndex}] must contain a semantic or coordinate target`,
+              );
+            }
+            return parsed;
+          });
         }
         if (
           raw.gesture !== undefined &&
@@ -570,6 +633,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         const step: Extract<RecipeStep, { kind: "tap" }> = {
           kind: "tap",
           target,
+          ...(fallbackTargets?.length ? { fallbackTargets } : {}),
           ...(raw.gesture !== undefined
             ? { gesture: raw.gesture as "single" | "multi" | "hold" }
             : {}),
@@ -814,6 +878,18 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, "expect-screen.aliases must be SHA-256 fingerprints");
         }
+        let screenTimeoutMs: number | undefined;
+        if (raw.timeoutMs !== undefined) {
+          if (
+            !isNumber(raw.timeoutMs) ||
+            !Number.isInteger(raw.timeoutMs) ||
+            raw.timeoutMs < 0 ||
+            raw.timeoutMs > MAX_WAIT_MS
+          ) {
+            throw stepErr(index, `expect-screen.timeoutMs must be an integer <= ${MAX_WAIT_MS}`);
+          }
+          screenTimeoutMs = raw.timeoutMs;
+        }
         if (
           raw.observations !== undefined &&
           (!Array.isArray(raw.observations) ||
@@ -834,6 +910,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           screenId: raw.screenId,
           screenTitle: raw.screenTitle,
           fingerprint: raw.fingerprint,
+          ...(screenTimeoutMs !== undefined ? { timeoutMs: screenTimeoutMs } : {}),
           ...(raw.aliases?.length ? { aliases: [...raw.aliases] as string[] } : {}),
           ...(raw.observations?.length
             ? {
@@ -1160,6 +1237,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, 'app.versionMatch must be "exact" | "contains"');
         if (raw.action === "open" && !isString(raw.app) && !isString(raw.url))
           throw stepErr(index, "app open requires app or url");
+        if (raw.relaunch !== undefined && typeof raw.relaunch !== "boolean")
+          throw stepErr(index, "app relaunch must be a boolean");
         if (
           raw.action !== "open" &&
           raw.action !== "switcher" &&
@@ -1181,6 +1260,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           action: raw.action as Extract<RecipeStep, { kind: "app" }>["action"],
           ...(isString(raw.app) ? { app: raw.app } : {}),
           ...(isString(raw.url) ? { url: raw.url } : {}),
+          ...(typeof raw.relaunch === "boolean" ? { relaunch: raw.relaunch } : {}),
           ...(isString(raw.artifact) ? { artifact: raw.artifact } : {}),
           ...(isString(raw.as) ? { as: raw.as } : {}),
           ...(isString(raw.version) ? { version: raw.version } : {}),

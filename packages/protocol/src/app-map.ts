@@ -102,7 +102,22 @@ export type ScreenVariant = AppMapEntity & {
   baseline?: BaselineProvenance;
 };
 
-type ActionMetadata = { id: string; label?: string };
+type ActionMetadata = {
+  id: string;
+  label?: string;
+  /** Continue when this best-effort setup or cleanup action is unavailable. */
+  optional?: boolean;
+  /** Execute only when the named UI state is currently true. This keeps
+   * reusable setup routines deterministic without tapping obscured controls
+   * that remain in an application's accessibility tree. */
+  when?: {
+    target: StepTarget;
+    condition: "present" | "absent";
+    /** Optional normalized viewport region used to distinguish an actually
+     * visible control from an off-canvas copy retained by SwiftUI. */
+    region?: { minX?: number; maxX?: number; minY?: number; maxY?: number };
+  };
+};
 
 export type AssertionSpec =
   | { kind: "screen"; screenId: string }
@@ -127,11 +142,13 @@ export type ActionSpec = ActionMetadata &
         steps: RecipeStep[];
         evidenceIds: string[];
       }
-    | { kind: "tap"; target: StepTarget }
+    | { kind: "tap"; target: StepTarget; fallbackTargets?: StepTarget[] }
     | { kind: "text"; text: string; target?: StepTarget }
     | { kind: "gesture"; gesture: GestureSpec }
     | { kind: "back" }
     | { kind: "home" }
+    | { kind: "app"; action: "open"; app?: string; url?: string; relaunch?: boolean }
+    | { kind: "app"; action: "close"; app: string }
     | { kind: "wait"; ms: number }
     | { kind: "assertion"; assertion: AssertionSpec }
     | { kind: "routine"; routineId: string; bindings?: Record<string, string> }

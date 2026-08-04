@@ -40,7 +40,12 @@ function fixture(): AppMap {
         routineId: signIn.id,
         bindings: { email: "{{account_email}}" },
       },
-      { id: "continue", kind: "tap", target: { label: "Continue" } },
+      {
+        id: "continue",
+        kind: "tap",
+        target: { identifier: "continue-button" },
+        fallbackTargets: [{ label: "Continue" }],
+      },
     ],
   };
   return {
@@ -108,6 +113,7 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
       screenId: "welcome",
       screenTitle: "Welcome",
       fingerprint: "a".repeat(64),
+      timeoutMs: 5_000,
     },
     {
       id: "relay-action-use-sign-in",
@@ -115,13 +121,19 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
       recipeId: routineId,
       bindings: { email: "{{account_email}}" },
     },
-    { id: "relay-action-continue", kind: "tap", target: { label: "Continue" } },
+    {
+      id: "relay-action-continue",
+      kind: "tap",
+      target: { identifier: "continue-button" },
+      fallbackTargets: [{ label: "Continue" }],
+    },
     {
       id: "relay-destination-open-home",
       kind: "expect-screen",
       screenId: "home",
       screenTitle: "Home",
       fingerprint: "b".repeat(64),
+      timeoutMs: 5_000,
     },
   ]);
   assert.deepEqual(plan.recipes[routineId]!.steps, [
@@ -138,7 +150,16 @@ test("runs explicit Flow setup before verifying the entry screen", () => {
     ...entity("start-clean"),
     name: "Start clean",
     parameters: [{ name: "entry", required: true }],
-    actions: [{ id: "compose", kind: "tap", target: { identifier: "{{entry}}" } }],
+    actions: [
+      {
+        id: "open-app",
+        kind: "app",
+        action: "open",
+        app: "ai.x.GrokApp",
+        relaunch: false,
+      },
+      { id: "compose", kind: "tap", target: { identifier: "{{entry}}" } },
+    ],
   };
   map.flows.checkout!.setup = {
     routineId: "start-clean",
@@ -164,11 +185,26 @@ test("runs explicit Flow setup before verifying the entry screen", () => {
       screenId: "welcome",
       screenTitle: "Welcome",
       fingerprint: "a".repeat(64),
+      timeoutMs: 5_000,
     },
   ]);
   assert.equal(root.stepProvenance[0]!.origin, "setup");
   assert.equal(root.stepProvenance[1]!.origin, "source");
   assert.deepEqual(plan.connections[0]!.compiledStepRange, [2, 5]);
+  assert.deepEqual(plan.recipes["app-map:map-1:routine:start-clean:r7"]!.steps, [
+    {
+      id: "relay-action-open-app",
+      kind: "app",
+      action: "open",
+      app: "ai.x.GrokApp",
+      relaunch: false,
+    },
+    {
+      id: "relay-action-compose",
+      kind: "tap",
+      target: { identifier: "{{entry}}" },
+    },
+  ]);
 });
 
 test("refuses to run drafts and unverifiable destinations", () => {
@@ -218,6 +254,26 @@ test("compiles approved semantic variants for dynamic destination matching", () 
   if (destination?.kind === "expect-screen") {
     assert.deepEqual(destination.observations, [observation]);
   }
+});
+
+test("preserves best-effort action policy in compiled recipes", () => {
+  const map = fixture();
+  map.connections["open-home"]!.actions = [
+    {
+      id: "dismiss-sidebar",
+      kind: "tap",
+      target: { identifier: "sidebar.close" },
+      optional: true,
+    },
+  ];
+
+  const plan = compileAppMapFlow(map, "checkout");
+  assert.deepEqual(plan.recipes[plan.rootRecipeId]!.steps[1], {
+    id: "relay-action-dismiss-sidebar",
+    kind: "tap",
+    target: { identifier: "sidebar.close" },
+    optional: true,
+  });
 });
 
 test("keeps passive transitions executable by verifying source and destination", () => {

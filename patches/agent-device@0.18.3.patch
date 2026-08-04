@@ -1,5 +1,5 @@
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
-index ca87a188f98dcf142c40a2adaf9c512673a452bd..bd1953b52fc9906a407081d56f12c10a8fcc4f96 100644
+index ca87a188f98dcf142c40a2adaf9c512673a452bd..e1b0fb48c4fe7b44fdb5037541a94a4fc26b7594 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
 +++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
 @@ -1,4 +1,7 @@
@@ -7,16 +7,19 @@ index ca87a188f98dcf142c40a2adaf9c512673a452bd..bd1953b52fc9906a407081d56f12c10a
 +#if canImport(UIKit)
 +import UIKit
 +#endif
-
+ 
  extension RunnerTests {
    // MARK: - Main Thread Dispatch
-@@ -398,6 +401,34 @@ extension RunnerTests {
+@@ -398,6 +401,61 @@ extension RunnerTests {
      }
-
+ 
      switch command.command {
 +    case .clipboardRead:
 +#if canImport(UIKit)
-+      return Response(ok: true, data: DataPayload(text: UIPasteboard.general.string ?? ""))
++      var text = ""
++      let read = { text = UIPasteboard.general.string ?? "" }
++      if Thread.isMainThread { read() } else { DispatchQueue.main.sync(execute: read) }
++      return Response(ok: true, data: DataPayload(text: text))
 +#else
 +      return Response(
 +        ok: false,
@@ -31,7 +34,31 @@ index ca87a188f98dcf142c40a2adaf9c512673a452bd..bd1953b52fc9906a407081d56f12c10a
 +      guard let text = command.text else {
 +        return Response(ok: false, error: ErrorPayload(message: "clipboardWrite requires text"))
 +      }
-+      UIPasteboard.general.string = text
++      var observed = ""
++      let write = {
++        // UIKit's pasteboard is main-thread state. Assigning it from XCTest's
++        // command worker can report success while leaving the system clipboard
++        // empty on physical iOS hardware. Use an explicit public text item and
++        // verify the write before acknowledging it.
++        UIPasteboard.general.setItems(
++          [["public.utf8-plain-text": text]],
++          options: [
++            .localOnly: false,
++            .expirationDate: Date().addingTimeInterval(60 * 60),
++          ]
++        )
++        observed = UIPasteboard.general.string ?? ""
++      }
++      if Thread.isMainThread { write() } else { DispatchQueue.main.sync(execute: write) }
++      guard observed == text else {
++        return Response(
++          ok: false,
++          error: ErrorPayload(
++            code: "CLIPBOARD_WRITE_FAILED",
++            message: "clipboard write did not persist"
++          )
++        )
++      }
 +      return Response(ok: true, data: DataPayload(message: "clipboard updated"))
 +#else
 +      return Response(
@@ -45,7 +72,7 @@ index ca87a188f98dcf142c40a2adaf9c512673a452bd..bd1953b52fc9906a407081d56f12c10a
      case .status:
        return executeStatus(command: command)
      case .shutdown:
-@@ -832,6 +863,7 @@ extension RunnerTests {
+@@ -832,6 +890,7 @@ extension RunnerTests {
          return Response(ok: false, error: ErrorPayload(message: "Failed to encode screenshot as PNG"))
        }
        let fileName = "screenshot-\(Int(Date().timeIntervalSince1970 * 1000)).png"
@@ -65,42 +92,13 @@ index 1132e0254e9ece60b7f48bb85c250924db31cb74..577f822fa9f4de006ef1996d247db83b
           .alert, .pinch, .sequence, .rotateGesture, .transformGesture, .recordStart, .recordStop,
           .status, .uptime, .shutdown:
        return true
-diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
-index b505f682ce8960419cb3f6f2d5b652f120d03044..6bfcf0a6447d4bc7d563111172b8030a558b414a 100644
---- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
-+++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
-@@ -807,19 +807,11 @@ extension RunnerTests {
-
-   func synthesizedTapAt(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
- #if os(iOS)
--    let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
--    let point = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: app.frame, interfaceOrientation: orientation)
--    if let message = RunnerSynthesizedGesture.synthesizeTap(
--      withApplication: app,
--      x: Double(point.x),
--      y: Double(point.y)
--    ) {
--      return .unsupported(
--        message: message,
--        hint: "Falling back to XCTest coordinate tap may be slower and can still need a healthy accessibility tree."
--      )
--    }
--    return .performed
-+    // Private XCTest event synthesis can report success without delivering a touch to
-+    // SpringBoard on physical iPads. The public coordinate API uses the same logical
-+    // points as the accessibility snapshot and lets XCTest own orientation conversion,
-+    // so a successful response also means the device received the gesture.
-+    return tapAt(app: app, x: x, y: y)
- #elseif os(tvOS)
-     return .unsupported(
-       message: "coordinate tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element",
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
 index 8c73d1c115411942aad34b64aa0110cda5b15818..73acdc911eca7c41bb06c9df465a26622579fe33 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
 +++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
 @@ -22,6 +22,11 @@ func runnerCGImage(from image: RunnerImage) -> CGImage? {
  }
-
+ 
  extension RunnerTests {
 +  private static let managedRecordingPrefix = "agent-device-recording-"
 +  private static let managedRecordingSuffix = ".mp4"
@@ -108,12 +106,12 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..73acdc911eca7c41bb06c9df465a2662
 +  private static let managedScreenshotSuffix = ".png"
 +
    // MARK: - Recording
-
+ 
    func captureRunnerFrame() -> RunnerImage? {
 @@ -58,6 +63,67 @@ extension RunnerTests {
      activeRecording = nil
    }
-
+ 
 +  /// Removes transport artifacts owned by this runner from its temporary container.
 +  ///
 +  /// Physical iOS screenshots and recordings are copied to the host after each command.
@@ -185,7 +183,7 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..73acdc911eca7c41bb06c9df465a2662
 +    cleanupStaleRunnerArtifacts(keeping: safeFileName, includeRecordings: true)
      return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
    }
-
+ 
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift
 index ac8a8919da5185d2fb18353db2a0e949243064a7..70f4904aaf9f98a482650cf1b8328670cb40e32f 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift
@@ -202,7 +200,7 @@ index ac8a8919da5185d2fb18353db2a0e949243064a7..70f4904aaf9f98a482650cf1b8328670
 @@ -81,6 +83,12 @@ extension CommandType {
      case .findText, .readText, .snapshot:
        return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: false)
-
+ 
 +    case .clipboardRead:
 +      return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: true)
 +
@@ -229,7 +227,7 @@ index 69d979af874ead39c5eac06fc1fa557b8864aa80..88e36143ccbf6f94ac656ca9269aba7f
 @@ -221,6 +218,15 @@ extension RunnerTests {
        }
      }
-
+ 
 +    // An empty replacement means clear the field. Returning before replacement
 +    // handling left the old value untouched while claiming verification passed.
 +    guard !text.isEmpty else {
@@ -242,17 +240,60 @@ index 69d979af874ead39c5eac06fc1fa557b8864aa80..88e36143ccbf6f94ac656ca9269aba7f
      func typeIntoCurrentTarget(_ value: String) -> XCUIElement? {
        if let currentTarget = resolveTextEntryElement(app: app, target: activeTarget) {
          app.typeText(value)
+diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TvRemote.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TvRemote.swift
+index 12e879975c7aac2851949279da15644c385c18dc..b1fb40343187e004ab824af35db0a2b4fedb63c8 100644
+--- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TvRemote.swift
++++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TvRemote.swift
+@@ -84,14 +84,31 @@ extension RunnerTests {
+ #if os(tvOS)
+     return performElementTap(element)
+ #else
+-    let frame = element.frame
+-    if !frame.isEmpty {
+-      // XCUIElement.tap() can fail the whole XCTest after navigation because it
+-      // re-resolves the tapped element even after the app removed it. Keep the
+-      // selector target semantic, then activate its resolved stable screen point.
+-      return tapAt(app: app, x: frame.midX, y: frame.midY)
+-    }
++    // Keep selector activation in the element's own coordinate space. On a
++    // landscape physical iPad `element.frame` can be reported in native
++    // portrait coordinates while `app.coordinate` expects interface-oriented
++    // points; converting the frame through the app silently taps elsewhere.
++    // An element-relative coordinate lets XCTest own that conversion while
++    // avoiding XCUIElement.tap()'s post-navigation re-resolution failure.
++    return performElementCoordinateTap(element)
++#endif
++  }
++
++  private func performElementCoordinateTap(_ element: XCUIElement) -> RunnerInteractionOutcome {
++#if os(tvOS)
+     return performElementTap(element)
++#else
++    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
++      element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
++    })
++    if let exceptionMessage {
++      NSLog("AGENT_DEVICE_RUNNER_ELEMENT_COORDINATE_TAP_IGNORED_EXCEPTION=%@", exceptionMessage)
++      if isPostTapElementDisappearance(exceptionMessage) {
++        return .performed
++      }
++      return .unsupported(message: "element coordinate tap failed: \(exceptionMessage)", hint: nil)
++    }
++    return .performed
+ #endif
+   }
+ 
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 index 4aa404a6b9a711aea54a539a8be75ad5c972d14e..94ec33fe759720b61214c38191145601db5d00f7 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 +++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 @@ -86,6 +86,7 @@ final class RunnerTests: XCTestCase {
-
+ 
    override func setUp() {
      continueAfterFailure = true
 +    cleanupStaleRunnerArtifacts()
    }
-
+ 
    @MainActor
 diff --git a/dist/src/495.js b/dist/src/495.js
 index 876d356bcf9b892fd13faf8bea6639b3ab0dd0fe..6c895463df2c55f2619de0518e1b60c9952fc9e2 100644
