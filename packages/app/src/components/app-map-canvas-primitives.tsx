@@ -6,6 +6,10 @@ import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
+import {
+  companionLogicalPointToDisplayed,
+  companionLogicalRectToDisplayed,
+} from "./app-map-device-companion-geometry";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
@@ -291,37 +295,46 @@ export function ScreenCard(props: {
                 loading="lazy"
                 class="size-full object-contain object-top"
                 evidence={props.orientationEvidence}
+                overlay={
+                  props.sourceAnchor
+                    ? ({ rotation }) => {
+                        const anchor = props.sourceAnchor!;
+                        const point = companionLogicalPointToDisplayed(anchor.point, rotation);
+                        const rect = anchor.rect
+                          ? companionLogicalRectToDisplayed(anchor.rect, rotation)
+                          : undefined;
+                        return (
+                          <div
+                            class="pointer-events-none absolute inset-0 z-[2]"
+                            aria-label="Recorded interaction target"
+                            data-recorded-map-target
+                          >
+                            <Show when={rect}>
+                              {(value) => (
+                                <div
+                                  class="absolute rounded-[3px] border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_10px_color-mix(in_srgb,var(--text-interactive-base)_32%,transparent)]"
+                                  style={{
+                                    left: `${value().x * 100}%`,
+                                    top: `${value().y * 100}%`,
+                                    width: `${value().width * 100}%`,
+                                    height: `${value().height * 100}%`,
+                                  }}
+                                />
+                              )}
+                            </Show>
+                            <span
+                              class="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
+                              style={{
+                                left: `${point.x * 100}%`,
+                                top: `${point.y * 100}%`,
+                              }}
+                            />
+                          </div>
+                        );
+                      }
+                    : undefined
+                }
               />
-              <Show when={props.sourceAnchor}>
-                {(anchor) => (
-                  <div
-                    class="pointer-events-none absolute inset-0 z-[2]"
-                    aria-label="Recorded interaction target"
-                    data-recorded-map-target
-                  >
-                    <Show when={anchor().rect}>
-                      {(rect) => (
-                        <div
-                          class="absolute rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/14%)]"
-                          style={{
-                            left: `${rect().x * 100}%`,
-                            top: `${rect().y * 100}%`,
-                            width: `${rect().width * 100}%`,
-                            height: `${rect().height * 100}%`,
-                          }}
-                        />
-                      )}
-                    </Show>
-                    <span
-                      class="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--v2-background-bg-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
-                      style={{
-                        left: `${anchor().point.x * 100}%`,
-                        top: `${anchor().point.y * 100}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              </Show>
             </div>
           </div>
         )}

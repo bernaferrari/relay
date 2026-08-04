@@ -1,8 +1,9 @@
-import { createMemo, createSignal, type JSX } from "solid-js";
+import { createMemo, createSignal, Show, type JSX } from "solid-js";
 import {
   companionFramePresentation,
   companionImageLayout,
   type CompanionDimensions,
+  type CompanionFramePresentation,
 } from "./app-map-device-companion-geometry";
 
 export type ScreenshotOrientationEvidence = {
@@ -11,6 +12,10 @@ export type ScreenshotOrientationEvidence = {
   edge?: "left" | "right";
 };
 
+export type OrientedScreenshotOverlay = (input: {
+  rotation: CompanionFramePresentation["rotation"];
+}) => JSX.Element;
+
 /** Keep persisted screenshots in the same orientation as the live device. */
 export function OrientedScreenshot(props: {
   src: string;
@@ -18,6 +23,7 @@ export function OrientedScreenshot(props: {
   evidence?: ScreenshotOrientationEvidence;
   class?: string;
   loading?: JSX.ImgHTMLAttributes<HTMLImageElement>["loading"];
+  overlay?: OrientedScreenshotOverlay;
 }) {
   const [natural, setNatural] = createSignal<CompanionDimensions>();
   const presentation = createMemo(() =>
@@ -62,6 +68,9 @@ export function OrientedScreenshot(props: {
           })
         }
       />
+      <Show when={props.overlay}>
+        {(overlay) => overlay()({ rotation: presentation()?.rotation ?? "none" })}
+      </Show>
     </span>
   );
 }

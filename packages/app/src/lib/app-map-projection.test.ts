@@ -149,6 +149,17 @@ test("projects a recorded tap into the transition so every map view can show it"
         referenceBounds: { width: 1080, height: 2340 },
       },
     },
+    evidence: {
+      id: "evidence-wifi",
+      recordedAt: 3,
+      deviceBounds: { width: 1080, height: 2340 },
+      pointer: { x: 270, y: 420 },
+      node: {
+        label: "Wi-Fi",
+        role: "button",
+        rect: { x: 120, y: 360, width: 300, height: 120 },
+      },
+    },
   };
   observed.connections.open = {
     id: "open",
@@ -178,7 +189,8 @@ test("projects a recorded tap into the transition so every map view can show it"
   );
 
   assert.deepEqual(projected.graph?.transitions[0]?.sourceAnchor, {
-    point: { x: 250 / 1080, y: 390 / 2340 },
+    point: { x: 270 / 1080, y: 420 / 2340 },
+    rect: { x: 120 / 1080, y: 360 / 2340, width: 300 / 1080, height: 120 / 2340 },
   });
 });
 

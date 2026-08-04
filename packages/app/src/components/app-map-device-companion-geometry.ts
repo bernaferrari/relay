@@ -115,6 +115,16 @@ export function companionDisplayedPointToLogical(
   return point;
 }
 
+/** Convert a normalized logical point into the displayed, possibly rotated frame. */
+export function companionLogicalPointToDisplayed(
+  point: CompanionPoint,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionPoint {
+  if (rotation === "left") return { x: point.y, y: 1 - point.x };
+  if (rotation === "right") return { x: 1 - point.y, y: point.x };
+  return point;
+}
+
 /** Project a logical accessibility rectangle onto the rotated companion. */
 export function companionLogicalRectToDisplayed(
   rect: CompanionRect,

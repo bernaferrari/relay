@@ -10,6 +10,7 @@ import type {
   CanvasInteractionAnchor,
   ScreenVariant,
 } from "@relay/protocol";
+import { normalizedAnchorForStep } from "./app-map-interaction-anchor";
 
 export type AppMapProjectionChange = AppMapBatchChange;
 
@@ -28,18 +29,7 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 function sourceAnchorForSteps(steps: readonly RecipeStep[]): CanvasInteractionAnchor | undefined {
-  const step = steps.find((candidate) => candidate.kind === "tap");
-  if (!step || step.kind !== "tap") return undefined;
-  const point = step.target.point;
-  const bounds = point?.referenceBounds;
-  if (!point || !bounds?.width || !bounds.height) return undefined;
-  const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
-  return {
-    point: {
-      x: clamp(point.x, bounds.width) / bounds.width,
-      y: clamp(point.y, bounds.height) / bounds.height,
-    },
-  };
+  return normalizedAnchorForStep(steps.find((candidate) => candidate.kind === "tap"));
 }
 
 function flowPath(graph: CanvasGraph, startScreenId: string): string[] {
