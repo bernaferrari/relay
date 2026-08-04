@@ -108,6 +108,9 @@ export type BackendKeyboardResult = {
   wasVisible?: boolean;
   dismissed?: boolean;
   attempts?: number;
+  /** iOS only: which mechanism resigned the keyboard (#1598) — 'dismissKey'
+   *  (tapped the keyboard's own Hide/Dismiss/Done key); background-tap dismissal is deliberately unsupported (#1606 review). */
+  mechanism?: string;
 };
 
 export type BackendClipboardTextResult = {

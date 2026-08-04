@@ -21,23 +21,34 @@ private enum KeyboardDismissObservationTiming {
   static let settleRequiredConsecutiveMatches: Int = 3
 }
 
+// The mechanism that actually resigned the keyboard, disclosed to the caller
+// (#1598) so a response never claims "dismissed" without saying how — a
+// safe-area tap has a very different reliability/side-effect profile than
+// tapping the keyboard's own Done key, and callers need to know which one
+// fired.
+enum RunnerKeyboardDismissMechanism: String {
+  case dismissKey
+}
+
 extension RunnerTests {
   func isKeyboardVisible(app: XCUIApplication) -> Bool {
     return visibleKeyboardFrame(app: app) != nil
   }
 
-  func dismissKeyboard(app: XCUIApplication) -> (wasVisible: Bool, dismissed: Bool, visible: Bool) {
+  func dismissKeyboard(
+    app: XCUIApplication
+  ) -> (wasVisible: Bool, dismissed: Bool, visible: Bool, mechanism: RunnerKeyboardDismissMechanism?) {
     let keyboard = app.keyboards.firstMatch
     let wasVisible = isKeyboardVisible(app: app)
     guard wasVisible else {
-      return (wasVisible: false, dismissed: false, visible: false)
+      return (wasVisible: false, dismissed: false, visible: false, mechanism: nil)
     }
 
 #if os(tvOS)
     _ = pressTvRemote(.menu)
     sleepFor(0.2)
     let visible = isKeyboardVisible(app: app)
-    return (wasVisible: true, dismissed: !visible, visible: visible)
+    return (wasVisible: true, dismissed: !visible, visible: visible, mechanism: visible ? nil : .dismissKey)
 #else
     if tapKeyboardDismissControl(app: app) {
       _ = keyboard.waitForNonExistence(timeout: KeyboardDismissObservationTiming.timeout)
@@ -47,12 +58,19 @@ extension RunnerTests {
         requiredConsecutiveMatches: KeyboardDismissObservationTiming.settleRequiredConsecutiveMatches
       )
       let visible = isKeyboardVisible(app: app)
-      return (wasVisible: true, dismissed: !visible, visible: visible)
+      return (wasVisible: true, dismissed: !visible, visible: visible, mechanism: visible ? nil : .dismissKey)
     }
 
-    return (wasVisible: true, dismissed: false, visible: isKeyboardVisible(app: app))
+    // #1606 review P1 (twice): generic background-tap dismissal is
+    // deliberately UNSUPPORTED. No geometry or role query can prove a
+    // coordinate is side-effect-free — a full-screen unlabeled Pressable is
+    // indistinguishable from an inert backdrop, so a "safe-area" tap can
+    // navigate or submit while reporting a successful dismiss. The dismiss
+    // key is the only mechanism the runner can vouch for.
+    return (wasVisible: true, dismissed: false, visible: isKeyboardVisible(app: app), mechanism: nil)
 #endif
   }
+
 
   // AX-free on purpose (screenshot bytes, not the accessibility tree) so it holds
   // under the same AX degradation the synthesized gesture lane is built to survive.
