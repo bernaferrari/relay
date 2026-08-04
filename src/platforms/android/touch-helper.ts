@@ -10,7 +10,7 @@ import {
   readInstrumentationResultNumber,
 } from './instrumentation-helper.ts';
 import { validateAndroidGestureViewport } from './gesture-viewport.ts';
-import type { AndroidTouchPlan } from './touch-plan.ts';
+import type { AndroidLoweredTouchPlan } from './touch-plan.ts';
 import { resolveAndroidHelperArtifact } from './helper-package-install.ts';
 import { parseAndroidSnapshotHelperManifest } from './snapshot-helper-artifact.ts';
 import { ensureAndroidSnapshotHelper } from './snapshot-helper-install.ts';
@@ -54,7 +54,7 @@ type PreparedAndroidTouchHelper = {
 
 export async function executeAndroidTouchHelperPlan(
   device: DeviceInfo,
-  plan: AndroidTouchPlan,
+  plan: AndroidLoweredTouchPlan,
 ): Promise<Record<string, unknown>> {
   const prepared = await prepareAndroidTouchHelper(device);
   const request = normalizeAndroidTouchHelperGestureRequest(plan);
@@ -209,7 +209,7 @@ async function resolveAndroidTouchHelperArtifact(): Promise<AndroidSnapshotHelpe
 }
 
 export function normalizeAndroidTouchHelperGestureRequest(
-  plan: AndroidTouchPlan,
+  plan: AndroidLoweredTouchPlan,
 ): AndroidTouchHelperGestureRequest {
   return {
     kind: plan.topology === 'single' ? 'swipe' : 'transform',
