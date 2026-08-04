@@ -686,8 +686,26 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       inputHelp: [
         { name: "serial", type: "string", description: "Device serial" },
         { name: "platform", type: "android | ios", description: "Device platform" },
+        {
+          name: "targetKind",
+          type: "device | browser",
+          description: "Execution target kind; defaults to device",
+        },
+        {
+          name: "browserTargetId",
+          type: "string",
+          description: "Managed browser target identifier when targetKind is browser",
+        },
+        {
+          name: "variables",
+          type: "object",
+          description: "Flow variables; values may be strings or arrays for case coverage",
+        },
       ],
-      examples: ['relay flow run checkout main --input \'{"serial":"emulator-5554"}\''],
+      examples: [
+        'relay flow run checkout main --input \'{"serial":"<phone-serial>","platform":"android"}\'',
+        'relay flow run checkout main --input \'{"serial":"<phone-serial>","variables":{"model":["low","medium","high"]}}\'',
+      ],
       behavior: "job-start-watch",
     }),
   ),

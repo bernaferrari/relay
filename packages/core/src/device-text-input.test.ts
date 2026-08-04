@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   androidKeyboardShifted,
   escapeAndroidShellText,
+  isAndroidClipboardTransportFailure,
   pasteAndroidText,
   replaceTextValue,
   type AndroidTextPasteAdapter,
@@ -33,6 +34,15 @@ test("Android shell text escapes punctuation without changing spaces or lines", 
     escapeAndroidShellText('hello, don\'t answer "hello"\nprice is $5 & safe!'),
     'hello, don\\\'t answer \\"hello\\"\nprice is \\$5 \\& safe\\!',
   );
+});
+
+test("Android clipboard transport failures use the input fallback", () => {
+  assert.equal(isAndroidClipboardTransportFailure("Failed to write Android clipboard text"), true);
+  assert.equal(
+    isAndroidClipboardTransportFailure("Android shell clipboard is not supported on this device"),
+    true,
+  );
+  assert.equal(isAndroidClipboardTransportFailure("device disconnected"), false);
 });
 
 function adapterThatRecords(

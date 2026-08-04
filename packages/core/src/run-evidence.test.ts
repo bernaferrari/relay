@@ -33,6 +33,12 @@ test("run evidence records video and performance without affecting the run", asy
   process.env.RELAY_RUNS_DIR = root;
   const calls: string[] = [];
   const device = {
+    capture: {
+      snapshot: async () => {
+        calls.push("prime");
+        return { nodes: [{ label: "screen" }] };
+      },
+    },
     observability: {
       perf: async () => {
         calls.push("perf");
@@ -56,6 +62,7 @@ test("run evidence records video and performance without affecting the run", asy
   const job = {
     id: "evidence-run",
     action: "chat-smoke",
+    serial: testTarget.serial,
     platform: "android",
     targetContext: testTarget,
     status: "running",
@@ -74,10 +81,12 @@ test("run evidence records video and performance without affecting the run", asy
   } as TestJob;
 
   try {
-    const handle = await startRunEvidence(job, device, () => undefined);
+    const handle = await startRunEvidence(job, device, () => undefined, undefined, {
+      foregroundAppResolver: async () => undefined,
+    });
     await stopRunEvidence(handle, job, device, () => undefined);
 
-    assert.deepEqual(calls, ["perf", "start", "perf", "stop"]);
+    assert.deepEqual(calls, ["prime", "perf", "start", "perf", "stop"]);
     assert.ok(job.artifacts.some((item) => item.kind === "performance-start"));
     const video = job.artifacts.find((item) => item.kind === "video");
     assert.ok(video);

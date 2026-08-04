@@ -680,6 +680,12 @@ export function escapeAndroidShellText(text: string): string {
   return text.replace(ANDROID_SHELL_META, "\\$&");
 }
 
+export function isAndroidClipboardTransportFailure(message: string): boolean {
+  return /(?:Android clipboard|clipboard).*(?:not supported|unsupported|failed|permission|security)|failed to .*Android clipboard/i.test(
+    message,
+  );
+}
+
 /**
  * Paste exact Android text without routing it through `adb shell input text`.
  *
@@ -797,7 +803,13 @@ export async function typeText(device: Device, text: string): Promise<void> {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!/clipboard .*not supported|unsupported.*clipboard/i.test(message)) throw error;
+      // Physical Android devices commonly expose the clipboard command but
+      // reject writes from an external uid (especially while a secure IME or
+      // work profile is active). That is a transport limitation, not a reason
+      // to make the whole interaction unusable. Fall back to the platform's
+      // input channel for clipboard command failures while still surfacing
+      // cancellation and unrelated session errors.
+      if (!isAndroidClipboardTransportFailure(message)) throw error;
       await controlled(() => typeAndroidShellTextExactly(device, serial, text));
     }
     return;

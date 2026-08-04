@@ -1114,7 +1114,10 @@ export function AppMapWorkspace(props: {
     }
     setSelectedGroupId(null);
     setSelectedConnectionId(null);
-    setScreenInspectorOpen(false);
+    // Selection is also the entry point to object properties. This mirrors a
+    // canvas editor: click a screen, see its details; Esc or the close button
+    // dismisses them without clearing the selection.
+    setScreenInspectorOpen(!event?.shiftKey);
     setRenamingNodeId(null);
     if (node.representativeStepIndex >= 0) selectStep(node.representativeStepIndex);
   };

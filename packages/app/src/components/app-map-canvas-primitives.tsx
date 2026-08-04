@@ -183,17 +183,17 @@ export function ScreenCard(props: {
           </button>
         </div>
       </Show>
-      <header class="flex min-w-0 items-center gap-1.5 px-0.5">
+      <header class="relative flex min-w-0 items-center justify-center gap-1.5 px-0.5">
         <Show
           when={props.editing}
           fallback={
-            <strong class="min-w-0 flex-1 truncate text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]">
+            <strong class="min-w-0 max-w-[72%] truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]">
               {props.title}
             </strong>
           }
         >
           <input
-            class="min-w-0 flex-1 rounded-[6px] bg-[var(--map-control-surface)] px-1.5 py-1 text-[13px] font-medium text-[var(--text-strong)] outline-none ring-2 ring-[var(--text-interactive-base)]"
+            class="min-w-0 w-full rounded-[6px] bg-[var(--map-control-surface)] px-1.5 py-1 text-center text-[13px] font-medium text-[var(--text-strong)] outline-none ring-2 ring-[var(--text-interactive-base)]"
             aria-label="Screen name"
             value={props.title}
             autofocus
@@ -211,14 +211,14 @@ export function ScreenCard(props: {
           />
         </Show>
         <Show when={!props.editing && props.isFlowStart}>
-          <span class="shrink-0 rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
+          <span class="absolute left-0 shrink-0 rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
             Start
           </span>
         </Show>
         <Show when={!props.editing && props.runState && props.runState !== "idle"}>
           <span
             class={cn(
-              "inline-flex shrink-0 items-center gap-1 text-[9px] font-medium capitalize",
+              "absolute right-0 inline-flex shrink-0 items-center gap-1 text-[9px] font-medium capitalize",
               props.runState === "failed"
                 ? "text-[var(--icon-critical-base)]"
                 : props.runState === "running"

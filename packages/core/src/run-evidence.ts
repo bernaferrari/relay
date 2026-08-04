@@ -7,6 +7,7 @@ import { redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
+import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
 
 const CHANNELS: EvidenceChannel[] = [
   "input",
@@ -179,7 +180,100 @@ export type RunEvidenceOptions = {
    * control. Starting simulator-style collectors would block that process and
    * can destroy the app state that the flow is about to verify. */
   physicalIos?: boolean;
+  /** Override foreground-app discovery in tests or embedded hosts. */
+  foregroundAppResolver?: (serial: string) => Promise<string | undefined>;
 };
+
+/**
+ * Android observability is session-scoped in agent-device. A screenshot can
+ * still work through the raw/device path when no SDK session exists, which
+ * made an otherwise healthy run look complete while logs, network, and
+ * performance quietly failed with "no active session". Prime the same SDK
+ * client before starting those collectors so all evidence shares one runtime
+ * binding. The snapshot is deliberately not added to the run: it is a
+ * transport warm-up, not user-visible evidence.
+ */
+async function primeAndroidEvidenceSession(
+  job: TestJob,
+  device: Device,
+  handle: RunEvidenceHandle,
+  log: (line: string) => void,
+  foregroundAppResolver: (
+    serial: string,
+  ) => Promise<string | undefined> = captureAndroidForegroundApp,
+): Promise<void> {
+  if (job.targetKind === "browser" || job.platform !== "android" || !job.serial) return;
+
+  try {
+    let appPackage: string | undefined;
+    if (device.command?.appState) {
+      try {
+        const state = await withTimeout(
+          device.command.appState({ ...base() }),
+          3_000,
+          "Android foreground app",
+        );
+        if ("package" in state && typeof state.package === "string") {
+          const candidate = state.package.trim();
+          // Do not accidentally bind evidence to the launcher or system UI
+          // when a person starts a run from the home screen.
+          if (candidate && !/(?:launcher|systemui)$/i.test(candidate)) appPackage = candidate;
+        }
+      } catch {
+        // Snapshot remains a useful session warm-up even when foreground-app
+        // inspection is unavailable on a particular Android build.
+      }
+    }
+    // `command.appState` is session-scoped. A freshly created client can
+    // legitimately return no app even while a physical phone is showing one.
+    // Ask Android which package owns the pixels before starting collectors so
+    // logs/perf/network attach to the same app as the run.
+    if (!appPackage) {
+      const foreground = await withTimeout(
+        foregroundAppResolver(job.serial),
+        2_500,
+        "Android foreground app discovery",
+      ).catch(() => undefined);
+      if (foreground && !/(?:launcher|systemui|inputmethod|keyboard)$/i.test(foreground)) {
+        appPackage = foreground;
+      }
+    }
+    if (appPackage && device.apps?.open) {
+      await withTimeout(
+        device.apps.open({
+          ...base(),
+          app: appPackage,
+          relaunch: false,
+          noRecord: true,
+        }),
+        5_000,
+        "Android app session",
+      );
+      event(handle, "input", "app.session.bound", { platform: "android", app: appPackage });
+      log(`evidence: Android app session bound to ${appPackage}`);
+    }
+    const result = await withTimeout(
+      device.capture.snapshot({ ...base(), interactiveOnly: false }),
+      5_000,
+      "Android evidence session",
+    );
+    const nodes = Array.isArray(result?.nodes) ? result.nodes.length : 0;
+    event(handle, "input", "session.primed", { platform: "android", nodes });
+    log(
+      nodes > 0
+        ? `evidence: Android session ready (${nodes} UI nodes observed)`
+        : "evidence: Android session ready (UI tree unavailable)",
+    );
+  } catch (error) {
+    // Evidence is additive. Keep the run usable and make the limitation
+    // explicit instead of turning a collector problem into a test failure.
+    log(
+      `warn: Android evidence session could not be primed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
 
 /** Start bounded automatic collectors. Their failures are recorded, not promoted to test failures. */
 export async function startRunEvidence(
@@ -191,6 +285,8 @@ export async function startRunEvidence(
 ): Promise<RunEvidenceHandle> {
   const handle = existing ?? initializeRunEvidence(job);
   const startedAt = handle.startedAt;
+
+  await primeAndroidEvidenceSession(job, device, handle, log, options.foregroundAppResolver);
 
   if (options.physicalIos) {
     unsupported(handle, "performance", "not available from the physical iOS runner", log);
