@@ -1,8 +1,8 @@
 import type { RawSnapshotNode, Rect } from '@agent-device/kernel/snapshot';
 import { centerOfRect } from '@agent-device/kernel/snapshot';
 import { areRectsApproximatelyEqual, normalizeRect } from '../utils/rect-center.ts';
-import { containsPoint } from '../utils/rect-visibility.ts';
-import { normalizeType } from '../utils/text-surface.ts';
+import { containsPoint } from '@agent-device/kernel/rect';
+import { normalizeType } from '@agent-device/contracts/snapshot';
 
 const COVERED_PRESENTATION_HINT = 'covered';
 const OVERLAY_KIND_FRAGMENTS = [
