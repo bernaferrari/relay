@@ -73,7 +73,7 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return `Check ${targetPhrase(step.target)} ${verb}${to}`;
     }
     case "expect-set":
-      return `Check options are exactly ${step.labels.map((label) => `“${label}”`).join(", ")}`;
+      return `Check options${step.scope ? ` within ${targetPhrase(step.scope)}` : ""} are exactly ${step.labels.map((label) => `“${label}”`).join(", ")}`;
     case "expect-screen":
       return `Reach ${step.screenTitle}`;
     case "extract":
@@ -156,7 +156,14 @@ export function stepValid(step: RecipeStep): boolean {
     case "expect":
       return targetValid(step.target);
     case "expect-set":
-      return step.identifierPrefix.trim().length > 0 && step.labels.some((label) => label.trim());
+      return (
+        (Boolean(step.identifierPrefix?.trim()) ||
+          Boolean(
+            step.scope &&
+            (step.scope.identifier || step.scope.ref || step.scope.label || step.scope.text),
+          )) &&
+        step.labels.some((label) => label.trim())
+      );
     case "expect-screen":
       return Boolean(step.screenId.trim() && step.screenTitle.trim() && step.fingerprint.trim());
     case "extract":
@@ -222,7 +229,7 @@ export function stepIssue(step: RecipeStep): string | null {
     case "expect":
       return "Needs a target — a label, ref, text, or point.";
     case "expect-set":
-      return "Needs an element group and at least one expected option.";
+      return "Needs an identifier prefix or container scope and at least one expected option.";
     case "expect-screen":
       return "Needs an expected screen identity.";
     case "extract":

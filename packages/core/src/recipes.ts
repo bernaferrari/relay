@@ -827,8 +827,28 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "expect-set": {
-        if (!isString(raw.identifierPrefix) || !raw.identifierPrefix.trim()) {
-          throw stepErr(index, "expect-set.identifierPrefix is required");
+        let identifierPrefix: string | undefined;
+        if (raw.identifierPrefix !== undefined) {
+          if (!isString(raw.identifierPrefix)) {
+            throw stepErr(index, "expect-set.identifierPrefix must be a string");
+          }
+          identifierPrefix = raw.identifierPrefix.trim() || undefined;
+        }
+        let scope: StepTarget | undefined;
+        if (raw.scope !== undefined) {
+          const parsedScope = parseTarget(raw.scope, index, "expect-set.scope");
+          if (
+            !parsedScope.identifier &&
+            !parsedScope.ref &&
+            !parsedScope.label &&
+            !parsedScope.text
+          ) {
+            throw stepErr(index, "expect-set.scope must have identifier, ref, label, or text");
+          }
+          scope = parsedScope;
+        }
+        if (!identifierPrefix && !scope) {
+          throw stepErr(index, "expect-set requires identifierPrefix or scope");
         }
         if (
           !Array.isArray(raw.labels) ||
@@ -853,7 +873,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         }
         out.push({
           kind: "expect-set",
-          identifierPrefix: raw.identifierPrefix.trim(),
+          ...(identifierPrefix ? { identifierPrefix } : {}),
+          ...(scope ? { scope } : {}),
           labels,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           ...(note ? { note } : {}),

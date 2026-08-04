@@ -192,10 +192,12 @@ export type RecipeStep = RecipeStepMetadata &
       }
     | {
         /** Assert the complete visible option set exposed under a stable
-         * accessibility identifier namespace. Order does not matter; missing
-         * and unexpected options both fail with an explicit diff. */
+         * accessibility identifier namespace or semantic container. Order does
+         * not matter; missing and unexpected options both fail with an explicit
+         * diff. */
         kind: "expect-set";
-        identifierPrefix: string;
+        identifierPrefix?: string;
+        scope?: StepTarget;
         labels: string[];
         timeoutMs?: number;
       }

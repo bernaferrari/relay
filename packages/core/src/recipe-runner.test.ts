@@ -693,6 +693,30 @@ describe("runRecipeStep expect-set", () => {
       /missing: Gallery; unexpected: Files, Photo or Video/,
     );
   });
+
+  it("matches options inside a semantic container when child ids are unavailable", async () => {
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: [
+              { index: 0, identifier: "attachments-menu", role: "menu", label: "Attachments" },
+              { index: 1, parentIndex: 0, role: "button", label: "Camera" },
+              { index: 2, parentIndex: 0, role: "button", label: "Gallery" },
+              { index: 3, parentIndex: 0, role: "button", label: "Files" },
+              { index: 4, label: "outside" },
+            ],
+          }),
+      }),
+      {
+        kind: "expect-set",
+        scope: { identifier: "attachments-menu" },
+        labels: ["Files", "Camera", "Gallery"],
+        timeoutMs: 0,
+      },
+      noLog,
+    );
+  });
 });
 
 describe("runRecipeStep expect-screen", () => {

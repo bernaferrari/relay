@@ -29,8 +29,8 @@ import {
   shellMain,
   shellTopbar,
   shellTopbarContext,
+  shellTopbarTitle,
   shellTopbarActions,
-  shellBreadcrumb,
   shellStudio,
   shellSaveState,
   shellStudioBodyWorkbench,
@@ -662,40 +662,44 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             >
               <Icon name="panel-left" size={17} />
             </button>
-            <div class={shellBreadcrumb}>
-              <Show
-                when={area() === "tests" && selectedMap()}
-                fallback={<strong>{area() === "runs" ? "Run history" : "Untitled"}</strong>}
-              >
-                <input
-                  type="text"
-                  size={Math.max(12, Math.min(34, displayTitle(mapNameDraft()).length + 1))}
-                  class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:max-w-[26vw] max-[520px]:min-w-0"
-                  aria-label="Map name"
-                  data-tip="Rename map"
-                  value={displayTitle(mapNameDraft())}
-                  placeholder="Untitled"
-                  spellcheck={false}
-                  onFocus={() => {
-                    titleBeforeEdit = mapNameDraft();
-                  }}
-                  onInput={(event) => setMapNameDraft(event.currentTarget.value)}
-                  onBlur={() => {
-                    const name = mapNameDraft().trim() || "Untitled";
-                    setMapNameDraft(name);
-                    draft.setTitle(name);
-                    void renameCanonicalMap(name);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                    if (event.key === "Escape") {
-                      setMapNameDraft(titleBeforeEdit);
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-              </Show>
-            </div>
+          </div>
+          <div class={shellTopbarTitle}>
+            <Show
+              when={area() === "tests" && selectedMap()}
+              fallback={
+                <strong class="max-w-full truncate text-center text-[13px] font-medium text-[var(--text-base)]">
+                  {area() === "runs" ? "Run history" : "Untitled"}
+                </strong>
+              }
+            >
+              <input
+                type="text"
+                size={Math.max(12, Math.min(34, displayTitle(mapNameDraft()).length + 1))}
+                class="h-8 max-w-full min-w-[120px] rounded-md bg-transparent px-2 text-center font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:min-w-0"
+                aria-label="Map name"
+                data-tip="Rename map"
+                value={displayTitle(mapNameDraft())}
+                placeholder="Untitled"
+                spellcheck={false}
+                onFocus={() => {
+                  titleBeforeEdit = mapNameDraft();
+                }}
+                onInput={(event) => setMapNameDraft(event.currentTarget.value)}
+                onBlur={() => {
+                  const name = mapNameDraft().trim() || "Untitled";
+                  setMapNameDraft(name);
+                  draft.setTitle(name);
+                  void renameCanonicalMap(name);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    setMapNameDraft(titleBeforeEdit);
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+            </Show>
           </div>
           <div class={shellTopbarActions}>
             <Show when={area() === "tests" && studioView() === "map"}>

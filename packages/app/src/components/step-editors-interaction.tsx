@@ -267,17 +267,45 @@ export function InteractionStepEditors(props: StepEditorFamilyProps): JSX.Elemen
           return (
             <div class="flex min-w-0 flex-col gap-2">
               <div class={propRow}>
-                <span class={fieldLabel}>Element group</span>
+                <span class={fieldLabel}>Identifier prefix</span>
                 <input
                   ref={(el) => {
                     inputEl = el;
                   }}
                   class={cn(valueCls, mono)}
                   type="text"
-                  placeholder="menu.option."
-                  value={s.identifierPrefix}
-                  onInput={(event) => onEdit({ ...s, identifierPrefix: event.currentTarget.value })}
+                  placeholder="menu.option. (optional)"
+                  value={s.identifierPrefix ?? ""}
+                  onInput={(event) =>
+                    onEdit({
+                      ...s,
+                      identifierPrefix: event.currentTarget.value || undefined,
+                    })
+                  }
                   spellcheck={false}
+                />
+              </div>
+              <div class={propRow}>
+                <span class={fieldLabel}>Within container</span>
+                <input
+                  class={valueCls}
+                  type="text"
+                  placeholder="e.g. Attachments (optional)"
+                  value={s.scope?.label ?? ""}
+                  onInput={(event) => {
+                    const label = event.currentTarget.value.trim();
+                    const scope = {
+                      ...s.scope,
+                      label: label || undefined,
+                    };
+                    onEdit({
+                      ...s,
+                      scope:
+                        scope.identifier || scope.ref || scope.label || scope.text
+                          ? scope
+                          : undefined,
+                    });
+                  }}
                 />
               </div>
               <div class="grid grid-cols-[132px_minmax(0,1fr)] items-start gap-2.5">

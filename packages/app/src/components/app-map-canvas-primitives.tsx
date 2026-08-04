@@ -150,6 +150,7 @@ export function ScreenCard(props: {
             type="button"
             class="app-map-icon-button"
             aria-label={`Open details for ${props.title}`}
+            title="Open details"
             data-tip="Details · Enter"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {

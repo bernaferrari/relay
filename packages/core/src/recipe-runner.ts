@@ -183,6 +183,72 @@ function labelsForIdentifierPrefix(nodes: SnapshotNode[], prefix: string): strin
   ].sort((a, b) => a.localeCompare(b));
 }
 
+/** Collect the immediate options inside a semantic container. Structural
+ * parent links are preferred; rectangle containment keeps older snapshots
+ * useful when a provider does not expose parentIndex. */
+function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string[] {
+  const byParent = new Map<number, SnapshotNode[]>();
+  for (const node of nodes) {
+    if (node.parentIndex === undefined) continue;
+    const children = byParent.get(node.parentIndex) ?? [];
+    children.push(node);
+    byParent.set(node.parentIndex, children);
+  }
+
+  const readableDescendant = (root: SnapshotNode): string | undefined => {
+    if (root.index === undefined) return undefined;
+    const queue = [...(byParent.get(root.index) ?? [])];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
+      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+      if (label && (type === "statictext" || type === "text" || type === "textview")) {
+        return label;
+      }
+      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
+    }
+    return undefined;
+  };
+
+  const roots = nodes.filter((node) => nodeMatchesTarget(node, scope));
+  const options: SnapshotNode[] = [];
+  const seen = new Set<SnapshotNode>();
+  for (const root of roots) {
+    const directChildren =
+      root.index !== undefined
+        ? (byParent.get(root.index) ?? [])
+        : root.rect
+          ? nodes.filter((node) => {
+              const rect = node.rect;
+              return (
+                node !== root &&
+                rect !== undefined &&
+                rect.x >= root.rect!.x &&
+                rect.y >= root.rect!.y &&
+                rect.x + rect.width <= root.rect!.x + root.rect!.width &&
+                rect.y + rect.height <= root.rect!.y + root.rect!.height
+              );
+            })
+          : [];
+    for (const child of directChildren) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      options.push(child);
+    }
+  }
+
+  return [
+    ...new Set(
+      options
+        .map(
+          (node) =>
+            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
+        )
+        .filter((label): label is string => Boolean(label)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
   let width = 0;
   let height = 0;
@@ -957,7 +1023,10 @@ async function runRequiredRecipeStep(
       while (attempt === 0 || Date.now() <= deadline) {
         attempt += 1;
         await cooperativeCheckpoint();
-        observed = labelsForIdentifierPrefix(await snapshot(device), step.identifierPrefix);
+        const nodes = await snapshot(device);
+        observed = step.scope
+          ? labelsForScope(nodes, step.scope)
+          : labelsForIdentifierPrefix(nodes, step.identifierPrefix ?? "");
         if (JSON.stringify(observed) === JSON.stringify(expected)) break;
         if (Date.now() >= deadline) break;
         await sleep(Math.max(0, Math.min(400, deadline - Date.now())), device);
@@ -965,10 +1034,17 @@ async function runRequiredRecipeStep(
       if (JSON.stringify(observed) !== JSON.stringify(expected)) {
         const missing = expected.filter((label) => !observed.includes(label));
         const unexpected = observed.filter((label) => !expected.includes(label));
+        const scopeDescription = step.scope
+          ? "within " + describeTarget(step.scope)
+          : "under " + (step.identifierPrefix ?? "");
         throw new Error(
-          `expect-set: options did not match ${step.identifierPrefix} ` +
-            `(missing: ${missing.length ? missing.join(", ") : "none"}; ` +
-            `unexpected: ${unexpected.length ? unexpected.join(", ") : "none"})`,
+          "expect-set: options did not match " +
+            scopeDescription +
+            " (missing: " +
+            (missing.length ? missing.join(", ") : "none") +
+            "; unexpected: " +
+            (unexpected.length ? unexpected.join(", ") : "none") +
+            ")",
         );
       }
       break;

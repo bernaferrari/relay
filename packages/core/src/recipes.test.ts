@@ -642,6 +642,26 @@ describe("validateRecipeSteps", () => {
         },
       ],
     );
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "expect-set",
+          scope: { label: "Attachments" },
+          labels: ["Camera", "Gallery", "Files"],
+        },
+      ]),
+      [
+        {
+          kind: "expect-set",
+          scope: { label: "Attachments" },
+          labels: ["Camera", "Gallery", "Files"],
+        },
+      ],
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "expect-set", labels: ["Files"] }]),
+      /requires identifierPrefix or scope/,
+    );
     assert.throws(
       () =>
         validateRecipeSteps([
