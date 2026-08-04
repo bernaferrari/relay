@@ -41,6 +41,7 @@ export * from "./workspace-root.js";
 export * from "./workspace-settings.js";
 export * from "./device-setup.js";
 export * from "./ios-device-adapter.js";
+export * from "./ios-runtime-recovery.js";
 export * from "./matrix.js";
 export * from "./matrix-yaml.js";
 export * from "./app-map-yaml.js";

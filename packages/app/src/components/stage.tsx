@@ -1386,10 +1386,16 @@ export function DeviceStage(_props: {
     if (recordingIssue || issue) {
       return {
         kind: "error",
-        title: "Can’t read this screen",
-        detail: presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
+        title:
+          currentDevice()?.platform === "ios"
+            ? `${currentDevice()?.name ?? "iPad"} isn’t ready`
+            : "Device isn’t ready",
+        detail:
+          currentDevice()?.platform === "ios"
+            ? `Keep ${currentDevice()?.name ?? "the iPad"} unlocked and connected, then reconnect.`
+            : presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
         primaryAction: "retry",
-        primaryLabel: "Try again",
+        primaryLabel: "Reconnect",
       };
     }
 
@@ -1439,6 +1445,10 @@ export function DeviceStage(_props: {
     // polling alone. Re-selecting the same target reacquires control without
     // making the person choose the device a second time.
     if (serial) await server.setSelectedDevice(serial);
+    if (serial && currentDevice()?.platform === "ios") {
+      const recovered = await server.recoverSelectedTarget("observe");
+      if (!recovered) return;
+    }
     if (rec.recordingIssue()) {
       void rec.enterRecordMode();
       return;
@@ -1901,7 +1911,6 @@ export function DeviceStage(_props: {
                       if (stageView() !== "live") return;
                       if (!liveInteractionSurfaceAvailable()) return;
                       if (!liveControlActive()) return;
-                      if (e.detail === 0) return;
                       if (performance.now() - lastLivePointerActionAt < 250) return;
                       const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
                       down = null;
@@ -2438,8 +2447,15 @@ export function DeviceStage(_props: {
                 size="md"
                 class="min-w-[104px] gap-2 rounded-lg"
                 aria-label={rec.recording() ? "Stop recording interactions" : "Record interactions"}
+                disabled={!rec.recording() && !server.selectedLeaseId()}
                 onClick={toggleRecording}
-                data-tip={rec.recording() ? "Stop recording steps" : "Record interactions as steps"}
+                data-tip={
+                  rec.recording()
+                    ? "Stop recording steps"
+                    : server.selectedLeaseId()
+                      ? "Record interactions as steps"
+                      : "Restoring device control…"
+                }
               >
                 <Icon name={rec.recording() ? "square" : "circle"} size={10} />
                 {rec.recording() ? "Stop" : "Record"}

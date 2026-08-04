@@ -83,9 +83,17 @@ export function appMapPrimaryAction(input: {
   if (input.device.kind !== "ready") {
     return {
       kind: "open-device",
-      label: "Open device",
+      label:
+        input.device.kind === "setup-ios"
+          ? "Set up device"
+          : input.device.kind === "capture-error" || input.device.kind === "device-unavailable"
+            ? "Reconnect device"
+            : input.device.title,
       reason: input.device.detail,
-      icon: "smartphone",
+      icon:
+        input.device.kind === "capture-error" || input.device.kind === "device-unavailable"
+          ? "refresh"
+          : "smartphone",
     };
   }
   return {

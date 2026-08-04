@@ -18,6 +18,7 @@ import {
   pressMatchingText,
   pressPoint,
   pressRef,
+  rememberedTargetApplication,
   snapshot,
   swipeGesture,
   typeText,
@@ -52,6 +53,12 @@ import {
   prepareIosRunner,
   recordIosVideo,
 } from "./ios-device-adapter.js";
+import {
+  isIosSessionBindingError,
+  isRecoverableIosRuntimeError,
+  recoverIosRuntime,
+  type IosRuntimeRecoveryResult,
+} from "./ios-runtime-recovery.js";
 
 /**
  * XCTest runner setup is a device concern, not a recording concern. A stage
@@ -62,22 +69,107 @@ import {
  */
 const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
+const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
 
-async function openIosControlSurface(device: Device, serial: string): Promise<void> {
+async function restoreIosAppSession(
+  device: Device,
+  serial: string,
+): Promise<{ app: string; fallback: boolean }> {
+  const remembered = await rememberedTargetApplication({
+    kind: "device",
+    platform: "ios",
+    serial,
+  });
+  const app = remembered ?? "com.apple.springboard";
   await device.apps.open({
     platform: "ios",
     udid: serial,
-    app: "com.apple.springboard",
+    app,
     relaunch: false,
     noRecord: true,
   });
+  return { app, fallback: !remembered };
+}
+
+async function recoverIosHostRuntime(
+  serial: string,
+  cause: unknown,
+  force = false,
+): Promise<IosRuntimeRecoveryResult> {
+  const existing = iosRuntimeRecoveries.get(serial);
+  if (existing) return existing;
+  const recovery = recoverIosRuntime({ serial, cause, force }).finally(() => {
+    iosRuntimeRecoveries.delete(serial);
+  });
+  iosRuntimeRecoveries.set(serial, recovery);
+  return recovery;
 }
 
 /** Forget runner preparation state after the Apple account or team changes. */
 export function resetIosRunnerState(): void {
   iosRunnerPreparations.clear();
   iosRunnerFailures.clear();
+  iosRuntimeRecoveries.clear();
+}
+
+export type TargetRuntimeRecovery = IosRuntimeRecoveryResult & {
+  session: {
+    status: "restored" | "unavailable";
+    app?: string;
+    fallback?: boolean;
+    detail: string;
+  };
+};
+
+/** Shared UI/CLI/MCP recovery operation for attached Apple hardware. */
+export async function recoverTargetRuntime(
+  serial: string,
+  cause?: unknown,
+): Promise<TargetRuntimeRecovery> {
+  const target = await resolveRuntimeTarget(serial);
+  if (target.context.kind !== "device" || target.context.platform !== "ios") {
+    throw new Error("Automatic runtime recovery is currently available for Apple devices only");
+  }
+  return runWithTargetContext(target.context, async () => {
+    const host = await recoverIosHostRuntime(serial, cause, true);
+    iosRunnerPreparations.delete(serial);
+    iosRunnerFailures.delete(serial);
+    if (!host.ready) {
+      return {
+        ...host,
+        session: {
+          status: "unavailable",
+          detail: "Apple device services still cannot reach this iPad.",
+        },
+      };
+    }
+    try {
+      await ensureIosRunnerPrepared(target.device, serial);
+      const restored = await restoreIosAppSession(target.device, serial);
+      return {
+        ...host,
+        ready: true,
+        session: {
+          status: "restored",
+          ...restored,
+          detail: restored.fallback
+            ? "Relay restored device control at the Home Screen."
+            : "Relay restored the app that was active in this workspace.",
+        },
+      };
+    } catch (error) {
+      const normalized = await diagnoseIosRunnerError(error, serial);
+      return {
+        ...host,
+        ready: false,
+        session: {
+          status: "unavailable",
+          detail: normalized.message,
+        },
+      };
+    }
+  });
 }
 
 function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
@@ -91,6 +183,11 @@ function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> 
   if (existing) return existing;
 
   const preparation = prepareIosRunner(device, { udid: serial })
+    .catch(async (error) => {
+      if (!isRecoverableIosRuntimeError(error)) throw error;
+      await recoverIosHostRuntime(serial, error);
+      return prepareIosRunner(device, { udid: serial });
+    })
     .then(() => {
       iosRunnerFailures.delete(serial);
     })
@@ -120,21 +217,34 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
   try {
     return await op();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
     const context = currentTargetContext();
     if (
-      /no active session|active app session|session[_ ]not[_ ]found/i.test(msg) &&
+      isIosSessionBindingError(err) &&
       context.kind === "device" &&
       context.platform === "ios" &&
       context.serial
     ) {
-      // Preparing a runner must never background the app a person is testing.
-      // Only open SpringBoard after the command channel explicitly reports
-      // that no app session exists, then retry the original operation once.
+      // Restore the application Relay intentionally opened. SpringBoard is a
+      // truthful first-use fallback only when no application is known; it must
+      // never replace Settings (or the app under test) after a daemon restart.
       await ensureIosRunnerPrepared(device, context.serial);
-      await openIosControlSurface(device, context.serial);
+      await restoreIosAppSession(device, context.serial);
       return await op();
     }
+    if (
+      isRecoverableIosRuntimeError(err) &&
+      context.kind === "device" &&
+      context.platform === "ios" &&
+      context.serial
+    ) {
+      await recoverIosHostRuntime(context.serial, err);
+      iosRunnerPreparations.delete(context.serial);
+      iosRunnerFailures.delete(context.serial);
+      await ensureIosRunnerPrepared(device, context.serial);
+      await restoreIosAppSession(device, context.serial);
+      return await op();
+    }
+    const msg = err instanceof Error ? err.message : String(err);
     if (/already bound/i.test(msg) && !getExecutingJobId()) {
       if (context.kind === "device" && context.platform === "ios") {
         // A physical Apple target has one long-lived XCTest process. Releasing

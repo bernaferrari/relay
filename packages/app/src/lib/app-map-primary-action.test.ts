@@ -36,7 +36,7 @@ test("the primary action names the next real device action", () => {
       serverOnline: true,
       device: { kind: "capture-error", title: "Unavailable", detail: "Open elsewhere" },
     }).label,
-    "Open device",
+    "Reconnect device",
   );
 });
 

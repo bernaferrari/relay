@@ -156,6 +156,35 @@ function createScreen(map: AppMap, id: string, title: string, at: number): Scree
   return screen;
 }
 
+function observedDestinationTitle(input: AppMapRecordingInput): string | undefined {
+  const navigationTitles = (input.after?.nodes ?? [])
+    .flatMap((node, index) => {
+      const role =
+        typeof node.role === "string" ? node.role : typeof node.type === "string" ? node.type : "";
+      if (!/navigation\s*bar|header/i.test(role)) return [];
+      const depth = typeof node.depth === "number" && Number.isFinite(node.depth) ? node.depth : 0;
+      const title =
+        typeof node.identifier === "string" && node.identifier.trim()
+          ? node.identifier.trim()
+          : typeof node.label === "string" && node.label.trim()
+            ? node.label.trim()
+            : undefined;
+      return title ? [{ title, depth, index }] : [];
+    })
+    .sort((left, right) => right.depth - left.depth || right.index - left.index);
+  const observed = navigationTitles[0]?.title;
+  if (observed) return observed;
+
+  for (const action of [...input.actions].reverse()) {
+    for (const step of [...action.steps].reverse()) {
+      if (step.kind !== "tap") continue;
+      const title = step.target.label?.trim() || step.target.text?.trim();
+      if (title) return title;
+    }
+  }
+  return undefined;
+}
+
 function flowTerminal(map: AppMap, flow: Flow): string | "end" {
   let terminal: string | "end" = flow.startScreenId;
   for (const connectionId of flow.connectionIds) {
@@ -295,14 +324,23 @@ export function commitAppMapRecording(
         if (requestedDestinationId && !screen) {
           appMapFail("missing-reference", "Destination screen no longer exists");
         }
-        screen ??= createScreen(
-          map,
-          stableId("screen", `${input.sessionId}:destination`),
-          requestedDestination?.kind === "new-screen" && requestedDestination.title?.trim()
-            ? requestedDestination.title.trim()
-            : "Next screen",
-          context.at,
-        );
+        if (!screen) {
+          screen = createScreen(
+            map,
+            stableId("screen", `${input.sessionId}:destination`),
+            requestedDestination?.kind === "new-screen" && requestedDestination.title?.trim()
+              ? requestedDestination.title.trim()
+              : (observedDestinationTitle(input) ?? "Next screen"),
+            context.at,
+          );
+          const sourceGroup = Object.values(map.groups).find((group) =>
+            group.screenIds.includes(source.id),
+          );
+          if (sourceGroup) {
+            sourceGroup.screenIds = [...new Set([...sourceGroup.screenIds, screen.id])];
+            sourceGroup.updatedAt = context.at;
+          }
+        }
         observeScreen({ map, screen, observation: input.after, recording: input, at: context.at });
         destination = { kind: "screen", screenId: screen.id };
       }

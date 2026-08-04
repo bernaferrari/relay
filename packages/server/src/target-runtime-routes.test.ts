@@ -209,3 +209,71 @@ test("launches an arbitrary app through the leased target session", async () => 
     await server.close();
   }
 });
+
+test("repairs an Apple target through the same actor-aware operation used by agents", async () => {
+  const calls: Array<{ serial: string; reason?: string }> = [];
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial: "ipad-1",
+          name: "iPad",
+          platform: "ios",
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: "ipad-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      recoverTarget: async (serial, reason) => {
+        calls.push({ serial, ...(reason ? { reason } : {}) });
+        return {
+          serial,
+          recovered: true,
+          ready: true,
+          summary: "Relay repaired the Apple device connection.",
+          actions: [
+            {
+              kind: "stale-lock",
+              status: "completed",
+              detail: "Removed a lock left by a process that is no longer running.",
+            },
+          ],
+          session: {
+            status: "restored",
+            app: "com.apple.Preferences",
+            fallback: false,
+            detail: "Relay restored the app that was active in this workspace.",
+          },
+        };
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: headers("target.recover"),
+      body: JSON.stringify({ serial: "ipad-1", reason: "observe" }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [{ serial: "ipad-1", reason: "observe" }]);
+    const body = (await response.json()) as {
+      recovery: { ready: boolean; session: { app?: string } };
+    };
+    assert.equal(body.recovery.ready, true);
+    assert.equal(body.recovery.session.app, "com.apple.Preferences");
+  } finally {
+    await server.close();
+  }
+});

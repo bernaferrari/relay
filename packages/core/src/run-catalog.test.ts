@@ -46,3 +46,38 @@ test("run catalog rebuilds from committed manifests and retention is dry-run saf
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("run catalog filters an App Map before applying its history limit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-catalog-map-"));
+  try {
+    for (let index = 0; index < 5; index += 1) {
+      const id = `run-${index}`;
+      const dir = join(root, id);
+      await mkdir(dir);
+      const run = {
+        schemaVersion: 5,
+        id,
+        dir,
+        action: index === 0 ? "app-map:settings:main" : `recipe:${index}`,
+        status: "ok",
+        queuedAt: index,
+        writtenAt: index,
+        frames: [],
+        artifacts: [],
+      };
+      const raw = JSON.stringify(run);
+      await writeFile(join(dir, "run.json"), raw);
+      await writeFile(
+        join(dir, ".complete"),
+        JSON.stringify({ digest: createHash("sha256").update(raw).digest("hex") }),
+      );
+    }
+    await rebuildRunCatalog(root);
+    assert.deepEqual(
+      (await catalogSummaries(root, 1, "app-map:settings:")).map((run) => run.id),
+      ["run-0"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

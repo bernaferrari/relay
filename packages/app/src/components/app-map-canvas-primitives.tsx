@@ -559,7 +559,10 @@ export function ConnectionInspector(props: {
                 Reach {props.targetTitle}
               </strong>
               <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
-                {checkedTargetsLabel(props.connection.review?.targets)}
+                {checkedTargetsLabel(
+                  props.connection.review?.targets,
+                  props.connection.review?.status,
+                )}
               </span>
             </span>
             <span class="text-[9.5px] font-medium text-[var(--text-weak)]">

@@ -20,7 +20,7 @@ import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
 import { nextRovingIndex } from "../lib/roving-focus";
-import { eyebrow, mono, productPage, tabUnderline, tabUnderlineActive } from "../lib/ui";
+import { eyebrow, mono, productPage } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon } from "./step-list-metadata";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
@@ -48,7 +48,7 @@ import type {
   VisualReviewAction,
   VisualReviewDecision,
 } from "@relay/protocol";
-import { appMapIdForJob, runStopHeadline } from "../lib/run-presentation";
+import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
 import {
   EvidenceList,
@@ -308,6 +308,10 @@ export function RunsWorkspace(props: {
   createEffect(() => {
     const requested = server.selectedJobId();
     if (!requested || !rows().some((row) => row.id === requested)) return;
+    // Background polling replaces row objects even when the selected run did
+    // not change. Reapplying the external selection here reset the person's
+    // evidence tab and step on every poll tick.
+    if (selectedId() === requested) return;
     const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
     selectRunStep(initialRunReviewStep(requestedRun));
@@ -378,7 +382,7 @@ export function RunsWorkspace(props: {
       <div
         class={cn(
           selected()
-            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[238px_minmax(300px,1.08fr)_minmax(370px,0.92fr)] overflow-hidden max-[1180px]:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
+            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[216px_minmax(420px,1.35fr)_minmax(390px,0.85fr)] overflow-hidden max-[1180px]:grid-cols-[minmax(360px,1.25fr)_minmax(390px,0.75fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
             : "mx-auto grid w-full max-w-[1080px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
           !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
@@ -581,32 +585,29 @@ export function RunsWorkspace(props: {
                     </Button>
                   </Show>
                 </div>
-                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-text-weak">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-text-weak">
                   <StatusChip
                     tone={jobStatusChip(job().status).tone}
                     label={jobStatusChip(job().status).label}
                   />
-                  <span class="inline-flex items-baseline gap-2">
-                    <span class="text-text-weaker">Ran</span>
-                    <span class={cn(mono, "text-text-base")}>
-                      {fmtAgo(
-                        job().finishedAt ?? job().startedAt ?? job().queuedAt,
-                        server.clock(),
-                      ) || "just now"}
-                    </span>
+                  <span class={cn(mono, "text-text-weaker")} data-tip="When this run finished">
+                    {fmtAgo(
+                      job().finishedAt ?? job().startedAt ?? job().queuedAt,
+                      server.clock(),
+                    ) || "just now"}
                   </span>
                   <Show when={fmtDur(job(), server.clock())}>
-                    <span class="inline-flex items-baseline gap-2">
-                      <span class="text-text-weaker">Duration</span>
-                      <span class={cn(mono, "text-text-base")}>
-                        {fmtDur(job(), server.clock())}
-                      </span>
+                    <span class={cn(mono, "text-text-weaker")} data-tip="Run duration">
+                      {fmtDur(job(), server.clock())}
                     </span>
                   </Show>
-                  <span class="inline-flex min-w-0 items-baseline gap-2">
-                    <span class="shrink-0 text-text-weaker">Device</span>
-                    <span class="truncate text-text-base">
-                      {job().targetProfile?.name ?? job().serial ?? "Not recorded"}
+                  <span class="inline-flex min-w-0 items-center gap-1.5 text-text-base">
+                    <Icon name="smartphone" size={11} class="shrink-0 text-text-weaker" />
+                    <span
+                      class="truncate"
+                      data-tip={job().serial ? `Target identifier: ${job().serial}` : undefined}
+                    >
+                      {runTargetLabel(job(), server.devices())}
                     </span>
                   </span>
                 </div>
@@ -635,13 +636,13 @@ export function RunsWorkspace(props: {
                 </div>
               </Show>
               <nav
-                class="flex shrink-0 gap-0.5 overflow-x-auto border-b border-border-weak-base px-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                class="flex shrink-0 gap-0.5 overflow-x-auto border-b border-border-weak-base px-3 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 role="tablist"
                 aria-label="Run evidence"
               >
                 {(
                   [
-                    ["timeline", "Replay"],
+                    ["timeline", "Steps"],
                     ["summary", "Summary"],
                     ["visual", "Visual"],
                     ["evaluation", "Checks"],
@@ -658,9 +659,9 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      tabUnderline,
-                      "!px-2 !text-[11px]",
-                      tab() === id && tabUnderlineActive,
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      tab() === id &&
+                        "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
                     onClick={() => setTab(id)}
                     onKeyDown={onReportTabKeyDown}
@@ -687,9 +688,9 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
                     class={cn(
-                      tabUnderline,
-                      "!px-2 !text-[11px]",
-                      tab() === "compatibility" && tabUnderlineActive,
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      tab() === "compatibility" &&
+                        "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
                     onClick={() => setTab("compatibility")}
                     onKeyDown={onReportTabKeyDown}
@@ -717,6 +718,7 @@ export function RunsWorkspace(props: {
                     job={job()}
                     clock={server.clock()}
                     previous={baseline()}
+                    targetLabel={runTargetLabel(job(), server.devices())}
                     onOpenRecipe={(id) => props.onOpenRecipe(selectedAppMapId() ?? id)}
                   />
                   <Show when={job().evidence}>
@@ -901,6 +903,7 @@ function RunReplayStage(props: {
   const [stageMode, setStageMode] = createSignal<"replay" | "map">("replay");
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
+  const [mediaAspect, setMediaAspect] = createSignal<number | null>(null);
   const cycleSpeed = () => setSpeed((current) => (current >= 8 ? 1 : current * 2));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
@@ -1069,6 +1072,9 @@ function RunReplayStage(props: {
   const onVideoLoadedMetadata = (event: Event) => {
     const video = event.currentTarget as HTMLVideoElement;
     if (Number.isFinite(video.duration)) setVideoDurationMs(video.duration * 1000);
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      setMediaAspect(video.videoWidth / video.videoHeight);
+    }
     seekVideoTo(index());
   };
   const timelineElapsedMs = () => {
@@ -1109,6 +1115,12 @@ function RunReplayStage(props: {
     }
     seekVideoTo(idx);
   });
+  createEffect(
+    on(
+      () => `${props.job.id}:${index()}:${frameSrc() ?? videoSrc() ?? "empty"}`,
+      () => setMediaAspect(null),
+    ),
+  );
   createEffect(() => {
     if (!hasVideo()) return;
     const video = videoRef;
@@ -1144,7 +1156,7 @@ function RunReplayStage(props: {
   });
   return (
     <section
-      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_94%,black)]"
+      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-deep)]"
       aria-label="Run replay"
       tabindex={-1}
       onKeyDown={(event) => {
@@ -1163,10 +1175,10 @@ function RunReplayStage(props: {
       }}
     >
       <div
-        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,color-mix(in_srgb,var(--v2-background-bg-accent)_7%,transparent),transparent_52%),radial-gradient(circle,color-mix(in_srgb,var(--v2-border-border-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,20px_20px]"
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-strong)_8%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
         aria-hidden="true"
       />
-      <header class="relative z-[1] flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5">
+      <header class="relative z-[1] grid min-h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4">
         <button
           type="button"
           class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-surface-base-hover hover:text-[var(--text-strong)]"
@@ -1194,6 +1206,25 @@ function RunReplayStage(props: {
             </button>
           </div>
         </Show>
+        <Show when={nodes().length > 0}>
+          <div class="flex min-w-0 items-center justify-end gap-2 text-[10.5px] text-text-weaker">
+            <span class="shrink-0 font-mono tabular-nums">
+              {index() + 1} / {nodes().length}
+            </span>
+            <span class="h-3 w-px bg-border-weak-base" aria-hidden="true" />
+            <span class="inline-flex min-w-0 items-center gap-1.5">
+              <i
+                class={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  runStateDot(node()?.state ?? "planned"),
+                )}
+              />
+              <span class="truncate">
+                {executionStateLabel(node()?.state ?? "planned", "step")}
+              </span>
+            </span>
+          </div>
+        </Show>
       </header>
       <Show when={nodes().length === 0}>
         <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
@@ -1215,66 +1246,66 @@ function RunReplayStage(props: {
         </div>
       </Show>
       <Show when={nodes().length > 0 && stageMode() === "replay"}>
-        <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
-          {/* Phone bezel — always renders; only the interior swaps between the
-            captured frame and a calm inline note when evidence is missing. */}
-          <div class="relative flex h-full max-h-[560px] w-full max-w-[300px] items-center justify-center">
-            <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--text-weak)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
-              <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
-              Step {String(index() + 1).padStart(2, "0")} ·{" "}
-              {executionStateLabel(node()?.state ?? "planned", "step")}
-            </span>
-            {/* Bezel border stays neutral regardless of run state — the floating
-              step badge's dot is the accent that carries pass/fail, per the
-              rule that alarm colors never tint a large chrome surface. */}
-            <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--v2-background-bg-layer-02)] bg-[var(--v2-background-bg-base)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
-              <span
-                class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--v2-background-bg-layer-02)]"
-                aria-hidden="true"
-              />
-              <Show
-                when={hasVideo()}
-                fallback={
-                  <Show
-                    when={frameSrc()}
-                    fallback={
-                      <div class="grid justify-items-center gap-1.5 px-6 text-center">
-                        <Icon
-                          name={node()?.state === "failed" ? "alert" : "camera"}
-                          size={16}
-                          class="text-text-weaker"
-                        />
-                        <span class="text-[11px]/[1.4] text-text-weaker">
-                          {node()?.observed ? "No screenshot captured here" : "Step not reached"}
-                        </span>
-                      </div>
-                    }
-                  >
-                    {(src) => (
-                      <img
-                        src={src()}
-                        alt={`Step ${index() + 1} evidence`}
-                        class="h-full w-full object-contain"
+        <div class="relative z-[1] flex min-h-0 flex-1 items-center justify-center px-5 py-3">
+          {/* Evidence is shown as evidence, not dressed up as a generic phone.
+            Its captured dimensions choose the surface ratio, so tablets,
+            landscape devices, browsers, and phones all use the available stage. */}
+          <div
+            class="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[12px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(0_0_0/10%),0_12px_28px_-8px_rgb(0_0_0/28%),0_28px_72px_-28px_rgb(0_0_0/45%)]"
+            style={{
+              "aspect-ratio": String(mediaAspect() ?? 9 / 16),
+              width: (mediaAspect() ?? 9 / 16) > 1 ? "100%" : "auto",
+              height: (mediaAspect() ?? 9 / 16) > 1 ? "auto" : "100%",
+            }}
+          >
+            <Show
+              when={hasVideo()}
+              fallback={
+                <Show
+                  when={frameSrc()}
+                  fallback={
+                    <div class="grid justify-items-center gap-1.5 px-6 text-center">
+                      <Icon
+                        name={node()?.state === "failed" ? "alert" : "camera"}
+                        size={16}
+                        class="text-text-weaker"
                       />
-                    )}
-                  </Show>
-                }
-              >
-                <video
-                  ref={(element) => {
-                    videoRef = element;
-                  }}
-                  src={videoSrc() ?? undefined}
-                  muted
-                  playsinline
-                  preload="metadata"
-                  class="h-full w-full object-contain"
-                  onTimeUpdate={onVideoTimeUpdate}
-                  onLoadedMetadata={onVideoLoadedMetadata}
-                  onEnded={() => setPlaying(false)}
-                />
-              </Show>
-            </div>
+                      <span class="text-[11px]/[1.4] text-text-weaker">
+                        {node()?.observed ? "No screenshot captured here" : "Step not reached"}
+                      </span>
+                    </div>
+                  }
+                >
+                  {(src) => (
+                    <img
+                      src={src()}
+                      alt={`Step ${index() + 1} evidence`}
+                      class="h-full w-full object-contain"
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                          setMediaAspect(image.naturalWidth / image.naturalHeight);
+                        }
+                      }}
+                    />
+                  )}
+                </Show>
+              }
+            >
+              <video
+                ref={(element) => {
+                  videoRef = element;
+                }}
+                src={videoSrc() ?? undefined}
+                muted
+                playsinline
+                preload="metadata"
+                class="h-full w-full object-contain"
+                onTimeUpdate={onVideoTimeUpdate}
+                onLoadedMetadata={onVideoLoadedMetadata}
+                onEnded={() => setPlaying(false)}
+              />
+            </Show>
           </div>
         </div>
         <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2 px-4 text-center">
@@ -1283,7 +1314,7 @@ function RunReplayStage(props: {
             size={12}
             class={node()?.state === "failed" ? "text-icon-critical-base" : "text-text-weaker"}
           />
-          <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
+          <p class="m-0 truncate text-[12px] font-medium text-text-base">{node()?.title}</p>
         </div>
         <Show when={hasVideo() && reviewCut()}>
           {(cut) => (

@@ -327,7 +327,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         if (input.url) await page.goto(input.url, { waitUntil: "domcontentloaded" });
         else if (input.app?.startsWith("http"))
           await page.goto(input.app, { waitUntil: "domcontentloaded" });
-        return { session: targetId, identifiers };
+        return { appId: input.app ?? input.url ?? targetId };
       },
       close: async () => {
         await (await activePage(session)).close();
@@ -437,6 +437,11 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         }
         return { action: "read", text: await page.evaluate(() => navigator.clipboard.readText()) };
       },
+      appState: async () => ({
+        platform: "android" as const,
+        package: "managed-browser",
+        activity: (await activePage(session)).url(),
+      }),
       keyboard: async (input) => {
         await (
           await activePage(session)

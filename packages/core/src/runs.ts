@@ -364,7 +364,10 @@ export function persistRun(job: TestJob): Promise<PersistedRun> {
   return next;
 }
 
-export async function listPersistedRuns(limit = 40): Promise<PersistedRun[]> {
+export async function listPersistedRuns(
+  limit = 40,
+  actionPrefix?: string,
+): Promise<PersistedRun[]> {
   const root = runsRoot();
   let entries: string[] = [];
   try {
@@ -386,6 +389,7 @@ export async function listPersistedRuns(limit = 40): Promise<PersistedRun[]> {
         if (!committed) continue;
         parsed = committed;
       }
+      if (actionPrefix && !parsed.action.startsWith(actionPrefix)) continue;
       parsed.dir = dir;
       runs.push(parsed);
     } catch {
@@ -395,12 +399,16 @@ export async function listPersistedRuns(limit = 40): Promise<PersistedRun[]> {
   return runs;
 }
 
-export async function listRunSummaries(limit = 40): Promise<RunSummary[]> {
+export async function listRunSummaries(limit = 40, appMapId?: string): Promise<RunSummary[]> {
   const root = runsRoot();
-  let summaries = await catalogSummaries(root, limit);
+  const actionPrefix = appMapId ? `app-map:${appMapId}:` : undefined;
+  let summaries = await catalogSummaries(root, limit, actionPrefix);
   if (summaries.length === 0) {
-    await rebuildRunCatalog(root);
-    summaries = await catalogSummaries(root, limit);
+    const catalogIsEmpty = (await catalogSummaries(root, 1)).length === 0;
+    if (catalogIsEmpty) {
+      await rebuildRunCatalog(root);
+      summaries = await catalogSummaries(root, limit, actionPrefix);
+    }
   }
   return summaries;
 }

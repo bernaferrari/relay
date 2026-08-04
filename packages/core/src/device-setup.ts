@@ -313,7 +313,7 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
  */
 export async function restartAgentDeviceDaemonForSetup(): Promise<boolean> {
   const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
-  let pid: number | undefined;
+  let canonicalPid: number | undefined;
   try {
     const value = JSON.parse(await readFile(join(stateDir, "daemon.json"), "utf8")) as {
       pid?: unknown;
@@ -322,22 +322,72 @@ export async function restartAgentDeviceDaemonForSetup(): Promise<boolean> {
     if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 1)
       return false;
     if (typeof value.stateDir === "string" && value.stateDir !== stateDir) return false;
-    pid = value.pid;
-    const command = await commandAvailable("ps", ["-p", String(pid), "-o", "command="]);
+    canonicalPid = value.pid;
+    const command = await commandAvailable("ps", ["-p", String(canonicalPid), "-o", "command="]);
     if (!command || !/agent-device\/.*internal\/daemon\.js/.test(command)) return false;
-    process.kill(pid, "SIGTERM");
   } catch {
     return false;
   }
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return true;
+
+  // A crashed/restarted client can leave an orphan daemon behind after a new
+  // daemon has replaced daemon.json. Reconcile every *verified* agent-device
+  // daemon that declares this exact state directory; daemons for other
+  // workspaces or test state directories remain untouched.
+  const candidateOutput = await commandAvailable("pgrep", [
+    "-f",
+    "node_modules/agent-device/dist/src/internal/daemon.js",
+  ]);
+  const candidates = candidateOutput
+    ?.split(/\s+/)
+    .map(Number)
+    .filter((pid) => Number.isInteger(pid) && pid > 1);
+  const verified: number[] = [];
+  for (const pid of candidates ?? []) {
+    const command = await commandAvailable("ps", ["eww", "-p", String(pid), "-o", "command="]);
+    if (command && agentDeviceDaemonPidsForStateDir(`${pid} ${command}`, stateDir).includes(pid)) {
+      verified.push(pid);
     }
+  }
+  const pids = verified.length > 0 ? verified : [canonicalPid];
+  if (!pids.includes(canonicalPid)) pids.push(canonicalPid);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // A daemon can exit between discovery and termination.
+    }
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const alive = pids.some((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!alive) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return false;
+}
+
+/**
+ * Parse `ps eww` output conservatively. Both the daemon executable and its
+ * explicit state directory must match before Relay may terminate a process.
+ */
+export function agentDeviceDaemonPidsForStateDir(output: string, stateDir: string): number[] {
+  const stateToken = `AGENT_DEVICE_STATE_DIR=${stateDir}`;
+  return output.split("\n").flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(.+)$/);
+    if (!match) return [];
+    const command = match[2]!;
+    if (!/node_modules\/agent-device\/dist\/src\/internal\/daemon\.js(?:\s|$)/.test(command))
+      return [];
+    if (!command.split(/\s+/).includes(stateToken)) return [];
+    const pid = Number(match[1]);
+    return Number.isInteger(pid) && pid > 1 ? [pid] : [];
+  });
 }
 
 /** Read-only availability check for Android Platform Tools. */

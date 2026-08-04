@@ -306,8 +306,8 @@ export class RelayClient {
       throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
     }
   }
-  async runs(): Promise<{ runs: RunSummary[] }> {
-    const body = await this.invoke("run.list", {});
+  async runs(input: { limit?: number; appMapId?: string } = {}): Promise<{ runs: RunSummary[] }> {
+    const body = await this.invoke("run.list", input);
     if (!body || !Array.isArray(body.runs))
       throw new ApiError(502, "Malformed runs response", body);
     try {

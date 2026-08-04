@@ -115,9 +115,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
 
   if (method === "GET" && pathname === "/runs") {
     const limit = parseLimit(url.searchParams.get("limit"), 40);
+    const appMapId = url.searchParams.get("appMapId")?.trim() || undefined;
+    const actionPrefix = appMapId ? `app-map:${appMapId}:` : undefined;
     const runs = scope.localTrusted
-      ? await listRunSummaries(limit)
-      : (await listPersistedRuns(Math.max(limit, 200)))
+      ? await listRunSummaries(limit, appMapId)
+      : (await listPersistedRuns(limit, actionPrefix))
           .filter((run) => run.projectId === scope.projectId && run.ownerId === scope.subject)
           .slice(0, limit)
           .map((run) => ({

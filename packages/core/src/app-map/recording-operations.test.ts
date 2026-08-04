@@ -46,6 +46,21 @@ function observation(id: string, fingerprint: string, evidenceId: string): Autho
   };
 }
 
+function titledObservation(
+  id: string,
+  fingerprint: string,
+  evidenceId: string,
+  title: string,
+): AuthoringObservation {
+  return {
+    ...observation(id, fingerprint, evidenceId),
+    nodes: [
+      { type: "NavigationBar", identifier: "Settings", depth: 2 },
+      { type: "NavigationBar", identifier: title, label: "Back", depth: 3 },
+    ],
+  };
+}
+
 function action(id = "tap-continue"): AuthoringAction {
   return {
     id,
@@ -125,6 +140,112 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(connection?.actions[0]?.kind, "recorded");
   assert.equal(result.appMap.activity["event-1"]?.eventType, "recording.committed");
   assert.equal(result.appMap.activity["event-1"]?.subject.id, result.connectionId);
+});
+
+test("names a captured destination from its deepest observed navigation title", () => {
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "session-titled-destination",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-titled-destination",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("date-time"),
+          steps: [{ id: "tap-date-time", kind: "tap", target: { label: "Date & Time" } }],
+        },
+      ],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: titledObservation("after", afterFingerprint, "evidence-after", "Date & Time"),
+      destination: { kind: "new-screen" },
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-titled-destination"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  const destination =
+    connection?.destination.kind === "screen"
+      ? result.appMap.screens[connection.destination.screenId]
+      : undefined;
+  assert.equal(destination?.title, "Date & Time");
+});
+
+test("falls back to the recorded tap label when the destination has no navigation title", () => {
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "session-action-title",
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      takeId: "take-action-title",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("privacy"),
+          steps: [{ id: "tap-privacy", kind: "tap", target: { label: "Privacy" } }],
+        },
+      ],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      destination: { kind: "new-screen" },
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-action-title"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  const destination =
+    connection?.destination.kind === "screen"
+      ? result.appMap.screens[connection.destination.screenId]
+      : undefined;
+  assert.equal(destination?.title, "Privacy");
+});
+
+test("keeps a newly captured destination in its source screen Group", () => {
+  const map = mapFixture();
+  map.screens.start = {
+    ...mapScope(map),
+    id: "start",
+    title: "General",
+    identity: { schemaVersion: 1, fingerprint: beforeFingerprint },
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.groups.settings = {
+    ...mapScope(map),
+    id: "settings",
+    name: "Settings",
+    screenIds: ["start"],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "session-grouped-destination",
+      sourceScreenId: "start",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-grouped-destination",
+      takeRevision: 1,
+      actions: [action("language-region")],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: titledObservation("after", afterFingerprint, "evidence-after", "Language & Region"),
+      destination: { kind: "new-screen" },
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-grouped-destination"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  assert.equal(connection?.destination.kind, "screen");
+  assert.deepEqual(result.appMap.groups.settings?.screenIds, [
+    "start",
+    connection?.destination.kind === "screen" ? connection.destination.screenId : "",
+  ]);
+  assert.equal(result.appMap.groups.settings?.updatedAt, 10);
 });
 
 test("fills an existing pending connection and preserves its flow position", () => {

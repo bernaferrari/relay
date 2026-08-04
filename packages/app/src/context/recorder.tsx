@@ -704,7 +704,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const session = activeSession();
       if (!session || session.state !== "reviewing" || !ownsActiveSession()) return false;
       const replayed = await server.replayAuthoringTake(session.id);
-      return replayed.take?.replayAttempts.at(-1)?.outcome === "passed";
+      const attempt = replayed.take?.replayAttempts.at(-1);
+      if (attempt?.outcome === "failed" && attempt.error) throw new Error(attempt.error);
+      return attempt?.outcome === "passed";
     }
 
     async function keepTake(

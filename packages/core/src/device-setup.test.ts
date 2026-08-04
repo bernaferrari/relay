@@ -4,12 +4,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  agentDeviceDaemonPidsForStateDir,
   findAppleSigningIdentities,
   findXcodeProvisioningTeams,
   readDeviceSetup,
   saveAppleDeviceSetup,
   suggestAppleDeviceSetup,
 } from "./device-setup.js";
+
+test("finds only verified agent-device daemons for the same state directory", () => {
+  const output = [
+    "101 node /repo/node_modules/agent-device/dist/src/internal/daemon.js AGENT_DEVICE_STATE_DIR=/Users/me/.agent-device",
+    "102 node /repo/node_modules/agent-device/dist/src/internal/daemon.js AGENT_DEVICE_STATE_DIR=/tmp/test-state",
+    "103 node /repo/not-agent-device/internal/daemon.js AGENT_DEVICE_STATE_DIR=/Users/me/.agent-device",
+    "104 node /repo/node_modules/agent-device/dist/src/internal/daemon.js AGENT_DEVICE_STATE_DIR=/Users/me/.agent-device-old",
+  ].join("\n");
+  assert.deepEqual(agentDeviceDaemonPidsForStateDir(output, "/Users/me/.agent-device"), [101]);
+});
 
 test("derives a safe local runner suggestion from an Apple Development identity", () => {
   const output =

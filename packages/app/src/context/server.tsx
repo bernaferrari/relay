@@ -454,10 +454,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           const selectedTargetReady = targetIsReady(selectedTarget, true);
           if (!selected) {
             void selectDeviceRemote(preferredTargetSerial(list));
-          } else if (selectedTargetReady && !selectedDeviceAvailable) {
-            // Reacquire this actor's lease when the intentionally focused
-            // target returns. Focus itself remains entirely renderer-local.
-            void selectDeviceRemote(selected);
+          } else if (selectedTargetReady) {
+            // Availability and control are separate. A server restart can
+            // expire the lease while screenshots remain observable, so every
+            // device refresh revalidates the focused target idempotently.
+            void validateSelectedTargetControl(selected);
           } else if (!selectedTargetReady && selectedDeviceAvailable) {
             // A cached screen is evidence from a device that is no longer
             // present. Keep the intentional selection for auto-recovery, but
@@ -806,10 +807,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function refreshRuns() {
+    async function refreshRuns(appMapId?: string) {
       if (health() === "offline") return;
       try {
-        const data = await request<{ runs: PersistedRun[]; root: string }>("/runs");
+        const query = new URLSearchParams({ limit: appMapId ? "200" : "40" });
+        if (appMapId) query.set("appMapId", appMapId);
+        const data = await request<{ runs: PersistedRun[]; root: string }>(`/runs?${query}`);
         const list = asArray<PersistedRun>(data, "runs");
         // /runs returns lightweight catalog summaries with no steps/frames.
         // A run already enriched via loadRunDetail (full steps + frames) must
@@ -819,7 +822,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           const detailed = new Map(
             current.filter((run) => run.steps?.length).map((run) => [run.id, run]),
           );
-          return list.map((incoming) => {
+          const projected = list.map((incoming) => {
             const richer = detailed.get(incoming.id);
             return richer && !incoming.steps?.length
               ? {
@@ -830,6 +833,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
                 }
               : incoming;
           });
+          if (!appMapId) return projected;
+          const byId = new Map(current.map((run) => [run.id, run]));
+          for (const run of projected) byId.set(run.id, run);
+          return [...byId.values()].sort((left, right) => right.writtenAt - left.writtenAt);
         });
         setRunsRoot(data.root ?? "");
       } catch {
@@ -1059,6 +1066,41 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       connectSse();
     }
 
+    let targetRecoveryInFlight: Promise<boolean> | null = null;
+    async function recoverSelectedTarget(
+      reason: "connect" | "observe" | "control" | "record" | "auto" = "auto",
+    ): Promise<boolean> {
+      if (targetRecoveryInFlight) return targetRecoveryInFlight;
+      const serial = selectedDevice();
+      const device = devices().find((candidate) => candidate.serial === serial);
+      if (!serial || device?.platform !== "ios") return false;
+      const recovery = (async () => {
+        try {
+          await selectDeviceRemote(serial);
+          const result = await runAction("target.recover", { serial, reason });
+          appendLog(result.recovery.summary, result.recovery.ready ? "success" : "error");
+          if (result.recovery.ready) {
+            setLiveCaptureIssue(null);
+            setControlIssue(null);
+            return true;
+          }
+          setLiveCaptureIssue(result.recovery.session.detail);
+          return false;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setLiveCaptureIssue(message);
+          appendLog(message, "error");
+          return false;
+        }
+      })();
+      targetRecoveryInFlight = recovery;
+      try {
+        return await recovery;
+      } finally {
+        if (targetRecoveryInFlight === recovery) targetRecoveryInFlight = null;
+      }
+    }
+
     function refreshFromEvent(kind: EventRefresh) {
       const refreshers: Record<EventRefresh, () => Promise<unknown>> = {
         devices: refreshDevices,
@@ -1209,16 +1251,35 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const [bootingSerial, setBootingSerial] = createSignal<string | null>(null);
     const [authorizingSerial, setAuthorizingSerial] = createSignal<string | null>(null);
+    let selectedTargetControlValidation: Promise<void> | null = null;
+
+    async function validateSelectedTargetControl(serial: string): Promise<void> {
+      if (selectedTargetControlValidation) return selectedTargetControlValidation;
+      const validation = selectDeviceRemote(serial).finally(() => {
+        if (selectedTargetControlValidation === validation) {
+          selectedTargetControlValidation = null;
+        }
+      });
+      selectedTargetControlValidation = validation;
+      return validation;
+    }
     async function bootDeviceRemote(serial: string): Promise<boolean> {
       const device = devices().find((item) => item.serial === serial);
       if (!device || bootingSerial()) return false;
       setBootingSerial(serial);
       try {
+        if (!client || !connection) await resolveConnection();
+        await selectDeviceRemote(serial);
+        if (!selectedLeaseId()) {
+          throw new Error(`Relay could not reserve ${device.name ?? "this device"} to start it.`);
+        }
         await bootDeviceRequest(request, serial, device.platform ?? "ios");
         await refreshDevices();
         return true;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        toast(message, "error");
         return false;
       } finally {
         setBootingSerial(null);
@@ -1291,7 +1352,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setSelectedLeaseId(null);
         setControlIssue(null);
 
-        if (serial && selectedDeviceAvailable) {
+        const claimableVirtualTarget = Boolean(
+          serial && /simulator|emulator/i.test(selectedTarget?.kind ?? ""),
+        );
+        if (serial && (selectedDeviceAvailable || claimableVirtualTarget)) {
           const active = leases.find(
             (lease) =>
               lease.deviceSerial === serial &&
@@ -1325,7 +1389,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           );
         }
       } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        setControlIssue(message);
+        setError(message);
       }
     }
 
@@ -1786,6 +1852,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       reviewVisualRun,
       pollHealth,
       retryConnection,
+      recoverSelectedTarget,
       runRecipeRemote,
       runAppMapFlowRemote,
       runCompatibilityMatrixRemote,

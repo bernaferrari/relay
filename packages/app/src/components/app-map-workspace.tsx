@@ -620,6 +620,7 @@ export function AppMapWorkspace(props: {
           setCanvasState(mergeAppMapProjection(EMPTY_APP_MAP_CANVAS_STATE, appMap));
           setLoadedAppMapId(appMapId);
           setAppMapLoadState({ status: "ready", appMapId });
+          void server.refreshRuns(appMapId);
         }
       })
       .catch((error: unknown) => {
@@ -1348,6 +1349,7 @@ export function AppMapWorkspace(props: {
         ? { takeId: take.id, state: "passed" }
         : { takeId: take.id, state: "failed", error: error ?? "Replay did not pass" },
     );
+    if (!passed) setCaptureOpen(true);
   };
   const keepTake = async () => {
     const take = recorder.take();
@@ -1814,7 +1816,6 @@ export function AppMapWorkspace(props: {
 
   createAppMapEventOrchestration({
     devicePanelOpen: captureOpen,
-    reviewingTake,
     runReadiness: graphRunReadiness,
     canvasTool,
     renamingScreen: () => Boolean(renamingNodeId()),
@@ -2669,7 +2670,7 @@ export function AppMapWorkspace(props: {
           />
         )}
       </Show>
-      <Show when={appMapLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
+      <Show when={appMapLoadState().status === "ready" && captureOpen()}>
         <AppMapDeviceCompanion
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}

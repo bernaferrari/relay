@@ -55,7 +55,6 @@ export function canvasWheelAction(input: {
 
 export function createAppMapEventOrchestration(options: {
   devicePanelOpen: Accessor<boolean>;
-  reviewingTake: Accessor<boolean>;
   runReadiness: Accessor<AppMapRunReadiness>;
   canvasTool: Accessor<AppMapCanvasTool>;
   renamingScreen: Accessor<boolean>;
@@ -77,7 +76,7 @@ export function createAppMapEventOrchestration(options: {
   createEffect(() => {
     window.dispatchEvent(
       new CustomEvent("relay:device-panel-state", {
-        detail: { open: options.devicePanelOpen() && !options.reviewingTake() },
+        detail: { open: options.devicePanelOpen() },
       }),
     );
   });

@@ -170,6 +170,22 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.recover",
+    path("target recover", ["serial"]),
+    path("device recover", ["serial"], undefined, {
+      summary: "Repair an Apple device connection and restore its active app",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "reason",
+          type: "connect | observe | control | record | auto",
+          description: "Recovery phase for Activity attribution",
+        },
+      ],
+      examples: ['relay device recover 00008110 --input \'{"reason":"control"}\''],
+    }),
+  ),
+  mapped(
     "target.interact",
     path("target interact", ["serial"]),
     path("device interact", ["serial"], undefined, {

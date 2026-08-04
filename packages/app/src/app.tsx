@@ -3,7 +3,6 @@ import { ThemeProvider, type ThemeAppliedDetail } from "@relay/ui/theme/context"
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
-import { ToastProvider } from "./context/toast";
 import { RecipeDraftProvider } from "./context/recipe-draft";
 import { WorkbenchProvider } from "./context/workbench";
 import { RecorderProvider } from "./context/recorder";
@@ -32,15 +31,13 @@ export function AppBaseProviders(
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider>
-          <ToastProvider>
-            <RecipeDraftProvider>
-              <WorkbenchProvider>
-                <RecorderProvider>
-                  <CommandProvider>{props.children}</CommandProvider>
-                </RecorderProvider>
-              </WorkbenchProvider>
-            </RecipeDraftProvider>
-          </ToastProvider>
+          <RecipeDraftProvider>
+            <WorkbenchProvider>
+              <RecorderProvider>
+                <CommandProvider>{props.children}</CommandProvider>
+              </RecorderProvider>
+            </WorkbenchProvider>
+          </RecipeDraftProvider>
         </ServerProvider>
       </ThemeProvider>
     </PlatformProvider>

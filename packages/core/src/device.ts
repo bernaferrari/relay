@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
+import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
   currentTargetContext,
   targetIdentity,
@@ -47,7 +48,11 @@ export type Device = {
     boot: (options?: Parameters<NativeDevice["devices"]["boot"]>[0]) => Promise<unknown>;
   };
   apps: {
-    open: (options: Parameters<NativeDevice["apps"]["open"]>[0]) => Promise<unknown>;
+    open: (options: Parameters<NativeDevice["apps"]["open"]>[0]) => Promise<{
+      appName?: string;
+      appBundleId?: string;
+      appId?: string;
+    }>;
     close: (options?: Parameters<NativeDevice["apps"]["close"]>[0]) => Promise<unknown>;
   };
   capture: {
@@ -76,6 +81,17 @@ export type Device = {
       options: Parameters<NativeDevice["command"]["clipboard"]>[0],
     ) => Promise<
       { action: "read"; text: string } | { action: "write"; textLength: number; message: string }
+    >;
+    appState: (options?: Parameters<NativeDevice["command"]["appState"]>[0]) => Promise<
+      | {
+          platform: "ios" | "macos";
+          appName: string;
+          appBundleId?: string;
+          source: "session";
+          surface: string;
+          device_udid?: string;
+        }
+      | { platform: "android"; package: string; activity: string }
     >;
     keyboard: (options?: Parameters<NativeDevice["command"]["keyboard"]>[0]) => Promise<unknown>;
     alert: (options: Parameters<NativeDevice["command"]["alert"]>[0]) => Promise<unknown>;
@@ -130,9 +146,61 @@ export type SnapshotNode = {
 // One client per explicit target preserves SDK session reuse without binding
 // unrelated concurrently executing targets to the same agent-device session.
 const devicesByTarget = new Map<string, Device>();
+const applicationsByTarget = new Map<string, string>();
+const TARGET_APPLICATIONS_FILE = "runtime/target-applications.json";
+let applicationsLoaded = false;
+let applicationsWrite = Promise.resolve();
+
+function targetKey(context = currentTargetContext()): string {
+  return `${context.platform}:${targetIdentity(context)}`;
+}
+
+async function loadTargetApplications(): Promise<void> {
+  if (applicationsLoaded) return;
+  const stored = await readWorkspaceSetting(TARGET_APPLICATIONS_FILE).catch(() => null);
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+    const values = (stored as { applications?: unknown }).applications;
+    if (values && typeof values === "object" && !Array.isArray(values)) {
+      for (const [key, app] of Object.entries(values)) {
+        if (typeof app === "string" && app.trim()) applicationsByTarget.set(key, app.trim());
+      }
+    }
+  }
+  applicationsLoaded = true;
+}
+
+async function persistTargetApplications(): Promise<void> {
+  const applications = Object.fromEntries(
+    [...applicationsByTarget.entries()].sort(([left], [right]) => left.localeCompare(right)),
+  );
+  applicationsWrite = applicationsWrite
+    .catch(() => undefined)
+    .then(() => writeWorkspaceSetting(TARGET_APPLICATIONS_FILE, { version: 1, applications }));
+  await applicationsWrite;
+}
+
+/** Last app Relay intentionally opened on a target; used to repair XCTest binding drift. */
+export async function rememberedTargetApplication(
+  context = currentTargetContext(),
+): Promise<string | undefined> {
+  await loadTargetApplications();
+  return applicationsByTarget.get(targetKey(context));
+}
+
+export async function rememberTargetApplication(
+  app: string | undefined,
+  context = currentTargetContext(),
+): Promise<void> {
+  await loadTargetApplications();
+  const value = app?.trim();
+  if (value) applicationsByTarget.set(targetKey(context), value);
+  else applicationsByTarget.delete(targetKey(context));
+  await persistTargetApplications();
+}
+
 export function createDevice(explicitContext?: TargetContext): Device {
   const context = explicitContext ?? currentTargetContext();
-  const key = `${context.platform}:${targetIdentity(context)}`;
+  const key = targetKey(context);
   let device = devicesByTarget.get(key);
   if (!device) {
     const native = createAgentDeviceClient({
@@ -223,13 +291,14 @@ export async function openApp(
   app: string,
   opts?: { relaunch?: boolean },
 ): Promise<void> {
-  await controlled(() =>
+  const opened = await controlled(() =>
     device.apps.open({
       ...base(),
       app,
       relaunch: opts?.relaunch ?? true,
     }),
   );
+  await rememberTargetApplication(opened.appBundleId ?? opened.appId ?? app);
   await sleep(2000, device);
 }
 

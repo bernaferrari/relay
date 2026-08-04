@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { JobInfo } from "./api-types";
-import { appMapIdForJob, runStopHeadline } from "./run-presentation";
+import { appMapIdForJob, runStopHeadline, runTargetLabel } from "./run-presentation";
 
 function job(action: string, data?: unknown): JobInfo {
   return {
@@ -37,4 +37,23 @@ test("zero-step failures never invent a first step", () => {
     runStopHeadline({ total: 2, selectedIndex: 0, failureLabel: "Setup" }),
     "Setup at step 1 of 2",
   );
+});
+
+test("run reports present a discovered device name instead of its serial", () => {
+  assert.equal(
+    runTargetLabel({ platform: "ios", serial: "ipad-udid" }, [
+      {
+        serial: "ipad-udid",
+        name: "iPad Pro 10.5",
+        platform: "ios",
+        kind: "device",
+        booted: true,
+      },
+    ]),
+    "iPad Pro 10.5",
+  );
+});
+
+test("run reports use a platform label when historical hardware is disconnected", () => {
+  assert.equal(runTargetLabel({ platform: "ios", serial: "ipad-udid" }, []), "iOS");
 });

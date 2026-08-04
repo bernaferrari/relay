@@ -1,6 +1,7 @@
 import type http from "node:http";
 import {
   installRegisteredBuild,
+  appendActivity,
   launchRegisteredBuild,
   createDevice,
   listDeviceLeases,
@@ -9,6 +10,7 @@ import {
   preflightDevicePool,
   preflightRegisteredBuild,
   openApp,
+  recoverTargetRuntime,
   readBuild,
   readDevicePool,
   runWithTargetContext,
@@ -28,6 +30,7 @@ export type TargetRuntimeRouteRuntime = {
     app: string;
     relaunch: boolean;
   }) => Promise<void>;
+  recoverTarget: (serial: string, reason?: string) => ReturnType<typeof recoverTargetRuntime>;
   runBuildCommand?: BuildCommandRunner;
 };
 
@@ -40,6 +43,11 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       openApp(createDevice(), app, { relaunch }),
     );
   },
+  recoverTarget: (serial, reason) =>
+    recoverTargetRuntime(
+      serial,
+      reason ? new Error(`Recovery requested for ${reason}`) : undefined,
+    ),
 };
 
 export async function handleTargetRuntimeRoute(context: {
@@ -78,6 +86,30 @@ export async function handleTargetRuntimeRoute(context: {
     json(response, 200, {
       launched: { serial, app, platform: device.platform, launchedAt: Date.now() },
     });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/device/recover") {
+    const body = (await parseJsonBody(request)) as { serial?: unknown; reason?: unknown };
+    const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+    const reason = typeof body.reason === "string" ? body.reason.trim() : undefined;
+    if (!serial) throw new HttpError(400, "serial is required");
+    await runtime.assertTargetControl(scope, serial);
+    const device = (await runtime.listDevices().catch(() => [])).find(
+      (candidate) => candidate.serial === serial,
+    );
+    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
+    if (device.platform !== "ios") {
+      throw new HttpError(400, "Automatic runtime recovery is available for Apple devices only");
+    }
+    const recovery = await runtime.recoverTarget(serial, reason);
+    await appendActivity({
+      eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",
+      resourceKind: "target",
+      resourceId: serial,
+      summary: recovery.summary,
+    });
+    json(response, 200, { recovery });
     return true;
   }
 

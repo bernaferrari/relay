@@ -11,6 +11,7 @@ type RunSummaryProps = {
   job: JobInfo;
   clock: number;
   previous: JobInfo | null;
+  targetLabel: string;
   onOpenRecipe: (id: string) => void;
 };
 
@@ -59,7 +60,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           <Fact label="Why it stopped" value={readableFailure(job().failureCategory!)} />
         </Show>
         <Fact label="Duration" value={fmtDur(job(), props.clock) || "—"} />
-        <Fact label="Device" value={job().targetProfile?.name ?? job().serial ?? "Not recorded"} />
+        <Fact label="Device" value={props.targetLabel} />
         <Show when={job().appVersion}>
           <Fact label="App version" value={`v${job().appVersion}`} />
         </Show>

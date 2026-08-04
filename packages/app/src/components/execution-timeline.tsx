@@ -120,7 +120,7 @@ export function ExecutionTimeline(props: {
   return (
     <section
       class={cn(
-        "relative z-[3] shrink-0 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3 py-2.5",
+        "relative z-[3] shrink-0 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3 py-2",
         props.class,
       )}
       aria-label={props.mode === "replay" ? "Run timeline" : "Execution timeline"}
@@ -207,10 +207,10 @@ export function ExecutionTimeline(props: {
       >
         {/* Replay: one continuous scrubber replaces the chip row + label block +
             prev/next + counter — play/pause, speed, track, time readout. */}
-        <div class="flex min-w-0 items-center gap-2.5">
+        <div class="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            class="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
+            class="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--text-strong)] text-[var(--v2-background-bg-base)] shadow-[0_1px_2px_rgb(0_0_0/18%)] transition-[background-color,transform] duration-150 hover:bg-[var(--text-base)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
             aria-label={props.playing ? "Pause run playback" : "Play run playback"}
             aria-pressed={props.playing}
             onClick={() => props.onTogglePlayback?.()}
@@ -220,7 +220,7 @@ export function ExecutionTimeline(props: {
           <Show when={props.onCycleSpeed}>
             <button
               type="button"
-              class="grid h-11 min-w-11 shrink-0 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-02)] px-2 font-mono text-[10px] font-semibold tabular-nums text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
+              class="grid h-9 min-w-9 shrink-0 place-items-center rounded-md px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus"
               aria-label="Playback speed"
               onClick={() => props.onCycleSpeed?.()}
             >
@@ -232,7 +232,7 @@ export function ExecutionTimeline(props: {
             ref={(element) => {
               trackEl = element;
             }}
-            class="group relative h-11 min-w-0 flex-1 cursor-pointer touch-none select-none"
+            class="group relative h-9 min-w-0 flex-1 cursor-pointer touch-none select-none"
             role="group"
             aria-label="Scrub run playback"
             onPointerDown={(event) => {

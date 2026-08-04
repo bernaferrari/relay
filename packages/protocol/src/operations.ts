@@ -309,6 +309,31 @@ type SpecificOperationMap = {
       };
     };
   };
+  "target.recover": {
+    input: {
+      serial: string;
+      reason?: "connect" | "observe" | "control" | "record" | "auto";
+    };
+    output: {
+      recovery: {
+        serial: string;
+        recovered: boolean;
+        ready: boolean;
+        summary: string;
+        actions: Array<{
+          kind: "stale-lock" | "agent-device" | "core-device";
+          status: "completed" | "skipped" | "failed";
+          detail: string;
+        }>;
+        session: {
+          status: "restored" | "unavailable";
+          app?: string;
+          fallback?: boolean;
+          detail: string;
+        };
+      };
+    };
+  };
   "job.list": {
     input: { limit?: number };
     output: { jobs: JobSummaryDto[]; active?: JobSummaryDto | null };
@@ -321,7 +346,7 @@ type SpecificOperationMap = {
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
-  "run.list": { input: Record<string, never>; output: { runs: RunSummaryDto[] } };
+  "run.list": { input: { limit?: number; appMapId?: string }; output: { runs: RunSummaryDto[] } };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
   "run.evidence.get": {
     input: { runId: string; limit?: number; includeBodies?: boolean };
@@ -883,6 +908,16 @@ const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (i
   }
 });
 
+const runListInputParser = objectParser<OperationInput<"run.list">>("run list input", (input) => {
+  if (input.limit !== undefined) {
+    const raw = input.limit;
+    const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+    if (!Number.isFinite(value) || value < 1) fail("run list limit", "must be a positive number");
+    input.limit = value;
+  }
+  if (input.appMapId !== undefined) string(input.appMapId, "run list App Map id");
+});
+
 const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) => {
   string(input.jobId, "job id");
 });
@@ -941,6 +976,50 @@ const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.lau
       fail("launched app platform", "must be android or ios");
     }
     number(launched.launchedAt, "launched app timestamp");
+  },
+);
+
+const targetRecoverInputParser = objectParser<OperationInput<"target.recover">>(
+  "target recovery input",
+  (input) => {
+    string(input.serial, "target recovery serial");
+    if (
+      input.reason !== undefined &&
+      (typeof input.reason !== "string" ||
+        !["connect", "observe", "control", "record", "auto"].includes(input.reason))
+    ) {
+      fail("target recovery reason", "must be connect, observe, control, record, or auto");
+    }
+  },
+);
+
+const targetRecoverOutputParser = objectParser<OperationOutput<"target.recover">>(
+  "target recovery response",
+  (input) => {
+    const recovery = record(input.recovery, "target recovery");
+    string(recovery.serial, "target recovery serial");
+    boolean(recovery.recovered, "target recovered");
+    boolean(recovery.ready, "target ready");
+    string(recovery.summary, "target recovery summary");
+    if (!Array.isArray(recovery.actions)) fail("target recovery actions", "must be an array");
+    for (const value of recovery.actions as unknown[]) {
+      const action = record(value, "target recovery action");
+      if (!["stale-lock", "agent-device", "core-device"].includes(String(action.kind))) {
+        fail("target recovery action kind", "is invalid");
+      }
+      if (!["completed", "skipped", "failed"].includes(String(action.status))) {
+        fail("target recovery action status", "is invalid");
+      }
+      string(action.detail, "target recovery action detail");
+    }
+    const session = record(recovery.session, "target recovery session");
+    if (session.status !== "restored" && session.status !== "unavailable") {
+      fail("target recovery session status", "must be restored or unavailable");
+    }
+    if (session.app !== undefined) string(session.app, "target recovery session app");
+    if (session.fallback !== undefined)
+      boolean(session.fallback, "target recovery session fallback");
+    string(session.detail, "target recovery session detail");
   },
 );
 
@@ -1647,6 +1726,14 @@ export const operationDefinitions = [
     idempotency: "inherent",
     input: targetAppLaunchInputParser,
     output: targetAppLaunchOutputParser,
+  }),
+  command("target.recover", "Repair target connection", "POST", "/device/recover", {
+    category: "target",
+    targetCapabilities: ["snapshot", "tap"],
+    lease: "exclusive",
+    idempotency: "inherent",
+    input: targetRecoverInputParser,
+    output: targetRecoverOutputParser,
   }),
   command("target.interact", "Interact with target", "POST", "/interact", {
     category: "target",
@@ -2397,7 +2484,11 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
   }),
-  query("run.list", "List Runs", "/runs", { category: "execution", output: runsParser }),
+  query("run.list", "List Runs", "/runs", {
+    category: "execution",
+    input: runListInputParser,
+    output: runsParser,
+  }),
   query("run.get", "Get Run", "/runs/:runId", {
     category: "evidence",
     input: runIdInputParser,

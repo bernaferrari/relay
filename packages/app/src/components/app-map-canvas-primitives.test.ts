@@ -12,7 +12,9 @@ test("connection evidence names the one target that was actually checked", () =>
 });
 
 test("connection evidence never substitutes a target-set claim", () => {
-  assert.equal(checkedTargetsLabel(undefined), "No target evidence recorded");
+  assert.equal(checkedTargetsLabel(undefined), "Not replayed on a target yet");
+  assert.equal(checkedTargetsLabel(undefined, "verified"), "Last replay reached this screen");
+  assert.equal(checkedTargetsLabel(undefined, "failed"), "Latest replay changed");
   assert.equal(
     checkedTargetsLabel([{ targetId: "iphone" }, { targetId: "ipad" }]),
     "Checked on 2 targets",

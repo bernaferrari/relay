@@ -142,13 +142,23 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
   }
 }
 
-export async function catalogSummaries(root: string, limit = 40): Promise<RunSummary[]> {
+export async function catalogSummaries(
+  root: string,
+  limit = 40,
+  actionPrefix?: string,
+): Promise<RunSummary[]> {
   await mkdir(root, { recursive: true });
   const db = database(root);
   try {
-    const rows = db
-      .prepare("SELECT * FROM runs ORDER BY written_at DESC LIMIT ?")
-      .all(limit) as Array<Record<string, unknown>>;
+    const rows = (
+      actionPrefix
+        ? db
+            .prepare(
+              "SELECT * FROM runs WHERE substr(action, 1, ?) = ? ORDER BY written_at DESC LIMIT ?",
+            )
+            .all(actionPrefix.length, actionPrefix, limit)
+        : db.prepare("SELECT * FROM runs ORDER BY written_at DESC LIMIT ?").all(limit)
+    ) as Array<Record<string, unknown>>;
     return rows.map((row) => {
       const { dir: _dir, ...summary } = rowToRecord(row);
       return summary;
