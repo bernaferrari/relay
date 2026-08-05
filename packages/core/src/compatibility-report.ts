@@ -3,6 +3,7 @@ import type {
   CompatibilityReport,
   FailureCategory,
   RunOutcome,
+  RunReview,
   TargetProfile,
 } from "@relay/protocol";
 
@@ -13,6 +14,7 @@ export type CompatibilityRunEvidence = {
   targetProfile?: TargetProfile;
   status: string;
   outcome?: RunOutcome;
+  review?: RunReview;
   failureCategory?: FailureCategory;
   queuedAt?: number;
   startedAt?: number;
@@ -41,6 +43,7 @@ function classify(
 ): "passed" | "product" | "harness" | "uncertain" | "pending" {
   if (run.status === "queued" || run.status === "running" || run.status === "paused")
     return "pending";
+  if (run.review?.status === "pending" || run.review?.status === "rejected") return "uncertain";
   if (run.outcome === "passed" || run.status === "ok" || run.status === "healed") return "passed";
   if (run.outcome === "product-failure") return "product";
   if (run.outcome === "uncertain") return "uncertain";

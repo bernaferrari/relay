@@ -9,6 +9,8 @@ import {
   listRunSummaries,
   persistRun,
   readPersistedRun,
+  reviewPersistedRun,
+  RunReviewError,
   runsRoot,
   writeFramePng,
 } from "./runs.js";
@@ -112,6 +114,98 @@ test("run reports finalize once at a terminal atomic commit point", async () => 
     run.logs.push("late mutation");
     await assert.rejects(persistRun(run), /integrity conflict/);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deferred checks survive persistence and can be approved exactly once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-review-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const run = job(join(root, "run"));
+  run.review = {
+    schemaVersion: 1,
+    status: "pending",
+    capability: "camera attachment",
+    reason: "The image needs a human comparison.",
+    requestedAt: Date.now(),
+    requestedBy: { id: "agent:openrouter", kind: "agent" },
+  };
+  try {
+    const persisted = await persistRun(run);
+    await assert.rejects(
+      () =>
+        reviewPersistedRun(runsRoot(), persisted, {
+          action: "approve",
+          actor: { id: "agent:openrouter", kind: "agent" },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof RunReviewError);
+        assert.equal(error.code, "RUN_REVIEW_ACTOR_REQUIRED");
+        return true;
+      },
+    );
+    const decision = await reviewPersistedRun(runsRoot(), persisted, {
+      action: "approve",
+      actor: { id: "human:ada", kind: "human" },
+      note: "The attachment matches the expected photo.",
+    });
+    assert.equal(decision.review.status, "approved");
+    assert.equal(decision.run.outcome, "passed");
+    assert.equal((await readPersistedRun(run.id))?.review?.status, "approved");
+    assert.equal((await listRunSummaries())[0]?.review?.status, "approved");
+
+    const retry = await reviewPersistedRun(runsRoot(), decision.run, {
+      action: "approve",
+      actor: { id: "human:ada", kind: "human" },
+    });
+    assert.equal(retry.review.decidedBy?.id, "human:ada");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("concurrent human review decisions resolve from the committed winner", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-review-race-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const run = job(join(root, "run"));
+  run.review = {
+    schemaVersion: 1,
+    status: "pending",
+    capability: "visual comparison",
+    reason: "The region needs a human decision.",
+    requestedAt: Date.now(),
+  };
+  try {
+    const persisted = await persistRun(run);
+    const [first, second] = await Promise.allSettled([
+      reviewPersistedRun(runsRoot(), persisted, {
+        action: "approve",
+        actor: { id: "human:ada", kind: "human" },
+      }),
+      reviewPersistedRun(runsRoot(), persisted, {
+        action: "reject",
+        actor: { id: "human:grace", kind: "human" },
+      }),
+    ]);
+    const fulfilled = [first, second].filter(
+      (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof reviewPersistedRun>>> =>
+        result.status === "fulfilled",
+    );
+    const rejected = [first, second].filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.ok(rejected[0]?.reason instanceof RunReviewError);
+    assert.equal(rejected[0]?.reason.code, "RUN_REVIEW_CONFLICT");
+    assert.equal((await readPersistedRun(run.id))?.review?.status, "approved");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
 });

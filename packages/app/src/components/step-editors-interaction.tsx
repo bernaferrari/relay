@@ -467,6 +467,54 @@ export function InteractionStepEditors(props: StepEditorFamilyProps): JSX.Elemen
         })()}
       </Show>
 
+      <Show when={kind() === "review"}>
+        {(() => {
+          const s = props.step();
+          if (s.kind !== "review") return null;
+          let inputEl: HTMLInputElement | undefined;
+          createEffect(() => {
+            if (props.autofocus()) {
+              inputEl?.focus();
+              props.onAutofocused();
+            }
+          });
+          return (
+            <div class="grid gap-2">
+              <div class={propRow}>
+                <span class={fieldLabel}>What to check later</span>
+                <input
+                  ref={(el) => {
+                    inputEl = el;
+                  }}
+                  class={valueCls}
+                  type="text"
+                  placeholder="e.g. Camera attachment"
+                  value={s.capability}
+                  onInput={(event) => onEdit({ ...s, capability: event.currentTarget.value })}
+                  spellcheck={false}
+                />
+              </div>
+              <div class={propRow}>
+                <span class={fieldLabel}>Why Relay needs you</span>
+                <textarea
+                  class={cn(
+                    fieldInput,
+                    "min-h-16 min-w-0 flex-1 resize-y px-2 py-1.5 leading-relaxed",
+                  )}
+                  placeholder="e.g. Compare the photo with the expected attachment"
+                  value={s.reason}
+                  onInput={(event) => onEdit({ ...s, reason: event.currentTarget.value })}
+                />
+              </div>
+              <p class="m-0 px-0.5 text-[11px]/[1.45] text-text-weak">
+                Relay keeps the evidence, marks the result <span class="font-semibold">?</span>, and
+                will show you a one-click decision in the run report later.
+              </p>
+            </div>
+          );
+        })()}
+      </Show>
+
       <Show when={kind() === "key"}>
         {(() => {
           const s = props.step();

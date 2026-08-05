@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { RunSummary } from "@relay/protocol";
+import type { RunReview, RunSummary } from "@relay/protocol";
 
 type CatalogRecord = RunSummary & { dir: string };
 
@@ -18,6 +18,7 @@ function database(root: string): DatabaseSync {
       title TEXT,
       status TEXT NOT NULL,
       outcome TEXT,
+      review_json TEXT,
       platform TEXT,
       serial TEXT,
       batch_id TEXT,
@@ -36,6 +37,10 @@ function database(root: string): DatabaseSync {
     CREATE INDEX IF NOT EXISTS runs_written_at ON runs(written_at DESC);
     PRAGMA user_version=1;
   `);
+  const columns = db.prepare("PRAGMA table_info(runs)").all() as Array<{ name?: string }>;
+  if (!columns.some((column) => column.name === "review_json")) {
+    db.exec("ALTER TABLE runs ADD COLUMN review_json TEXT");
+  }
   return db;
 }
 
@@ -53,6 +58,7 @@ function rowToRecord(row: Record<string, unknown>): CatalogRecord {
     ...(row.platform ? { platform: String(row.platform) } : {}),
     ...(row.serial ? { serial: String(row.serial) } : {}),
     ...(row.outcome ? { outcome: String(row.outcome) } : {}),
+    ...(row.review_json ? { review: JSON.parse(String(row.review_json)) as RunReview } : {}),
     ...(row.batch_id ? { batchId: String(row.batch_id) } : {}),
     frameCount: Number(row.frame_count),
     writtenAt: Number(row.written_at),
@@ -105,13 +111,13 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
     const evidence = run.evidence as { finishedAt?: unknown } | undefined;
     db.prepare(`
       INSERT INTO runs (
-        id, dir, action, title, status, outcome, platform, serial, batch_id,
+        id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
         artifact_count, artifact_bytes, evidence_complete
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
-        outcome=excluded.outcome, platform=excluded.platform, serial=excluded.serial,
+        outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
         batch_id=excluded.batch_id, queued_at=excluded.queued_at, started_at=excluded.started_at,
         finished_at=excluded.finished_at, duration_ms=excluded.duration_ms,
         written_at=excluded.written_at, frame_count=excluded.frame_count,
@@ -124,6 +130,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       run.title == null ? null : String(run.title),
       String(run.status),
       run.outcome == null ? null : String(run.outcome),
+      run.review == null ? null : JSON.stringify(run.review),
       run.platform == null ? null : String(run.platform),
       run.serial == null ? null : String(run.serial),
       run.batchId == null ? null : String(run.batchId),

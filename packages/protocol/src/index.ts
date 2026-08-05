@@ -5,11 +5,13 @@ export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
 export * from "./execution-summary.js";
+export * from "./run-review.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
 export * from "./target-summary.js";
 import type { RecipeStep } from "./recipes.js";
 import type { ActorKind, ResourceEventPayload } from "./coordination.js";
+export type { RunReview } from "./run-review.js";
 
 export type ConnectionAuth =
   | { type: "none" }
@@ -143,6 +145,7 @@ export type JobSummary = {
   platform?: string;
   serial?: string;
   outcome?: string;
+  review?: import("./run-review.js").RunReview;
   batchId?: string;
   frameCount: number;
   evidenceComplete?: boolean;
@@ -1053,6 +1056,7 @@ export type FailureCategory =
   | "semantic-assertion"
   | "visual-assertion"
   | "judge-uncertainty"
+  | "review-required"
   | "harness-defect";
 
 export type ConversationContentBlock =

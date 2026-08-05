@@ -12,6 +12,7 @@ import type {
   EvidenceManifest,
   FailureCategory,
   RunOutcome,
+  RunReview,
   TargetProfile,
 } from "@relay/protocol";
 import { now } from "./events.js";
@@ -71,6 +72,7 @@ export type PersistedRun = {
   errorCode?: string;
   outcome?: RunOutcome;
   failureCategory?: FailureCategory;
+  review?: RunReview;
   appVersion?: string;
   batchId?: string;
   caseIndex?: number;
@@ -93,7 +95,27 @@ export type PersistedRun = {
 
 export type RunArtifact = TestJob["artifacts"][number];
 
+export type RunReviewAction = "approve" | "reject";
+
+export class RunReviewError extends Error {
+  readonly code:
+    | "RUN_REVIEW_NOT_FOUND"
+    | "RUN_REVIEW_UNAVAILABLE"
+    | "RUN_REVIEW_CONFLICT"
+    | "RUN_REVIEW_ACTOR_REQUIRED";
+  readonly recovery: string;
+
+  constructor(code: RunReviewError["code"], message: string, recovery: string) {
+    super(message);
+    this.name = "RunReviewError";
+    this.code = code;
+    this.recovery = recovery;
+  }
+}
+
 const finalizing = new Map<string, Promise<PersistedRun>>();
+type RunReviewResult = { run: PersistedRun; review: RunReview };
+const reviewing = new Map<string, Promise<RunReviewResult>>();
 const COMPLETE_MARKER = ".complete";
 
 function slug(s: string): string {
@@ -226,6 +248,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     errorCode: job.errorCode,
     outcome: job.outcome,
     failureCategory: job.failureCategory,
+    review: job.review,
     appVersion: job.appVersion,
     batchId: job.batchId,
     caseIndex: job.caseIndex,
@@ -475,6 +498,139 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   }
 }
 
+/**
+ * Resolve a deferred verification without rewriting the captured evidence.
+ * The manifest remains authoritative; only the small review envelope and the
+ * derived outcome change. Repeating the same decision is intentionally
+ * idempotent so a user can safely click once and recover from a network retry.
+ */
+async function reviewPersistedRunOnce(
+  root: string,
+  run: PersistedRun,
+  input: {
+    action: RunReviewAction;
+    actor: { id: string; kind: ActorKind };
+    note?: string;
+  },
+): Promise<RunReviewResult> {
+  if (!belongsToRunStore(root, run.dir)) {
+    throw new RunReviewError(
+      "RUN_REVIEW_UNAVAILABLE",
+      "This run is outside the configured Relay run store",
+      "Re-open the run from the current project before deciding its review.",
+    );
+  }
+  if (!run.review) {
+    throw new RunReviewError(
+      "RUN_REVIEW_NOT_FOUND",
+      "This run has no deferred check waiting for review",
+      "Only runs marked Needs review can be decided here.",
+    );
+  }
+  if (input.actor.kind !== "human") {
+    throw new RunReviewError(
+      "RUN_REVIEW_ACTOR_REQUIRED",
+      "A human must decide this deferred check",
+      "Open the run review in Relay and ask a human to mark it correct or unresolved.",
+    );
+  }
+  if (run.review.status !== "pending") {
+    const alreadyMatches =
+      (run.review.status === "approved" && input.action === "approve") ||
+      (run.review.status === "rejected" && input.action === "reject");
+    if (alreadyMatches) return { run, review: run.review };
+    throw new RunReviewError(
+      "RUN_REVIEW_CONFLICT",
+      `This run was already ${run.review.status}`,
+      "Open the run details to inspect the existing reviewer decision.",
+    );
+  }
+
+  const decidedAt = now();
+  const review: RunReview = {
+    ...run.review,
+    status: input.action === "approve" ? "approved" : "rejected",
+    decidedAt,
+    decidedBy: input.actor,
+    ...(input.note?.trim() ? { note: input.note.trim().slice(0, 2_000) } : {}),
+  };
+  const next: PersistedRun = structuredClone(run);
+  next.review = review;
+  if (input.action === "approve") {
+    next.outcome = "passed";
+    next.failureCategory = undefined;
+    next.error = undefined;
+    next.errorCode = undefined;
+  } else {
+    next.outcome = "uncertain";
+    next.failureCategory = "review-required";
+    next.error = review.note ?? "Human review did not approve this check";
+    next.errorCode = "REVIEW_REJECTED";
+  }
+
+  const json = JSON.stringify(next, null, 2);
+  const token = randomUUID();
+  const temporary = {
+    run: join(run.dir, `.run.json.review.${token}.tmp`),
+    manifest: join(run.dir, `.report-manifest.json.review.${token}.tmp`),
+    marker: join(run.dir, `.complete.review.${token}.tmp`),
+  };
+  const digest = createHash("sha256").update(json).digest("hex");
+  try {
+    await Promise.all([
+      writeFile(temporary.run, json, { encoding: "utf8", flag: "wx" }),
+      writeFile(temporary.manifest, json, { encoding: "utf8", flag: "wx" }),
+      writeFile(temporary.marker, JSON.stringify({ schemaVersion: 1, id: next.id, digest }), {
+        encoding: "utf8",
+        flag: "wx",
+      }),
+    ]);
+    await Promise.all(Object.values(temporary).map(syncPath));
+    await rename(temporary.run, join(run.dir, "run.json"));
+    await rename(temporary.manifest, join(run.dir, "report-manifest.json"));
+    await rename(temporary.marker, join(run.dir, COMPLETE_MARKER));
+    await syncPath(run.dir);
+    await indexRun(root, next as unknown as Record<string, unknown>).catch(() => undefined);
+  } finally {
+    await Promise.all(Object.values(temporary).map((path) => unlink(path).catch(() => undefined)));
+  }
+  next.dir = run.dir;
+  return { run: next, review };
+}
+
+/**
+ * Serialize decisions for a run within this Relay process and refresh the
+ * persisted snapshot before deciding. Review is intentionally a human-only
+ * operation, but multiple people can still have the same run open at once.
+ */
+export function reviewPersistedRun(
+  root: string,
+  run: PersistedRun,
+  input: {
+    action: RunReviewAction;
+    actor: { id: string; kind: ActorKind };
+    note?: string;
+  },
+): Promise<RunReviewResult> {
+  const key = run.dir;
+  const previous = reviewing.get(key) ?? Promise.resolve<RunReviewResult | undefined>(undefined);
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const latest = (await readCompletedRun(run.dir)) ?? run;
+      latest.dir = run.dir;
+      return reviewPersistedRunOnce(root, latest, input);
+    });
+  reviewing.set(key, next);
+  const clearLock = () => {
+    if (reviewing.get(key) === next) reviewing.delete(key);
+  };
+  // Use then(onFulfilled, onRejected) so cleanup itself never creates an
+  // unhandled rejected promise when a conflicting review is intentional.
+  void next.then(clearLock, clearLock);
+  return next;
+}
+
 export async function recipeStability(
   recipeId: string,
   limit = 20,
@@ -490,7 +646,10 @@ export async function recipeStability(
     .filter((run) => run.action === recipeId)
     .slice(0, Math.max(1, Math.min(limit, 100)));
   const passed = runs.filter(
-    (run) => run.outcome === "passed" || run.status === "ok" || run.status === "healed",
+    (run) =>
+      run.review?.status !== "pending" &&
+      run.review?.status !== "rejected" &&
+      (run.outcome === "passed" || run.status === "ok" || run.status === "healed"),
   ).length;
   const productFailures = runs.filter((run) => run.outcome === "product-failure").length;
   const harnessFailures = runs.filter((run) => run.outcome === "harness-failure").length;

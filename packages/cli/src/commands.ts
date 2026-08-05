@@ -1310,6 +1310,23 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("run.catalog.rebuild", path("run catalog rebuild")),
   mapped("run.retention.apply", path("run retention apply")),
   mapped(
+    "run.review",
+    path("run review", ["runId"], undefined, {
+      summary: "Approve or reject a deferred verification",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [
+        {
+          name: "action",
+          type: '"approve" | "reject"',
+          required: true,
+          description: "Approve the check as correct or reject it",
+        },
+        { name: "note", type: "string", description: "Optional reviewer note" },
+      ],
+      examples: ['relay run review <run-id> --input \'{"action":"approve"}\''],
+    }),
+  ),
+  mapped(
     "run.visual-baseline.update",
     path("run visual-baseline update", ["runId"], { action: "approve-new-baseline" }),
     path(

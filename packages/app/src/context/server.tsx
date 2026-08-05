@@ -932,6 +932,27 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function reviewRun(
+      id: string,
+      action: "approve" | "reject",
+      note?: string,
+    ): Promise<import("@relay/protocol").RunReview | null> {
+      try {
+        const result = await runAction("run.review", {
+          runId: id,
+          action,
+          ...(note?.trim() ? { note: note.trim() } : {}),
+        });
+        await refreshRuns();
+        await loadRunDetail(id);
+        return result.review;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast(message, "error");
+        return null;
+      }
+    }
+
     async function refreshProjectVariables() {
       if (!client || health() === "offline") return;
       try {
@@ -1851,6 +1872,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadRunEvidence,
       compareVisualRun,
       reviewVisualRun,
+      reviewRun,
       pollHealth,
       retryConnection,
       recoverSelectedTarget,

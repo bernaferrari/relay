@@ -49,6 +49,7 @@ import type {
   RegisteredBuildPreflight,
   TargetWorkerStatus,
 } from "./target-runtime.js";
+import type { RunReview } from "./run-review.js";
 type RedactionPolicyDto = {
   enabled: boolean;
   source: "default" | "workspace" | "environment";
@@ -72,6 +73,7 @@ type JobSummaryDto = {
   status: string;
   queuedAt: number;
   frameCount: number;
+  review?: RunReview;
   [key: string]: unknown;
 };
 
@@ -355,6 +357,10 @@ type SpecificOperationMap = {
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": { input: { limit?: number; appMapId?: string }; output: { runs: RunSummaryDto[] } };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
+  "run.review": {
+    input: { runId: string; action: "approve" | "reject"; note?: string };
+    output: { run: OperationRecord; review: RunReview };
+  };
   "run.evidence.get": {
     input: { runId: string; limit?: number; includeBodies?: boolean };
     output: { evidence: OperationRecord };
@@ -1512,6 +1518,25 @@ const observationProposalOutputParser = objectParser<
 const visualCompareInputParser = objectParser<OperationInput<"run.visual.compare">>(
   "visual comparison input",
   (input) => string(input.runId, "visual comparison runId"),
+);
+
+const runReviewInputParser = objectParser<OperationInput<"run.review">>(
+  "run review input",
+  (input) => {
+    string(input.runId, "run review runId");
+    if (input.action !== "approve" && input.action !== "reject") {
+      fail("run review action", 'must be "approve" or "reject"');
+    }
+    if (input.note !== undefined) string(input.note, "run review note");
+  },
+);
+
+const runReviewOutputParser = objectParser<OperationOutput<"run.review">>(
+  "run review response",
+  (input) => {
+    record(input.run, "run review run");
+    record(input.review, "run review decision");
+  },
 );
 
 const visualReviewInputParser = objectParser<OperationInput<"run.visual.review">>(
@@ -2883,6 +2908,12 @@ export const operationDefinitions = [
   query("run.get", "Get Run", "/runs/:runId", {
     category: "evidence",
     input: runIdInputParser,
+  }),
+  command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {
+    category: "evidence",
+    confirmation: "confirm",
+    input: runReviewInputParser,
+    output: runReviewOutputParser,
   }),
   query("run.evidence.get", "Get Run Evidence", "/runs/:runId/evidence", {
     category: "evidence",

@@ -32,11 +32,15 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
     readableOutcome(job().outcome ?? (job().status === "error" ? "harness-failure" : "passed"));
 
   const resultTone = () =>
-    job().status === "ok" || job().status === "healed"
-      ? "bg-icon-success-base"
-      : job().status === "error" || job().status === "cancelled"
-        ? "bg-icon-critical-base"
-        : "bg-surface-brand-base";
+    job().review?.status === "rejected" || job().outcome === "product-failure"
+      ? "bg-icon-critical-base"
+      : job().review?.status === "pending" || job().outcome === "uncertain"
+        ? "bg-icon-warning-base"
+        : job().status === "ok" || job().status === "healed"
+          ? "bg-icon-success-base"
+          : job().status === "error" || job().status === "cancelled"
+            ? "bg-icon-critical-base"
+            : "bg-surface-brand-base";
 
   return (
     <div class="grid min-w-0 overflow-hidden">
@@ -56,6 +60,15 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
         <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-[12.5px]/[1.5] text-text-weak">
           {friendlyError(job().error!)}
         </p>
+      </Show>
+      <Show when={job().review?.status === "pending"}>
+        <div class="mt-3 grid gap-1.5 rounded-lg bg-surface-warning-weak px-3 py-2.5 text-[11.5px]/[1.45] text-text-warning-base">
+          <strong class="font-semibold">Automation paused at a human-verifiable boundary</strong>
+          <span>{job().review!.reason}</span>
+          <span class="font-mono text-[10px] text-text-weaker">
+            Capability · {job().review!.capability}
+          </span>
+        </div>
       </Show>
       <div class="pt-4 pb-1 text-[11px]/[1.25] font-semibold tracking-[0.06em] uppercase text-text-weaker">
         What happened

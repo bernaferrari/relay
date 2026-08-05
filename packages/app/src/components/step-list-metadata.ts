@@ -20,6 +20,7 @@ export function kindLabel(kind: string): string {
     "wait-response": "Response",
     sleep: "Sleep",
     pause: "Human",
+    review: "Review",
     key: "Key",
     scroll: "Scroll",
     swipe: "Swipe",
@@ -48,7 +49,7 @@ export function kindIcon(kind: RecipeStep["kind"]): IconName {
   if (["type", "key", "clipboard"].includes(kind)) return "keyboard";
   if (["expect", "expect-set", "assert-content", "evaluate-semantic"].includes(kind))
     return "check";
-  if (["wait-for", "wait-response", "sleep", "pause"].includes(kind)) return "clock";
+  if (["wait-for", "wait-response", "sleep", "pause", "review"].includes(kind)) return "clock";
   if (["screenshot", "extract"].includes(kind)) return "camera";
   if (["flow", "module", "branch", "repeat"].includes(kind)) return "move";
   if (["device", "rotate"].includes(kind)) return "smartphone";
@@ -178,6 +179,10 @@ export const ADD_GROUPS: AddGroup[] = [
         make: () => ({ kind: "wait-response", target: {}, timeoutMs: 90_000, stableForMs: 2_000 }),
       },
       { label: "Wait (sleep)", make: () => ({ kind: "sleep", ms: 500 }) },
+      {
+        label: "Defer check for review",
+        make: () => ({ kind: "review", capability: "", reason: "" }),
+      },
       {
         label: "Check clipboard",
         make: () => ({ kind: "clipboard", action: "read", expect: "", match: "exact" }),

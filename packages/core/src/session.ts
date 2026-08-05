@@ -73,6 +73,7 @@ import type {
   EvidenceManifest,
   FailureCategory,
   RunOutcome,
+  RunReview,
   TargetProfile,
 } from "@relay/protocol";
 import type { JobSummary } from "@relay/protocol";
@@ -154,6 +155,8 @@ export type TestJob = {
   errorCode?: JobErrorCode;
   outcome?: RunOutcome;
   failureCategory?: FailureCategory;
+  /** A completed run whose final verdict is intentionally deferred to a human. */
+  review?: RunReview;
   /** Optional app-under-test version if known from the action result. */
   appVersion?: string;
   batchId?: string;
@@ -238,6 +241,7 @@ export function summarizeJob(job: TestJob): JobSummary {
     platform: job.targetKind === "browser" ? "browser" : job.platform,
     serial: job.browserTargetId ?? job.serial,
     outcome: job.outcome,
+    review: job.review,
     batchId: job.batchId,
     frameCount: job.frames.length,
     evidenceComplete: Boolean(job.evidence?.finishedAt),
@@ -695,6 +699,7 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     case "wait-for":
     case "wait-response":
     case "pause":
+    case "review":
       return ["after"];
     default:
       return ["before", "after"];
@@ -955,7 +960,8 @@ async function executeJob(id: string): Promise<void> {
       const step = primary();
       if (step) finishStep(step, "ok", "✓ recipe completed");
     }
-    job.result = "recipe completed";
+    job.result =
+      job.review?.status === "pending" ? "recipe completed · needs review" : "recipe completed";
     job.error = undefined;
     job.errorCode = undefined;
     setOutcome(job);
@@ -965,7 +971,7 @@ async function executeJob(id: string): Promise<void> {
       at: job.finishedAt,
       jobId: job.id,
       action: job.action,
-      ok: true,
+      ok: job.outcome === "passed",
       result: job.result,
       error: job.error,
       durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),

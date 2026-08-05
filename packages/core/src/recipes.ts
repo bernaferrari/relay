@@ -1125,6 +1125,27 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "review": {
+        if (!isString(raw.capability) || !raw.capability.trim()) {
+          throw stepErr(index, "review.capability is required");
+        }
+        if (!isString(raw.reason) || !raw.reason.trim()) {
+          throw stepErr(index, "review.reason is required");
+        }
+        if (raw.capability.trim().length > 120) {
+          throw stepErr(index, "review.capability must be 120 characters or fewer");
+        }
+        if (raw.reason.trim().length > 500) {
+          throw stepErr(index, "review.reason must be 500 characters or fewer");
+        }
+        out.push({
+          kind: "review",
+          capability: raw.capability.trim(),
+          reason: raw.reason.trim(),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "flow": {
         if (!isString(raw.flow)) throw stepErr(index, "flow requires flow: string (an ActionId)");
         if (!isActionId(raw.flow)) {
@@ -1819,6 +1840,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return step.reason
         ? `Wait for human (${step.reason}): ${step.message}`
         : `Pause: ${step.message}`;
+    case "review":
+      return `Needs review · ${step.capability}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
@@ -1902,6 +1925,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "evaluate-semantic":
       return ["ai", "ok"];
     case "pause":
+    case "review":
       return ["wait"];
     case "screenshot":
       return ["shot"];

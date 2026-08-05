@@ -3,7 +3,7 @@
  */
 import type { JobStatus, TestJob } from "./session.js";
 import type { Glyph, StepKind } from "./trace.js";
-import type { FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import type { FailureCategory, RunOutcome, RunReview, TargetProfile } from "@relay/protocol";
 import { classifyRunOutcome } from "./outcomes.js";
 
 const LOG_TAIL_CHARS = 2_000;
@@ -34,13 +34,14 @@ export type JobReport = {
   errorCode?: string;
   outcome: RunOutcome;
   failureCategory?: FailureCategory;
+  review?: RunReview;
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;
   steps: JobReportStep[];
   frameCount: number;
   runDir?: string;
-  /** CI convenience: true when status is ok or healed */
+  /** CI convenience: true only after the check is actually passed or approved. */
   ok: boolean;
 };
 
@@ -62,10 +63,13 @@ export function toJobReport(job: TestJob): JobReport {
   const startedAt = job.startedAt ?? job.queuedAt;
   const durationMs = job.finishedAt != null ? job.finishedAt - startedAt : undefined;
   const healed = Boolean(job.healed || job.status === "healed");
-  const ok = (job.status === "ok" || healed) && job.status !== "cancelled";
-  const classification = job.outcome
-    ? { outcome: job.outcome, failureCategory: job.failureCategory }
-    : classifyRunOutcome(job);
+  const classification =
+    job.review?.status === "pending" || job.review?.status === "rejected"
+      ? classifyRunOutcome(job)
+      : job.outcome
+        ? { outcome: job.outcome, failureCategory: job.failureCategory }
+        : classifyRunOutcome(job);
+  const ok = classification.outcome === "passed";
 
   return {
     id: job.id,
@@ -83,6 +87,7 @@ export function toJobReport(job: TestJob): JobReport {
     errorCode: job.errorCode,
     outcome: classification.outcome,
     failureCategory: classification.failureCategory,
+    review: job.review,
     startedAt,
     finishedAt: job.finishedAt,
     durationMs,
@@ -127,6 +132,13 @@ export function toJunitXml(reports: JobReport[]): string {
       return `    <testcase ${attrs}>${systemOut}\n    </testcase>`;
     }
 
+    if (r.outcome === "uncertain" && r.review?.status !== "rejected") {
+      const reason = r.review?.reason ?? "This check needs a human decision";
+      return `    <testcase ${attrs}>
+      <skipped message="${escapeXml(reason)}" />
+    </testcase>`;
+    }
+
     failures += 1;
     const msg = escapeXml(r.error ?? r.status);
     const detail = escapeXml(
@@ -166,7 +178,10 @@ export function formatJsonReport(reports: JobReport[]): string {
         total: reports.length,
         passed: reports.filter((r) => r.ok && !r.healed).length,
         healed: reports.filter((r) => r.healed).length,
-        failed: reports.filter((r) => !r.ok).length,
+        needsReview: reports.filter((r) => r.outcome === "uncertain").length,
+        failed: reports.filter(
+          (r) => !r.ok && (r.outcome !== "uncertain" || r.review?.status === "rejected"),
+        ).length,
       },
       reports,
     },

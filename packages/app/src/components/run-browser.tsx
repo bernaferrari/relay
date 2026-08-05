@@ -3,7 +3,7 @@ import { useServer, type JobInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { Icon } from "./icon";
-import { jobStatusChip } from "./status-chip";
+import { runOutcomeChip } from "./status-chip";
 
 export function RunBrowser(props: {
   rows: JobInfo[];
@@ -17,7 +17,7 @@ export function RunBrowser(props: {
     if (!needle) return props.rows;
     return props.rows.filter((job) => {
       const recipe = server.recipes().find((item) => item.id === job.action);
-      const status = jobStatusChip(job.status);
+      const status = runOutcomeChip(job);
       return [job.title, recipe?.title, titleize(job.action), status.label]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(needle));
@@ -58,7 +58,7 @@ export function RunBrowser(props: {
         <For each={filteredRows()}>
           {(job) => {
             const recipe = () => server.recipes().find((item) => item.id === job.action);
-            const status = () => jobStatusChip(job.status);
+            const status = () => runOutcomeChip(job);
             return (
               <button
                 type="button"

@@ -1356,6 +1356,23 @@ async function runRequiredRecipeStep(
       break;
     }
 
+    case "review": {
+      if (!job) throw new Error("review: no job to annotate");
+      const context = job.operationContext;
+      const review = {
+        schemaVersion: 1 as const,
+        status: "pending" as const,
+        capability: step.capability,
+        reason: step.reason,
+        requestedAt: now(),
+        ...(context ? { requestedBy: { id: context.actorId, kind: context.actorKind } } : {}),
+      };
+      job.review = review;
+      job.artifacts.push({ kind: "review-required", capturedAt: review.requestedAt, data: review });
+      log(`? needs review · ${step.capability}: ${step.reason}`);
+      break;
+    }
+
     case "flow": {
       // validateRecipeSteps guarantees step.flow is a known ActionId; narrow to satisfy types.
       if (!isActionId(step.flow)) {

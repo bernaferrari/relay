@@ -1,4 +1,4 @@
-import type { FailureCategory, RunOutcome } from "@relay/protocol";
+import type { FailureCategory, RunOutcome, RunReview } from "@relay/protocol";
 
 export type ClassifiedOutcome = { outcome: RunOutcome; failureCategory?: FailureCategory };
 
@@ -6,7 +6,11 @@ export function classifyRunOutcome(input: {
   status: string;
   error?: string;
   errorCode?: string;
+  review?: RunReview;
 }): ClassifiedOutcome {
+  if (input.review?.status === "pending" || input.review?.status === "rejected") {
+    return { outcome: "uncertain", failureCategory: "review-required" };
+  }
   if (input.status === "ok" || input.status === "healed") return { outcome: "passed" };
   if (input.status === "cancelled" || input.errorCode === "CANCELLED")
     return { outcome: "cancelled" };

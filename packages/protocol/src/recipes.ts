@@ -251,6 +251,14 @@ export type RecipeStep = RecipeStepMetadata &
           timeoutMs?: number;
         };
       }
+    | {
+        /** Finish this verification as a reviewable unknown instead of a
+         * false pass or a hard failure. A reviewer can approve or reject it
+         * later from the run report or CLI. */
+        kind: "review";
+        capability: string;
+        reason: string;
+      }
     | { kind: "screenshot"; caption?: string }
     | { kind: "flow"; flow: string }
     | { kind: "module"; recipeId: string; bindings?: Record<string, string> }

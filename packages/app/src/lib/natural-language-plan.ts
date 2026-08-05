@@ -62,6 +62,14 @@ function instructionToStep(instruction: string): RecipeStep {
     return { kind: "scroll", direction: /\bup\b/i.test(text) ? "up" : "down" };
   if (/^copy\b/i.test(text)) return { kind: "clipboard", action: "write", text: textValue(text) };
   if (/^paste\b/i.test(text)) return { kind: "clipboard", action: "read" };
+  if (/^(confirm|review|judge|compare|manually check|inspect)\b/i.test(text)) {
+    return {
+      kind: "review",
+      capability: "Human verification",
+      reason: text,
+      note: "Generated as a deferred check from a natural-language instruction",
+    };
+  }
   return { kind: "pause", message: text, note: "Generated from a natural-language instruction" };
 }
 

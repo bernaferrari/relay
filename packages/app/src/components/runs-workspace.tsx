@@ -14,7 +14,7 @@ import { useWorkbench } from "../context/workbench";
 import { RunSummary } from "./run-summary";
 import { friendlyError, readableFailure } from "../lib/run-failure-presentation";
 import { Icon } from "./icon";
-import { StatusChip, jobStatusChip } from "./status-chip";
+import { StatusChip, runOutcomeChip } from "./status-chip";
 import { EmptyState } from "./empty-state";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur } from "../lib/job";
@@ -97,7 +97,9 @@ export function RunsWorkspace(props: {
     import("@relay/protocol").RegressionSignal[]
   >([]);
   const [refreshing, setRefreshing] = createSignal(false);
-  const [runFilter, setRunFilter] = createSignal<"all" | "passed" | "attention" | "active">("all");
+  const [runFilter, setRunFilter] = createSignal<
+    "all" | "passed" | "attention" | "review" | "active"
+  >("all");
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const requestedDetails = new Set<string>();
 
@@ -132,12 +134,20 @@ export function RunsWorkspace(props: {
     const filter = runFilter();
     const filtered =
       filter === "passed"
-        ? rows().filter((row) => row.status === "ok" || row.status === "healed")
+        ? rows().filter((row) => runOutcomeChip(row).tone === "pass")
         : filter === "attention"
-          ? rows().filter((row) => row.status === "error" || row.status === "cancelled")
-          : filter === "active"
-            ? rows().filter((row) => ["queued", "running", "paused"].includes(row.status))
-            : rows();
+          ? rows().filter((row) => {
+              const tone = runOutcomeChip(row).tone;
+              return tone === "fail";
+            })
+          : filter === "review"
+            ? rows().filter(
+                (row) =>
+                  row.review?.status === "pending" || (row.outcome === "uncertain" && !row.review),
+              )
+            : filter === "active"
+              ? rows().filter((row) => ["queued", "running", "paused"].includes(row.status))
+              : rows();
     // The default should answer “what needs review?” rather than repeat the
     // same flow forty times. Full chronology remains one deliberate click
     // away for audit work.
@@ -170,7 +180,9 @@ export function RunsWorkspace(props: {
         ((a as { writtenAt?: number }).writtenAt ?? 0) ===
           ((b as { writtenAt?: number }).writtenAt ?? 0) &&
         (a.artifacts?.length ?? 0) === (b.artifacts?.length ?? 0) &&
-        (a.frames?.length ?? 0) === (b.frames?.length ?? 0)),
+        (a.frames?.length ?? 0) === (b.frames?.length ?? 0) &&
+        a.review?.status === b.review?.status &&
+        (a.review?.decidedAt ?? 0) === (b.review?.decidedAt ?? 0)),
   });
   /**
    * A run report owns its local replay cursor, but when the corresponding
@@ -250,6 +262,17 @@ export function RunsWorkspace(props: {
       }
     } finally {
       setApprovingVisualBaseline(false);
+    }
+  }
+  async function reviewDeferredRun(action: "approve" | "reject"): Promise<void> {
+    const job = selected();
+    if (!job?.persisted || job.review?.status !== "pending") return;
+    const review = await server.reviewRun(job.id, action);
+    if (review) {
+      toast(
+        action === "approve" ? "Check marked correct" : "Check left unresolved",
+        action === "approve" ? "success" : "info",
+      );
     }
   }
   async function updateVisualPolicy(
@@ -404,6 +427,7 @@ export function RunsWorkspace(props: {
                   {(
                     [
                       ["all", "Latest"],
+                      ["review", "Review"],
                       ["passed", "Passed"],
                       ["attention", "Attention"],
                       ["active", "Active"],
@@ -590,8 +614,8 @@ export function RunsWorkspace(props: {
                 </div>
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-text-weak">
                   <StatusChip
-                    tone={jobStatusChip(job().status).tone}
-                    label={jobStatusChip(job().status).label}
+                    tone={runOutcomeChip(job()).tone}
+                    label={runOutcomeChip(job()).label}
                   />
                   <span class={cn(mono, "text-text-weaker")} data-tip="When this run finished">
                     {fmtAgo(
@@ -615,6 +639,62 @@ export function RunsWorkspace(props: {
                   </span>
                 </div>
               </header>
+              <Show when={job().review?.status === "pending"}>
+                <div class="mx-4 mb-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--icon-warning-base)_32%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-warning-base)_7%,transparent)] px-3 py-3">
+                  <div class="flex items-start gap-2.5">
+                    <span
+                      class="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-warning-weak text-[14px] font-semibold text-text-warning-base"
+                      aria-hidden="true"
+                    >
+                      ?
+                    </span>
+                    <div class="min-w-0">
+                      <strong class="block text-[12.5px] font-semibold text-text-strong">
+                        Needs your review
+                      </strong>
+                      <span class="mt-0.5 block text-[11px]/[1.45] text-text-weak">
+                        {job().review!.reason}
+                      </span>
+                      <span class="mt-1 block font-mono text-[10px] text-text-weaker">
+                        Capability · {job().review!.capability}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      class="text-[11px]"
+                      onClick={() => void reviewDeferredRun("approve")}
+                    >
+                      <Icon name="check" size={12} /> Mark correct
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      class="text-[11px]"
+                      onClick={() => void reviewDeferredRun("reject")}
+                    >
+                      Keep unresolved
+                    </Button>
+                  </div>
+                </div>
+              </Show>
+              <Show when={job().review?.status === "approved"}>
+                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-success-base/40 bg-surface-success-weak px-3 py-2.5 text-[11px]/[1.4] text-text-success-base">
+                  <Icon name="check" size={13} class="mt-0.5 shrink-0" />
+                  <span>Marked correct by a reviewer. The original evidence is unchanged.</span>
+                </div>
+              </Show>
+              <Show when={job().review?.status === "rejected"}>
+                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-critical-base/40 bg-surface-critical-weak px-3 py-2.5 text-[11px]/[1.4] text-text-critical-base">
+                  <Icon name="x" size={13} class="mt-0.5 shrink-0" />
+                  <span>
+                    This check was not accepted. Fix the capability or add an explicit assertion
+                    before relying on it.
+                  </span>
+                </div>
+              </Show>
               <Show when={job().status === "error" || job().status === "cancelled"}>
                 <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--icon-critical-base)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5">
                   <span class="mt-0.5 grid size-6 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] text-[var(--icon-critical-base)]">

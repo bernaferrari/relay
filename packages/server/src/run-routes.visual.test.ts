@@ -46,6 +46,7 @@ async function persistFixture(
   root: string,
   id: string,
   frameContents: string,
+  review?: PersistedRun["review"],
 ): Promise<PersistedRun> {
   const dir = join(root, `fixture_${id}`);
   await mkdir(join(dir, "frames"), { recursive: true });
@@ -66,6 +67,7 @@ async function persistFixture(
     finishedAt: 2,
     logs: [],
     steps: [],
+    ...(review ? { review } : {}),
     frames: [
       {
         path: "frames/001.png",
@@ -214,6 +216,51 @@ test("run routes compare durable visual evidence and require explicit review dec
     assert.equal(
       (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
       "latest-run",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("run routes expose deferred checks and persist the human decision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-route-review-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    await persistFixture(root, "review-run", "approved-image", {
+      schemaVersion: 1,
+      status: "pending",
+      capability: "camera attachment",
+      reason: "The captured image needs a human comparison.",
+      requestedAt: 2,
+      requestedBy: { id: "agent:openrouter", kind: "agent" },
+    });
+
+    const before = await requestRoute("GET", "/runs");
+    assert.equal(
+      (before.value.runs as Array<{ review?: { status: string } }>).find(
+        (run) => run.review?.status === "pending",
+      )?.review?.status,
+      "pending",
+    );
+
+    const approved = await requestRoute("POST", "/runs/review-run/review", {
+      action: "approve",
+      note: "The image is correct.",
+    });
+    assert.equal((approved.value.review as { status: string }).status, "approved");
+    assert.equal((approved.value.run as { outcome: string }).outcome, "passed");
+
+    await assert.rejects(
+      () => requestRoute("POST", "/runs/review-run/review", { action: "reject" }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.equal(error.status, 409);
+        assert.equal(error.body?.code, "RUN_REVIEW_CONFLICT");
+        return true;
+      },
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_RUNS_DIR;

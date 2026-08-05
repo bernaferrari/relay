@@ -23,6 +23,8 @@ import {
   getVisualBaseline,
   getVisualComparisonPolicy,
   reviewVisualComparison,
+  reviewPersistedRun,
+  RunReviewError,
   updateVisualComparisonPolicy,
   VISUAL_REVIEW_ACTIONS,
   VisualVerificationError,
@@ -134,6 +136,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             platform: run.platform,
             serial: run.serial,
             outcome: run.outcome,
+            review: run.review,
             batchId: run.batchId,
             frameCount: run.frameCount ?? run.frames.length,
             evidenceComplete: Boolean(run.evidence?.finishedAt),
@@ -365,6 +368,48 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     } catch (error) {
       if (error instanceof VisualVerificationError) {
         throw visualVerificationHttpError(error);
+      }
+      throw error;
+    }
+    return true;
+  }
+
+  const runReviewMatch = matchPath(pathname, "/runs/:id/review");
+  if (method === "POST" && runReviewMatch) {
+    const run = await readPersistedRun(runReviewMatch.id!);
+    assertRunAccess(scope, run);
+    const body = (await parseJsonBody(request)) as {
+      action?: unknown;
+      note?: unknown;
+    };
+    if (body.action !== "approve" && body.action !== "reject") {
+      throw new HttpError(400, "Unknown run review action", {
+        code: "RUN_REVIEW_ACTION_INVALID",
+        recovery:
+          "Choose action=approve to mark the check correct or action=reject to keep it unresolved.",
+      });
+    }
+    try {
+      const reviewed = await reviewPersistedRun(runsRoot(), run, {
+        action: body.action,
+        actor: reviewActor(context),
+        ...(typeof body.note === "string" ? { note: body.note } : {}),
+      });
+      recordAudit(scope, {
+        action: `run.review.${body.action}`,
+        resource: run.id,
+        result: "allow",
+      });
+      json(response, 200, reviewed);
+    } catch (error) {
+      if (error instanceof RunReviewError) {
+        const status =
+          error.code === "RUN_REVIEW_NOT_FOUND"
+            ? 404
+            : error.code === "RUN_REVIEW_ACTOR_REQUIRED"
+              ? 403
+              : 409;
+        throw new HttpError(status, error.message, { code: error.code, recovery: error.recovery });
       }
       throw error;
     }

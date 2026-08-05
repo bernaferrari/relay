@@ -87,6 +87,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "pause":
       // Keep the action explicit: this is a deliberate handoff, not a sleep.
       return step.message.trim() ? `Wait for you: ${step.message}` : "Wait for your input";
+    case "review":
+      return `Needs review: ${step.capability}`;
     case "key":
       return `Press ${step.key === "back" ? "Back" : "Home"}`;
     case "scroll":
@@ -178,6 +180,8 @@ export function stepValid(step: RecipeStep): boolean {
       return Number.isFinite(step.ms) && step.ms >= 0;
     case "pause":
       return step.message.trim().length > 0;
+    case "review":
+      return step.capability.trim().length > 0 && step.reason.trim().length > 0;
     case "flow":
       return step.flow.trim().length > 0;
     case "module":
@@ -244,6 +248,8 @@ export function stepIssue(step: RecipeStep): string | null {
       return "Needs a wait duration.";
     case "pause":
       return "Needs instructions for the human.";
+    case "review":
+      return "Needs a capability and a reason for the deferred check.";
     case "flow":
       return "Needs a flow — pick one from the list.";
     case "module":

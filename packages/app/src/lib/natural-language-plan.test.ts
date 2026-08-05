@@ -42,11 +42,12 @@ describe("planTestPrompt", () => {
     );
   });
 
-  it("keeps ambiguous instructions as explicit manual checkpoints", () => {
+  it("turns subjective checks into deferred review instead of blocking the run", () => {
     assert.deepEqual(planTestPrompt("Confirm the animation feels smooth")[0]?.step, {
-      kind: "pause",
-      message: "Confirm the animation feels smooth",
-      note: "Generated from a natural-language instruction",
+      kind: "review",
+      capability: "Human verification",
+      reason: "Confirm the animation feels smooth",
+      note: "Generated as a deferred check from a natural-language instruction",
     });
   });
 });

@@ -21,6 +21,9 @@ function fakeJob(partial: Partial<TestJob> & Pick<TestJob, "status">): TestJob {
     tone: partial.tone ?? "dim",
     error: partial.error,
     errorCode: partial.errorCode,
+    outcome: partial.outcome,
+    failureCategory: partial.failureCategory,
+    review: partial.review,
     healed: partial.healed,
     healMessage: partial.healMessage,
     serial: partial.serial,
@@ -73,6 +76,38 @@ describe("toJobReport", () => {
     assert.equal(r.errorCode, "ACTION_FAILED");
     assert.equal(r.outcome, "harness-failure");
   });
+
+  it("keeps deferred checks out of the green path until a human approves them", () => {
+    const r = toJobReport(
+      fakeJob({
+        status: "ok",
+        review: {
+          schemaVersion: 1,
+          status: "pending",
+          capability: "camera attachment",
+          reason: "The image cannot be inspected in this run.",
+          requestedAt: 1,
+        },
+      }),
+    );
+    assert.equal(r.ok, false);
+    assert.equal(r.outcome, "uncertain");
+    assert.match(toJunitXml([r]), /skipped/);
+    const approved = toJobReport({
+      ...fakeJob({ status: "ok" }),
+      outcome: "passed",
+      review: {
+        schemaVersion: 1,
+        status: "approved",
+        capability: "camera attachment",
+        reason: "The image cannot be inspected in this run.",
+        requestedAt: 1,
+        decidedAt: 2,
+        decidedBy: { id: "human:ada", kind: "human" },
+      },
+    });
+    assert.equal(approved.ok, true);
+  });
 });
 
 describe("toJunitXml", () => {
@@ -88,6 +123,25 @@ describe("toJunitXml", () => {
     assert.match(xml, /failures="1"/);
     assert.match(xml, /<failure/);
     assert.match(xml, /login-google/);
+  });
+
+  it("turns an explicitly rejected deferred check into a failure", () => {
+    const report = toJobReport({
+      ...fakeJob({ status: "ok" }),
+      outcome: "uncertain",
+      review: {
+        schemaVersion: 1,
+        status: "rejected",
+        capability: "camera attachment",
+        reason: "The captured image was not the expected photo.",
+        requestedAt: 1,
+        decidedAt: 2,
+        decidedBy: { id: "human:ada", kind: "human" },
+      },
+    });
+    const xml = toJunitXml([report]);
+    assert.match(xml, /failures="1"/);
+    assert.match(xml, /<failure/);
   });
 });
 

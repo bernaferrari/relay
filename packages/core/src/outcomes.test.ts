@@ -27,4 +27,20 @@ describe("classifyRunOutcome", () => {
       outcome: "cancelled",
     });
   });
+
+  it("treats a deferred capability as reviewable instead of green", () => {
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "ok",
+        review: {
+          schemaVersion: 1,
+          status: "pending",
+          capability: "camera attachment",
+          reason: "This workstation cannot inspect the captured image yet.",
+          requestedAt: 1,
+        },
+      }),
+      { outcome: "uncertain", failureCategory: "review-required" },
+    );
+  });
 });

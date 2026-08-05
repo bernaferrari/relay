@@ -26,6 +26,7 @@ const expectedKinds: RecipeStep["kind"][] = [
   "module",
   "branch",
   "repeat",
+  "review",
   "script",
   "app",
   "device",

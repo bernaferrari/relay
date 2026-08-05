@@ -63,3 +63,23 @@ export function jobStatusChip(status: JobInfo["status"]): { tone: StatusChipTone
             : "idle";
   return { tone, label: executionStateLabel(state) };
 }
+
+/** Outcome-aware status used by reports and history. Raw `status=ok` only
+ * means execution completed; a deferred check must never look green. */
+export function runOutcomeChip(job: Pick<JobInfo, "status" | "outcome" | "review">): {
+  tone: StatusChipTone;
+  label: string;
+} {
+  if (job.review?.status === "rejected") {
+    return { tone: "fail", label: "Review rejected" };
+  }
+  if (job.review?.status === "pending" || job.outcome === "uncertain") {
+    return { tone: "attention", label: "Needs review" };
+  }
+  if (job.outcome === "passed" || job.status === "ok" || job.status === "healed") {
+    return { tone: "pass", label: job.status === "healed" ? "Passed with recovery" : "Passed" };
+  }
+  if (job.outcome === "product-failure") return { tone: "fail", label: "App issue" };
+  if (job.outcome === "harness-failure") return { tone: "fail", label: "Could not run" };
+  return jobStatusChip(job.status);
+}

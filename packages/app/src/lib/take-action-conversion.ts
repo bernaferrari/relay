@@ -131,6 +131,13 @@ export function convertStepAction(step: RecipeStep, kind: EditableActionKind): R
       return { kind, ...withMetadata };
     case "pause":
       return { kind, message: "Continue when ready", ...withMetadata };
+    case "review":
+      return {
+        kind,
+        capability: "",
+        reason: "",
+        ...withMetadata,
+      };
     case "scroll":
       return { kind, direction: "down", ...withMetadata };
     case "swipe":

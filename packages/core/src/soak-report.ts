@@ -4,6 +4,7 @@ import type {
   EvidenceManifest,
   FailureCategory,
   RunOutcome,
+  RunReview,
   SoakEvidenceChannelReport,
   SoakReport,
   TargetProfile,
@@ -28,6 +29,7 @@ export type SoakRunEvidence = {
   targetProfile?: TargetProfile;
   status: string;
   outcome?: RunOutcome;
+  review?: RunReview;
   failureCategory?: FailureCategory;
   caseCount?: number;
   evidence?: EvidenceManifest;
@@ -97,7 +99,10 @@ export function buildSoakReport(runs: SoakRunEvidence[], batchId: string): SoakR
   const isPending = (run: SoakRunEvidence) =>
     run.status === "queued" || run.status === "running" || run.status === "paused";
   const passed = current.filter(
-    (run) => run.outcome === "passed" || run.status === "ok" || run.status === "healed",
+    (run) =>
+      run.review?.status !== "pending" &&
+      run.review?.status !== "rejected" &&
+      (run.outcome === "passed" || run.status === "ok" || run.status === "healed"),
   ).length;
   const productFailures = current.filter((run) => run.outcome === "product-failure").length;
   const uncertain = current.filter((run) => run.outcome === "uncertain").length;

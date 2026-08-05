@@ -9,6 +9,7 @@ import { mono } from "../lib/ui";
 import { ActionIconTrail } from "./action-icon-trail";
 import { Icon } from "./icon";
 import { kindIcon, kindLabel } from "./step-list-metadata";
+import { runOutcomeChip } from "./status-chip";
 
 /** Supporting action list for a run report. Playback remains the primary
  * review surface; this list explains and jumps to an exact moment. */
@@ -107,22 +108,10 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
     const target = server.devices().find((device) => device.serial === props.job.serial);
     return target ? presentTarget(target).displayName : (props.job.serial ?? null);
   };
-  const status = () =>
-    props.job.outcome === "passed"
-      ? "Passed"
-      : props.job.outcome === "product-failure"
-        ? "App issue"
-        : props.job.outcome === "harness-failure"
-          ? "Could not run"
-          : props.job.outcome === "uncertain"
-            ? "Needs review"
-            : props.job.status === "ok"
-              ? "Passed"
-              : props.job.status === "error"
-                ? "Needs attention"
-                : titleize(props.job.status);
+  const outcome = () => runOutcomeChip(props.job);
+  const status = () => outcome().label;
   const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
-  const passed = () => props.job.status === "ok" || props.job.status === "healed";
+  const passed = () => outcome().tone === "pass";
   const active = () => ["queued", "running", "paused"].includes(props.job.status);
   const frameThumbs = createMemo(() => {
     const job = props.job;
@@ -169,12 +158,23 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
         class={cn(
           "grid size-9 place-items-center rounded-[10px]",
           passed() && "bg-surface-success-weak text-icon-success-base",
+          outcome().tone === "attention" && "bg-surface-warning-weak text-icon-warning-base",
           active() && "bg-surface-info-weak text-icon-info-base",
-          !passed() && !active() && "bg-surface-critical-weak text-icon-critical-base",
+          !passed() &&
+            !active() &&
+            outcome().tone !== "attention" &&
+            "bg-surface-critical-weak text-icon-critical-base",
         )}
         aria-hidden="true"
       >
-        <Icon name={passed() ? "check" : active() ? "play" : "alert"} size={16} />
+        <Show
+          when={outcome().tone === "attention"}
+          fallback={<Icon name={passed() ? "check" : active() ? "play" : "alert"} size={16} />}
+        >
+          <span class="text-[15px] font-semibold leading-none" aria-hidden="true">
+            ?
+          </span>
+        </Show>
       </span>
       <span class="min-w-0">
         <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
@@ -185,7 +185,8 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
             class={cn(
               "font-medium",
               passed() && "text-text-success-base",
-              !passed() && !active() && "text-text-critical-base",
+              outcome().tone === "attention" && "text-text-warning-base",
+              !passed() && !active() && outcome().tone !== "attention" && "text-text-critical-base",
             )}
           >
             {status()}

@@ -94,6 +94,7 @@ export type JobInfo = Omit<import("@relay/protocol").JobSummary, "status" | "fra
   result?: unknown;
   error?: string;
   outcome?: import("@relay/protocol").RunOutcome;
+  review?: import("@relay/protocol").RunReview;
   failureCategory?: import("@relay/protocol").FailureCategory;
   previousError?: string;
   healed?: boolean;
@@ -171,6 +172,7 @@ export type PersistedRun = Omit<
   error?: string;
   result?: unknown;
   outcome?: import("@relay/protocol").RunOutcome;
+  review?: import("@relay/protocol").RunReview;
   failureCategory?: import("@relay/protocol").FailureCategory;
   writtenAt: number;
   recipeSnapshot?: RecipeInfo;
