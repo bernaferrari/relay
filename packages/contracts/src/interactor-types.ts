@@ -103,7 +103,7 @@ export type Interactor = {
   doubleTap(x: number, y: number): Promise<Record<string, unknown> | void>;
   longPress(x: number, y: number, durationMs?: number): Promise<Record<string, unknown> | void>;
   focus(x: number, y: number): Promise<Record<string, unknown> | void>;
-  type(text: string, delayMs?: number): Promise<void>;
+  type(text: string, delayMs?: number): Promise<Record<string, unknown> | void>;
   fillElementSelector?(
     selector: ElementSelectorTapOptions,
     text: string,
@@ -114,6 +114,7 @@ export type Interactor = {
     y: number,
     text: string,
     delayMs?: number,
+    options?: { allowNonHittableCoordinateFallback?: boolean },
   ): Promise<Record<string, unknown> | void>;
   scroll(
     direction: ScrollDirection,

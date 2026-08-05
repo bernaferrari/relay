@@ -11,7 +11,11 @@ vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOrigi
   return { ...actual, runAppleRunnerCommand: mockRunAppleRunnerCommand };
 });
 
-import { handlePressCommand } from '../dispatch-interactions.ts';
+import {
+  handleFillCommand,
+  handlePressCommand,
+  handleTypeCommand,
+} from '../dispatch-interactions.ts';
 import type { Interactor } from '@agent-device/contracts/interaction';
 import type { RunnerCommand } from '../../platforms/apple/core/runner/runner-contract.ts';
 import { AppError } from '@agent-device/kernel/errors';
@@ -88,6 +92,41 @@ test('handlePressCommand fuses an iOS jitter series into one sequence runner req
   ]);
   assert.equal(result.timingMode, 'runner-sequence');
   assert.equal(result.message, 'Tapped (100, 200)');
+});
+
+test('handleFillCommand forwards validated coordinates and delay', async () => {
+  const calls: unknown[][] = [];
+  const interactor = {
+    ...makeUnusedInteractor(),
+    fill: async (...args: Parameters<Interactor['fill']>) => {
+      calls.push(args);
+    },
+  };
+
+  await handleFillCommand(interactor, ['120', '240', 'semantic'], { delayMs: 25 });
+  await handleFillCommand(interactor, ['120', '240', 'coordinate'], undefined);
+
+  assert.deepEqual(calls, [
+    [120, 240, 'semantic', 25],
+    [120, 240, 'coordinate', 0],
+  ]);
+});
+
+test('handleTypeCommand preserves structured backend route evidence', async () => {
+  const interactor = {
+    ...makeUnusedInteractor(),
+    type: async () => ({
+      textEntryRoute: 'synthesized-first-responder',
+      referenceWidth: 0,
+      referenceHeight: 0,
+    }),
+  };
+
+  const result = await handleTypeCommand(interactor, ['hello'], { delayMs: 25 });
+
+  assert.equal(result.textEntryRoute, 'synthesized-first-responder');
+  assert.equal(result.referenceWidth, undefined);
+  assert.equal(result.referenceHeight, undefined);
 });
 
 test('handlePressCommand fuses an iOS hold series into longPress sequence steps', async () => {
