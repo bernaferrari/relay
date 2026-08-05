@@ -5,6 +5,7 @@ import { SessionStore } from '../session-store.ts';
 import { handleRecordCommand } from './record-trace-recording.ts';
 import { errorResponse } from './response.ts';
 import { recordSessionAction } from './handler-utils.ts';
+import type { TraceCommandResult } from '@agent-device/contracts/recording';
 
 export async function handleRecordTraceCommands(params: {
   req: DaemonRequest;
@@ -41,7 +42,10 @@ export async function handleRecordTraceCommands(params: {
         action: 'start',
         outPath: resolvedOut,
       });
-      return { ok: true, data: { trace: 'started', outPath: resolvedOut } };
+      return {
+        ok: true,
+        data: { trace: 'started', outPath: resolvedOut } satisfies TraceCommandResult,
+      };
     }
     if (!session.trace) {
       return errorResponse('INVALID_ARGS', 'no active trace');
@@ -59,7 +63,23 @@ export async function handleRecordTraceCommands(params: {
     }
     session.trace = undefined;
     recordSessionAction(sessionStore, session, req, command, { action: 'stop', outPath });
-    return { ok: true, data: { trace: 'stopped', outPath } };
+    const clientOutPath = req.meta?.clientArtifactPaths?.outPath ?? outPath;
+    return {
+      ok: true,
+      data: {
+        trace: 'stopped',
+        outPath,
+        artifacts: [
+          {
+            field: 'outPath',
+            artifactType: 'trace-log',
+            path: outPath,
+            localPath: clientOutPath,
+            fileName: path.basename(clientOutPath),
+          },
+        ],
+      } satisfies TraceCommandResult,
+    };
   }
 
   return null;

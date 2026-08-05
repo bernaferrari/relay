@@ -1,4 +1,4 @@
-import { AppError, toAppErrorCode } from '../../kernel/errors.ts';
+import { AppError, toAppErrorCode } from '@agent-device/kernel/errors';
 import { createRequestId } from '../../utils/diagnostics.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { materializeRemoteArtifacts } from '../../remote/daemon-artifacts.ts';
@@ -72,6 +72,8 @@ function toDaemonHttpRpcError(
       hint: typeof data.hint === 'string' ? data.hint : undefined,
       diagnosticId: typeof data.diagnosticId === 'string' ? data.diagnosticId : undefined,
       logPath: typeof data.logPath === 'string' ? data.logPath : undefined,
+      retriable: typeof data.retriable === 'boolean' ? data.retriable : undefined,
+      supportedOn: typeof data.supportedOn === 'string' ? data.supportedOn : undefined,
       requestId,
     },
   );

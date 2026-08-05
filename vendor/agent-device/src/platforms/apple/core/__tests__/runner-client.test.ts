@@ -5,10 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const { mockRunCmdStreaming, mockRepairMacOsRunnerProductsIfNeeded } = vi.hoisted(() => ({
-  mockRunCmdStreaming: vi.fn(),
-  mockRepairMacOsRunnerProductsIfNeeded: vi.fn(),
-}));
+const { mockRunCmdStreaming, mockRunCmdSync, mockRepairMacOsRunnerProductsIfNeeded } = vi.hoisted(
+  () => ({
+    mockRunCmdStreaming: vi.fn(),
+    mockRunCmdSync: vi.fn(),
+    mockRepairMacOsRunnerProductsIfNeeded: vi.fn(),
+  }),
+);
 
 vi.mock('../../../../utils/exec.ts', async () => {
   const actual = await vi.importActual<typeof import('../../../../utils/exec.ts')>(
@@ -17,6 +20,7 @@ vi.mock('../../../../utils/exec.ts', async () => {
   return {
     ...actual,
     runCmdStreaming: mockRunCmdStreaming,
+    runCmdSync: mockRunCmdSync,
   };
 });
 
@@ -30,43 +34,57 @@ vi.mock('../runner/runner-macos-products.ts', async () => {
   };
 });
 
-import type { DeviceInfo } from '../../../../kernel/device.ts';
+vi.mock('../../../../utils/host-process.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../utils/host-process.ts')>();
+  return { ...actual, readProcessStartTime: vi.fn(() => 'test-process-start') };
+});
+
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   type RequestProgressEvent,
   withRequestProgressSink,
-} from '../../../../daemon/request-progress.ts';
+} from '../../../../request/progress.ts';
+import { createRequestCanceledError, isRequestCanceledError } from '../../../../request/cancel.ts';
 import {
   flushDiagnosticsToSessionFile,
   withDiagnosticsScope,
 } from '../../../../utils/diagnostics.ts';
-import { AppError } from '../../../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { isReadOnlyRunnerCommand } from '../runner/runner-command-traits.ts';
-import { withRunnerCommandId, type RunnerCommand } from '../runner/runner-contract.ts';
 import {
-  assertSafeDerivedCleanup,
   isRetryableRunnerError,
   resolveRunnerBuildFailureHint,
   resolveRunnerEarlyExitHint,
+  shouldRetryRunnerConnectError,
+  withRunnerCommandId,
+  type RunnerCommand,
+} from '../runner/runner-contract.ts';
+import {
   resolveRunnerBuildDestination,
-  resolveRunnerBundleBuildSettings,
   resolveRunnerDestination,
+} from '../apple-runner-platform.ts';
+import {
+  resolveRunnerBundleBuildSettings,
   resolveRunnerMaxConcurrentDestinationsFlag,
   resolveRunnerSigningBuildSettings,
-  shouldRetryRunnerConnectError,
-} from '../runner/runner-client.ts';
+  resolveRunnerPerformanceBuildSettings,
+  resolveRunnerSandboxBuildArgs,
+} from '../runner/runner-cache-metadata.ts';
 import {
   acquireRunnerXctestrunCacheLock,
+  assertSafeDerivedCleanup,
+  resolveRunnerCacheMetadataPath,
+  shouldDeleteRunnerDerivedRootEntry,
+  writeRunnerCacheMetadata,
+} from '../runner/runner-cache.ts';
+import {
   ensureXctestrunArtifact,
-  ensureXctestrun,
+  xctestrunReferencesProjectRoot,
+} from '../runner/runner-artifact.ts';
+import {
   markRunnerXctestrunArtifactBadForRun,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerDerivedPath,
-  resolveRunnerCacheMetadataPath,
-  resolveRunnerPerformanceBuildSettings,
-  resolveRunnerSandboxBuildArgs,
-  shouldDeleteRunnerDerivedRootEntry,
-  writeRunnerCacheMetadata,
-  xctestrunReferencesProjectRoot,
 } from '../runner/runner-xctestrun.ts';
 import { parseRunnerResponse } from '../runner/runner-session.ts';
 
@@ -149,27 +167,26 @@ const runnerProtocolCommandFixtures: Record<RunnerCommand['command'], RunnerComm
   appSwitcher: { command: 'appSwitcher' },
   keyboardDismiss: { command: 'keyboardDismiss' },
   keyboardReturn: { command: 'keyboardReturn' },
+  clipboardRead: { command: 'clipboardRead' },
+  clipboardWrite: { command: 'clipboardWrite', text: 'hello' },
+  clipboardPaste: {
+    command: 'clipboardPaste',
+    text: 'hello',
+    selectorKey: 'id',
+    selectorValue: 'field',
+  },
+  clipboardCopy: { command: 'clipboardCopy', selectorKey: 'id', selectorValue: 'field' },
   alert: { command: 'alert', action: 'accept' },
-  pinch: { command: 'pinch', scale: 0.5 },
   sequence: {
     command: 'sequence',
     steps: [
       { kind: 'tap', x: 120, y: 240 },
       { kind: 'longPress', x: 120, y: 240, durationMs: 300 },
-      { kind: 'drag', x: 10, y: 600, x2: 10, y2: 200, durationMs: 250, pauseMs: 50 },
+      { kind: 'doubleTap', x: 10, y: 600, pauseMs: 50 },
     ],
   },
-  rotateGesture: { command: 'rotateGesture', degrees: 35, x: 200, y: 420, velocity: 1 },
-  transformGesture: {
-    command: 'transformGesture',
-    x: 200,
-    y: 420,
-    dx: 80,
-    dy: -40,
-    scale: 2,
-    degrees: 35,
-    durationMs: 700,
-  },
+  gesture: { command: 'gesture' },
+  gestureViewport: { command: 'gestureViewport' },
   recordStart: {
     command: 'recordStart',
     outPath: '/tmp/runner-recording.mp4',
@@ -179,10 +196,13 @@ const runnerProtocolCommandFixtures: Record<RunnerCommand['command'], RunnerComm
   recordStop: { command: 'recordStop' },
   status: { command: 'status', statusCommandId: 'runner-command-1' },
   uptime: { command: 'uptime' },
+  activate: { command: 'activate', appBundleId: 'com.example.app' },
+  terminate: { command: 'terminate', appBundleId: 'com.example.app' },
+  targetReset: { command: 'targetReset' },
   shutdown: { command: 'shutdown' },
 };
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 
 async function makeTmpDir(): Promise<string> {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-device-xctestrun-'));
@@ -200,10 +220,6 @@ async function makeProjectTmpDir(): Promise<string> {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   });
   return tmpDir;
-}
-
-async function waitMs(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function writeXctestrunFixture(
@@ -309,6 +325,18 @@ async function makeCachedRunnerXctestrun(): Promise<{
 beforeEach(() => {
   vi.resetAllMocks();
   mockRunCmdStreaming.mockResolvedValue(undefined);
+  mockRunCmdSync.mockImplementation((command: string, args: string[]) => {
+    if (command === 'xcodebuild' && args[0] === '-version') {
+      return { exitCode: 0, stdout: 'Xcode 26.2\nBuild version 17C52\n', stderr: '' };
+    }
+    if (command === 'xcrun' && args.includes('--show-sdk-version')) {
+      return { exitCode: 0, stdout: '26.2\n', stderr: '' };
+    }
+    if (command === 'xcrun' && args.includes('--show-sdk-build-version')) {
+      return { exitCode: 0, stdout: '23C53\n', stderr: '' };
+    }
+    throw new Error(`Unexpected Apple fingerprint command: ${command} ${args.join(' ')}`);
+  });
   mockRepairMacOsRunnerProductsIfNeeded.mockResolvedValue(undefined);
 });
 
@@ -319,27 +347,32 @@ test('resolveRunnerDestination uses simulator destination for simulators', () =>
 test('runner protocol fixtures cover every runner command with JSON-safe samples', () => {
   const commands = Object.keys(runnerProtocolCommandFixtures).sort();
   assert.deepEqual(commands, [
+    'activate',
     'alert',
     'appSwitcher',
     'back',
     'backInApp',
     'backSystem',
+    'clipboardCopy',
+    'clipboardPaste',
+    'clipboardRead',
+    'clipboardWrite',
     'desktopScroll',
     'drag',
     'findText',
+    'gesture',
+    'gestureViewport',
     'home',
     'keyboardDismiss',
     'keyboardReturn',
     'longPress',
     'mouseClick',
-    'pinch',
     'querySelector',
     'readText',
     'recordStart',
     'recordStop',
     'remotePress',
     'rotate',
-    'rotateGesture',
     'screenshot',
     'scroll',
     'sequence',
@@ -348,7 +381,8 @@ test('runner protocol fixtures cover every runner command with JSON-safe samples
     'status',
     'swipe',
     'tap',
-    'transformGesture',
+    'targetReset',
+    'terminate',
     'type',
     'uptime',
   ]);
@@ -644,6 +678,39 @@ test('parseRunnerResponse preserves runner unsupported-operation codes', async (
   );
 });
 
+test('parseRunnerResponse surfaces the keyboard-dismiss hint to press the next target directly', async () => {
+  const hint =
+    'The on-screen keyboard usually does not block agent-device interactions: press the next target directly instead of retrying dismiss. If that press fails or reports no visible effect, scroll the target into view, or use keyboard enter to press the return key when submission is wanted.';
+  const response = new Response(
+    JSON.stringify({
+      ok: false,
+      error: {
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'Unable to dismiss the iOS keyboard without a safe native dismiss control',
+        hint,
+      },
+    }),
+  );
+  const session = { ready: false };
+
+  await assert.rejects(
+    () => parseRunnerResponse(response, session, '/tmp/runner.log'),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'UNSUPPORTED_OPERATION');
+      assert.equal(error.details?.hint, hint);
+      assert.match(
+        String(error.details?.hint),
+        /usually does not block agent-device interactions/i,
+      );
+      assert.match(String(error.details?.hint), /press the next target directly/i);
+      assert.match(String(error.details?.hint), /scroll the target into view/i);
+      assert.match(String(error.details?.hint), /keyboard enter/i);
+      return true;
+    },
+  );
+});
+
 test('parseRunnerResponse preserves iOS AX snapshot failure code and hint', async () => {
   const hint =
     'Try a smaller read such as snapshot -s <visible label or id> -d 8, or use direct selector commands such as find id <value> click.';
@@ -694,6 +761,59 @@ test('parseRunnerResponse preserves XCTest recorded failure code and hint', asyn
       assert.equal(error.code, 'XCTEST_RECORDED_FAILURE');
       assert.match(error.message, /may not have been performed/);
       assert.equal(error.details?.hint, hint);
+      assert.equal(isRetryableRunnerError(error), false);
+      return true;
+    },
+  );
+});
+
+test('parseRunnerResponse maps RUNNER_BUSY to retriable command failure', async () => {
+  const hint = 'Wait a few seconds and retry.';
+  const response = new Response(
+    JSON.stringify({
+      ok: false,
+      error: {
+        code: 'RUNNER_BUSY',
+        message: 'The runner is still finishing abandoned work.',
+        hint,
+      },
+    }),
+  );
+  const session = { ready: true };
+
+  await assert.rejects(
+    () => parseRunnerResponse(response, session, '/tmp/runner.log'),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'COMMAND_FAILED');
+      assert.equal(error.details?.runnerErrorCode, 'RUNNER_BUSY');
+      assert.equal(error.details?.retriable, true);
+      assert.equal(error.details?.hint, hint);
+      assert.equal(isRetryableRunnerError(error), true);
+      return true;
+    },
+  );
+});
+
+test('parseRunnerResponse preserves RUNNER_WEDGED as a fatal runner code', async () => {
+  const response = new Response(
+    JSON.stringify({
+      ok: false,
+      error: {
+        code: 'RUNNER_WEDGED',
+        message: 'The runner main thread is wedged.',
+        hint: 'The runner session will be restarted.',
+      },
+    }),
+  );
+  const session = { ready: true };
+
+  await assert.rejects(
+    () => parseRunnerResponse(response, session, '/tmp/runner.log'),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'RUNNER_WEDGED');
+      assert.equal(error.details?.runnerErrorCode, 'RUNNER_WEDGED');
       assert.equal(isRetryableRunnerError(error), false);
       return true;
     },
@@ -792,7 +912,7 @@ AGENT_DEVICE_RUNNER_COMMAND_FAILED command=snapshot error=fetch failed
   );
 });
 
-test('parseRunnerResponse keeps ordinary runner failures generic without crash log evidence', async () => {
+test('parseRunnerResponse hints when XCTest main-thread execution times out', async () => {
   const logPath = writeRunnerLogTail(
     'AGENT_DEVICE_RUNNER_COMMAND_FAILED command=type error=main thread execution timed out',
   );
@@ -812,8 +932,10 @@ test('parseRunnerResponse keeps ordinary runner failures generic without crash l
     (error: unknown) => {
       assert.ok(error instanceof AppError);
       assert.equal(error.code, 'COMMAND_FAILED');
-      assert.equal(error.details?.runnerFailureReason, undefined);
-      assert.equal(error.details?.hint, undefined);
+      assert.equal(error.details?.runnerFailureReason, 'runner_main_thread_execution_timeout');
+      assert.match(String(error.details?.hint), /XCTest timed out waiting for main-thread work/);
+      assert.match(String(error.details?.hint), /screenshot as visual truth/);
+      assert.match(String(error.details?.hint), /coordinate presses/);
       return true;
     },
   );
@@ -887,7 +1009,7 @@ test('xctestrunReferencesProjectRoot rejects stale worktree artifacts', async ()
   const xctestrunPath = path.join(tmpDir, 'AgentDeviceRunner.xctestrun');
   fs.writeFileSync(
     xctestrunPath,
-    '<plist><dict><key>SourceFilesCommonPathPrefix</key><string>/tmp/other-worktree/agent-device/apple-runner/AgentDeviceRunner</string></dict></plist>',
+    '<plist><dict><key>SourceFilesCommonPathPrefix</key><string>/tmp/other-worktree/agent-device/apple/runner/AgentDeviceRunner</string></dict></plist>',
     'utf8',
   );
 
@@ -938,7 +1060,8 @@ test('resolveRunnerDerivedPath reuses cache path for identical runner source fin
   const firstRoot = path.join(tmpDir, 'first');
   const secondRoot = path.join(tmpDir, 'second');
   const runnerRelativePath = path.join(
-    'apple-runner',
+    'apple',
+    'runner',
     'AgentDeviceRunner',
     'AgentDeviceRunnerUITests',
     'RunnerTests.swift',
@@ -980,6 +1103,10 @@ test('resolveRunnerDerivedPath reuses cache path for identical runner source fin
 });
 
 test('acquireRunnerXctestrunCacheLock serializes cache access across acquirers', async () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
   const tmpDir = await makeTmpDir();
   const derivedPath = path.join(tmpDir, 'derived');
   const releaseFirst = await acquireRunnerXctestrunCacheLock(derivedPath);
@@ -989,14 +1116,14 @@ test('acquireRunnerXctestrunCacheLock serializes cache access across acquirers',
     await releaseSecond();
   });
 
-  await waitMs(50);
   assert.equal(secondAcquired, false);
   await releaseFirst();
+  await vi.advanceTimersByTimeAsync(100);
   await second;
   assert.equal(secondAcquired, true);
 });
 
-test('ensureXctestrun reuses matching manifest artifacts from another project root', async () => {
+test('ensureXctestrunArtifact reuses matching manifest artifacts from another project root', async () => {
   const tmpDir = await makeTmpDir();
   const derivedPath = path.join(tmpDir, 'custom-derived');
   const productPath = path.join(derivedPath, 'Runner.app');
@@ -1014,14 +1141,14 @@ test('ensureXctestrun reuses matching manifest artifacts from another project ro
   });
   withRunnerDerivedPathEnv(derivedPath);
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, xctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 0);
   assert.deepEqual(mockRepairMacOsRunnerProductsIfNeeded.mock.calls[0]?.[1], [productPath]);
 });
 
-test('ensureXctestrun rebuilds foreign artifacts when metadata does not match', async () => {
+test('ensureXctestrunArtifact rebuilds foreign artifacts when metadata does not match', async () => {
   const projectRoot = repoRoot;
   const tmpDir = await makeProjectTmpDir();
   const derivedPath = path.join(tmpDir, 'custom-derived');
@@ -1057,14 +1184,14 @@ test('ensureXctestrun rebuilds foreign artifacts when metadata does not match', 
     });
   });
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, rebuiltXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 1);
   assert.equal(fs.existsSync(foreignXctestrunPath), false);
 });
 
-test('ensureXctestrun ignores manifest artifacts outside the cache root', async () => {
+test('ensureXctestrunArtifact ignores manifest artifacts outside the cache root', async () => {
   const projectRoot = repoRoot;
   const tmpDir = await makeProjectTmpDir();
   const derivedPath = path.join(tmpDir, 'custom-derived');
@@ -1094,20 +1221,109 @@ test('ensureXctestrun ignores manifest artifacts outside the cache root', async 
     });
   });
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, rebuiltXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 1);
 });
 
-test('ensureXctestrun rebuilds after cached macOS runner repair failure', async () => {
+test('ensureXctestrunArtifact aborts only the disconnected request build and preserves concurrent unrelated builds', async () => {
+  // The request AbortSignal must reach the xctestrun build (killProcessTree via
+  // runCmdStreaming); removing global abort must not orphan a disconnected prep.
+  // Request-scoped: aborting one request's build leaves an unrelated concurrent
+  // build (different device -> different derived, different signal) untouched.
+  withoutRunnerDerivedPathEnv();
+  const canceledDevice = iosSimulator;
+  const survivorDevice = macOsDevice;
+  for (const device of [canceledDevice, survivorDevice]) {
+    const derived = resolveRunnerDerivedPath(
+      device,
+      resolveExpectedRunnerCacheMetadata(device, repoRoot),
+    );
+    onTestFinished(async () => {
+      await fs.promises.rm(derived, { recursive: true, force: true });
+    });
+  }
+
+  const canceledController = new AbortController();
+  const survivorController = new AbortController();
+  const deferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void } => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+  const waitForAbort = (signal: AbortSignal): Promise<void> =>
+    signal.aborted
+      ? Promise.resolve()
+      : new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), {
+            once: true,
+          }),
+        );
+  const canceledBuildStarted = deferred<void>();
+  const survivorBuildStarted = deferred<void>();
+  const releaseSurvivor = deferred<void>();
+  const cancellationError = createRequestCanceledError();
+
+  mockRunCmdStreaming.mockImplementation(async (_cmd, args, options) => {
+    const derived = args[args.indexOf('-derivedDataPath') + 1];
+    if (options?.signal === canceledController.signal) {
+      canceledBuildStarted.resolve();
+      await waitForAbort(options.signal);
+      throw cancellationError;
+    }
+    survivorBuildStarted.resolve();
+    await releaseSurvivor.promise;
+    await fs.promises.mkdir(path.join(derived, 'rebuilt', 'Runner.app'), { recursive: true });
+    writeXctestrunFixture(path.join(derived, 'rebuilt', 'rebuilt.xctestrun'), {
+      projectRoot: repoRoot,
+      productRelativePaths: ['Runner.app'],
+    });
+  });
+
+  const canceledPromise = ensureXctestrunArtifact(canceledDevice, {
+    signal: canceledController.signal,
+  });
+  const survivorPromise = ensureXctestrunArtifact(survivorDevice, {
+    signal: survivorController.signal,
+  });
+
+  await Promise.all([canceledBuildStarted.promise, survivorBuildStarted.promise]);
+
+  canceledController.abort();
+  await assert.rejects(canceledPromise, (error: unknown) => {
+    assert.equal(error, cancellationError);
+    assert.ok(isRequestCanceledError(error));
+    return true;
+  });
+  // The unrelated concurrent build's signal was never aborted.
+  assert.equal(survivorController.signal.aborted, false);
+
+  releaseSurvivor.resolve();
+  const survivorResult = await survivorPromise;
+  assert.ok(survivorResult.xctestrunPath.endsWith('rebuilt.xctestrun'));
+
+  const canceledCall = mockRunCmdStreaming.mock.calls.find(
+    (call) => call[2]?.signal === canceledController.signal,
+  );
+  const survivorCall = mockRunCmdStreaming.mock.calls.find(
+    (call) => call[2]?.signal === survivorController.signal,
+  );
+  assert.ok(canceledCall, 'canceled build received its request signal');
+  assert.ok(survivorCall, 'survivor build received its request signal');
+});
+
+test('ensureXctestrunArtifact rebuilds after cached macOS runner repair failure', async () => {
   // Cached runner artifacts can look reusable until ad-hoc repair fails; ensure we clean once,
   // rebuild, and return the repaired rebuilt xctestrun instead of looping on stale cache state.
   const projectRoot = repoRoot;
   const { derivedPath, existingXctestrunPath } = await makeCachedRunnerXctestrun();
   const projectPath = path.join(
     projectRoot,
-    'apple-runner',
+    'apple',
+    'runner',
     'AgentDeviceRunner',
     'AgentDeviceRunner.xcodeproj',
   );
@@ -1140,7 +1356,7 @@ test('ensureXctestrun rebuilds after cached macOS runner repair failure', async 
     });
   });
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, rebuiltXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 1);
@@ -1148,7 +1364,7 @@ test('ensureXctestrun rebuilds after cached macOS runner repair failure', async 
   assert.deepEqual(repairedPaths, [existingXctestrunPath, rebuiltXctestrunPath]);
 });
 
-test('ensureXctestrun prefers validated cache manifest over recursive scan', async () => {
+test('ensureXctestrunArtifact prefers validated cache manifest over recursive scan', async () => {
   const tmpDir = await makeTmpDir();
   const derivedPath = path.join(tmpDir, 'custom-derived');
   const manifestProductPath = path.join(derivedPath, 'ManifestRunner.app');
@@ -1180,14 +1396,14 @@ test('ensureXctestrun prefers validated cache manifest over recursive scan', asy
   });
   withRunnerDerivedPathEnv(derivedPath);
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, manifestXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 0);
   assert.deepEqual(mockRepairMacOsRunnerProductsIfNeeded.mock.calls[0]?.[1], [manifestProductPath]);
 });
 
-test('ensureXctestrun falls back to scan when cache manifest is stale', async () => {
+test('ensureXctestrunArtifact falls back to scan when cache manifest is stale', async () => {
   const tmpDir = await makeTmpDir();
   const derivedPath = path.join(tmpDir, 'custom-derived');
   const manifestProductPath = path.join(derivedPath, 'ManifestRunner.app');
@@ -1224,14 +1440,14 @@ test('ensureXctestrun falls back to scan when cache manifest is stale', async ()
   );
   withRunnerDerivedPathEnv(derivedPath);
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, newerXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 0);
   assert.deepEqual(mockRepairMacOsRunnerProductsIfNeeded.mock.calls[0]?.[1], [newerProductPath]);
 });
 
-test('ensureXctestrun rebuilds cached runner when Swift build flags mismatch', async () => {
+test('ensureXctestrunArtifact rebuilds cached runner when Swift build flags mismatch', async () => {
   const projectRoot = repoRoot;
   const { derivedPath, existingXctestrunPath } = await makeCachedRunnerXctestrun();
   const metadataPath = resolveRunnerCacheMetadataPath(derivedPath);
@@ -1258,7 +1474,7 @@ test('ensureXctestrun rebuilds cached runner when Swift build flags mismatch', a
     });
   });
 
-  const result = await ensureXctestrun(macOsDevice, {});
+  const result = (await ensureXctestrunArtifact(macOsDevice, {})).xctestrunPath;
 
   assert.equal(result, rebuiltXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 1);
@@ -1390,14 +1606,14 @@ test('ensureXctestrunArtifact stress-recovers after a bad restored artifact', as
   assert.equal(mockRunCmdStreaming.mock.calls[0]?.[2]?.timeoutMs, 300_000);
 });
 
-test('ensureXctestrun rethrows unexpected cached macOS runner repair errors', async () => {
+test('ensureXctestrunArtifact rethrows unexpected cached macOS runner repair errors', async () => {
   const { derivedPath, existingXctestrunPath } = await makeCachedRunnerXctestrun();
 
   withRunnerDerivedPathEnv(derivedPath);
 
   mockRepairMacOsRunnerProductsIfNeeded.mockRejectedValue(new Error('permission denied'));
 
-  await assert.rejects(ensureXctestrun(macOsDevice, {}), /permission denied/);
+  await assert.rejects(ensureXctestrunArtifact(macOsDevice, {}), /permission denied/);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 0);
   assert.equal(fs.existsSync(existingXctestrunPath), true);
 });

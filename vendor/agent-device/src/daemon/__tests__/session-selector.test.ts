@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { assertSessionSelectorMatches } from '../session-selector.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type { SessionState } from '../types.ts';
 
 function makeSession(overrides?: Partial<SessionState>): SessionState {
@@ -28,6 +28,26 @@ test('accepts matching platform and serial selectors', () => {
       platform: 'android',
       target: 'tv',
       serial: 'emulator-5554',
+    }),
+  );
+});
+
+test('accepts matching serial selector for a Vega session', () => {
+  const session = makeSession({
+    device: {
+      platform: 'vega',
+      id: 'VirtualDevice',
+      name: 'Vega Virtual Device',
+      kind: 'emulator',
+      target: 'tv',
+      booted: true,
+    },
+  });
+  assert.doesNotThrow(() =>
+    assertSessionSelectorMatches(session, {
+      platform: 'vega',
+      target: 'tv',
+      serial: 'VirtualDevice',
     }),
   );
 });

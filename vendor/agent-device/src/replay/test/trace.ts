@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ReplaySuiteTestResult } from '../../daemon/types.ts';
+import type { ReplaySuiteTestResult } from '@agent-device/contracts/replay';
 import { formatDurationSeconds } from '../../utils/duration-format.ts';
 
 type ReplayActionStartTrace = {
@@ -186,10 +186,7 @@ function formatReplayStepCommand(
 }
 
 function formatReplayStepCommandName(command: string | undefined): string {
-  if (!command) return 'unknown';
-  if (!command.startsWith('__maestro')) return command;
-  const name = command.slice('__maestro'.length);
-  return name.length > 0 ? name[0]!.toLowerCase() + name.slice(1) : command;
+  return command ?? 'unknown';
 }
 
 function formatReplayStepArg(value: unknown): string {

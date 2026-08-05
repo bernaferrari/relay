@@ -5,13 +5,18 @@ import path from 'node:path';
 import { getResolveTargetDeviceMock } from './request-router-dispatch-mocks.ts';
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
+vi.mock('../../utils/host-process.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/host-process.ts')>();
+  return { ...actual, readProcessStartTime: vi.fn(() => 'test-process-start') };
+});
 
 import { dispatchCommand } from '../../core/dispatch.ts';
 import { createRequestHandler } from '../request-router.ts';
+import { resolveRequestExecutionLockKeys } from '../request-binding.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 
 const mockDispatch = vi.mocked(dispatchCommand);
@@ -24,6 +29,17 @@ function makeIosDevice(id: string): DeviceInfo {
     id,
     name: `iPhone ${id}`,
     kind: 'simulator',
+    target: 'mobile',
+    booted: true,
+  };
+}
+
+function makeAndroidDevice(id: string): DeviceInfo {
+  return {
+    platform: 'android',
+    id,
+    name: `Android ${id}`,
+    kind: 'emulator',
     target: 'mobile',
     booted: true,
   };
@@ -47,12 +63,13 @@ function openRequest(
   flags: Record<string, unknown>,
   requestId: string,
   meta: Record<string, unknown> = {},
+  positionals: string[] = [],
 ) {
   return {
     token: 'test-token',
     session,
     command: 'open',
-    positionals: [],
+    positionals,
     flags,
     meta: { requestId, ...meta },
   };
@@ -83,6 +100,7 @@ test('open returns and creates the session state directory', async () => {
   });
   if (response.ok) {
     expect(response.data?.session).toBe('session-a');
+    expect(response.data?.sessionReused).toBe(false);
     expect(response.data?.sessionStateDir).toEqual(expect.stringContaining('session-a'));
     expect(response.data?.runnerLogPath).toEqual(
       path.join(String(response.data?.sessionStateDir), 'runner.log'),
@@ -90,8 +108,122 @@ test('open returns and creates the session state directory', async () => {
     expect(response.data?.requestLogPath).toEqual(
       path.join(String(response.data?.sessionStateDir), 'requests', 'req-open-state.ndjson'),
     );
+    expect(response.data?.eventLogPath).toEqual(
+      path.join(String(response.data?.sessionStateDir), 'events.ndjson'),
+    );
     expect(fs.existsSync(String(response.data?.sessionStateDir))).toBe(true);
+    expect(fs.existsSync(String(response.data?.eventLogPath))).toBe(true);
   }
+});
+
+test('fresh open uses app-aware device selection for advisory locking and dispatch', async () => {
+  const sessionStore = makeSessionStore('agent-device-router-open-');
+  const genericDevice = makeIosDevice('SIM-GENERIC');
+  const appDevice = makeIosDevice('SIM-WITH-APP');
+  mockResolveTargetDevice.mockImplementation(async (_flags, options) =>
+    options?.appleSimulatorAppTarget === 'com.example.demo' ? appDevice : genericDevice,
+  );
+
+  const response = await createOpenHandler(sessionStore)(
+    openRequest('session-app-aware', { platform: 'ios' }, 'req-open-app-aware', {}, [
+      'com.example.demo',
+    ]),
+  );
+
+  expect(response.ok).toBe(true);
+  expect(mockResolveTargetDevice.mock.calls).toEqual([
+    [{ platform: 'ios' }, { appleSimulatorAppTarget: 'com.example.demo' }],
+    [{ platform: 'ios' }, { appleSimulatorAppTarget: 'com.example.demo' }],
+  ]);
+  expect(sessionStore.get('session-app-aware')?.device.id).toBe(appDevice.id);
+});
+
+test('fresh replay reserves its authored app simulator before any replay step', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-app-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform ios --metro-port 8081\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-lock-');
+  const genericDevice = makeIosDevice('SIM-GENERIC');
+  const appDevice = makeIosDevice('SIM-WITH-APP');
+  mockResolveTargetDevice.mockImplementation(async (_flags, options) =>
+    options?.appleSimulatorAppTarget === 'com.example.demo' ? appDevice : genericDevice,
+  );
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay', 'device:SIM-WITH-APP']);
+  expect(mockResolveTargetDevice).toHaveBeenCalledWith(
+    { platform: 'ios' },
+    { appleSimulatorAppTarget: 'com.example.demo' },
+  );
+});
+
+test('fresh replay leaves a first deep-link open unbound when a later app target exists', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-deep-link-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform ios --metro-port 8081\nopen demo://checkout\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-deep-link-lock-');
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay-deep-link',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay-deep-link',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay-deep-link']);
+  expect(mockResolveTargetDevice).not.toHaveBeenCalled();
+});
+
+test('fresh replay preserves an authored Android platform before advisory locking', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-android-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform android --metro-port 8081\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-android-lock-');
+  const androidDevice = makeAndroidDevice('ANDROID-EMULATOR');
+  mockResolveTargetDevice.mockResolvedValue(androidDevice);
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay-android',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay-android',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay-android', 'device:ANDROID-EMULATOR']);
+  expect(mockResolveTargetDevice).toHaveBeenCalledWith({ platform: 'android' }, undefined);
 });
 
 test('open --debug writes bounded open timing diagnostics to requestLogPath', async () => {
@@ -273,11 +405,18 @@ test('router serializes same-device open requests before first session creation 
     new AppError('DEVICE_NOT_FOUND', 'device discovery is still warming up'),
     sameDevice,
   ];
+  let resolutionCalls = 0;
+  let markSecondPreflightFinished: (() => void) | undefined;
+  const secondPreflightFinished = new Promise<void>((resolve) => {
+    markSecondPreflightFinished = resolve;
+  });
   mockResolveTargetDevice.mockImplementation(async () => {
+    resolutionCalls += 1;
     const next = resolutionPlan.shift();
     if (!next) {
       throw new Error('Unexpected resolveTargetDevice call');
     }
+    if (resolutionCalls === 3) markSecondPreflightFinished?.();
     if (next instanceof AppError) {
       throw next;
     }
@@ -288,11 +427,16 @@ test('router serializes same-device open requests before first session creation 
   let activeEnsures = 0;
   let maxActiveEnsures = 0;
   let releaseFirstEnsure: (() => void) | undefined;
+  let markFirstEnsureStarted: (() => void) | undefined;
+  const firstEnsureStarted = new Promise<void>((resolve) => {
+    markFirstEnsureStarted = resolve;
+  });
   mockEnsureDeviceReady.mockImplementation(async () => {
     ensureCalls += 1;
     activeEnsures += 1;
     maxActiveEnsures = Math.max(maxActiveEnsures, activeEnsures);
     if (ensureCalls === 1) {
+      markFirstEnsureStarted?.();
       await new Promise<void>((resolve) => {
         releaseFirstEnsure = () => {
           activeEnsures -= 1;
@@ -308,15 +452,13 @@ test('router serializes same-device open requests before first session creation 
 
   const firstOpen = handler(openRequest('session-a', { platform: 'ios' }, 'req-open-1'));
 
-  await vi.waitFor(() => {
-    expect(ensureCalls).toBe(1);
-  });
+  await firstEnsureStarted;
 
   const secondOpen = handler(
     openRequest('session-b', { platform: 'ios', udid: 'SIM-001' }, 'req-open-2'),
   );
 
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await secondPreflightFinished;
   expect(ensureCalls).toBe(1);
   expect(maxActiveEnsures).toBe(1);
 
@@ -350,10 +492,15 @@ test('router allows pre-open requests for different devices to proceed concurren
   let activeEnsures = 0;
   let maxActiveEnsures = 0;
   const releases: Array<() => void> = [];
+  let markBothEnsuresStarted: (() => void) | undefined;
+  const bothEnsuresStarted = new Promise<void>((resolve) => {
+    markBothEnsuresStarted = resolve;
+  });
   mockEnsureDeviceReady.mockImplementation(async () => {
     ensureCalls += 1;
     activeEnsures += 1;
     maxActiveEnsures = Math.max(maxActiveEnsures, activeEnsures);
+    if (ensureCalls === 2) markBothEnsuresStarted?.();
     await new Promise<void>((resolve) => {
       releases.push(() => {
         activeEnsures -= 1;
@@ -371,10 +518,9 @@ test('router allows pre-open requests for different devices to proceed concurren
     openRequest('session-b', { platform: 'ios', udid: 'SIM-002' }, 'req-open-b'),
   );
 
-  await vi.waitFor(() => {
-    expect(ensureCalls).toBe(2);
-  });
+  await bothEnsuresStarted;
 
+  expect(ensureCalls).toBe(2);
   expect(maxActiveEnsures).toBe(2);
   releases.splice(0).forEach((release) => release());
 

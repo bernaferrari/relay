@@ -1,5 +1,27 @@
+import {
+  CLICK_BUTTONS,
+  GESTURE_KINDS,
+  readGesturePayload,
+  SCROLL_DIRECTIONS,
+  SCROLL_DURATION_MAX_MS,
+  SWIPE_PATTERNS,
+  SWIPE_PAUSE_MAX_MS,
+  SWIPE_PRESETS,
+  SWIPE_REPETITION_MAX,
+  type FlingGesturePayload,
+  type PanGesturePayload,
+  type PinchGesturePayload,
+  type RotateGesturePayload,
+  type SwipeGesturePayload,
+  type TransformGesturePayload,
+} from '@agent-device/contracts/interaction';
+import type { PostActionObservationSupportFor } from '../../core/command-descriptor/post-action-observation.ts';
+import {
+  commandSupportsSettleObservation,
+  commandSupportsVerifyEvidence,
+} from '../../core/command-descriptor/registry.ts';
+import { FIND_LOCATORS } from '@agent-device/selectors';
 import { defineCommandMetadata } from '../command-contract.ts';
-import { GESTURE_KINDS } from '../../command-catalog.ts';
 import {
   booleanField,
   elementTargetField,
@@ -8,35 +30,20 @@ import {
   integerField,
   interactionTargetField,
   numberField,
-  optionalInteger,
   pointField,
   readCommonInput,
   readFieldInput,
   readInputRecord,
-  readPoint,
   repeatedFields,
-  requiredEnum,
   requiredField,
-  requiredNumber,
   selectorSnapshotFields,
   stringField,
   type CommandFieldMap,
   type CommonCommandInput,
   type InferCommandInput,
-  type PointInput,
 } from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
-import { CLICK_BUTTONS } from '../../core/click-button.ts';
-import { SCROLL_DURATION_MAX_MS } from '../../core/scroll-command.ts';
-import {
-  SCROLL_DIRECTIONS,
-  SWIPE_PATTERNS,
-  SWIPE_PRESETS,
-  type ScrollDirection,
-  type SwipePreset,
-} from '../../core/scroll-gesture.ts';
 import { SCROLL_INPUT_DIRECTIONS } from './runtime/gestures.ts';
-import { FIND_LOCATORS } from '../../utils/finders.ts';
 
 const FIND_ACTION_VALUES = [
   'click',
@@ -52,11 +59,11 @@ const FIND_ACTION_VALUES = [
 const interactionCommandDescriptions = {
   click: 'Click or tap a semantic UI target by ref, selector, or point.',
   press: 'Press a semantic UI target by ref, selector, or point.',
-  fill: 'Fill text into a semantic UI target by ref, selector, or point.',
+  fill: 'Replace text in a semantic UI target by ref, selector, or point.',
   longpress: 'Long press by ref, selector, or point.',
   swipe: 'Swipe between two points.',
   focus: 'Focus input at coordinates.',
-  type: 'Type text in the focused field.',
+  type: 'Append text to the focused field.',
   scroll: 'Scroll in a direction or to an edge.',
   get: 'Get element text or attributes.',
   is: 'Assert UI state.',
@@ -66,38 +73,75 @@ const interactionCommandDescriptions = {
 
 type InteractionCommandName = keyof typeof interactionCommandDescriptions;
 
+const verifyField = () =>
+  booleanField(
+    'Capture cheap post-action evidence (AX digest, node counts, changedFromBefore) instead of a follow-up snapshot.',
+  );
+
+const settleFields = () => ({
+  settle: booleanField(
+    'After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action.',
+  ),
+  settleQuietMs: integerField('Settle: quiet window in milliseconds (default 500).', { min: 0 }),
+  timeoutMs: integerField('Settle: wait deadline in milliseconds (default 10000).', { min: 1 }),
+});
+
+type VerifyFieldMap = { verify: ReturnType<typeof verifyField> };
+type SettleFieldMap = ReturnType<typeof settleFields>;
+type PostActionObservationFields<TName extends string> =
+  PostActionObservationSupportFor<TName> extends 'settle-and-verify'
+    ? VerifyFieldMap & SettleFieldMap
+    : PostActionObservationSupportFor<TName> extends 'settle'
+      ? SettleFieldMap
+      : {};
+
+function postActionObservationFields<const TName extends InteractionCommandName>(
+  command: TName,
+): PostActionObservationFields<TName> {
+  return {
+    ...(commandSupportsVerifyEvidence(command) ? { verify: verifyField() } : {}),
+    ...(commandSupportsSettleObservation(command) ? settleFields() : {}),
+  } as PostActionObservationFields<TName>;
+}
+
 const clickFields = {
   target: requiredField(interactionTargetField()),
   button: enumField(CLICK_BUTTONS, 'Pointer button for platforms that support mouse buttons.'),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
+  ...postActionObservationFields('click'),
 };
 
 const pressFields = {
   target: requiredField(interactionTargetField()),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
+  ...postActionObservationFields('press'),
 };
 
 const fillFields = {
   target: requiredField(interactionTargetField()),
   text: requiredField(stringField('Text to enter into the target.')),
   delayMs: integerField('Delay between typed characters.', { min: 0 }),
+  recordAs: stringField(
+    'When script recording is armed, send text to the live app but publish it as ${VAR}. Use an uppercase replay variable name such as PASSWORD.',
+  ),
   ...selectorSnapshotFields(),
+  ...postActionObservationFields('fill'),
 };
 
 const longPressFields = {
   target: requiredField(interactionTargetField()),
   durationMs: integerField('Long press duration in milliseconds.', { min: 0 }),
   ...selectorSnapshotFields(),
+  ...postActionObservationFields('longpress'),
 };
 
 const swipeFields = {
   from: requiredField(pointField('Swipe start point.')),
   to: requiredField(pointField('Swipe end point.')),
-  durationMs: integerField('Swipe duration in milliseconds.', { min: 0 }),
-  count: integerField('Number of swipe repetitions.', { min: 1 }),
-  pauseMs: integerField('Pause between repeated swipes.', { min: 0 }),
+  count: integerField('Number of swipe repetitions.', { min: 1, max: SWIPE_REPETITION_MAX }),
+  pauseMs: integerField('Pause between repeated swipes.', { min: 0, max: SWIPE_PAUSE_MAX_MS }),
   pattern: enumField(SWIPE_PATTERNS),
 };
 
@@ -121,19 +165,35 @@ const scrollFields = {
   }),
 };
 
+// #1271 stage 2 (ADR 0012 amendment): `get`/`is`/`find` are observation-only,
+// so a repair-armed heal excludes an OUT-OF-BAND one by default. Both flags
+// are exposed here so the Node SDK's typed options and the MCP tool schema can
+// set them, mirroring `--no-record`/`--record` on the CLI. On `find`, `record`
+// is valid only for a read-only action — a mutating `find … click|fill|focus|
+// type` is refused as INVALID_ARGS by the daemon (`handleFindCommands`), since
+// the observe-vs-mutate split is a positional the schema cannot see.
+const recordControlFields = () => ({
+  noRecord: booleanField('Do not record this action.'),
+  record: booleanField(
+    'Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this. On find, valid only for a read-only action.',
+  ),
+});
+
 const getFields = {
   format: requiredField(enumField(['text', 'attrs'] as const)),
   target: requiredField(elementTargetField()),
   ...selectorSnapshotFields(),
+  ...recordControlFields(),
 };
 
 const isFields = {
   predicate: requiredField(
-    enumField(['visible', 'hidden', 'exists', 'editable', 'selected', 'text'] as const),
+    enumField(['visible', 'hidden', 'exists', 'editable', 'selected', 'focused', 'text'] as const),
   ),
   selector: requiredField(stringField()),
   value: stringField(),
   ...selectorSnapshotFields(),
+  ...recordControlFields(),
 };
 
 const findFields = {
@@ -146,6 +206,7 @@ const findFields = {
   last: booleanField(),
   depth: integerField(),
   raw: booleanField(),
+  ...recordControlFields(),
 };
 
 const gestureFields = {
@@ -157,8 +218,8 @@ const gestureFields = {
   distance: integerField('Fling distance.', { min: 0 }),
   scale: numberField('Pinch or transform scale.'),
   degrees: numberField('Rotation in degrees.'),
-  velocity: integerField('Rotate gesture velocity.', { min: 0 }),
-  durationMs: integerField('Gesture duration in milliseconds.', { min: 0 }),
+  durationMs: integerField('Pan/transform duration.', { min: 16, max: 10_000 }),
+  pointerCount: integerField('Pan touch pointer count (1 or 2).', { min: 1, max: 2 }),
 };
 
 export type ClickInput = InferCommandInput<typeof clickFields>;
@@ -167,48 +228,12 @@ export type FillInput = InferCommandInput<typeof fillFields>;
 export type LongPressInput = InferCommandInput<typeof longPressFields>;
 export type GetInput = InferCommandInput<typeof getFields>;
 
-export type PanInput = CommonCommandInput & {
-  kind: 'pan';
-  origin: PointInput;
-  delta: PointInput;
-  durationMs?: number;
-};
-
-export type FlingInput = CommonCommandInput & {
-  kind: 'fling';
-  direction: ScrollDirection;
-  origin: PointInput;
-  distance?: number;
-  durationMs?: number;
-};
-
-export type SwipeGestureInput = CommonCommandInput & {
-  kind: 'swipe';
-  preset: SwipePreset;
-  durationMs?: number;
-};
-
-export type PinchInput = CommonCommandInput & {
-  kind: 'pinch';
-  scale: number;
-  origin?: PointInput;
-};
-
-export type RotateInput = CommonCommandInput & {
-  kind: 'rotate';
-  degrees: number;
-  origin?: PointInput;
-  velocity?: number;
-};
-
-export type TransformInput = CommonCommandInput & {
-  kind: 'transform';
-  origin: PointInput;
-  delta: PointInput;
-  scale: number;
-  degrees: number;
-  durationMs?: number;
-};
+export type PanInput = CommonCommandInput & PanGesturePayload;
+export type FlingInput = CommonCommandInput & FlingGesturePayload;
+export type SwipeGestureInput = CommonCommandInput & SwipeGesturePayload;
+export type PinchInput = CommonCommandInput & PinchGesturePayload;
+export type RotateInput = CommonCommandInput & RotateGesturePayload;
+export type TransformInput = CommonCommandInput & TransformGesturePayload;
 
 export type GestureInput =
   | PanInput
@@ -253,63 +278,9 @@ export const interactionCommandMetadata = [
   }),
 ] as const;
 
-function readGestureInput(input: unknown): GestureInput {
+export function readGestureInput(input: unknown): GestureInput {
   const record = readInputRecord(input);
-  const common = readCommonInput(record);
-  const kind = requiredEnum(record, 'kind', GESTURE_KINDS);
-  if (kind === 'pan') {
-    return {
-      ...common,
-      kind,
-      origin: readPoint(record, 'origin'),
-      delta: readPoint(record, 'delta'),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'fling') {
-    return {
-      ...common,
-      kind,
-      direction: requiredEnum(record, 'direction', SCROLL_DIRECTIONS),
-      origin: readPoint(record, 'origin'),
-      distance: optionalInteger(record, 'distance', { min: 0 }),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'swipe') {
-    return {
-      ...common,
-      kind,
-      preset: requiredEnum(record, 'preset', SWIPE_PRESETS),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'pinch') {
-    return {
-      ...common,
-      kind,
-      scale: requiredNumber(record, 'scale'),
-      origin: optionalPoint(record, 'origin'),
-    };
-  }
-  if (kind === 'rotate') {
-    return {
-      ...common,
-      kind,
-      degrees: requiredNumber(record, 'degrees'),
-      origin: optionalPoint(record, 'origin'),
-      velocity: optionalInteger(record, 'velocity', { min: 0 }),
-    };
-  }
-  return {
-    ...common,
-    kind,
-    origin: readPoint(record, 'origin'),
-    delta: readPoint(record, 'delta'),
-    scale: requiredNumber(record, 'scale'),
-    degrees: requiredNumber(record, 'degrees'),
-    durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-  };
+  return { ...readCommonInput(record), ...readGesturePayload(record) } as GestureInput;
 }
 
 function defineInteractionCommandMetadata<
@@ -317,8 +288,4 @@ function defineInteractionCommandMetadata<
   const TFields extends CommandFieldMap,
 >(name: TName, fields: TFields) {
   return defineFieldCommandMetadata(name, interactionCommandDescriptions[name], fields);
-}
-
-function optionalPoint(record: Record<string, unknown>, key: string): PointInput | undefined {
-  return record[key] === undefined ? undefined : readPoint(record, key);
 }

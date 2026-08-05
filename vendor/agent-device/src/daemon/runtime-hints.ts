@@ -1,5 +1,7 @@
-import { isIosFamily, type DeviceInfo } from '../kernel/device.ts';
-import { AppError, asAppError } from '../kernel/errors.ts';
+import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
+import { escapeXmlTextAndAttribute } from '@agent-device/xml';
+import { execFailureDetails, type ExecResult } from '../utils/exec.ts';
 import type { SessionRuntimeHints } from './types.ts';
 import {
   resolveRuntimeTransportHints,
@@ -14,7 +16,12 @@ import { buildSimctlArgsForDevice } from '../platforms/apple/core/simctl.ts';
 import { runXcrun } from '../platforms/apple/core/tool-provider.ts';
 import { isActiveProviderDevice } from '../provider-device-runtime.ts';
 
-const ANDROID_DEV_PREFS_PATH = 'shared_prefs/ReactNativeDevPrefs.xml';
+// React Native's PackagerConnectionSettings/DevInternalSettings read debug_http_host via
+// PreferenceManager.getDefaultSharedPreferences(context), which resolves to
+// `<packageName>_preferences.xml`, not a React Native-specific file. We write both that file
+// and the legacy ReactNativeDevPrefs.xml path (kept in case some RN fork/version reads it) so
+// the hint reaches the app either way.
+const ANDROID_LEGACY_DEV_PREFS_PATH = 'shared_prefs/ReactNativeDevPrefs.xml';
 const ANDROID_DEBUG_HOST_KEY = 'debug_http_host';
 const ANDROID_HTTPS_KEY = 'dev_server_https';
 const IOS_JS_LOCATION_KEY = 'RCT_jsLocation';
@@ -22,7 +29,7 @@ const IOS_PACKAGER_SCHEME_KEY = 'RCT_packager_scheme';
 const ANDROID_RUN_AS_HINT =
   'React Native runtime hints require adb run-as access to the app sandbox. Verify the app is debuggable and the selected package/device are correct.';
 const ANDROID_WRITE_HINT =
-  'adb run-as succeeded, but writing ReactNativeDevPrefs.xml failed. Inspect stderr/details for the failing shell command.';
+  'adb run-as succeeded, but writing React Native dev-server preferences failed. Inspect stderr/details for the failing shell command.';
 const ANDROID_PROBE_HINT =
   'adb shell run-as probe failed. Check adb connectivity and that the device is reachable. Inspect stderr/details for more information.';
 const DEFAULT_ANDROID_PREFS_XML = [
@@ -32,7 +39,7 @@ const DEFAULT_ANDROID_PREFS_XML = [
   '',
 ].join('\n');
 
-export { resolveRuntimeTransportHints, trimRuntimeValue } from '../utils/runtime-transport.ts';
+export { trimRuntimeValue } from '../utils/runtime-transport.ts';
 
 export function hasRuntimeTransportHints(runtime: SessionRuntimeHints | undefined): boolean {
   return resolveRuntimeTransportHints(runtime) !== undefined;
@@ -76,37 +83,50 @@ export async function clearRuntimeHintsFromApp(params: {
   }
 }
 
+function androidDevPrefsPaths(packageName: string): string[] {
+  return [`shared_prefs/${packageName}_preferences.xml`, ANDROID_LEGACY_DEV_PREFS_PATH];
+}
+
 async function applyAndroidRuntimeHints(
   device: DeviceInfo,
   packageName: string,
   transport: ResolvedRuntimeTransport,
 ): Promise<void> {
   assertAndroidRuntimePackageName(packageName);
-  const currentXml = await readAndroidDevPrefs(device, packageName);
-  let nextXml = upsertAndroidStringPref(
-    currentXml,
-    ANDROID_DEBUG_HOST_KEY,
-    `${transport.host}:${transport.port}`,
-  );
-  nextXml = upsertAndroidBooleanPref(nextXml, ANDROID_HTTPS_KEY, transport.scheme === 'https');
-  await writeAndroidDevPrefs(device, packageName, nextXml);
+  const files: Array<{ path: string; xml: string }> = [];
+  for (const prefsPath of androidDevPrefsPaths(packageName)) {
+    const currentXml = await readAndroidDevPrefs(device, packageName, prefsPath);
+    let xml = upsertAndroidStringPref(
+      currentXml,
+      ANDROID_DEBUG_HOST_KEY,
+      `${transport.host}:${transport.port}`,
+    );
+    xml = upsertAndroidBooleanPref(xml, ANDROID_HTTPS_KEY, transport.scheme === 'https');
+    files.push({ path: prefsPath, xml });
+  }
+  await writeAndroidDevPrefs(device, packageName, files);
 }
 
 async function clearAndroidRuntimeHints(device: DeviceInfo, packageName: string): Promise<void> {
   assertAndroidRuntimePackageName(packageName);
-  const currentXml = await readAndroidDevPrefs(device, packageName);
-  const withoutHost = removeAndroidPrefEntry(currentXml, ANDROID_DEBUG_HOST_KEY);
-  const withoutHttps = removeAndroidPrefEntry(withoutHost, ANDROID_HTTPS_KEY);
-  if (withoutHttps === currentXml) return;
-  await writeAndroidDevPrefs(device, packageName, withoutHttps);
+  const files: Array<{ path: string; xml: string }> = [];
+  for (const prefsPath of androidDevPrefsPaths(packageName)) {
+    const currentXml = await readAndroidDevPrefs(device, packageName, prefsPath);
+    const withoutHost = removeAndroidPrefEntry(currentXml, ANDROID_DEBUG_HOST_KEY);
+    const xml = removeAndroidPrefEntry(withoutHost, ANDROID_HTTPS_KEY);
+    if (xml !== currentXml) files.push({ path: prefsPath, xml });
+  }
+  if (files.length === 0) return;
+  await writeAndroidDevPrefs(device, packageName, files);
 }
-
-async function readAndroidDevPrefs(device: DeviceInfo, packageName: string): Promise<string> {
-  const result = await runAndroidAdb(
-    device,
-    ['shell', 'run-as', packageName, 'cat', ANDROID_DEV_PREFS_PATH],
-    { allowFailure: true },
-  );
+async function readAndroidDevPrefs(
+  device: DeviceInfo,
+  packageName: string,
+  prefsPath: string,
+): Promise<string> {
+  const result = await runAndroidAdb(device, ['shell', 'run-as', packageName, 'cat', prefsPath], {
+    allowFailure: true,
+  });
   if (result.exitCode !== 0) return DEFAULT_ANDROID_PREFS_XML;
   return normalizeAndroidPrefsXml(result.stdout);
 }
@@ -114,55 +134,79 @@ async function readAndroidDevPrefs(device: DeviceInfo, packageName: string): Pro
 async function writeAndroidDevPrefs(
   device: DeviceInfo,
   packageName: string,
-  xml: string,
+  files: Array<{ path: string; xml: string }>,
+): Promise<void> {
+  await assertAndroidAppSandboxAccessible(device, packageName);
+  try {
+    await writeAndroidDevPrefsFiles(device, packageName, files);
+  } catch (error) {
+    throw androidRuntimeHintsWriteError(error, packageName);
+  }
+}
+
+async function assertAndroidAppSandboxAccessible(
+  device: DeviceInfo,
+  packageName: string,
 ): Promise<void> {
   const probeArgs = ['shell', 'run-as', packageName, 'id'];
   const probeResult = await runAndroidAdb(device, probeArgs, { allowFailure: true });
-  if (probeResult.exitCode !== 0) {
-    const runAsDenied = isAndroidRunAsDeniedOutput(probeResult.stdout, probeResult.stderr);
-    throw new AppError(
-      'COMMAND_FAILED',
-      runAsDenied
-        ? `Failed to access Android app sandbox for ${packageName}`
-        : `Failed to probe Android app sandbox for ${packageName}`,
-      {
-        package: packageName,
-        cmd: 'adb',
-        args: probeArgs,
-        stdout: probeResult.stdout,
-        stderr: probeResult.stderr,
-        exitCode: probeResult.exitCode,
-        hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_PROBE_HINT,
-      },
-    );
-  }
+  if (probeResult.exitCode === 0) return;
+  throw androidRuntimeHintsProbeError(probeResult, packageName, probeArgs);
+}
 
-  try {
-    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'mkdir', '-p', 'shared_prefs']);
-    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'tee', ANDROID_DEV_PREFS_PATH], {
-      stdin: xml.trimEnd(),
+function androidRuntimeHintsProbeError(
+  result: ExecResult,
+  packageName: string,
+  args: string[],
+): AppError {
+  const runAsDenied = isAndroidRunAsDeniedOutput(result.stdout, result.stderr);
+  return new AppError(
+    'COMMAND_FAILED',
+    runAsDenied
+      ? `Failed to access Android app sandbox for ${packageName}`
+      : `Failed to probe Android app sandbox for ${packageName}`,
+    execFailureDetails(result, {
+      package: packageName,
+      cmd: 'adb',
+      args,
+      hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_PROBE_HINT,
+    }),
+  );
+}
+
+async function writeAndroidDevPrefsFiles(
+  device: DeviceInfo,
+  packageName: string,
+  files: Array<{ path: string; xml: string }>,
+): Promise<void> {
+  await runAndroidAdb(device, ['shell', 'run-as', packageName, 'mkdir', '-p', 'shared_prefs']);
+  for (const file of files) {
+    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'tee', file.path], {
+      stdin: file.xml.trimEnd(),
     });
-  } catch (error) {
-    const appErr = asAppError(error);
-    if (appErr.code === 'TOOL_MISSING') throw appErr;
-    const stdout = typeof appErr.details?.stdout === 'string' ? appErr.details.stdout : '';
-    const stderr = typeof appErr.details?.stderr === 'string' ? appErr.details.stderr : '';
-    const runAsDenied = isAndroidRunAsDeniedOutput(stdout, stderr);
-    throw new AppError(
-      'COMMAND_FAILED',
-      runAsDenied
-        ? `Failed to access Android app sandbox for ${packageName}`
-        : `Failed to write Android runtime hints for ${packageName}`,
-      {
-        ...(appErr.details ?? {}),
-        package: packageName,
-        cmd: 'adb',
-        phase: 'write-runtime-hints',
-        hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_WRITE_HINT,
-      },
-      appErr,
-    );
   }
+}
+
+function androidRuntimeHintsWriteError(error: unknown, packageName: string): AppError {
+  const appErr = asAppError(error);
+  if (appErr.code === 'TOOL_MISSING') return appErr;
+  const stdout = typeof appErr.details?.stdout === 'string' ? appErr.details.stdout : '';
+  const stderr = typeof appErr.details?.stderr === 'string' ? appErr.details.stderr : '';
+  const runAsDenied = isAndroidRunAsDeniedOutput(stdout, stderr);
+  return new AppError(
+    'COMMAND_FAILED',
+    runAsDenied
+      ? `Failed to access Android app sandbox for ${packageName}`
+      : `Failed to write Android runtime hints for ${packageName}`,
+    {
+      ...(appErr.details ?? {}),
+      package: packageName,
+      cmd: 'adb',
+      phase: 'write-runtime-hints',
+      hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_WRITE_HINT,
+    },
+    appErr,
+  );
 }
 
 async function applyIosSimulatorRuntimeHints(
@@ -230,12 +274,12 @@ function normalizeAndroidPrefsXml(xml: string): string {
 }
 
 function upsertAndroidStringPref(xml: string, key: string, value: string): string {
-  const entry = `  <string name="${escapeXmlText(key)}">${escapeXmlText(value)}</string>`;
+  const entry = `  <string name="${escapeXmlTextAndAttribute(key)}">${escapeXmlTextAndAttribute(value)}</string>`;
   return insertAndroidPrefEntry(removeAndroidPrefEntry(xml, key), entry);
 }
 
 function upsertAndroidBooleanPref(xml: string, key: string, value: boolean): string {
-  const entry = `  <boolean name="${escapeXmlText(key)}" value="${value ? 'true' : 'false'}" />`;
+  const entry = `  <boolean name="${escapeXmlTextAndAttribute(key)}" value="${value ? 'true' : 'false'}" />`;
   return insertAndroidPrefEntry(removeAndroidPrefEntry(xml, key), entry);
 }
 
@@ -265,15 +309,6 @@ function assertAndroidRuntimePackageName(packageName: string): void {
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function escapeXmlText(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
 }
 
 function isAndroidRunAsDeniedOutput(stdout: string, stderr: string): boolean {

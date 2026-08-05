@@ -3,18 +3,17 @@ import {
   buildAndroidHelperPresentationInput,
   type AndroidHelperPresentationInput,
 } from './android-helper-snapshot-presentation.ts';
-import { AppError, normalizeError, type NormalizedError } from '../kernel/errors.ts';
+import { AppError, normalizeError, type NormalizedError } from '@agent-device/kernel/errors';
 import { detectPossibleRepeatedNavSubtree } from './repeated-nav-subtree.ts';
+import { formatReplayDivergenceReport } from '@agent-device/contracts/divergence';
 import { buildSnapshotDisplayLines, formatSnapshotLine } from '../snapshot/snapshot-lines.ts';
 import {
   isSnapshotBackend,
   usesMobileSnapshotPresentation,
-  type Rect,
   type SnapshotNode,
   type SnapshotUnchanged,
   type SnapshotVisibility,
-} from '../kernel/snapshot.ts';
-import type { MovementRange } from '../screenshot-diff/screenshot-diff-ocr.ts';
+} from '@agent-device/kernel/snapshot';
 import type { ScreenshotDiffResult } from '../screenshot-diff/screenshot-diff.ts';
 import type { ScreenshotDiffRegion } from '../screenshot-diff/screenshot-diff-regions.ts';
 import { styleText } from 'node:util';
@@ -40,15 +39,61 @@ export function printHumanError(
   if (normalized.hint) {
     process.stderr.write(`Hint: ${normalized.hint}\n`);
   }
+  // #1597: printed unconditionally (not gated behind --debug), same as the
+  // divergence report below — an agent must see the candidate refs without a
+  // follow-up round trip.
+  const ambiguousMatchLines = formatAmbiguousMatchCandidateLines(normalized.details);
+  if (ambiguousMatchLines.length > 0) {
+    process.stderr.write(`${ambiguousMatchLines.join('\n')}\n`);
+  }
   if (normalized.diagnosticId) {
     process.stderr.write(`Diagnostic ID: ${normalized.diagnosticId}\n`);
   }
   if (normalized.logPath) {
     process.stderr.write(`Diagnostics Log: ${normalized.logPath}\n`);
   }
+  // ADR 0012: the divergence compact report always renders; --debug's raw
+  // details dump below remains the full-object view.
+  const divergenceText = formatReplayDivergenceReport(normalized.details);
+  if (divergenceText) {
+    process.stderr.write(`${divergenceText}\n`);
+  }
   if (options.showDetails && normalized.details) {
     process.stderr.write(`${JSON.stringify(normalized.details, null, 2)}\n`);
   }
+}
+
+// #1597: shared by printHumanError (CLI) and formatToolErrorText (MCP,
+// src/mcp/tool-error.ts) so an AMBIGUOUS_MATCH's candidate refs render
+// identically on every text surface, never only in --json/--debug. Reads
+// `details.candidates` (pre-rendered snapshot-lines, capped at
+// AMBIGUOUS_MATCH_CANDIDATE_LIMIT by buildAmbiguousMatchError,
+// src/daemon/handlers/find.ts) and `details.matches` (the true total) to
+// compute the "+N more" marker for whatever the cap omitted.
+//
+// `details.candidates` is NOT unique to that one producer: the device-domain
+// AMBIGUOUS_MATCH/APP_NOT_INSTALLED resolvers (findBootedAppleSimulatorWithApp,
+// src/core/dispatch-resolve.ts) reuse the same key for `{ id, name }` device
+// objects, and never set `details.matches` at all. Both guards below —
+// numeric `matches` and every candidate being a pre-rendered string — must
+// hold together, or this renders "[object Object]" for that shape instead of
+// silently rendering nothing (its prior, pre-#1597 behavior).
+export function formatAmbiguousMatchCandidateLines(
+  details: Record<string, unknown> | undefined,
+): string[] {
+  const candidates = details?.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  if (typeof details?.matches !== 'number') return [];
+  if (!candidates.every((candidate): candidate is string => typeof candidate === 'string')) {
+    return [];
+  }
+  const totalMatches = details.matches;
+  const remaining = totalMatches - candidates.length;
+  return [
+    'Candidates:',
+    ...candidates.map((candidate) => `  ${candidate}`),
+    ...(remaining > 0 ? [`  +${remaining} more`] : []),
+  ];
 }
 
 type SnapshotDiffLine = {
@@ -316,10 +361,7 @@ export function formatScreenshotDiffText(data: ScreenshotDiffResult): string {
 
   if (!match && !dimensionMismatch) {
     lines.push(...formatScreenshotDiffPixelCountLines(data, useColor));
-    lines.push(...formatScreenshotDiffHintLines(data, useColor));
     lines.push(...formatScreenshotDiffRegionLines(data, useColor));
-    lines.push(...formatScreenshotDiffOcrLines(data, useColor));
-    lines.push(...formatScreenshotDiffNonTextLines(data, useColor));
   }
 
   return `${lines.join('\n')}\n`;
@@ -388,12 +430,6 @@ function formatScreenshotDiffPixelCountLines(
   return [`  ${diffCount} different / ${totalPixels} total pixels`];
 }
 
-function formatScreenshotDiffHintLines(data: ScreenshotDiffResult, useColor: boolean): string[] {
-  const hints = formatScreenshotDiffHints(data);
-  if (hints.length === 0) return [];
-  return [`  ${formatMuted('Hints:', useColor)}`, ...hints.map((hint) => `    - ${hint}`)];
-}
-
 function formatScreenshotDiffRegionLines(data: ScreenshotDiffResult, useColor: boolean): string[] {
   const regions = Array.isArray(data.regions) ? data.regions : [];
   if (regions.length === 0) return [];
@@ -412,14 +448,9 @@ function formatScreenshotDiffRegionEntryLines(region: ScreenshotDiffRegion): str
       : String(region.shareOfDiffPercentage);
   const rect = region.rect;
   const lines = [
-    `    ${region.index}. ${region.location} x=${rect.x} y=${rect.y} ` +
-      `${rect.width}x${rect.height}, ${share}% of diff, change=${region.dominantChange}`,
+    `    ${region.index}. x=${rect.x} y=${rect.y} ${rect.width}x${rect.height}, ` +
+      `${share}% of diff`,
   ];
-
-  const detailLine = formatScreenshotRegionDetails(region);
-  if (detailLine) {
-    lines.push(`       ${detailLine}`);
-  }
 
   const bestMatch = region.currentOverlayMatches?.[0];
   if (bestMatch) {
@@ -431,134 +462,6 @@ function formatScreenshotDiffRegionEntryLines(region: ScreenshotDiffRegion): str
   }
 
   return lines;
-}
-
-function formatScreenshotDiffOcrLines(data: ScreenshotDiffResult, useColor: boolean): string[] {
-  const ocrMatches = data.ocr?.matches ?? [];
-  if (ocrMatches.length === 0) return [];
-
-  const shownOcrMatches = ocrMatches.slice(0, 8);
-  const lines = [
-    `  ${formatMuted(
-      `OCR text deltas (${data.ocr?.provider}; baselineBlocks=${data.ocr?.baselineBlocks} ` +
-        `currentBlocks=${data.ocr?.currentBlocks}; showing ${shownOcrMatches.length}/${ocrMatches.length}; px):`,
-      useColor,
-    )}`,
-    `    ${formatMuted(
-      'item | text | movePx | sizeDeltaPx | bboxBaseline | bboxCurrent | confidence | issueHint',
-      useColor,
-    )}`,
-  ];
-
-  for (const [index, ocrMatch] of shownOcrMatches.entries()) {
-    const delta = ocrMatch.delta;
-    lines.push(
-      `    ${index + 1} | ${JSON.stringify(ocrMatch.text)} | ` +
-        `${formatSignedPixels(delta.x)},${formatSignedPixels(delta.y)} | ` +
-        `${formatSignedPixels(delta.width)},${formatSignedPixels(delta.height)} | ` +
-        `${formatRect(ocrMatch.baselineRect)} | ${formatRect(ocrMatch.currentRect)} | ` +
-        `${ocrMatch.confidence} | ` +
-        `${ocrMatch.possibleTextMetricMismatch ? 'ocr-bbox-size-change' : '-'}`,
-    );
-  }
-
-  return lines;
-}
-
-function formatScreenshotDiffNonTextLines(data: ScreenshotDiffResult, useColor: boolean): string[] {
-  const nonTextDeltas = data.nonTextDeltas ?? [];
-  if (nonTextDeltas.length === 0) return [];
-
-  const shownNonTextDeltas = nonTextDeltas.slice(0, 8);
-  const lines = [
-    `  ${formatMuted(
-      `Non-text visual deltas (showing ${shownNonTextDeltas.length}/${nonTextDeltas.length}; px):`,
-      useColor,
-    )}`,
-    `    ${formatMuted('item | region | slot | kind | bboxCurrent | nearestText', useColor)}`,
-  ];
-
-  for (const delta of shownNonTextDeltas) {
-    lines.push(
-      `    ${delta.index} | ${delta.regionIndex ? `r${delta.regionIndex}` : '-'} | ` +
-        `${delta.slot} | ${delta.likelyKind} | ${formatRect(delta.rect)} | ` +
-        `${delta.nearestText ? JSON.stringify(delta.nearestText) : '-'}`,
-    );
-  }
-
-  return lines;
-}
-
-function formatRect(rect: Rect): string {
-  return `x=${rect.x},y=${rect.y},w=${rect.width},h=${rect.height}`;
-}
-
-function formatSignedPixels(value: number): string {
-  return value > 0 ? `+${value}` : String(value);
-}
-
-function formatScreenshotDiffHints(data: ScreenshotDiffResult): string[] {
-  const hints: string[] = [];
-  const clusters = data.ocr?.movementClusters ?? [];
-  for (const cluster of clusters.slice(0, 2)) {
-    hints.push(
-      `text movement cluster: ${formatQuotedList(cluster.texts)} dx=${formatRange(cluster.xRange)}px ` +
-        `dy=${formatRange(cluster.yRange)}px`,
-    );
-  }
-
-  const controlDeltas = (data.nonTextDeltas ?? [])
-    .filter((delta) => ['icon', 'toggle', 'chevron'].includes(delta.likelyKind))
-    .slice(0, 3);
-  if (controlDeltas.length > 0) {
-    hints.push(`non-text controls: ${controlDeltas.map(formatNonTextHint).join('; ')}`);
-  }
-
-  const boundaryDeltas = (data.nonTextDeltas ?? [])
-    .filter((delta) => delta.likelyKind === 'separator')
-    .slice(0, 2);
-  if (boundaryDeltas.length > 0) {
-    hints.push(`non-text boundaries: ${boundaryDeltas.map(formatNonTextHint).join('; ')}`);
-  }
-
-  return hints.slice(0, 6);
-}
-
-function formatNonTextHint(delta: {
-  likelyKind: string;
-  nearestText?: string;
-  regionIndex?: number;
-}): string {
-  const anchor = delta.nearestText ? ` near ${JSON.stringify(delta.nearestText)}` : '';
-  const region = delta.regionIndex ? ` r${delta.regionIndex}` : '';
-  return `${delta.likelyKind}${anchor}${region}`;
-}
-
-function formatRange(range: MovementRange): string {
-  return range.min === range.max
-    ? formatSignedPixels(range.min)
-    : `${formatSignedPixels(range.min)}..${formatSignedPixels(range.max)}`;
-}
-
-function formatQuotedList(values: string[]): string {
-  const shown = values.slice(0, 4).map((value) => JSON.stringify(value));
-  const suffix = values.length > shown.length ? ` +${values.length - shown.length} more` : '';
-  return `${shown.join(', ')}${suffix}`;
-}
-
-function formatScreenshotRegionDetails(region: ScreenshotDiffRegion): string | null {
-  const details = [
-    region.size ? `size=${region.size}` : null,
-    region.shape ? `shape=${region.shape}` : null,
-    typeof region.densityPercentage === 'number' ? `density=${region.densityPercentage}%` : null,
-    region.averageBaselineColorHex && region.averageCurrentColorHex
-      ? `avgColor=${region.averageBaselineColorHex}->${region.averageCurrentColorHex}`
-      : null,
-    typeof region.baselineLuminance === 'number' && typeof region.currentLuminance === 'number'
-      ? `luminance=${region.baselineLuminance}->${region.currentLuminance}`
-      : null,
-  ].filter((entry): entry is string => entry !== null);
-  return details.length > 0 ? details.join(' ') : null;
 }
 
 function toRelativePath(filePath: string): string {

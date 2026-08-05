@@ -2,8 +2,14 @@ import {
   isDeepLinkTarget,
   isWebUrl,
   resolveIosDeviceDeepLinkBundleId,
-} from '../../core/open-target.ts';
-import { isMacOs, isApplePlatform, type DeviceInfo } from '../../kernel/device.ts';
+} from '@agent-device/contracts/command';
+import {
+  isIosFamily,
+  isMacOs,
+  isApplePlatform,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
+import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 
 async function resolveIosBundleIdForOpen(
   device: DeviceInfo,
@@ -100,6 +106,9 @@ export async function resolveSessionAppBundleIdForTarget(
     openTarget: string | undefined,
   ) => Promise<string | undefined>,
 ): Promise<string | undefined> {
+  if (isIosFamily(device) && isActiveProviderDevice(device)) {
+    return currentAppBundleId;
+  }
   return (
     (await resolveIosBundleIdForOpen(device, openTarget, currentAppBundleId)) ??
     (await resolveAndroidPackageForOpenFn(device, openTarget)) ??

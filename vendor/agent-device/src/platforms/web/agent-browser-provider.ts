@@ -1,7 +1,8 @@
-import { runCmd } from '../../utils/exec.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { execFailureDetails, runCmd } from '../../utils/exec.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { sleep } from '../../utils/timeouts.ts';
-import type { Rect } from '../../kernel/snapshot.ts';
+import type { Rect } from '@agent-device/kernel/snapshot';
 import {
   buildAudioProbeEvalScript,
   normalizeAgentBrowserAudioProbeResult,
@@ -15,7 +16,12 @@ import {
   type JsonObject,
 } from './json-utils.ts';
 import type { WebProvider, WebSnapshotOptions, WebSnapshotResult } from './provider.ts';
-import { mapManagedAgentBrowserError, resolveAgentBrowserTool } from './agent-browser-tool.ts';
+import {
+  getManagedAgentBrowserStatus,
+  mapManagedAgentBrowserError,
+  resolveAgentBrowserTool,
+} from './agent-browser-tool.ts';
+import { cleanupManagedAgentBrowserOrphansForProviderStartup } from './agent-browser-lifecycle.ts';
 
 const AGENT_BROWSER = 'agent-browser';
 const AGENT_BROWSER_TIMEOUT_MS = 30_000;
@@ -25,14 +31,15 @@ const AGENT_BROWSER_DOCTOR_HINT =
 type AgentBrowserProviderOptions = {
   session?: string;
   stateDir?: string;
+  openWebSessionNames?: () => readonly string[];
 };
 
 export function createAgentBrowserWebProvider(
   options: AgentBrowserProviderOptions = {},
 ): WebProvider {
   const session = options.session?.trim();
-  const runJson = async (args: string[]): Promise<unknown> =>
-    await runAgentBrowserJson(args, { session, options });
+  const runJson = async (args: string[], signal?: AbortSignal): Promise<unknown> =>
+    await runAgentBrowserJson(args, { session, options, signal });
 
   return {
     async open(target) {
@@ -48,7 +55,10 @@ export function createAgentBrowserWebProvider(
       await runJson(['record', 'stop']);
     },
     async snapshot(snapshotOptions) {
-      return await captureAgentBrowserSnapshot(runJson, snapshotOptions);
+      return await captureAgentBrowserSnapshot(
+        (args) => runJson(args, snapshotOptions?.signal),
+        snapshotOptions,
+      );
     },
     async screenshot(outPath, screenshotOptions) {
       await runJson(['screenshot', ...(screenshotOptions?.fullscreen ? ['--full'] : []), outPath]);
@@ -199,11 +209,15 @@ function isIgnorableBoxError(error: unknown): boolean {
 
 async function runAgentBrowserJson(
   args: string[],
-  params: { session: string | undefined; options: AgentBrowserProviderOptions },
+  params: {
+    session: string | undefined;
+    options: AgentBrowserProviderOptions;
+    signal?: AbortSignal;
+  },
 ): Promise<unknown> {
-  const { session, options } = params;
+  const { session, options, signal } = params;
   const cliArgs = [...args, '--json', ...(session ? ['--session', session] : [])];
-  const result = await runAgentBrowserCommand(cliArgs, options);
+  const result = await runAgentBrowserCommand(cliArgs, options, signal);
   const parsed = parseAgentBrowserJson(result.stdout, result.stderr, cliArgs, result.exitCode);
   return unwrapAgentBrowserJson(parsed, result, cliArgs);
 }
@@ -211,6 +225,7 @@ async function runAgentBrowserJson(
 async function runAgentBrowserCommand(
   cliArgs: string[],
   options: AgentBrowserProviderOptions,
+  signal?: AbortSignal,
 ): Promise<{
   stdout: string;
   stderr: string;
@@ -220,11 +235,13 @@ async function runAgentBrowserCommand(
   let stderr = '';
   let exitCode = 0;
   try {
+    await cleanupProviderStartupOrphans(options);
     const tool = await resolveAgentBrowserTool({ stateDir: options.stateDir });
     const result = await runCmd(tool.command, cliArgs, {
       allowFailure: true,
       env: tool.env,
       timeoutMs: AGENT_BROWSER_TIMEOUT_MS,
+      signal,
     });
     stdout = result.stdout;
     stderr = result.stderr;
@@ -234,6 +251,23 @@ async function runAgentBrowserCommand(
   }
 
   return { stdout, stderr, exitCode };
+}
+
+async function cleanupProviderStartupOrphans(options: AgentBrowserProviderOptions): Promise<void> {
+  if (!options.openWebSessionNames) return;
+  const status = getManagedAgentBrowserStatus({ stateDir: options.stateDir });
+  if (!status.installed) return;
+  try {
+    await cleanupManagedAgentBrowserOrphansForProviderStartup(status, {
+      openWebSessionNames: options.openWebSessionNames(),
+    });
+  } catch (error) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'web_agent_browser_provider_orphan_cleanup_failed',
+      data: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
 }
 
 function unwrapAgentBrowserJson(
@@ -253,14 +287,17 @@ function unwrapAgentBrowserJson(
     });
   }
   if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', 'agent-browser command failed', {
-      cmd: AGENT_BROWSER,
-      args: cliArgs,
-      exitCode: result.exitCode,
-      stdout: result.stdout.slice(0, 500),
-      stderr: result.stderr.slice(0, 500),
-      hint: readStringProperty(parsed, 'hint') ?? AGENT_BROWSER_DOCTOR_HINT,
-    });
+    throw new AppError(
+      'COMMAND_FAILED',
+      'agent-browser command failed',
+      execFailureDetails(result, {
+        cmd: AGENT_BROWSER,
+        args: cliArgs,
+        stdout: result.stdout.slice(0, 500),
+        stderr: result.stderr.slice(0, 500),
+        hint: readStringProperty(parsed, 'hint') ?? AGENT_BROWSER_DOCTOR_HINT,
+      }),
+    );
   }
 
   return Object.hasOwn(parsed, 'data') ? parsed.data : parsed;
@@ -276,6 +313,8 @@ function parseAgentBrowserJson(
     return JSON.parse(stdout);
   } catch (error) {
     const commandFailed = exitCode !== 0;
+    // exec-guard-allow: reachable at exit 0 (invalid JSON on stdout); the
+    // message already branches on the exit code and output is truncated.
     throw new AppError(
       'COMMAND_FAILED',
       commandFailed ? 'agent-browser command failed' : 'agent-browser returned invalid JSON',

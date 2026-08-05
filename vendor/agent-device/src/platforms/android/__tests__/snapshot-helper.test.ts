@@ -6,18 +6,22 @@ import path from 'node:path';
 import { beforeEach, test } from 'vitest';
 import {
   captureAndroidSnapshotWithHelper,
+  parseAndroidSnapshotHelperOutput,
+} from '../snapshot-helper-capture.ts';
+import {
   ensureAndroidSnapshotHelper,
   forgetAndroidSnapshotHelperInstall,
-  parseAndroidSnapshotHelperManifest,
-  parseAndroidSnapshotHelperOutput,
-  parseAndroidSnapshotHelperXml,
-  prepareAndroidSnapshotHelperArtifactFromManifestUrl,
   resetAndroidSnapshotHelperInstallCache,
-  verifyAndroidSnapshotHelperArtifact,
-  type AndroidAdbExecutor,
-  type AndroidSnapshotHelperManifest,
-} from '../snapshot-helper.ts';
+} from '../snapshot-helper-install.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { parseAndroidSnapshotHelperManifest } from '../snapshot-helper-artifact.ts';
+import { verifyAndroidHelperApkChecksum } from '../helper-package-install.ts';
+import type {
+  AndroidAdbExecutor,
+  AndroidSnapshotHelperManifest,
+} from '../snapshot-helper-types.ts';
 import type { AndroidAdbProvider } from '../adb-executor.ts';
+import { resetAndroidSnapshotHelperRetirements } from '../snapshot-helper-retirement.ts';
 
 const manifest: AndroidSnapshotHelperManifest = {
   name: 'android-snapshot-helper',
@@ -36,6 +40,7 @@ const manifest: AndroidSnapshotHelperManifest = {
 
 beforeEach(() => {
   resetAndroidSnapshotHelperInstallCache();
+  resetAndroidSnapshotHelperRetirements();
 });
 
 test('parseAndroidSnapshotHelperOutput reconstructs XML chunks and metadata', () => {
@@ -105,26 +110,6 @@ test('parseAndroidSnapshotHelperOutput decodes UTF-8 across byte chunk boundarie
   assert.equal(parsed.xml, xml);
 });
 
-test('parseAndroidSnapshotHelperXml returns shaped nodes from captured helper output', () => {
-  const parsed = parseAndroidSnapshotHelperXml(
-    '<hierarchy><node text="Continue" class="android.widget.Button" bounds="[1,2][21,42]" clickable="true" /><node text="Keyboard suggestion" class="android.widget.TextView" bounds="[1,44][121,84]" /></hierarchy>',
-    {
-      outputFormat: 'uiautomator-xml',
-      captureMode: 'interactive-windows',
-      windowCount: 2,
-      nodeCount: 2,
-    },
-  );
-
-  assert.equal(parsed.nodes[0]?.label, 'Continue');
-  assert.equal(parsed.nodes[0]?.hittable, true);
-  assert.deepEqual(parsed.nodes[0]?.rect, { x: 1, y: 2, width: 20, height: 40 });
-  assert.equal(parsed.nodes[1]?.label, 'Keyboard suggestion');
-  assert.equal(parsed.metadata.captureMode, 'interactive-windows');
-  assert.equal(parsed.metadata.windowCount, 2);
-  assert.equal(parsed.metadata.nodeCount, 2);
-});
-
 test('parseAndroidSnapshotHelperOutput rejects incomplete chunks', () => {
   const output = [
     statusRecord({ chunkIndex: '0', chunkCount: '2', payloadBase64: encodeChunk('<hierarchy>') }),
@@ -183,7 +168,7 @@ test('parseAndroidSnapshotHelperOutput falls back to error type for null helper 
   });
 });
 
-test('ensureAndroidSnapshotHelper installs when missing and skips current version', async () => {
+test('ensureAndroidSnapshotHelper installs when missing and skips a newer version', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-install-'));
   const apkPath = path.join(tmpDir, 'helper.apk');
   await fs.writeFile(apkPath, 'helper-apk');
@@ -212,14 +197,201 @@ test('ensureAndroidSnapshotHelper installs when missing and skips current versio
   const skipped = await ensureAndroidSnapshotHelper({
     adb: async () => ({
       exitCode: 0,
-      stdout: 'package:com.callstack.agentdevice.snapshothelper versionCode:13003',
+      stdout: 'package:com.callstack.agentdevice.snapshothelper versionCode:13004',
       stderr: '',
     }),
-    artifact: { apkPath: '/tmp/helper.apk', manifest },
+    artifact: { apkPath, manifest: localManifest },
   });
 
   assert.equal(skipped.installed, false);
   assert.equal(skipped.reason, 'current');
+});
+
+test('ensureAndroidSnapshotHelper tags a device-side install rejection distinctly from artifact resolution', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-install-reject-'));
+  const apkPath = path.join(tmpDir, 'helper.apk');
+  await fs.writeFile(apkPath, 'helper-apk');
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return { exitCode: 1, stdout: '', stderr: 'not found' };
+    }
+    if (args[0] === 'install') {
+      return { exitCode: 1, stdout: '', stderr: 'Failure [INSTALL_FAILED_TEST_ONLY]' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+
+  await assert.rejects(
+    () =>
+      ensureAndroidSnapshotHelper({
+        adb,
+        artifact: { apkPath, manifest: { ...manifest, sha256: sha256Text('helper-apk') } },
+      }),
+    (error) => {
+      assert.match((error as Error).message, /Failed to install Android snapshot helper/);
+      assert.equal(
+        (error as { details?: Record<string, unknown> }).details
+          ?.androidSnapshotHelperInstallFailure,
+        true,
+      );
+      return true;
+    },
+  );
+});
+
+test('ensureAndroidSnapshotHelper tags a rejected provider install without losing the enriched error', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-install-throw-'));
+  const apkPath = path.join(tmpDir, 'helper.apk');
+  await fs.writeFile(apkPath, 'helper-apk');
+  const installError = new AppError('COMMAND_FAILED', 'Failed to install Android snapshot helper', {
+    stderr: 'adb: failed to install helper.apk: Failure [INSTALL_FAILED_TEST_ONLY]',
+    stdout: '',
+    exitCode: 1,
+    processExitError: true,
+    hint: 'The Android package installer rejected the APK — see the INSTALL_FAILED code in the error output for the exact cause.',
+  });
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return { exitCode: 1, stdout: '', stderr: 'not found' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+  const adbProvider: AndroidAdbProvider = {
+    exec: adb,
+    install: async () => {
+      throw installError;
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      ensureAndroidSnapshotHelper({
+        adb,
+        adbProvider,
+        artifact: { apkPath, manifest: { ...manifest, sha256: sha256Text('helper-apk') } },
+      }),
+    (error) => {
+      assert.equal(error, installError);
+      const details = (error as AppError).details;
+      assert.equal(details?.androidSnapshotHelperInstallFailure, true);
+      assert.match(String(details?.stderr), /INSTALL_FAILED_TEST_ONLY/);
+      assert.match(String(details?.hint), /package installer rejected the APK/);
+      return true;
+    },
+  );
+});
+
+test('ensureAndroidSnapshotHelper replaces same-version helper when APK bytes differ', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-identity-'));
+  const apkPath = path.join(tmpDir, 'helper.apk');
+  await fs.writeFile(apkPath, 'new-helper-apk');
+  const localManifest = {
+    ...manifest,
+    sha256: sha256Text('new-helper-apk'),
+  };
+  const installs: string[] = [];
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return {
+        exitCode: 0,
+        stdout: `package:${localManifest.packageName} versionCode:${localManifest.versionCode}`,
+        stderr: '',
+      };
+    }
+    if (args[0] === 'shell' && args[1] === 'pm' && args[2] === 'path') {
+      return { exitCode: 0, stdout: 'package:/data/app/helper/base.apk\n', stderr: '' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+
+  const result = await ensureAndroidSnapshotHelper({
+    adb,
+    adbProvider: {
+      exec: adb,
+      pull: async (_remotePath, localPath) => {
+        await fs.writeFile(localPath, 'old-helper-apk');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+      install: async (pathToInstall) => {
+        installs.push(pathToInstall);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    },
+    artifact: { apkPath, manifest: localManifest },
+    deviceKey: 'android:emulator-5554',
+  });
+
+  assert.equal(result.reason, 'mismatched');
+  assert.equal(result.installed, true);
+  assert.deepEqual(installs, [apkPath]);
+});
+
+test('installing a same-version different-sha helper evicts the stale install memo', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-memo-evict-'));
+  const apkPathA = path.join(tmpDir, 'helper-a.apk');
+  const apkPathB = path.join(tmpDir, 'helper-b.apk');
+  await fs.writeFile(apkPathA, 'helper-apk-a');
+  await fs.writeFile(apkPathB, 'helper-apk-b');
+  const manifestA = { ...manifest, sha256: sha256Text('helper-apk-a') };
+  const manifestB = { ...manifest, sha256: sha256Text('helper-apk-b') };
+  const deviceKey = 'android:memo-evict';
+  let installedBytes = 'helper-apk-a';
+  const installs: string[] = [];
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return {
+        exitCode: 0,
+        stdout: `package:${manifest.packageName} versionCode:${manifest.versionCode}`,
+        stderr: '',
+      };
+    }
+    if (args[0] === 'shell' && args[1] === 'pm' && args[2] === 'path') {
+      return { exitCode: 0, stdout: 'package:/data/app/helper/base.apk\n', stderr: '' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+  const adbProvider = {
+    exec: adb,
+    pull: async (_remotePath: string, localPath: string) => {
+      await fs.writeFile(localPath, installedBytes);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    },
+    install: async (pathToInstall: string) => {
+      installs.push(pathToInstall);
+      installedBytes = await fs.readFile(pathToInstall, 'utf8');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    },
+  };
+
+  const first = await ensureAndroidSnapshotHelper({
+    adb,
+    adbProvider,
+    artifact: { apkPath: apkPathA, manifest: manifestA },
+    deviceKey,
+  });
+  assert.equal(first.reason, 'current');
+
+  // B replaces A in place: same packageName/versionCode, different APK bytes.
+  const replaced = await ensureAndroidSnapshotHelper({
+    adb,
+    adbProvider,
+    artifact: { apkPath: apkPathB, manifest: manifestB },
+    deviceKey,
+  });
+  assert.equal(replaced.reason, 'mismatched');
+  assert.equal(replaced.installed, true);
+
+  // Selecting A again must re-inspect against the swapped binary instead of serving A's stale
+  // 'current' memo, and reinstall A.
+  const reinstalled = await ensureAndroidSnapshotHelper({
+    adb,
+    adbProvider,
+    artifact: { apkPath: apkPathA, manifest: manifestA },
+    deviceKey,
+  });
+  assert.equal(reinstalled.reason, 'mismatched');
+  assert.equal(reinstalled.installed, true);
+  assert.deepEqual(installs, [apkPathB, apkPathA]);
 });
 
 test('ensureAndroidSnapshotHelper caches successful install checks per device and helper version', async () => {
@@ -245,6 +417,7 @@ test('ensureAndroidSnapshotHelper caches successful install checks per device an
     artifact,
     deviceKey: 'android:emulator-5554',
   });
+  await fs.rm(apkPath);
   const cached = await ensureAndroidSnapshotHelper({
     adb,
     artifact,
@@ -268,6 +441,7 @@ test('ensureAndroidSnapshotHelper caches successful install checks per device an
     ['install', '-r', '-t', apkPath],
   ]);
 
+  await fs.writeFile(apkPath, 'helper-apk');
   await ensureAndroidSnapshotHelper({
     adb,
     artifact,
@@ -302,7 +476,7 @@ test('ensureAndroidSnapshotHelper always policy bypasses cached install result',
     if (args.includes('--show-versioncode')) {
       return {
         exitCode: 0,
-        stdout: `package:${localManifest.packageName} versionCode:${localManifest.versionCode}`,
+        stdout: `package:${localManifest.packageName} versionCode:${localManifest.versionCode + 1}`,
         stderr: '',
       };
     }
@@ -348,17 +522,14 @@ test('ensureAndroidSnapshotHelper always policy bypasses cached install result',
   ]);
 });
 
-test('verifyAndroidSnapshotHelperArtifact rejects checksum mismatch', async () => {
+test('shared Android helper verifier rejects snapshot helper checksum mismatch', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-sha-'));
   const apkPath = path.join(tmpDir, 'helper.apk');
   await fs.writeFile(apkPath, 'actual');
 
   await assert.rejects(
     () =>
-      verifyAndroidSnapshotHelperArtifact({
-        apkPath,
-        manifest: { ...manifest, sha256: sha256Text('expected') },
-      }),
+      verifyAndroidHelperApkChecksum(apkPath, sha256Text('expected'), 'Android snapshot helper'),
     { message: 'Android snapshot helper APK checksum mismatch' },
   );
 });
@@ -760,64 +931,6 @@ test('captureAndroidSnapshotWithHelper reads helper output file when instrumenta
   ]);
 });
 
-test('prepareAndroidSnapshotHelperArtifactFromManifestUrl downloads and verifies APK', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-download-'));
-  const apk = Buffer.from('downloaded-helper');
-  const manifestUrl = 'https://example.test/helper.manifest.json';
-  const apkUrl = 'https://example.test/helper.apk';
-  const fetch = createArtifactFetch({ manifestUrl, apkUrl, apk });
-
-  const artifact = await prepareAndroidSnapshotHelperArtifactFromManifestUrl({
-    manifestUrl,
-    cacheDir: tmpDir,
-    fetch,
-  });
-
-  assert.deepEqual(fetch.fetched, [manifestUrl, apkUrl]);
-  assert.equal(await fs.readFile(artifact.apkPath, 'utf8'), 'downloaded-helper');
-  assert.equal(artifact.manifest.sha256, sha256Buffer(apk));
-  await artifact.cleanup?.();
-});
-
-test('prepareAndroidSnapshotHelperArtifactFromManifestUrl removes owned cache directory on cleanup', async () => {
-  const apk = Buffer.from('downloaded-helper');
-  const manifestUrl = 'https://example.test/helper.manifest.json';
-  const apkUrl = 'https://example.test/helper.apk';
-  const fetch = createArtifactFetch({ manifestUrl, apkUrl, apk });
-
-  const artifact = await prepareAndroidSnapshotHelperArtifactFromManifestUrl({
-    manifestUrl,
-    fetch,
-  });
-  const cacheDir = path.dirname(artifact.apkPath);
-
-  await artifact.cleanup?.();
-
-  await assert.rejects(() => fs.access(cacheDir), { code: 'ENOENT' });
-});
-
-test('prepareAndroidSnapshotHelperArtifactFromManifestUrl rejects oversized APK downloads', async () => {
-  const manifestUrl = 'https://example.test/helper.manifest.json';
-  const apkUrl = 'https://example.test/helper.apk';
-  const fetch = createArtifactFetch({
-    manifestUrl,
-    apkUrl,
-    apk: Buffer.from('small'),
-    apkResponse: new Response('small', {
-      headers: { 'content-length': String(20 * 1024 * 1024 + 1) },
-    }),
-  });
-
-  await assert.rejects(
-    () =>
-      prepareAndroidSnapshotHelperArtifactFromManifestUrl({
-        manifestUrl,
-        fetch,
-      }),
-    { message: 'Android snapshot helper APK download exceeds size limit' },
-  );
-});
-
 test('parseAndroidSnapshotHelperManifest validates manifest shape', () => {
   assert.throws(() => parseAndroidSnapshotHelperManifest({ ...manifest, outputFormat: 'json' }), {
     message: 'Android snapshot helper manifest outputFormat must be "uiautomator-xml".',
@@ -878,33 +991,6 @@ function resultRecord(values: Record<string, string>): string {
     'INSTRUMENTATION_RESULT: helperApiVersion=1',
     ...Object.entries(values).map(([key, value]) => `INSTRUMENTATION_RESULT: ${key}=${value}`),
   ].join('\n');
-}
-
-function createArtifactFetch(options: {
-  manifestUrl: string;
-  apkUrl: string;
-  apk: Buffer;
-  apkResponse?: Response;
-}): typeof fetch & { fetched: string[] } {
-  const fetched: string[] = [];
-  const fetchImpl = async (url: string | URL | Request) => {
-    fetched.push(String(url));
-    if (String(url) === options.manifestUrl) {
-      return new Response(
-        JSON.stringify({
-          ...manifest,
-          assetName: 'helper.apk',
-          apkUrl: options.apkUrl,
-          sha256: sha256Buffer(options.apk),
-        }),
-      );
-    }
-    if (String(url) === options.apkUrl) {
-      return options.apkResponse ?? new Response(new Uint8Array(options.apk));
-    }
-    return new Response('not found', { status: 404 });
-  };
-  return Object.assign(fetchImpl, { fetched }) as typeof fetch & { fetched: string[] };
 }
 
 function sha256Text(value: string): string {

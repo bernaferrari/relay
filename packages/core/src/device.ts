@@ -78,6 +78,7 @@ export type Device = {
     find: (options: Parameters<NativeDevice["interactions"]["find"]>[0]) => Promise<unknown>;
     scroll: (options: Parameters<NativeDevice["interactions"]["scroll"]>[0]) => Promise<unknown>;
     swipe: (options: Parameters<NativeDevice["interactions"]["swipe"]>[0]) => Promise<unknown>;
+    pan: (options: Parameters<NativeDevice["interactions"]["pan"]>[0]) => Promise<unknown>;
   };
   command: {
     wait: (options: Parameters<NativeDevice["command"]["wait"]>[0]) => Promise<unknown>;
@@ -730,7 +731,19 @@ export async function swipeGesture(
   to: { x: number; y: number },
   durationMs = 250,
 ): Promise<void> {
-  await controlled(() => device.interactions.swipe({ ...base(), from, to, durationMs }));
+  // agent-device 0.20 models timed coordinate movement as a pan. Its raw
+  // swipe command is now a repeated preset gesture and intentionally has no
+  // duration field.
+  await controlled(() =>
+    device.interactions.pan({
+      ...base(),
+      x: from.x,
+      y: from.y,
+      dx: to.x - from.x,
+      dy: to.y - from.y,
+      durationMs,
+    }),
+  );
 }
 
 export type AndroidTextPasteAdapter = {
@@ -756,7 +769,7 @@ export function escapeAndroidShellText(text: string): string {
 }
 
 export function isAndroidClipboardTransportFailure(message: string): boolean {
-  return /(?:Android clipboard|clipboard).*(?:not supported|unsupported|failed|permission|security)|failed to .*Android clipboard/i.test(
+  return /(?:Android clipboard|clipboard).*(?:not supported|unsupported|unavailable|failed|permission|security)|failed to .*Android clipboard/i.test(
     message,
   );
 }

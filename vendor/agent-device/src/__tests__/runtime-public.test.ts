@@ -11,7 +11,7 @@ import {
   type AgentDevice,
   type CommandSessionStore,
 } from '../runtime.ts';
-import { BACKEND_CAPABILITY_NAMES, type AgentDeviceBackend } from '../backend.ts';
+import type { AgentDeviceBackend } from '../backend.ts';
 import { commands, type ScreenshotCommandOptions } from '../commands/index.ts';
 import {
   createLocalArtifactAdapter,
@@ -120,6 +120,7 @@ test('local artifact adapter marks command outputs and temp files by visibility'
   const output = await adapter.reserveOutput(undefined, {
     field: 'path',
     ext: '.png',
+    artifactType: 'screenshot',
     visibility: 'client-visible',
   });
   const temp = await adapter.createTempFile({
@@ -153,7 +154,7 @@ test('local artifact adapter can constrain explicit local paths to a root', asyn
       () =>
         adapter.reserveOutput(
           { kind: 'path', path: path.join(path.dirname(root), 'outside.png') },
-          { field: 'path', ext: '.png' },
+          { field: 'path', ext: '.png', artifactType: 'screenshot' },
         ),
       /outside the artifact adapter root/,
     );
@@ -234,7 +235,6 @@ test('internal backend, commands, and io modules are usable', () => {
   const options = {
     out: { kind: 'path', path: '/tmp/screen.png' },
   } satisfies ScreenshotCommandOptions;
-  assert.equal(BACKEND_CAPABILITY_NAMES.includes('android.shell'), true);
   assert.equal(options.out.kind, 'path');
   assert.equal(typeof commands.capture.screenshot, 'function');
   assert.equal(typeof commands.capture.diffScreenshot, 'function');
@@ -253,17 +253,17 @@ test('internal backend, commands, and io modules are usable', () => {
   assert.equal(typeof commands.interactions.typeText, 'function');
   assert.equal(typeof commands.interactions.focus, 'function');
   assert.equal(typeof commands.interactions.longPress, 'function');
-  assert.equal(typeof commands.interactions.swipe, 'function');
   assert.equal(typeof commands.interactions.scroll, 'function');
-  assert.equal(typeof commands.interactions.pinch, 'function');
+  assert.equal(typeof commands.interactions.gesture, 'function');
   assert.equal(typeof commands.system.back, 'function');
   assert.equal(typeof commands.system.home, 'function');
-  assert.equal(typeof commands.system.rotate, 'function');
+  assert.equal(typeof commands.system.orientation, 'function');
   assert.equal(typeof commands.system.keyboard, 'function');
   assert.equal(typeof commands.system.clipboard, 'function');
   assert.equal(typeof commands.system.settings, 'function');
   assert.equal(typeof commands.system.alert, 'function');
   assert.equal(typeof commands.system.appSwitcher, 'function');
+  assert.equal(typeof commands.system.tvRemote, 'function');
   assert.equal(typeof commands.admin.devices, 'function');
   assert.equal(typeof commands.admin.install, 'function');
   assert.equal(typeof commands.recording.record, 'function');

@@ -1,4 +1,4 @@
-import type { SnapshotState } from '../kernel/snapshot.ts';
+import type { SnapshotState } from '@agent-device/kernel/snapshot';
 import type { AndroidSnapshotFreshness, SessionState } from './types.ts';
 
 export type { AndroidSnapshotFreshness } from './types.ts';
@@ -15,13 +15,6 @@ const ANDROID_COMPARISON_BASELINE_MAX_AGE_MS = 5_000;
 // and may be skipped when slower devices spend the budget inside each capture.
 export const ANDROID_FRESHNESS_RETRY_DEADLINE_MS = 1_500;
 export const ANDROID_FRESHNESS_RETRY_DELAYS_MS = [250, 400, 600] as const;
-
-export type AndroidFreshnessCaptureMeta = {
-  action: string;
-  retryCount: number;
-  staleAfterRetries: boolean;
-  reason?: 'empty-interactive' | 'sharp-drop' | 'stuck-route';
-};
 
 export function markAndroidSnapshotFreshness(
   session: SessionState,

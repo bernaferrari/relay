@@ -10,12 +10,9 @@ import type {
 export type {
   AgentDeviceRuntime,
   AgentDeviceRuntimeConfig,
-  CommandClock,
-  CommandContext,
   CommandPolicy,
   CommandSessionRecord,
   CommandSessionStore,
-  DiagnosticsSink,
 } from './runtime-contract.ts';
 
 export type AgentDevice = AgentDeviceRuntime & BoundAgentDeviceCommands;
@@ -82,7 +79,6 @@ export function localCommandPolicy(overrides: Partial<CommandPolicy> = {}): Comm
     allowLocalInputPaths: true,
     allowLocalOutputPaths: true,
     maxImagePixels: 20_000_000,
-    allowNamedBackendCapabilities: [],
     ...overrides,
   };
 }
@@ -92,7 +88,6 @@ export function restrictedCommandPolicy(overrides: Partial<CommandPolicy> = {}):
     allowLocalInputPaths: false,
     allowLocalOutputPaths: false,
     maxImagePixels: 20_000_000,
-    allowNamedBackendCapabilities: [],
     ...overrides,
   };
 }

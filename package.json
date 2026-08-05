@@ -13,7 +13,7 @@
     "dev:app": "pnpm --filter @relay/app dev",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
     "inspect:desktop": "pnpm --filter @relay/desktop inspect",
-    "agent-device:install": "cd vendor/agent-device && corepack pnpm@11.1.2 install --frozen-lockfile --ignore-workspace --ignore-scripts",
+    "agent-device:install": "cd vendor/agent-device && pnpm install --frozen-lockfile --ignore-scripts",
     "agent-device:build": "node scripts/build-agent-device.mjs",
     "check": "vp check",
     "fmt": "vp fmt",

@@ -1,8 +1,11 @@
 import { deriveCapabilityMatrix } from './command-descriptor/derive.ts';
 import { commandDescriptors } from './command-descriptor/registry.ts';
-import { tryGetPlugin } from './platform-plugin/plugin.ts';
+import { tryGetPlugin } from './platform-plugin-registry.ts';
 import { registerBuiltinPlatformPlugins } from './interactors/register-builtins.ts';
-import type { DeviceInfo } from '../kernel/device.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import type { GestureSemanticInput } from '@agent-device/contracts/interaction';
+import { assertAppleMultiTouchSupported } from '@agent-device/contracts/platform';
 
 // Populate the PlatformPlugin registry once at module load (idempotent; registers
 // only lazy closures, so no leaf code is imported and CLI cold-start is unaffected
@@ -22,6 +25,7 @@ type KindMatrix = {
 export type CommandCapability = {
   apple?: KindMatrix;
   android?: KindMatrix;
+  vega?: KindMatrix;
   linux?: KindMatrix;
   web?: KindMatrix;
 };
@@ -81,17 +85,14 @@ function addWebCommandCapabilities(
 export function isCommandSupportedOnDevice(command: string, device: DeviceInfo): boolean {
   const capability = COMMAND_CAPABILITY_MATRIX[command];
   if (!capability) return true;
-  // Platform -> capability-bucket selection now flows through the single
+  // Platform -> capability-bucket selection flows through the single
   // PlatformPlugin registry (ADR-0009, Phase 3 step b.1): the bucket a leaf
   // platform reads from a CommandCapability is the owning plugin's
-  // `capability.bucket`. This replaces the former `selectCapabilityForPlatform`
-  // fold over `platformDescriptors`; the plugin bucket is proven byte-for-byte
-  // equal to that derivation by `platform-plugin/__tests__/parity.test.ts`, and
-  // `__tests__/capability-plugin-routing-parity.test.ts` pins that this swap leaves
-  // `isCommandSupportedOnDevice` unchanged across the full command x device matrix.
-  // `tryGetPlugin` returns undefined only for an unregistered platform — the same
-  // "no bucket -> unsupported" fall-through the fold produced for a platform with
-  // no capability family (ADR-0009's plugin registry: `if (!plugin) return false`).
+  // `capability.bucket`, pinned against a hardcoded platform -> bucket table by
+  // `platform-plugin/__tests__/parity.test.ts` and
+  // `__tests__/capability-plugin-routing-parity.test.ts`. `tryGetPlugin` returns
+  // undefined only for an unregistered platform, which falls through to
+  // "no bucket -> unsupported" below.
   const plugin = tryGetPlugin(device.platform);
   if (!plugin) return false;
   const byPlatform = capability[plugin.capability.bucket];
@@ -128,11 +129,60 @@ export function listCapabilityCommands(): string[] {
 export function supportedPlatformsForCommand(command: string): string[] {
   const capability = COMMAND_CAPABILITY_MATRIX[command];
   if (!capability) return [];
-  const families: Array<keyof CommandCapability> = ['apple', 'android', 'linux', 'web'];
+  const families: Array<keyof CommandCapability> = ['apple', 'android', 'vega', 'linux', 'web'];
   const supported: string[] = [];
   for (const family of families) {
     const kinds = capability[family] as KindMatrix | undefined;
     if (kinds && Object.values(kinds).some((value) => value === true)) supported.push(family);
   }
   return supported;
+}
+
+export function requireGestureSupported(input: GestureSemanticInput, device: DeviceInfo): void {
+  if (device.platform === 'web' || device.appleOs === 'watchos') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  if (isMultiTouchGesture(input)) {
+    requireMultiTouchGestureSupported(input, device);
+    return;
+  }
+  if (device.appleOs === 'visionos') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  // Linux can preserve public coordinate/preset swipe through its drag primitive, but cannot
+  // honor the speed semantics authored by `gesture fling`.
+  if (input.intent === 'fling' && 'direction' in input && device.platform === 'linux') {
+    throw unsupportedGesture(input, 'gesture fling is not supported on Linux');
+  }
+}
+
+function isMultiTouchGesture(input: GestureSemanticInput): boolean {
+  if (input.intent === 'pan') return ('pointerCount' in input ? input.pointerCount : 1) === 2;
+  return input.intent === 'pinch' || input.intent === 'rotate' || input.intent === 'transform';
+}
+
+function requireMultiTouchGestureSupported(input: GestureSemanticInput, device: DeviceInfo): void {
+  if (device.platform === 'android') {
+    if (device.target !== 'tv') return;
+    throw unsupportedGesture(
+      input,
+      `gesture ${input.intent} is not supported on Android TV`,
+      'Android TV has no touch input — this gesture is supported on Android phones, tablets, and the iOS simulator only.',
+    );
+  }
+  if (device.platform !== 'apple') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  assertAppleMultiTouchSupported(device, input.intent);
+}
+
+function gesturePlatformMessage(input: GestureSemanticInput, device: DeviceInfo): string {
+  return `gesture ${input.intent} is not supported on ${device.appleOs ?? device.platform}`;
+}
+
+function unsupportedGesture(input: GestureSemanticInput, message: string, hint?: string): AppError {
+  return new AppError('UNSUPPORTED_OPERATION', message, {
+    gesture: input.intent,
+    ...(hint ? { hint } : {}),
+  });
 }

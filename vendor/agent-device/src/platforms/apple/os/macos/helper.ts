@@ -3,13 +3,13 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AppError } from '../../../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   resolveExecutableOverridePath,
   runCmdBackground,
   type ExecBackgroundResult,
 } from '../../../../utils/exec.ts';
-import type { SessionSurface } from '../../../../core/session-surface.ts';
+import type { SessionSurface } from '@agent-device/contracts/session';
 import {
   hasScopedAppleToolProvider,
   resolveAppleToolProvider,
@@ -19,7 +19,7 @@ import {
 export type MacOsPermissionTarget = 'accessibility' | 'screen-recording' | 'input-monitoring';
 
 // Keep this shape aligned with macOS helper SnapshotNodeResponse in
-// macos-helper/Sources/AgentDeviceMacOSHelper/SnapshotTraversal.swift.
+// apple/macos-helper/Sources/AgentDeviceMacOSHelper/SnapshotTraversal.swift.
 export type MacOsSnapshotNode = {
   index: number;
   type?: string;
@@ -99,7 +99,7 @@ function appendMacOsHelperContextArgs(
 export function resolveMacOsHelperPackageRootFrom(modulePath: string): string {
   let currentDir = path.dirname(modulePath);
   while (true) {
-    const candidate = path.join(currentDir, 'macos-helper');
+    const candidate = path.join(currentDir, 'apple', 'macos-helper');
     if (existsSync(path.join(candidate, 'Package.swift'))) {
       return candidate;
     }
@@ -252,10 +252,14 @@ export async function startMacOsAudioProbeProcess(options: {
   );
 }
 
-async function runMacOsHelper<T extends Record<string, unknown>>(args: string[]): Promise<T> {
+async function runMacOsHelper<T extends Record<string, unknown>>(
+  args: string[],
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
   const helperOptions = {
     allowFailure: true,
     timeoutMs: 30_000,
+    signal: options.signal,
   };
   const helperProvider = resolveAppleToolProvider().macosHelper;
   const helperPath = helperProvider
@@ -282,6 +286,9 @@ async function runMacOsHelper<T extends Record<string, unknown>>(args: string[])
     parsed && !parsed.ok
       ? (parsed.error?.message ?? `macOS helper exited with code ${result.exitCode}`)
       : stdout || result.stderr.trim() || `macOS helper exited with code ${result.exitCode}`;
+  // exec-guard-allow: the message is already built from the helper's JSON error
+  // envelope (or its output); a stderr excerpt would only degrade it, and the
+  // throw is reachable at exit 0 when the envelope reports ok=false.
   throw new AppError('COMMAND_FAILED', message, {
     helperPath,
     args,
@@ -340,7 +347,7 @@ export async function runMacOsAlertAction(
 
 export async function runMacOsSnapshotAction(
   surface: Exclude<SessionSurface, 'app'>,
-  options: { bundleId?: string } = {},
+  options: { bundleId?: string; signal?: AbortSignal } = {},
 ): Promise<{
   surface: Exclude<SessionSurface, 'app'>;
   nodes: MacOsSnapshotNode[];
@@ -349,7 +356,7 @@ export async function runMacOsSnapshotAction(
 }> {
   const args = ['snapshot', '--surface', surface];
   appendMacOsHelperContextArgs(args, options);
-  return await runMacOsHelper(args);
+  return await runMacOsHelper(args, { signal: options.signal });
 }
 
 export async function runMacOsReadTextAction(

@@ -1,24 +1,32 @@
 # Agent Device Tester
 
-`Agent Device Tester` is a minimal Expo Router fixture app for `agent-device` and `skillgym` experiments.
+`Agent Device Tester` is a minimal Expo Router fixture app for `agent-device` experiments.
 
 It is intentionally small, but each surface is dense with durable accessibility targets so a few screens cover a large share of the workflows we care about.
 
 ## Why this app exists
 
 - It gives `agent-device` a stable React Native target that we control.
-- It makes `skillgym` prompts concrete: the agent can inspect real app files instead of answering against an imagined UI.
 - It keeps the number of screens low while still covering roughly 50 practical interaction and verification cases.
 
 ## Screens
 
 - `Home`: visible-text checks, dismissible banner, modal open/close, async loading, status badge, switch state
-- `Catalog`: search debounce, filter chips, long-list scroll, favorite toggles, cart updates, drill-in navigation
+- `Catalog`: search debounce, filter chips, direction-aware scroll canary, favorite toggles, cart updates, drill-in navigation
 - `Product detail`: back navigation, quantity stepper, multiline notes, save action
 - `Checkout form`: required-field validation, fill vs type, checkbox state, choice groups, keyboard dismiss, success summary
 - `Settings`: switch rows, accordion content, loading and error states, retry flow, destructive-confirm modal
+- `Automation lab`: long-press, alert-result, app-event, app-state, appearance, orientation, permission-recovery, and log canaries
+- `WebView accessibility`: a deterministic semantic fixture plus live websites with varied HTML for native accessibility snapshot verification
 
 Navigation uses Expo Router native bottom tabs, so the tab bar itself is also part of the test surface.
+
+The deterministic WebView fixture is the stable accessibility oracle. On iOS, an interactive
+snapshot should expose its root as `webview`, both titles as `heading`, paragraph and label content
+as `text`, and the form controls as `text-field`, `switch`, and `button`. The live-site buttons are
+exploratory smoke coverage for real-world WebKit trees, not stable assertion targets.
+Use an unscoped snapshot for this oracle: XCTest can detach a scoped WebKit document subtree from
+its `WebView` ancestor, leaving insufficient evidence for safe semantic projection.
 
 ## Coverage map
 
@@ -51,6 +59,38 @@ workflow installs `expo-dev-client`, builds the native app with `expo run:ios` o
 The app declares `@expo/dom-webview` directly to keep Expo's development runtime
 on the SDK 56 native module; Android verification failed when the dev client
 resolved an older transitive copy.
+
+### Build cache
+
+Local `pnpm test-app:ios` / `test-app:android` cache the native build on disk via
+the [`expo-build-disk-cache`](https://github.com/WookieFPV/expo-build-disk-cache)
+provider (configured in `app.config.js`), keyed by the
+[Expo fingerprint](https://docs.expo.dev/versions/latest/sdk/fingerprint/). A
+second run with no native change reuses the first build instead of recompiling;
+editing screens never needs a rebuild, because Metro serves JavaScript at
+runtime. A fresh checkout still pays for the first native build — the disk cache
+only spares you the repeats.
+
+That fingerprint is why `/ios` and `/android` are gitignored: ignoring the
+prebuild output is what makes @expo/fingerprint treat this app as CNG and skip
+hashing it. Un-ignore them and the fingerprint starts describing your machine
+rather than the project.
+
+CI does not use the disk cache. `.github/workflows/test-app-build-cache.yml`
+builds a **Release** binary (JS embedded, no Metro) per platform when the
+fingerprint has no artifact yet, and publishes it as a GitHub Actions artifact
+named `fingerprint.<hash>.<platform>`. Jobs that drive the app install it through
+`.github/actions/setup-fixture-app`, which downloads that artifact and refreshes
+its JS with `@expo/repack-app` (~seconds) — so a JS-only change reuses the same
+native binary. A consuming job needs `permissions: actions: read`.
+
+The `/automation` route is intentionally JavaScript-only and can be opened from
+**Settings → Open automation lab** or with the
+`agent-device-test-app:///automation` scheme. Its stable `automation-*` ids expose durable
+outcomes for long press, native alert actions, app-event name/payload, app state, appearance,
+window orientation, and microphone permission recovery. CI repacks JavaScript-only changes into the
+cached Release app without starting Metro; native configuration changes intentionally produce one
+new fingerprinted build that all simulator consumers share.
 
 ### iOS simulator
 
@@ -95,6 +135,20 @@ the same session when verification is complete:
 ```bash
 agent-device close --platform ios --udid "<physical udid>" --session test-app-physical
 ```
+
+#### AccessorySetupKit picker fixture
+
+The Settings tab links to a dedicated **Accessory setup lab** backed by a local Expo module. The
+development client uses this fixed test service UUID, so no build-time environment variables are
+required:
+
+```text
+FFF0
+```
+
+Advertise that service from the test accessory, build with the normal physical-device command above,
+then open **Settings → Open accessory setup lab**. The picker requires physical iOS 18+ hardware; use
+the normal session hygiene above when validating its snapshot, wait, and selector paths.
 
 ### Android emulator or device
 
@@ -178,11 +232,23 @@ pnpm test-app:replay:android
 
 These run the `.ad` replay suite in `examples/test-app/replays`.
 
-`gesture-lab.ad` verifies `gesture pan`, `gesture fling`, `gesture pinch`, and
-`gesture rotate` against the gesture metrics rendered by the Home screen on iOS
-and Android. Android and iOS simulator sessions also support `gesture transform`
-for a combined pan/zoom/rotate gesture. On Android, treat combined transform
-assertions as qualitative because recognizers can report non-exact centroid,
+The Android gesture replay pins coordinates to the CI emulator profile —
+**pixel_7, 1080x2400 @ 420 dpi** (`gh workflow` uses exactly this AVD). Run it
+on a matching emulator; on a different size or density the gesture card moves
+and the canary waits fail with a wait timeout naming the missed state, which
+is fixture geometry, not a product regression. The checkout replay is
+selector-driven and runs on any emulator.
+
+The iOS `gesture-lab.ad` and Android `gesture-lab-android.ad` replays verify
+`gesture pan`, `gesture fling`, `gesture pinch`, and `gesture rotate` against the
+gesture metrics rendered by the Home screen. They also prove that the default pan
+does not activate an exactly-two-pointer recognizer, while
+`gesture pan ... --pointer-count 2` does without changing pinch or rotation state.
+
+Each gesture replay relaunches the app before its combined `gesture transform`
+canary, verifies the clean pan/pinch/rotate state, then checks that one atomic
+two-pointer gesture changes all three semantic states. On Android, these checks
+are intentionally qualitative because recognizers can report non-exact centroid,
 scale, and rotation values for one simultaneous two-finger gesture.
 
 To target a specific iOS simulator or an installed Expo development build, run the

@@ -1,4 +1,4 @@
-import type { ReplaySuiteResult } from '../../../daemon/types.ts';
+import type { ReplaySuiteResult } from '@agent-device/contracts/replay';
 import { replayTestFailureStepLines } from '../trace.ts';
 import {
   createReplayTestProgressRenderer,
@@ -6,6 +6,7 @@ import {
 } from '../progress.ts';
 import { formatDurationSeconds } from '../../../utils/duration-format.ts';
 import { colorize, supportsColor } from '../../../utils/output.ts';
+import { formatReplayDivergenceReport } from '@agent-device/contracts/divergence';
 import type {
   ReplayTestReporter,
   ReplayTestReporterContext,
@@ -44,7 +45,8 @@ export function createDefaultReplayTestReporter(): ReplayTestReporter {
     progressRenderer ??= createReplayTestProgressRenderer({
       verbose: context.verbose,
       liveProgress: shouldUseLiveProgress(context),
-      columns: context.stderr.columns,
+      columns: () => context.stderr.columns,
+      terminalReflowsOnResize: terminalReflowsOnResize(),
     });
     const output = progressRenderer.render(event);
     if (!output) return;
@@ -101,6 +103,10 @@ export function createDefaultReplayTestReporter(): ReplayTestReporter {
 
 function shouldUseLiveProgress(context: ReplayTestReporterContext): boolean {
   return context.stderr.isTTY && !process.env.CI;
+}
+
+function terminalReflowsOnResize(): boolean {
+  return !process.env.TMUX && !process.env.STY;
 }
 
 function renderReplayTestSummary(
@@ -201,8 +207,23 @@ function renderReplayFailureBody(
   for (const line of replayFailureConsoleLines(result)) {
     context.stdout.write(`${indent}${line}\n`);
   }
+  renderReplayFailureDivergence(result, context, indent);
   if (!context.debug) return;
   for (const line of replayTestFailureStepLines(result)) {
+    context.stdout.write(`${indent}${line}\n`);
+  }
+}
+
+// ADR 0012: the `test` text surface carries the divergence repair data
+// (screen refs / suggestions), same as the --json suite payload.
+function renderReplayFailureDivergence(
+  result: FailedReplayTestResult,
+  context: ReplayTestReporterContext,
+  indent: string,
+): void {
+  const divergence = formatReplayDivergenceReport(result.error?.details);
+  if (!divergence) return;
+  for (const line of divergence.split('\n')) {
     context.stdout.write(`${indent}${line}\n`);
   }
 }

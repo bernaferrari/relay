@@ -1,14 +1,12 @@
-import { cp, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const vendorDir = join(root, "vendor", "agent-device");
-const overrideDir = join(root, "vendor", "agent-device-relay-overrides", "dist", "src");
 
 await new Promise((resolvePromise, reject) => {
-  const child = spawn("corepack", ["pnpm@11.1.2", "build"], {
+  const child = spawn("pnpm", ["build"], {
     cwd: vendorDir,
     stdio: "inherit",
   });
@@ -22,13 +20,4 @@ await new Promise((resolvePromise, reject) => {
   });
 });
 
-const overrideNames = ["2948.js", "495.js", "9722.js", "index.d.ts", "interactor.js", "session.js"];
-const outputDir = join(vendorDir, "dist", "src");
-await mkdir(outputDir, { recursive: true });
-for (const name of overrideNames) {
-  await cp(join(overrideDir, name), join(outputDir, name));
-}
-
-console.log(
-  `Applied ${overrideNames.length} Relay runtime overrides to vendor/agent-device/dist/src`,
-);
+console.log("Built the vendored agent-device source without a compiled override layer.");

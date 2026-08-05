@@ -5,7 +5,7 @@
  * (press, type, scroll…) does not re-run `which` on every call.
  */
 
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { resolveLinuxToolProvider, type LinuxToolProvider } from './tool-provider.ts';
 
 export type DisplayServer = 'wayland' | 'x11';
@@ -55,7 +55,9 @@ export async function ensureInputTool(): Promise<{
   );
 }
 
-/** Reset cached tool (for testing). */
+/**
+ * @internal Test isolation hook for the cached Linux input tool.
+ */
 export function resetInputToolCache(): void {
   cachedInputTool = null;
 }

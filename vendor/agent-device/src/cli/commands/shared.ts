@@ -1,4 +1,4 @@
-import type { CliFlags } from '../parser/cli-flags.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
 import { printJson } from '../../utils/output.ts';
 
 export function writeCommandOutput(

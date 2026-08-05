@@ -8,7 +8,7 @@ import {
   publicPlatformString,
   resolveDevice,
   type DeviceInfo,
-} from '../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import { shouldAgentCdpUseRemoteBridgeUrl } from './agent-cdp.ts';
 import type { MetroBridgeScope } from '../../client/client-companion-tunnel-contract.ts';
 import {
@@ -20,17 +20,18 @@ import {
   type RemoteConnectionState,
   type RemoteConnectionRequestMetadata,
 } from '../../remote/remote-connection-state.ts';
-import { profileToCliFlags } from '../../utils/remote-config.ts';
-import type { BatchStep } from '../../client/client-types.ts';
-import { AppError } from '../../kernel/errors.ts';
-import type { LeaseBackend, SessionRuntimeHints } from '../../kernel/contracts.ts';
-import type { CliFlags } from '../parser/cli-flags.ts';
-import type { AgentDeviceClient, Lease } from '../../client/client.ts';
-import type { CloudProviderSessionResult } from '../../cloud-artifacts.ts';
-import type { MetroPrepareKind } from '../../metro/client-metro.ts';
+import { profileToCliFlags } from '../remote-config-flags.ts';
+import type { BatchStep } from '@agent-device/contracts/client';
+import { AppError } from '@agent-device/kernel/errors';
+import type { LeaseBackend, SessionRuntimeHints } from '@agent-device/kernel/contracts';
+import type { CliFlags } from '@agent-device/contracts/command';
+import type { AgentDeviceClient, Lease } from '../../agent-device-client.ts';
+import type { CloudProviderSessionResult } from '@agent-device/contracts/observability';
 import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { readMetroPrepareKind } from '../../commands/metro/prepare-kind.ts';
 import { connectionProviderRequiresRemoteDaemon } from '../connection/provider-policy.ts';
-import { isCloudWebDriverProviderName } from '../../cloud-webdriver/providers.ts';
+import { readCloudDeviceFeatureProfileFields } from '../connection/profile-fields.ts';
+import { isCloudWebDriverProviderName } from '@agent-device/provider-webdriver';
 
 const leaseDeferredCommands = new Set([
   'artifacts',
@@ -423,7 +424,7 @@ async function prepareConnectedMetro(
   }
   const prepared = await client.metro.prepare({
     projectRoot: flags.metroProjectRoot,
-    kind: readDeferredMetroKind(flags.metroKind),
+    kind: readMetroPrepareKind(flags.metroKind),
     publicBaseUrl: flags.metroPublicBaseUrl,
     proxyBaseUrl: flags.metroProxyBaseUrl,
     bearerToken: flags.metroBearerToken,
@@ -587,12 +588,6 @@ function isRuntimeCompatibleWithPlatform(
   return runtime.platform === platform;
 }
 
-function readDeferredMetroKind(value: string | undefined): MetroPrepareKind | undefined {
-  if (value === undefined) return undefined;
-  if (value === 'auto' || value === 'react-native' || value === 'expo') return value;
-  throw new AppError('INVALID_ARGS', 'metro prepare --kind must be auto, react-native, or expo');
-}
-
 function isSameMetroCleanup(
   left: RemoteConnectionState['metro'] | undefined,
   right: RemoteConnectionState['metro'] | undefined,
@@ -693,6 +688,7 @@ async function allocateOrReuseLease(
     providerProject: flags.providerProject,
     providerBuild: flags.providerBuild,
     providerSessionName: flags.providerSessionName,
+    ...readCloudDeviceFeatureProfileFields(flags),
     awsProjectArn: flags.awsProjectArn,
     awsDeviceArn: flags.awsDeviceArn,
     awsAppArn: flags.awsAppArn,

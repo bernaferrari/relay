@@ -1,12 +1,5 @@
-import {
-  serializeCloseResult,
-  serializeDeployResult,
-  serializeDevice,
-  serializeInstallFromSourceResult,
-  serializeOpenResult,
-  serializeSessionListEntry,
-} from '../../client/client-shared.ts';
 import type {
+  AgentDeviceCapabilitiesResult,
   AgentDeviceDevice,
   AgentDeviceSession,
   AppCloseResult,
@@ -15,19 +8,28 @@ import type {
   AppOpenResult,
   CommandRequestResult,
   SessionCloseResult,
-} from '../../client/client-types.ts';
+  SessionSaveScriptResult,
+} from '@agent-device/contracts/client';
 import type {
   AgentArtifactsResult,
   CloudArtifactsResult,
   DaemonArtifactsResult,
-} from '../../cloud-artifacts.ts';
-import { readCommandMessage } from '../../utils/success-text.ts';
-import type { CliOutput } from '../command-contract.ts';
+} from '@agent-device/contracts/observability';
 import {
   consumeDoctorProgressRendered,
   formatDoctorCheckDetailLines,
   formatDoctorCheckSummaryLine,
-} from '../../cli-doctor-output.ts';
+} from '../../utils/doctor-progress.ts';
+import {
+  serializeCloseResult,
+  serializeDeployResult,
+  serializeDevice,
+  serializeInstallFromSourceResult,
+  serializeOpenResult,
+  serializeSessionListEntry,
+} from '../../utils/result-serialization.ts';
+import { readCommandMessage } from '../../utils/success-text.ts';
+import type { CliOutput } from '../command-contract.ts';
 import {
   messageCliOutput,
   messageOutput,
@@ -38,6 +40,20 @@ import {
 function devicesCliOutput(result: AgentDeviceDevice[]): CliOutput {
   const data = { devices: result.map(serializeDevice) };
   return { data, text: result.map(formatDeviceLine).join('\n') };
+}
+
+function capabilitiesCliOutput(result: AgentDeviceCapabilitiesResult): CliOutput {
+  const data = {
+    device: serializeDevice(result.device),
+    availableCommands: result.availableCommands,
+  };
+  return {
+    data,
+    text: [
+      `${formatDeviceLine(result.device)} supports ${result.availableCommands.length} commands:`,
+      result.availableCommands.join(' '),
+    ].join('\n'),
+  };
 }
 
 function appsCliOutput(params: {
@@ -61,8 +77,14 @@ function appsCliOutput(params: {
 }
 
 function sessionCliOutput(
-  result: { sessions: AgentDeviceSession[] } | { stateDir: string },
+  result: { sessions: AgentDeviceSession[] } | { stateDir: string } | SessionSaveScriptResult,
 ): CliOutput {
+  if ('savedScript' in result) {
+    return {
+      data: result,
+      text: `Published script: ${result.savedScript}\nSession remains active: ${result.session}\nActions: ${result.actionCount}`,
+    };
+  }
   if ('stateDir' in result) {
     return { data: result, text: result.stateDir };
   }
@@ -75,6 +97,9 @@ export function openCliOutput(result: AppOpenResult): CliOutput {
   const lines = [readCommandMessage(data)].filter((line): line is string => Boolean(line));
   if (typeof data.sessionStateDir === 'string') {
     lines.push(`Session state: ${data.sessionStateDir}`);
+  }
+  for (const warning of result.warnings ?? []) {
+    lines.push(`Warning: ${warning}`);
   }
   return { data, text: lines.join('\n') || null };
 }
@@ -163,6 +188,7 @@ export const managementCliOutputFormatters = {
   boot: resultOutput(bootCliOutput),
   shutdown: resultOutput(shutdownCliOutput),
   devices: resultOutput(devicesCliOutput),
+  capabilities: resultOutput(capabilitiesCliOutput),
   doctor: resultOutput(doctorCliOutput),
   apps: ({ input, result }) =>
     appsCliOutput({
@@ -194,7 +220,8 @@ function formatCloudArtifactLine(artifact: CloudArtifactsResult['cloudArtifacts'
 }
 
 function formatDaemonArtifactLine(artifact: DaemonArtifactsResult['artifacts'][number]): string {
-  return `${artifact.filename}: ${artifact.mimeType} ${artifact.sizeBytes} bytes id=${artifact.id}`;
+  const type = artifact.artifactType ? ` (${artifact.artifactType})` : '';
+  return `${artifact.filename}${type}: ${artifact.mimeType} ${artifact.sizeBytes} bytes id=${artifact.id}`;
 }
 
 function formatCloudArtifactsRetryCommand(result: CloudArtifactsResult): string | undefined {

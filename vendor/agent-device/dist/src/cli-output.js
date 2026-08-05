@@ -1,1 +1,0 @@
-import{listCommandFamilyCliOutputFormatters as t}from"./2948.js";let r=t();function u(t){return r[t.name]?.({input:t.input??{},result:t.result})}export{u as formatCliOutput};

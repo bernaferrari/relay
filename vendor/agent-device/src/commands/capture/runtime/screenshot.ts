@@ -1,4 +1,4 @@
-import { AppError } from '../../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { successText } from '../../../utils/success-text.ts';
 import { resizePngFileToMaxSize } from '../../../utils/png-resize.ts';
 import type { ArtifactDescriptor } from '../../../io.ts';
@@ -22,6 +22,7 @@ export const screenshotCommand: RuntimeCommand<
   const reserved = await reserveCommandOutput(runtime, options.out, {
     field: 'path',
     ext: '.png',
+    artifactType: 'screenshot',
   });
 
   let artifact: ArtifactDescriptor | undefined;
@@ -39,6 +40,7 @@ export const screenshotCommand: RuntimeCommand<
       {
         fullscreen: options.fullscreen,
         overlayRefs: options.overlayRefs,
+        pixelDensity: options.pixelDensity,
         stabilize: options.stabilize,
         normalizeStatusBar: options.normalizeStatusBar,
         surface: options.surface,

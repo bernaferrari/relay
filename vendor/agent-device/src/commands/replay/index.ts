@@ -1,12 +1,15 @@
-import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
+import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
 import {
   booleanField,
+  booleanSchema,
   integerField,
+  jsonSchemaField,
   requiredField,
   stringArrayField,
   stringField,
+  stringSchema,
 } from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import {
@@ -16,7 +19,8 @@ import {
   requiredString,
 } from '../cli-grammar/common.ts';
 import type { CliReader, CommandInput, DaemonWriter } from '../cli-grammar/types.ts';
-import { REPLAY_FLAGS } from '../../cli/parser/cli-flags.ts';
+import { METRO_RELOAD_FLAGS, REPLAY_FLAGS } from '../cli-grammar/flag-groups.ts';
+import { withCommandRuntimeHints } from '../runtime-hints.ts';
 
 const REPLAY_COMMAND_NAME = 'replay';
 const TEST_COMMAND_NAME = 'test';
@@ -35,6 +39,26 @@ export const replayCommandMetadata = defineFieldCommandMetadata(
     backend: stringField(),
     maestro: booleanField(),
     env: stringArrayField(),
+    metroHost: stringField('Metro/debug host hint inherited by replay-opened sessions.'),
+    metroPort: integerField('Metro/debug port hint inherited by replay-opened sessions.'),
+    bundleUrl: stringField('Bundle URL hint inherited by replay-opened sessions.'),
+    // ADR 0012 decision 4 / migration step 5: replay-only resume. Named
+    // `resumeFrom`/`resumePlanDigest` (not `from`/`planDigest`) because
+    // `from` already means a gesture's `PointInput` on `CommandInput`
+    // (shared flat type across every command). `test` deliberately has
+    // neither field — it must stay a full, deterministic suite run.
+    resumeFrom: integerField(),
+    resumePlanDigest: stringField(),
+    keepSession: booleanField(
+      'Leave the session active by suppressing exactly an authored terminal close in native .ad.',
+    ),
+    // ADR 0012 decision 6, R1/R6: arms agent-supervised re-record repair
+    // from the first replay attempt; optional string value is the healed
+    // script's output path.
+    saveScript: jsonSchemaField<boolean | string>({ oneOf: [booleanSchema(), stringSchema()] }),
+    // #1258: overwrite an existing --save-script target (arm-time preflight +
+    // publish) instead of refusing. Alias: --overwrite.
+    force: booleanField(),
   },
 );
 
@@ -47,6 +71,9 @@ export const testCommandMetadata = defineFieldCommandMetadata(
     backend: stringField(),
     maestro: booleanField(),
     env: stringArrayField(),
+    metroHost: stringField('Metro/debug host hint inherited by each test session.'),
+    metroPort: integerField('Metro/debug port hint inherited by each test session.'),
+    bundleUrl: stringField('Bundle URL hint inherited by each test session.'),
     failFast: booleanField(),
     timeoutMs: integerField(),
     retries: integerField(),
@@ -59,21 +86,39 @@ export const testCommandMetadata = defineFieldCommandMetadata(
 
 export const replayCommandDefinition = defineExecutableCommand(
   replayCommandMetadata,
-  (client, input) => client.replay.run(input),
+  (client, input) => client.replay.run(withCommandRuntimeHints(input)),
 );
 
 export const testCommandDefinition = defineExecutableCommand(testCommandMetadata, (client, input) =>
-  client.replay.test(input),
+  client.replay.test(withCommandRuntimeHints(input)),
 );
 
 const replayCliSchema = {
-  usageOverride: 'replay <path> | replay export <file.ad> [--format maestro] [--out <path>]',
+  usageOverride: 'replay <path> | replay export <file.ad> [--out <path>]',
   helpDescription:
-    'Replay a recorded session. For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command.',
+    'Replay a recorded session. For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command. A script with no terminal close leaves its session (and daemon) running until you close it or it idle-reaps — no different from a session opened interactively. For native .ad scripts, --keep-session suppresses exactly an authored terminal close so you can continue interactively.',
   summary: replayCommandDescription,
   positionalArgs: ['path'],
   allowsExtraPositionals: true,
-  allowedFlags: ['replayMaestro', 'replayExportFormat', ...REPLAY_FLAGS, 'timeoutMs', 'out'],
+  allowedFlags: [
+    'replayMaestro',
+    ...REPLAY_FLAGS,
+    ...METRO_RELOAD_FLAGS,
+    'replayFrom',
+    'replayPlanDigest',
+    'replayKeepSession',
+    'timeoutMs',
+    'out',
+    'saveScript',
+    'force',
+  ],
+  // ADR 0012 decision 6: on replay, --save-script arms a repair transaction from step 1 (not the
+  // open/close authoring lifecycle the shared flag description documents) and the healed script
+  // commits on that transaction's own teardown, not on a plain close.
+  flagDescriptionOverrides: {
+    saveScript:
+      'Arm a repair transaction from this replay (ADR 0012): recording starts at step 1, and the healed script commits when the repair-armed session tears down (close, close --save-script, or idle-reap). Independent of the open/close authoring arm-on-open. Optional custom output path.',
+  },
 } as const satisfies CommandSchemaOverride;
 
 const testCliSchema = {
@@ -86,6 +131,7 @@ const testCliSchema = {
   allowedFlags: [
     'replayMaestro',
     ...REPLAY_FLAGS,
+    ...METRO_RELOAD_FLAGS,
     'failFast',
     'timeoutMs',
     'retries',
@@ -104,6 +150,14 @@ export const replayCliReader: CliReader = (positionals, flags) => ({
   update: flags.replayUpdate,
   backend: flags.replayMaestro ? 'maestro' : undefined,
   env: flags.replayEnv,
+  metroHost: flags.metroHost,
+  metroPort: flags.metroPort,
+  bundleUrl: flags.bundleUrl,
+  resumeFrom: flags.replayFrom,
+  resumePlanDigest: flags.replayPlanDigest,
+  keepSession: flags.replayKeepSession,
+  saveScript: flags.saveScript,
+  force: flags.force,
 });
 
 export const testCliReader: CliReader = (positionals, flags) => ({
@@ -112,6 +166,9 @@ export const testCliReader: CliReader = (positionals, flags) => ({
   update: flags.replayUpdate,
   backend: flags.replayMaestro ? 'maestro' : undefined,
   env: flags.replayEnv,
+  metroHost: flags.metroHost,
+  metroPort: flags.metroPort,
+  bundleUrl: flags.bundleUrl,
   failFast: flags.failFast,
   timeoutMs: flags.timeoutMs,
   retries: flags.retries,
@@ -128,6 +185,10 @@ export const replayDaemonWriter: DaemonWriter = (input) =>
     replayBackend: readReplayBackend(input),
     replayEnv: input.env,
     replayShellEnv: collectReplayClientShellEnv(process.env),
+    replayFrom: input.resumeFrom,
+    replayPlanDigest: input.resumePlanDigest,
+    replayKeepSession: input.keepSession,
+    saveScript: input.saveScript,
   });
 
 export const testDaemonWriter: DaemonWriter = (input) =>

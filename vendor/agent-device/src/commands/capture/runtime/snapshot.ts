@@ -1,39 +1,38 @@
-import type { BackendSnapshotResult } from '../../../backend.ts';
-import type { SnapshotDiagnosticsSummary } from '../../../snapshot-diagnostics.ts';
-import type { AgentDeviceRuntime, CommandSessionRecord } from '../../../runtime-contract.ts';
 import {
   publicSnapshotCaptureAnnotations,
   snapshotCaptureAnnotationsFrom,
+  type DiffSnapshotCommandResult,
   type PublicSnapshotCaptureAnnotations,
   type SnapshotCaptureAnnotations,
-} from '../../../snapshot-capture-annotations.ts';
-import { renderSnapshotQualityWarnings } from '../../../snapshot/snapshot-quality.ts';
-import { AppError } from '../../../kernel/errors.ts';
-import {
-  buildSnapshotDiff,
-  countSnapshotComparableLines,
-} from '../../../snapshot/snapshot-diff.ts';
-import type { SnapshotDiffLine, SnapshotDiffSummary } from '../../../snapshot/snapshot-diff.ts';
+  type SnapshotDiagnosticsSummary,
+} from '@agent-device/contracts/capture';
+import { AppError } from '@agent-device/kernel/errors';
 import type {
   SnapshotNode,
   SnapshotState,
   SnapshotUnchanged,
   SnapshotVisibility,
-} from '../../../kernel/snapshot.ts';
-import { buildSnapshotVisibility } from '../../../snapshot/snapshot-visibility.ts';
-import { formatReactNativeOverlayWarning } from '../../react-native/overlay.ts';
+} from '@agent-device/kernel/snapshot';
+import type { BackendSnapshotResult } from '../../../backend.ts';
+import type { AgentDeviceRuntime, CommandSessionRecord } from '../../../runtime-contract.ts';
 import {
-  buildUnchangedSnapshotMetadata,
-  ensureSnapshotPresentationKey,
-} from './snapshot-unchanged.ts';
+  buildSnapshotDiff,
+  countSnapshotComparableLines,
+} from '../../../snapshot/snapshot-diff.ts';
+import { renderSnapshotQualityWarnings } from '../../../snapshot/snapshot-quality.ts';
+import { buildSnapshotVisibility } from '../../../snapshot/snapshot-visibility.ts';
+import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '../../../snapshot/system-surface-disclosure.ts';
+import { formatReactNativeOverlayWarning } from '../../react-native/overlay.ts';
+import { now } from '../../runtime-common.ts';
 import type {
   DiffSnapshotCommandOptions,
   RuntimeCommand,
   SnapshotCommandOptions,
 } from '../../runtime-types.ts';
-import { now } from '../../runtime-common.ts';
-
-export type { SnapshotDiffLine, SnapshotDiffSummary } from '../../../snapshot/snapshot-diff.ts';
+import {
+  buildUnchangedSnapshotMetadata,
+  ensureSnapshotPresentationKey,
+} from './snapshot-unchanged.ts';
 
 export type SnapshotCommandResult = {
   nodes: SnapshotNode[];
@@ -45,13 +44,7 @@ export type SnapshotCommandResult = {
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
 } & PublicSnapshotCaptureAnnotations;
 
-export type DiffSnapshotCommandResult = {
-  mode: 'snapshot';
-  baselineInitialized: boolean;
-  summary: SnapshotDiffSummary;
-  lines: SnapshotDiffLine[];
-  warnings?: string[];
-};
+export type { DiffSnapshotCommandResult } from '@agent-device/contracts/capture';
 
 type SnapshotCapture = {
   snapshot: SnapshotState;
@@ -246,19 +239,24 @@ function buildSnapshotWarnings(params: {
     warnings.push(...buildMergedAccessibilityLeafWarnings(params.snapshot.nodes));
   }
 
-  const helperFallbackWarning = formatAndroidHelperFallbackWarning(
-    params.annotations.androidSnapshot,
-  );
-  if (helperFallbackWarning) warnings.push(helperFallbackWarning);
-
   const reactNativeOverlayWarning = formatReactNativeOverlayWarning(params.snapshot.nodes);
   if (reactNativeOverlayWarning) warnings.push(reactNativeOverlayWarning);
+
+  const systemSurfaceWarning = formatAndroidSystemSurfaceWarning(params.annotations);
+  if (systemSurfaceWarning) warnings.push(systemSurfaceWarning);
 
   const recentDropWarning = formatRecentSnapshotDropWarning(params);
   if (recentDropWarning) warnings.push(recentDropWarning);
 
   warnings.push(...formatFreshnessWarnings(params.annotations.freshness, params.snapshot.backend));
   return Array.from(new Set(warnings));
+}
+
+function formatAndroidSystemSurfaceWarning(
+  annotations: SnapshotCaptureAnnotations,
+): string | undefined {
+  if (annotations.androidSnapshot?.systemSurfaceOnly !== true) return undefined;
+  return ANDROID_SYSTEM_SURFACE_DISCLOSURE;
 }
 
 function buildSparseIosInteractiveWarnings(params: {
@@ -339,14 +337,6 @@ function buildEmptyAndroidInteractiveWarnings(params: {
     );
   }
   return warnings;
-}
-
-function formatAndroidHelperFallbackWarning(
-  androidSnapshot: SnapshotCaptureAnnotations['androidSnapshot'],
-): string | undefined {
-  if (androidSnapshot?.backend !== 'uiautomator-dump') return undefined;
-  const reason = androidSnapshot.fallbackReason ? ` Reason: ${androidSnapshot.fallbackReason}` : '';
-  return `Android snapshot helper unavailable; using stock UIAutomator dump, which can time out on busy React Native UIs.${reason}`;
 }
 
 function formatRecentSnapshotDropWarning(params: {

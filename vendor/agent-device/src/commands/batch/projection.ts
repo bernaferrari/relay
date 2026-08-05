@@ -2,14 +2,14 @@ import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import {
   STRUCTURED_BATCH_COMMAND_NAMES,
   readStructuredBatchCommandName,
-} from '../../batch-policy.ts';
+} from '../../core/batch-policy.ts';
 import {
   parseBatchStepRuntime,
   readBatchStepInputObject,
   readBatchStepRecord,
-} from '../../batch-contract.ts';
+} from '@agent-device/contracts/command';
 import type { DaemonBatchStep } from '../../core/batch.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { request } from '../cli-grammar/common.ts';
 import type { CommandInput, DaemonCommandRequest, DaemonWriter } from '../cli-grammar/types.ts';
 import { buildRequestFlags } from '../command-flags.ts';
@@ -62,6 +62,7 @@ function readBatchDaemonStep(
   return {
     command: prepared.command,
     positionals: prepared.positionals,
+    ...(prepared.input ? { input: prepared.input } : {}),
     flags: buildRequestFlags(prepared.options, prepared.metadataFlags),
     runtime: runtime ?? prepared.options.runtime,
   };

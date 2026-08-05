@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { dispatchCommand } from '../../core/dispatch.ts';
-import { buildSnapshotPresentationKey } from '../../kernel/snapshot.ts';
+import { buildSnapshotPresentationKey } from '@agent-device/kernel/snapshot';
 import { makeIosSession } from '../../__tests__/test-utils/index.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { createSelectorCaptureRuntime } from '../selector-capture-runtime.ts';
@@ -83,7 +83,6 @@ test('legacy iOS sparse recovery retries a full snapshot', async () => {
     recovery: {
       legacyIosSparse: {
         query: 'Search',
-        scope: undefined,
         shouldScope: false,
       },
     },
@@ -110,7 +109,6 @@ test('legacy iOS sparse recovery rethrows full snapshot failure when scoping is 
       recovery: {
         legacyIosSparse: {
           query: 'Search',
-          scope: undefined,
           shouldScope: false,
         },
       },

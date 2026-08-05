@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isIosFamily, isMacOs, type DeviceInfo } from '../kernel/device.ts';
-import { AppError } from '../kernel/errors.ts';
-import { tryGetPlugin } from '../core/platform-plugin/plugin.ts';
+import { isIosFamily, isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { tryGetPlugin } from '../core/platform-plugin-registry.ts';
 import { registerBuiltinPlatformPlugins } from '../core/interactors/register-builtins.ts';
 import { createScopedProvider } from '../utils/scoped-provider.ts';
 import {
@@ -26,8 +26,8 @@ import {
   readRecentNetworkTrafficFromText,
   type NetworkDump,
   type NetworkIncludeMode,
-  type LogBackend,
 } from './network-log.ts';
+import type { LogBackend } from '@agent-device/contracts/observability';
 
 // Populate the PlatformPlugin registry once at module load (idempotent; registers
 // only lazy closures, so no leaf code is imported and CLI cold-start is unaffected
@@ -38,17 +38,7 @@ registerBuiltinPlatformPlugins();
 export type { AppLogResult } from './app-log-process.ts';
 export type { AppLogState } from './app-log-process.ts';
 export type { AppLogFailure } from './app-log-process.ts';
-export { APP_LOG_PID_FILENAME, cleanupStaleAppLogProcesses } from './app-log-process.ts';
-export {
-  assertAndroidPackageArgSafe,
-  readRecentAndroidLogcatForPackage,
-} from './app-log-android.ts';
-export {
-  buildAppleLogPredicate,
-  buildIosDeviceConsoleLaunchArgs,
-  buildIosSimulatorLogStreamArgs,
-} from './app-log-ios.ts';
-export { runAppLogDoctor, type AppLogDoctorResult } from './app-log-doctor.ts';
+export { runAppLogDoctor } from './app-log-doctor.ts';
 
 export type SessionNetworkCapture = {
   backend: LogBackend;

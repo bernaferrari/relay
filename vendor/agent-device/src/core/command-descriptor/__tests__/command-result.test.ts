@@ -1,20 +1,32 @@
-import { expect, test } from 'vitest';
 import type {
-  FillCommandResult,
-  LongPressCommandResult,
-  PressCommandResult,
-} from '../../../contracts/interaction.ts';
-import type { BootCommandResult, ShutdownCommandResult } from '../../../contracts/device.ts';
-import type { ViewportCommandResult } from '../../../contracts/viewport.ts';
+  DiffSnapshotCommandResult,
+  ViewportCommandResult,
+} from '@agent-device/contracts/capture';
+import type { PrepareCommandResult, PushCommandResult } from '@agent-device/contracts/command';
+import type {
+  AppStateCommandResult,
+  BootCommandResult,
+  ShutdownCommandResult,
+  TriggerAppEventCommandResult,
+} from '@agent-device/contracts/device';
 import type {
   AppSwitcherCommandResult,
   BackCommandResult,
+  ClipboardCommandResult,
+  FillCommandResponseData,
+  FindCommandResponseData,
   HomeCommandResult,
-  RotateCommandResult,
-} from '../../../contracts/navigation.ts';
-import type { ClipboardCommandResult } from '../../../contracts/clipboard.ts';
-import type { AppStateCommandResult } from '../../../contracts/app-state.ts';
-import type { KeyboardCommandResult } from '../../../contracts/keyboard.ts';
+  KeyboardCommandResult,
+  LongPressCommandResponseData,
+  OrientationCommandResult,
+  PressCommandResponseData,
+  TvRemoteCommandResult,
+  WaitCommandResult,
+} from '@agent-device/contracts/interaction';
+import type { DoctorCommandResult } from '@agent-device/contracts/observability';
+import type { RecordingCommandResult, TraceCommandResult } from '@agent-device/contracts/recording';
+import type { ReplayCommandResult, ReplaySuiteResult } from '@agent-device/contracts/replay';
+import { expect, test } from 'vitest';
 import type { CommandResult, CommandResultMap } from '../command-result.ts';
 
 /**
@@ -27,34 +39,90 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 test('seeded CommandResult entries resolve to their existing contract result types', () => {
-  const press: Equal<CommandResult<'press'>, PressCommandResult> = true;
-  const fill: Equal<CommandResult<'fill'>, FillCommandResult> = true;
-  const longPress: Equal<CommandResult<'longpress'>, LongPressCommandResult> = true;
+  const press: Equal<CommandResult<'press'>, PressCommandResponseData> = true;
+  const click: Equal<CommandResult<'click'>, PressCommandResponseData> = true;
+  const fill: Equal<CommandResult<'fill'>, FillCommandResponseData> = true;
+  const longPress: Equal<CommandResult<'longpress'>, LongPressCommandResponseData> = true;
+  const find: Equal<CommandResult<'find'>, FindCommandResponseData> = true;
   const boot: Equal<CommandResult<'boot'>, BootCommandResult> = true;
   const shutdown: Equal<CommandResult<'shutdown'>, ShutdownCommandResult> = true;
   const viewport: Equal<CommandResult<'viewport'>, ViewportCommandResult> = true;
   const home: Equal<CommandResult<'home'>, HomeCommandResult> = true;
   const back: Equal<CommandResult<'back'>, BackCommandResult> = true;
-  const rotate: Equal<CommandResult<'rotate'>, RotateCommandResult> = true;
+  const orientation: Equal<CommandResult<'orientation'>, OrientationCommandResult> = true;
   const appSwitcher: Equal<CommandResult<'app-switcher'>, AppSwitcherCommandResult> = true;
   const clipboard: Equal<CommandResult<'clipboard'>, ClipboardCommandResult> = true;
   const appstate: Equal<CommandResult<'appstate'>, AppStateCommandResult> = true;
   const keyboard: Equal<CommandResult<'keyboard'>, KeyboardCommandResult> = true;
+  const tvRemote: Equal<CommandResult<'tv-remote'>, TvRemoteCommandResult> = true;
+  const wait: Equal<CommandResult<'wait'>, WaitCommandResult> = true;
+  const prepare: Equal<CommandResult<'prepare'>, PrepareCommandResult> = true;
+  const push: Equal<CommandResult<'push'>, PushCommandResult> = true;
+  const triggerAppEvent: Equal<
+    CommandResult<'trigger-app-event'>,
+    TriggerAppEventCommandResult
+  > = true;
+  const doctor: Equal<CommandResult<'doctor'>, DoctorCommandResult> = true;
+  const diff: Equal<CommandResult<'diff'>, DiffSnapshotCommandResult> = true;
+  const replay: Equal<CommandResult<'replay'>, ReplayCommandResult> = true;
+  const replayTest: Equal<CommandResult<'test'>, ReplaySuiteResult> = true;
+  const record: Equal<CommandResult<'record'>, RecordingCommandResult> = true;
+  const trace: Equal<CommandResult<'trace'>, TraceCommandResult> = true;
   expect([
     press,
+    click,
     fill,
     longPress,
+    find,
     boot,
     shutdown,
     viewport,
     home,
     back,
-    rotate,
+    orientation,
     appSwitcher,
     clipboard,
     appstate,
     keyboard,
-  ]).toEqual([true, true, true, true, true, true, true, true, true, true, true, true, true]);
+    tvRemote,
+    wait,
+    prepare,
+    push,
+    triggerAppEvent,
+    doctor,
+    diff,
+    replay,
+    replayTest,
+    record,
+    trace,
+  ]).toEqual([
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+  ]);
 });
 
 test('unmigrated commands fall back to the untyped Record bag, keeping the union total', () => {
@@ -68,18 +136,31 @@ test('CommandResultMap is seeded only from already-existing contract result type
   const keys: Equal<
     keyof CommandResultMap,
     | 'press'
+    | 'click'
     | 'fill'
     | 'longpress'
+    | 'find'
     | 'boot'
     | 'shutdown'
     | 'viewport'
     | 'home'
     | 'back'
-    | 'rotate'
+    | 'orientation'
     | 'app-switcher'
     | 'clipboard'
     | 'appstate'
     | 'keyboard'
+    | 'tv-remote'
+    | 'wait'
+    | 'prepare'
+    | 'push'
+    | 'trigger-app-event'
+    | 'doctor'
+    | 'diff'
+    | 'replay'
+    | 'test'
+    | 'record'
+    | 'trace'
   > = true;
   expect(keys).toBe(true);
 });

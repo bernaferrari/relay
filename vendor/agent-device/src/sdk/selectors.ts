@@ -1,15 +1,12 @@
-export type { SelectorChain } from '../utils/selectors-parse.ts';
-export type { SelectorDiagnostics } from '../daemon/selectors.ts';
+export type { SelectorChain, SelectorDiagnostics } from '@agent-device/selectors/ast';
 
-export {
-  isSelectorToken,
-  parseSelectorChain,
-  tryParseSelectorChain,
-} from '../utils/selectors-parse.ts';
 export {
   findSelectorChainMatch,
   formatSelectorFailure,
   isNodeEditable,
   isNodeVisible,
+  isSelectorToken,
+  parseSelectorChain,
   resolveSelectorChain,
-} from '../daemon/selectors.ts';
+  tryParseSelectorChain,
+} from '@agent-device/selectors/ast';

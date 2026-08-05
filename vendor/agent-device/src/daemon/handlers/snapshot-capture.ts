@@ -1,8 +1,9 @@
-import { dispatchCommand, type CommandFlags } from '../../core/dispatch.ts';
-import { isMacOs, isMobilePlatform, publicPlatformString } from '../../kernel/device.ts';
-import { sleep } from '../../utils/timeouts.ts';
-import { runMacOsSnapshotAction } from '../../platforms/apple/os/macos/helper.ts';
-import { snapshotLinux } from '../../platforms/linux/snapshot.ts';
+import {
+  recordSnapshotTiming,
+  snapshotCaptureAnnotationsFrom,
+  type SnapshotCaptureAnnotations,
+} from '@agent-device/contracts/capture';
+import { isMacOs, isMobilePlatform, publicPlatformString } from '@agent-device/kernel/device';
 import {
   attachRefs,
   buildSnapshotPresentationKey,
@@ -12,11 +13,19 @@ import {
   type RawSnapshotNode,
   type SnapshotBackend,
   type SnapshotState,
-} from '../../kernel/snapshot.ts';
+} from '@agent-device/kernel/snapshot';
+import { dispatchCommand, type CommandFlags } from '../../core/dispatch.ts';
+import { runMacOsSnapshotAction } from '../../platforms/apple/os/macos/helper.ts';
+import { snapshotLinux } from '../../platforms/linux/snapshot.ts';
+import { isAndroidInputMethodSnapshotNode } from '../../snapshot/android-input-method-overlays.ts';
 import { annotateCoveredSnapshotNodes } from '../../snapshot/snapshot-occlusion.ts';
+import {
+  findNodeByLabel,
+  pruneGroupNodes,
+  resolveRefLabel,
+} from '../../snapshot/snapshot-processing.ts';
 import { normalizeSnapshotTree } from '../../snapshot/snapshot-tree.ts';
-export { buildSnapshotVisibility } from '../../snapshot/snapshot-visibility.ts';
-import type { SessionState } from '../types.ts';
+import { sleep } from '../../utils/timeouts.ts';
 import {
   ANDROID_FRESHNESS_RETRY_DEADLINE_MS,
   ANDROID_FRESHNESS_RETRY_DELAYS_MS,
@@ -36,19 +45,13 @@ import {
   getActivePendingInteractionOutcome,
   retryPendingInteractionOutcome,
 } from '../interaction-outcome-policy.ts';
-import { capturePostGestureStabilizedResult } from '../post-gesture-stabilization.ts';
 import {
-  findNodeByLabel,
-  pruneGroupNodes,
-  resolveRefLabel,
-} from '../../snapshot/snapshot-processing.ts';
-import { errorResponse, type DaemonFailureResponse } from './response.ts';
+  capturePostGestureStabilizedResult,
+  formatGestureNoEffectWarning,
+} from '../post-gesture-stabilization.ts';
 import { presentIosInteractiveSnapshot } from '../snapshot-presentation/ios/index.ts';
-import {
-  snapshotCaptureAnnotationsFrom,
-  type SnapshotCaptureAnnotations,
-} from '../../snapshot-capture-annotations.ts';
-import { recordSnapshotTiming } from '../../snapshot-diagnostics.ts';
+import type { SessionState } from '../types.ts';
+import { errorResponse, type DaemonFailureResponse } from './response.ts';
 
 type CaptureSnapshotParams = {
   device: SessionState['device'];
@@ -59,6 +62,7 @@ type CaptureSnapshotParams = {
   logPath: string;
   snapshotScope?: string;
   androidFreshnessMode?: AndroidFreshnessMode;
+  signal?: AbortSignal;
 };
 
 type SnapshotData = {
@@ -152,12 +156,13 @@ async function captureInteractionOutcomeAwareSnapshot(
   }
 
   clearPendingInteractionOutcome(session);
-  latest = await capturePostGestureStabilizedResult({
+  const stabilized = await capturePostGestureStabilizedResult({
     session,
     initial: latest,
     capture: async () => await capturePostActionSnapshotAttempt(params),
     readSnapshot: (attempt) => attempt.snapshot,
   });
+  latest = stabilized.value;
   if (outcome.change !== 'ambiguous' && latest.annotations.freshness?.staleAfterRetries !== true) {
     clearAndroidSnapshotFreshness(session);
   }
@@ -174,7 +179,7 @@ async function captureInteractionOutcomeAwareSnapshot(
 
   return {
     snapshot: latest.snapshot,
-    ...latest.annotations,
+    ...withGestureNoEffectWarning(latest.annotations, stabilized.gestureNoEffect),
   };
 }
 
@@ -199,7 +204,7 @@ async function waitForDelayedInteractionSurfaceChange(
 export async function captureSnapshotData(params: CaptureSnapshotParams): Promise<SnapshotData> {
   const { device, session, flags, outPath, logPath, snapshotScope } = params;
   if (device.platform === 'linux') {
-    const linuxResult = await snapshotLinux(session?.surface);
+    const linuxResult = await snapshotLinux(session?.surface, params.signal);
     return shapeDesktopSurfaceSnapshot(
       { nodes: linuxResult.nodes, truncated: linuxResult.truncated, backend: 'linux-atspi' },
       {
@@ -212,6 +217,7 @@ export async function captureSnapshotData(params: CaptureSnapshotParams): Promis
   if (isMacOs(device) && session?.surface && session.surface !== 'app') {
     const helperSnapshot = await runMacOsSnapshotAction(session.surface, {
       bundleId: session.surface === 'menubar' ? session.appBundleId : undefined,
+      signal: params.signal,
     });
     return shapeDesktopSurfaceSnapshot(helperSnapshot, {
       snapshotDepth: flags?.snapshotDepth,
@@ -227,6 +233,7 @@ export async function captureSnapshotData(params: CaptureSnapshotParams): Promis
       session?.trace?.outPath,
     ),
     snapshotIncludeRects: params.includeRects,
+    signal: params.signal,
   })) as SnapshotData;
 }
 
@@ -285,14 +292,35 @@ async function captureAndroidFreshnessAwareAttempt(
 async function capturePostGestureAwareSnapshot(
   params: CaptureSnapshotParams & { session: SessionState },
 ): Promise<CaptureSnapshotResult> {
-  const latest = await capturePostGestureStabilizedResult({
+  const stabilized = await capturePostGestureStabilizedResult({
     session: params.session,
     capture: async () => await capturePostActionSnapshotAttempt(params),
     readSnapshot: (attempt) => attempt.snapshot,
   });
+  const latest = stabilized.value;
   return {
     snapshot: latest.snapshot,
-    ...latest.annotations,
+    ...withGestureNoEffectWarning(latest.annotations, stabilized.gestureNoEffect),
+  };
+}
+
+/**
+ * #1600: a proven no-effect gesture must reach the agent inside the very
+ * response it reads next, not only the diagnostics stream. Warnings ride the
+ * existing annotations channel so every renderer that already prints capture
+ * warnings picks this up with no new plumbing.
+ */
+function withGestureNoEffectWarning(
+  annotations: SnapshotCaptureAnnotations,
+  gestureNoEffect: { action: string; positionals: string[] } | undefined,
+): SnapshotCaptureAnnotations {
+  if (!gestureNoEffect) return annotations;
+  return {
+    ...annotations,
+    warnings: [
+      ...(annotations.warnings ?? []),
+      formatGestureNoEffectWarning(gestureNoEffect.action, gestureNoEffect.positionals),
+    ],
   };
 }
 
@@ -315,11 +343,15 @@ async function captureSnapshotAttempt(params: CaptureSnapshotParams): Promise<Sn
     // approach (b): emit the PUBLIC leaf platform (ios/macos), never the internal `apple`.
     platform: publicPlatformString(params.device),
   });
-  return {
-    data,
-    snapshot: buildSnapshotState(data, resolveSnapshotStateFlags(params)),
-    annotations: snapshotCaptureAnnotationsFrom(data),
-  };
+  const annotations = snapshotCaptureAnnotationsFrom(data);
+  const snapshot = buildSnapshotState(data, resolveSnapshotStateFlags(params));
+  // The one seam where snapshot state and capture annotations meet: consumers that only keep the
+  // SnapshotState (selector-backed find/wait, session-stored snapshots) must still learn that the
+  // capture is an occluding system surface, so the disclosure is not lost with the annotations.
+  if (annotations.androidSnapshot?.systemSurfaceOnly === true) {
+    snapshot.systemSurfaceOnly = true;
+  }
+  return { data, snapshot, annotations };
 }
 
 function resolveSnapshotStateFlags(
@@ -402,7 +434,12 @@ export function buildSnapshotState(
     ? presentIosInteractiveSnapshot(scopedNodes)
     : scopedNodes;
   const nodes = attachRefs(
-    snapshotRaw ? presentableNodes : annotateCoveredSnapshotNodes(presentableNodes),
+    snapshotRaw
+      ? presentableNodes
+      : annotateCoveredSnapshotNodes(presentableNodes, {
+          isAdditionalOverlayNode:
+            data?.backend === 'android' ? isAndroidInputMethodSnapshotNode : undefined,
+        }),
   );
   const snapshotQuality = snapshotCaptureAnnotationsFrom(data).quality;
   return {

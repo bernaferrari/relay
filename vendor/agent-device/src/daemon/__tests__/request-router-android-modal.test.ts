@@ -21,10 +21,8 @@ import { createRequestHandler } from '../request-router.ts';
 import type { SessionState } from '../types.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
-import {
-  createProviderDeviceRuntimeRequestProviders,
-  type ProviderDeviceRuntime,
-} from '../../provider-device-runtime.ts';
+import { createProviderDeviceRuntimeRequestProviders } from '../../provider-device-runtime.ts';
+import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
 
 vi.mock('../../platforms/android/snapshot.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../platforms/android/snapshot.ts')>();
@@ -33,7 +31,7 @@ vi.mock('../../platforms/android/snapshot.ts', async (importOriginal) => {
     snapshotAndroid: vi.fn(async () => {
       snapshotCalls += 1;
       if (snapshotMode === 'throws') {
-        throw new Error('uiautomator dump did not return XML');
+        throw new Error('Android snapshot helper did not return XML');
       }
       if (snapshotCalls === 1) {
         return {

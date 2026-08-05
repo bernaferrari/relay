@@ -1,7 +1,11 @@
-import { withRetry } from '../../../../utils/retry.ts';
-import { isIosFamily, type DeviceInfo } from '../../../../kernel/device.ts';
+import { retryWithPolicy } from '../../../../utils/retry.ts';
+import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
 import { emitDiagnostic } from '../../../../utils/diagnostics.ts';
-import { type RunnerSessionOptions, validateRunnerDevice } from './runner-session.ts';
+import {
+  stopIosRunnerSession,
+  type RunnerSessionOptions,
+  validateRunnerDevice,
+} from './runner-session.ts';
 import {
   assertRunnerRequestActive,
   isRetryableRunnerError,
@@ -23,13 +27,7 @@ import {
   type PrepareIosRunnerResult,
 } from './runner-lifecycle.ts';
 import { RUNNER_COMMAND_TIMEOUT_MS } from './runner-transport.ts';
-export {
-  isRetryableRunnerError,
-  resolveRunnerEarlyExitHint,
-  resolveRunnerBuildFailureHint,
-  shouldRetryRunnerConnectError,
-  type RunnerCommand,
-} from './runner-contract.ts';
+export type { RunnerCommand } from './runner-contract.ts';
 export type { PrepareIosRunnerOptions, PrepareIosRunnerResult } from './runner-lifecycle.ts';
 
 // --- Runner command execution ---
@@ -44,7 +42,7 @@ export async function runAppleRunnerCommand(
   const runnerCommand = withRunnerCommandId(command);
   const provider = resolveAppleRunnerRuntime(device, options);
   if (isReadOnlyRunnerCommand(runnerCommand.command)) {
-    return withRetry(
+    return retryWithPolicy(
       () => {
         assertRunnerRequestActive(options.requestId);
         return provider.runCommand(device, runnerCommand, options);
@@ -58,6 +56,23 @@ export async function runAppleRunnerCommand(
     );
   }
   return provider.runCommand(device, runnerCommand, options);
+}
+
+export async function notifyIosRunnerAppRelaunched(
+  device: DeviceInfo,
+  options: AppleRunnerCommandOptions = {},
+): Promise<void> {
+  if (!isIosFamily(device)) return;
+  try {
+    await runAppleRunnerCommand(device, { command: 'targetReset' }, options);
+  } catch (error) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'ios_runner_target_reset_failed',
+      data: { deviceId: device.id, error: error instanceof Error ? error.message : String(error) },
+    });
+    await stopIosRunnerSession(device.id);
+  }
 }
 
 type PrewarmIosRunnerOptions = RunnerSessionOptions & {
@@ -174,13 +189,7 @@ const LOCAL_APPLE_RUNNER_RUNTIME = createLocalAppleRunnerProvider(executeRunnerC
 });
 
 export {
-  resolveRunnerDestination,
-  resolveRunnerBuildDestination,
-  resolveRunnerMaxConcurrentDestinationsFlag,
   resolveRunnerAppBundleId,
-  resolveRunnerSigningBuildSettings,
-  resolveRunnerBundleBuildSettings,
-  assertSafeDerivedCleanup,
   hasCachedAppleRunnerArtifact,
   IOS_RUNNER_CONTAINER_BUNDLE_IDS,
 } from './runner-xctestrun.ts';
@@ -190,6 +199,5 @@ export {
   getRunnerSessionSnapshot,
   scheduleIosRunnerIdleStop,
   stopIosRunnerSession,
-  abortAllIosRunnerSessions,
   stopAllIosRunnerSessions,
 } from './runner-session.ts';

@@ -1,11 +1,9 @@
+import type { Rect } from '@agent-device/kernel/snapshot';
 import type { PNG } from '../utils/png.ts';
-import type { Rect } from '../kernel/snapshot.ts';
 import { normalizedRect, type NormalizedRect } from '../utils/screenshot-geometry.ts';
 import { findConnectedMaskComponents } from './screenshot-diff-components.ts';
 import { splitLargeDiffRegions } from './screenshot-diff-region-split.ts';
 import type { MutableDiffRegion } from './screenshot-diff-region-types.ts';
-
-export type { MutableDiffRegion } from './screenshot-diff-region-types.ts';
 
 type ScreenshotDiffColor = {
   r: number;
@@ -41,22 +39,18 @@ export type ScreenshotDiffRegionOverlayMatch = {
 const DEFAULT_MAX_DIFF_REGIONS = 8;
 const REGION_MERGE_GAP_PX = 12;
 const MAX_REGIONS_TO_MERGE = 2000;
-// These region labels are coarse, screen-relative buckets for agent guidance,
-// not tuned to a specific screenshot size or app layout.
 const DOMINANT_CHANGE_MIN_CHANNEL_DELTA = 12;
 const LARGE_AREA_MIN_WIDTH_RATIO = 0.55;
 const LARGE_AREA_MIN_HEIGHT_RATIO = 0.12;
 const BAND_MIN_ASPECT_RATIO = 2.5;
 const LARGE_REGION_MIN_AREA_RATIO = 0.04;
 const MEDIUM_REGION_MIN_AREA_RATIO = 0.01;
-
 export function summarizeDiffRegions(params: {
   diffMask: Uint8Array;
   baseline: PNG;
   current: PNG;
   totalPixels: number;
   differentPixels: number;
-  maxRegions?: number;
 }): ScreenshotDiffRegion[] {
   const rawRegions = findConnectedDiffRegions(params);
   // Avoid quadratic nearby-merge work on extremely noisy diffs; the later ranking
@@ -74,7 +68,7 @@ export function summarizeDiffRegions(params: {
       if (topDelta !== 0) return topDelta;
       return left.minX - right.minX;
     })
-    .slice(0, Math.max(0, params.maxRegions ?? DEFAULT_MAX_DIFF_REGIONS))
+    .slice(0, DEFAULT_MAX_DIFF_REGIONS)
     .map((region, index) =>
       toScreenshotDiffRegion(region, index + 1, {
         width: params.baseline.width,
@@ -212,13 +206,6 @@ function toScreenshotDiffRegion(
     region.differentPixels,
   );
   const regionArea = rect.width * rect.height;
-  const densityPercentage = roundPercentage(region.differentPixels / regionArea);
-  const baselineLuminance = Math.round(luminance(averageBaselineColor));
-  const currentLuminance = Math.round(luminance(averageCurrentColor));
-  const shape = describeRegionShape(rect, image.width, image.height);
-  const size = describeRegionSize(regionArea, image.totalPixels);
-  const dominantChange = describeDominantChange(averageBaselineColor, averageCurrentColor);
-  const location = describeRegionLocation(center, image.width, image.height);
   return {
     index,
     rect,
@@ -230,15 +217,15 @@ function toScreenshotDiffRegion(
     }),
     differentPixels: region.differentPixels,
     shareOfDiffPercentage: roundPercentage(region.differentPixels / image.differentPixels),
-    densityPercentage,
-    shape,
-    size,
-    location,
+    densityPercentage: roundPercentage(region.differentPixels / regionArea),
+    shape: describeRegionShape(rect, image.width, image.height),
+    size: describeRegionSize(regionArea, image.totalPixels),
+    location: describeRegionLocation(center, image.width, image.height),
     averageBaselineColorHex: toHexColor(averageBaselineColor),
     averageCurrentColorHex: toHexColor(averageCurrentColor),
-    baselineLuminance,
-    currentLuminance,
-    dominantChange,
+    baselineLuminance: Math.round(luminance(averageBaselineColor)),
+    currentLuminance: Math.round(luminance(averageCurrentColor)),
+    dominantChange: describeDominantChange(averageBaselineColor, averageCurrentColor),
   };
 }
 
@@ -271,13 +258,10 @@ function describeDominantChange(
   baseline: ScreenshotDiffColor,
   current: ScreenshotDiffColor,
 ): ScreenshotDiffRegion['dominantChange'] {
-  const baselineLuminance = luminance(baseline);
-  const currentLuminance = luminance(current);
-  const luminanceDelta = currentLuminance - baselineLuminance;
+  const luminanceDelta = luminance(current) - luminance(baseline);
   if (Math.abs(luminanceDelta) >= DOMINANT_CHANGE_MIN_CHANNEL_DELTA) {
     return luminanceDelta > 0 ? 'brighter' : 'darker';
   }
-
   const maxChannelDelta = Math.max(
     Math.abs(current.r - baseline.r),
     Math.abs(current.g - baseline.g),

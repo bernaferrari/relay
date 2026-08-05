@@ -1,4 +1,4 @@
-import { listMcpExposedCommandNames } from '../command-catalog.ts';
+import { listMcpExposedCommandNames } from '../core/command-descriptor/registry.ts';
 import type { CommandMetadata } from './command-contract.ts';
 import { listCommandFamilyMetadata, type CommandFamilyCommandName } from './family/registry.ts';
 
@@ -26,6 +26,9 @@ export function listMcpCommandMetadata(): AnyCommandMetadata[] {
   });
 }
 
+/**
+ * @internal Introspection helper used by command surface parity tests.
+ */
 export function listCommandMetadataNames(): CommandName[] {
   return [...commandMetadataMap.keys()].sort();
 }
@@ -34,6 +37,8 @@ export function isCommandName(name: string): name is CommandName {
   return commandMetadataMap.has(name as CommandName);
 }
 
+export function findCommandMetadata(name: CommandName): AnyCommandMetadata;
+export function findCommandMetadata(name: string): AnyCommandMetadata | undefined;
 export function findCommandMetadata(name: string): AnyCommandMetadata | undefined {
   return commandMetadataMap.get(name as CommandName);
 }

@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { SessionStore } from '../session-store.ts';
 import type { SessionState } from '../types.ts';
+import { buildRequestFinishedEvent } from '../session-event-log.ts';
+import { HEAL_COMPLETE_SENTINEL } from '../session-script-writer.ts';
+import { parseReplayScriptDetailed } from '@agent-device/ad-script';
+import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
+import { repairPublication } from '../../__tests__/test-utils/session-factories.ts';
 
 type RecordActionEntry = Parameters<SessionStore['recordAction']>[1];
 
@@ -143,15 +148,269 @@ test('saveScript flag enables .ad session log writing', () => {
   assert.equal(listSessionScriptFiles(root).length, 1);
 });
 
-test('saveScript path writes session log to custom location', () => {
+test('parameterized fill publication writes only the placeholder to target and temp content', () => {
+  const fixture = makeFixture('agent-device-session-log-parameterized-fill-');
+  const secret = 'publication-only-live-value-1348';
+  recordOpen(fixture.store, fixture.session);
+  fixture.store.recordAction(fixture.session, {
+    command: 'fill',
+    positionals: ['id="password"', secret],
+    flags: { platform: 'ios', recordAs: 'PASSWORD' },
+    result: {
+      text: secret,
+      message: `Filled ${secret}`,
+      selectorChain: ['id="password"'],
+    },
+  });
+  recordClose(fixture.store, fixture.session);
+
+  const script = writeScript(fixture);
+  assert.equal(script.includes(secret), false);
+  assert.match(script, /fill "id=\\"password\\"" "\$\{PASSWORD\}"/);
+  assert.equal(
+    fs.readdirSync(fixture.root).some((entry) => entry.endsWith('.tmp')),
+    false,
+  );
+});
+
+test('recordAction writes a paged session event log', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-');
+  recordOpen(store, session, { platform: 'ios' });
+  store.recordAction(session, {
+    command: 'click',
+    positionals: ['@14', 'Checkout'],
+    flags: { platform: 'ios' },
+    result: { ref: '14', refLabel: 'Checkout', x: 120, y: 240, message: 'Tapped @14 (120, 240)' },
+  });
+  await store.flushEvents(session.name);
+
+  const eventLogPath = store.resolveEventLogPath(session.name);
+  assert.equal(fs.existsSync(eventLogPath), true);
+  const firstPage = store.readEvents(session.name, { limit: 1 });
+  assert.equal(firstPage.events.length, 1);
+  assert.equal(firstPage.events[0]?.kind, 'action.recorded');
+  assert.equal(firstPage.nextCursor, '1');
+
+  const secondPage = store.readEvents(session.name, { cursor: firstPage.nextCursor, limit: 1 });
+  assert.equal(secondPage.events[0]?.summary, 'Tapped @14');
+  assert.equal(secondPage.nextCursor, undefined);
+});
+
+test('recordAction event log redacts typed text and its length from display positionals', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-redaction-');
+  store.recordAction(session, {
+    command: 'fill',
+    positionals: ['@14', 'super-secret-token'],
+    flags: {},
+    result: { ref: '14', text: 'super-secret-token', message: 'Filled super-secret-token' },
+  });
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes('super-secret-token'), false);
+  assert.equal(page.events[0]?.summary, 'Filled @14');
+  assert.equal(page.events[0]?.details?.message, undefined);
+  assert.deepEqual(page.events[0]?.details?.positionals, ['@14', '<text>']);
+  assert.equal(page.events[0]?.details?.textLength, undefined);
+});
+
+test('recordAction event log redacts payload-bearing and unknown positionals', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-payload-redaction-');
+  const clipboardText = 'super-secret-token';
+  const pushPayload = '{"token":"push-secret-token"}';
+  const eventPayload = '{"token":"event-secret-token"}';
+  const futurePayload = 'future-secret-token';
+
+  store.recordAction(session, {
+    command: 'clipboard',
+    positionals: ['write', clipboardText],
+    flags: {},
+    result: { action: 'write', textLength: Array.from(clipboardText).length },
+  });
+  store.recordAction(session, {
+    command: 'push',
+    positionals: ['com.example.app', pushPayload],
+    flags: {},
+    result: { message: 'Pushed notification to com.example.app' },
+  });
+  store.recordAction(session, {
+    command: 'trigger-app-event',
+    positionals: ['checkout', eventPayload],
+    flags: {},
+    result: { message: 'Triggered app event checkout' },
+  });
+  store.recordAction(session, {
+    command: 'future-command',
+    positionals: ['public-ish', futurePayload],
+    flags: {},
+    result: { message: `Ran ${futurePayload}` },
+  });
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes(clipboardText), false);
+  assert.equal(serialized.includes(pushPayload), false);
+  assert.equal(serialized.includes(eventPayload), false);
+  assert.equal(serialized.includes(futurePayload), false);
+  assert.deepEqual(page.events[0]?.details?.positionals, ['write', '<text>']);
+  assert.deepEqual(page.events[1]?.details?.positionals, ['<app>', '<payload>']);
+  assert.deepEqual(page.events[2]?.details?.positionals, ['<event>', '<payload>']);
+  assert.deepEqual(page.events[3]?.details?.positionals, ['<arg>', '<arg>']);
+  assert.equal(page.events[3]?.summary, 'Ran future-command');
+  assert.equal(page.events[3]?.details?.message, undefined);
+});
+
+test('recordAction event log omits transformed messages for redacted positionals', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-overlap-redaction-');
+
+  store.recordAction(session, {
+    command: 'future-command',
+    positionals: ['token', 'my-token-123'],
+    flags: {},
+    result: { message: 'Ran my-token-123 after token' },
+  });
+  store.recordAction(session, {
+    command: 'future-command',
+    positionals: ['arg', 'my-arg-123'],
+    flags: {},
+    result: { message: 'Ran my-arg-123 after arg' },
+  });
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes('my-token-123'), false);
+  assert.equal(serialized.includes('token'), false);
+  assert.equal(serialized.includes('my-arg-123'), false);
+  assert.equal(page.events[0]?.summary, 'Ran future-command');
+  assert.equal(page.events[0]?.details?.message, undefined);
+  assert.deepEqual(page.events[0]?.details?.positionals, ['<arg>', '<arg>']);
+  assert.equal(page.events[1]?.summary, 'Ran future-command');
+  assert.equal(page.events[1]?.details?.message, undefined);
+});
+
+test('recordAction event log does not leak short typed text or its length', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-short-text-');
+  store.recordAction(session, {
+    command: 'type',
+    positionals: ['e'],
+    flags: {},
+    result: { text: 'e', message: 'Typed 1 chars' },
+  });
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes('"e"'), false);
+  assert.equal(page.events[0]?.summary, 'Typed text');
+  assert.equal(page.events[0]?.details?.message, undefined);
+  assert.deepEqual(page.events[0]?.details?.positionals, ['<text>']);
+});
+
+test('recordAction event log omits value-bearing selector details', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-selector-redaction-');
+  store.recordAction(session, {
+    command: 'click',
+    positionals: ['value=123456'],
+    flags: {},
+    result: {
+      refLabel: '123456',
+      selector: 'value="123456"',
+      selectorChain: ['value="123456" editable=true'],
+      message: 'Tapped 123456',
+    },
+  });
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes('123456'), false);
+  assert.equal(page.events[0]?.summary, 'Tapped target');
+  assert.equal(page.events[0]?.details?.message, undefined);
+  assert.equal(page.events[0]?.details?.refLabel, undefined);
+  assert.equal(page.events[0]?.details?.selector, undefined);
+  assert.equal(page.events[0]?.details?.selectorChain, undefined);
+  assert.equal(page.events[0]?.details?.selectorChainLength, 1);
+});
+
+test('recordAction event log rejects malformed provider scroll output', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-malformed-scroll-');
+  const privateValue = 'provider-private-scroll-value';
+  store.recordAction(session, {
+    command: 'scroll',
+    positionals: [privateValue],
+    flags: {},
+    result: {
+      direction: privateValue.repeat(100),
+      edge: { value: privateValue },
+      passes: [privateValue],
+      amount: Number.POSITIVE_INFINITY,
+      pixels: { value: privateValue },
+      durationMs: Number.NaN,
+      x1: [privateValue],
+      y1: { value: privateValue },
+      x2: Number.NEGATIVE_INFINITY,
+      y2: [privateValue],
+      message: privateValue,
+    },
+  });
+  await store.flushEvents(session.name);
+
+  const event = store.readEvents(session.name).events[0];
+  assert.equal(event?.summary, 'Scrolled');
+  assert.deepEqual(event?.details, {
+    command: 'scroll',
+    positionals: ['<arg>'],
+  });
+  assert.equal(JSON.stringify(event).includes(privateValue), false);
+});
+
+test('request failure event log omits raw error message and hint', async () => {
+  const { store, session } = makeFixture('agent-device-session-events-error-redaction-');
+  const secretPayload = '{"ssn":"123-45-6789"';
+  store.recordEvent(
+    session.name,
+    buildRequestFinishedEvent({
+      req: {
+        token: 'test-token',
+        session: session.name,
+        command: 'trigger-app-event',
+        positionals: ['login', secretPayload],
+        meta: { requestId: 'req-secret-error' },
+      },
+      response: {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGS',
+          message: `Invalid trigger-app-event payload JSON: ${secretPayload}`,
+          hint: `Fix payload ${secretPayload}`,
+        },
+      },
+      durationMs: 12,
+    }),
+  );
+  await store.flushEvents(session.name);
+
+  const page = store.readEvents(session.name);
+  const serialized = JSON.stringify(page.events);
+  assert.equal(serialized.includes(secretPayload), false);
+  assert.equal(page.events[0]?.summary, 'Failed trigger-app-event: INVALID_ARGS');
+  assert.equal(page.events[0]?.details?.message, undefined);
+  assert.equal(page.events[0]?.details?.hint, undefined);
+});
+
+test('saveScript path writes session log to custom location', async () => {
   const { root, store, session } = makeFixture('agent-device-session-log-custom-path-', 'sessions');
   const customPath = path.join(root, 'workflows', 'my-flow.ad');
   recordOpen(store, session, { platform: 'ios', saveScript: customPath });
   recordClose(store, session);
 
   store.writeSessionLog(session);
+  await store.flushEvents(session.name);
   assert.equal(fs.existsSync(customPath), true);
-  assert.equal(fs.existsSync(path.join(root, 'sessions')), false);
+  assert.equal(fs.existsSync(store.resolveEventLogPath(session.name)), true);
 });
 
 test('writeSessionLog persists open --relaunch in script output', () => {
@@ -291,6 +550,15 @@ test('writeSessionLog preserves interaction series flags for click/press/swipe',
     },
     result: {},
   });
+  fixture.store.recordAction(fixture.session, {
+    command: 'gesture',
+    positionals: ['pan', '195', '443', '48', '0', '500'],
+    flags: {
+      platform: 'ios',
+      pointerCount: 2,
+    },
+    result: {},
+  });
   recordClose(fixture.store, fixture.session);
 
   const script = writeScript(fixture);
@@ -299,6 +567,7 @@ test('writeSessionLog preserves interaction series flags for click/press/swipe',
     /press 201 545 --count 4 --interval-ms 8/,
     /swipe 10 20 30 40 --count 3 --pause-ms 12 --pattern ping-pong/,
     /fill @e5 "search" --delay-ms 40/,
+    /gesture "pan" 195 443 48 0 500 --pointer-count 2/,
   ]);
 });
 
@@ -393,4 +662,189 @@ test('writeSessionLog preserves significant whitespace and empty string argument
     /screenshot " \.\/screens\/final\.png "/,
     /--metro-host " host\\t" --launch-url "myapp:\/\/dev "/,
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// ADR 0012 decision 3: recorded target-v1 evidence flows end to end through
+// `recordAction` → `SessionScriptWriter` into the `.ad` file, immediately
+// before the action it annotates.
+// ---------------------------------------------------------------------------
+
+const SAVE_TARGET_EVIDENCE: TargetAnnotationV1 = {
+  id: 'save',
+  role: 'button',
+  label: 'Save',
+  ancestry: [{ role: 'toolbar', label: 'Editor' }],
+  sibling: 0,
+  viewportOrder: 0,
+  verification: 'verified',
+};
+
+test('writeSessionLog emits the target-v1 annotation immediately before its action line', () => {
+  const fixture = makeFixture('agent-device-session-log-target-evidence-');
+  recordOpen(fixture.store, fixture.session);
+  fixture.store.recordAction(fixture.session, {
+    command: 'click',
+    positionals: ['@e12'],
+    flags: { platform: 'ios' },
+    result: {},
+    targetEvidence: SAVE_TARGET_EVIDENCE,
+  });
+  recordClose(fixture.store, fixture.session);
+
+  const script = writeScript(fixture);
+  const lines = script.trim().split('\n');
+  const clickLineIndex = lines.findIndex((line) => line.startsWith('click '));
+  assert.ok(clickLineIndex > 0);
+  assert.equal(
+    lines[clickLineIndex - 1],
+    '# agent-device:target-v1 {"id":"save","role":"button","label":"Save","ancestry":[{"role":"toolbar","label":"Editor"}],"sibling":0,"viewportOrder":0,"verification":"verified"}',
+  );
+});
+
+test('writeSessionLog never fabricates a target-v1 annotation for actions recorded without evidence', () => {
+  const fixture = makeFixture('agent-device-session-log-no-target-evidence-');
+  recordOpen(fixture.store, fixture.session);
+  fixture.store.recordAction(fixture.session, {
+    command: 'click',
+    positionals: ['@e12'],
+    flags: { platform: 'ios' },
+    result: {},
+  });
+  recordClose(fixture.store, fixture.session);
+
+  const script = writeScript(fixture);
+  assert.equal(/agent-device:target-v1/.test(script), false);
+});
+
+// --- ADR 0012 decision 6, R7 (C5a): repair tombstones turn a post-reap
+// SESSION_NOT_FOUND into REPAIR_SESSION_EXPIRED with re-run guidance. ---
+
+test('writeRepairTombstone/readRepairTombstone round-trips owner + source path', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-'));
+  const store = new SessionStore(path.join(root, 'sessions'));
+  const session = makeSession('default');
+  session.scriptPublication = repairPublication('armed', {
+    boundary: 0,
+    sourcePath: '/flows/login.ad',
+  });
+
+  store.writeRepairTombstone(session);
+  const tombstone = store.readRepairTombstone('default');
+  assert.ok(tombstone);
+  assert.equal(tombstone?.owner, 'default');
+  assert.equal(tombstone?.sourcePath, '/flows/login.ad');
+  assert.ok((tombstone?.expiresAt ?? 0) > Date.now());
+});
+
+test('readRepairTombstone returns undefined once the tombstone has expired', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-expiry-'));
+  const store = new SessionStore(path.join(root, 'sessions'));
+  const session = makeSession('default');
+  // TTL 0 => expiresAt <= now => already stale.
+  store.writeRepairTombstone(session, 0);
+  assert.equal(store.readRepairTombstone('default'), undefined);
+});
+
+test('clearRepairTombstone removes a tombstone (a fresh replay --save-script clears the key)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-clear-'));
+  const store = new SessionStore(path.join(root, 'sessions'));
+  const session = makeSession('default');
+  store.writeRepairTombstone(session);
+  assert.ok(store.readRepairTombstone('default'));
+
+  store.clearRepairTombstone('default');
+  assert.equal(store.readRepairTombstone('default'), undefined);
+});
+
+// --- ADR 0012 decision 6 (BLOCKER 2): a COMPLETE transaction's commit can
+// still FAIL at idle-reap/daemon-shutdown teardown (no-clobber refusal, a
+// bare-@ref failure, or a filesystem error) — that failure must be preserved,
+// not lost behind a generic "reaped before it was finalized" tombstone. ---
+
+test('BLOCKER 2: finalizeRepairTeardown of a COMPLETE transaction whose commit FAILS preserves the failure in a distinct tombstone, not a generic expiry', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-teardown-commit-fail-'));
+  const store = new SessionStore(path.join(root, 'sessions'));
+  const healedPath = path.join(root, 'flow.healed.ad');
+  // A prior COMPLETE (sentinel-marked) healed artifact already sits at the
+  // default sibling path — teardown's auto-commit attempt must refuse to
+  // clobber it, exactly like an explicit close's commit would.
+  fs.writeFileSync(
+    healedPath,
+    `context platform=ios device="x"\nclick id="old"\n${HEAL_COMPLETE_SENTINEL}\n`,
+  );
+  const before = fs.readFileSync(healedPath, 'utf8');
+
+  const session = makeSession('default');
+  session.recordSession = true;
+  session.scriptPublication = repairPublication('complete', {
+    boundary: 0,
+    path: healedPath,
+    sourcePath: '/flows/login.ad',
+  });
+  session.actions = [{ ts: 1, command: 'open', positionals: ['Demo'], flags: {} }];
+
+  // Idle-reap/shutdown teardown (never routes through close's handler).
+  store.finalizeRepairTeardown(session);
+
+  // The prior complete artifact is untouched — teardown's failed commit
+  // never clobbers it.
+  assert.equal(fs.readFileSync(healedPath, 'utf8'), before);
+  // Never committed (the write failed), so the ordinary success bookkeeping
+  // never ran.
+  assert.notEqual(
+    session.scriptPublication?.kind === 'repair' ? session.scriptPublication.status : undefined,
+    'committed',
+  );
+
+  const tombstone = store.readRepairTombstone('default');
+  assert.ok(tombstone, 'expected a tombstone to preserve the failed-commit outcome');
+  // BLOCKER 2: distinguishable from a plain "reaped before it was finalized"
+  // tombstone — it carries the real commit failure.
+  assert.ok(tombstone?.commitFailure, 'expected the tombstone to carry the commit failure');
+  assert.match(tombstone!.commitFailure!.message, /already exists/);
+  assert.equal(tombstone?.sourcePath, '/flows/login.ad');
+});
+
+// --- ADR 0012 decision 6 (BLOCKER 3): idle-reap/shutdown auto-commit must
+// record the same synthetic terminal `close` an explicit close records, so
+// the committed healed .ad is self-contained (fresh-replayable) exactly like
+// an explicit `close --save-script` commit. ---
+
+test('BLOCKER 3: finalizeRepairTeardown auto-commit records a terminal close, producing a self-contained, fresh-replayable healed .ad', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-teardown-autocommit-close-'));
+  const store = new SessionStore(path.join(root, 'sessions'));
+  const healedPath = path.join(root, 'flow.healed.ad');
+
+  const session = makeSession('default');
+  session.recordSession = true;
+  session.scriptPublication = repairPublication('complete', { boundary: 0, path: healedPath });
+  session.actions = [
+    { ts: 1, command: 'open', positionals: ['Demo'], flags: {} },
+    { ts: 2, command: 'click', positionals: ['id="save-v2"'], flags: {} },
+  ];
+
+  // The source plan's terminal `close` was already skipped-while-armed
+  // (Fix 3) — `session.actions` never gained one. Idle-reap/shutdown teardown
+  // must synthesize it itself before auto-committing.
+  store.finalizeRepairTeardown(session);
+
+  assert.equal(
+    session.scriptPublication?.kind === 'repair' ? session.scriptPublication.status : undefined,
+    'committed',
+  );
+  assert.equal(store.readRepairTombstone('default'), undefined);
+  const script = fs.readFileSync(healedPath, 'utf8');
+  assert.ok(script.includes(HEAL_COMPLETE_SENTINEL));
+  const parsed = parseReplayScriptDetailed(script);
+  // Self-contained: the auto-committed artifact ends with its OWN terminal
+  // close, exactly like an explicit close's commit — never a healed script
+  // that a fresh replay would run off the end of.
+  assert.deepEqual(
+    parsed.actions.map((a) => a.command),
+    ['open', 'click', 'close'],
+  );
+  assert.deepEqual(parsed.actions[2]?.positionals, []);
+  const bareRefs = parsed.actions.flatMap((a) => a.positionals.filter((p) => p.startsWith('@')));
+  assert.deepEqual(bareRefs, []);
 });

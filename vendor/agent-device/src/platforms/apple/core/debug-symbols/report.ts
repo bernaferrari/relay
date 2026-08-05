@@ -1,12 +1,14 @@
 import type {
   CrashArtifact,
-  DebugSymbolsCrashFrame,
-  DebugSymbolsCrashSummary,
   IpsDocument,
   IpsFrameMatch,
   SymbolicatedAddress,
   TextFrameMatch,
 } from './types.ts';
+import type {
+  DebugSymbolsCrashFrame,
+  DebugSymbolsCrashSummary,
+} from '@agent-device/contracts/observability';
 import { isRecord } from '../../../../utils/parsing.ts';
 import {
   addressKey,

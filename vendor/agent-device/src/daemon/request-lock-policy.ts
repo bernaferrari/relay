@@ -1,4 +1,4 @@
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { SessionState, DaemonRequest } from './types.ts';
 import {
@@ -7,7 +7,11 @@ import {
   type SessionSelectorConflict,
   type SessionSelectorConflictKey,
 } from './session-selector.ts';
-import { isApplePlatform, publicPlatformString, type PlatformSelector } from '../kernel/device.ts';
+import {
+  isApplePlatform,
+  publicPlatformString,
+  type PlatformSelector,
+} from '@agent-device/kernel/device';
 import { buildSessionRecoveryHint, describeSessionDevice } from './session-recovery-hints.ts';
 import { shellQuoteIfNeeded } from '../utils/shell-quote.ts';
 import { hasLockableDeviceSelector, hasSelectorValue } from './device-selector-intent.ts';
@@ -190,6 +194,8 @@ function targetSelectorsConflict(
     case 'android':
     case 'ios':
       return target === 'desktop';
+    case 'vega':
+      return target !== 'tv';
     case 'macos':
     case 'linux':
     case 'web':
@@ -221,6 +227,8 @@ function freshSessionSelectorKeysForPlatform(
   switch (lockPlatform) {
     case 'android':
       return ['udid', 'iosSimulatorDeviceSet'];
+    case 'vega':
+      return ['udid', 'iosSimulatorDeviceSet', 'androidDeviceAllowlist'];
     case 'ios':
       return ['serial', 'androidDeviceAllowlist'];
     case 'apple':

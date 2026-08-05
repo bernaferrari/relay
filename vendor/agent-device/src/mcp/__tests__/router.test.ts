@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'vitest';
-import { listMcpExposedCommandNames } from '../../command-catalog.ts';
+import { listMcpExposedCommandNames } from '../../core/command-descriptor/registry.ts';
 import { handleMcpMessage } from '../router.ts';
 import { createMcpPayloadQueue, handleMcpPayload } from '../server.ts';
 
@@ -28,6 +28,7 @@ test('MCP exposes every automatable CLI command as a structured direct tool', as
     .properties;
   assert.ok(!('positionals' in fillProperties));
   assert.ok('target' in fillProperties);
+  assert.ok('recordAs' in fillProperties);
 
   const batchTool = (response.result as { tools: Array<Record<string, unknown>> }).tools.find(
     (tool) => tool.name === 'batch',
@@ -45,6 +46,16 @@ test('MCP exposes every automatable CLI command as a structured direct tool', as
   assert.ok(invalidFillResponse && 'result' in invalidFillResponse);
   assert.equal((invalidFillResponse.result as { isError: boolean }).isError, true);
   assert.match(JSON.stringify(invalidFillResponse.result), /Expected target to be set/);
+
+  const malformedArgumentsResponse = await handleMcpMessage({
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'tools/call',
+    params: { name: 'devices', arguments: [] },
+  });
+  assert.ok(malformedArgumentsResponse && 'result' in malformedArgumentsResponse);
+  assert.equal((malformedArgumentsResponse.result as { isError: boolean }).isError, true);
+  assert.match(JSON.stringify(malformedArgumentsResponse.result), /Expected object parameters/);
 });
 
 test('MCP JSON-RPC batches return responses in request order and skip notifications', async () => {

@@ -20,8 +20,17 @@ When a session is established, human output includes a `Session state: <path>` l
 Session artifact directories contain per-run evidence for concurrent agents:
 
 - `requests/<request-id>.ndjson` - daemon request diagnostics for this session.
+- `events.ndjson` - session event timeline for requests and recorded actions.
 - `runner.log` - Apple runner and `xcodebuild` build/start output for this session.
 - `app.log` - app/device logs when `logs start` or `logs clear --restart` is active.
+
+`events.ndjson` is privacy-shaped for automation timelines. It preserves command names, status,
+durations, bounded device/app inventory previews, lifecycle outcomes, artifact basenames, and
+structural action details such as scroll distance/direction, safe refs, and coordinates.
+User-entered text, clipboard contents, push/event payloads, selector values, free-form
+flags/messages/paths, and raw unknown command arguments are omitted or replaced with content-free
+placeholders. `--no-record` suppresses recorded action entries; request start/finish entries still
+record command, status, and timing.
 
 The top-level daemon log is for daemon lifecycle/startup issues. Use the session artifact directory first when debugging a specific run.
 

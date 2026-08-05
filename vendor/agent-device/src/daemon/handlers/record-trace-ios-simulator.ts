@@ -1,6 +1,7 @@
 import { sleep } from '../../utils/timeouts.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import type { ExecResult } from '../../utils/exec.ts';
+import { signalPidsBestEffort, uniquePositivePids } from '../../utils/host-process.ts';
 import { formatRecordTraceError } from '../record-trace-errors.ts';
 import type { SessionState } from '../types.ts';
 import type { RecordTraceDeps } from './record-trace-types.ts';
@@ -8,6 +9,18 @@ import type { RecordTraceDeps } from './record-trace-types.ts';
 export const IOS_SIMULATOR_RECORDING_STOP_TIMEOUT_MS = 5_000;
 
 const IOS_SIMULATOR_RECORDING_FORCE_STOP_TIMEOUT_MS = 2_000;
+
+/**
+ * Worst-case wall-clock time for {@link stopIosSimulatorRecordingProcess} to
+ * conclude: the direct child-handle SIGINT wait plus the three escalating
+ * PID-based retries (SIGINT, SIGTERM, SIGKILL). Any teardown path that bounds
+ * recording finalization with its own timeout (daemon shutdown's per-session
+ * teardown race) must budget at least this long, or a recorder stuck past the
+ * direct-handle wait is abandoned mid-escalation and the simctl child orphans
+ * with an unfinalized 0-byte mp4.
+ */
+export const IOS_SIMULATOR_RECORDING_STOP_ESCALATION_BUDGET_MS =
+  IOS_SIMULATOR_RECORDING_STOP_TIMEOUT_MS + 3 * IOS_SIMULATOR_RECORDING_FORCE_STOP_TIMEOUT_MS;
 
 type IosSimulatorRecording = Extract<NonNullable<SessionState['recording']>, { platform: 'ios' }>;
 
@@ -42,17 +55,40 @@ export async function stopIosSimulatorRecordingProcess(params: {
 
   recording.child.kill('SIGKILL');
   await signalIosSimulatorRecorderCleanup(deps, recording, 'SIGKILL');
-  return await waitForRecordingProcessExit(
+  result = await waitForRecordingProcessExit(
     recording.wait,
     IOS_SIMULATOR_RECORDING_FORCE_STOP_TIMEOUT_MS,
   );
+  if (result) return result;
+  if (recording.recorderPid !== undefined && !isProcessAlive(recording.recorderPid)) {
+    return { exitCode: 0, stderr: '', stdout: '' };
+  }
+  return null;
 }
 
 async function waitForRecordingProcessExit(
   wait: Promise<ExecResult>,
   timeoutMs: number,
 ): Promise<ExecResult | null> {
-  return await Promise.race([wait, sleep(timeoutMs).then(() => null)]);
+  // A rejected monitor means we lost the ability to confirm process exit; it does not mean the
+  // recorder exited. Treat it like an unconfirmed timeout so the caller continues through the
+  // PID-backed SIGINT/SIGTERM/SIGKILL cleanup sequence.
+  return await Promise.race([
+    wait.then(
+      (result) => result,
+      () => null,
+    ),
+    sleep(timeoutMs).then(() => null),
+  ]);
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function signalIosSimulatorRecorderCleanup(
@@ -88,8 +124,8 @@ async function signalMatchingIosSimulatorRecorders(
     return;
   }
 
-  const pids = uniquePositivePids(parseProcessIds(result.stdout));
-  const signaled = signalProcessIds(pids, signal);
+  const pids = uniquePositivePids(parseProcessIds(result.stdout), { excludePid: process.pid });
+  const signaled = signalPidsBestEffort(pids, signal);
 
   emitDiagnostic({
     level: signaled > 0 ? 'warn' : 'debug',
@@ -124,8 +160,10 @@ async function signalSessionOwnedIosSimulatorRecorders(
   }
 
   const childResult = await findChildProcessIds(deps, recorderPid, recording.outPath, signal);
-  const pids = uniquePositivePids([recorderPid, ...childResult.pids]);
-  const signaled = signalProcessIds(pids, signal);
+  const pids = uniquePositivePids([recorderPid, ...childResult.pids], {
+    excludePid: process.pid,
+  });
+  const signaled = signalPidsBestEffort(pids, signal);
 
   emitDiagnostic({
     level: signaled > 0 ? 'warn' : 'debug',
@@ -171,25 +209,6 @@ async function findChildProcessIds(
     pids: parseProcessIds(result.stdout),
     exitCode: result.exitCode,
   };
-}
-
-function uniquePositivePids(values: number[]): number[] {
-  return Array.from(new Set(values)).filter(
-    (pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid,
-  );
-}
-
-function signalProcessIds(pids: number[], signal: NodeJS.Signals): number {
-  let signaled = 0;
-  for (const pid of pids) {
-    try {
-      process.kill(pid, signal);
-      signaled += 1;
-    } catch {
-      // Process already exited or cannot be signaled; cleanup remains best-effort.
-    }
-  }
-  return signaled;
 }
 
 function parseProcessIds(stdout: string): number[] {

@@ -1,5 +1,11 @@
-import { isIosFamily, isMacOs, publicPlatformString, type DeviceInfo } from '../kernel/device.ts';
-import { AppError } from '../kernel/errors.ts';
+import {
+  isIosFamily,
+  isMacOs,
+  publicPlatformString,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import type { JsonObject } from '@agent-device/contracts/client';
 
 type AppEventDevice = Pick<DeviceInfo, 'platform' | 'appleOs'>;
 
@@ -7,7 +13,7 @@ const APP_EVENT_NAME_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const MAX_APP_EVENT_PAYLOAD_BYTES = 8 * 1024;
 const MAX_APP_EVENT_URL_LENGTH = 4 * 1024;
 
-type AppEventPayload = Record<string, unknown> | undefined;
+type AppEventPayload = JsonObject | undefined;
 
 export function parseTriggerAppEventArgs(positionals: string[]): {
   eventName: string;
@@ -85,7 +91,7 @@ function parseTriggerEventPayload(
         `trigger-app-event payload for "${eventName}" exceeds ${MAX_APP_EVENT_PAYLOAD_BYTES} bytes`,
       );
     }
-    return parsed as Record<string, unknown>;
+    return parsed as JsonObject;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError('INVALID_ARGS', `Invalid trigger-app-event payload JSON: ${payloadArg}`);

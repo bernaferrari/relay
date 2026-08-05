@@ -1,1 +1,0 @@
-import{createScopedProvider as r,createAgentBrowserWebProvider as e}from"./9722.js";let o=r(e());function t(r){return o.resolve(r)}async function n(r,e){return await o.run(r,e)}export{t as resolveWebProvider,n as withWebProvider};

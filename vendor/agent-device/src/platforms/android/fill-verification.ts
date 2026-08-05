@@ -1,31 +1,20 @@
-import type { DeviceInfo } from '../../kernel/device.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
-import type { Rect } from '../../kernel/snapshot.ts';
+import type { Rect } from '@agent-device/kernel/snapshot';
 import {
   buildFillFailureDetails,
-  type FillFailureDetails,
-  type FillDiagnosticNode,
-  type FillVerification,
   isSensitiveFillDiagnosticNode,
-} from '../fill-diagnostics.ts';
+  type AndroidFillVerification,
+  type AndroidFillVerificationNode,
+  type FillFailureDetails,
+} from './fill-diagnostics.ts';
 import { sleep } from './adb.ts';
 import { getAndroidKeyboardState } from './device-input-state.ts';
-import { isAndroidInputMethodOwnedNode } from './input-ownership.ts';
+import { isAndroidInputMethodOwnedNode } from '@agent-device/contracts/platform';
 import { captureAndroidUiHierarchyXml } from './snapshot.ts';
 import { androidUiNodes, type AndroidUiNodeMetadata } from './ui-hierarchy.ts';
 
-export type AndroidFillVerificationNode = FillDiagnosticNode & {
-  className: string | null;
-  resourceId: string | null;
-  packageName: string | null;
-  rect: Rect;
-  focused: boolean;
-  password: boolean;
-  inputMethodOwned: boolean;
-  area: number;
-};
-
-export type AndroidFillVerification = FillVerification<AndroidFillVerificationNode>;
+export type { AndroidFillVerification } from './fill-diagnostics.ts';
 
 type AndroidFillVerificationCandidate = AndroidFillVerificationNode & {
   editText: boolean;
@@ -122,7 +111,9 @@ export function readAndroidTextAtPointInHierarchy(
   x: number,
   y: number,
 ): string | null {
-  return inspectAndroidTextAtPointInHierarchy(xml, x, y).actualInput?.text ?? null;
+  // Reads are point-targeted: a focused sibling may be a different app field or an IME
+  // composing surface, so it must not override the node that contains the requested point.
+  return inspectAndroidTextAtPointInHierarchy(xml, x, y).targetInput?.text ?? null;
 }
 
 export function androidFillFailureMessage(verification: AndroidFillVerification | null): string {
@@ -138,7 +129,7 @@ export function androidFillFailureMessage(verification: AndroidFillVerification 
 export function androidFillFailureDetails(
   expected: string,
   verification: AndroidFillVerification | null,
-): FillFailureDetails<AndroidFillVerificationNode> {
+): FillFailureDetails {
   const details = buildFillFailureDetails(expected, verification);
   if (verification?.reason === 'ime_capture') {
     details.hint =

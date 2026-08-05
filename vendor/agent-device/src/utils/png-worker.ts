@@ -1,8 +1,8 @@
 import { parentPort } from 'node:worker_threads';
-import { normalizeError } from '../kernel/errors.ts';
-import { PNG } from './png-codec.ts';
-import { decodePng } from './png.ts';
+import { normalizeError } from '@agent-device/kernel/errors';
+import { decodePng, PNG } from './png.ts';
 import { computeScreenshotDiffPixels } from './screenshot-diff-pixels.ts';
+import { computePngRgbDifference } from './png-rgb-difference.ts';
 import {
   toBuffer,
   type PngWorkerJobResult,
@@ -23,12 +23,14 @@ function runJob(request: PngWorkerRequest): PngWorkerJobResult {
       return { kind: 'decode', width: png.width, height: png.height, data: png.data };
     }
     case 'encode': {
-      const png = new PNG({
-        width: request.width,
-        height: request.height,
-        data: toBuffer(request.data),
-      });
+      const png = new PNG({ width: request.width, height: request.height });
+      png.data = toBuffer(request.data);
       return { kind: 'encode', png: PNG.sync.write(png) };
+    }
+    case 'rgb-difference': {
+      const first = decodePng(toBuffer(request.firstPng), request.label);
+      const second = decodePng(toBuffer(request.secondPng), request.label);
+      return { kind: 'rgb-difference', ...computePngRgbDifference(first, second) };
     }
     case 'diff-pixels': {
       return { kind: 'diff-pixels', ...computeScreenshotDiffPixels(request) };
@@ -66,6 +68,8 @@ function resultBufferViews(result: PngWorkerJobResult): Uint8Array[] {
       return [result.data];
     case 'encode':
       return [result.png];
+    case 'rgb-difference':
+      return [];
     case 'diff-pixels':
       return [result.diffData, result.diffMask];
   }

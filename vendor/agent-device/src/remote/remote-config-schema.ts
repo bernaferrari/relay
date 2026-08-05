@@ -1,57 +1,18 @@
+import {
+  PROVIDER_DEVICE_ORIENTATIONS,
+  type CloudProviderProfileFields,
+  type RemoteConfigMetroOptions,
+  type RemoteConnectionProfileFields,
+} from '@agent-device/contracts/remote';
+// Declared in contracts/ so zones below remote/ can be stated in terms of the field vocabulary;
+// re-exported here because this module is where consumers already import it from.
+export type { RemoteConnectionProfileFields } from '@agent-device/contracts/remote';
 import { buildPrimaryEnvVarName } from '../utils/source-value.ts';
-import type {
-  DaemonServerMode,
-  DaemonTransportPreference,
-  LeaseBackend,
-  SessionIsolationMode,
-} from '../kernel/contracts.ts';
-import { PLATFORM_SELECTORS, type DeviceTarget, type PlatformSelector } from '../kernel/device.ts';
-import type { MetroPrepareKind } from '../metro/client-metro.ts';
-
-export type RemoteConfigMetroOptions = {
-  metroProjectRoot?: string;
-  metroKind?: MetroPrepareKind;
-  metroPublicBaseUrl?: string;
-  metroProxyBaseUrl?: string;
-  metroBearerToken?: string;
-  metroPreparePort?: number;
-  metroListenHost?: string;
-  metroStatusHost?: string;
-  metroStartupTimeoutMs?: number;
-  metroProbeTimeoutMs?: number;
-  metroRuntimeFile?: string;
-  metroNoReuseExisting?: boolean;
-  metroNoInstallDeps?: boolean;
-};
-
-export type RemoteConnectionProfileFields = {
-  stateDir?: string;
-  daemonBaseUrl?: string;
-  daemonAuthToken?: string;
-  daemonTransport?: DaemonTransportPreference;
-  daemonServerMode?: DaemonServerMode;
-  tenant?: string;
-  sessionIsolation?: SessionIsolationMode;
-  runId?: string;
-  leaseId?: string;
-  leaseBackend?: LeaseBackend;
-  leaseProvider?: string;
-  deviceKey?: string;
-  clientId?: string;
-};
-
-export type CloudProviderProfileFields = {
-  providerApp?: string;
-  providerOsVersion?: string;
-  providerProject?: string;
-  providerBuild?: string;
-  providerSessionName?: string;
-  awsProjectArn?: string;
-  awsDeviceArn?: string;
-  awsAppArn?: string;
-  awsRegion?: string;
-  awsInteractionMode?: 'INTERACTIVE' | 'NO_VIDEO' | 'VIDEO_ONLY';
-};
+import {
+  PLATFORM_SELECTORS,
+  type DeviceTarget,
+  type PlatformSelector,
+} from '@agent-device/kernel/device';
 
 export type RemoteConfigProfile = RemoteConfigMetroOptions &
   CloudProviderProfileFields &
@@ -120,6 +81,18 @@ export const REMOTE_CONFIG_FIELD_SPECS = [
   { key: 'providerProject', type: 'string' },
   { key: 'providerBuild', type: 'string' },
   { key: 'providerSessionName', type: 'string' },
+  {
+    key: 'providerDeviceOrientation',
+    type: 'enum',
+    enumValues: PROVIDER_DEVICE_ORIENTATIONS,
+  },
+  { key: 'providerGeoLocation', type: 'string' },
+  { key: 'providerTimezone', type: 'string' },
+  { key: 'providerLanguage', type: 'string' },
+  { key: 'providerLocale', type: 'string' },
+  { key: 'providerNetworkProfile', type: 'string' },
+  { key: 'providerCustomNetwork', type: 'string' },
+  { key: 'providerNoResignApp', type: 'boolean' },
   { key: 'awsProjectArn', type: 'string' },
   { key: 'awsDeviceArn', type: 'string' },
   { key: 'awsAppArn', type: 'string' },
@@ -130,7 +103,7 @@ export const REMOTE_CONFIG_FIELD_SPECS = [
     enumValues: ['INTERACTIVE', 'NO_VIDEO', 'VIDEO_ONLY'],
   },
   { key: 'metroProjectRoot', type: 'string', path: true },
-  { key: 'metroKind', type: 'enum', enumValues: ['auto', 'react-native', 'expo'] },
+  { key: 'metroKind', type: 'enum', enumValues: ['auto', 'react-native', 'expo', 'repack'] },
   { key: 'metroPublicBaseUrl', type: 'string' },
   { key: 'metroProxyBaseUrl', type: 'string' },
   { key: 'metroBearerToken', type: 'string' },
@@ -142,6 +115,7 @@ export const REMOTE_CONFIG_FIELD_SPECS = [
   { key: 'metroRuntimeFile', type: 'string', path: true },
   { key: 'metroNoReuseExisting', type: 'boolean' },
   { key: 'metroNoInstallDeps', type: 'boolean' },
+  { key: 'launchUrl', type: 'string' },
 ] as const satisfies readonly RemoteConfigFieldSpec[];
 
 const REMOTE_CONFIG_LEASE_FIELD_SPECS = [

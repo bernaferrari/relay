@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type {
-  AgentDeviceBackend,
-  BackendSnapshotOptions,
-  BackendSnapshotResult,
-} from '../../../backend.ts';
+import type { AgentDeviceBackend, BackendSnapshotOptions } from '../../../backend.ts';
 import { createLocalArtifactAdapter } from '../../../io.ts';
 import {
   createAgentDevice,
@@ -12,12 +8,17 @@ import {
   localCommandPolicy,
   type CommandSessionStore,
 } from '../../../runtime.ts';
-import { ref, selector } from '../../index.ts';
-import type { SnapshotState } from '../../../kernel/snapshot.ts';
+import { ref, selector } from './selector-read-utils.ts';
 import { makeSnapshotState } from '../../../__tests__/test-utils/index.ts';
+import {
+  createFakeClock,
+  createSelectorDevice,
+  selectorReadSnapshot,
+} from './__tests__/test-utils/index.ts';
+import { AppError } from '@agent-device/kernel/errors';
 
 test('runtime get reads text from a selector target', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   const device = createSelectorDevice(snapshot, {
     readText: 'Backend expanded text',
   });
@@ -40,7 +41,7 @@ test('runtime get reads text from a selector target', async () => {
 });
 
 test('runtime get selector target captures fresh snapshot without a stored session snapshot', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   const sessions = createMemorySessionStore([{ name: 'default' }]);
   let captures = 0;
   const device = createAgentDevice({
@@ -68,7 +69,7 @@ test('runtime get selector target captures fresh snapshot without a stored sessi
 });
 
 test('runtime get returns attrs for a ref target without recapturing', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   let captures = 0;
   const device = createSelectorDevice(snapshot, {
     captureSnapshot: () => {
@@ -90,7 +91,7 @@ test('runtime get returns attrs for a ref target without recapturing', async () 
 });
 
 test('runtime selectors pass runtime signal to backend snapshot capture', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   const controller = new AbortController();
   let signal: AbortSignal | undefined;
   const device = createAgentDevice({
@@ -116,7 +117,7 @@ test('runtime selectors pass runtime signal to backend snapshot capture', async 
 });
 
 test('runtime selectors forward public snapshot options to backend capture', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   let captureOptions: BackendSnapshotOptions | undefined;
   const device = createAgentDevice({
     backend: {
@@ -150,7 +151,7 @@ test('runtime selectors forward public snapshot options to backend capture', asy
 });
 
 test('runtime visibility predicates request snapshot rects', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   let captureOptions: BackendSnapshotOptions | undefined;
   const device = createAgentDevice({
     backend: {
@@ -172,8 +173,81 @@ test('runtime visibility predicates request snapshot rects', async () => {
   assert.equal(captureOptions?.includeRects, true);
 });
 
+test('runtime focused predicate requests a full snapshot', async () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Cell',
+      label: 'Profiles and Accounts',
+      focused: true,
+    },
+  ]);
+  let captureOptions: BackendSnapshotOptions | undefined;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      captureSnapshot: async (_context, options) => {
+        captureOptions = options;
+        return { snapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
+    policy: localCommandPolicy(),
+  });
+
+  const result = await device.selectors.is({
+    session: 'default',
+    predicate: 'focused',
+    selector: 'role=cell label="Profiles and Accounts"',
+  });
+
+  assert.equal(result.pass, true);
+  assert.equal(captureOptions?.interactiveOnly, false);
+});
+
+test('runtime focused predicate reads focused Android TV nodes from the full tree', async () => {
+  const fullSnapshot = makeSnapshotState(
+    [
+      {
+        index: 0,
+        depth: 0,
+        type: 'TextView',
+        label: 'Featured',
+        focused: true,
+        hittable: false,
+      },
+    ],
+    { backend: 'android' },
+  );
+  const interactiveSnapshot = makeSnapshotState([], { backend: 'android' });
+  let captureOptions: BackendSnapshotOptions | undefined;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async (_context, options) => {
+        captureOptions = options;
+        return { snapshot: options?.interactiveOnly ? interactiveSnapshot : fullSnapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot: interactiveSnapshot }]),
+    policy: localCommandPolicy(),
+  });
+
+  const result = await device.selectors.is({
+    session: 'default',
+    predicate: 'focused',
+    selector: 'label=Featured',
+  });
+
+  assert.equal(result.pass, true);
+  assert.equal(captureOptions?.interactiveOnly, false);
+});
+
 test('runtime is validates selector predicates', async () => {
-  const device = createSelectorDevice(selectorSnapshot());
+  const device = createSelectorDevice(selectorReadSnapshot());
 
   const result = await device.selectors.is({
     session: 'default',
@@ -191,7 +265,7 @@ test('runtime is validates selector predicates', async () => {
 });
 
 test('runtime find get_text reads the matched node', async () => {
-  const device = createSelectorDevice(selectorSnapshot(), {
+  const device = createSelectorDevice(selectorReadSnapshot(), {
     readText: 'Continue',
   });
 
@@ -209,7 +283,7 @@ test('runtime find get_text reads the matched node', async () => {
 });
 
 test('runtime find accepts selector expression queries', async () => {
-  const device = createSelectorDevice(selectorSnapshot());
+  const device = createSelectorDevice(selectorReadSnapshot());
 
   const result = await device.selectors.find({
     session: 'default',
@@ -221,7 +295,7 @@ test('runtime find accepts selector expression queries', async () => {
 });
 
 test('runtime web find text does not pass locator text as browser selector scope', async () => {
-  const snapshot = selectorSnapshot();
+  const snapshot = selectorReadSnapshot();
   let captureOptions: BackendSnapshotOptions | undefined;
   const device = createAgentDevice({
     backend: {
@@ -248,7 +322,7 @@ test('runtime web find text does not pass locator text as browser selector scope
 });
 
 test('runtime find wait reports sparse snapshot verdicts on the selector-read route', async () => {
-  const initialSnapshot = selectorSnapshot();
+  const initialSnapshot = selectorReadSnapshot();
   const session = { name: 'default', snapshot: initialSnapshot };
   const sessions = {
     get: () => session,
@@ -302,22 +376,105 @@ test('runtime find wait reports sparse snapshot verdicts on the selector-read ro
   assert.equal(session.snapshot, initialSnapshot);
 });
 
-test('runtime wait can use backend text search', async () => {
-  const device = createSelectorDevice(selectorSnapshot(), {
-    findText: true,
-    now: 10,
+test('runtime find wait skips hidden-content hint derivation on every poll (#1270)', async () => {
+  // A `wait`'s presence check never consumes scroll hints, so every poll must ask the capture
+  // layer to skip deriving them — otherwise a single pathological `dumpsys activity top` call
+  // can eat the whole wait budget from inside this loop.
+  const snapshot = selectorReadSnapshot();
+  const captureOptionsCalls: Array<BackendSnapshotOptions | undefined> = [];
+  let elapsed = 0;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async (_context, options) => {
+        captureOptionsCalls.push(options);
+        return { snapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
+    policy: localCommandPolicy(),
+    clock: {
+      now: () => elapsed,
+      sleep: async () => {
+        elapsed += 300;
+      },
+    },
   });
 
-  const result = await device.selectors.wait({
-    session: 'default',
-    target: { kind: 'text', text: 'Ready', timeoutMs: 100 },
+  await assert.rejects(
+    () =>
+      device.selectors.find({
+        session: 'default',
+        locator: 'text',
+        query: 'Never appears',
+        action: 'wait',
+        timeoutMs: 500,
+      }),
+    /find wait timed out/,
+  );
+
+  assert.equal(captureOptionsCalls.length >= 2, true);
+  for (const options of captureOptionsCalls) {
+    assert.equal(options?.includeHiddenContentHints, false);
+  }
+});
+
+test('runtime find wait cancels and joins a capture that consumes its full deadline', async () => {
+  const initial = selectorReadSnapshot();
+  const sessions = createMemorySessionStore([{ name: 'default', snapshot: initial }]);
+  let captureCount = 0;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async (context) => {
+        captureCount += 1;
+        return await new Promise((resolve) => {
+          context.signal?.addEventListener(
+            'abort',
+            () => {
+              setTimeout(
+                () =>
+                  resolve({
+                    snapshot: makeSnapshotState([
+                      { index: 0, depth: 0, type: 'Other', label: 'Late screen' },
+                    ]),
+                  }),
+                5,
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions,
+    policy: localCommandPolicy(),
   });
 
-  assert.deepEqual(result, { kind: 'text', text: 'Ready', waitedMs: 0 });
+  await assert.rejects(
+    device.selectors.find({
+      session: 'default',
+      locator: 'text',
+      query: 'Never appears',
+      action: 'wait',
+      timeoutMs: 20,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'wait_capture_stalled');
+      assert.equal(details?.captureStalled, true);
+      return true;
+    },
+  );
+  assert.equal(captureCount, 1);
+  assert.deepEqual((await sessions.get('default'))?.snapshot, initial);
 });
 
 test('runtime selector convenience methods use explicit target helpers', async () => {
-  const device = createSelectorDevice(selectorSnapshot(), {
+  const device = createSelectorDevice(selectorReadSnapshot(), {
     readText: 'Continue',
     findText: true,
   });
@@ -338,49 +495,330 @@ test('runtime selector convenience methods use explicit target helpers', async (
   assert.deepEqual(waited, { kind: 'text', text: 'Ready', waitedMs: 0 });
 });
 
-function selectorSnapshot(): SnapshotState {
+// ---------------------------------------------------------------------------
+// Wait polls ride out captures that judged the screen unreadable (the
+// mid-transition Android helper content verdicts) instead of aborting the
+// wait — the live-validated destination-guard gap from #1349's PR review.
+// (#1349's own in-loop landmark identity verification tests — the
+// `target.recordedLandmark` cases — moved to `selector-wait.test.ts`, the
+// 1:1 topology location for `selector-wait.ts`; #1478 P5 step 2 cell 7.)
+// ---------------------------------------------------------------------------
+
+function landmarkScreen(parentLabel: string) {
   return makeSnapshotState([
+    { index: 0, depth: 0, type: 'Other', label: parentLabel },
     {
-      index: 0,
-      depth: 0,
-      type: 'Button',
-      label: 'Continue',
-      value: 'Continue',
-      rect: { x: 10, y: 20, width: 100, height: 40 },
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'StaticText',
+      label: 'Screen X',
+      rect: { x: 0, y: 0, width: 100, height: 20 },
     },
   ]);
 }
 
-function createSelectorDevice(
-  snapshot: SnapshotState,
-  options: {
-    readText?: string;
-    findText?: boolean;
-    now?: number;
-    captureSnapshot?: () => BackendSnapshotResult | Promise<BackendSnapshotResult>;
-  } = {},
-) {
-  const session = { name: 'default', snapshot };
-  const sessions = {
-    get: () => session,
-    set: (record) => {
-      session.snapshot = record.snapshot ?? session.snapshot;
+function unreadableCaptureError() {
+  return new AppError(
+    'COMMAND_FAILED',
+    'Android snapshot helper returned insufficient foreground app content',
+    {
+      androidSnapshotHelperFailureReason: 'content-poor-app-window',
+      retriable: true,
     },
-  } satisfies CommandSessionStore;
+  );
+}
+
+function waitDeviceWithCaptures(captures: Array<() => ReturnType<typeof landmarkScreen>>) {
+  let call = 0;
   return createAgentDevice({
     backend: {
-      platform: 'ios',
-      captureSnapshot: async () =>
-        options.captureSnapshot ? await options.captureSnapshot() : { snapshot },
-      readText: async () => ({ text: options.readText ?? '' }),
-      findText: async () => ({ found: options.findText ?? false }),
+      platform: 'android',
+      captureSnapshot: async () => {
+        const produce = captures[Math.min(call, captures.length - 1)]!;
+        call += 1;
+        return { snapshot: produce() };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default' }]),
+    policy: localCommandPolicy(),
+    clock: createFakeClock(),
+  });
+}
+
+test('runtime wait rides out an unreadable mid-transition capture and succeeds on the next poll', async () => {
+  const device = waitDeviceWithCaptures([
+    () => {
+      throw unreadableCaptureError();
+    },
+    () => landmarkScreen('Detail Screen'),
+  ]);
+
+  const result = await device.selectors.wait({
+    session: 'default',
+    target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 5000 },
+  });
+
+  assert.equal(result.kind, 'selector');
+  if (result.kind !== 'selector') throw new Error('unreachable');
+  assert.equal(result.waitedMs >= 300, true);
+});
+
+test('runtime wait rethrows the capture verdict when the screen never became readable', async () => {
+  const device = waitDeviceWithCaptures([
+    () => {
+      throw unreadableCaptureError();
+    },
+  ]);
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 1000 },
+    }),
+    /insufficient foreground app content/,
+  );
+});
+
+test('runtime wait classifies readable no-match polls as target absent', async () => {
+  const empty = () => makeSnapshotState([{ index: 0, depth: 0, type: 'Other', label: 'Loading' }]);
+  const device = waitDeviceWithCaptures([
+    empty,
+    () => {
+      throw unreadableCaptureError();
+    },
+  ]);
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 1000 },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'wait timed out for selector: label="Screen X"');
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'wait_target_absent');
+      assert.equal((details?.readableCaptures as number) > 0, true);
+      return true;
+    },
+  );
+});
+
+test('runtime wait reports a stalled final capture after earlier unreadable verdicts', async () => {
+  let captureCount = 0;
+  const initial = makeSnapshotState([{ index: 0, depth: 0, type: 'Other', label: 'Initial' }]);
+  const sessions = createMemorySessionStore([{ name: 'default', snapshot: initial }]);
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: (context) => {
+        captureCount += 1;
+        if (captureCount === 1) throw unreadableCaptureError();
+        return new Promise((resolve) => {
+          context.signal?.addEventListener(
+            'abort',
+            () => {
+              setTimeout(
+                () =>
+                  resolve({
+                    snapshot: makeSnapshotState([
+                      { index: 0, depth: 0, type: 'Other', label: 'Late capture' },
+                    ]),
+                  }),
+                5,
+              );
+            },
+            { once: true },
+          );
+        });
+      },
     } satisfies AgentDeviceBackend,
     artifacts: createLocalArtifactAdapter(),
     sessions,
     policy: localCommandPolicy(),
-    clock: {
-      now: () => options.now ?? 0,
-      sleep: async () => {},
-    },
+    clock: createFakeClock(),
   });
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 400 },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'wait timed out for selector: label="Screen X"');
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'wait_capture_stalled');
+      assert.equal(details?.retriable, true);
+      assert.equal(details?.readableCaptures, 0);
+      assert.equal(typeof details?.waitedMs, 'number');
+      return true;
+    },
+  );
+  assert.deepEqual((await sessions.get('default'))?.snapshot, initial);
+});
+
+test('runtime wait does not call a deadline-truncated poll stalled after a readable capture', async () => {
+  let captureCount = 0;
+  const loading = makeSnapshotState([{ index: 0, depth: 0, type: 'Other', label: 'Loading' }]);
+  const sessions = createMemorySessionStore([{ name: 'default' }]);
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async (context) => {
+        captureCount += 1;
+        if (captureCount === 1) return { snapshot: loading };
+        return await new Promise((resolve) => {
+          context.signal?.addEventListener(
+            'abort',
+            () => {
+              setTimeout(() => resolve({ snapshot: loading }), 5);
+            },
+            { once: true },
+          );
+        });
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions,
+    policy: localCommandPolicy(),
+    clock: createFakeClock(),
+  });
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 400 },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'wait timed out for selector: label="Screen X"');
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'wait_deadline_exceeded');
+      assert.equal(details?.captureTruncated, true);
+      assert.equal(details?.captureStalled, undefined);
+      return true;
+    },
+  );
+  assert.equal(captureCount, 2);
+  assert.deepEqual((await sessions.get('default'))?.snapshot, loading);
+});
+
+function failingWaitDevice(produceError: () => Error): {
+  device: ReturnType<typeof createAgentDevice>;
+  attempts: () => number;
+} {
+  let attempts = 0;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async () => {
+        attempts += 1;
+        throw produceError();
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default' }]),
+    policy: localCommandPolicy(),
+    clock: createFakeClock(),
+  });
+  return { device, attempts: () => attempts };
 }
+
+test('runtime wait still fails immediately on a non-content capture failure', async () => {
+  const { device, attempts } = failingWaitDevice(
+    () => new AppError('COMMAND_FAILED', 'adb device offline'),
+  );
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 5000 },
+    }),
+    /adb device offline/,
+  );
+  // Fail-FAST, not fail-at-deadline: a single capture attempt, no polling.
+  assert.equal(attempts(), 1);
+});
+
+test('runtime wait fails immediately on a helper MECHANISM failure even though it carries androidSnapshotHelperFailureReason', async () => {
+  // The realistic wrapper shape: androidSnapshotHelperCaptureError /
+  // androidSnapshotHelperUnavailableError stamp the SAME details key as the
+  // content verdicts, but with free-form mechanism reasons. Those must not be
+  // polled until the wait deadline — the broad any-string classifier would
+  // ride this to the deadline and rethrow the same error, so the attempt
+  // count (not the eventual message) is what makes this regression bite.
+  const { device, attempts } = failingWaitDevice(
+    () =>
+      new AppError(
+        'COMMAND_FAILED',
+        'Android snapshot helper failed: instrumentation run timed out after 120000ms',
+        {
+          androidSnapshotHelperFailureReason: 'instrumentation run timed out after 120000ms',
+          hint: 'The device may be busy; retry once it settles.',
+        },
+      ),
+  );
+
+  await assert.rejects(
+    device.selectors.wait({
+      session: 'default',
+      target: { kind: 'selector', selector: 'label="Screen X"', timeoutMs: 5000 },
+    }),
+    /instrumentation run timed out/,
+  );
+  assert.equal(attempts(), 1);
+});
+
+// Regression: admission normalizes a predicate's case, and every branch below it has to read
+// the ADMITTED value. Reading `options.predicate` instead let an uppercase predicate past the
+// gate and then evaluated it against lower-case branches — `EXISTS` skipped its own branch and
+// `TEXT` compared nothing — so the command answered wrongly instead of refusing or working.
+test('runtime is admits an upper-case predicate and evaluates it as the normalized one', async () => {
+  const snapshot = makeSnapshotState([
+    { index: 0, depth: 0, type: 'StaticText', label: 'Greeting' },
+  ]);
+  const device = createSelectorDevice(snapshot);
+
+  const exists = await device.selectors.is({
+    session: 'default',
+    predicate: 'EXISTS' as 'exists',
+    selector: 'label=Greeting',
+  });
+  assert.equal(exists.predicate, 'exists');
+  assert.equal(exists.pass, true);
+
+  const text = await device.selectors.is({
+    session: 'default',
+    predicate: 'TEXT' as 'text',
+    selector: 'label=Greeting',
+    expectedText: 'Greeting',
+  });
+  assert.equal(text.predicate, 'text');
+  assert.equal(text.pass, true);
+  assert.equal(text.text, 'Greeting');
+});
+
+test('runtime is still refuses a predicate that is not in the vocabulary', async () => {
+  const device = createSelectorDevice(
+    makeSnapshotState([{ index: 0, depth: 0, type: 'StaticText', label: 'Greeting' }]),
+  );
+
+  await assert.rejects(
+    async () =>
+      await device.selectors.is({
+        session: 'default',
+        predicate: 'shiny' as 'exists',
+        selector: 'label=Greeting',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'INVALID_ARGS');
+      // ADR 0010: the refusal carries recovery guidance on every surface, not just the daemon's.
+      assert.match(String(error.details?.hint ?? ''), /is <selector> <predicate>/);
+      return true;
+    },
+  );
+});

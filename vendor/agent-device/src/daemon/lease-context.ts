@@ -1,25 +1,18 @@
 import type { DaemonRequest } from './types.ts';
-import type { LeaseBackend } from '../kernel/contracts.ts';
-import type { DeviceLease } from './lease-registry.ts';
-import type { RunnerLogicalLeaseContext } from '../core/runner-lease-context.ts';
+import type { LeaseBackend } from '@agent-device/kernel/contracts';
+import type { DeviceLease } from '@agent-device/contracts/device';
+import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/platform';
 import { stripUndefined } from '../utils/parsing.ts';
 import {
   DEFAULT_PROXY_LEASE_TTL_MS,
-  buildLeaseDiagnosticsContext,
   findMissingProxyLeaseFields,
   isProxyLeaseScope,
   leaseScopeFromRequest,
-  type LeaseDiagnosticsContext,
   type LeaseScope,
 } from '../core/lease-scope.ts';
 
-export {
-  DEFAULT_PROXY_LEASE_TTL_MS,
-  buildLeaseDiagnosticsContext,
-  findMissingProxyLeaseFields,
-  isProxyLeaseScope,
-};
-export type { LeaseDiagnosticsContext, LeaseScope };
+export { DEFAULT_PROXY_LEASE_TTL_MS, findMissingProxyLeaseFields, isProxyLeaseScope };
+export type { LeaseScope };
 
 export type SessionLease = {
   tenantId: string;

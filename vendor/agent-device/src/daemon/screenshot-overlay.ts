@@ -5,11 +5,12 @@ import {
   type ScreenshotOverlayRef,
   type SnapshotNode,
   type SnapshotState,
-} from '../kernel/snapshot.ts';
+} from '@agent-device/kernel/snapshot';
 import type { PNG } from '../utils/png.ts';
 import { decodePngAsync, encodePngAsync } from '../utils/png-worker-client.ts';
 import { analyzeReactNativeOverlay } from '../core/react-native-overlay.ts';
-import { findNearestAncestor, normalizeType } from '../snapshot/snapshot-processing.ts';
+import { normalizeType } from '@agent-device/contracts/snapshot';
+import { findNearestAncestor } from '../snapshot/snapshot-processing.ts';
 import { resolveAndroidOverlaySourceRect } from './screenshot-overlay-android.ts';
 import { hasPositiveRect, rectArea, rectContains } from './screenshot-overlay-rects.ts';
 

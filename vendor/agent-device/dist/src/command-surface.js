@@ -1,1 +1,1 @@
-import{listCommandFamilyDefinitions as n}from"./2948.js";let a=new Map(n().map(n=>[n.name,n]));async function e(n,e,r){var t;return await (t=e,a.get(t)).invoke(n,r)}export{e as runCommand};
+import{o as e}from"./png-worker-contract.js";import{a as t}from"./registry.js";var n=e({runCommand:()=>a});const r=t(),i=new Map(r.map(e=>[e.name,e]));async function a(e,t,n){return await o(t).invoke(e,n)}function o(e){return i.get(e)}export{a as n,n as t};

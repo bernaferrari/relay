@@ -1,1 +1,1 @@
-export{};
+import{n as e}from"./remote-config2.js";export{e as resolveRemoteConfigProfile};

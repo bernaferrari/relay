@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
-import { AppError } from '../kernel/errors.ts';
-import { PNG } from './png-codec.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { PNG } from './png.ts';
 import { decodePngAsync, encodePngAsync } from './png-worker-client.ts';
 
 /**
@@ -26,6 +26,23 @@ export async function resizePngFileToMaxSize(filePath: string, maxSize: number):
   const resized = resizePngBox(source, width, height);
 
   await fs.writeFile(filePath, await encodePngAsync(resized));
+}
+
+export async function resizePngFile(
+  filePath: string,
+  width: number,
+  height: number,
+): Promise<void> {
+  if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) {
+    throw new AppError('INVALID_ARGS', 'Screenshot resize dimensions must be positive integers');
+  }
+
+  const source = await decodePngAsync(await fs.readFile(filePath), 'screenshot');
+  if (source.width === width && source.height === height) {
+    return;
+  }
+
+  await fs.writeFile(filePath, await encodePngAsync(resizePngBox(source, width, height)));
 }
 
 function resizePngBox(source: PNG, width: number, height: number): PNG {

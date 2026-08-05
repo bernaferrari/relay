@@ -1,9 +1,4 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   readAndroidHelperManifestInteger,
   readAndroidHelperManifestLiteral,
@@ -12,13 +7,8 @@ import {
   ANDROID_SNAPSHOT_HELPER_NAME,
   ANDROID_SNAPSHOT_HELPER_OUTPUT_FORMAT,
   ANDROID_SNAPSHOT_HELPER_PROTOCOL,
-  type AndroidSnapshotHelperArtifact,
   type AndroidSnapshotHelperManifest,
-  type AndroidSnapshotHelperPreparedArtifact,
 } from './snapshot-helper-types.ts';
-
-const ANDROID_SNAPSHOT_HELPER_MAX_MANIFEST_BYTES = 64 * 1024;
-const ANDROID_SNAPSHOT_HELPER_MAX_APK_BYTES = 20 * 1024 * 1024;
 
 export type AndroidSnapshotHelperInstallOptions = {
   replace?: boolean;
@@ -37,88 +27,6 @@ const ANDROID_SNAPSHOT_HELPER_INSTALL_FLAG_OPTIONS = {
 } as const satisfies Record<string, AndroidSnapshotHelperInstallOptionName>;
 
 type AndroidSnapshotHelperInstallFlag = keyof typeof ANDROID_SNAPSHOT_HELPER_INSTALL_FLAG_OPTIONS;
-
-export async function verifyAndroidSnapshotHelperArtifact(
-  artifact: AndroidSnapshotHelperArtifact,
-): Promise<void> {
-  const actual = await sha256File(artifact.apkPath);
-  if (actual !== artifact.manifest.sha256) {
-    throw new AppError('COMMAND_FAILED', 'Android snapshot helper APK checksum mismatch', {
-      apkPath: artifact.apkPath,
-      expectedSha256: artifact.manifest.sha256,
-      actualSha256: actual,
-    });
-  }
-}
-
-export async function prepareAndroidSnapshotHelperArtifactFromManifestUrl(options: {
-  manifestUrl: string;
-  cacheDir?: string;
-  fetch?: typeof fetch;
-}): Promise<AndroidSnapshotHelperPreparedArtifact> {
-  const fetchImpl = options.fetch ?? fetch;
-  const manifestResponse = await fetchImpl(options.manifestUrl);
-  if (!manifestResponse.ok) {
-    throw new AppError('COMMAND_FAILED', 'Failed to download Android snapshot helper manifest', {
-      manifestUrl: options.manifestUrl,
-      status: manifestResponse.status,
-      statusText: manifestResponse.statusText,
-    });
-  }
-  const manifest = parseAndroidSnapshotHelperManifest(
-    JSON.parse(
-      (
-        await readResponseBodyWithLimit(
-          manifestResponse,
-          ANDROID_SNAPSHOT_HELPER_MAX_MANIFEST_BYTES,
-          'Android snapshot helper manifest',
-        )
-      ).toString('utf8'),
-    ),
-  );
-  if (!manifest.apkUrl) {
-    throw new AppError(
-      'COMMAND_FAILED',
-      'Android snapshot helper manifest does not include apkUrl',
-      {
-        manifestUrl: options.manifestUrl,
-      },
-    );
-  }
-
-  const cacheDir =
-    options.cacheDir ??
-    path.join(os.tmpdir(), `agent-device-android-snapshot-helper-${manifest.version}`);
-  const ownsCacheDir = !options.cacheDir;
-  await fsp.mkdir(cacheDir, { recursive: true });
-  const apkName =
-    manifest.assetName ?? `agent-device-android-snapshot-helper-${manifest.version}.apk`;
-  const apkPath = path.join(cacheDir, apkName);
-  const apkResponse = await fetchImpl(manifest.apkUrl);
-  if (!apkResponse.ok) {
-    throw new AppError('COMMAND_FAILED', 'Failed to download Android snapshot helper APK', {
-      apkUrl: manifest.apkUrl,
-      status: apkResponse.status,
-      statusText: apkResponse.statusText,
-    });
-  }
-  await fsp.writeFile(
-    apkPath,
-    await readResponseBodyWithLimit(
-      apkResponse,
-      ANDROID_SNAPSHOT_HELPER_MAX_APK_BYTES,
-      'Android snapshot helper APK',
-    ),
-  );
-  const artifact = { apkPath, manifest };
-  await verifyAndroidSnapshotHelperArtifact(artifact);
-  return {
-    ...artifact,
-    cleanup: async () => {
-      await fsp.rm(ownsCacheDir ? cacheDir : apkPath, { recursive: ownsCacheDir, force: true });
-    },
-  };
-}
 
 export function parseAndroidSnapshotHelperManifest(value: unknown): AndroidSnapshotHelperManifest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -172,55 +80,6 @@ export function readAndroidSnapshotHelperInstallOptions(
   return installOptionsFromSnapshotHelperInstallArgs(installArgs);
 }
 
-async function readResponseBodyWithLimit(
-  response: Response,
-  maxBytes: number,
-  label: string,
-): Promise<Buffer> {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength !== null) {
-    const parsedLength = Number(contentLength);
-    if (Number.isFinite(parsedLength) && parsedLength > maxBytes) {
-      throw new AppError('COMMAND_FAILED', `${label} download exceeds size limit`, {
-        contentLength: parsedLength,
-        maxBytes,
-      });
-    }
-  }
-
-  if (!response.body) {
-    const body = Buffer.from(await response.arrayBuffer());
-    if (body.length > maxBytes) {
-      throw new AppError('COMMAND_FAILED', `${label} download exceeds size limit`, {
-        contentLength: body.length,
-        maxBytes,
-      });
-    }
-    return body;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        throw new AppError('COMMAND_FAILED', `${label} download exceeds size limit`, {
-          contentLength: total,
-          maxBytes,
-        });
-      }
-      chunks.push(Buffer.from(value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return Buffer.concat(chunks, total);
-}
-
 function readAndroidSnapshotHelperManifestInstallArgs(value: unknown): string[] {
   const installArgs = readStringArray(value, 'installArgs');
   if (installArgs[0] !== 'install') {
@@ -271,16 +130,6 @@ function readSha256(value: unknown): string {
     );
   }
   return sha256;
-}
-
-async function sha256File(filePath: string): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-  });
 }
 
 function readString(value: unknown, field: string): string {

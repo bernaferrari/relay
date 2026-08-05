@@ -1,13 +1,14 @@
-import { parseSessionSurface, type SessionSurface } from '../../core/session-surface.ts';
+import { parseSessionSurface, type SessionSurface } from '@agent-device/contracts/session';
 import { resolveFrontmostMacOsApp } from '../../platforms/apple/os/macos/helper.ts';
 import {
   isIosFamily,
   isMacOs,
+  isSerialAddressablePlatform,
   publicPlatformString,
   type DeviceInfo,
-} from '../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import type { SessionRuntimeHints, SessionState } from '../types.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { successText } from '../../utils/success-text.ts';
 import type { StartupPerfSample } from './session-startup-metrics.ts';
 
@@ -16,6 +17,7 @@ export function buildOpenResult(params: {
   sessionStateDir: string;
   runnerLogPath: string;
   requestLogPath: string;
+  eventLogPath: string;
   appName?: string;
   appBundleId?: string;
   surface: SessionSurface;
@@ -24,12 +26,14 @@ export function buildOpenResult(params: {
   device?: DeviceInfo;
   runtime?: SessionRuntimeHints;
   runtimeHintCount: (runtime: SessionRuntimeHints) => number;
+  sessionReused: boolean;
 }): Record<string, unknown> {
   const {
     sessionName,
     sessionStateDir,
     runnerLogPath,
     requestLogPath,
+    eventLogPath,
     appName,
     appBundleId,
     surface,
@@ -38,6 +42,7 @@ export function buildOpenResult(params: {
     device,
     runtime,
     runtimeHintCount,
+    sessionReused,
   } = params;
   const result: Record<string, unknown> = {
     session: sessionName,
@@ -45,6 +50,8 @@ export function buildOpenResult(params: {
     sessionStateDir,
     runnerLogPath,
     requestLogPath,
+    eventLogPath,
+    sessionReused,
   };
   if (appName) result.appName = appName;
   if (appBundleId) result.appBundleId = appBundleId;
@@ -59,7 +66,7 @@ export function buildOpenResult(params: {
     result.device = device.name;
     result.id = device.id;
     result.kind = device.kind;
-    if (device.platform === 'android') {
+    if (isSerialAddressablePlatform(device.platform)) {
       result.serial = device.id;
     }
   }

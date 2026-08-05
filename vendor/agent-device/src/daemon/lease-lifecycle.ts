@@ -1,6 +1,8 @@
 import { emitDiagnostic } from '../utils/diagnostics.ts';
 import { leaseScopeToReleaseRequest } from '../core/lease-scope.ts';
+import { clearAdvisoryDeviceClaim } from './device-claims.ts';
 import type { LeaseRegistry } from './lease-registry.ts';
+import type { DeviceLease, LeaseLifecycleProvider } from '@agent-device/contracts/device';
 import { buildSessionLeaseFromRequest, type SessionLease } from './lease-context.ts';
 import {
   assertRequestLeaseAdmission,
@@ -8,9 +10,41 @@ import {
 } from './request-admission.ts';
 import type { SessionStore } from './session-store.ts';
 import type { DaemonRequest, SessionState } from './types.ts';
-import type { LeaseLifecycleProvider } from './handlers/lease.ts';
+
+export type ExpiredProviderLeaseRecovery = (lease: DeviceLease) => Promise<void>;
 
 export type SessionTeardown = (session: SessionState, sessionName: string) => Promise<void>;
+
+export async function releaseExpiredProviderLease(
+  recoverExpiredLease: ExpiredProviderLeaseRecovery | undefined,
+  lease: DeviceLease,
+): Promise<boolean> {
+  if (!lease.leaseProvider || !recoverExpiredLease) return false;
+
+  try {
+    await recoverExpiredLease(lease);
+    emitDiagnostic({
+      level: 'info',
+      phase: 'provider_lease_expired_released',
+      data: {
+        leaseId: lease.leaseId,
+        provider: lease.leaseProvider,
+      },
+    });
+    return true;
+  } catch (error) {
+    emitDiagnostic({
+      level: 'error',
+      phase: 'provider_lease_expiry_release_failed',
+      data: {
+        leaseId: lease.leaseId,
+        provider: lease.leaseProvider,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    return false;
+  }
+}
 
 export function assertLockedLeaseAdmissionPreflight(req: DaemonRequest): void {
   assertRequestLeaseAdmissionPreflight(req);
@@ -45,6 +79,17 @@ export async function cleanupExpiredLeasedSession(params: {
         reason: 'LEASE_EXPIRED',
         leaseId: lease.leaseId,
         session: session.name,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+  });
+  await clearAdvisoryDeviceClaim(session.deviceClaim).catch((error) => {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'leased_session_expiry_device_claim_clear_failed',
+      data: {
+        session: session.name,
+        deviceKey: session.deviceClaim?.deviceKey,
         error: error instanceof Error ? error.message : String(error),
       },
     });
@@ -101,17 +146,20 @@ export async function releaseSessionLease(params: {
 }): Promise<Record<string, unknown> | undefined> {
   const lease = params.session.lease;
   if (!lease) return undefined;
-  const result = params.leaseRegistry.releaseLease(
-    leaseScopeToReleaseRequest({
-      leaseId: lease.leaseId,
-      tenantId: lease.tenantId,
-      runId: lease.runId,
-      leaseBackend: lease.leaseBackend,
-      leaseProvider: lease.leaseProvider,
-      deviceKey: lease.deviceKey,
-      clientId: lease.clientId,
-    }),
-  );
+  const releaseRequest = leaseScopeToReleaseRequest({
+    leaseId: lease.leaseId,
+    tenantId: lease.tenantId,
+    runId: lease.runId,
+    leaseBackend: lease.leaseBackend,
+    leaseProvider: lease.leaseProvider,
+    deviceKey: lease.deviceKey,
+    clientId: lease.clientId,
+  });
+  const activeLease = params.leaseRegistry.getLease(releaseRequest);
+  const providerData = activeLease
+    ? await params.leaseLifecycleProvider?.release?.(activeLease)
+    : undefined;
+  const result = params.leaseRegistry.releaseLease(releaseRequest);
   emitDiagnostic({
     level: 'info',
     phase: 'session_lease_released',
@@ -121,5 +169,5 @@ export async function releaseSessionLease(params: {
       released: result.released,
     },
   });
-  return result.lease ? await params.leaseLifecycleProvider?.release?.(result.lease) : undefined;
+  return providerData;
 }

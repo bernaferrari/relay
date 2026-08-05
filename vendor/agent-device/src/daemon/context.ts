@@ -1,9 +1,9 @@
 import type { CommandFlags, DispatchContext } from '../core/dispatch-context.ts';
-import { resolveClickButton } from '../core/click-button.ts';
+import { resolveClickButton } from '@agent-device/contracts/interaction';
 import {
   screenshotFlagsFromOptions,
   type ScreenshotRuntimeFlags,
-} from '../contracts/screenshot.ts';
+} from '@agent-device/contracts/capture';
 import { getDiagnosticsMeta } from '../utils/diagnostics.ts';
 import { resolveRunnerLogicalLeaseContext } from './lease-context.ts';
 import type { DaemonRequest } from './types.ts';
@@ -36,10 +36,12 @@ export function contextFromFlags(
     iosXctestrunFile: flags?.iosXctestrunFile,
     iosXctestDerivedDataPath: flags?.iosXctestDerivedDataPath,
     iosXctestEnvDir: flags?.iosXctestEnvDir,
+    screenshotCaptureBackend: flags?.maestro?.screenshotCaptureBackend,
     snapshotInteractiveOnly: flags?.snapshotInteractiveOnly,
     snapshotDepth: flags?.snapshotDepth,
     snapshotScope: flags?.snapshotScope,
     snapshotRaw: flags?.snapshotRaw,
+    snapshotIncludeHiddenContentHints: flags?.snapshotIncludeHiddenContentHints,
     ...screenshotFlagsFromOptions(flags),
     count: flags?.count,
     intervalMs: flags?.intervalMs,

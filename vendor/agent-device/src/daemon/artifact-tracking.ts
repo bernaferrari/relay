@@ -2,12 +2,23 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { DaemonArtifactType } from '@agent-device/kernel/contracts';
 import { runCmd } from '../utils/exec.ts';
+import {
+  expiredTenantOwnedEntryError,
+  requireTenantOwnedEntry,
+  type TenantOwnedResourceKind,
+} from './tenant-owned-entry.ts';
 
 // --- Downloadable artifact tracking ---
 
 const ARTIFACT_CLEANUP_TIMEOUT_MS = 15 * 60 * 1000;
+
+const DOWNLOADABLE_ARTIFACT_RESOURCE: TenantOwnedResourceKind = {
+  label: 'Artifact',
+  expiredHint: `Downloadable artifacts are removed after download or after ${ARTIFACT_CLEANUP_TIMEOUT_MS / 60_000} minutes. Re-run the command that produced the artifact and download it again.`,
+};
 const DEFAULT_DOWNLOAD_MIME_TYPE = 'application/octet-stream';
 const DIRECTORY_ARCHIVE_MIME_TYPE = 'application/gzip';
 
@@ -21,6 +32,7 @@ type DirectoryArchive = {
 type ArtifactEntry = {
   artifactPath: string;
   tenantId?: string;
+  artifactType: DaemonArtifactType | undefined;
   fileName?: string;
   deleteAfterDownload: boolean;
   createdAt: number;
@@ -33,6 +45,8 @@ const pendingArtifacts = new Map<string, ArtifactEntry>();
 
 export type DownloadableArtifactInventoryEntry = {
   id: string;
+  // Optional on the wire (see DaemonArtifact.artifactType).
+  artifactType?: DaemonArtifactType;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -50,6 +64,7 @@ export type PreparedDownloadableArtifact = {
 export function trackDownloadableArtifact(params: {
   artifactPath: string;
   tenantId?: string;
+  artifactType: DaemonArtifactType | undefined;
   fileName?: string;
   deleteAfterDownload?: boolean;
 }): string {
@@ -62,6 +77,7 @@ export function trackDownloadableArtifact(params: {
   pendingArtifacts.set(artifactId, {
     artifactPath: params.artifactPath,
     tenantId: params.tenantId,
+    artifactType: params.artifactType,
     fileName: params.fileName,
     deleteAfterDownload: params.deleteAfterDownload !== false,
     createdAt,
@@ -102,6 +118,7 @@ export async function listDownloadableArtifacts(
     if (!payload) continue;
     artifacts.push({
       id,
+      ...(entry.artifactType !== undefined ? { artifactType: entry.artifactType } : {}),
       filename: payload.fileName ?? id,
       mimeType: payload.mimeType,
       sizeBytes: payload.sizeBytes,
@@ -129,13 +146,12 @@ function readDownloadableArtifactEntry(
   artifactId: string,
   tenantId: string | undefined,
 ): { entry: ArtifactEntry; stat: fs.Stats } {
-  const entry = pendingArtifacts.get(artifactId);
-  if (!entry) {
-    throw new AppError('INVALID_ARGS', `Artifact not found: ${artifactId}`);
-  }
-  if (entry.tenantId && entry.tenantId !== tenantId) {
-    throw new AppError('UNAUTHORIZED', 'Artifact belongs to a different tenant');
-  }
+  const entry = requireTenantOwnedEntry(
+    pendingArtifacts,
+    artifactId,
+    tenantId,
+    DOWNLOADABLE_ARTIFACT_RESOURCE,
+  );
   let stat: fs.Stats;
   try {
     stat = fs.statSync(entry.artifactPath);
@@ -234,7 +250,7 @@ async function createDirectoryArchive(
     // The artifact may be consumed or expire while tar is still archiving.
     if (pendingArtifacts.get(artifactId) !== entry) {
       fs.rmSync(tempDir, { recursive: true, force: true });
-      throw new AppError('INVALID_ARGS', `Artifact not found: ${artifactId}`);
+      throw expiredTenantOwnedEntryError(DOWNLOADABLE_ARTIFACT_RESOURCE, artifactId);
     }
     entry.directoryArchive = archive;
     return archive;
@@ -305,6 +321,11 @@ function cleanupDirectoryArchive(entry: ArtifactEntry): void {
 
 const UPLOAD_CLEANUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+const UPLOADED_ARTIFACT_RESOURCE: TenantOwnedResourceKind = {
+  label: 'Uploaded artifact',
+  expiredHint: `Uploaded artifacts expire ${UPLOAD_CLEANUP_TIMEOUT_MS / 60_000} minutes after upload. Upload the file again and retry with the new upload id.`,
+};
+
 type UploadEntry = {
   artifactPath: string;
   tempDir: string;
@@ -334,13 +355,12 @@ export function trackUploadedArtifact(params: {
 }
 
 export function prepareUploadedArtifact(uploadId: string, tenantId?: string): string {
-  const entry = pendingUploads.get(uploadId);
-  if (!entry) {
-    throw new AppError('INVALID_ARGS', `Uploaded artifact not found: ${uploadId}`);
-  }
-  if (entry.tenantId && entry.tenantId !== tenantId) {
-    throw new AppError('UNAUTHORIZED', 'Uploaded artifact belongs to a different tenant');
-  }
+  const entry = requireTenantOwnedEntry(
+    pendingUploads,
+    uploadId,
+    tenantId,
+    UPLOADED_ARTIFACT_RESOURCE,
+  );
   clearTimeout(entry.timer);
   return entry.artifactPath;
 }

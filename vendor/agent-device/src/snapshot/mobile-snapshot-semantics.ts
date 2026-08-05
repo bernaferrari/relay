@@ -1,8 +1,15 @@
-import { isRectVisibleInViewport, resolveViewportRect } from '../utils/rect-visibility.ts';
+import { isRectVisibleInViewport } from '@agent-device/kernel/rect';
+import {
+  buildSnapshotNodeMap,
+  findNearestScrollableAncestor,
+  isNodeVisibleInEffectiveViewport,
+  isTapPointInsideViewport,
+  resolveEffectiveViewportRect,
+  resolveViewportRect,
+} from '@agent-device/contracts/snapshot';
 import { inferVerticalScrollIndicatorDirections } from '../utils/scroll-indicator.ts';
-import type { HiddenContentHint, Rect, SnapshotNode } from '../kernel/snapshot.ts';
-import { buildSnapshotNodeMap, displayNodeLabel } from './snapshot-tree.ts';
-import { isScrollableNodeLike } from '../utils/scrollable.ts';
+import type { HiddenContentHint, Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
+import { displayNodeLabel } from './snapshot-tree.ts';
 
 type Direction = 'above' | 'below';
 
@@ -77,31 +84,101 @@ function analyzeMobileSnapshotVisibility(nodes: SnapshotNode[]): {
   return { byIndex, visibleNodeIndexes, offscreenNodes, hintedContainers };
 }
 
-export function isNodeVisibleInEffectiveViewport(
-  node: Pick<SnapshotNode, 'rect' | 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'>,
-  nodes: SnapshotNode[],
-  byIndex: Map<number, SnapshotNode> = buildSnapshotNodeMap(nodes),
+/**
+ * #1542: the pure geometry boundary the off-screen refusal double-check's
+ * direct probe (`src/daemon/offscreen-target-probe.ts`) reduces its decision
+ * to, once it has a fresh, tree-independent read of one element. A probe
+ * confirms the element genuinely on-screen only when BOTH hold: XCTest's own
+ * live hit-test says `hittable`, AND the tap point sits inside the root
+ * viewport (`isTapPointInsideViewport`, above). Either signal alone is
+ * insufficient — `hittable` with no viewport check could confirm an element
+ * that is technically tappable but whose reported rect drifted outside the
+ * app window; a viewport check with no `hittable` check could confirm an
+ * element occluded or clipped in a way geometry alone can't see. Kept pure
+ * (and separate from the network read) so it is unit-testable without a
+ * runner mock.
+ */
+export function isConfirmedOnScreenProbe(
+  probe: { rect: Rect; hittable: boolean },
+  rootViewport: Rect | null,
 ): boolean {
-  if (!node.rect) {
-    return true;
-  }
-  const viewport = resolveEffectiveViewportRect(node, nodes, byIndex);
-  if (!viewport) {
-    return true;
-  }
-  return isRectVisibleInViewport(node.rect, viewport);
+  return probe.hittable && isTapPointInsideViewport(probe.rect, rootViewport);
 }
 
-export function resolveEffectiveViewportRect(
+/** The concrete `scroll <direction>` that brings an off-screen target into view. */
+export type OffscreenScrollDirection = 'up' | 'down' | 'left' | 'right';
+
+/**
+ * The direction to `scroll` so an off-screen interaction target comes into view.
+ * Derived from the SAME two boundaries `isNodeVisibleOnScreen` rejects against,
+ * so every rejected target yields a direction (#1366) — not just the subset a
+ * rect-vs-one-viewport check catches:
+ *
+ *  1. The rect has no overlap with its effective (scroll-container) viewport —
+ *     an item scrolled out of an on-screen list. Direction from the container.
+ *  2. The rect still overlaps its container, but the tap-point CENTER is pushed
+ *     outside the ROOT viewport — a child inside an off-screen drawer, or a row
+ *     straddling the viewport edge whose center is past it. The rect-vs-effective
+ *     -viewport form misses both; this reads the boundary that actually failed.
+ *
+ * Direction follows the reveal convention the CLI hints already use
+ * (`cli-help.ts`): off-screen below -> scroll down, above -> up, horizontal
+ * mirror; the axis with the largest center overshoot wins so a corner-off target
+ * gets its dominant move. Returns null only when the node is on-screen.
+ */
+export function classifyOffscreenScrollDirection(
   node: Pick<SnapshotNode, 'rect' | 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'>,
   nodes: SnapshotNode[],
   byIndex: Map<number, SnapshotNode> = buildSnapshotNodeMap(nodes),
-): Rect | null {
-  const clippingAncestorRect = findNearestScrollableAncestorRect(node, byIndex);
-  if (clippingAncestorRect) {
-    return clippingAncestorRect;
+): OffscreenScrollDirection | null {
+  if (!node.rect) {
+    return null;
   }
-  return resolveViewportRect(nodes, node.rect ?? { x: 0, y: 0, width: 0, height: 0 });
+  // Boundary 1: fully separated from the effective (scroll-container) viewport.
+  const effectiveViewport = resolveEffectiveViewportRect(node, nodes, byIndex);
+  if (effectiveViewport && !isRectVisibleInViewport(node.rect, effectiveViewport)) {
+    const direction = directionOfCenterOutsideViewport(node.rect, effectiveViewport);
+    if (direction) {
+      return direction;
+    }
+  }
+  // Boundary 2: tap-point center outside the root viewport (off-screen container
+  // or an edge-straddling rect whose center is past the frame).
+  const rootViewport = resolveViewportRect(nodes, node.rect);
+  if (rootViewport && !isTapPointInsideViewport(node.rect, rootViewport)) {
+    const direction = directionOfCenterOutsideViewport(node.rect, rootViewport);
+    if (direction) {
+      return direction;
+    }
+  }
+  return null;
+}
+
+/**
+ * The dominant edge the rect's tap-point center sits beyond, or null when the
+ * center is within the viewport on both axes. Uses the same unrounded center as
+ * `isTapPointInsideViewport` so the direction agrees with the rejection at the
+ * pixel boundary.
+ */
+function directionOfCenterOutsideViewport(
+  rect: Rect,
+  viewport: Rect,
+): OffscreenScrollDirection | null {
+  const centerX = rect.x + rect.width / 2;
+  const centerY = rect.y + rect.height / 2;
+  const overshoots: Array<{ direction: OffscreenScrollDirection; amount: number }> = [
+    { direction: 'down', amount: centerY - (viewport.y + viewport.height) },
+    { direction: 'up', amount: viewport.y - centerY },
+    { direction: 'right', amount: centerX - (viewport.x + viewport.width) },
+    { direction: 'left', amount: viewport.x - centerX },
+  ];
+  let best: { direction: OffscreenScrollDirection; amount: number } | null = null;
+  for (const candidate of overshoots) {
+    if (candidate.amount > 0 && (!best || candidate.amount > best.amount)) {
+      best = candidate;
+    }
+  }
+  return best?.direction ?? null;
 }
 
 function deriveContainerHints(
@@ -296,7 +373,7 @@ function findNearestVisibleScrollableAncestor(
   visibleNodeIndexes: Set<number>,
   byIndex: Map<number, SnapshotNode>,
 ): SnapshotNode | null {
-  return findNearestScrollableAncestorMatching(node, byIndex, (current) =>
+  return findNearestScrollableAncestor(node, byIndex, (current) =>
     visibleNodeIndexes.has(current.index),
   );
 }
@@ -342,32 +419,4 @@ function inferDirectionsFromScrollIndicator(node: SnapshotNode): Set<Direction> 
     directions.add('below');
   }
   return directions.size > 0 ? directions : null;
-}
-
-function findNearestScrollableAncestorRect(
-  node: Pick<SnapshotNode, 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'>,
-  byIndex: Map<number, SnapshotNode>,
-): Rect | null {
-  return (
-    findNearestScrollableAncestorMatching(node, byIndex, (current) => Boolean(current.rect))
-      ?.rect ?? null
-  );
-}
-
-function findNearestScrollableAncestorMatching(
-  node: Pick<SnapshotNode, 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'>,
-  byIndex: Map<number, SnapshotNode>,
-  predicate: (node: SnapshotNode) => boolean,
-): SnapshotNode | null {
-  let current = typeof node.parentIndex === 'number' ? byIndex.get(node.parentIndex) : undefined;
-  const visited = new Set<number>();
-  while (current && !visited.has(current.index)) {
-    visited.add(current.index);
-    if (predicate(current) && isScrollableNodeLike(current)) {
-      return current;
-    }
-    current =
-      typeof current.parentIndex === 'number' ? byIndex.get(current.parentIndex) : undefined;
-  }
-  return null;
 }

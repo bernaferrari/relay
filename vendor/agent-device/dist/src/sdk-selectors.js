@@ -1,0 +1,1 @@
+import{W as e}from"./sdk-batch-runner.js";function t(t,n,r){return e(typeof t==`string`?t:t.raw,n,r)}export{t};

@@ -1,8 +1,11 @@
+import { useRouter } from 'expo-router';
+
 import { AppFrame } from '../../src/components';
 import { useLabState } from '../../src/lab-state';
 import { SettingsScreen } from '../../src/screens/SettingsScreen';
 
 export default function SettingsRoute() {
+  const router = useRouter();
   const state = useLabState();
 
   return (
@@ -12,6 +15,10 @@ export default function SettingsRoute() {
         diagnosticsLoading={state.diagnosticsLoading}
         diagnosticsState={state.diagnosticsState}
         notificationsEnabled={state.notificationsEnabled}
+        onOpenAccessorySetup={() => router.push('/accessory-setup')}
+        onOpenAutomationLab={() => router.push('/automation')}
+        onOpenInertSurface={() => router.push('/inert')}
+        onOpenWebViewLab={() => router.push('/webview')}
         onConfirmReset={state.resetLabState}
         onLoadDiagnostics={state.loadDiagnostics}
         onRetryDiagnostics={state.retryDiagnostics}

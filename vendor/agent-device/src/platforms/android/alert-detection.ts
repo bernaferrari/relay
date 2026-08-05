@@ -1,5 +1,5 @@
-import { centerOfRect, type RawSnapshotNode } from '../../kernel/snapshot.ts';
-import type { AlertInfo, AlertSource } from '../../alert-contract.ts';
+import { centerOfRect, type RawSnapshotNode } from '@agent-device/kernel/snapshot';
+import type { AlertInfo, AlertSource } from '@agent-device/contracts/interaction';
 
 type AndroidAlertButtonRole = 'accept' | 'dismiss' | 'neutral';
 
@@ -30,6 +30,11 @@ const ANDROID_PERMISSION_PACKAGES = new Set([
   'com.google.android.packageinstaller',
   'com.android.packageinstaller',
 ]);
+
+/** Packages that host runtime-permission and install prompts — a legitimate `alert` source, never an app escape. */
+export function isAndroidPermissionPackage(packageName: string): boolean {
+  return ANDROID_PERMISSION_PACKAGES.has(packageName);
+}
 const ANDROID_SYSTEM_DIALOG_PACKAGES = new Set(['android', 'com.android.systemui']);
 const ANDROID_ALERT_ID_PATTERN =
   /^android:id\/(?:alertTitle|message|button[123]|parentPanel|buttonPanel|contentPanel)$/i;
@@ -41,6 +46,15 @@ const ACCEPT_LABEL_PATTERN =
   /^(?:ok|allow|allow all|while using the app|only this time|yes|continue|save|confirm|turn on|open settings)$/i;
 const DISMISS_LABEL_PATTERN =
   /^(?:cancel|deny|don.t allow|don’t allow|not now|no|dismiss|close|close app|later|skip)$/i;
+
+export function classifyAndroidAlertIdentifier(
+  identifier: string | null,
+): 'button' | 'content' | undefined {
+  if (identifier === null) return undefined;
+  if (ANDROID_ALERT_BUTTON_ID_PATTERN.test(identifier)) return 'button';
+  if (ANDROID_ALERT_ID_PATTERN.test(identifier)) return 'content';
+  return undefined;
+}
 
 export function findAndroidAlertCandidate(nodes: RawSnapshotNode[]): AndroidAlertCandidate | null {
   const candidate = findAndroidAlertNodes(nodes);

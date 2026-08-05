@@ -17,6 +17,10 @@ export interface SettingsScreenProps {
   diagnosticsState: 'idle' | 'ready' | 'error';
   notificationsEnabled: boolean;
   reducedMotionEnabled: boolean;
+  onOpenAccessorySetup: () => void;
+  onOpenAutomationLab: () => void;
+  onOpenInertSurface: () => void;
+  onOpenWebViewLab: () => void;
   onLoadDiagnostics: () => void;
   onRetryDiagnostics: () => void;
   onSetNotificationsEnabled: (value: boolean) => void;
@@ -58,6 +62,50 @@ export function SettingsScreen(props: SettingsScreenProps) {
         title="Settings"
         testID="settings-title"
       />
+
+      <SectionCard
+        subtitle="Open deterministic app-visible canaries for simulator E2E commands."
+        title="Automation"
+      >
+        <ActionButton
+          label="Open automation lab"
+          onPress={props.onOpenAutomationLab}
+          testID="open-automation-lab"
+        />
+      </SectionCard>
+
+      <SectionCard
+        subtitle="Open the physical iOS AccessorySetupUI verification fixture."
+        title="Accessory setup"
+      >
+        <ActionButton
+          label="Open accessory setup lab"
+          onPress={props.onOpenAccessorySetup}
+          testID="open-accessory-setup-lab"
+        />
+      </SectionCard>
+
+      <SectionCard
+        subtitle="Open a surface where a tap provably changes nothing on screen."
+        title="Inert surface"
+      >
+        <ActionButton
+          label="Open inert surface"
+          onPress={props.onOpenInertSurface}
+          testID="open-inert-surface"
+        />
+      </SectionCard>
+
+      <SectionCard
+        subtitle="Inspect native accessibility snapshots for semantic content inside a WebView."
+        title="WebView accessibility"
+      >
+        <ActionButton
+          label="Open WebView accessibility lab"
+          onPress={props.onOpenWebViewLab}
+          testID="open-webview-lab"
+        />
+      </SectionCard>
 
       <SectionCard subtitle="Simple switch rows for durable selectors." title="Preferences">
         <ToggleRow

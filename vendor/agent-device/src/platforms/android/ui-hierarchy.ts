@@ -1,13 +1,21 @@
-import type { RawSnapshotNode, Rect, SnapshotOptions } from '../../kernel/snapshot.ts';
-import { parseBounds } from '../../utils/bounds.ts';
-import { isScrollableType } from '../../utils/scrollable.ts';
+import type { RawSnapshotNode, Rect, SnapshotOptions } from '@agent-device/kernel/snapshot';
+import { parseBounds } from '@agent-device/kernel/bounds';
+import { decodeXmlCharacterReferences } from '@agent-device/xml';
+import { isScrollableType } from '@agent-device/contracts/snapshot';
 import { intersectArea } from '../../utils/screenshot-geometry.ts';
+import {
+  type AndroidSystemChromeProvenance,
+  isAndroidSystemChromeWindowResourceId,
+} from '@agent-device/contracts/platform';
+
+type AndroidRawSnapshotNode = RawSnapshotNode & AndroidSystemChromeProvenance;
 
 export type AndroidSnapshotAnalysis = {
   rawNodeCount: number;
   maxDepth: number;
 };
 
+/** Parsed node metadata plus status/navigation subtree provenance when present. */
 export type AndroidUiNodeMetadata = {
   text: string | null;
   desc: string | null;
@@ -32,14 +40,45 @@ export type AndroidUiNodeMetadata = {
   windowActive?: boolean;
   windowFocused?: boolean;
   windowRect?: Rect;
-};
+} & AndroidSystemChromeProvenance;
 
+/**
+ * Membership of the status-bar/nav-bar subtree over a `<node>` token stream: the
+ * container id is the only chrome signal in the tree, its clock/battery/wifi
+ * leaves carrying no marker of their own.
+ */
+function createAndroidChromeSubtreeTracker() {
+  const openElements: boolean[] = [];
+  const inChromeNow = (): boolean => openElements[openElements.length - 1] === true;
+  return {
+    /** Enters an opening tag; returns whether that node is inside the chrome subtree. */
+    open(resourceId: string | null | undefined, selfClosing: boolean): boolean {
+      const inChrome = inChromeNow() || isAndroidSystemChromeWindowResourceId(resourceId);
+      if (!selfClosing) openElements.push(inChrome);
+      return inChrome;
+    },
+    /** Handles `</node>`. */
+    close(): void {
+      openElements.pop();
+    },
+  };
+}
+
+/** Streams `<node>` metadata in document order, carrying status-bar/nav-bar provenance. */
 export function* androidUiNodes(xml: string): IterableIterator<AndroidUiNodeMetadata> {
-  const nodeRegex = /<node\b[^>]*>/g;
-  let match = nodeRegex.exec(xml);
+  const tokenRegex = /<node\b[^>]*>|<\/node>/g;
+  const chrome = createAndroidChromeSubtreeTracker();
+  let match = tokenRegex.exec(xml);
   while (match) {
-    yield readAndroidUiNodeMetadata(match[0]);
-    match = nodeRegex.exec(xml);
+    const token = match[0];
+    if (token.startsWith('</node')) {
+      chrome.close();
+    } else {
+      const metadata = readAndroidUiNodeMetadata(token);
+      const inChrome = chrome.open(metadata.resourceId, token.endsWith('/>'));
+      yield inChrome ? { ...metadata, systemChrome: true } : metadata;
+    }
+    match = tokenRegex.exec(xml);
   }
 }
 
@@ -67,14 +106,14 @@ export function parseUiHierarchy(
 }
 
 export type AndroidBuiltSnapshot = {
-  nodes: RawSnapshotNode[];
+  nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
   truncated?: boolean;
   analysis: AndroidSnapshotAnalysis;
 };
 
 type AndroidSnapshotBuildState = {
-  nodes: RawSnapshotNode[];
+  nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
   maxNodes?: number;
   maxDepth: number;
@@ -115,6 +154,16 @@ export function buildUiHierarchySnapshot(
   return state.truncated ? { ...snapshot, truncated: true } : snapshot;
 }
 
+/**
+ * Chrome provenance is stamped HERE, while the tree still has the wrapper that
+ * carries it. `shouldIncludeAndroidNode` drops `status_bar*`/`navigation_bar*`
+ * wrappers and re-parents their children upward, so downstream classifiers see
+ * a clock/battery/wifi leaf sitting next to real content with nothing left to
+ * say which region it came from. Recording it on the way down (like
+ * `ancestorHittable`) means the answer is identical in every capture shape —
+ * `--raw` keeps the wrapper, a default capture drops it, both stamp the same
+ * descendants.
+ */
 function walkUiHierarchyNode(
   state: AndroidSnapshotBuildState,
   node: AndroidNode,
@@ -122,6 +171,7 @@ function walkUiHierarchyNode(
   parentIndex?: number,
   ancestorHittable: boolean = false,
   ancestorCollection: boolean = false,
+  ancestorSystemChrome: boolean = false,
 ): void {
   if (state.maxNodes !== undefined && state.nodes.length >= state.maxNodes) {
     state.truncated = true;
@@ -138,8 +188,10 @@ function walkUiHierarchyNode(
         hasInteractiveDescendant(state, node),
         ancestorCollection,
       );
+  const systemChrome =
+    ancestorSystemChrome || isAndroidSystemChromeWindowResourceId(node.identifier);
   const currentIndex = include
-    ? appendAndroidSnapshotNode(state, node, depth, parentIndex)
+    ? appendAndroidSnapshotNode(state, node, parentIndex, systemChrome)
     : parentIndex;
   const nextAncestorHittable = ancestorHittable || Boolean(node.hittable);
   const nextAncestorCollection = ancestorCollection || isCollectionContainerType(node.type);
@@ -151,6 +203,7 @@ function walkUiHierarchyNode(
       currentIndex,
       nextAncestorHittable,
       nextAncestorCollection,
+      systemChrome,
     );
     if (state.truncated) return;
   }
@@ -159,10 +212,14 @@ function walkUiHierarchyNode(
 function appendAndroidSnapshotNode(
   state: AndroidSnapshotBuildState,
   node: AndroidNode,
-  depth: number,
-  parentIndex?: number,
+  parentIndex: number | undefined,
+  systemChrome: boolean,
 ): number {
   const currentIndex = state.nodes.length;
+  // Snapshot filtering removes Compose layout wrappers. Keep depth aligned with
+  // the retained parent edge, rather than the source tree's depth: otherwise a
+  // fixed sibling that follows scroll content can be re-parented under the last
+  // retained row by normalizeSnapshotTree's depth fallback (#1377).
   state.sourceNodes.push(node);
   state.nodes.push({
     index: currentIndex,
@@ -173,14 +230,23 @@ function appendAndroidSnapshotNode(
     bundleId: node.packageName ?? undefined,
     rect: node.rect,
     enabled: node.enabled,
+    focused: node.focused,
     visibleToUser: node.visibleToUser,
     hittable: node.hittable,
-    depth,
+    depth: compactedAndroidNodeDepth(state.nodes, parentIndex),
     parentIndex,
     ...(node.hiddenContentAbove ? { hiddenContentAbove: true } : {}),
     ...(node.hiddenContentBelow ? { hiddenContentBelow: true } : {}),
+    ...(systemChrome ? { systemChrome: true } : {}),
   });
   return currentIndex;
+}
+
+function compactedAndroidNodeDepth(
+  nodes: AndroidRawSnapshotNode[],
+  parentIndex: number | undefined,
+): number {
+  return parentIndex === undefined ? 0 : (nodes[parentIndex]?.depth ?? -1) + 1;
 }
 
 function hasInteractiveDescendant(state: AndroidSnapshotBuildState, node: AndroidNode): boolean {
@@ -305,7 +371,7 @@ function readNextXmlAttribute(
   if (valueEnd < 0 || valueEnd >= end) return undefined;
   return {
     name,
-    value: decodeXmlAttributeValue(node.slice(valueStart, valueEnd)),
+    value: decodeXmlCharacterReferences(node.slice(valueStart, valueEnd)),
     nextCursor: valueEnd + 1,
   };
 }
@@ -340,74 +406,6 @@ function isXmlAttributeNameTerminator(char: string): boolean {
   return char === '=' || char === '/' || char === '>' || isXmlWhitespace(char);
 }
 
-function decodeXmlAttributeValue(value: string): string {
-  let decoded = '';
-  let cursor = 0;
-  while (cursor < value.length) {
-    const entityStart = value.indexOf('&', cursor);
-    if (entityStart < 0) {
-      decoded += value.slice(cursor);
-      break;
-    }
-    decoded += value.slice(cursor, entityStart);
-    const entityEnd = value.indexOf(';', entityStart + 1);
-    if (entityEnd < 0) {
-      decoded += value.slice(entityStart);
-      break;
-    }
-    const rawEntity = value.slice(entityStart + 1, entityEnd);
-    decoded += decodeXmlEntity(rawEntity) ?? value.slice(entityStart, entityEnd + 1);
-    cursor = entityEnd + 1;
-  }
-  return decoded;
-}
-
-function decodeXmlEntity(entity: string): string | undefined {
-  switch (entity) {
-    case 'amp':
-      return '&';
-    case 'lt':
-      return '<';
-    case 'gt':
-      return '>';
-    case 'quot':
-      return '"';
-    case 'apos':
-      return "'";
-    default:
-      return decodeNumericXmlEntity(entity);
-  }
-}
-
-function decodeNumericXmlEntity(entity: string): string | undefined {
-  if (!entity.startsWith('#')) return undefined;
-  const radix = entity[1]?.toLowerCase() === 'x' ? 16 : 10;
-  const digits = radix === 16 ? entity.slice(2) : entity.slice(1);
-  if (!digits || !isValidNumericEntityDigits(digits, radix)) return undefined;
-  const codePoint = Number.parseInt(digits, radix);
-  if (!Number.isFinite(codePoint)) return undefined;
-  try {
-    return String.fromCodePoint(codePoint);
-  } catch {
-    return undefined;
-  }
-}
-
-function isValidNumericEntityDigits(digits: string, radix: 10 | 16): boolean {
-  for (const digit of digits) {
-    const code = digit.charCodeAt(0);
-    const isDecimal = code >= 48 && code <= 57;
-    if (radix === 10) {
-      if (!isDecimal) return false;
-      continue;
-    }
-    const isUpperHex = code >= 65 && code <= 70;
-    const isLowerHex = code >= 97 && code <= 102;
-    if (!isDecimal && !isUpperHex && !isLowerHex) return false;
-  }
-  return true;
-}
-
 function readXmlAttr(attrs: Map<string, string>, name: string): string | null {
   return attrs.get(name) ?? null;
 }
@@ -422,6 +420,7 @@ export type AndroidUiHierarchy = {
   enabled?: boolean;
   visibleToUser?: boolean;
   drawingOrder?: number;
+  focused?: boolean;
   hittable?: boolean;
   depth: number;
   parentIndex?: number;
@@ -490,6 +489,7 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
       packageName: attrs.packageName,
       rect: attrs.rect,
       enabled: attrs.enabled,
+      focused: attrs.focused,
       visibleToUser: attrs.visibleToUser,
       drawingOrder: attrs.drawingOrder,
       hittable: attrs.clickable ?? attrs.focusable,
@@ -546,9 +546,22 @@ function pruneAndroidCoveredSubtrees(node: AndroidNode, state: AndroidTreePruneS
   const siblings = node.children;
   const coveringCandidates = siblings.filter((sibling) => canCoverSibling(sibling, state));
   if (coveringCandidates.length === 0) return;
-  node.children = siblings.filter(
-    (child) => !isCoveredByHigherDrawingOrderSibling(child, coveringCandidates),
+  node.children = siblings.filter((child) => shouldKeepAndroidSibling(child, coveringCandidates));
+}
+
+function shouldKeepAndroidSibling(
+  node: AndroidNode,
+  coveringCandidates: AndroidCoveringCandidate[],
+): boolean {
+  return (
+    isSemanticIdentifierMarker(node) ||
+    !isCoveredByHigherDrawingOrderSibling(node, coveringCandidates)
   );
+}
+
+function isSemanticIdentifierMarker(node: AndroidNode): boolean {
+  // RN can emit a screen-level testID as an empty sibling beside its rendered navigator.
+  return hasMeaningfulIdentifier(node) && !node.hittable && node.children.length === 0;
 }
 
 function isCoveredByHigherDrawingOrderSibling(
@@ -558,7 +571,6 @@ function isCoveredByHigherDrawingOrderSibling(
   if (node.visibleToUser === false || node.drawingOrder === undefined || !hasPositiveRect(node)) {
     return false;
   }
-
   for (const sibling of coveringCandidates) {
     if (sibling === node || sibling.drawingOrder <= node.drawingOrder) {
       continue;
@@ -568,6 +580,11 @@ function isCoveredByHigherDrawingOrderSibling(
     }
   }
   return false;
+}
+
+function hasMeaningfulIdentifier(node: AndroidNode): boolean {
+  const identifier = node.identifier?.trim() ?? '';
+  return Boolean(identifier && !isGenericAndroidId(identifier));
 }
 
 function canCoverSibling(
@@ -735,6 +752,7 @@ function shouldIncludeInteractiveAndroidNode(
   ancestorCollection: boolean,
 ): boolean {
   if (hasNonPositiveRect(node)) return false;
+  if (node.focused) return true;
   if (node.hittable) return true;
   if (isScrollableType(info.type) && descendantHittable) return true;
   return shouldIncludeInteractiveProxyNode(

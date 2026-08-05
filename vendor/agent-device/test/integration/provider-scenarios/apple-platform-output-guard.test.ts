@@ -8,8 +8,8 @@ import type { RecordingProvider } from '../../../src/daemon/recording-provider.t
 import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
 import { PROVIDER_SCENARIO_IOS_SIMULATOR, PROVIDER_SCENARIO_MACOS } from './fixtures.ts';
 import {
+  createProviderIosSimulatorRecordingProcess,
   createProviderScenarioHarness,
-  likelyPlayableMp4Container,
   type ProviderScenarioHarness,
   type ProviderScenarioRpcResult,
 } from './harness.ts';
@@ -68,6 +68,7 @@ const DRIVEN_COMMANDS: Record<string, DriveSpec> = {
   // -- platform-bearing priority commands (success responses emit the leaf) --
   [PUBLIC_COMMANDS.open]: ({ world }) => [WORLDS[world].open],
   [PUBLIC_COMMANDS.appState]: () => one(),
+  [PUBLIC_COMMANDS.capabilities]: () => one(),
   [PUBLIC_COMMANDS.devices]: () => one(),
   [PUBLIC_COMMANDS.doctor]: () => one(),
   [PUBLIC_COMMANDS.boot]: () => one(),
@@ -91,6 +92,7 @@ const DRIVEN_COMMANDS: Record<string, DriveSpec> = {
 
   // -- observability --
   [PUBLIC_COMMANDS.logs]: () => one(),
+  [PUBLIC_COMMANDS.events]: () => one(),
   [PUBLIC_COMMANDS.network]: () => one(),
   [PUBLIC_COMMANDS.audio]: () => one(),
   [PUBLIC_COMMANDS.screenshot]: ({ tmpDir }) => one([], { out: path.join(tmpDir, 'shot.png') }),
@@ -117,9 +119,10 @@ const DRIVEN_COMMANDS: Record<string, DriveSpec> = {
   [PUBLIC_COMMANDS.home]: () => one(),
   [PUBLIC_COMMANDS.focus]: () => one(['next']),
   [PUBLIC_COMMANDS.gesture]: () => one(['pinch', '0.8', '10', '10']),
-  [PUBLIC_COMMANDS.rotate]: () => one(['left']),
+  [PUBLIC_COMMANDS.orientation]: () => one(['left']),
   [PUBLIC_COMMANDS.scroll]: () => one(['down']),
   [PUBLIC_COMMANDS.swipe]: () => one(['up']),
+  [PUBLIC_COMMANDS.tvRemote]: () => one(['select']),
   [PUBLIC_COMMANDS.appSwitcher]: () => one(),
 
   // -- orchestration (drive to an error response; still scanned) --
@@ -330,13 +333,8 @@ function permissiveTool(world: World) {
 
 function permissiveRecording(): RecordingProvider {
   return {
-    startIosSimulatorRecording: ({ outPath }) => {
-      fs.writeFileSync(outPath, likelyPlayableMp4Container());
-      return {
-        child: { kill: () => true },
-        wait: Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }),
-      };
-    },
+    startIosSimulatorRecording: ({ outPath }) =>
+      createProviderIosSimulatorRecordingProcess(outPath),
   };
 }
 

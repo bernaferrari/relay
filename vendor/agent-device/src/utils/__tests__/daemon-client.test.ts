@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
@@ -12,26 +12,59 @@ import {
   supportsLoopbackBind,
 } from '../../__tests__/test-utils/index.ts';
 import { runCmdBackground } from '../exec.ts';
+import { sendToDaemon } from '../../daemon/client/daemon-client.ts';
+import { computeDaemonCodeSignature } from '../../daemon/code-signature.ts';
+import { downloadRemoteArtifact } from '../../remote/daemon-artifacts.ts';
 import {
-  canConnectSocket,
   cleanupFailedDaemonStartupMetadata,
-  computeDaemonCodeSignature,
-  downloadRemoteArtifact,
-  resolveDaemonRequestTimeoutMs,
   resolveDaemonStartupHint,
-  sendToDaemon,
+} from '../../daemon/client/daemon-client-metadata.ts';
+import { canConnectSocket } from '../../daemon/client/daemon-client-transport.ts';
+import { DAEMON_RPC_PROTOCOL_VERSION } from '../../daemon/http-health.ts';
+import {
+  resolveDaemonRequestTimeoutMs,
   shouldResetDaemonAfterRequestTimeout,
-} from '../../daemon/client/daemon-client.ts';
+} from '../../daemon/client/daemon-client-timeout.ts';
 import { resolveDaemonPaths } from '../../daemon/config.ts';
-import type { RequestProgressEvent } from '../../daemon/request-progress.ts';
+import type { RequestProgressEvent } from '../../request/progress.ts';
 import {
   isProcessAlive,
   readProcessCommand,
   readProcessStartTime,
-  stopProcessForTakeover,
   waitForProcessExit,
-} from '../process-identity.ts';
+} from '../host-process.ts';
+import { stopProcessForTakeover } from '../../daemon/daemon-process.ts';
 import { findProjectRoot, readVersion } from '../version.ts';
+
+// readProcessStartTime/readProcessCommand shell out to `ps` with a 1s
+// timeout (see host-process.ts). isAgentDeviceDaemonProcess re-reads both for
+// every liveness check, so a spawned-daemon fixture that is proven live once
+// (a real read, right after the process starts) can still be misclassified
+// as dead later if a *subsequent* `ps` call happens to miss its deadline
+// under full-suite CPU contention. mockReadProcessStartTime/mockReadProcessCommand
+// default to `undefined`, which falls through to the real implementation for
+// every pid in every test in this file; only the one test below that needs a
+// stable answer for its spawned pid configures an override, and clears it
+// afterward.
+const { mockReadProcessStartTime, mockReadProcessCommand } = vi.hoisted(() => ({
+  mockReadProcessStartTime: vi.fn<(pid: number) => string | null | undefined>(),
+  mockReadProcessCommand: vi.fn<(pid: number) => string | null | undefined>(),
+}));
+
+vi.mock('../host-process.ts', async () => {
+  const actual = await vi.importActual<typeof import('../host-process.ts')>('../host-process.ts');
+  return {
+    ...actual,
+    readProcessStartTime: (pid: number) => {
+      const overridden = mockReadProcessStartTime(pid);
+      return overridden !== undefined ? overridden : actual.readProcessStartTime(pid);
+    },
+    readProcessCommand: (pid: number) => {
+      const overridden = mockReadProcessCommand(pid);
+      return overridden !== undefined ? overridden : actual.readProcessCommand(pid);
+    },
+  };
+});
 
 type MockHttpResponse = EventEmitter & {
   headers?: Record<string, string>;
@@ -207,6 +240,126 @@ test('snapshot request timeout preserves daemon metadata for follow-up evidence 
   assert.equal(shouldResetDaemonAfterRequestTimeout(undefined), true);
 });
 
+test('read-only polling command timeouts preserve the daemon like snapshot', () => {
+  // wait/find are repeated snapshot captures: a stalled accessibility bridge
+  // must not turn one timed-out poll into a daemon reset that loses every session.
+  assert.equal(shouldResetDaemonAfterRequestTimeout('wait'), false);
+  assert.equal(shouldResetDaemonAfterRequestTimeout('find'), false);
+  // Interaction commands resolve targets through the same capture, so their
+  // timeouts preserve the daemon too (#1105); non-capture commands still reset.
+  assert.equal(shouldResetDaemonAfterRequestTimeout('press'), false);
+  assert.equal(shouldResetDaemonAfterRequestTimeout('open'), true);
+});
+
+test('wait request timeout extends past the user-supplied wait budget', () => {
+  const base = {
+    session: 'default',
+    positionals: [] as string[],
+    flags: {},
+    meta: {},
+  };
+
+  // Explicit budgets beyond the default envelope extend it (budget + margin).
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'wait',
+      positionals: ['text', 'Ready', '180000'],
+    }),
+    210_000,
+  );
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'wait',
+      positionals: ['stable', '500', '120000'],
+    }),
+    150_000,
+  );
+  // Sleep waits block for their full duration and get the same treatment.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({ ...base, command: 'wait', positionals: ['120000'] }),
+    150_000,
+  );
+  // Small budgets never shrink the envelope below the default.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'wait',
+      positionals: ['text', 'Ready', '5000'],
+    }),
+    90_000,
+  );
+  // No explicit budget → default envelope.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({ ...base, command: 'wait', positionals: ['text', 'Ready'] }),
+    90_000,
+  );
+  assert.equal(resolveDaemonRequestTimeoutMs({ ...base, command: 'wait' }), 90_000);
+});
+
+test('interaction --settle budgets add post-action settle time on top of the normal envelope', () => {
+  const base = {
+    session: 'default',
+    positionals: ['@e2'],
+    meta: {},
+  };
+
+  // --timeout bounds the SETTLE wait after selector resolution and the action,
+  // so the envelope keeps the normal touch-command overhead and then adds the
+  // settle budget plus the same safety margin used by wait.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'press',
+      flags: { settle: true, timeoutMs: 120_000 },
+    }),
+    240_000,
+  );
+  // A small settle deadline still needs the normal touch-command envelope plus
+  // room for post-action observation.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'fill',
+      flags: { settle: true, timeoutMs: 5_000 },
+    }),
+    125_000,
+  );
+  // Longpress keeps the cold Android helper route and its 120-second maximum
+  // hold inside the outer envelope.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'longpress',
+      positionals: ['300', '500', '120000'],
+      flags: {},
+    }),
+    210_000,
+  );
+  // Bare --settle adds its default budget after the longpress-specific base,
+  // so a maximum hold still leaves room for post-action observation.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'longpress',
+      flags: { settle: true },
+    }),
+    250_000,
+  );
+  // Bare timeoutMs without --settle remains wire-compatible with older touch
+  // command clients: it is ignored instead of opting into settle semantics.
+  assert.equal(
+    resolveDaemonRequestTimeoutMs({
+      ...base,
+      command: 'press',
+      flags: { timeoutMs: 120_000 },
+    }),
+    90_000,
+  );
+  assert.equal(resolveDaemonRequestTimeoutMs({ ...base, command: 'press', flags: {} }), 90_000);
+});
+
 test('snapshot uses the standard daemon request timeout with an explicit override', () => {
   const base = {
     session: 'default',
@@ -290,11 +443,25 @@ test('cleanupFailedDaemonStartupMetadata retains live startup daemon on timeout'
 
   try {
     await new Promise((resolve) => setTimeout(resolve, 50));
+    // Read the spawned daemon's real identity once (ground truth: it is
+    // genuinely alive, with this real start time and command line), then
+    // pin readProcessStartTime/readProcessCommand to keep returning these
+    // same proven-real values for this pid. isAgentDeviceDaemonProcess reads
+    // both again internally on every call inside cleanupFailedDaemonStartupMetadata;
+    // without pinning, a second real `ps` call could miss its 1s timeout
+    // under load and misclassify this genuinely-live daemon as dead.
     const processStartTime = readProcessStartTime(pid) ?? undefined;
-    if (readProcessCommand(pid) === null || processStartTime === undefined) {
+    const command = readProcessCommand(pid);
+    if (command === null || processStartTime === undefined) {
       t.skip('process command/start inspection is unavailable in this environment');
       return;
     }
+    mockReadProcessStartTime.mockImplementation((queriedPid: number) =>
+      queriedPid === pid ? processStartTime : undefined,
+    );
+    mockReadProcessCommand.mockImplementation((queriedPid: number) =>
+      queriedPid === pid ? command : undefined,
+    );
 
     const paths = resolveDaemonPaths(stateDir);
     fs.mkdirSync(paths.baseDir, { recursive: true });
@@ -327,6 +494,8 @@ test('cleanupFailedDaemonStartupMetadata retains live startup daemon on timeout'
     assert.equal(fs.existsSync(paths.infoPath), true);
     assert.equal(fs.existsSync(paths.lockPath), true);
   } finally {
+    mockReadProcessStartTime.mockReset();
+    mockReadProcessCommand.mockReset();
     if (isProcessAlive(pid)) {
       process.kill(pid, 'SIGKILL');
       await waitForProcessExit(pid, 1_500);
@@ -471,14 +640,14 @@ test('sendToDaemon forwards replay test progress before the socket response', as
         type: 'replay_action_start',
         step: 2,
         line: 4,
-        command: '__maestroAssertVisible',
+        command: 'assertVisible',
         positionals: ['text="Home"', '3000'],
       },
       {
         type: 'replay_action_stop',
         step: 2,
         line: 4,
-        command: '__maestroAssertVisible',
+        command: 'assertVisible',
         ok: true,
         durationMs: 750,
       },
@@ -833,16 +1002,18 @@ test('sendToDaemon uses explicit remote daemon base URL and auth token', async (
   const previousBaseUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
   const previousAuthToken = process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
   process.env.AGENT_DEVICE_DAEMON_BASE_URL = 'http://remote-mac.example.test:7777/agent-device';
-  process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = 'remote-secret';
+  process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = 'ambient-token';
 
   try {
-    const response = await sendToDaemon({
-      session: 'default',
-      command: 'remote-smoke',
-      positionals: ['ping'],
-      flags: {},
-      meta: { requestId: 'req-remote' },
-    });
+    const response = await sendToDaemon(
+      {
+        session: 'default',
+        command: 'remote-smoke',
+        positionals: ['ping'],
+        meta: { requestId: 'req-remote' },
+      },
+      { authToken: 'remote-secret' },
+    );
 
     assert.equal(response.ok, true);
     assert.deepEqual(response.data, { source: 'remote-daemon' });
@@ -854,6 +1025,7 @@ test('sendToDaemon uses explicit remote daemon base URL and auth token', async (
     assert.equal((rpcRequest as any)?.params?.command, 'remote-smoke');
     assert.deepEqual((rpcRequest as any)?.params?.positionals, ['ping']);
     assert.equal((rpcRequest as any)?.params?.token, 'remote-secret');
+    assert.equal((rpcRequest as any)?.params?.flags?.daemonAuthToken, undefined);
   } finally {
     (http as unknown as { request: typeof http.request }).request = originalHttpRequest;
     if (previousBaseUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
@@ -863,59 +1035,98 @@ test('sendToDaemon uses explicit remote daemon base URL and auth token', async (
   }
 });
 
-test('sendToDaemon rejects remote daemon RPC protocol mismatches before RPC', async () => {
-  const seenPaths: string[] = [];
-  let rpcCalled = false;
-  const restoreHttpRequest = mockEventHttpRequest(({ options, res }) => {
-    seenPaths.push(String(options.path ?? ''));
-    if (options.method === 'GET') {
-      res.emit(
-        'data',
-        JSON.stringify({
-          ok: true,
-          service: 'agent-device-proxy',
-          version: '99.0.0',
-          rpcProtocolVersion: 999,
-        }),
-      );
-      res.emit('end');
-      return;
-    }
-
-    rpcCalled = true;
-    emitJsonRpcResult(res, 'req-incompatible', { ok: true, data: {} });
+test('sendToDaemon moves a raw direct-dispatch token into auth instead of RPC flags', async () => {
+  let rpcRequest: Record<string, unknown> | undefined;
+  let authHeader = '';
+  const restoreHttpRequest = mockEventHttpRequest(({ options, body, res }) => {
+    if (respondToHealthcheck(options, res)) return;
+    authHeader = String(options.headers.authorization ?? '');
+    rpcRequest = JSON.parse(body) as Record<string, unknown>;
+    emitJsonRpcResult(res, 'req-direct-dispatch', { ok: true, data: {} });
   });
 
   try {
     await withRemoteDaemonEnv(async () => {
-      let error: unknown;
-      try {
-        await sendToDaemon({
-          session: 'default',
-          command: 'remote-smoke',
-          positionals: ['ping'],
-          flags: {},
-          meta: { requestId: 'req-incompatible' },
-        });
-      } catch (caught) {
-        error = caught;
-      }
-
-      assert.ok(error instanceof Error);
-      assert.equal((error as any).code, 'COMMAND_FAILED');
-      assert.match(error.message, /Remote daemon RPC protocol is incompatible/);
-      assert.equal((error as any).details?.remoteService, 'agent-device-proxy');
-      assert.equal((error as any).details?.remoteVersion, '99.0.0');
-      assert.equal((error as any).details?.remoteRpcProtocolVersion, 999);
-      assert.equal(typeof (error as any).details?.supportedRpcProtocolVersion, 'number');
+      const response = await sendToDaemon({
+        session: 'default',
+        command: 'remote-smoke',
+        positionals: ['ping'],
+        flags: { daemonAuthToken: 'direct-dispatch-token' } as never,
+        meta: { requestId: 'req-direct-dispatch' },
+      });
+      assert.equal(response.ok, true);
     });
 
-    assert.deepEqual(seenPaths, ['/agent-device/health']);
-    assert.equal(rpcCalled, false);
+    assert.equal(authHeader, 'Bearer direct-dispatch-token');
+    assert.equal((rpcRequest as any)?.params?.token, 'direct-dispatch-token');
+    assert.equal((rpcRequest as any)?.params?.flags?.daemonAuthToken, undefined);
   } finally {
     restoreHttpRequest();
   }
 });
+
+test.each([
+  ['older', DAEMON_RPC_PROTOCOL_VERSION - 1],
+  ['newer', DAEMON_RPC_PROTOCOL_VERSION + 1],
+] as const)(
+  'sendToDaemon rejects %s remote daemon RPC protocols before RPC',
+  async (_skew, remoteProtocolVersion) => {
+    const seenPaths: string[] = [];
+    let rpcCalled = false;
+    const restoreHttpRequest = mockEventHttpRequest(({ options, res }) => {
+      seenPaths.push(String(options.path ?? ''));
+      if (options.method === 'GET') {
+        res.emit(
+          'data',
+          JSON.stringify({
+            ok: true,
+            service: 'agent-device-proxy',
+            version: '99.0.0',
+            rpcProtocolVersion: remoteProtocolVersion,
+          }),
+        );
+        res.emit('end');
+        return;
+      }
+
+      rpcCalled = true;
+      emitJsonRpcResult(res, 'req-incompatible', { ok: true, data: {} });
+    });
+
+    try {
+      await withRemoteDaemonEnv(async () => {
+        let error: unknown;
+        try {
+          await sendToDaemon({
+            session: 'default',
+            command: 'remote-smoke',
+            positionals: ['ping'],
+            flags: {},
+            meta: { requestId: 'req-incompatible' },
+          });
+        } catch (caught) {
+          error = caught;
+        }
+
+        assert.ok(error instanceof Error);
+        assert.equal((error as any).code, 'COMMAND_FAILED');
+        assert.match(error.message, /Remote daemon RPC protocol is incompatible/);
+        assert.equal((error as any).details?.remoteService, 'agent-device-proxy');
+        assert.equal((error as any).details?.remoteVersion, '99.0.0');
+        assert.equal((error as any).details?.remoteRpcProtocolVersion, remoteProtocolVersion);
+        assert.equal(
+          (error as any).details?.supportedRpcProtocolVersion,
+          DAEMON_RPC_PROTOCOL_VERSION,
+        );
+      });
+
+      assert.deepEqual(seenPaths, ['/agent-device/health']);
+      assert.equal(rpcCalled, false);
+    } finally {
+      restoreHttpRequest();
+    }
+  },
+);
 
 test('sendToDaemon hints to disconnect when a remote daemon is unavailable', async () => {
   const restoreHttpRequest = mockEventHttpRequest(({ res }) => {
@@ -1338,7 +1549,7 @@ test('downloadRemoteArtifact downloads daemon artifact URL', async (t) => {
       token: 'remote-secret',
       artifactId: 'artifact-download',
       destinationPath,
-      requestId: 'req-remote-artifact-download',
+      requestScope: { requestId: 'req-remote-artifact-download' },
     });
     assert.equal(seenUrl, '/agent-device/artifacts/artifact-download');
     assert.equal(seenAuth, 'Bearer remote-secret');
@@ -1375,7 +1586,7 @@ test('downloadRemoteArtifact times out stalled artifact responses and removes pa
           token: 'remote-secret',
           artifactId: 'artifact-timeout',
           destinationPath,
-          requestId: 'req-remote-artifact-timeout',
+          requestScope: { requestId: 'req-remote-artifact-timeout' },
           timeoutMs: 50,
         }),
       (error: unknown) => {
@@ -1419,7 +1630,7 @@ test('downloadRemoteArtifact removes partial files after mid-stream aborts', asy
           token: 'remote-secret',
           artifactId: 'artifact-abort',
           destinationPath,
-          requestId: 'req-remote-artifact-abort',
+          requestScope: { requestId: 'req-remote-artifact-abort' },
           timeoutMs: 1_000,
         }),
       (error: unknown) => {

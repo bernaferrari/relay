@@ -1,21 +1,34 @@
+import {
+  hasAndroidSystemChromeProvenance,
+  isAndroidInputMethodOwnedNode,
+} from '@agent-device/contracts/platform';
+import type { AndroidContentRecoveryReason } from '../../snapshot/snapshot-quality.ts';
+import { classifyAndroidAlertIdentifier } from './alert-detection.ts';
 import type { AndroidSnapshotBackendMetadata } from './snapshot-types.ts';
 import { androidUiNodes, type AndroidUiNodeMetadata } from './ui-hierarchy.ts';
 
 const ANDROID_WINDOW_TYPE_APPLICATION = 1;
 const MAX_REPORTED_WINDOW_TYPES = 8;
 const MIN_FOREGROUND_APP_MEANINGFUL_NODES = 2;
+const MIN_INPUT_METHOD_MEANINGFUL_NODES = 2;
+const MIN_SYSTEM_SURFACE_MEANINGFUL_NODES = 3;
 const ANDROID_SYSTEM_PACKAGES = new Set(['android', 'com.android.systemui']);
+const INSUFFICIENT_APP_CONTENT_REASON =
+  'Android snapshot helper returned insufficient application window content';
 
 export type AndroidHelperContentRecoveryDecision = {
-  reason: 'empty-helper-output' | 'system-window-only' | 'content-poor-app-window';
-  fallbackReason: string;
+  /** ADR 0012 #1349: waits classify these as ride-out-able content verdicts (`isUnreadableCaptureContentError`). */
+  reason: AndroidContentRecoveryReason;
+  failureReason: string;
   diagnostics: {
     helperNodeCount: number;
+    helperSystemUiNodeCount: number;
     helperWindowRootCount: number;
     helperApplicationWindowRootCount: number;
     helperMeaningfulNodeCount: number;
     helperApplicationMeaningfulNodeCount: number;
     helperNonSystemMeaningfulNodeCount: number;
+    helperInputMethodMeaningfulNodeCount: number;
     helperForegroundAppMeaningfulNodeCount?: number;
     helperForegroundAppPackage?: string;
     helperForegroundAppMeaningfulNodeThreshold?: number;
@@ -24,16 +37,21 @@ export type AndroidHelperContentRecoveryDecision = {
   };
 };
 
-export function classifyAndroidHelperContentRecovery(
+export type AndroidHelperContentClassification =
+  | { outcome: 'ok' }
+  | { outcome: 'system-surface-only' }
+  | { outcome: 'unusable'; decision: AndroidHelperContentRecoveryDecision };
+
+export function classifyAndroidHelperContent(
   xml: string,
   metadata: AndroidSnapshotBackendMetadata,
   options: { foregroundAppPackage?: string } = {},
-): AndroidHelperContentRecoveryDecision | undefined {
-  if (metadata.backend !== 'android-helper') return undefined;
+): AndroidHelperContentClassification {
+  if (metadata.backend !== 'android-helper') return { outcome: 'ok' };
 
   const summary = summarizeAndroidHelperXml(xml, options.foregroundAppPackage);
-  if (summary.nodeCount === 0 || metadata.nodeCount === 0 || metadata.rootPresent === false) {
-    return buildRecoveryDecision(
+  if (isEmptyHelperOutput(summary, metadata)) {
+    return unusable(
       summary,
       metadata,
       'empty-helper-output',
@@ -41,14 +59,14 @@ export function classifyAndroidHelperContentRecovery(
     );
   }
 
-  const foregroundAppMeaningfulNodeCount = summary.foregroundAppMeaningfulNodeCount;
-  if (
-    foregroundAppMeaningfulNodeCount !== undefined &&
-    (foregroundAppMeaningfulNodeCount === 0 ||
-      (foregroundAppMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES &&
-        summary.meaningfulNodeCount > foregroundAppMeaningfulNodeCount))
-  ) {
-    return buildRecoveryDecision(
+  if (hasRecognizedAndroidAlertSurface(summary)) return { outcome: 'ok' };
+  // Notification shade, quick settings, and similar overlays legitimately own the whole screen:
+  // no application window is interactive, but the system surface carries real content. That
+  // capture is the truth, so it must be returned rather than classified as a helper failure.
+  if (isScreenOwnedByMeaningfulSystemSurface(summary)) return { outcome: 'system-surface-only' };
+  if (isForegroundAppContentHiddenByInputMethod(summary)) return { outcome: 'ok' };
+  if (isForegroundAppContentPoor(summary)) {
+    return unusable(
       summary,
       metadata,
       'content-poor-app-window',
@@ -56,35 +74,16 @@ export function classifyAndroidHelperContentRecovery(
     );
   }
 
-  if (
-    foregroundAppMeaningfulNodeCount === undefined &&
-    summary.applicationWindowRootCount > 0 &&
-    summary.applicationMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES
-  ) {
-    return buildRecoveryDecision(
-      summary,
-      metadata,
-      'content-poor-app-window',
-      'Android snapshot helper returned insufficient application window content',
-    );
+  if (isApplicationWindowContentPoor(summary)) {
+    return unusable(summary, metadata, 'content-poor-app-window', INSUFFICIENT_APP_CONTENT_REASON);
   }
 
-  if (
-    foregroundAppMeaningfulNodeCount === undefined &&
-    summary.windowRootCount === 0 &&
-    (metadata.windowCount ?? 0) > 1 &&
-    summary.nonSystemMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES
-  ) {
-    return buildRecoveryDecision(
-      summary,
-      metadata,
-      'content-poor-app-window',
-      'Android snapshot helper returned insufficient application window content',
-    );
+  if (isWindowlessMultiWindowContentPoor(summary, metadata)) {
+    return unusable(summary, metadata, 'content-poor-app-window', INSUFFICIENT_APP_CONTENT_REASON);
   }
 
-  if (summary.windowRootCount > 0 && summary.applicationWindowRootCount === 0) {
-    return buildRecoveryDecision(
+  if (isSystemWindowOnly(summary)) {
+    return unusable(
       summary,
       metadata,
       'system-window-only',
@@ -92,29 +91,113 @@ export function classifyAndroidHelperContentRecovery(
     );
   }
 
-  return undefined;
+  return { outcome: 'ok' };
+}
+
+function unusable(
+  summary: AndroidHelperXmlSummary,
+  metadata: AndroidSnapshotBackendMetadata,
+  reason: AndroidHelperContentRecoveryDecision['reason'],
+  failureReason: string,
+): AndroidHelperContentClassification {
+  return {
+    outcome: 'unusable',
+    decision: buildRecoveryDecision(summary, metadata, reason, failureReason),
+  };
+}
+
+function isScreenOwnedByMeaningfulSystemSurface(summary: AndroidHelperXmlSummary): boolean {
+  return (
+    summary.windowRootCount > 0 &&
+    summary.applicationWindowRootCount === 0 &&
+    summary.activeSystemSurfaceMeaningfulNodeCount >= MIN_SYSTEM_SURFACE_MEANINGFUL_NODES
+  );
+}
+
+function isEmptyHelperOutput(
+  summary: AndroidHelperXmlSummary,
+  metadata: AndroidSnapshotBackendMetadata,
+): boolean {
+  return summary.nodeCount === 0 || metadata.nodeCount === 0 || metadata.rootPresent === false;
+}
+
+function isForegroundAppContentHiddenByInputMethod(summary: AndroidHelperXmlSummary): boolean {
+  return (
+    isForegroundAppContentPoor(summary) &&
+    summary.inputMethodMeaningfulNodeCount >= MIN_INPUT_METHOD_MEANINGFUL_NODES
+  );
+}
+
+function isForegroundAppContentPoor(summary: AndroidHelperXmlSummary): boolean {
+  const foregroundCount = summary.foregroundAppMeaningfulNodeCount;
+  if (foregroundCount === undefined) return false;
+  if (foregroundCount === 0) {
+    return summary.applicationMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES;
+  }
+  return (
+    foregroundCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES &&
+    summary.meaningfulNodeCount > foregroundCount
+  );
+}
+
+function isApplicationWindowContentPoor(summary: AndroidHelperXmlSummary): boolean {
+  return (
+    summary.foregroundAppMeaningfulNodeCount === undefined &&
+    summary.applicationWindowRootCount > 0 &&
+    summary.applicationMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES
+  );
+}
+
+function isWindowlessMultiWindowContentPoor(
+  summary: AndroidHelperXmlSummary,
+  metadata: AndroidSnapshotBackendMetadata,
+): boolean {
+  return (
+    summary.foregroundAppMeaningfulNodeCount === undefined &&
+    summary.windowRootCount === 0 &&
+    (metadata.windowCount ?? 0) > 1 &&
+    summary.nonSystemMeaningfulNodeCount < MIN_FOREGROUND_APP_MEANINGFUL_NODES
+  );
+}
+
+function isSystemWindowOnly(summary: AndroidHelperXmlSummary): boolean {
+  return (
+    (summary.windowRootCount > 0 && summary.applicationWindowRootCount === 0) ||
+    (summary.windowRootCount === 0 &&
+      summary.nodeCount > 0 &&
+      summary.systemUiNodeCount === summary.nodeCount)
+  );
+}
+
+function hasRecognizedAndroidAlertSurface(summary: AndroidHelperXmlSummary): boolean {
+  return summary.hasAlertButtonIdentifier && summary.hasAlertContentIdentifier;
 }
 
 function buildRecoveryDecision(
   summary: AndroidHelperXmlSummary,
   metadata: AndroidSnapshotBackendMetadata,
   reason: AndroidHelperContentRecoveryDecision['reason'],
-  fallbackReason: string,
+  failureReason: string,
 ): AndroidHelperContentRecoveryDecision {
   return {
     reason,
-    fallbackReason,
+    failureReason,
     diagnostics: buildRecoveryDiagnostics(summary, metadata),
   };
 }
 
 type AndroidHelperXmlSummary = {
   nodeCount: number;
+  systemUiNodeCount: number;
   windowRootCount: number;
   applicationWindowRootCount: number;
+  activeSystemSurfaceMeaningfulNodeCount: number;
   meaningfulNodeCount: number;
   applicationMeaningfulNodeCount: number;
   nonSystemMeaningfulNodeCount: number;
+  inputMethodMeaningfulNodeCount: number;
+  hasAlertButtonIdentifier: boolean;
+  hasAlertContentIdentifier: boolean;
   foregroundAppPackage?: string;
   foregroundAppMeaningfulNodeCount?: number;
   windowTypes: number[];
@@ -122,6 +205,7 @@ type AndroidHelperXmlSummary = {
 
 type AndroidHelperXmlSummaryState = Omit<AndroidHelperXmlSummary, 'windowTypes'> & {
   currentWindowType?: number;
+  currentWindowActiveOrFocused?: boolean;
   windowTypes: Set<number>;
 };
 
@@ -143,11 +227,16 @@ function createAndroidHelperXmlSummaryState(
 ): AndroidHelperXmlSummaryState {
   return {
     nodeCount: 0,
+    systemUiNodeCount: 0,
     windowRootCount: 0,
     applicationWindowRootCount: 0,
+    activeSystemSurfaceMeaningfulNodeCount: 0,
     meaningfulNodeCount: 0,
     applicationMeaningfulNodeCount: 0,
     nonSystemMeaningfulNodeCount: 0,
+    inputMethodMeaningfulNodeCount: 0,
+    hasAlertButtonIdentifier: false,
+    hasAlertContentIdentifier: false,
     ...(foregroundAppPackage !== undefined
       ? { foregroundAppPackage, foregroundAppMeaningfulNodeCount: 0 }
       : {}),
@@ -160,8 +249,19 @@ function recordAndroidHelperSummaryNode(
   node: AndroidUiNodeMetadata,
 ): void {
   summary.nodeCount += 1;
+  if (isExplicitAndroidSystemPackage(node.packageName)) summary.systemUiNodeCount += 1;
+  if (node.visibleToUser !== false) recordAndroidAlertIdentifier(summary, node.resourceId);
   recordAndroidHelperWindowNode(summary, node);
   recordAndroidHelperMeaningfulNode(summary, node);
+}
+
+function recordAndroidAlertIdentifier(
+  summary: AndroidHelperXmlSummaryState,
+  resourceId: string | null,
+): void {
+  const kind = classifyAndroidAlertIdentifier(resourceId);
+  if (kind === 'button') summary.hasAlertButtonIdentifier = true;
+  if (kind === 'content') summary.hasAlertContentIdentifier = true;
 }
 
 function recordAndroidHelperWindowNode(
@@ -171,6 +271,7 @@ function recordAndroidHelperWindowNode(
   if (node.windowType === undefined) return;
 
   summary.currentWindowType = node.windowType;
+  summary.currentWindowActiveOrFocused = node.windowActive === true || node.windowFocused === true;
   summary.windowRootCount += 1;
   summary.windowTypes.add(node.windowType);
   if (node.windowType === ANDROID_WINDOW_TYPE_APPLICATION) {
@@ -185,11 +286,50 @@ function recordAndroidHelperMeaningfulNode(
   if (!isMeaningfulContentNode(node)) return;
 
   summary.meaningfulNodeCount += 1;
-  if (summary.currentWindowType === ANDROID_WINDOW_TYPE_APPLICATION) {
+  recordMeaningfulWindowOwnership(summary, node);
+  recordMeaningfulPackageOwnership(summary, node);
+}
+
+function recordMeaningfulWindowOwnership(
+  summary: AndroidHelperXmlSummaryState,
+  node: AndroidUiNodeMetadata,
+): void {
+  if (
+    summary.currentWindowType === ANDROID_WINDOW_TYPE_APPLICATION &&
+    !isAndroidSystemPackage(node.packageName)
+  ) {
     summary.applicationMeaningfulNodeCount += 1;
   }
+  // Status/nav-bar chrome must not satisfy the system-surface floor: an active navigation bar
+  // (Back + Home + Recents) or status chrome (clock, battery, signal icons) is missing-app-content
+  // residue, not a usable shade/quick-settings surface. Only non-chrome nodes count.
+  if (isInActiveSystemSurfaceWindow(summary) && !hasAndroidSystemChromeProvenance(node)) {
+    summary.activeSystemSurfaceMeaningfulNodeCount += 1;
+  }
+}
+
+function isInActiveSystemSurfaceWindow(summary: AndroidHelperXmlSummaryState): boolean {
+  return (
+    summary.currentWindowType !== undefined &&
+    summary.currentWindowType !== ANDROID_WINDOW_TYPE_APPLICATION &&
+    summary.currentWindowActiveOrFocused === true
+  );
+}
+
+function recordMeaningfulPackageOwnership(
+  summary: AndroidHelperXmlSummaryState,
+  node: AndroidUiNodeMetadata,
+): void {
   if (!isAndroidSystemPackage(node.packageName)) {
     summary.nonSystemMeaningfulNodeCount += 1;
+  }
+  if (
+    isAndroidInputMethodOwnedNode({
+      packageName: node.packageName,
+      resourceId: node.resourceId,
+    })
+  ) {
+    summary.inputMethodMeaningfulNodeCount += 1;
   }
   if (
     summary.foregroundAppPackage !== undefined &&
@@ -204,11 +344,16 @@ function finalizeAndroidHelperXmlSummary(
 ): AndroidHelperXmlSummary {
   return {
     nodeCount: summary.nodeCount,
+    systemUiNodeCount: summary.systemUiNodeCount,
     windowRootCount: summary.windowRootCount,
     applicationWindowRootCount: summary.applicationWindowRootCount,
+    activeSystemSurfaceMeaningfulNodeCount: summary.activeSystemSurfaceMeaningfulNodeCount,
     meaningfulNodeCount: summary.meaningfulNodeCount,
     applicationMeaningfulNodeCount: summary.applicationMeaningfulNodeCount,
     nonSystemMeaningfulNodeCount: summary.nonSystemMeaningfulNodeCount,
+    inputMethodMeaningfulNodeCount: summary.inputMethodMeaningfulNodeCount,
+    hasAlertButtonIdentifier: summary.hasAlertButtonIdentifier,
+    hasAlertContentIdentifier: summary.hasAlertContentIdentifier,
     ...(summary.foregroundAppPackage !== undefined
       ? {
           foregroundAppPackage: summary.foregroundAppPackage,
@@ -232,17 +377,23 @@ function isAndroidSystemPackage(packageName: string | null): boolean {
   return packageName === null || ANDROID_SYSTEM_PACKAGES.has(packageName);
 }
 
+function isExplicitAndroidSystemPackage(packageName: string | null): boolean {
+  return packageName !== null && ANDROID_SYSTEM_PACKAGES.has(packageName);
+}
+
 function buildRecoveryDiagnostics(
   summary: AndroidHelperXmlSummary,
   metadata: AndroidSnapshotBackendMetadata,
 ): AndroidHelperContentRecoveryDecision['diagnostics'] {
   return {
     helperNodeCount: summary.nodeCount,
+    helperSystemUiNodeCount: summary.systemUiNodeCount,
     helperWindowRootCount: summary.windowRootCount,
     helperApplicationWindowRootCount: summary.applicationWindowRootCount,
     helperMeaningfulNodeCount: summary.meaningfulNodeCount,
     helperApplicationMeaningfulNodeCount: summary.applicationMeaningfulNodeCount,
     helperNonSystemMeaningfulNodeCount: summary.nonSystemMeaningfulNodeCount,
+    helperInputMethodMeaningfulNodeCount: summary.inputMethodMeaningfulNodeCount,
     ...(summary.foregroundAppPackage !== undefined
       ? {
           helperForegroundAppPackage: summary.foregroundAppPackage,

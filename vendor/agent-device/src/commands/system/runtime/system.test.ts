@@ -5,6 +5,7 @@ import type {
   BackendAlertAction,
   BackendDeviceOrientation,
   BackendKeyboardOptions,
+  BackendTvRemoteOptions,
 } from '../../../backend.ts';
 import { createLocalArtifactAdapter } from '../../../io.ts';
 import { createAgentDevice, localCommandPolicy } from '../../../runtime.ts';
@@ -19,13 +20,14 @@ test('runtime system commands call typed backend primitives', async () => {
 
   const back = await device.system.back({ session: 'default', mode: 'system' });
   const home = await device.system.home({ session: 'default' });
-  const rotated = await device.system.rotate({ orientation: 'landscape-left' });
+  const rotated = await device.system.orientation({ orientation: 'landscape-left' });
   const keyboard = await device.system.keyboard({ action: 'dismiss' });
   const clipboardRead = await device.system.clipboard({ action: 'read' });
   const clipboardWrite = await device.system.clipboard({ action: 'write', text: 'hello' });
   const settings = await device.system.settings({ target: 'privacy' });
   const alert = await device.system.alert({ action: 'accept', timeoutMs: 500 });
   const appSwitcher = await device.system.appSwitcher();
+  const tvRemote = await device.system.tvRemote({ button: 'select', durationMs: 300 });
 
   assert.equal(back.kind, 'systemBack');
   assert.equal(home.kind, 'systemHome');
@@ -37,17 +39,46 @@ test('runtime system commands call typed backend primitives', async () => {
   assert.equal(settings.target, 'privacy');
   assert.equal(alert.kind, 'alertHandled');
   assert.equal(appSwitcher.kind, 'appSwitcherOpened');
+  assert.equal(tvRemote.kind, 'tvRemotePressed');
+  assert.equal(tvRemote.button, 'select');
   assert.deepEqual(calls, [
     { command: 'pressBack', mode: 'system', session: 'default' },
     { command: 'pressHome', session: 'default' },
-    { command: 'rotate', orientation: 'landscape-left' },
+    { command: 'setOrientation', orientation: 'landscape-left' },
     { command: 'setKeyboard', options: { action: 'dismiss' } },
     { command: 'getClipboard' },
     { command: 'setClipboard', text: 'hello' },
     { command: 'openSettings', target: 'privacy' },
     { command: 'handleAlert', action: 'accept', timeoutMs: 500 },
     { command: 'openAppSwitcher' },
+    { command: 'pressTvRemote', options: { button: 'select', durationMs: 300 } },
   ]);
+});
+
+// #1598: the SDK-level keyboard.dismiss result must also disclose which
+// mechanism the backend used, mirroring the CLI/daemon dispatch surface.
+test('runtime keyboard dismiss discloses the mechanism reported by the backend', async () => {
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      setKeyboard: async (_context, options) => ({
+        action: options.action,
+        dismissed: true,
+        visible: false,
+        mechanism: 'legacySafeAreaTap',
+      }),
+    },
+    artifacts: createLocalArtifactAdapter(),
+    policy: localCommandPolicy(),
+  });
+
+  const keyboard = await device.system.keyboard({ action: 'dismiss' });
+
+  assert.equal(keyboard.kind, 'keyboardDismissed');
+  if (keyboard.kind === 'keyboardDismissed') {
+    assert.equal(keyboard.state.mechanism, 'legacySafeAreaTap');
+  }
+  assert.equal(String(keyboard.message), 'Keyboard dismissed');
 });
 
 test('runtime system commands validate options before backend calls', async () => {
@@ -59,7 +90,7 @@ test('runtime system commands validate options before backend calls', async () =
   });
 
   await assert.rejects(
-    () => device.system.rotate({ orientation: 'sideways' as BackendDeviceOrientation }),
+    () => device.system.orientation({ orientation: 'sideways' as BackendDeviceOrientation }),
     /orientation must be/,
   );
   await assert.rejects(
@@ -73,6 +104,10 @@ test('runtime system commands validate options before backend calls', async () =
   await assert.rejects(
     () => device.system.alert({ action: 'tap' as BackendAlertAction }),
     /action must be/,
+  );
+  await assert.rejects(
+    () => device.system.tvRemote({ button: 'blue' as BackendTvRemoteOptions['button'] }),
+    /button must be/,
   );
 
   assert.deepEqual(calls, []);
@@ -88,8 +123,8 @@ function createSystemBackend(calls: unknown[]): AgentDeviceBackend {
     pressHome: async (context) => {
       calls.push({ command: 'pressHome', session: context.session });
     },
-    rotate: async (_context, orientation) => {
-      calls.push({ command: 'rotate', orientation });
+    setOrientation: async (_context, orientation) => {
+      calls.push({ command: 'setOrientation', orientation });
     },
     setKeyboard: async (_context, options) => {
       calls.push({ command: 'setKeyboard', options });
@@ -111,6 +146,9 @@ function createSystemBackend(calls: unknown[]): AgentDeviceBackend {
     },
     openAppSwitcher: async () => {
       calls.push({ command: 'openAppSwitcher' });
+    },
+    pressTvRemote: async (_context, options) => {
+      calls.push({ command: 'pressTvRemote', options });
     },
   };
 }

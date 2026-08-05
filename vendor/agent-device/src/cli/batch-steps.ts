@@ -1,11 +1,12 @@
-import type { BatchStep } from '../client/client-types.ts';
-import { type SessionRuntimeHints } from '../kernel/contracts.ts';
-import { parseBatchStepRuntime } from '../batch-contract.ts';
+import type { BatchStep } from '@agent-device/contracts/client';
+import { type SessionRuntimeHints } from '@agent-device/kernel/contracts';
+import { parseBatchStepRuntime } from '@agent-device/contracts/command';
 import { readInputFromCli } from '../commands/cli-grammar.ts';
 import { isCommandName, type CommandName } from '../commands/command-metadata.ts';
-import type { CliFlags } from './parser/cli-flags.ts';
-import { AppError } from '../kernel/errors.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
+import { AppError } from '@agent-device/kernel/errors';
 import { isRecord } from '../utils/parsing.ts';
+import { assertCommandPositionalArity } from '../cli-schema/command-schema.ts';
 
 type LegacyCliBatchStep = {
   command: CommandName;
@@ -79,6 +80,7 @@ function readLegacyCliBatchStep(step: unknown, stepNumber: number): LegacyCliBat
   assertLegacyBatchStepKeys(step, stepNumber);
   const command = readLegacyCommand(step.command, stepNumber);
   const positionals = readLegacyPositionals(step.positionals, stepNumber);
+  assertCommandPositionalArity(command, positionals ?? [], `Batch step ${stepNumber}`);
   const flags = readLegacyFlags(step.flags, stepNumber);
   const runtime = parseBatchStepRuntime(step.runtime, stepNumber);
   return {

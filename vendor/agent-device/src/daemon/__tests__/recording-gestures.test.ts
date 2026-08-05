@@ -75,6 +75,21 @@ test('scroll amount scales swipe travel for visualization', () => {
   assert.equal(event.amount, 0.6);
 });
 
+test('scroll augmentation preserves explicit duration for visualization', () => {
+  const session = makeSession();
+  const result = augmentScrollVisualizationResult(session, 'scroll', ['up', '0.6'], {
+    direction: 'up',
+    amount: 0.6,
+    durationMs: 100,
+  });
+
+  recordTouchVisualizationEvent(session, 'scroll', ['up', '0.6'], result, {}, 1_500);
+
+  const event = session.recording?.gestureEvents[0];
+  assert.equal(event?.kind, 'scroll');
+  assert.equal(event?.durationMs, 100);
+});
+
 test('scroll augmentation preserves explicit reference frame from platform result', () => {
   const session = makeSession();
   session.snapshot = undefined;
@@ -93,26 +108,36 @@ test('scroll augmentation preserves explicit reference frame from platform resul
   assert.equal(augmented.y2, 240);
 });
 
-test('scroll augmentation preserves explicit pixel travel coordinates', () => {
+test('scroll visualization preserves absolute travel in its zero-origin reference frame', () => {
   const session = makeSession();
   session.snapshot = undefined;
 
   const augmented = augmentScrollVisualizationResult(session, 'scroll', ['down'], {
     direction: 'down',
     pixels: 240,
-    x1: 201,
-    y1: 557,
-    x2: 201,
-    y2: 317,
-    referenceWidth: 402,
-    referenceHeight: 874,
+    x1: 211,
+    y1: 577,
+    x2: 211,
+    y2: 337,
+    referenceWidth: 412,
+    referenceHeight: 894,
   }) as Record<string, unknown>;
 
-  assert.equal(augmented.x1, 201);
-  assert.equal(augmented.y1, 557);
-  assert.equal(augmented.x2, 201);
-  assert.equal(augmented.y2, 317);
+  recordTouchVisualizationEvent(session, 'scroll', ['down'], augmented, {}, 1_500);
+
+  assert.equal(augmented.x1, 211);
+  assert.equal(augmented.y1, 577);
+  assert.equal(augmented.x2, 211);
+  assert.equal(augmented.y2, 337);
   assert.equal(augmented.pixels, 240);
+  const event = session.recording?.gestureEvents[0];
+  assert.equal(event?.kind, 'scroll');
+  assert.equal(event?.referenceWidth, 412);
+  assert.equal(event?.referenceHeight, 894);
+  assert.equal(event?.x, 211);
+  assert.equal(event?.y, 577);
+  assert.equal(event?.x2, 211);
+  assert.equal(event?.y2, 337);
 });
 
 test('gesture recording prefers native runner timing when available', () => {
@@ -177,6 +202,186 @@ test('swipe visualization prefers native gesture duration when available', () =>
   if (!event || event.kind !== 'swipe') return;
 
   assert.equal(event.durationMs, 780);
+});
+
+test('canonical gesture results record pan, fling, and pinch visualization telemetry', () => {
+  const session = makeSession();
+
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['pan', '40', '100', '120', '-20', '360'],
+    {
+      kind: 'pan',
+      from: { x: 40, y: 100 },
+      to: { x: 160, y: 80 },
+      durationMs: 360,
+      pointerCount: 1,
+    },
+    {},
+    1_500,
+    1_860,
+  );
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['fling', 'left', '260', '400', '180'],
+    {
+      kind: 'fling',
+      from: { x: 260, y: 400 },
+      to: { x: 80, y: 400 },
+      durationMs: 180,
+      pointerCount: 1,
+    },
+    {},
+    1_900,
+    2_080,
+  );
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['pinch', '1.5', '201', '437'],
+    {
+      kind: 'pinch',
+      from: { x: 201, y: 437 },
+      to: { x: 201, y: 437 },
+      scale: 1.5,
+      durationMs: 280,
+      pointerCount: 2,
+    },
+    {},
+    2_100,
+    2_380,
+  );
+
+  assert.deepEqual(session.recording?.gestureEvents, [
+    {
+      kind: 'swipe',
+      tMs: 500,
+      x: 40,
+      y: 100,
+      x2: 160,
+      y2: 80,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      durationMs: 360,
+    },
+    {
+      kind: 'swipe',
+      tMs: 900,
+      x: 260,
+      y: 400,
+      x2: 80,
+      y2: 400,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      durationMs: 180,
+    },
+    {
+      kind: 'pinch',
+      tMs: 1_100,
+      x: 201,
+      y: 437,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      scale: 1.5,
+      durationMs: 280,
+    },
+  ]);
+});
+
+test('canonical rotate records centroid visualization telemetry', () => {
+  const session = makeSession();
+
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['rotate', '35', '201', '437'],
+    {
+      kind: 'rotate',
+      from: { x: 201, y: 437 },
+      to: { x: 201, y: 437 },
+      durationMs: 300,
+      pointerCount: 2,
+    },
+    {},
+    1_500,
+    1_800,
+  );
+
+  assert.deepEqual(session.recording?.gestureEvents, [
+    {
+      kind: 'swipe',
+      tMs: 500,
+      x: 201,
+      y: 437,
+      x2: 201,
+      y2: 437,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      durationMs: 300,
+    },
+  ]);
+});
+
+test('canonical multi-touch travel does not acquire one-finger back-swipe semantics', () => {
+  const session = makeSession();
+
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['transform', '10', '437', '170', '0', '1.4', '25', '600'],
+    {
+      kind: 'transform',
+      from: { x: 10, y: 437 },
+      to: { x: 180, y: 437 },
+      durationMs: 600,
+      pointerCount: 2,
+    },
+    {},
+    1_500,
+    2_100,
+  );
+  recordTouchVisualizationEvent(
+    session,
+    'gesture',
+    ['pan', '392', '437', '-170', '0', '400'],
+    {
+      kind: 'pan',
+      from: { x: 392, y: 437 },
+      to: { x: 222, y: 437 },
+      durationMs: 400,
+      pointerCount: 2,
+    },
+    {},
+    2_200,
+    2_600,
+  );
+
+  assert.deepEqual(session.recording?.gestureEvents, [
+    {
+      kind: 'swipe',
+      tMs: 500,
+      x: 10,
+      y: 437,
+      x2: 180,
+      y2: 437,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      durationMs: 600,
+    },
+    {
+      kind: 'swipe',
+      tMs: 1_200,
+      x: 392,
+      y: 437,
+      x2: 222,
+      y2: 437,
+      referenceWidth: 402,
+      referenceHeight: 874,
+      durationMs: 400,
+    },
+  ]);
 });
 
 test('telemetry is still captured when touch overlays are hidden', () => {

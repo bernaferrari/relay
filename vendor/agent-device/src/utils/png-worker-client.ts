@@ -1,14 +1,14 @@
 import { Worker } from 'node:worker_threads';
 import { emitDiagnostic } from './diagnostics.ts';
-import { AppError, toAppErrorCode } from '../kernel/errors.ts';
+import { AppError, toAppErrorCode } from '@agent-device/kernel/errors';
 import { resolveInternalEntryModulePath } from './internal-entry.ts';
-import { PNG } from './png-codec.ts';
-import { decodePng } from './png.ts';
+import { decodePng, PNG } from './png.ts';
 import {
   computeScreenshotDiffPixels,
   type ScreenshotDiffPixelsJob,
   type ScreenshotDiffPixelsResult,
 } from './screenshot-diff-pixels.ts';
+import { computePngRgbDifference, type PngRgbDifferenceResult } from './png-rgb-difference.ts';
 import {
   toBuffer,
   type PngWorkerJobFor,
@@ -200,7 +200,9 @@ export async function decodePngAsync(buffer: Buffer, label: string): Promise<PNG
     const png = decodePng(buffer, label);
     return { kind: 'decode', width: png.width, height: png.height, data: png.data };
   });
-  return new PNG({ width: result.width, height: result.height, data: toBuffer(result.data) });
+  const png = new PNG({ width: result.width, height: result.height });
+  png.data = toBuffer(result.data);
+  return png;
 }
 
 export async function encodePngAsync(png: PNG): Promise<Buffer> {
@@ -209,6 +211,21 @@ export async function encodePngAsync(png: PNG): Promise<Buffer> {
     () => ({ kind: 'encode', png: PNG.sync.write(png) }),
   );
   return toBuffer(result.png);
+}
+
+export async function computePngRgbDifferenceAsync(
+  firstPng: Buffer,
+  secondPng: Buffer,
+  label: string,
+): Promise<PngRgbDifferenceResult> {
+  const { kind: _kind, ...result } = await runPngJob(
+    { kind: 'rgb-difference', firstPng, secondPng, label },
+    () => ({
+      kind: 'rgb-difference' as const,
+      ...computePngRgbDifference(decodePng(firstPng, label), decodePng(secondPng, label)),
+    }),
+  );
+  return result;
 }
 
 export async function computeScreenshotDiffPixelsAsync(

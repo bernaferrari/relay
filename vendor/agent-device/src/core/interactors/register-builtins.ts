@@ -1,10 +1,13 @@
-import { registerPlatformPlugin, type PlatformPlugin } from '../platform-plugin/plugin.ts';
+import type { RunnerContext } from '@agent-device/contracts/interaction';
+import type { PlatformPlugin } from '@agent-device/contracts/platform';
+import { registerPlatformPlugin } from '../platform-plugin-registry.ts';
 import { applePlugin } from '../../platforms/apple/plugin.ts';
+import { vegaPlugin } from '../../platforms/vega/plugin.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { isAudioProbeSupportedDevice } from '../../kernel/audio-probe-support.ts';
-import { WEB_DESKTOP_DEVICE } from '../platform-inventory.ts';
-import type { Platform, DeviceInfo } from '../../kernel/device.ts';
-import type { DeviceInventoryRequest } from '../platform-inventory.ts';
+import { isAudioProbeSupportedDevice } from '@agent-device/contracts/platform';
+import { WEB_DESKTOP_DEVICE, type DeviceInventoryRequest } from '@agent-device/contracts/device';
+import type { Platform, DeviceInfo } from '@agent-device/kernel/device';
+import { resolveAndroidDiscoverySerialAllowlist } from '../platform-inventory.ts';
 
 // The builtin-plugin wiring lives at the interactor seam (src/core/interactors/) —
 // the one place R3 (see scripts/layering/check.ts) permits a STATIC value import of
@@ -25,29 +28,36 @@ const androidPlugin = {
   platforms: ['android'],
   capability: {
     bucket: 'android',
-    supportsByDefault: { [PUBLIC_COMMANDS.audio]: isAudioProbeSupportedDevice },
+    supportsByDefault: {
+      [PUBLIC_COMMANDS.audio]: isAudioProbeSupportedDevice,
+      [PUBLIC_COMMANDS.tvRemote]: (device) => device.target === 'tv',
+    },
+    unsupportedHintByDefault: {
+      [PUBLIC_COMMANDS.tvRemote]: (device) =>
+        device.target === 'tv' ? undefined : 'tv-remote is supported only on Android TV targets.',
+    },
   },
   // Wraps the Android arm of `resolveLogBackend`: every Android device -> 'android'.
   appLog: { resolveBackend: () => 'android' },
   // Wraps the Android arm of `supportsPlatformPerfMetrics`: every Android device
-  // reports perf-metrics support.
-  perf: { supportsMetrics: () => true },
+  // reports perf-metrics support. `metricsSamplerTag` wraps the Android arm of the
+  // former `buildPerfResponseData` sampling branch: every supported Android device
+  // routes to the Android `perf metrics` sampler.
+  perf: { supportsMetrics: () => true, metricsSamplerTag: () => 'android' },
   // Wraps the Android arm of `resolveRecordingBackendForDevice`: every Android device
   // resolves to the android recording backend.
   recording: { resolveBackendTag: () => 'android' },
   // Declares the platform-gated request provider resolver the Android family owns (the
   // adb provider, formerly gated by `device.platform === 'android'`).
   providers: { platformGatedResolvers: ['androidAdbProvider'] },
-  createInteractor: async (device: DeviceInfo) => {
+  createInteractor: async (device: DeviceInfo, runner: RunnerContext) => {
     const { createAndroidInteractor } = await import('./android.ts');
-    return createAndroidInteractor(device);
+    return createAndroidInteractor(device, undefined, runner);
   },
   discoverDevices: async (request: DeviceInventoryRequest) => {
     const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
     return await listAndroidDevices({
-      serialAllowlist: request.androidSerialAllowlist
-        ? new Set(request.androidSerialAllowlist)
-        : undefined,
+      serialAllowlist: resolveAndroidDiscoverySerialAllowlist(request),
     });
   },
 } as const satisfies PlatformPlugin;
@@ -96,6 +106,7 @@ const webPlugin = {
 export const BUILTIN_PLATFORM_PLUGINS = [
   applePlugin,
   androidPlugin,
+  vegaPlugin,
   linuxPlugin,
   webPlugin,
 ] as const satisfies readonly PlatformPlugin[];
@@ -114,6 +125,7 @@ type CoveredPlatform = (typeof BUILTIN_PLATFORM_PLUGINS)[number]['platforms'][nu
  * sketch, but type-level so it cannot be satisfied vacuously by a runtime map.)
  */
 type AssertTrue<T extends true> = T;
+/** Exported only so `noUnusedLocals` keeps the guard alive. */
 export type BuiltinPluginsCoverAllPlatforms = AssertTrue<
   [Platform] extends [CoveredPlatform] ? true : false
 >;

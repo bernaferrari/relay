@@ -1,37 +1,41 @@
-import type { AlertAction, AlertInfo } from './alert-contract.ts';
-import type { AppsFilter } from './contracts/app-inventory.ts';
-import type { Point, SnapshotNode, SnapshotOptions, SnapshotState } from './kernel/snapshot.ts';
-import type { NetworkIncludeMode } from './kernel/contracts.ts';
-import type { DeviceTarget, Platform, PlatformSelector, PublicPlatform } from './kernel/device.ts';
-import type { BackMode } from './core/back-mode.ts';
-import type { RepeatedInput } from './commands/command-input.ts';
-import type { ClickButton } from './core/click-button.ts';
-import type { DeviceRotation } from './core/device-rotation.ts';
-import type { ScrollDirection } from './core/scroll-gesture.ts';
-import type { SessionSurface } from './core/session-surface.ts';
-import type { RecordingExportQuality } from './core/recording-export-quality.ts';
-import type { SnapshotDiagnosticsSummary } from './snapshot-diagnostics.ts';
 import type {
-  SnapshotCaptureAnalysis,
   SnapshotCaptureAnnotations,
-  SnapshotCaptureFreshness,
-} from './snapshot-capture-annotations.ts';
+  SnapshotDiagnosticsSummary,
+} from '@agent-device/contracts/capture';
+import type { JsonObject } from '@agent-device/contracts/client';
+import type { AppsFilter, DeviceRotation } from '@agent-device/contracts/device';
+import type {
+  AlertAction,
+  AlertInfo,
+  BackMode,
+  ClickButton,
+  GesturePlan,
+  ScrollDirection,
+  TvRemoteButton,
+} from '@agent-device/contracts/interaction';
+import type { RecordingExportQuality } from '@agent-device/contracts/recording';
+import type { SessionSurface } from '@agent-device/contracts/session';
+import type { NetworkIncludeMode } from '@agent-device/kernel/contracts';
+import type {
+  DeviceTarget,
+  Platform,
+  PlatformSelector,
+  PublicPlatform,
+} from '@agent-device/kernel/device';
+import type {
+  Point,
+  Rect,
+  SnapshotNode,
+  SnapshotOptions,
+  SnapshotState,
+} from '@agent-device/kernel/snapshot';
+import type { RepeatedInput } from './commands/command-input.ts';
 import type { ScreenshotResultData } from './utils/screenshot-result.ts';
 
 // The backend's public leaf platform (approach b): backends distinguish iOS from
 // macOS (e.g. snapshot backend routing, the macOS surface guard), so this carries the
 // leaf string, not the internal collapsed `apple`.
 export type AgentDeviceBackendPlatform = PublicPlatform;
-
-export const BACKEND_CAPABILITY_NAMES = [
-  'android.shell',
-  'ios.runnerCommand',
-  'macos.desktopScreenshot',
-] as const;
-
-export type BackendCapabilityName = (typeof BACKEND_CAPABILITY_NAMES)[number];
-
-export type BackendCapabilitySet = readonly BackendCapabilityName[];
 
 export type BackendCommandContext = {
   session?: string;
@@ -54,12 +58,9 @@ export type BackendSnapshotResult = {
 
 export type BackendSnapshotOptions = SnapshotOptions & {
   includeRects?: boolean;
+  includeHiddenContentHints?: boolean;
   outPath?: string;
 };
-
-export type BackendSnapshotAnalysis = SnapshotCaptureAnalysis;
-
-export type BackendSnapshotFreshness = SnapshotCaptureFreshness;
 
 export type BackendReadTextResult = {
   text: string;
@@ -72,6 +73,7 @@ export type BackendFindTextResult = {
 export type BackendScreenshotOptions = {
   fullscreen?: boolean;
   overlayRefs?: boolean;
+  pixelDensity?: number;
   stabilize?: boolean;
   normalizeStatusBar?: boolean;
   surface?: SessionSurface;
@@ -85,6 +87,11 @@ export type BackendDeviceOrientation = DeviceRotation;
 
 export type BackendBackOptions = {
   mode?: BackMode;
+};
+
+export type BackendTvRemoteOptions = {
+  button: TvRemoteButton;
+  durationMs?: number;
 };
 
 export type BackendKeyboardOptions = {
@@ -101,6 +108,9 @@ export type BackendKeyboardResult = {
   wasVisible?: boolean;
   dismissed?: boolean;
   attempts?: number;
+  /** iOS only: which mechanism resigned the keyboard (#1598) — 'dismissKey'
+   *  (tapped the keyboard's own Hide/Dismiss/Done key); background-tap dismissal is deliberately unsupported (#1606 review). */
+  mechanism?: string;
 };
 
 export type BackendClipboardTextResult = {
@@ -147,10 +157,6 @@ export type BackendLongPressOptions = {
   durationMs?: number;
 };
 
-export type BackendSwipeOptions = {
-  durationMs?: number;
-};
-
 export type BackendScrollTarget =
   | {
       kind: 'viewport';
@@ -165,11 +171,6 @@ export type BackendScrollOptions = {
   amount?: number;
   pixels?: number;
   durationMs?: number;
-};
-
-export type BackendPinchOptions = {
-  scale: number;
-  center?: Point;
 };
 
 export type BackendOpenTarget = {
@@ -219,7 +220,7 @@ export type BackendAppState = {
 export type BackendPushInput =
   | {
       kind: 'json';
-      payload: Record<string, unknown>;
+      payload: JsonObject;
     }
   | {
       kind: 'file';
@@ -228,7 +229,7 @@ export type BackendPushInput =
 
 export type BackendAppEvent = {
   name: string;
-  payload?: Record<string, unknown>;
+  payload?: JsonObject;
 };
 
 export type BackendDeviceFilter = {
@@ -420,12 +421,12 @@ export type BackendEscapeHatches = {
 
 export type AgentDeviceBackend = {
   platform: AgentDeviceBackendPlatform;
-  capabilities?: BackendCapabilitySet;
   escapeHatches?: BackendEscapeHatches;
   captureSnapshot?(
     context: BackendCommandContext,
     options?: BackendSnapshotOptions,
   ): Promise<BackendSnapshotResult>;
+  resolveGestureViewport?(context: BackendCommandContext): Promise<Rect | undefined>;
   captureScreenshot?(
     context: BackendCommandContext,
     outPath: string,
@@ -433,6 +434,37 @@ export type AgentDeviceBackend = {
   ): Promise<BackendScreenshotResult | void>;
   readText?(context: BackendCommandContext, node: SnapshotNode): Promise<BackendReadTextResult>;
   findText?(context: BackendCommandContext, text: string): Promise<BackendFindTextResult>;
+  /**
+   * #1542 off-screen refusal double-check: called ONLY at the moment the
+   * shared off-screen interaction guard is about to REFUSE a click/tap/
+   * gesture-target resolution, to re-confirm the target directly — bypassing
+   * whatever bulk accessibility tree the guard's verdict came from (observed
+   * on iOS: a keyboard-dismiss content-offset correction can leave a
+   * ScrollView's bulk AX frame squeezed to a stale value, or the whole bulk
+   * tree pinned at pre-gesture values, while the target is genuinely fine).
+   *
+   * Conceptually a boolean ("is this actually visible?"), but returns the
+   * confirmed LIVE rect rather than a bare `true`/`false`: a rescue must tap
+   * at the live coordinate, never the stale bulk-tree one the guard was
+   * about to refuse — a caller that used the original rect after a rescue
+   * would silently tap the wrong place when the bulk tree is stale, not just
+   * stale-looking. `rootViewport` is the guard's own already-resolved root
+   * viewport (Application/Window frame), passed in so an implementation can
+   * validate the live rect's tap point against it without recomputing it.
+   *
+   * Returns `null` when the target cannot be positively confirmed on-screen
+   * (no stable id/label, not found, ambiguous match, not hittable, outside
+   * `rootViewport`, or any transport failure) — the guard MUST fail closed
+   * (refuse) on `null`. This is a rescue path only, never a way to relax a
+   * genuine refusal. Backends that do not support a direct, tree-independent
+   * read simply omit this method, which leaves today's refuse-on-off-screen
+   * behavior byte-for-byte unchanged.
+   */
+  confirmOffscreenTargetVisible?(
+    context: BackendCommandContext,
+    node: Pick<SnapshotNode, 'identifier' | 'label'>,
+    rootViewport: Rect | null,
+  ): Promise<Rect | null>;
   tap?(
     context: BackendCommandContext,
     point: Point,
@@ -466,21 +498,12 @@ export type AgentDeviceBackend = {
     point: Point,
     options?: BackendLongPressOptions,
   ): Promise<BackendActionResult>;
-  swipe?(
-    context: BackendCommandContext,
-    from: Point,
-    to: Point,
-    options?: BackendSwipeOptions,
-  ): Promise<BackendActionResult>;
   scroll?(
     context: BackendCommandContext,
     target: BackendScrollTarget,
     options: BackendScrollOptions,
   ): Promise<BackendActionResult>;
-  pinch?(
-    context: BackendCommandContext,
-    options: BackendPinchOptions,
-  ): Promise<BackendActionResult>;
+  performGesture?(context: BackendCommandContext, plan: GesturePlan): Promise<BackendActionResult>;
   pressKey?(
     context: BackendCommandContext,
     key: string,
@@ -491,7 +514,11 @@ export type AgentDeviceBackend = {
     options?: BackendBackOptions,
   ): Promise<BackendActionResult>;
   pressHome?(context: BackendCommandContext): Promise<BackendActionResult>;
-  rotate?(
+  pressTvRemote?(
+    context: BackendCommandContext,
+    options: BackendTvRemoteOptions,
+  ): Promise<BackendActionResult>;
+  setOrientation?(
     context: BackendCommandContext,
     orientation: BackendDeviceOrientation,
   ): Promise<BackendActionResult>;

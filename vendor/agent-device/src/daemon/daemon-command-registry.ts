@@ -1,28 +1,45 @@
 import { deriveDaemonCommandDescriptors } from '../core/command-descriptor/derive.ts';
 import { commandDescriptors } from '../core/command-descriptor/registry.ts';
+import type { DaemonCommandRoute } from './request-handler-chain.ts';
 import type { DaemonRequest } from './types.ts';
 
-export type DaemonCommandRoute =
-  | 'lease'
-  | 'session'
-  | 'snapshot'
-  | 'reactNative'
-  | 'recordTrace'
-  | 'find'
-  | 'interaction'
-  | 'generic';
+export type { DaemonCommandRoute } from './request-handler-chain.ts';
 
-export type SessionCommandKind = 'inventory' | 'state' | 'observability' | 'replay';
+export type SessionCommandKind = 'inventory' | 'state' | 'observability' | 'publication' | 'replay';
+
+// Declared in contracts/ so core/ can classify commands without importing the daemon;
+// re-exported here because the descriptor shape below is stated in terms of it.
+export type { RefFrameEffect } from '@agent-device/contracts/replay';
+import type { RefFrameEffect } from '@agent-device/contracts/replay';
+
+/**
+ * Request-sensitive form of {@link RefFrameEffect}. Commands whose subactions
+ * differ (keyboard `status` vs `dismiss`, alert `get`/`wait` vs
+ * `accept`/`dismiss`) use the resolver form instead of pretending all
+ * subcommands behave alike. Mirrors the existing `(req) => boolean` closure
+ * traits below.
+ */
+export type DaemonRefFrameEffect = RefFrameEffect | ((req: DaemonRequest) => RefFrameEffect);
 
 export type DaemonCommandDescriptor = {
   command: string;
   route: DaemonCommandRoute;
   sessionKind?: SessionCommandKind;
+  refFrameEffect?: DaemonRefFrameEffect;
   leaseAdmissionExempt?: boolean;
   sessionExecutionLockExempt?: boolean;
   selectorValidationExempt?: boolean;
   replayScopedAction?: boolean;
   allowInvalidRecording?: boolean;
+  /**
+   * #1478: this command's REQUEST may carry `flags.saveScript` to arm session
+   * script publication. Only the released flag owners (`open`, `close`,
+   * `replay` — the commands whose CLI grammar declares `--save-script`) set
+   * this; every other command's raw request is rejected at the daemon request
+   * seam by `unsupportedSaveScriptFlagResponse`, so a recordable command such
+   * as `record` or `trace` cannot arm publication over the wire.
+   */
+  saveScriptFlagOwner?: boolean;
   lockPolicySelectorOverride?: boolean;
   androidBlockingDialogGuard?: boolean;
   preferExplicitDeviceOverExistingSession?: boolean;
@@ -76,6 +93,18 @@ export function shouldBlockForInvalidRecording(command: string): boolean {
   return getDaemonCommandDescriptor(command)?.allowInvalidRecording !== true;
 }
 
+/** #1478: whether `flags.saveScript` is accepted on this command's request. */
+export function ownsSaveScriptFlag(command: string): boolean {
+  return getDaemonCommandDescriptor(command)?.saveScriptFlagOwner === true;
+}
+
+/** #1478: the released `--save-script` flag owners, sorted for stable messages. */
+export function listSaveScriptFlagOwnerCommands(): string[] {
+  return DAEMON_COMMAND_DESCRIPTORS.filter((descriptor) => descriptor.saveScriptFlagOwner === true)
+    .map((descriptor) => descriptor.command)
+    .sort();
+}
+
 export function canOverrideLockPolicySelector(command: string): boolean {
   return getDaemonCommandDescriptor(command)?.lockPolicySelectorOverride === true;
 }
@@ -91,6 +120,18 @@ export function shouldPreferExplicitDeviceOverExistingSession(req: DaemonRequest
 export function usesSessionlessDefaultProviderDevice(req: DaemonRequest): boolean {
   const allow = getDaemonCommandDescriptor(req.command)?.allowSessionlessDefaultDevice;
   return typeof allow === 'function' ? allow(req) : false;
+}
+
+/**
+ * ADR 0014: the ref-frame effect a request resolves to, honoring the
+ * request-sensitive resolver form. Returns `undefined` for commands with no
+ * daemon descriptor (never daemon-projected) — the completeness gate ensures
+ * every daemon-projected command declares an effect, so `undefined` here means
+ * the command does not reach a session-owning daemon leaf.
+ */
+export function resolveRefFrameEffect(req: DaemonRequest): RefFrameEffect | undefined {
+  const effect = getDaemonCommandDescriptor(req.command)?.refFrameEffect;
+  return typeof effect === 'function' ? effect(req) : effect;
 }
 
 export function resolveProviderDeviceResolutionIntent(
@@ -123,6 +164,12 @@ function buildDaemonCommandRegistry(descriptors: readonly DaemonCommandDescripto
 }
 
 function shouldSkipSessionlessProviderDevice(req: DaemonRequest): boolean {
-  const skip = getDaemonCommandDescriptor(req.command)?.skipSessionlessProviderDevice;
+  const descriptor = getDaemonCommandDescriptor(req.command);
+  // Lease-route requests manage lease lifecycle/artifacts, not a device
+  // session: resolving a default device for provider scoping would spuriously
+  // trigger local device discovery before any lease exists. Derived from the
+  // route so a new lease-route command cannot regress it.
+  if (descriptor?.route === 'lease') return true;
+  const skip = descriptor?.skipSessionlessProviderDevice;
   return typeof skip === 'function' ? skip(req) : false;
 }

@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import type { AndroidAdbExecutor } from '../../platforms/android/adb-executor.ts';
-import { isIosFamily, publicPlatformString, type DeviceInfo } from '../../kernel/device.ts';
-import { emitRequestProgress } from '../request-progress.ts';
+import { isIosFamily, publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
+import { emitRequestProgress } from '../../request/progress.ts';
 import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import { readVersion } from '../../utils/version.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
@@ -28,11 +28,13 @@ import {
   summarizeDoctorStatus,
 } from './session-doctor-output.ts';
 import { appendToolchainChecks } from './session-doctor-toolchain.ts';
-import type { DoctorCheck, DoctorOptions } from './session-doctor-types.ts';
+import type { DoctorOptions } from './session-doctor-types.ts';
+import type { DoctorCheck, DoctorCommandResult } from '@agent-device/contracts/observability';
 import {
   hasCachedAppleRunnerArtifact,
   prewarmAppleRunnerCache,
 } from '../../platforms/apple/core/runner/runner-client.ts';
+import { appendWebBrowserLifecycleCheck } from './session-doctor-web.ts';
 
 export async function handleDoctorCommand(params: {
   req: DaemonRequest;
@@ -71,6 +73,7 @@ export async function handleDoctorCommand(params: {
     inventory,
     options,
     session,
+    stateDir,
   });
   await appendIosRunnerWarmupCheck(checks, appCheckDevice ?? resolveWarmupSimulator(inventory));
   return doctorResponse(checks, options, { device: appCheckDevice, includeMetro: true, inventory });
@@ -139,8 +142,9 @@ async function appendLocalDoctorChecks(params: {
   inventory: DoctorDeviceInventory | undefined;
   options: DoctorOptions;
   session: SessionState | undefined;
+  stateDir: string;
 }): Promise<DeviceInfo | undefined> {
-  const { checks, inventory, options, session, androidAdbExecutor } = params;
+  const { checks, inventory, options, session, androidAdbExecutor, stateDir } = params;
   const appCheckDevice =
     session?.device ?? resolveDoctorDeviceForAppCheck(checks, inventory, options.targetApp);
   if (appCheckDevice) {
@@ -154,6 +158,7 @@ async function appendLocalDoctorChecks(params: {
   if (options.shouldProbeMetro) {
     appendDoctorCheck(checks, await probeMetro(options.metroHost, options.metroPort, options.kind));
   }
+  await appendWebBrowserLifecycleCheck(checks, stateDir);
   return appCheckDevice;
 }
 
@@ -200,6 +205,6 @@ function doctorResponse(
           ? { host: options.metroHost, port: options.metroPort }
           : undefined,
       checks: sortChecks(checks),
-    },
+    } satisfies DoctorCommandResult,
   };
 }

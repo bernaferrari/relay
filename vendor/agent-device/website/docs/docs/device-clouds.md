@@ -1,18 +1,21 @@
 ---
 title: Device Clouds & Farms
-description: Connect agents to BrowserStack device clouds and AWS Device Farm without interactive login.
+description: Connect agents to Limrun, BrowserStack, and AWS Device Farm without interactive login.
 ---
 
 # Device Clouds & Farms
 
-Use device cloud and device farm connections when the agent should drive BrowserStack App Automate or AWS Device Farm remote access through the local `agent-device` daemon:
+Use device cloud and device farm connections when the agent should drive Limrun direct instances, BrowserStack App Automate, or AWS Device Farm remote access through the local `agent-device` daemon:
 
 ```bash
 agent-device connect browserstack ...
 agent-device connect aws-device-farm ...
+agent-device connect limrun ...
 ```
 
-These providers are not remote `agent-device` daemons. `connect browserstack` and `connect aws-device-farm` write a local generated profile, then the first lease-allocating command such as `open` creates the hosted WebDriver session.
+These providers are not remote `agent-device` daemons. `connect` makes read-only provider calls to verify credentials and the configured resources, then saves active connection state. It does not allocate a device. BrowserStack and AWS Device Farm create hosted WebDriver sessions on `open`; Limrun allocates its direct iOS/Android instance on the first device command, which can be `install` or `open`.
+
+Successful human output names the verified or deferred device, explains the app state, and prints copy-pasteable next commands and workflow notes. `--json` exposes the same information in `verification`, `device`, `app`, `liveSession`, `nextSteps`, and `notes`. Do not use `devices` or `apps` as a preflight catalog for these direct providers: they inspect a live leased device and can therefore allocate the deferred session.
 
 ## Interface Summary
 
@@ -20,11 +23,11 @@ Device cloud providers have one setup model and three ways to drive the resultin
 
 | Interface         | What it does well                                                                                              | How provider setup works                                                                                                                                                                  |
 | ----------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI               | Best default for agents and CI. It creates the local provider profile once, then normal commands inherit it.   | Run `agent-device connect browserstack` or `agent-device connect aws-device-farm`, then `open`, `snapshot`, `click`, `close`, `artifacts`, and `disconnect`.                              |
+| CLI               | Best default for agents and CI. It creates the local provider profile once, then normal commands inherit it.   | Run `agent-device connect limrun`, `agent-device connect browserstack`, or `agent-device connect aws-device-farm`, then normal device commands.                              |
 | JavaScript client | Best for Node integrations that already own process configuration.                                             | Pass provider fields in `createAgentDeviceClient(...)` config or per-command options, then call normal client methods such as `client.apps.open(...)` and `client.capture.snapshot(...)`. |
 | MCP               | Best for tool-only agents after bootstrap. MCP exposes operational tools backed by the same command contracts. | Run CLI `connect ...` before starting or using the MCP server in the same effective state directory. MCP intentionally does not expose `connect` or `disconnect` as provider setup tools. |
 
-The CLI is the canonical bootstrap path because it persists a non-secret generated profile and keeps BrowserStack/AWS credentials in the environment. After bootstrap, CLI, JavaScript, and MCP all use the same daemon/session behavior.
+The CLI is the canonical bootstrap path because it persists a non-secret generated profile and keeps provider credentials in the environment. After bootstrap, CLI, JavaScript, and MCP all use the same daemon/session behavior.
 
 ## Autonomous Agent Requirements
 
@@ -32,7 +35,7 @@ Agents can connect autonomously when all required credentials and selectors are 
 
 - Do not rely on browser-based login inside the agent workflow.
 - Put provider credentials in CI secrets, a local ignored env file, or the CI platform's secret store.
-- Keep generated remote profiles non-secret. They may contain provider app ids, Device Farm ARNs, device names, OS versions, and labels; they must not contain BrowserStack access keys or AWS secret keys.
+- Keep generated remote profiles non-secret. They may contain provider app ids, Device Farm ARNs, device names, OS versions, and labels; they must not contain Limrun API keys, BrowserStack access keys, or AWS secret keys.
 - Run `agent-device artifacts --json` after `close` when the provider has video/log URLs to fetch.
 
 ## CLI Experience
@@ -40,11 +43,49 @@ Agents can connect autonomously when all required credentials and selectors are 
 The CLI experience is:
 
 1. Export provider credentials.
-2. Run `agent-device connect <provider>` with provider selectors.
-3. Run normal `agent-device` commands.
+2. Run `agent-device connect <provider>` with provider selectors. Connection state is activated only after the provider verifies access.
+3. Follow the printed `Next` commands to install or open the app.
 4. Run `agent-device close` to stop the hosted session.
 5. Run `agent-device artifacts --json` to retrieve provider-hosted video/log/dashboard URLs.
 6. Run `agent-device disconnect` to clear local connection state.
+
+### Limrun
+
+Required environment:
+
+```bash
+export LIMRUN_API_KEY=...
+```
+
+`LIMRUN_REGION` optionally selects a Limrun region.
+
+Choose the platform to create a matching instance:
+
+```bash
+agent-device connect limrun --platform android
+```
+
+Limrun creates remote iOS simulators and Android emulators only. It does not use local or physical-device selectors such as `--udid`, `--serial`, or `--device`.
+
+Full Android flow:
+
+```bash
+export LIMRUN_API_KEY=...
+
+agent-device connect limrun --platform android
+agent-device install com.example.app ./app.apk
+agent-device open com.example.app --relaunch
+agent-device snapshot -i
+agent-device click 'label="Continue"'
+agent-device close
+agent-device disconnect
+```
+
+Limrun Android uses the direct ADB tunnel, so the normal Android helper-backed snapshots, installs, and port reverse flow are available. This makes a local Metro server reachable through the normal Android reverse setup.
+
+A newly allocated Limrun instance does not contain your app. `connect` therefore recommends `install <package-or-bundle-id> <app-path-or-url>` before `open`. The install command allocates the instance when needed; it is not necessary to run `devices` first.
+
+Limrun iOS uses the direct Limrun iOS client. It supports normal app lifecycle, snapshots, screenshots, taps, text input, scrolling, and app install, but it cannot reverse a remote device port to a local host port. For iOS Metro or React DevTools, use a publicly reachable HTTPS endpoint or a bridge URL rather than a local-only address. Limrun does not currently expose provider artifacts through `agent-device artifacts`.
 
 ### BrowserStack
 
@@ -67,6 +108,8 @@ agent-device connect browserstack \
 
 `--provider-app` accepts a BrowserStack app reference such as `bs://...`, an HTTP(S) app URL, or an existing local app path. Local paths are uploaded to BrowserStack when the hosted session is allocated.
 
+At connect time, BrowserStack credentials and the exact device/OS pair are verified. A `bs://` reference is checked against recent uploaded apps; a local artifact is checked on disk and persisted as an absolute path; a public URL remains configured but is validated by BrowserStack when the session is created. `open` still requires the app's installed package or bundle identifier, not its upload name.
+
 Optional labels:
 
 ```bash
@@ -74,6 +117,31 @@ Optional labels:
 --provider-build "$GITHUB_RUN_ID"
 --provider-session-name "$GITHUB_JOB"
 ```
+
+Optional device features:
+
+```bash
+--provider-device-orientation portrait   # or landscape        (alias --device-orientation)
+--provider-geo-location US                                   # (alias --geo-location)
+--provider-timezone New_York                                 # (alias --timezone)
+--provider-language Fr                                       # (alias --language)
+--provider-locale Fr                                         # (alias --locale)
+--provider-network-profile 4g-lte-advanced-good              # (alias --network-profile)
+--provider-custom-network 1000                               # (alias --custom-network)
+--provider-no-resign-app                                     # iOS only
+```
+
+These become BrowserStack vendor capabilities inside `bstack:options` when the hosted session is
+created. Notes:
+
+- This sets the orientation the session *starts* in. It does not constrain activities launched later:
+  an activity that does not pin its own orientation — a Chrome Custom Tab hosting an OAuth page, for
+  example — follows the device's persistent rotation instead, and can still come up landscape. Use
+  `agent-device orientation portrait` once that activity is in the foreground to correct it.
+- `--provider-network-profile` and `--provider-custom-network` are mutually exclusive — pass one.
+- `--provider-no-resign-app` applies to iOS only, and is rejected on an Android session. BrowserStack
+  re-signs uploaded iOS apps with its own provisioning profile, which strips entitlements; opt out
+  when testing entitlement-dependent features such as push notifications.
 
 Full flow:
 
@@ -100,6 +168,8 @@ agent-device disconnect
 ### AWS Device Farm
 
 AWS Device Farm uses the AWS CLI credential provider chain. `agent-device` does not require `aws login`; it shells out to `aws devicefarm ...`, so any non-interactive AWS CLI credential source that works in CI works here. The AWS CLI documents environment variables such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_PROFILE`, `AWS_ROLE_ARN`, and `AWS_WEB_IDENTITY_TOKEN_FILE` in the [AWS CLI environment variable reference](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html).
+
+The current agent-device AWS Device Farm adapter supports hosted Android and iOS WebDriver sessions only. It does not route Vega OS or accept a Vega Fire TV ARN; the initial Vega workflow uses a local VVD only.
 
 Prefer short-lived CI credentials over long-lived IAM user keys. In GitHub Actions, use OIDC to assume an IAM role and let the action export the standard AWS environment variables; AWS documents IAM OIDC providers in the [IAM OIDC provider guide](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html), and the official `aws-actions/configure-aws-credentials` action documents the GitHub Actions setup in its [configure-aws-credentials repository](https://github.com/aws-actions/configure-aws-credentials). For other CI systems, use the platform's AWS federation support when available. If static keys are unavoidable, store them as CI secrets and scope their IAM policy to the needed Device Farm project/actions.
 
@@ -139,6 +209,8 @@ export AWS_DEVICE_FARM_APP_ARN=...
 ```
 
 `AGENT_DEVICE_AWS_DEVICE_FARM_PROJECT_ARN`, `AGENT_DEVICE_AWS_DEVICE_FARM_DEVICE_ARN`, and `AGENT_DEVICE_AWS_DEVICE_FARM_APP_ARN` are accepted as agent-device-specific aliases.
+
+`connect` runs read-only `get-project`, `get-device`, and, when supplied, `get-upload` calls. It rejects a device or app for the wrong platform and an app upload that is not ready. If no app ARN is supplied, the output says so explicitly. AWS Device Farm does not support installing an app after the remote access session is allocated; reconnect with `--aws-app-arn <arn> --force` before `open` when the app is required.
 
 Full flow:
 
@@ -213,11 +285,36 @@ const client = createAgentDeviceClient({
 });
 ```
 
-The JavaScript client does not publish a hosted WebDriver SDK subpath. Use the normal typed client methods; provider implementation details stay internal.
+Use the normal typed client methods when agent-device owns the daemon. Limrun uses the same client
+shape with `leaseProvider: 'limrun'`, `platform: 'android'` or `platform: 'ios'`, and
+`LIMRUN_API_KEY` in the daemon environment.
+
+The first-party agent-device-cloud bridge hosts the provider runtime itself and can reuse
+agent-device's Limrun implementation:
+
+```ts
+import { LimrunRuntime } from 'agent-device/limrun';
+
+const apiKey = process.env.LIMRUN_API_KEY;
+if (!apiKey) throw new Error('LIMRUN_API_KEY is required');
+
+const runtime = new LimrunRuntime({
+  apiKey,
+  region: process.env.LIMRUN_REGION,
+});
+```
+
+After allocating a lease, embedding bridges can call `runtime.getDeviceSession(device)` to access
+the allocated device's reusable semantic capabilities. The facade includes app inventory,
+foreground state where the provider exposes it, key input, bounded log reads, recording, remote
+asset installation, and the existing interactor. Android additionally exposes agent-device's
+`AndroidAdbProvider` abstraction for helpers and reversible port forwarding. iOS exposes a typed
+`simctl` execution handle for bridge-owned runner lifecycle and launch policy. Raw Limrun clients
+remain private to the provider runtime.
 
 ## MCP Experience
 
-The MCP server exposes operational command tools such as `open`, `snapshot`, `click`, `close`, and `artifacts`. It does not expose `connect browserstack` or `connect aws-device-farm`.
+The MCP server exposes operational command tools such as `open`, `snapshot`, `click`, `close`, and `artifacts`. It does not expose provider `connect` commands.
 
 For MCP-only operation, bootstrap with the CLI first in the same effective state directory:
 
@@ -238,7 +335,7 @@ close {}
 artifacts {}
 ```
 
-Use the same pattern for AWS Device Farm: provide AWS credentials in the MCP server environment, run CLI `connect aws-device-farm ...` once, then let MCP tools operate on the active connection. If an integration cannot run CLI bootstrap, use the JavaScript client path instead of MCP for provider setup.
+Use the same pattern for Limrun or AWS Device Farm: provide the provider credentials in the MCP server environment, run the corresponding CLI `connect` command once, then let MCP tools operate on the active connection. If an integration cannot run CLI bootstrap, use the JavaScript client path instead of MCP for provider setup.
 
 ## Artifact Lookup
 
@@ -254,6 +351,7 @@ BrowserStack can return session video, Appium logs, device logs, dashboard URL, 
 
 ## Troubleshooting
 
-- If BrowserStack connect fails before opening a session, check `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `--provider-app`, `--provider-os-version`, and `--device`.
-- If AWS allocation fails, first run `aws sts get-caller-identity` in the same CI step to confirm the AWS CLI credential chain is active, then verify the Device Farm ARNs and region.
+- If BrowserStack connect fails, its error distinguishes rejected credentials, an unavailable device/OS pair, a missing `bs://` upload, and a missing local artifact.
+- If AWS connect fails, use its reported `aws devicefarm get-*` error to check the credential chain, ARN, region, resource platform, or upload readiness. Allocation has not happened yet.
+- If Limrun connect fails, check `LIMRUN_API_KEY` and the optional `LIMRUN_REGION`. A successful connect verifies the selected instance service without creating an instance.
 - If artifact lookup is pending immediately after `close`, retry `agent-device artifacts --json`. Some providers finalize video/log URLs asynchronously after the hosted session stops.

@@ -1,11 +1,12 @@
-import { runCmd, runCmdDetached, whichCmd } from '../../utils/exec.ts';
+import { requireExecSuccess, runCmd, runCmdDetached, whichCmd } from '../../utils/exec.ts';
 import type { ExecResult } from '../../utils/exec.ts';
 import { sleep } from '../../utils/timeouts.ts';
-import { AppError, asAppError } from '../../kernel/errors.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
 import { resolveAndroidSerialAllowlist } from '../../utils/device-isolation.ts';
 import { bootFailureHint, classifyBootFailure } from '../boot-diagnostics.ts';
+import { attachAdbFailureHint } from './adb-executor.ts';
 import { ensureAndroidSdkPathConfigured } from './sdk.ts';
 
 const EMULATOR_SERIAL_PREFIX = 'emulator-';
@@ -282,10 +283,14 @@ function parseAndroidDeviceEntries(rawOutput: string): AndroidDeviceEntry[] {
 }
 
 async function listAndroidDeviceEntries(): Promise<AndroidDeviceEntry[]> {
-  const result = await runCmd('adb', ['devices', '-l'], {
-    timeoutMs: ANDROID_BOOT_PROP_TIMEOUT_MS,
-  });
-  return parseAndroidDeviceEntries(result.stdout);
+  try {
+    const result = await runCmd('adb', ['devices', '-l'], {
+      timeoutMs: ANDROID_BOOT_PROP_TIMEOUT_MS,
+    });
+    return parseAndroidDeviceEntries(result.stdout);
+  } catch (error) {
+    throw attachAdbFailureHint(error);
+  }
 }
 
 export function parseAndroidAvdList(rawOutput: string): string[] {
@@ -306,18 +311,16 @@ export function resolveAndroidAvdName(
 }
 
 async function listAndroidAvdNames(): Promise<string[]> {
-  const result = await runCmd('emulator', ['-list-avds'], {
-    allowFailure: true,
-    timeoutMs: ANDROID_BOOT_PROP_TIMEOUT_MS,
-  });
-  if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', 'Failed to list Android emulator AVDs', {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
+  const result = requireExecSuccess(
+    await runCmd('emulator', ['-list-avds'], {
+      allowFailure: true,
+      timeoutMs: ANDROID_BOOT_PROP_TIMEOUT_MS,
+    }),
+    'Failed to list Android emulator AVDs',
+    {
       hint: 'Verify Android emulator tooling is installed and available in PATH.',
-    });
-  }
+    },
+  );
   return parseAndroidAvdList(result.stdout);
 }
 
@@ -363,6 +366,14 @@ async function waitForAndroidEmulatorByAvdName(params: {
   timeoutMs: number;
 }): Promise<DeviceInfo> {
   const startedAt = Date.now();
+  // Poll cadence scales with the caller's budget: a 1Hz sample rate against a
+  // small budget wastes most of it between checks (a 5s budget deserves 250ms
+  // sampling), while large budgets keep the gentle 1s cadence. Floor of 50ms
+  // keeps tight budgets from busy-spinning.
+  const pollMs = Math.min(
+    ANDROID_EMULATOR_BOOT_POLL_MS,
+    Math.max(50, Math.floor(params.timeoutMs / 20)),
+  );
   while (Date.now() - startedAt < params.timeoutMs) {
     try {
       const serial = await findAndroidEmulatorSerialByAvdName(params.avdName, params.serial);
@@ -379,7 +390,7 @@ async function waitForAndroidEmulatorByAvdName(params: {
     } catch {
       // Best-effort polling while adb/emulator process settles.
     }
-    await sleep(ANDROID_EMULATOR_BOOT_POLL_MS);
+    await sleep(pollMs);
   }
   throw new AppError('COMMAND_FAILED', 'Android emulator did not appear in time', {
     avdName: params.avdName,
@@ -495,7 +506,9 @@ export async function ensureAndroidEmulatorBooted(params: {
 export async function waitForAndroidBoot(serial: string, timeoutMs = 60000): Promise<void> {
   const timeoutBudget = timeoutMs;
   const deadline = Deadline.fromTimeoutMs(timeoutBudget);
-  const maxAttempts = Math.max(1, Math.ceil(timeoutBudget / ANDROID_BOOT_POLL_MS));
+  // Aim for at least 20 polls without busy-looping, capped at the production cadence.
+  const pollMs = Math.min(ANDROID_BOOT_POLL_MS, Math.max(50, Math.floor(timeoutBudget / 20)));
+  const maxAttempts = Math.max(1, Math.ceil(timeoutBudget / pollMs));
   let lastBootResult: ExecResult | undefined;
   let timedOut = false;
   try {
@@ -517,6 +530,8 @@ export async function waitForAndroidBoot(serial: string, timeoutMs = 60000): Pro
         );
         lastBootResult = result;
         if (result.stdout.trim() === '1') return;
+        // exec-guard-allow: getprop exits 0 while the device is still booting;
+        // the throw is a retry-loop poll miss, not a process-exit wrap.
         throw new AppError('COMMAND_FAILED', 'Android device is still booting', {
           serial,
           stdout: result.stdout,
@@ -526,8 +541,8 @@ export async function waitForAndroidBoot(serial: string, timeoutMs = 60000): Pro
       },
       {
         maxAttempts,
-        baseDelayMs: ANDROID_BOOT_POLL_MS,
-        maxDelayMs: ANDROID_BOOT_POLL_MS,
+        baseDelayMs: pollMs,
+        maxDelayMs: pollMs,
         jitter: 0,
         shouldRetry: (error) => {
           const reason = classifyBootFailure({

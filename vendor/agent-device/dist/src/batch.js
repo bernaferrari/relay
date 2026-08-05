@@ -1,1 +1,1 @@
-export{runBatch}from"./6918.js";
+import{n as e}from"./sdk-batch-runner.js";export{e as runBatch};

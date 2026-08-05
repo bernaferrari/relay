@@ -44,6 +44,7 @@ function stubDevice(impl: {
   fill?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
   swipe?: (options: unknown) => Promise<unknown>;
+  pan?: (options: unknown) => Promise<unknown>;
   clipboard?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
@@ -56,6 +57,7 @@ function stubDevice(impl: {
       fill: impl.fill ?? (() => Promise.resolve({})),
       type: impl.type ?? (() => Promise.resolve({})),
       swipe: impl.swipe ?? (() => Promise.resolve({})),
+      pan: impl.pan ?? (() => Promise.resolve({})),
     },
     command: {
       wait: impl.wait ?? (() => Promise.resolve({})),
@@ -343,7 +345,7 @@ describe("runRecipeStep swipe", () => {
   it("resolves the pinned start and end independently on a larger device", async () => {
     const swipes: unknown[] = [];
     const device = stubDevice({
-      swipe: (options) => {
+      pan: (options) => {
         swipes.push(options);
         return Promise.resolve({});
       },
@@ -376,8 +378,10 @@ describe("runRecipeStep swipe", () => {
       {
         platform: "android",
         serial: "recipe-runner-test",
-        from: { x: 10, y: 20 },
-        to: { x: 190, y: 380 },
+        x: 10,
+        y: 20,
+        dx: 180,
+        dy: 360,
         durationMs: 330,
       },
     ]);

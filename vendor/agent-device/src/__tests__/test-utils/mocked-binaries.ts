@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { ANDROID_EMULATOR } from './device-fixtures.ts';
 
 /**
  * Creates a temporary stub `adb` binary that logs all args to a file,
@@ -36,22 +38,20 @@ export async function withMockedAdb(
 }
 
 /**
- * Creates a temporary stub `xcrun` binary that logs all args to a file,
- * prepends it to PATH, and cleans up after the callback finishes.
+ * Like {@link withMockedAdb}, but with a caller-provided stub `adb` script so
+ * tests can shape per-subcommand responses instead of only recording args.
+ * The callback also receives the canonical Android emulator device fixture.
  */
-export async function withMockedXcrun(
+export async function withScriptedAdb(
   tempPrefix: string,
-  run: (argsLogPath: string) => Promise<void>,
+  script: string,
+  run: (ctx: { argsLogPath: string; device: DeviceInfo }) => Promise<void>,
 ): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), tempPrefix));
-  const xcrunPath = path.join(tmpDir, 'xcrun');
+  const adbPath = path.join(tmpDir, 'adb');
   const argsLogPath = path.join(tmpDir, 'args.log');
-  await fs.writeFile(
-    xcrunPath,
-    '#!/bin/sh\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    'utf8',
-  );
-  await fs.chmod(xcrunPath, 0o755);
+  await fs.writeFile(adbPath, script, 'utf8');
+  await fs.chmod(adbPath, 0o755);
 
   const previousPath = process.env.PATH;
   const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
@@ -59,7 +59,9 @@ export async function withMockedXcrun(
   process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
 
   try {
-    await run(argsLogPath);
+    // Fresh copy per call: tests may tailor the device without leaking
+    // mutations into the shared fixture.
+    await run({ argsLogPath, device: { ...ANDROID_EMULATOR } });
   } finally {
     process.env.PATH = previousPath;
     if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;

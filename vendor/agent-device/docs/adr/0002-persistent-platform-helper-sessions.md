@@ -49,7 +49,21 @@ For Android snapshots, productize a persistent helper mode that keeps `UiAutomat
 serves fresh snapshot requests over an `adb forward` socket. Do not add snapshot result caching as
 part of that first step. The first reliable win is infrastructure reuse, not data reuse. The current
 implementation keeps the existing one-shot instrumentation helper as the fallback for startup,
-socket, protocol, and request failures.
+socket, protocol, and request failures. Both transports execute the same packaged helper contract;
+agent-device must fail closed when that helper is unavailable or invalid instead of substituting
+the legacy `adb uiautomator dump` snapshot engine.
+
+Android permits only one reliable instrumentation-owned `UiAutomation` context per device. Snapshot
+capture, gesture viewport resolution, and planned-touch injection therefore share one bundled
+automation helper: a live persistent helper session executes touch commands directly over its
+session socket, and without one the same helper runs one-shot (amended 2026-07, issue #1275,
+consistent with ADR 0013; previously touch synthesis shipped as a separate instrumentation helper,
+so the daemon had to stop the persistent snapshot session before every gesture and let the next
+snapshot restart it lazily). One-shot retry after a failed session command applies only to
+idempotent reads such as viewport resolution, and only after the failed session has been stopped.
+Gesture injection is not idempotent — events may already be partially injected — so a session
+gesture failure surfaces directly instead of retrying one-shot. Helper reuse must never turn
+process ownership into cross-command interference.
 
 For iOS, keep the XCTest runner session as the reference implementation for lifecycle and
 invalidation behavior. Android does not need to copy iOS internals, but it should reuse the same
@@ -82,7 +96,7 @@ should show meaningful wall-clock improvement on a realistic app state, not just
 
 Session managers need more lifecycle tests than one-shot helpers: startup, ready protocol, reuse,
 timeout, malformed response, helper version mismatch, device disconnect, install invalidation,
-shutdown, and one-shot fallback.
+shutdown, exclusive instrumentation handoff, and one-shot fallback.
 
 Observability should report whether a command used a persistent session, started one, reused one,
 invalidated one, or fell back to one-shot. This keeps CI and user bug reports diagnosable when a

@@ -8,23 +8,19 @@ import {
   publicPlatformString,
   type DeviceInfo,
   type PublicPlatform,
-} from '../../../kernel/device.ts';
-import { AppError } from '../../../kernel/errors.ts';
-import type { ExecResult } from '../../../utils/exec.ts';
+} from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { parseXmlDocumentSync, type XmlNode } from '@agent-device/xml';
+import { execFailureDetails, requireExecSuccess, type ExecResult } from '../../../utils/exec.ts';
 import { splitNonEmptyTrimmedLines } from '../../../utils/parsing.ts';
 import { roundPercent } from '../../perf-utils.ts';
-import { uniqueStrings } from '../../../daemon/action-utils.ts';
-import {
-  IOS_DEVICECTL_DEFAULT_HINT,
-  listIosDeviceApps,
-  listIosDeviceProcesses,
-  resolveIosDevicectlHint,
-  type IosDeviceProcessInfo,
-} from './devicectl.ts';
+import { uniqueStrings } from '@agent-device/kernel/collections';
+import { IOS_DEVICECTL_DEFAULT_HINT, resolveIosDevicectlHint } from './devicectl.ts';
+import type { IosDeviceProcessInfo } from './app-info.ts';
+import { resolveIosPhysicalDeviceControl } from './physical-device-control.ts';
 import { readInfoPlistString } from './plist.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
 import { runAppleToolCommand, runXcrun } from './tool-provider.ts';
-import { parseXmlDocumentSync, type XmlNode } from './xml.ts';
 import {
   findAllXmlNodes,
   findFirstXmlNode,
@@ -188,17 +184,18 @@ export async function captureAppleMemorySnapshot(
   if (result.exitCode !== 0) {
     await cleanupLocalArtifact(outPath, hadLocalArtifact);
     // fallow-ignore-next-line code-duplication
-    throw new AppError('COMMAND_FAILED', `Failed to capture Apple memgraph for ${appBundleId}`, {
-      kind: 'memgraph',
-      appBundleId,
-      pid: process.pid,
-      processName: path.basename(readProcessCommandToken(process.command)),
-      path: outPath,
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      hint: resolveAppleMemorySnapshotHint(device, result.stdout, result.stderr),
-    });
+    throw new AppError(
+      'COMMAND_FAILED',
+      `Failed to capture Apple memgraph for ${appBundleId}`,
+      execFailureDetails(result, {
+        kind: 'memgraph',
+        appBundleId,
+        pid: process.pid,
+        processName: path.basename(readProcessCommandToken(process.command)),
+        path: outPath,
+        hint: resolveAppleMemorySnapshotHint(device, result.stdout, result.stderr),
+      }),
+    );
   }
 
   const stat = await fs.stat(outPath).catch(() => null);
@@ -536,16 +533,17 @@ async function recordIosDeviceTrace(params: {
       capturedAtMs: record.capturedAtMs,
     };
   }
-  throw new AppError('COMMAND_FAILED', params.failureMessage, {
-    cmd: 'xcrun',
-    args: recordArgs,
-    exitCode: record.result.exitCode,
-    stdout: record.result.stdout,
-    stderr: record.result.stderr,
-    appBundleId,
-    deviceId: device.id,
-    hint: resolveIosDevicePerfHint(record.result.stdout, record.result.stderr),
-  });
+  throw new AppError(
+    'COMMAND_FAILED',
+    params.failureMessage,
+    execFailureDetails(record.result, {
+      cmd: 'xcrun',
+      args: recordArgs,
+      appBundleId,
+      deviceId: device.id,
+      hint: resolveIosDevicePerfHint(record.result.stdout, record.result.stderr),
+    }),
+  );
 }
 
 async function runIosDeviceTraceRecord(
@@ -638,21 +636,20 @@ async function exportIosDevicePerfTable(
     '--output',
     outputPath,
   ];
-  const exportResult = await runXcrun(exportArgs, {
-    allowFailure: true,
-    timeoutMs: IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS,
-  });
-  if (exportResult.exitCode === 0) return;
-  throw new AppError('COMMAND_FAILED', `Failed to export iOS device ${schema} data`, {
-    cmd: 'xcrun',
-    args: exportArgs,
-    exitCode: exportResult.exitCode,
-    stdout: exportResult.stdout,
-    stderr: exportResult.stderr,
-    appBundleId,
-    deviceId: device.id,
-    hint: resolveIosDevicePerfHint(exportResult.stdout, exportResult.stderr),
-  });
+  requireExecSuccess(
+    await runXcrun(exportArgs, {
+      allowFailure: true,
+      timeoutMs: IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS,
+    }),
+    `Failed to export iOS device ${schema} data`,
+    (exportResult) => ({
+      cmd: 'xcrun',
+      args: exportArgs,
+      appBundleId,
+      deviceId: device.id,
+      hint: resolveIosDevicePerfHint(exportResult.stdout, exportResult.stderr),
+    }),
+  );
 }
 
 async function exportOptionalIosDevicePerfTable(
@@ -845,26 +842,10 @@ export async function resolveIosDevicePerfTarget(
   device: DeviceInfo,
   appBundleId: string,
 ): Promise<IosDeviceProcessInfo[]> {
-  const apps = await listIosDeviceApps(device, 'all');
-  const app = apps.find((candidate) => candidate.bundleId === appBundleId);
-  if (!app) {
-    throw new AppError('APP_NOT_INSTALLED', `No iOS device app found for ${appBundleId}`, {
-      appBundleId,
-      deviceId: device.id,
-    });
-  }
-  if (!app.url) {
-    throw new AppError('COMMAND_FAILED', `Missing app bundle URL for ${appBundleId}`, {
-      appBundleId,
-      deviceId: device.id,
-    });
-  }
-
-  const appBundleUrl = app.url.replace(/\/$/, '');
+  const { appBundleUrl, processes } = await resolveIosPhysicalDeviceControl(
+    device,
+  ).resolveAppProcesses(device, appBundleId);
   const appBundlePath = fileURLToPath(appBundleUrl);
-  const processes = (await listIosDeviceProcesses(device)).filter((process) =>
-    process.executable.startsWith(`${appBundleUrl}/`),
-  );
   if (processes.length === 0) {
     throw new AppError('COMMAND_FAILED', `No running process found for ${appBundleId}`, {
       appBundleId,
@@ -973,18 +954,14 @@ function summarizeIosDevicePerfSnapshot(
 
 async function resolveMacOsBundlePath(appBundleId: string): Promise<string> {
   const query = `kMDItemCFBundleIdentifier == "${appBundleId.replaceAll('"', '\\"')}"`;
-  const result = await runAppleToolCommand('mdfind', [query], {
-    allowFailure: true,
-    timeoutMs: APPLE_PERF_TIMEOUT_MS,
-  });
-  if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', `Failed to resolve macOS app bundle for ${appBundleId}`, {
-      appBundleId,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    });
-  }
+  const result = requireExecSuccess(
+    await runAppleToolCommand('mdfind', [query], {
+      allowFailure: true,
+      timeoutMs: APPLE_PERF_TIMEOUT_MS,
+    }),
+    `Failed to resolve macOS app bundle for ${appBundleId}`,
+    { appBundleId },
+  );
 
   const bundlePath = result.stdout
     .split('\n')
@@ -1008,23 +985,17 @@ async function resolveIosSimulatorAppContainer(
     appBundleId,
     'app',
   ]);
-  const result = await runXcrun(args, {
-    allowFailure: true,
-    timeoutMs: APPLE_PERF_TIMEOUT_MS,
-  });
-  if (result.exitCode !== 0) {
-    throw new AppError(
-      'COMMAND_FAILED',
-      `Failed to resolve iOS simulator app container for ${appBundleId}`,
-      {
-        appBundleId,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-        hint: 'Ensure the iOS simulator app is installed and booted, then retry perf.',
-      },
-    );
-  }
+  const result = requireExecSuccess(
+    await runXcrun(args, {
+      allowFailure: true,
+      timeoutMs: APPLE_PERF_TIMEOUT_MS,
+    }),
+    `Failed to resolve iOS simulator app container for ${appBundleId}`,
+    {
+      appBundleId,
+      hint: 'Ensure the iOS simulator app is installed and booted, then retry perf.',
+    },
+  );
   const appPath = result.stdout.trim();
   if (appPath.length === 0) {
     throw new AppError(

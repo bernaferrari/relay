@@ -5,9 +5,9 @@ import {
 import {
   countDeviceInventoryByGroup,
   LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS,
-  type DeviceInventoryRequest,
   type DeviceInventoryGroup,
-} from '../../core/platform-inventory.ts';
+  type DeviceInventoryRequest,
+} from '@agent-device/contracts/device';
 import {
   matchesDeviceSelector,
   publicPlatformString,
@@ -15,10 +15,10 @@ import {
   type DeviceTarget,
   type PlatformSelector,
   type PublicPlatform,
-} from '../../kernel/device.ts';
-import { normalizeError } from '../../kernel/errors.ts';
+} from '@agent-device/kernel/device';
+import { normalizeError } from '@agent-device/kernel/errors';
 import type { DaemonRequest, SessionState } from '../types.ts';
-import type { DoctorCheck } from './session-doctor-types.ts';
+import type { DoctorCheck } from '@agent-device/contracts/observability';
 import { appendDoctorCheck } from './session-doctor-output.ts';
 
 export type DoctorDeviceInventory = {
@@ -225,7 +225,7 @@ function deviceInventorySummaryBreakdown(
   if (selector.platform || selector.target) return undefined;
   const groups = countDeviceInventoryByGroup(devices);
   const labels = deviceInventoryGroupLabels();
-  return (['android', 'apple', 'linux', 'web'] as const)
+  return (['android', 'apple', 'vega', 'linux', 'web'] as const)
     .flatMap((group) => {
       const entry = groups[group];
       return entry.available > 0
@@ -239,6 +239,7 @@ function deviceInventoryGroupLabels(): Record<DeviceInventoryGroup, string> {
   return {
     android: 'Android',
     apple: 'Apple',
+    vega: 'Vega',
     linux: 'Linux',
     web: 'web',
   };
@@ -248,6 +249,7 @@ function platformLabel(platform: PlatformSelector): string {
   if (platform === 'ios') return 'iOS';
   if (platform === 'macos') return 'macOS';
   if (platform === 'android') return 'Android';
+  if (platform === 'vega') return 'Vega';
   if (platform === 'linux') return 'Linux';
   if (platform === 'web') return 'web';
   return 'Apple';

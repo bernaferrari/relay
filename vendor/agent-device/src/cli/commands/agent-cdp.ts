@@ -1,8 +1,8 @@
 import { runCmdStreaming } from '../../utils/exec.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { isRemoteBridgeBackend } from './remote-bridge.ts';
-import type { SessionRuntimeHints } from '../../kernel/contracts.ts';
-import type { CliFlags } from '../parser/cli-flags.ts';
+import type { SessionRuntimeHints } from '@agent-device/kernel/contracts';
+import type { CliFlags } from '@agent-device/contracts/command';
 
 const AGENT_CDP_VERSION = '1.6.1';
 export const AGENT_CDP_PACKAGE = `agent-cdp@${AGENT_CDP_VERSION}`;
@@ -69,9 +69,9 @@ export function buildAgentCdpPassthroughArgs(
   if (!cdpUrl) {
     throw new AppError(
       'INVALID_ARGS',
-      'cdp remote bridge target discovery requires a Metro public base URL.',
+      'cdp remote bridge target discovery requires a React Native dev-server public base URL.',
       {
-        hint: 'Include metroPublicBaseUrl in the remote config so cdp can reach the local or tunneled Metro CDP endpoint without bridge proxy authentication.',
+        hint: 'Include metroPublicBaseUrl in the remote config so cdp can reach the local or tunneled Metro/Re.Pack CDP endpoint without bridge proxy authentication.',
       },
     );
   }

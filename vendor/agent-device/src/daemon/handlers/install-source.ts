@@ -1,11 +1,9 @@
-import { isIosFamily } from '../../kernel/device.ts';
-import {
-  installProviderDeviceInstallablePath,
-  type ProviderDeviceInstallResult,
-} from '../../provider-device-runtime.ts';
+import { isIosFamily } from '@agent-device/kernel/device';
+import type { ProviderDeviceInstallResult } from '@agent-device/contracts/device';
+import { installProviderDeviceInstallablePath } from '../../provider-device-runtime.ts';
 import { resolveTargetDevice, type CommandFlags } from '../../core/dispatch.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
-import { getRequestSignal } from '../request-cancel.ts';
+import { getRequestSignal } from '../../request/cancel.ts';
 import {
   cleanupRetainedMaterializedPaths,
   retainMaterializedPaths,
@@ -15,8 +13,8 @@ import { resolveInstallSource } from '../install-source-resolution.ts';
 import { SessionStore } from '../session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 
-import { resolveInstallFromSourceResultTarget } from '../../client/client-shared.ts';
-import { AppError, normalizeError } from '../../kernel/errors.ts';
+import { resolveInstallFromSourceResultTarget } from '../../utils/result-serialization.ts';
+import { AppError, normalizeError } from '@agent-device/kernel/errors';
 import { withSuccessText } from '../../utils/success-text.ts';
 import { requireCommandSupported } from './response.ts';
 import { recordSessionAction } from './handler-utils.ts';

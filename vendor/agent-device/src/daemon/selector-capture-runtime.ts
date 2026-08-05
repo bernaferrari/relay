@@ -4,7 +4,7 @@ import {
   buildSnapshotPresentationKey,
   snapshotPresentationOptionsFromFlags,
   type SnapshotState,
-} from '../kernel/snapshot.ts';
+} from '@agent-device/kernel/snapshot';
 import { isSparseSnapshotQualityVerdict } from '../snapshot/snapshot-quality.ts';
 import type { DaemonRequest, SessionState } from './types.ts';
 import { SessionStore } from './session-store.ts';
@@ -21,6 +21,9 @@ type SelectorCaptureRuntimeParams = {
   sessionName: string;
   req: DaemonRequest;
   logPath?: string;
+  // Sessionless routes have no session record to read the consumed capture back from, so the
+  // capture runtime reports every consumed snapshot here for response-level disclosures.
+  consumedSnapshot?: { state?: SnapshotState };
 };
 
 /**
@@ -37,7 +40,6 @@ type SelectorCaptureCachePolicy = {
 type SelectorCaptureRecoveryPolicy = {
   legacyIosSparse?: {
     query: string;
-    scope: string | undefined;
     shouldScope: boolean;
   };
   sparseVerdictQueryScope?: {
@@ -48,6 +50,7 @@ type SelectorCaptureRecoveryPolicy = {
 
 type SelectorCaptureRequest = {
   flags: CommandFlags | undefined;
+  signal?: AbortSignal;
   includeRects?: boolean;
   outPath?: string;
   snapshotScope?: string;
@@ -63,6 +66,11 @@ export function createSelectorCaptureRuntime(params: SelectorCaptureRuntimeParam
   let lastSnapshotResult: SelectorCaptureResult | undefined;
   let lastSnapshotCacheKey: string | undefined;
 
+  const remember = (result: SelectorCaptureResult): SelectorCaptureResult => {
+    if (params.consumedSnapshot) params.consumedSnapshot.state = result.snapshot;
+    return result;
+  };
+
   const capture = async (request: SelectorCaptureRequest): Promise<SelectorCaptureResult> => {
     const timestamp = Date.now();
     const cacheKey = selectorCaptureCacheKey(request, params.req.flags?.out);
@@ -76,7 +84,7 @@ export function createSelectorCaptureRuntime(params: SelectorCaptureRuntimeParam
       cacheKey,
     });
     if (reusableLastSnapshot) {
-      return reusableLastSnapshot;
+      return remember(reusableLastSnapshot);
     }
 
     const sessionSnapshot = reusableSessionSnapshot({ session, timestamp, request });
@@ -84,16 +92,17 @@ export function createSelectorCaptureRuntime(params: SelectorCaptureRuntimeParam
       lastSnapshotAt = sessionSnapshot.createdAt;
       lastSnapshotResult = { snapshot: sessionSnapshot };
       lastSnapshotCacheKey = cacheKey;
-      return lastSnapshotResult;
+      return remember(lastSnapshotResult);
     }
 
     const snapshot = await captureSelectorSnapshot({ params, request });
+    request.signal?.throwIfAborted();
     const result = { snapshot };
     updateSessionSnapshot({ session, sessionStore, sessionName, snapshot });
     lastSnapshotAt = timestamp;
     lastSnapshotResult = result;
     lastSnapshotCacheKey = cacheKey;
-    return result;
+    return remember(result);
   };
 
   return { capture };
@@ -133,7 +142,7 @@ async function recoverLegacySparseIosSnapshot(params: {
 }): Promise<SnapshotState> {
   const { runtimeParams, request, policy } = params;
   try {
-    return await runCapture(runtimeParams, request, policy.scope, false);
+    return await runCapture(runtimeParams, request, undefined, false);
   } catch (error) {
     if (!policy.shouldScope) throw error;
     return await runCapture(runtimeParams, request, policy.query, false);
@@ -171,6 +180,7 @@ async function runCapture(
     logPath: params.logPath ?? '',
     snapshotScope,
     includeRects: request.includeRects,
+    signal: request.signal,
   });
   return capture.snapshot;
 }

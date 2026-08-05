@@ -8,14 +8,17 @@ import {
   publicPlatformString,
   type DeviceInfo,
   type PublicPlatform,
-} from '../../../kernel/device.ts';
-import { AppError } from '../../../kernel/errors.ts';
+} from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { parseXmlDocumentSync } from '@agent-device/xml';
 import {
+  execFailureDetails,
+  requireExecSuccess,
   runCmdBackground,
   type ExecBackgroundResult,
   type ExecResult,
 } from '../../../utils/exec.ts';
-import { uniqueStrings } from '../../../daemon/action-utils.ts';
+import { uniqueStrings } from '@agent-device/kernel/collections';
 import { findAllXmlNodes } from './perf-xml.ts';
 import {
   isRetryableIosDeviceTraceRecordFailure,
@@ -26,7 +29,6 @@ import {
   resolveIosDevicePerfTarget,
 } from './perf.ts';
 import { runXcrun } from './tool-provider.ts';
-import { parseXmlDocumentSync } from './xml.ts';
 
 const IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS = 15_000;
 const IOS_DEVICE_TRACE_RECORD_MAX_ATTEMPTS = 3;
@@ -126,17 +128,15 @@ export async function stopAppleXctracePerfCapture(
   if (outPath !== capture.outPath) {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
   }
-  const result = await stopAppleXctraceProcess(capture, { failOnForcedKill: true });
-  if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', `Failed to stop Apple xctrace ${capture.mode} capture`, {
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
+  const result = requireExecSuccess(
+    await stopAppleXctraceProcess(capture, { failOnForcedKill: true }),
+    `Failed to stop Apple xctrace ${capture.mode} capture`,
+    (result) => ({
       tracePath: capture.outPath,
       captureCleanedUp: true,
       hint: resolveIosDevicePerfHint(result.stdout, result.stderr),
-    });
-  }
+    }),
+  );
   if (outPath !== capture.outPath) {
     await fs.rename(capture.outPath, outPath).catch(async () => {
       await fs.cp(capture.outPath, outPath, { recursive: true });
@@ -190,21 +190,19 @@ export async function writeAppleXctracePerfReport(params: {
       '--output',
       tocPath,
     ];
-    const exportResult = await runXcrun(exportArgs, {
-      allowFailure: true,
-      timeoutMs: IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS,
-    });
-    if (exportResult.exitCode !== 0) {
-      throw new AppError('COMMAND_FAILED', 'Failed to export Apple xctrace report metadata', {
+    requireExecSuccess(
+      await runXcrun(exportArgs, {
+        allowFailure: true,
+        timeoutMs: IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS,
+      }),
+      'Failed to export Apple xctrace report metadata',
+      (exportResult) => ({
         cmd: 'xcrun',
         args: exportArgs,
-        exitCode: exportResult.exitCode,
-        stdout: exportResult.stdout,
-        stderr: exportResult.stderr,
         tracePath: params.tracePath,
         hint: resolveIosDevicePerfHint(exportResult.stdout, exportResult.stderr),
-      });
-    }
+      }),
+    );
     const report = buildAppleXctracePerfReport({
       ...params,
       tocXml: await fs.readFile(tocPath, 'utf8'),
@@ -292,16 +290,17 @@ async function startAppleXctraceRecordWithRetry(
   }
 
   const failure = lastImmediateFailure ?? { stdout: '', stderr: '', exitCode: 1 };
-  throw new AppError('COMMAND_FAILED', context.failureMessage, {
-    cmd: 'xcrun',
-    args,
-    exitCode: failure.exitCode,
-    stdout: failure.stdout,
-    stderr: failure.stderr,
-    appBundleId: context.appBundleId,
-    deviceId: context.device.id,
-    hint: resolveIosDevicePerfHint(failure.stdout, failure.stderr),
-  });
+  throw new AppError(
+    'COMMAND_FAILED',
+    context.failureMessage,
+    execFailureDetails(failure, {
+      cmd: 'xcrun',
+      args,
+      appBundleId: context.appBundleId,
+      deviceId: context.device.id,
+      hint: resolveIosDevicePerfHint(failure.stdout, failure.stderr),
+    }),
+  );
 }
 
 async function waitForImmediateAppleXctraceExit(
@@ -325,6 +324,8 @@ async function stopAppleXctraceProcess(
   const forced = await waitForAppleXctraceExit(capture.wait, APPLE_XCTRACE_STOP_FORCE_TIMEOUT_MS);
   if (forced && !options.failOnForcedKill) return forced;
   if (forced) {
+    // exec-guard-allow: force-kill timeout — the timeout message beats
+    // whatever partial stderr the killed xctrace left behind.
     throw new AppError('COMMAND_FAILED', 'Timed out waiting for Apple xctrace capture to stop', {
       exitCode: forced.exitCode,
       stdout: forced.stdout,

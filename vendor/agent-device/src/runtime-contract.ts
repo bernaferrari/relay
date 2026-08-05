@@ -1,12 +1,11 @@
-import type { AgentDeviceBackend, BackendCapabilityName } from './backend.ts';
+import type { AgentDeviceBackend } from './backend.ts';
 import type { ArtifactAdapter } from './io.ts';
-import type { SnapshotState } from './kernel/snapshot.ts';
+import type { SnapshotState } from '@agent-device/kernel/snapshot';
 
 export type CommandPolicy = {
   allowLocalInputPaths: boolean;
   allowLocalOutputPaths: boolean;
   maxImagePixels: number;
-  allowNamedBackendCapabilities: readonly BackendCapabilityName[];
 };
 
 export type CommandSessionRecord = {
@@ -16,6 +15,14 @@ export type CommandSessionRecord = {
   appName?: string;
   backendSessionId?: string;
   snapshot?: SnapshotState;
+  /**
+   * ADR 0014 authorized ref-frame source tree. When present it is the tree a
+   * ref (`@eN`) resolves against for identity, so a newer operational
+   * observation in `snapshot` (e.g. an Android freshness capture) cannot
+   * retarget an already-authorized ref by positional coincidence. Absent for
+   * pre-frame sessions and non-daemon runtimes, which resolve against `snapshot`.
+   */
+  refFrameSnapshot?: SnapshotState;
   metadata?: Record<string, unknown>;
 };
 

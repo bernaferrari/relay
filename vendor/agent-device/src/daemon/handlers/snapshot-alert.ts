@@ -1,20 +1,22 @@
-import { isMacOs } from '../../kernel/device.ts';
+import { isIosFamily, isMacOs } from '@agent-device/kernel/device';
 import {
   ALERT_ACTION_RETRY_MS,
   ALERT_POLL_INTERVAL_MS as POLL_INTERVAL_MS,
   DEFAULT_ALERT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS,
   type AlertAction,
-} from '../../alert-contract.ts';
+} from '@agent-device/contracts/interaction';
 import { sleep } from '../../utils/timeouts.ts';
 import { runAppleRunnerCommand } from '../../platforms/apple/core/runner/runner-client.ts';
 import { runMacOsAlertAction } from '../../platforms/apple/os/macos/helper.ts';
 import { handleAndroidAlert } from '../../platforms/android/alert.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { buildAppleRunnerRequestOptions } from '../apple-runner-options.ts';
 import { recordIfSession } from './snapshot-session.ts';
 import { parseTimeout } from '../../utils/parse-timeout.ts';
+import { resolveRefFrameEffect } from '../daemon-command-registry.ts';
+import { expireRefFrame } from '../ref-frame.ts';
 import { errorResponse, requireCommandSupported } from './response.ts';
 
 type HandleAlertCommandParams = {
@@ -26,7 +28,7 @@ type HandleAlertCommandParams = {
 };
 
 type NativeAlertAction = Exclude<AlertAction, 'wait'>;
-type NativeAlertRunner = (action: NativeAlertAction) => Promise<unknown>;
+type NativeAlertRunner = (action: NativeAlertAction, timeoutMs: number) => Promise<unknown>;
 
 const ALERT_FALLBACK_HINT =
   'If the permission sheet is visible in snapshot or screenshot but alert reports no alert, take a scoped snapshot around the visible button label and use press @ref.';
@@ -48,6 +50,13 @@ export async function handleAlertCommand(
   })();
   const unsupported = requireCommandSupported('alert', device);
   if (unsupported) return unsupported;
+  // ADR 0014 side-effect seam: alert accept/dismiss act on the device; get/wait
+  // are read-only. The alert resolver returns `may-invalidate` only for the
+  // acting subactions, so this covers both the Android and native accept/dismiss
+  // mutations without touching the read paths.
+  if (session && resolveRefFrameEffect(req) === 'may-invalidate') {
+    expireRefFrame(session);
+  }
   if (device.platform === 'android') {
     const timeoutMs = parseTimeout(req.positionals?.[1]) ?? DEFAULT_TIMEOUT_MS;
     return recordAlertResponse(
@@ -68,10 +77,10 @@ export async function handleAlertCommand(
     logPath,
     traceLogPath: session?.trace?.outPath,
   });
-  const runAlert: NativeAlertRunner = async (alertAction) =>
+  const runAlert: NativeAlertRunner = async (alertAction, timeoutMs) =>
     await runAppleRunnerCommand(
       device,
-      { command: 'alert', action: alertAction, appBundleId: session?.appBundleId },
+      { command: 'alert', action: alertAction, appBundleId: session?.appBundleId, timeoutMs },
       runnerOptions,
     );
   return await handleNativeAlertCommand(params, action, runAlert);
@@ -91,7 +100,7 @@ async function handleNativeAlertCommand(
     return await handleNativeAlertAction(params, resolvedAction, runAlert);
   }
 
-  return recordAlertResponse(params, await runAlert('get'));
+  return recordAlertResponse(params, await runAlert('get', DEFAULT_TIMEOUT_MS));
 }
 
 function normalizeAlertAction(action: string | undefined): AlertAction {
@@ -105,9 +114,12 @@ async function waitForNativeAlert(
 ): Promise<DaemonResponse> {
   const timeout = parseTimeout(params.req.positionals?.[1]) ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
+  let firstAttempt = true;
   while (Date.now() - start < timeout) {
     try {
-      return recordAlertResponse(params, await runAlert('get'));
+      const budgetMs = firstAttempt ? timeout : remainingBudgetMs(start, timeout);
+      firstAttempt = false;
+      return recordAlertResponse(params, await runAlert('get', budgetMs));
     } catch {
       // keep waiting
     }
@@ -121,11 +133,17 @@ async function handleNativeAlertAction(
   action: 'accept' | 'dismiss',
   runAlert: NativeAlertRunner,
 ): Promise<DaemonResponse> {
+  const runnerTimeoutMs = isIosFamily(params.device) ? DEFAULT_TIMEOUT_MS : ALERT_ACTION_RETRY_MS;
   const start = Date.now();
   let lastError: unknown;
+  let firstAttempt = true;
   while (Date.now() - start < ALERT_ACTION_RETRY_MS) {
     try {
-      return recordAlertResponse(params, await runAlert(action));
+      const budgetMs = firstAttempt
+        ? runnerTimeoutMs
+        : remainingBudgetMs(start, ALERT_ACTION_RETRY_MS);
+      firstAttempt = false;
+      return recordAlertResponse(params, await runAlert(action, budgetMs));
     } catch (err) {
       lastError = err;
       const msg = String((err as { message?: unknown })?.message ?? '').toLowerCase();
@@ -134,6 +152,10 @@ async function handleNativeAlertAction(
     await sleep(POLL_INTERVAL_MS);
   }
   throw withAlertFallbackHint(lastError);
+}
+
+function remainingBudgetMs(start: number, timeoutMs: number): number {
+  return Math.max(1, timeoutMs - (Date.now() - start));
 }
 
 function recordAlertResponse(params: HandleAlertCommandParams, data: unknown): DaemonResponse {

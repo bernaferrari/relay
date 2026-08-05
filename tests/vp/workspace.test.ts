@@ -38,12 +38,18 @@ describe("Relay workspace verification", () => {
     const workspace = await readFile("pnpm-workspace.yaml", "utf8");
     const core = await packageJson("packages/core/package.json");
     const lifecycle = await readFile(
-      "vendor/agent-device/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift",
+      "vendor/agent-device/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift",
+      "utf8",
+    );
+    const commandExecution = await readFile(
+      "vendor/agent-device/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift",
       "utf8",
     );
 
     expect(workspace).not.toContain("patchedDependencies");
     expect(core.dependencies?.["agent-device"]).toBe("link:../../vendor/agent-device");
+    expect(commandExecution).toContain("case .clipboardPaste:");
+    expect(commandExecution).toContain("case .clipboardCopy:");
     expect(lifecycle).toContain(
       'private static let managedRecordingPrefix = "agent-device-recording-"',
     );

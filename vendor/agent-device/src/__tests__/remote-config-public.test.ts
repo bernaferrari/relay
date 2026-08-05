@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveRemoteConfigProfile, resolveRemoteConfigPath } from '../remote/remote-config.ts';
+import { resolveRemoteConfigProfile } from '../remote/remote-config.ts';
+import { resolveRemoteConfigPath } from '../remote/remote-config-core.ts';
 
 test('public remote-config helpers resolve file paths and merged profiles', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-remote-config-public-'));
@@ -19,6 +20,7 @@ test('public remote-config helpers resolve file paths and merged profiles', () =
       JSON.stringify({
         platform: 'ios',
         metroProjectRoot: '../project',
+        metroKind: 'repack',
         metroPublicBaseUrl: 'https://public.example.test',
       }),
       'utf8',
@@ -35,6 +37,7 @@ test('public remote-config helpers resolve file paths and merged profiles', () =
       profile: {
         platform: 'ios',
         metroProjectRoot: projectRoot,
+        metroKind: 'repack',
         metroPublicBaseUrl: 'https://public.example.test',
         metroPreparePort: 9090,
       },

@@ -2,9 +2,33 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
-import { formatScreenshotDiffText, formatSnapshotDiffText, formatSnapshotText } from '../output.ts';
+import {
+  formatAmbiguousMatchCandidateLines,
+  formatScreenshotDiffText,
+  formatSnapshotDiffText,
+  formatSnapshotText,
+  printHumanError,
+} from '../output.ts';
 import { formatRole, formatSnapshotLine } from '../../snapshot/snapshot-lines.ts';
 import { normalizedRect } from '../screenshot-geometry.ts';
+import { AppError } from '@agent-device/kernel/errors';
+
+function captureStderr(run: () => void): string {
+  const original = process.stderr.write.bind(process.stderr);
+  let output = '';
+  (process.stderr as unknown as { write: typeof process.stderr.write }).write = ((
+    chunk: unknown,
+  ) => {
+    output += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    run();
+  } finally {
+    process.stderr.write = original;
+  }
+  return output;
+}
 
 const DIFF_DATA = {
   mode: 'snapshot',
@@ -1554,14 +1578,14 @@ test('formatScreenshotDiffText renders mismatch with pixel counts without color'
           normalizedRect: normalizedRect({ x: 10, y: 20, width: 100, height: 40 }),
           differentPixels: 350,
           shareOfDiffPercentage: 70,
-          densityPercentage: 8.75,
+          densityPercentage: 87.5,
           shape: 'horizontal-band',
-          size: 'medium',
+          size: 'small',
           location: 'top-left',
-          averageBaselineColorHex: '#141414',
-          averageCurrentColorHex: '#dcdcdc',
-          baselineLuminance: 20,
-          currentLuminance: 220,
+          averageBaselineColorHex: '#000000',
+          averageCurrentColorHex: '#ffffff',
+          baselineLuminance: 0,
+          currentLuminance: 255,
           dominantChange: 'brighter',
           currentOverlayMatches: [
             {
@@ -1573,45 +1597,6 @@ test('formatScreenshotDiffText renders mismatch with pixel counts without color'
           ],
         },
       ],
-      ocr: {
-        provider: 'tesseract',
-        baselineBlocks: 2,
-        currentBlocks: 2,
-        matches: [
-          {
-            text: 'Wi-Fi',
-            baselineRect: { x: 120, y: 320, width: 60, height: 22 },
-            currentRect: { x: 130, y: 332, width: 70, height: 22 },
-            delta: { x: 10, y: 12, width: 10, height: 0 },
-            confidence: 94,
-            possibleTextMetricMismatch: true,
-          },
-        ],
-        movementClusters: [
-          {
-            texts: ['Wi-Fi', 'Bluetooth'],
-            xRange: { min: 10, max: 12 },
-            yRange: { min: 10, max: 14 },
-          },
-        ],
-      },
-      nonTextDeltas: [
-        {
-          index: 1,
-          regionIndex: 1,
-          slot: 'leading',
-          likelyKind: 'icon',
-          rect: { x: 80, y: 318, width: 30, height: 30 },
-          nearestText: 'Wi-Fi',
-        },
-        {
-          index: 2,
-          regionIndex: 1,
-          slot: 'separator',
-          likelyKind: 'separator',
-          rect: { x: 90, y: 360, width: 120, height: 2 },
-        },
-      ],
     }),
   );
   assert.match(text, /✗ 5% pixels differ/);
@@ -1619,36 +1604,9 @@ test('formatScreenshotDiffText renders mismatch with pixel counts without color'
   assert.match(text, /Current overlay:/);
   assert.match(text, /diff\.current-overlay\.png \(1 refs\)/);
   assert.match(text, /500 different \/ 10000 total pixels/);
-  assert.match(text, /Hints:/);
-  assert.match(
-    text,
-    /text movement cluster: "Wi-Fi", "Bluetooth" dx=\+10\.\.\+12px dy=\+10\.\.\+14px/,
-  );
-  assert.match(text, /non-text controls: icon near "Wi-Fi" r1/);
-  assert.match(text, /non-text boundaries: separator r1/);
   assert.match(text, /Changed regions:/);
-  assert.match(text, /1\. top-left x=10 y=20 100x40, 70% of diff, change=brighter/);
-  assert.match(
-    text,
-    /size=medium shape=horizontal-band density=8\.75% avgColor=#141414->#dcdcdc luminance=20->220/,
-  );
+  assert.match(text, /1\. x=10 y=20 100x40, 70% of diff/);
   assert.match(text, /overlaps @e1 "Continue", 12% of region/);
-  assert.match(
-    text,
-    /OCR text deltas \(tesseract; baselineBlocks=2 currentBlocks=2; showing 1\/1; px\):/,
-  );
-  assert.match(
-    text,
-    /item \| text \| movePx \| sizeDeltaPx \| bboxBaseline \| bboxCurrent \| confidence \| issueHint/,
-  );
-  assert.match(
-    text,
-    /1 \| "Wi-Fi" \| \+10,\+12 \| \+10,0 \| x=120,y=320,w=60,h=22 \| x=130,y=332,w=70,h=22 \| 94 \| ocr-bbox-size-change/,
-  );
-  assert.match(text, /Non-text visual deltas \(showing 2\/2; px\):/);
-  assert.match(text, /item \| region \| slot \| kind \| bboxCurrent \| nearestText/);
-  assert.match(text, /1 \| r1 \| leading \| icon \| x=80,y=318,w=30,h=30 \| "Wi-Fi"/);
-  assert.match(text, /2 \| r1 \| separator \| separator \| x=90,y=360,w=120,h=2 \| -/);
   assert.equal(text.includes('\x1b['), false);
 });
 
@@ -1731,4 +1689,166 @@ test('formatScreenshotDiffText does not show diff path when images match', () =>
   );
   assert.equal(text.includes('Diff image'), false);
   assert.equal(text.includes('diff.png'), false);
+});
+
+// --- ADR 0012 migration step 2: replay divergence compact text report ---
+
+test('printHumanError renders a compact divergence report unconditionally (not gated behind --debug)', () => {
+  const err = new AppError(
+    'REPLAY_DIVERGENCE',
+    'Replay failed at step 2 (click "Save"): not hittable',
+    {
+      divergence: {
+        version: 1,
+        kind: 'action-failure',
+        step: { index: 2, source: { path: '/tmp/flow.ad', line: 5 } },
+        action: 'click "Save"',
+        cause: { code: 'COMMAND_FAILED', message: 'not hittable' },
+        screen: {
+          state: 'available',
+          refsGeneration: 3,
+          refs: [{ ref: 'e5', role: 'button', label: 'Save' }],
+        },
+        suggestions: [
+          { selector: 'id="save"', basis: 'id', ref: 'e5', role: 'button', label: 'Save' },
+        ],
+        suggestionCount: 1,
+        resume: { allowed: false, reason: 'resume not yet supported' },
+        // ADR 0012 decision 6: always present, and must survive every
+        // projection — this is the "daemon text summary" (CLI) projection.
+        repairHint: 'record-and-heal',
+      },
+    },
+  );
+
+  const output = captureStderr(() => printHumanError(err));
+
+  assert.match(output, /Divergence at step 2 \(\/tmp\/flow\.ad:5\)/);
+  assert.match(output, /Screen: 1 actionable ref\(s\) captured \(refsGeneration 3\)/);
+  assert.match(output, /@e5 \[button\] "Save"/);
+  assert.match(output, /Suggestions:/);
+  assert.match(output, /\[id\] "Save" id="save"/);
+  assert.match(output, /Repair hint: record-and-heal/);
+  // Not gated behind --debug: showDetails defaults to false/undefined here.
+});
+
+// --- #1597: AMBIGUOUS_MATCH candidates print unconditionally, capped at 5 ---
+
+test('printHumanError lists AMBIGUOUS_MATCH candidates unconditionally, not gated behind --debug', () => {
+  const err = new AppError(
+    'AMBIGUOUS_MATCH',
+    'find matched 3 elements for text "Follow". Use a more specific locator or selector.',
+    {
+      locator: 'text',
+      query: 'Follow',
+      matches: 3,
+      candidates: ['@e2 [button] "Follow"', '@e5 [button] "Follow"', '@e9 [button] "Follow"'],
+    },
+  );
+
+  // This is the exact old-message shape the bug reported: the human render
+  // used to stop at "Error (...): ...\nHint: ...", so an agent reading it had
+  // no @ref to act on. Asserting the candidate lines appear proves this red
+  // against that shape (it would fail before formatAmbiguousMatchCandidateLines
+  // was wired into printHumanError).
+  const output = captureStderr(() => printHumanError(err));
+
+  assert.match(output, /^Error \(AMBIGUOUS_MATCH\): find matched 3 elements/);
+  assert.match(
+    output,
+    /Candidates:\n {2}@e2 \[button\] "Follow"\n {2}@e5 \[button\] "Follow"\n {2}@e9 \[button\] "Follow"/,
+  );
+  // 3 candidates for 3 matches: nothing was capped, so no "+N more" marker.
+  assert.equal(/\+\d+ more/.test(output), false);
+  // Not gated behind --debug: showDetails defaults to false/undefined here.
+});
+
+test('printHumanError appends a "+N more" marker when candidates were capped', () => {
+  const err = new AppError('AMBIGUOUS_MATCH', 'find matched 7 elements for text "Row". ...', {
+    matches: 7,
+    candidates: [
+      '@e2 [button] "Row"',
+      '@e3 [button] "Row"',
+      '@e4 [button] "Row"',
+      '@e5 [button] "Row"',
+      '@e6 [button] "Row"',
+    ],
+  });
+
+  const output = captureStderr(() => printHumanError(err));
+
+  assert.match(output, /@e6 \[button\] "Row"\n {2}\+2 more/);
+});
+
+test('formatAmbiguousMatchCandidateLines returns nothing when details carry no candidates', () => {
+  assert.deepEqual(formatAmbiguousMatchCandidateLines(undefined), []);
+  assert.deepEqual(formatAmbiguousMatchCandidateLines({ matches: 3 }), []);
+  assert.deepEqual(formatAmbiguousMatchCandidateLines({ candidates: [] }), []);
+});
+
+// P2 review on #1597: `details.candidates` is not unique to the find
+// handler's element-match shape. The device-domain resolver
+// (findBootedAppleSimulatorWithApp, src/core/dispatch-resolve.ts) reuses the
+// same key for `{ id, name }` device objects on both AMBIGUOUS_MATCH and
+// APP_NOT_INSTALLED, and never sets `details.matches` — this must render
+// nothing (its behavior before this renderer existed), never
+// "Candidates:\n  [object Object]".
+test('printHumanError renders device-domain candidate objects as nothing, never [object Object]', () => {
+  const deviceCandidates = [
+    { id: 'SIM-001', name: 'iPhone 17 Pro' },
+    { id: 'SIM-002', name: 'iPhone 17' },
+  ];
+
+  const ambiguousDeviceErr = new AppError(
+    'AMBIGUOUS_MATCH',
+    'Multiple booted iOS simulators have com.example.app installed',
+    { appTarget: 'com.example.app', candidates: deviceCandidates },
+  );
+  const ambiguousOutput = captureStderr(() => printHumanError(ambiguousDeviceErr));
+  assert.equal(ambiguousOutput.includes('[object Object]'), false);
+  assert.equal(ambiguousOutput.includes('Candidates:'), false);
+
+  const notInstalledErr = new AppError(
+    'APP_NOT_INSTALLED',
+    'No booted iOS simulator has com.example.app installed',
+    { appTarget: 'com.example.app', candidates: deviceCandidates },
+  );
+  const notInstalledOutput = captureStderr(() => printHumanError(notInstalledErr));
+  assert.equal(notInstalledOutput.includes('[object Object]'), false);
+  assert.equal(notInstalledOutput.includes('Candidates:'), false);
+
+  // The formatter itself, not just the CLI render, must reject this shape —
+  // both the missing `matches` and the object-shaped entries disqualify it.
+  assert.deepEqual(
+    formatAmbiguousMatchCandidateLines({
+      appTarget: 'com.example.app',
+      candidates: deviceCandidates,
+    }),
+    [],
+  );
+});
+
+test('printHumanError shows an unavailable screen reason and omitted suggestions hint', () => {
+  const err = new AppError('REPLAY_DIVERGENCE', 'Replay failed at step 1', {
+    divergence: {
+      version: 1,
+      kind: 'action-failure',
+      step: { index: 1, source: { path: '/tmp/flow.ad', line: 1 } },
+      action: 'click "Save"',
+      cause: { code: 'COMMAND_FAILED', message: 'not hittable' },
+      screen: {
+        state: 'unavailable',
+        reason: 'capture-failed',
+        hint: 'take a snapshot to observe the result.',
+      },
+      suggestions: [],
+      suggestionCount: 2,
+      resume: { allowed: false, reason: 'resume not yet supported' },
+    },
+  });
+
+  const output = captureStderr(() => printHumanError(err));
+
+  assert.match(output, /Screen: unavailable \(capture-failed\)\. take a snapshot/);
+  assert.match(output, /Suggestions: 2 available \(omitted at this response level/);
 });

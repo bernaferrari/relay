@@ -25,14 +25,14 @@ import {
   PROXY_REMOTE_LEASE_TTL_MS,
 } from '../cli/commands/connection-runtime.ts';
 import { stopMetroCompanion } from '../metro/client-metro-companion.ts';
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   hashRemoteConfigFile,
   readActiveConnectionState,
   readRemoteConnectionState,
   writeRemoteConnectionState,
 } from '../remote/remote-connection-state.ts';
-import type { AgentDeviceClient } from '../client/client.ts';
+import type { AgentDeviceClient } from '../agent-device-client.ts';
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -58,7 +58,7 @@ test('deferred Metro config ignores perf-style kind values', () => {
       json: true,
       help: false,
       version: false,
-      metroKind: 'expo',
+      metroKind: 'repack',
     }),
     true,
   );
@@ -315,7 +315,7 @@ test('connect proxy scopes generated client identity by explicit session', async
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('connect proxy notice only advertises open as the lease allocator', async () => {
+test('connect proxy notice distinguishes safe inventory from lease allocation', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-notice-'));
   const stateDir = path.join(tempRoot, '.state');
 
@@ -334,8 +334,9 @@ test('connect proxy notice only advertises open as the lease allocator', async (
     });
   });
 
-  assert.match(stdout, /Proxy lease allocation is pending/);
-  assert.match(stdout, /run open when ready/);
+  assert.match(stdout, /No live device session has been created/);
+  assert.match(stdout, /Run devices to inspect inventory without allocating/);
+  assert.match(stdout, /agent-device open <package-id> --relaunch/);
   assert.doesNotMatch(stdout, /snapshot/);
   assert.doesNotMatch(stdout, /install-from-source/);
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -435,8 +436,8 @@ test('connect reports deferred Metro runtime preparation when remote config has 
     });
   });
 
-  assert.match(stdout, /Lease allocation is pending/);
-  assert.match(stdout, /open, snapshot, or devices/);
+  assert.match(stdout, /No live device session has been created/);
+  assert.match(stdout, /Run a device command when ready/);
   assert.match(stdout, /Metro runtime is not prepared yet/);
   assert.match(stdout, /metro prepare --remote-config/);
   assert.equal(readActiveConnectionState({ stateDir })?.runtime, undefined);
@@ -1119,7 +1120,7 @@ test('deferred materialization re-prepares runtime when explicit Metro overrides
       session: 'adc-android',
       platform: 'android',
       metroProjectRoot: '/tmp/project-new',
-      metroKind: 'expo',
+      metroKind: 'repack',
       metroPublicBaseUrl: 'https://sandbox.example.test',
       metroProxyBaseUrl: 'https://proxy.example.test',
       launchUrl: 'myapp://open',
@@ -1129,7 +1130,7 @@ test('deferred materialization re-prepares runtime when explicit Metro overrides
         prepareRequest = options;
         return {
           projectRoot: '/tmp/project-new',
-          kind: 'expo',
+          kind: 'repack',
           dependenciesInstalled: false,
           packageManager: null,
           started: false,
@@ -1151,7 +1152,7 @@ test('deferred materialization re-prepares runtime when explicit Metro overrides
   });
 
   assert.equal(prepareRequest?.projectRoot, '/tmp/project-new');
-  assert.equal(prepareRequest?.kind, 'expo');
+  assert.equal(prepareRequest?.kind, 'repack');
   assert.equal(prepareRequest?.publicBaseUrl, 'https://sandbox.example.test');
   assert.equal(prepareRequest?.proxyBaseUrl, 'https://proxy.example.test');
   assert.equal(prepareRequest?.launchUrl, 'myapp://open');
@@ -2078,6 +2079,51 @@ test('disconnect tolerates prior close and removes local connection state', asyn
     profileKey: remoteConfigPath,
     consumerKey: 'adc-android',
   });
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('disconnect after connect-only cleanup stays local when no session resources exist', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-disconnect-pending-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, '{}');
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-pending',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      tenant: 'limrun',
+      runId: 'run-123',
+      leaseBackend: 'android-instance',
+      leaseProvider: 'limrun',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  let closeCalls = 0;
+
+  await captureStdout(async () => {
+    await disconnectCommand({
+      positionals: [],
+      flags: {
+        json: false,
+        help: false,
+        version: false,
+        stateDir,
+      },
+      client: createTestClient({
+        closeSession: async () => {
+          closeCalls += 1;
+          throw new Error('disconnect must not contact a daemon');
+        },
+      }),
+    });
+  });
+
+  assert.equal(closeCalls, 0);
+  assert.equal(readRemoteConnectionState({ stateDir, session: 'adc-pending' }), null);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 

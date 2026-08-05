@@ -1,11 +1,11 @@
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { CaptureScreenshotOptions } from '../../client/client-types.ts';
-import { SESSION_SURFACES } from '../../core/session-surface.ts';
+import type { CaptureScreenshotOptions } from '@agent-device/contracts/client';
+import { SESSION_SURFACES } from '@agent-device/contracts/session';
 import {
   SCREENSHOT_COMMAND_FLAG_KEYS,
   screenshotFlagsFromOptions,
   screenshotOptionsFromFlags,
-} from '../../contracts/screenshot.ts';
+} from '@agent-device/contracts/capture';
 import { booleanField, enumField, integerField, stringField } from '../command-input.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
 import { commonInputFromFlags, optionalString, request } from '../cli-grammar/common.ts';
@@ -23,6 +23,9 @@ const screenshotCommandMetadata = defineFieldCommandMetadata(
   {
     path: stringField('Output path.'),
     overlayRefs: booleanField(),
+    pixelDensity: integerField('Output screenshot pixel density in pixels per logical point.', {
+      min: 1,
+    }),
     fullscreen: booleanField(),
     maxSize: integerField(),
     stabilize: booleanField(),
@@ -38,9 +41,9 @@ const screenshotCommandDefinition = defineExecutableCommand(
 
 const screenshotCliSchema = {
   helpDescription:
-    'Capture screenshot (web defaults to the viewport; use --fullscreen, --full, or -f for the entire page. macOS app sessions default to the app window; use --fullscreen for full desktop, --max-size to downscale, --overlay-refs to annotate current refs, --normalize-status-bar for deterministic iOS simulator chrome, or --no-stabilize for low-latency Android capture loops)',
+    'Capture screenshot (web defaults to the viewport; use --fullscreen, --full, or -f for the entire page. iOS simulators default to 1x logical-point output; use --pixel-density to request a different screenshot density. macOS app sessions default to the app window; use --fullscreen for full desktop, --max-size to downscale, --overlay-refs to annotate current refs, --normalize-status-bar for deterministic iOS simulator chrome, or --no-stabilize for low-latency Android capture loops)',
   summary:
-    'Capture screenshot with optional web full-page, desktop, downscale, or ref overlay modes',
+    'Capture screenshot with optional density, full-page, desktop, downscale, or ref overlay modes',
   positionalArgs: ['path?'],
   allowedFlags: SCREENSHOT_COMMAND_FLAG_KEYS,
 } as const;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { CliFlags } from '../../cli/parser/cli-flags.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
 import {
   recordCliReader,
   recordCommandDefinition,
@@ -37,6 +37,7 @@ describe('recording command interface', () => {
         screenshotMaxSize: 1024,
         quality: 'high',
         hideTouches: true,
+        recordingScope: 'device',
       } as CliFlags),
     ).toEqual({
       action: 'start',
@@ -45,6 +46,7 @@ describe('recording command interface', () => {
       maxSize: 1024,
       quality: 'high',
       hideTouches: true,
+      recordingScope: 'device',
     });
   });
 

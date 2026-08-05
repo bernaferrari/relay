@@ -429,6 +429,16 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         await page.mouse.up();
         return { ok: true };
       },
+      pan: async (input: { x: number; y: number; dx: number; dy: number; durationMs?: number }) => {
+        const page = await activePage(session);
+        await page.mouse.move(input.x, input.y);
+        await page.mouse.down();
+        await page.mouse.move(input.x + input.dx, input.y + input.dy, {
+          steps: Math.max(12, Math.round((input.durationMs ?? 250) / 20)),
+        });
+        await page.mouse.up();
+        return { ok: true };
+      },
     },
     command: {
       wait: async (input: { durationMs?: number; text?: string; selector?: string }) => {

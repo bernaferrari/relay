@@ -1,11 +1,12 @@
-import { AppError } from '../../../../kernel/errors.ts';
-import type { DeviceInfo } from '../../../../kernel/device.ts';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { emitDiagnostic } from '../../../../utils/diagnostics.ts';
-import { getRequestSignal, isRequestCanceledError } from '../../../../daemon/request-cancel.ts';
+import { isRequestCanceledError } from '../../../../request/cancel.ts';
 import { RUNNER_COMMAND_TIMEOUT_MS, RUNNER_STARTUP_TIMEOUT_MS } from './runner-transport.ts';
 import {
   type RunnerSession,
   ensureRunnerSession,
+  getRunnerSessionSnapshot,
   invalidateRunnerSession,
   executeRunnerCommandWithSession,
   readRunnerStartupTimeoutMs,
@@ -13,6 +14,7 @@ import {
 import {
   assertRunnerRequestActive,
   isRetryableRunnerError,
+  resolveRunnerRequestSignal,
   shouldRetryRunnerConnectError,
   withRunnerCommandId,
   type RunnerCommand,
@@ -24,6 +26,14 @@ import type {
 } from './runner-provider.ts';
 import { markRunnerXctestrunArtifactBadForRun } from './runner-xctestrun.ts';
 import { handleRunnerTransportErrorAfterCommandSend } from './runner-command-recovery.ts';
+import {
+  buildRunnerRecycleBudgetExhaustedError,
+  commitRunnerRecycle,
+  hasRunnerRequestTouchedSession,
+  markRunnerRequestTouchedSession,
+  runnerRecycleLedgerKey,
+  tryBeginRunnerRecycle,
+} from './runner-recycle-ledger.ts';
 
 export type PrepareIosRunnerOptions = AppleRunnerPrepareOptions;
 export type PrepareIosRunnerResult = AppleRunnerPrepareResult;
@@ -39,7 +49,7 @@ export async function prepareLocalIosRunner(
   options: PrepareIosRunnerOptions,
 ): Promise<PrepareIosRunnerResult> {
   assertRunnerRequestActive(options.requestId);
-  const signal = getRequestSignal(options.requestId);
+  const signal = resolveRunnerRequestSignal(options);
   const command = withRunnerCommandId({ command: 'uptime' });
   let recoveryReason: string | undefined;
   for (let attempt = 1; attempt <= PREPARE_RUNNER_HEALTH_MAX_SESSION_ATTEMPTS; attempt += 1) {
@@ -115,7 +125,14 @@ async function handlePrepareHealthFailure(params: {
   error: unknown;
 }): Promise<PrepareAttemptResult> {
   const { device, session, command, options, signal, attempt, error } = params;
-  const appErr = error instanceof AppError ? error : new AppError('COMMAND_FAILED', String(error));
+  const appErr = asAppError(error, 'COMMAND_FAILED');
+  if (isRequestCanceledError(appErr)) {
+    // The owning request was canceled mid-startup (client disconnect): stop the
+    // just-created session so a canceled prep never leaves a runner retained for
+    // reuse. Scoped to this request's device only.
+    await invalidateRunnerSessionBestEffort(session, 'prepare_runner_request_canceled');
+    throw error;
+  }
   if (attempt === 1 && shouldRecoverBadCachedRunnerArtifact(appErr, session)) {
     return {
       kind: 'prepared',
@@ -240,10 +257,25 @@ export async function executeRunnerCommand(
   options: AppleRunnerCommandOptions,
 ): Promise<Record<string, unknown>> {
   assertRunnerRequestActive(options.requestId);
-  const signal = getRequestSignal(options.requestId);
+  const signal = resolveRunnerRequestSignal(options);
+  const recycleKey = runnerRecycleLedgerKey(options, command);
   let session: RunnerSession | undefined;
+  let recycleBootBegun = false;
   try {
+    // A request that already used a runner session and finds none alive is about to pay for
+    // a recycle boot (~25s): bound that to the per-request recycle budget so a hostile screen
+    // fails fast with a preserved session instead of stacking runner boots (#1105).
+    if (!getRunnerSessionSnapshot(device.id)?.alive && hasRunnerRequestTouchedSession(recycleKey)) {
+      if (!tryBeginRunnerRecycle(recycleKey)) {
+        throw buildRunnerRecycleBudgetExhaustedError(command, options);
+      }
+      recycleBootBegun = true;
+    }
     session = await ensureRunnerSession(device, options);
+    if (recycleBootBegun) {
+      commitRunnerRecycle(recycleKey);
+    }
+    markRunnerRequestTouchedSession(recycleKey);
     const timeoutMs = session.ready
       ? RUNNER_COMMAND_TIMEOUT_MS
       : readRunnerStartupTimeoutMs(session);
@@ -256,7 +288,11 @@ export async function executeRunnerCommand(
       signal,
     );
   } catch (err) {
-    const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
+    const appErr = asAppError(err, 'COMMAND_FAILED');
+    if (session && !session.ready && isRequestCanceledError(appErr)) {
+      await invalidateRunnerSessionBestEffort(session, 'runner_startup_request_canceled');
+      throw err;
+    }
     if (
       appErr.code === 'COMMAND_FAILED' &&
       typeof appErr.message === 'string' &&
@@ -314,11 +350,19 @@ async function restartSessionAndRunCommand(params: {
   recoveredDiagnosticPhase?: string;
 }): Promise<Record<string, unknown>> {
   const { device, command, options, signal, restartReason } = params;
+  // At most one recycle per request: when the budget is spent, fail fast and KEEP the current
+  // session — if the runner is merely busy draining abandoned work it answers the next request
+  // cheaply, and a dead process is detected and cleaned by the next ensureRunnerSession (#1105).
+  const recycleKey = runnerRecycleLedgerKey(options, command);
+  if (!tryBeginRunnerRecycle(recycleKey)) {
+    throw buildRunnerRecycleBudgetExhaustedError(command, options);
+  }
   await invalidateRunnerSession(params.session, restartReason);
   const restartedSession = await ensureRunnerSession(device, {
     ...options,
     cleanStaleBundles: true,
   });
+  commitRunnerRecycle(recycleKey);
   try {
     const recovered = await executeRunnerCommandWithSession(
       device,
@@ -342,8 +386,7 @@ async function restartSessionAndRunCommand(params: {
     }
     return recovered;
   } catch (retryErr) {
-    const retryAppErr =
-      retryErr instanceof AppError ? retryErr : new AppError('COMMAND_FAILED', String(retryErr));
+    const retryAppErr = asAppError(retryErr, 'COMMAND_FAILED');
     if (isRetryableRunnerError(retryAppErr)) {
       return await handleRunnerTransportErrorAfterCommandSend({
         device,
@@ -444,7 +487,7 @@ function wrapPrepareHealthFailure(
   session: RunnerSession,
   restoredFailureReason: string,
 ): AppError {
-  const appErr = error instanceof AppError ? error : new AppError('COMMAND_FAILED', String(error));
+  const appErr = asAppError(error, 'COMMAND_FAILED');
   return new AppError(
     appErr.code,
     'artifact restored but runner did not connect',
@@ -516,6 +559,10 @@ function emitPrepareDiagnostic(
       buildMs: result.buildMs,
       connectMs: result.connectMs,
       healthCheckMs: result.healthCheckMs,
+      timingContainment:
+        result.buildMs === undefined
+          ? { healthCheckMs: [] }
+          : { connectMs: ['buildMs'], healthCheckMs: [] },
       xctestrunPath: result.xctestrunPath,
       recoveryReason: result.recoveryReason,
       failureReason: result.failureReason,

@@ -1,1 +1,0 @@
-import o from"node:os";function e(){return{platform:"apple",id:"host-macos-local",name:o.hostname(),kind:"device",target:"desktop",appleOs:"macos",booted:!0}}async function t(){return[e()]}export{e as buildHostMacDevice,t as listMacosDevices};

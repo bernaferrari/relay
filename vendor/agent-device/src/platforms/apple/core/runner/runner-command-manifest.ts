@@ -2,6 +2,7 @@ import type { RunnerCommand } from './runner-contract.ts';
 
 export type RunnerCommandTraitClass =
   | 'default'
+  | 'readinessPreflightExemptMutation'
   | 'readOnly'
   | 'readOnlyReadinessProbe'
   | 'preflightSkippableTouchMutation';
@@ -26,17 +27,23 @@ export const RUNNER_COMMAND_TRAIT_MANIFEST = {
   backSystem: 'default',
   home: 'default',
   rotate: 'default',
-  rotateGesture: 'default',
-  transformGesture: 'default',
+  gesture: 'preflightSkippableTouchMutation',
+  gestureViewport: 'readOnly',
   appSwitcher: 'default',
   keyboardDismiss: 'default',
   keyboardReturn: 'default',
+  clipboardRead: 'readOnly',
+  clipboardWrite: 'readinessPreflightExemptMutation',
+  clipboardPaste: 'preflightSkippableTouchMutation',
+  clipboardCopy: 'preflightSkippableTouchMutation',
   alert: 'readOnly',
-  pinch: 'default',
   sequence: 'preflightSkippableTouchMutation',
   recordStart: 'default',
   recordStop: 'default',
   status: 'readOnlyReadinessProbe',
   uptime: 'readOnlyReadinessProbe',
+  activate: 'readinessPreflightExemptMutation',
+  terminate: 'readinessPreflightExemptMutation',
+  targetReset: 'readinessPreflightExemptMutation',
   shutdown: 'default',
 } as const satisfies Record<RunnerCommand['command'], RunnerCommandTraitClass>;

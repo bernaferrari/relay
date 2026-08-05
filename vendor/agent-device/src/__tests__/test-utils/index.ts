@@ -15,10 +15,30 @@ export {
   makeAndroidSession,
   makeIosSession,
   makeMacOsSession,
+  makeAuthoringSession,
   makeSession,
 } from './session-factories.ts';
 
 export { makeSnapshotState } from './snapshot-builders.ts';
+
+export {
+  ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+  androidSnapshotHelperOutput,
+  createAndroidSnapshotHelperExecutor,
+} from './android-snapshot-helper.ts';
+
+export { makeSessionStore } from './store-factory.ts';
+
+export {
+  COMPACT_VIEWPORTS,
+  formatRef,
+  gestureInViewportArb,
+  PROPERTY_RUNS,
+  PROPERTY_RUNS_SMALL,
+  rawSnapshotNodesArb,
+  refArb,
+  replayScriptArb,
+} from './property-arbitraries.ts';
 
 export { withNoColor } from './color.ts';
 

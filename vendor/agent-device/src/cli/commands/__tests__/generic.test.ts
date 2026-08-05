@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { createAgentDeviceClient } from '../../../client/client.ts';
-import type { DaemonResponse } from '../../../kernel/contracts.ts';
-import type { CliFlags } from '../../parser/cli-flags.ts';
-import type { ClientBackedCliCommandName } from '../../../command-catalog.ts';
+import { createAgentDeviceClient } from '../../../agent-device-client.ts';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
+import type { CliFlags } from '@agent-device/contracts/command';
+import type { ClientBackedCliCommandName } from '../client-backed.ts';
 import { runGenericClientBackedCommand } from '../generic.ts';
 
 async function captureStdout(fn: () => Promise<unknown>): Promise<string> {
