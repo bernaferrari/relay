@@ -1,0 +1,18 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-full-smoke
+name: Grok · full smoke pack
+description: Run the focused Grok checks as one auditable smoke pass. Each module keeps its own evidence and can still be run independently.
+steps:
+  - kind: module
+    recipeId: grok-send-hello
+  - kind: module
+    recipeId: grok-multiline-and-attachments
+  - kind: module
+    recipeId: grok-camera-attachment
+  - kind: module
+    recipeId: grok-conversation-controls
+  - kind: module
+    recipeId: grok-rich-response-judged
+  - kind: screenshot
+    caption: Full Grok smoke pack completed
