@@ -1,7 +1,7 @@
 import type { DsymMatch, SymbolicatedAddress, SymbolicationGroup } from './types.ts';
 import { addressKey, hex, unique } from './utils.ts';
-import { runCmd } from '../../../../utils/exec.ts';
-import { AppError } from '../../../../kernel/errors.ts';
+import { requireExecSuccess, runCmd } from '../../../../utils/exec.ts';
+import { AppError } from '@agent-device/kernel/errors';
 
 export async function symbolicateAddresses(
   addresses: SymbolicatedAddress[],
@@ -38,11 +38,16 @@ async function runAtosForGroup(
   group: SymbolicationGroup,
 ): Promise<SymbolicatedAddress[]> {
   const addresses = unique(group.addresses.map(hex));
-  const result = await runCmd(atos, atosArgs(group, addresses), {
-    timeoutMs: 30_000,
-    allowFailure: true,
-  });
-  if (result.exitCode !== 0) throwAtosFailure(result.stderr);
+  const result = requireExecSuccess(
+    await runCmd(atos, atosArgs(group, addresses), {
+      timeoutMs: 30_000,
+      allowFailure: true,
+    }),
+    'atos failed while symbolicating crash frames.',
+    {
+      hint: 'Verify the crash artifact and dSYM were produced from the same build and architecture.',
+    },
+  );
   return mapAtosOutputToAddresses(group.image, addresses, result.stdout);
 }
 
@@ -86,13 +91,6 @@ function isSymbolicatedAtosOutput(text: string | undefined, rawAddress: string):
   if (!normalized || normalized === '??') return false;
   if (normalized === rawAddress.toLowerCase()) return false;
   return !normalized.startsWith('0x');
-}
-
-function throwAtosFailure(stderr: string): never {
-  throw new AppError('COMMAND_FAILED', 'atos failed while symbolicating crash frames.', {
-    stderr,
-    hint: 'Verify the crash artifact and dSYM were produced from the same build and architecture.',
-  });
 }
 
 export async function resolveAppleTools(): Promise<{ dwarfdump: string; atos: string }> {

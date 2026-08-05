@@ -1,4 +1,4 @@
-import { isApplePlatform, type DeviceInfo } from '../kernel/device.ts';
+import { isApplePlatform, type DeviceInfo } from '@agent-device/kernel/device';
 import { sleep } from '../utils/timeouts.ts';
 export { requireIntInRange } from '../utils/validation.ts';
 
@@ -13,10 +13,6 @@ const DETERMINISTIC_JITTER_PATTERN: ReadonlyArray<readonly [number, number]> = [
   [1, -1],
   [-1, -1],
 ];
-
-export function shouldUseIosDragSeries(device: DeviceInfo, count: number): boolean {
-  return isApplePlatform(device.platform) && count > 1;
-}
 
 /**
  * Whether a press series should fuse into one or more `sequence` runner requests. Every Apple

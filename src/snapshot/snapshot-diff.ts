@@ -1,4 +1,5 @@
-import type { SnapshotNode } from '../kernel/snapshot.ts';
+import type { SnapshotDiffLine, SnapshotDiffSummary } from '@agent-device/contracts/capture';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import {
   buildSnapshotDisplayLines,
   displayLabel,
@@ -6,16 +7,7 @@ import {
   formatSnapshotLine,
 } from './snapshot-lines.ts';
 
-export type SnapshotDiffLine = {
-  kind: 'added' | 'removed' | 'unchanged';
-  text: string;
-};
-
-export type SnapshotDiffSummary = {
-  additions: number;
-  removals: number;
-  unchanged: number;
-};
+export type { SnapshotDiffLine, SnapshotDiffSummary } from '@agent-device/contracts/capture';
 
 export type SnapshotDiffResult = {
   summary: SnapshotDiffSummary;
@@ -24,11 +16,14 @@ export type SnapshotDiffResult = {
 
 type SnapshotDiffOptions = {
   flatten?: boolean;
+  /** Attach the current-tree node ref to added lines (see SnapshotDiffLine.ref). */
+  withRefs?: boolean;
 };
 
 type SnapshotComparableLine = {
   text: string;
   comparable: string;
+  ref?: string;
 };
 
 function snapshotNodeToComparableLine(node: SnapshotNode, depthOverride?: number): string {
@@ -73,11 +68,13 @@ function snapshotNodesToLines(
     return nodes.map((node) => ({
       text: formatSnapshotLine(node, 0, false),
       comparable: snapshotNodeToComparableLine(node, 0),
+      ...(options.withRefs && node.ref ? { ref: node.ref } : {}),
     }));
   }
   return buildSnapshotDisplayLines(nodes).map((line) => ({
     text: line.text,
     comparable: snapshotNodeToComparableLine(line.node, line.depth),
+    ...(options.withRefs && line.node.ref ? { ref: line.node.ref } : {}),
   }));
 }
 
@@ -96,7 +93,7 @@ function diffComparableLinesMyers(
   for (let d = 0; d <= max; d += 1) {
     trace.push(new Map(v));
     for (let k = -d; k <= d; k += 2) {
-      const goDown = k === -d || (k !== d && getV(v, k - 1) < getV(v, k + 1));
+      const goDown = shouldGoDown(v, k, d);
       let x = goDown ? getV(v, k + 1) : getV(v, k - 1) + 1;
       let y = x - k;
       while (x < n && y < m && previous[x]!.comparable === current[y]!.comparable) {
@@ -127,7 +124,7 @@ function backtrackMyers(
   for (let d = trace.length - 1; d >= 0; d -= 1) {
     const v = trace[d]!;
     const k = x - y;
-    const goDown = k === -d || (k !== d && getV(v, k - 1) < getV(v, k + 1));
+    const goDown = shouldGoDown(v, k, d);
     const prevK = goDown ? k + 1 : k - 1;
     const prevX = getV(v, prevK);
     const prevY = prevX - prevK;
@@ -141,7 +138,8 @@ function backtrackMyers(
     if (d === 0) break;
 
     if (x === prevX) {
-      lines.push({ kind: 'added', text: current[prevY]!.text });
+      const added = current[prevY]!;
+      lines.push({ kind: 'added', text: added.text, ...(added.ref ? { ref: added.ref } : {}) });
       y = prevY;
     } else {
       lines.push({ kind: 'removed', text: previous[prevX]!.text });
@@ -151,6 +149,10 @@ function backtrackMyers(
 
   lines.reverse();
   return lines;
+}
+
+function shouldGoDown(v: Map<number, number>, k: number, d: number): boolean {
+  return k === -d || (k !== d && getV(v, k - 1) < getV(v, k + 1));
 }
 
 function getV(v: Map<number, number>, k: number): number {

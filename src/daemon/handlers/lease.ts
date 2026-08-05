@@ -1,7 +1,11 @@
+import type { LeaseLifecycleContext, LeaseLifecycleProvider } from '@agent-device/contracts/device';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { AgentArtifactsResult, CloudArtifactProvider } from '../../cloud-artifacts.ts';
+import type {
+  AgentArtifactsResult,
+  CloudArtifactProvider,
+} from '@agent-device/contracts/observability';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
-import type { DeviceLease, LeaseRegistry } from '../lease-registry.ts';
+import type { LeaseRegistry } from '../lease-registry.ts';
 import type { SessionStore } from '../session-store.ts';
 import {
   isProxyLeaseScope,
@@ -13,33 +17,16 @@ import {
   leaseScopeToHeartbeatRequest,
   leaseScopeToReleaseRequest,
 } from '../../core/lease-scope.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { listDownloadableArtifacts } from '../artifact-tracking.ts';
-
-export type LeaseLifecycleProvider = {
-  allocate?: (
-    lease: DeviceLease,
-    context?: LeaseLifecycleContext,
-  ) => Promise<Record<string, unknown> | undefined>;
-  heartbeat?: (
-    lease: DeviceLease,
-    context?: LeaseLifecycleContext,
-  ) => Promise<Record<string, unknown> | undefined>;
-  release?: (
-    lease: DeviceLease,
-    context?: LeaseLifecycleContext,
-  ) => Promise<Record<string, unknown> | undefined>;
-};
-
-export type LeaseLifecycleContext = {
-  req: DaemonRequest;
-};
 
 type LeaseHandlerArgs = {
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
+  providerRuntimeIds?: readonly string[];
+  providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
 };
@@ -50,6 +37,8 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
     sessionName,
     sessionStore,
     leaseRegistry,
+    providerRuntimeIds,
+    providerRuntimeRequiredIds,
     leaseLifecycleProvider,
     cloudArtifactProvider,
   } = args;
@@ -66,10 +55,15 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
       };
     }
     case 'lease_allocate': {
+      assertProviderRuntimeAvailable(
+        leaseScope.leaseProvider,
+        providerRuntimeIds,
+        providerRuntimeRequiredIds,
+      );
       const lease = leaseRegistry.allocateLease(leaseScopeToAllocateRequest(leaseScope));
       let providerData: Record<string, unknown> | undefined;
       try {
-        providerData = await leaseLifecycleProvider?.allocate?.(lease, { req });
+        providerData = await leaseLifecycleProvider?.allocate?.(lease, leaseLifecycleContext(req));
       } catch (error) {
         leaseRegistry.releaseLease(
           leaseScopeToReleaseRequest({
@@ -91,17 +85,22 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
     }
     case 'lease_heartbeat': {
       const lease = leaseRegistry.heartbeatLease(leaseScopeToHeartbeatRequest(leaseScope));
-      const providerData = await leaseLifecycleProvider?.heartbeat?.(lease, { req });
+      const providerData = await leaseLifecycleProvider?.heartbeat?.(
+        lease,
+        leaseLifecycleContext(req),
+      );
       return {
         ok: true,
         data: { lease, ...(providerData ? { provider: providerData } : {}) },
       };
     }
     case 'lease_release': {
-      const result = leaseRegistry.releaseLease(leaseScopeToReleaseRequest(leaseScope));
-      const providerData = result.lease
-        ? await leaseLifecycleProvider?.release?.(result.lease, { req })
+      const releaseRequest = leaseScopeToReleaseRequest(leaseScope);
+      const lease = leaseRegistry.getLease(releaseRequest);
+      const providerData = lease
+        ? await leaseLifecycleProvider?.release?.(lease, leaseLifecycleContext(req))
         : undefined;
+      const result = leaseRegistry.releaseLease(releaseRequest);
       return {
         ok: true,
         data: { released: result.released, ...(providerData ? { provider: providerData } : {}) },
@@ -110,6 +109,37 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
     default:
       return null;
   }
+}
+
+function leaseLifecycleContext(req: DaemonRequest): LeaseLifecycleContext {
+  return {
+    flags: req.flags,
+    cwd: typeof req.meta?.cwd === 'string' ? req.meta.cwd : undefined,
+  };
+}
+
+function assertProviderRuntimeAvailable(
+  provider: string | undefined,
+  providerRuntimeIds: readonly string[] | undefined,
+  providerRuntimeRequiredIds: readonly string[] | undefined,
+): void {
+  if (
+    !provider ||
+    providerRuntimeIds === undefined ||
+    providerRuntimeRequiredIds === undefined ||
+    !providerRuntimeRequiredIds.includes(provider) ||
+    providerRuntimeIds.includes(provider)
+  ) {
+    return;
+  }
+  throw new AppError(
+    'UNSUPPORTED_OPERATION',
+    `Provider "${provider}" is not available in this daemon runtime.`,
+    {
+      provider,
+      hint: `Restart the daemon with ${provider} configured, then retry lease allocation.`,
+    },
+  );
 }
 
 async function listArtifactsForRequest(

@@ -1,3 +1,4 @@
+import type { PlatformGatedProviderResolverKey } from '@agent-device/contracts/platform';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
@@ -7,7 +8,7 @@ import {
   type DeviceInfo,
   type DeviceKind,
   type DeviceTarget,
-} from '../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import {
   ANDROID_EMULATOR,
   ANDROID_TV_DEVICE,
@@ -21,11 +22,10 @@ import {
   VISIONOS_SIMULATOR,
   WEB_DESKTOP_DEVICE,
 } from '../../__tests__/test-utils/index.ts';
-import { getPlugin, tryGetPlugin } from '../../core/platform-plugin/plugin.ts';
+import { getPlugin, tryGetPlugin } from '../../core/platform-plugin-registry.ts';
 import { registerBuiltinPlatformPlugins } from '../../core/interactors/register-builtins.ts';
 import {
   withRequestPlatformProviderScope,
-  type PlatformGatedProviderResolverKey,
   type PlatformProviderResolvers,
 } from '../request-platform-providers.ts';
 import type { DaemonRequest } from '../types.ts';
@@ -47,6 +47,7 @@ const GATED_KEYS: PlatformGatedProviderResolverKey[] = [
   'androidAdbProvider',
   'appleRunnerProvider',
   'appleToolProvider',
+  'vegaToolProvider',
   'linuxToolProvider',
   'webProvider',
 ];
@@ -60,6 +61,7 @@ function gatedResolversByHand(device: DeviceInfo): Set<PlatformGatedProviderReso
     applies.add('appleRunnerProvider'); // was `!isApplePlatform(...)`
     applies.add('appleToolProvider'); // was `!isApplePlatform(...)`
   }
+  if (device.platform === 'vega') applies.add('vegaToolProvider');
   if (device.platform === 'linux') applies.add('linuxToolProvider'); // was `!== 'linux'`
   if (device.platform === 'web') applies.add('webProvider'); // was `!== 'web'`
   return applies;
@@ -125,6 +127,7 @@ test('every family carries the providers facet with the resolvers it owns', () =
     [...getPlugin('android').providers!.platformGatedResolvers],
     ['androidAdbProvider'],
   );
+  assert.deepEqual([...getPlugin('vega').providers!.platformGatedResolvers], ['vegaToolProvider']);
   assert.deepEqual(
     [...getPlugin('linux').providers!.platformGatedResolvers],
     ['linuxToolProvider'],
@@ -149,6 +152,7 @@ test('withRequestPlatformProviderScope invokes exactly the resolvers the former 
       androidAdbProvider: spy('androidAdbProvider'),
       appleRunnerProvider: spy('appleRunnerProvider'),
       appleToolProvider: spy('appleToolProvider'),
+      vegaToolProvider: spy('vegaToolProvider'),
       linuxToolProvider: spy('linuxToolProvider'),
       webProvider: spy('webProvider'),
       appLogProvider: spy('appLogProvider'),

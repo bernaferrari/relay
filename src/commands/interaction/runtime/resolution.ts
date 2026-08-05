@@ -1,26 +1,111 @@
-import { AppError } from '../../../kernel/errors.ts';
-import type { Point, SnapshotNode, SnapshotState } from '../../../kernel/snapshot.ts';
-import { findNodeByRef, normalizeRef } from '../../../kernel/snapshot.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { Point, SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
+import { findNodeByRef, normalizeRef } from '@agent-device/kernel/snapshot';
 import { resolveRectCenter } from '../../../utils/rect-center.ts';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
-import { parseSelectorChain } from '../../../utils/selectors-parse.ts';
-import { formatSelectorFailure, resolveSelectorChain } from '../../../daemon/selectors.ts';
-import { buildSelectorChainForNode } from '../../../utils/selector-build.ts';
-import { findNodeByLabel, resolveRefLabel } from '../../../snapshot/snapshot-processing.ts';
+import type {
+  AgentDeviceRuntime,
+  CommandContext,
+  CommandSessionRecord,
+} from '../../../runtime-contract.ts';
 import {
-  isNodeVisibleInEffectiveViewport,
+  formatSelectorFailure,
+  resolveSelectorChain,
+  selectorFailureHint,
+  STALE_REF_HINT,
+  type SelectorResolution,
+  buildSelectorChainForNode,
+} from '@agent-device/selectors';
+import { resolvePressRecordingTarget } from '../../../core/press-retarget.ts';
+import { requireSnapshotSession } from './selector-read-shared.ts';
+import { findNodeByLabel, resolveRefLabel } from '../../../snapshot/snapshot-processing.ts';
+import { containsPoint } from '@agent-device/kernel/rect';
+import {
+  isNodeVisibleOnScreen,
+  normalizeType,
   resolveEffectiveViewportRect,
+  resolveViewportRect,
+} from '@agent-device/contracts/snapshot';
+import {
+  classifyOffscreenScrollDirection,
+  type OffscreenScrollDirection,
 } from '../../../snapshot/mobile-snapshot-semantics.ts';
 import { isSnapshotNodeInteractionBlocked } from '../../../snapshot/snapshot-occlusion.ts';
+import { truncateUtf8 } from '../../../utils/truncate-utf8.ts';
 import type {
   InteractionTarget,
   PointTarget,
+  RecordingTargetOverride,
+  ResolutionDiagnosticEntry,
+  ResolutionDisclosure,
   ResolvedInteractionTarget,
-} from '../../../contracts/interaction.ts';
+} from '@agent-device/contracts/interaction';
 import { now, toBackendContext } from '../../runtime-common.ts';
 import { resolveActionableTouchResolution } from '../../../core/interaction-targeting.ts';
+import {
+  localIdentitiesEqual,
+  readNodeLocalIdentity,
+  readNodeStructuralDenotation,
+  structuralDenotationsEqual,
+} from '@agent-device/ad-script';
+import {
+  REPLAY_TARGET_GUARD_MISMATCH_REASON,
+  type ReplayTargetGuardDenotation,
+} from '@agent-device/contracts/replay';
 
-export type { InteractionTarget, PointTarget, ResolvedInteractionTarget };
+export type { InteractionTarget, ResolvedInteractionTarget };
+
+/**
+ * ADR 0012 migration step 4, post-resolution guard: the LOCAL identity AND
+ * the STRUCTURAL denotation (pre-order document index + same-parent sibling
+ * ordinal) of the element replay's pre-action verification isolated. Set ONLY
+ * by the replay step loop (via `DaemonRequest.internal.replayTargetGuard`) for
+ * annotated verified actions — never on live interactive commands.
+ *
+ * Local identity alone is insufficient: ADR path 6 isolates ONE member among
+ * several nodes that share the same `{id, role, label}` using sibling /
+ * region-scoped viewportOrder. If verification isolates duplicate A but
+ * dispatch's occlusion/visibility filtering selects duplicate B with the same
+ * local identity, a local-identity-only guard would pass and tap the wrong
+ * element. The structural denotation is the discriminator that catches that
+ * split BEFORE the device action.
+ */
+export type ExpectedResolvedTarget = ReplayTargetGuardDenotation;
+
+/**
+ * Compares the resolution winner (pre-promotion: hittable-ancestor promotion
+ * deliberately retargets to the same LEAF's actionable container and must not
+ * trip the guard — duplicates are distinct leaves with distinct structural
+ * denotations, so comparing the leaf is exactly right) against the verified
+ * member's local identity AND structural denotation; throws pre-action when
+ * EITHER differs.
+ */
+export function assertExpectedResolvedTarget(
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  expected: ExpectedResolvedTarget | undefined,
+  action: string,
+): void {
+  if (!expected) return;
+  const observedIdentity = readNodeLocalIdentity(node);
+  const observedStructural = readNodeStructuralDenotation(node, nodes);
+  if (
+    localIdentitiesEqual(observedIdentity, expected.identity) &&
+    structuralDenotationsEqual(observedStructural, expected.structural)
+  ) {
+    return;
+  }
+  throw new AppError(
+    'COMMAND_FAILED',
+    `${action} resolved to a different element than replay verification isolated; the action was not sent`,
+    {
+      reason: REPLAY_TARGET_GUARD_MISMATCH_REASON,
+      observed: observedIdentity,
+      observedStructural,
+      expected: expected.identity,
+      expectedStructural: expected.structural,
+    },
+  );
+}
 
 export type InteractionAction =
   | 'click'
@@ -30,9 +115,13 @@ export type InteractionAction =
   | 'longPress'
   | 'scroll'
   | 'swipe'
-  | 'pinch';
+  | 'pinch'
+  | 'pan'
+  | 'fling'
+  | 'rotate'
+  | 'transform';
 
-export type CapturedSnapshot = {
+export type InteractionSnapshot = {
   snapshot: SnapshotState;
 };
 
@@ -40,6 +129,17 @@ type ResolveInteractionTargetParams = {
   action: InteractionAction;
   requireInteractive: boolean;
   promoteToHittableAncestor: boolean;
+  /**
+   * `--verify` (#1047): also capture the pre-action node set for a `point` target
+   * so `changedFromBefore` evidence has a baseline. Ref/selector targets already
+   * capture a snapshot to resolve the target, so this is a no-op cost for them —
+   * their nodes are attached below regardless of this flag. For point targets,
+   * which normally skip capture entirely, this opts into one extra capture, only
+   * when the caller explicitly asked for verify evidence. Defaults to false.
+   */
+  captureEvidenceBaseline?: boolean;
+  /** ADR 0012 step 4 post-resolution guard; see `ExpectedResolvedTarget`. */
+  expectedResolvedTarget?: ExpectedResolvedTarget;
 };
 
 export async function resolveInteractionTarget(
@@ -50,7 +150,7 @@ export async function resolveInteractionTarget(
   await assertSupportedInteractionSurface(runtime, options, params.action);
 
   if (options.target.kind === 'point') {
-    return resolvePointInteractionTarget(options.target);
+    return await resolvePointInteractionTarget(runtime, options, options.target, params);
   }
 
   if (options.target.kind === 'ref') {
@@ -60,11 +160,62 @@ export async function resolveInteractionTarget(
   return await resolveSelectorInteractionTarget(runtime, options, options.target, params);
 }
 
-function resolvePointInteractionTarget(target: PointTarget): ResolvedInteractionTarget {
+async function tryResolveOutOfBoundsPointWarning(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  target: PointTarget,
+): Promise<string | undefined> {
+  const sessionName = options.session ?? 'default';
+  const session = await runtime.sessions.get(sessionName);
+  if (!session?.snapshot) return undefined;
+
+  // Create a synthetic rect from the point for viewport lookup
+  const pointRect = { x: target.x, y: target.y, width: 0, height: 0 };
+  const viewport = resolveViewportRect(session.snapshot.nodes, pointRect);
+  if (!viewport) return undefined;
+
+  const point = { x: target.x, y: target.y };
+  if (containsPoint(viewport, point.x, point.y)) return undefined;
+
+  return `Coordinates (${point.x}, ${point.y}) are outside the last-known viewport (${viewport.width}x${viewport.height}). The tap will be forwarded anyway; take a fresh snapshot if the screen changed.`;
+}
+
+async function resolvePointInteractionTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  target: PointTarget,
+  params: ResolveInteractionTargetParams,
+): Promise<ResolvedInteractionTarget> {
+  const warning = await tryResolveOutOfBoundsPointWarning(runtime, options, target);
+  if (!params.captureEvidenceBaseline) {
+    return {
+      kind: 'point',
+      point: { x: target.x, y: target.y },
+      ...(warning ? { warning } : {}),
+    };
+  }
+  const preActionNodes = await tryCaptureEvidenceBaseline(runtime, options);
   return {
     kind: 'point',
     point: { x: target.x, y: target.y },
+    ...(preActionNodes ? { preActionNodes } : {}),
+    ...(warning ? { warning } : {}),
   };
+}
+
+async function tryCaptureEvidenceBaseline(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+): Promise<SnapshotNode[] | undefined> {
+  try {
+    const capture = await captureInteractionSnapshot(runtime, options, true);
+    return capture.snapshot.nodes;
+  } catch {
+    // Evidence is best-effort: a failed baseline capture must not fail the
+    // action itself. Post-action evidence (if any) will simply omit
+    // changedFromBefore.
+    return undefined;
+  }
 }
 
 async function resolveRefInteractionTarget(
@@ -75,6 +226,12 @@ async function resolveRefInteractionTarget(
 ): Promise<ResolvedInteractionTarget> {
   const capture = await resolveSnapshotForRef(runtime, options, target);
   const resolved = capture.resolved;
+  assertExpectedResolvedTarget(
+    resolved.node,
+    capture.snapshot.nodes,
+    params.expectedResolvedTarget,
+    params.action,
+  );
   const node = params.promoteToHittableAncestor
     ? resolveActionableNodeOrThrow(capture.snapshot.nodes, resolved.node, {
         action: params.action,
@@ -82,17 +239,27 @@ async function resolveRefInteractionTarget(
       })
     : resolved.node;
   assertInteractionNotBlocked(node, `Ref ${target.ref}`, params.action);
-  assertVisibleRefTarget(node, capture.snapshot.nodes, target.ref, params.action);
-  const point = resolveNodeCenter(node, `Ref ${target.ref} not found or has invalid bounds`);
+  // #1542: point/response read from the returned (possibly rescue-patched) node.
+  const visibleNode = await assertVisibleRefTarget(
+    runtime,
+    options,
+    node,
+    capture.snapshot.nodes,
+    target.ref,
+    params.action,
+  );
+  const point = resolveNodeCenter(visibleNode, `Ref ${target.ref} not found or has invalid bounds`);
   return {
     kind: 'ref',
     point,
     target: { kind: 'ref', ref: `@${resolved.ref}` },
-    node,
-    selectorChain: buildSelectorChainForNode(node, runtime.backend.platform, {
-      action: params.action === 'fill' ? 'fill' : 'click',
-    }),
-    refLabel: resolveRefLabel(node, capture.snapshot.nodes),
+    ...describeResolvedInteractionNode(
+      runtime,
+      visibleNode,
+      capture.snapshot.nodes,
+      params.action,
+      resolved.resolution,
+    ),
   };
 }
 
@@ -103,62 +270,229 @@ async function resolveSelectorInteractionTarget(
   target: Extract<InteractionTarget, { kind: 'selector' }>,
   params: ResolveInteractionTargetParams,
 ): Promise<ResolvedInteractionTarget> {
-  const chain = parseSelectorChain(target.selector);
+  const selectorExpression = target.selector;
   let capture = await captureInteractionSnapshot(runtime, options, params.requireInteractive);
-  let resolved = resolveSelectorChain(interactableSelectorNodes(capture.snapshot.nodes), chain, {
-    platform: runtime.backend.platform,
-    requireRect: true,
-    requireUnique: true,
-    disambiguateAmbiguous: true,
-  });
-  if ((!resolved || !resolved.node.rect) && params.requireInteractive) {
-    capture = await captureInteractionSnapshot(runtime, options, false);
-    resolved = resolveSelectorChain(interactableSelectorNodes(capture.snapshot.nodes), chain, {
+  let resolved = resolveSelectorChain(
+    interactableSelectorNodes(capture.snapshot.nodes),
+    selectorExpression,
+    {
       platform: runtime.backend.platform,
       requireRect: true,
       requireUnique: true,
       disambiguateAmbiguous: true,
-    });
+    },
+  );
+  if ((!resolved || !resolved.node.rect) && params.requireInteractive) {
+    capture = await captureInteractionSnapshot(runtime, options, false);
+    resolved = resolveSelectorChain(
+      interactableSelectorNodes(capture.snapshot.nodes),
+      selectorExpression,
+      {
+        platform: runtime.backend.platform,
+        requireRect: true,
+        requireUnique: true,
+        disambiguateAmbiguous: true,
+      },
+    );
   }
   if (!resolved || !resolved.node.rect) {
-    const covered = resolveSelectorChain(capture.snapshot.nodes, chain, {
+    const covered = resolveSelectorChain(capture.snapshot.nodes, selectorExpression, {
       platform: runtime.backend.platform,
       requireRect: true,
       requireUnique: false,
     });
     if (covered?.node && isSnapshotNodeInteractionBlocked(covered.node)) {
       throw buildCoveredInteractionError({
-        label: `Selector ${covered.selector.raw}`,
+        label: `Selector ${covered.selector}`,
         node: covered.node,
         action: params.action,
-        selector: covered.selector.raw,
+        selector: covered.selector,
       });
     }
     throw new AppError(
       'COMMAND_FAILED',
-      formatSelectorFailure(chain, resolved?.diagnostics ?? [], { unique: true }),
+      formatSelectorFailure(selectorExpression, resolved?.diagnostics ?? [], { unique: true }),
+      { hint: selectorFailureHint(resolved?.diagnostics ?? []) },
     );
   }
+  assertExpectedResolvedTarget(
+    resolved.node,
+    capture.snapshot.nodes,
+    params.expectedResolvedTarget,
+    params.action,
+  );
   const node = params.promoteToHittableAncestor
     ? resolveActionableNodeOrThrow(capture.snapshot.nodes, resolved.node, {
         action: params.action,
-        label: `Selector ${resolved.selector.raw}`,
+        label: `Selector ${resolved.selector}`,
       })
     : resolved.node;
-  assertInteractionNotBlocked(node, `Selector ${resolved.selector.raw}`, params.action);
-  const point = resolveNodeCenter(
+  assertInteractionNotBlocked(node, `Selector ${resolved.selector}`, params.action);
+  // #1542: see the ref-target twin above.
+  const visibleNode = await assertVisibleSelectorTarget(
+    runtime,
+    options,
     node,
-    `Selector ${resolved.selector.raw} resolved to invalid bounds`,
+    capture.snapshot.nodes,
+    resolved.selector,
+    params.action,
+  );
+  const point = resolveNodeCenter(
+    visibleNode,
+    `Selector ${resolved.selector} resolved to invalid bounds`,
   );
   return {
     kind: 'selector',
     point,
-    target: { kind: 'selector', selector: resolved.selector.raw },
+    target: { kind: 'selector', selector: resolved.selector },
+    ...describeResolvedInteractionNode(
+      runtime,
+      visibleNode,
+      capture.snapshot.nodes,
+      params.action,
+      buildSelectorResolutionDisclosure(resolved, capture.snapshot.nodes),
+    ),
+  };
+}
+
+// ADR 0012 decision 2 bounds: diagnostic strings and losing alternatives.
+const RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP = 256;
+const MAX_RESOLUTION_ALTERNATIVES = 5;
+
+/** A successful `@ref` lookup names exactly one node; label recovery discloses label-fallback instead. */
+export const EXACT_REF_RESOLUTION: ResolutionDisclosure = {
+  source: 'ref',
+  phase: 'pre-action',
+  kind: 'exact',
+};
+
+const LABEL_FALLBACK_REF_RESOLUTION: ResolutionDisclosure = {
+  source: 'ref',
+  phase: 'pre-action',
+  kind: 'label-fallback',
+};
+
+const UNIQUE_RUNTIME_RESOLUTION: ResolutionDisclosure = {
+  source: 'runtime',
+  phase: 'pre-action',
+  kind: 'unique',
+};
+
+// Disclosure only: the winner stays resolveSelectorChain's pick (ADR 0012).
+function buildSelectorResolutionDisclosure(
+  resolved: SelectorResolution,
+  nodes: SnapshotState['nodes'],
+): ResolutionDisclosure {
+  if (!resolved.disambiguation) return UNIQUE_RUNTIME_RESOLUTION;
+  return {
+    source: 'runtime',
+    phase: 'pre-action',
+    kind: 'disambiguated',
+    matchCount: resolved.disambiguation.matchCount,
+    winnerDiagnostic: buildResolutionDiagnosticEntry(resolved.node, nodes),
+    tiebreak: resolved.disambiguation.tiebreak,
+    alternatives: resolved.disambiguation.alternatives
+      .slice(0, MAX_RESOLUTION_ALTERNATIVES)
+      .map((node) => buildResolutionDiagnosticEntry(node, nodes)),
+  };
+}
+
+function buildResolutionDiagnosticEntry(
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+): ResolutionDiagnosticEntry {
+  const role = normalizeType(node.type ?? '');
+  const label = resolveRefLabel(node, nodes);
+  return {
+    diagnosticRef: `diag-${node.ref}`,
+    ...(role ? { role: truncateUtf8(role, RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP) } : {}),
+    ...(label !== undefined
+      ? { label: truncateUtf8(label, RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP) }
+      : {}),
+  };
+}
+
+// Shared tail of a resolved ref/selector interaction target: the node itself
+// plus everything derived from it for the response. Every response field
+// describes the DISPATCHED node — the #1280 retarget rides only on the
+// `recordingTarget` side channel below.
+function describeResolvedInteractionNode(
+  runtime: AgentDeviceRuntime,
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  action: InteractionAction,
+  resolution: ResolutionDisclosure,
+): {
+  node: SnapshotNode;
+  selectorChain: string[];
+  refLabel: string | undefined;
+  targetHittable?: boolean;
+  hint?: string;
+  preActionNodes: SnapshotState['nodes'];
+  resolution: ResolutionDisclosure;
+  recordingTarget?: RecordingTargetOverride;
+} {
+  return {
     node,
     selectorChain: buildSelectorChainForNode(node, runtime.backend.platform, {
-      action: params.action === 'fill' ? 'fill' : 'click',
+      action: action === 'fill' ? 'fill' : 'click',
+      nodes,
     }),
-    refLabel: resolveRefLabel(node, capture.snapshot.nodes),
+    refLabel: resolveRefLabel(node, nodes),
+    ...describeNonHittableTarget(node, action),
+    preActionNodes: nodes,
+    resolution,
+    ...pressRecordingTargetOverride(runtime, node, nodes, action),
+  };
+}
+
+/**
+ * #1280 (ADR 0012 decision 3 amendment): the recording-only side channel.
+ * When a click/press resolves to an identity-empty container, the RECORDED
+ * step retargets to its first labeled descendant — node, chain, and
+ * ref-label computed together here so the recorded action entry and its
+ * `target-v1` evidence can never half-retarget. The response payloads never
+ * consume this (see `interaction-touch-response.ts`). `fill` is deliberately
+ * excluded: its chain carries `editable=true` constraints a label descendant
+ * cannot satisfy, which would record an unreplayable selector.
+ */
+function pressRecordingTargetOverride(
+  runtime: AgentDeviceRuntime,
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  action: InteractionAction,
+): { recordingTarget?: RecordingTargetOverride } {
+  if (action !== 'click' && action !== 'press') return {};
+  const recordingNode = resolvePressRecordingTarget(node, nodes);
+  if (recordingNode === node) return {};
+  return {
+    recordingTarget: {
+      node: recordingNode,
+      selectorChain: buildSelectorChainForNode(recordingNode, runtime.backend.platform, {
+        action: 'click',
+        nodes,
+      }),
+      refLabel: resolveRefLabel(recordingNode, nodes),
+    },
+  };
+}
+
+/**
+ * iOS AX `hittable` flags are unreliable on deep React Native trees (see #1037:
+ * a map-pin annotation exact-matched a longer recents row label and reported tap
+ * success while doing nothing visible). We deliberately do NOT fail or filter on
+ * this signal — that would break selectors that only ever resolve to nodes the
+ * platform marks non-hittable. Instead, surface it so the caller can notice a
+ * likely no-op tap and re-target with a ref or a more specific selector/longer text.
+ */
+function describeNonHittableTarget(
+  node: SnapshotNode,
+  action: InteractionAction,
+): { targetHittable?: boolean; hint?: string } {
+  if (node.hittable !== false) return {};
+  return {
+    targetHittable: false,
+    hint: `The resolved element reports hittable: false, so this ${action} may have had no visible effect. Verify with a snapshot, or prefer a @ref or a longer/more specific selector to target the intended element.`,
   };
 }
 
@@ -226,7 +560,7 @@ export async function captureInteractionSnapshot(
   runtime: AgentDeviceRuntime,
   options: CommandContext,
   interactiveOnly: boolean,
-): Promise<CapturedSnapshot> {
+): Promise<InteractionSnapshot> {
   if (!runtime.backend.captureSnapshot) {
     throw new AppError('UNSUPPORTED_OPERATION', 'snapshot is not supported by this backend');
   }
@@ -277,50 +611,94 @@ async function resolveSnapshotForRef(
   runtime: AgentDeviceRuntime,
   options: CommandContext,
   target: Extract<InteractionTarget, { kind: 'ref' }>,
-): Promise<CapturedSnapshot & { resolved: { ref: string; node: SnapshotNode } }> {
-  const sessionName = options.session ?? 'default';
-  const session = await runtime.sessions.get(sessionName);
-  if (!session) throw new AppError('SESSION_NOT_FOUND', 'No active session. Run open first.');
-  if (!session.snapshot) {
-    throw new AppError('INVALID_ARGS', 'No snapshot in session. Run snapshot first.');
-  }
+): Promise<InteractionSnapshot & { resolved: ResolvedRefNode }> {
+  const { session, snapshot: frameTree } = await requireSnapshotSession(runtime, options.session);
 
   const fallbackLabel = target.fallbackLabel ?? '';
-  const stored = tryResolveRefNode(session.snapshot.nodes, target.ref, {
+  const authorized = tryResolveRefNode(frameTree.nodes, target.ref, {
     fallbackLabel,
   });
-  if (stored) {
-    return { snapshot: session.snapshot, resolved: stored };
+  // ADR 0014: missing authorized-frame evidence FAILS. It must not fall through
+  // to a fresh capture and accept the same ref body from a newer tree — that is
+  // exactly the positional-coincidence retarget the frame model forbids. A stale
+  // read is observable and recoverable; a stale mutation can act on the wrong
+  // element. The caller re-observes (snapshot) or uses a selector.
+  if (!authorized) {
+    throw new AppError('COMMAND_FAILED', `Ref ${target.ref} not found or has no bounds`, {
+      hint: STALE_REF_HINT,
+    });
   }
-
-  const capture = await captureInteractionSnapshot(runtime, options, true);
-  const refreshed = tryResolveRefNode(capture.snapshot.nodes, target.ref, {
+  return reconcileFreshObservation({
+    session,
+    frameTree,
+    target,
     fallbackLabel,
+    authorized,
   });
-  if (!refreshed) {
-    throw new AppError('COMMAND_FAILED', `Ref ${target.ref} not found or has no bounds`);
-  }
-  return { ...capture, resolved: refreshed };
 }
 
-function tryResolveRefNode(
+/**
+ * ADR 0014 step 5: decouple Android freshness from ref authorization. The frame
+ * tree names WHICH node `@eN` authorizes. When a freshness (or other read-only)
+ * capture has advanced the operational observation past the frame, adopt the
+ * observation's node — its fresh on-screen coordinates — ONLY when its local
+ * identity still matches the authorized node. That covers the legitimate case of
+ * an element that merely moved. If the identity differs (a different element now
+ * sits at that index) or the ref is absent from the observation, keep the
+ * authorized frame node so a positional coincidence cannot retarget the action.
+ */
+function reconcileFreshObservation(params: {
+  session: CommandSessionRecord;
+  frameTree: SnapshotState;
+  target: Extract<InteractionTarget, { kind: 'ref' }>;
+  fallbackLabel: string;
+  authorized: ResolvedRefNode;
+}): InteractionSnapshot & { resolved: ResolvedRefNode } {
+  const { session, frameTree, target, fallbackLabel, authorized } = params;
+  const observation = session.snapshot;
+  if (!observation || observation === frameTree) {
+    return { snapshot: frameTree, resolved: authorized };
+  }
+  const observed = tryResolveRefNode(observation.nodes, target.ref, { fallbackLabel });
+  if (
+    observed &&
+    localIdentitiesEqual(
+      readNodeLocalIdentity(authorized.node),
+      readNodeLocalIdentity(observed.node),
+    )
+  ) {
+    return { snapshot: observation, resolved: observed };
+  }
+  return { snapshot: frameTree, resolved: authorized };
+}
+
+/** The runtime-ref resolver: `exact` for a resolved `@ref`, `label-fallback` for trailing-label recovery. */
+export function tryResolveRefNode(
   nodes: SnapshotState['nodes'],
   refInput: string,
   options: {
     fallbackLabel: string;
   },
-): { ref: string; node: SnapshotNode } | null {
+): ResolvedRefNode | null {
   const ref = normalizeRef(refInput);
   if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${refInput}`);
   const refNode = findNodeByRef(nodes, ref);
-  if (isUsableResolvedNode(refNode)) return { ref, node: refNode };
+  if (isUsableResolvedNode(refNode)) {
+    return { ref, node: refNode, resolution: EXACT_REF_RESOLUTION };
+  }
   const fallbackNode =
     options.fallbackLabel.length > 0 ? findNodeByLabel(nodes, options.fallbackLabel) : null;
   if (isUsableResolvedNode(fallbackNode)) {
-    return { ref, node: fallbackNode };
+    return { ref, node: fallbackNode, resolution: LABEL_FALLBACK_REF_RESOLUTION };
   }
   return null;
 }
+
+type ResolvedRefNode = {
+  ref: string;
+  node: SnapshotNode;
+  resolution: ResolutionDisclosure;
+};
 
 function resolveNodeCenter(node: SnapshotNode, message: string): Point {
   const point = resolveRectCenter(node.rect);
@@ -333,19 +711,168 @@ function isUsableResolvedNode(node: SnapshotNode | null | undefined): node is Sn
   return resolveRectCenter(node.rect) !== null;
 }
 
-function assertVisibleRefTarget(
+// Selector parity for the @ref off-screen guard: without it, a selector
+// resolving to a closed drawer/carousel item "succeeds" by tapping coordinates
+// outside the viewport (observed as `Tapped (-161, 265)` against Bluesky's
+// closed drawer) while the same node via @ref is refused.
+async function assertVisibleSelectorTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  selector: string,
+  action: InteractionAction,
+): Promise<SnapshotNode> {
+  return await throwIfOffscreenInteractionTarget(runtime, options, node, nodes, {
+    message: `Selector ${selector} resolved to an off-screen element and is not safe to ${action}`,
+    details: { reason: 'offscreen_selector', selector },
+    // A selector re-resolves against a fresh snapshot on every attempt, so the
+    // recovery is: move the named direction, then retry THIS selector — no
+    // separate snapshot step, and no @ref (a scroll expires the ref frame,
+    // #1366). Naming the direction stops the wrong-way / retry-the-same-ref loop;
+    // bounded steps stop the overshoot loop — a single large scroll (fling
+    // momentum on iOS) can sail past the target, so a short gesture pan lands it.
+    hint: (direction) =>
+      `${scrollRevealClause(direction)} in small steps, retrying ${action} with the same selector after each (it re-resolves against a fresh snapshot). A single large scroll can overshoot the target; a short bounded gesture pan lands it more reliably. If it is inside a closed drawer or another tab, open that container first.`,
+  });
+}
+
+async function assertVisibleRefTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
   node: SnapshotNode,
   nodes: SnapshotState['nodes'],
   refInput: string,
   action: InteractionAction,
-): void {
+): Promise<SnapshotNode> {
+  return await throwIfOffscreenInteractionTarget(runtime, options, node, nodes, {
+    message: `Ref ${refInput} is off-screen and not safe to ${action}`,
+    details: { reason: 'offscreen_ref', ref: normalizeRef(refInput) },
+    // The scroll that reveals the target expires the ref frame (#1366, ADR
+    // 0014), so retrying this @ref would be rejected next. Steer to a selector,
+    // which re-resolves against a fresh snapshot and bypasses the ref-frame guard.
+    hint: (direction) =>
+      `${scrollRevealClause(direction)} in small steps (a single large scroll can overshoot; a short bounded gesture pan lands it more reliably), then retry ${action} with a selector (e.g. text=/id=) rather than this @ref — the scroll expires the ref frame, so re-run snapshot -i before reusing any @ref.`,
+  });
+}
+
+// Shared lead-in for both off-screen hints. Names the concrete `scroll <dir>`
+// when the geometry gives one, and falls back to the generic phrasing when the
+// target is off more than one edge in a way that has no single reveal. Callers
+// append the bounded-steps guidance: a single large scroll (fling momentum on
+// iOS) can sail past the target, so small bounded moves are what actually land.
+function scrollRevealClause(direction: OffscreenScrollDirection | null): string {
+  return direction ? `Scroll ${direction} toward it` : 'Scroll toward it';
+}
+
+/**
+ * ADR 0011 native-ref preflight: `click @ref` / `fill @ref` fast paths
+ * dispatch straight to `backend.tapTarget`/`fillTarget`, and a backend fast
+ * path can silently "succeed" — delegation-on-error never triggers there. The
+ * ref came from the stored session snapshot, so the node is already in hand:
+ * run the SAME shared guards the runtime path uses against it before the
+ * backend call — occlusion (`isSnapshotNodeInteractionBlocked` via
+ * `assertInteractionNotBlocked`) and offscreen (`isNodeVisibleOnScreen` via
+ * `assertVisibleRefTarget`) ERROR with the runtime path's exact shapes, and
+ * the non-hittable annotation is returned for the fast-path result.
+ *
+ * Zero extra round trips by construction on the accept path: no session, no
+ * stored snapshot, an unresolvable/invalid ref, or a node without a usable
+ * rect all make the preflight a no-op and the fast path proceeds exactly as
+ * before. Promotion to a hittable ancestor stays a runtime-path behavior —
+ * the preflight never changes which element the backend acts on. Exception:
+ * a would-be off-screen refusal may spend one extra iOS runner round trip
+ * (#1542's double-check) before erroring — cost only on the path that was
+ * about to fail anyway.
+ */
+export async function preflightNativeRefInteraction(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  target: Extract<InteractionTarget, { kind: 'ref' }>,
+  action: InteractionAction,
+): Promise<{
+  targetHittable?: boolean;
+  hint?: string;
+  node?: SnapshotNode;
+  preActionNodes?: SnapshotNode[];
+}> {
+  const session = await runtime.sessions.get(options.session ?? 'default');
+  const nodes = session?.snapshot?.nodes;
+  if (!nodes || normalizeRef(target.ref) === null) return {};
+  const resolved = tryResolveRefNode(nodes, target.ref, {
+    fallbackLabel: target.fallbackLabel ?? '',
+  });
+  if (!resolved) return {};
+  assertInteractionNotBlocked(resolved.node, `Ref ${target.ref}`, action);
+  // #1542: dispatches by REF, not coordinate, so no point to re-derive — but
+  // evidence/annotation below still describes the returned (visible) node.
+  const visibleNode = await assertVisibleRefTarget(
+    runtime,
+    options,
+    resolved.node,
+    nodes,
+    target.ref,
+    action,
+  );
+  return {
+    ...describeNonHittableTarget(visibleNode, action),
+    // ADR 0012 decision 3: the guard lookup above doubles as the record-time
+    // evidence source for the fast path, at zero extra capture cost.
+    node: visibleNode,
+    preActionNodes: nodes,
+  };
+}
+
+// isNodeVisibleOnScreen (not the effective-viewport form): items inside an
+// off-screen scrollable container (closed drawer) must also count as
+// off-screen, not just items scrolled out of an on-screen container.
+//
+// #1542: once the bulk tree says off-screen, the guard gives iOS one chance
+// to rescue a FALSE refusal via the optional backend.confirmOffscreenTargetVisible
+// hook — a stale/corrupted bulk tree can say off-screen while the app is
+// visually fine (zero cost on the accept path; runs only here). A confirmed
+// rescue returns the node PATCHED WITH THE LIVE RECT: the caller must act on
+// that returned node, never the original, because in the frozen-bulk-tree
+// manifestation the original rect can be stale even when the rescue verdict
+// is correct — tapping it would silently land at the wrong coordinate. The
+// hook fails closed (null) on anything short of a positive confirmation, so
+// a genuine refusal, or any backend without the hook, is unchanged.
+//
+// Exported (not just for callers here) for ADR 0011 registry honesty:
+// interaction-guarantees.ts's `offscreen` cells point their `via` at this
+// function, not at isNodeVisibleOnScreen alone, since this is the actual
+// end-to-end enforcement point.
+export async function throwIfOffscreenInteractionTarget(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  failure: {
+    message: string;
+    details: Record<string, unknown>;
+    hint: (direction: OffscreenScrollDirection | null) => string;
+  },
+): Promise<SnapshotNode> {
   const viewport = node.rect ? resolveEffectiveViewportRect(node, nodes) : null;
-  if (!node.rect || !viewport || isNodeVisibleInEffectiveViewport(node, nodes)) return;
-  throw new AppError('COMMAND_FAILED', `Ref ${refInput} is off-screen and not safe to ${action}`, {
-    reason: 'offscreen_ref',
-    ref: normalizeRef(refInput),
+  if (!node.rect || !viewport || isNodeVisibleOnScreen(node, nodes)) return node;
+  const rootViewport = resolveViewportRect(nodes, node.rect);
+  const liveRect = await runtime.backend.confirmOffscreenTargetVisible?.(
+    toBackendContext(runtime, options),
+    node,
+    rootViewport,
+  );
+  if (liveRect) return { ...node, rect: liveRect };
+  // The direction that scrolls this off-screen target into view. Named in the
+  // hint (and surfaced as a machine-readable detail) so the recovery is a single
+  // deterministic move instead of a guess (#1366). Derived from the same
+  // boundary the rejection above used, so partial clips and off-screen
+  // containers get a direction too, not just fully-scrolled-out items.
+  const scrollDirection = classifyOffscreenScrollDirection(node, nodes);
+  throw new AppError('COMMAND_FAILED', failure.message, {
+    ...failure.details,
     rect: node.rect,
     viewport,
-    hint: `Use scroll with the direction from the off-screen summary, take a fresh snapshot, then retry ${action} with the new ref or a selector.`,
+    ...(scrollDirection ? { scrollDirection } : {}),
+    hint: failure.hint(scrollDirection),
   });
 }

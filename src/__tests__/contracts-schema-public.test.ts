@@ -1,31 +1,32 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { AppError } from '../sdk/index.ts';
-import type { CommandResult } from '../core/command-descriptor/command-result.ts';
-import type { AppStateCommandResult } from '../contracts/app-state.ts';
-import type { ClipboardCommandResult } from '../contracts/clipboard.ts';
-import type { BootCommandResult, ShutdownCommandResult } from '../contracts/device.ts';
+import type { ViewportCommandResult } from '@agent-device/contracts/capture';
+import type {
+  AppStateCommandResult,
+  BootCommandResult,
+  ShutdownCommandResult,
+} from '@agent-device/contracts/device';
 import type {
   AppSwitcherCommandResult,
   BackCommandResult,
+  ClipboardCommandResult,
   HomeCommandResult,
-  RotateCommandResult,
-} from '../contracts/navigation.ts';
-import type { ViewportCommandResult } from '../contracts/viewport.ts';
-import { centerOfRect, defaultHintForCode, normalizeError } from '../sdk/contracts.ts';
+  OrientationCommandResult,
+  TvRemoteCommandResult,
+} from '@agent-device/contracts/interaction';
 import {
-  daemonCommandRequestSchema,
   daemonRuntimeSchema,
   jsonRpcRequestSchema,
-  leaseAllocateSchema,
-  leaseHeartbeatSchema,
-  leaseReleaseSchema,
   type AppErrorCode,
   type Rect,
   type SnapshotNode,
-} from '../kernel/contracts.ts';
+} from '@agent-device/kernel/contracts';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { test } from 'vitest';
+import type { CommandResult } from '../core/command-descriptor/command-result.ts';
+import { centerOfRect, defaultHintForCode, normalizeError } from '../sdk/contracts.ts';
+import type { DaemonError } from '../sdk/contracts.ts';
+import { AppError } from '../sdk/index.ts';
 
 const invalidArgsCode = 'INVALID_ARGS' satisfies AppErrorCode;
 const rect = { x: 1, y: 2, width: 3, height: 4 } satisfies Rect;
@@ -39,7 +40,7 @@ const node = {
 
 test('public contracts error helpers do not load diagnostics module', () => {
   const errorsSource = fs.readFileSync(
-    path.join(import.meta.dirname, '..', 'kernel', 'errors.ts'),
+    path.join(import.meta.dirname, '..', '..', 'packages', 'kernel', 'src', 'errors.ts'),
     'utf8',
   );
 
@@ -58,51 +59,16 @@ test('public contract facade does not expose parser schemas', async () => {
   assert.equal(publicContracts.leaseReleaseSchema, undefined);
 });
 
-test('internal contract schemas validate daemon requests and lease payloads', () => {
+test('internal runtime schema validates daemon runtime hints', () => {
   const runtime = daemonRuntimeSchema.parse({
     platform: 'ios',
     metroHost: '127.0.0.1',
     metroPort: 8081,
     bundleUrl: 'https://example.test/index.bundle?platform=ios',
   });
-  const request = daemonCommandRequestSchema.parse({
-    command: 'open',
-    positionals: ['Demo'],
-    runtime,
-    meta: {
-      tenantId: 'acme',
-      runId: 'run-1',
-      leaseBackend: 'ios-instance',
-      lockPolicy: 'reject',
-      lockPlatform: 'ios',
-    },
-  });
-  const allocate = leaseAllocateSchema.parse({
-    tenantId: 'acme',
-    runId: 'run-1',
-    ttlMs: 60_000,
-    backend: 'android-instance',
-  });
-  const heartbeat = leaseHeartbeatSchema.parse({
-    tenantId: 'acme',
-    runId: 'run-1',
-    leaseId: 'lease-1',
-    ttlMs: 60_000,
-  });
-  const release = leaseReleaseSchema.parse({
-    tenant: 'acme',
-    runId: 'run-1',
-    leaseId: 'lease-1',
-  });
 
-  assert.equal(request.runtime?.platform, 'ios');
-  assert.equal(request.meta?.leaseBackend, 'ios-instance');
-  assert.equal(request.session, undefined);
-  assert.equal(allocate.backend, 'android-instance');
-  assert.equal(heartbeat.runId, 'run-1');
-  assert.equal(release.tenant, 'acme');
-  assert.equal(heartbeat.leaseId, 'lease-1');
-  assert.equal(release.leaseId, 'lease-1');
+  assert.equal(runtime.platform, 'ios');
+  assert.equal(runtime.metroHost, '127.0.0.1');
   assert.deepEqual(centerOfRect(rect), { x: 3, y: 4 });
   assert.equal(node.ref, 'e1');
 });
@@ -159,12 +125,19 @@ test('command result contracts are assignable to command result map', () => {
   } satisfies AppSwitcherCommandResult;
   const appSwitcherFromMap: CommandResult<'app-switcher'> = appSwitcher;
 
-  const rotate = {
-    action: 'rotate',
+  const orientation = {
+    action: 'orientation',
     orientation: 'portrait',
     message: 'Rotated to portrait',
-  } satisfies RotateCommandResult;
-  const rotateFromMap: CommandResult<'rotate'> = rotate;
+  } satisfies OrientationCommandResult;
+  const orientationFromMap: CommandResult<'orientation'> = orientation;
+
+  const tvRemote = {
+    action: 'tv-remote',
+    button: 'select',
+    message: 'Pressed TV remote select',
+  } satisfies TvRemoteCommandResult;
+  const tvRemoteFromMap: CommandResult<'tv-remote'> = tvRemote;
 
   const clipboard = {
     action: 'write',
@@ -186,107 +159,12 @@ test('command result contracts are assignable to command result map', () => {
   assert.equal(backFromMap.mode, 'in-app');
   assert.equal(homeFromMap.action, 'home');
   assert.equal(appSwitcherFromMap.action, 'app-switcher');
-  assert.equal(rotateFromMap.orientation, 'portrait');
+  assert.equal(orientationFromMap.orientation, 'portrait');
+  assert.equal(tvRemoteFromMap.button, 'select');
   assert.equal(clipboardFromMap.action === 'write' ? clipboardFromMap.textLength : -1, 11);
   assert.equal(
     appstateFromMap.platform === 'android' ? appstateFromMap.package : '',
     'com.example.demo',
-  );
-});
-
-test('internal daemon request schema accepts GitHub Actions artifact install sources', () => {
-  const artifactIdRequest = daemonCommandRequestSchema.parse({
-    command: 'install_source',
-    positionals: [],
-    flags: { platform: 'android' },
-    meta: {
-      installSource: {
-        kind: 'github-actions-artifact',
-        owner: 'acme',
-        repo: 'mobile',
-        artifactId: 1234567890,
-      },
-    },
-  });
-  const artifactNameRequest = daemonCommandRequestSchema.parse({
-    command: 'install_source',
-    positionals: [],
-    flags: { platform: 'ios' },
-    meta: {
-      installSource: {
-        kind: 'github-actions-artifact',
-        owner: 'acme',
-        repo: 'mobile',
-        runId: 987654321,
-        artifactName: 'app-debug',
-      },
-    },
-  });
-  const latestArtifactNameRequest = daemonCommandRequestSchema.parse({
-    command: 'install_source',
-    positionals: [],
-    flags: { platform: 'android' },
-    meta: {
-      installSource: {
-        kind: 'github-actions-artifact',
-        owner: 'acme',
-        repo: 'mobile',
-        artifactName: 'app-debug',
-      },
-    },
-  });
-
-  assert.deepEqual(artifactIdRequest.meta?.installSource, {
-    kind: 'github-actions-artifact',
-    owner: 'acme',
-    repo: 'mobile',
-    artifactId: 1234567890,
-  });
-  assert.deepEqual(artifactNameRequest.meta?.installSource, {
-    kind: 'github-actions-artifact',
-    owner: 'acme',
-    repo: 'mobile',
-    runId: 987654321,
-    artifactName: 'app-debug',
-  });
-  assert.deepEqual(latestArtifactNameRequest.meta?.installSource, {
-    kind: 'github-actions-artifact',
-    owner: 'acme',
-    repo: 'mobile',
-    artifactName: 'app-debug',
-  });
-  assert.throws(
-    () =>
-      daemonCommandRequestSchema.parse({
-        command: 'install_source',
-        positionals: [],
-        meta: {
-          installSource: {
-            kind: 'github-actions-artifact',
-            owner: 'acme',
-            repo: 'mobile',
-            artifactId: 1234567890,
-            runId: 987654321,
-            artifactName: 'app-debug',
-          },
-        },
-      }),
-    /either artifactId or artifactName, not both/,
-  );
-  assert.throws(
-    () =>
-      daemonCommandRequestSchema.parse({
-        command: 'install_source',
-        positionals: [],
-        meta: {
-          installSource: {
-            kind: 'github-actions-artifact',
-            owner: ' ',
-            repo: 'mobile',
-          },
-        },
-      }),
-    /owner/,
   );
 });
 
@@ -297,21 +175,20 @@ test('public contract exports normalize and hint app errors', () => {
   assert.equal(normalized.hint, defaultHintForCode(invalidArgsCode));
   assert.equal(
     defaultHintForCode('UNKNOWN'),
-    'Retry with --debug and inspect diagnostics log for details.',
+    'Unexpected internal error. Retry with --debug and report the diagnostics log if it persists.',
   );
 });
 
-test('internal contract schemas reject invalid payloads', () => {
-  assert.throws(
-    () =>
-      daemonCommandRequestSchema.parse({
-        token: 'secret',
-        session: 'default',
-        command: 'open',
-        positionals: [123],
-      }),
-    /positionals\[0\]/,
-  );
+test('public contracts retain the DaemonError type export', () => {
+  const daemonError = {
+    code: 'COMMAND_FAILED',
+    message: 'Daemon command failed',
+  } satisfies DaemonError;
+
+  assert.equal(daemonError.code, 'COMMAND_FAILED');
+});
+
+test('internal JSON-RPC schema rejects invalid payloads', () => {
   assert.throws(
     () =>
       jsonRpcRequestSchema.parse({
@@ -320,14 +197,5 @@ test('internal contract schemas reject invalid payloads', () => {
         method: 'agent_device.command',
       }),
     /\.id/,
-  );
-  assert.throws(
-    () =>
-      leaseReleaseSchema.parse({
-        token: 'secret',
-        leaseId: 'lease-1',
-        ttlMs: 60_000,
-      }),
-    /\.ttlMs/,
   );
 });

@@ -1,4 +1,4 @@
-import type { RawSnapshotNode, SnapshotNode } from '../kernel/snapshot.ts';
+import type { RawSnapshotNode, SnapshotNode } from '@agent-device/kernel/snapshot';
 
 export function normalizeSnapshotTree(nodes: RawSnapshotNode[]): RawSnapshotNode[] {
   const originalToNormalizedIndex = new Map<number, number>();
@@ -34,10 +34,6 @@ export function normalizeSnapshotTree(nodes: RawSnapshotNode[]): RawSnapshotNode
   }
 
   return normalized;
-}
-
-export function buildSnapshotNodeMap<T extends { index: number }>(nodes: T[]): Map<number, T> {
-  return new Map(nodes.map((node) => [node.index, node]));
 }
 
 export function displayNodeLabel(node: SnapshotNode): string {

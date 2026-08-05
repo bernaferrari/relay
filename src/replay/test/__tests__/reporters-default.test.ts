@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import type { ReplaySuiteResult } from '../../../daemon/types.ts';
+import type { ReplaySuiteResult } from '@agent-device/contracts/replay';
 import { createDefaultReplayTestReporter } from '../reporters/default.ts';
 import type { ReplayTestReporterContext } from '../reporters/types.ts';
 
@@ -41,20 +41,20 @@ function emptySuite(): ReplaySuiteResult {
   };
 }
 
-function withCiEnv<T>(value: string | undefined, run: () => T): T {
-  const original = process.env.CI;
-  if (value === undefined) delete process.env.CI;
-  else process.env.CI = value;
+function withEnv<T>(name: 'CI' | 'TMUX', value: string | undefined, run: () => T): T {
+  const original = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
   try {
     return run();
   } finally {
-    if (original === undefined) delete process.env.CI;
-    else process.env.CI = original;
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
   }
 }
 
 test('default replay test reporter hides and restores cursor for tty progress', () => {
-  withCiEnv(undefined, () => {
+  withEnv('CI', undefined, () => {
     const reporter = createDefaultReplayTestReporter();
     const { context, stderr, stdout } = createReporterContext({ stderrIsTty: true });
 
@@ -70,6 +70,53 @@ test('default replay test reporter hides and restores cursor for tty progress', 
   });
 });
 
+test('default replay test reporter avoids cursor-up cleanup inside tmux', () => {
+  withEnv('CI', undefined, () =>
+    withEnv('TMUX', '/tmp/tmux-1000/default,1,0', () => {
+      const reporter = createDefaultReplayTestReporter();
+      const { context, stderr } = createReporterContext({ stderrIsTty: true });
+      context.stderr.columns = 200;
+      reporter.onSuiteStart?.(
+        { total: 1, runnable: 1, skipped: 0, artifactsDir: '/tmp/replay' },
+        context,
+      );
+      reporter.onTestStep?.(
+        {
+          file: '/tmp/checkout.yaml',
+          title: 'x'.repeat(180),
+          index: 1,
+          total: 1,
+          stepIndex: 1,
+          stepTotal: 2,
+          stepCommand: 'assertVisible',
+          stepValue: 'Confirmation',
+        },
+        context,
+      );
+
+      context.stderr.columns = 20;
+      reporter.onTestStep?.(
+        {
+          file: '/tmp/checkout.yaml',
+          title: 'Checkout',
+          index: 1,
+          total: 1,
+          stepIndex: 2,
+          stepTotal: 2,
+          stepCommand: 'tapOn',
+          stepValue: 'Continue',
+        },
+        context,
+      );
+      reporter.onSuiteEnd?.(emptySuite(), context);
+
+      const resizedProgress = stderr[2];
+      assert.equal((resizedProgress?.split('\u001B[1A').length ?? 1) - 1, 0);
+      assert.equal((resizedProgress?.split('\u001B[2K').length ?? 1) - 1, 1);
+    }),
+  );
+});
+
 test('default replay test reporter leaves cursor alone for non-tty streams', () => {
   const reporter = createDefaultReplayTestReporter();
   const { context, stderr } = createReporterContext({ stderrIsTty: false });
@@ -81,4 +128,62 @@ test('default replay test reporter leaves cursor alone for non-tty streams', () 
   reporter.onSuiteEnd?.(emptySuite(), context);
 
   assert.deepEqual(stderr, []);
+});
+
+function failingSuiteWithDivergence(): ReplaySuiteResult {
+  const failed = {
+    file: '/tmp/flow.ad',
+    title: 'checkout',
+    session: 'test-session',
+    status: 'failed' as const,
+    durationMs: 10,
+    attempts: 1,
+    error: {
+      code: 'REPLAY_DIVERGENCE',
+      message: 'Replay failed at step 2 (click "Save"): not hittable',
+      details: {
+        divergence: {
+          version: 1,
+          kind: 'action-failure',
+          step: { index: 2, source: { path: '/tmp/flow.ad', line: 2 } },
+          action: 'click "Save"',
+          cause: { code: 'COMMAND_FAILED', message: 'not hittable' },
+          screen: {
+            state: 'available',
+            refsGeneration: 4,
+            refs: [{ ref: 'e5', role: 'button', label: 'Save' }],
+          },
+          suggestions: [
+            { selector: 'id="save"', basis: 'id', ref: 'e5', role: 'button', label: 'Save' },
+          ],
+          suggestionCount: 1,
+          resume: { allowed: false, reason: 'resume not yet supported' },
+        },
+      },
+    },
+  };
+  return {
+    total: 1,
+    executed: 1,
+    passed: 0,
+    failed: 1,
+    skipped: 0,
+    notRun: 0,
+    durationMs: 10,
+    failures: [failed],
+    tests: [failed],
+  };
+}
+
+test('default replay test reporter surfaces the divergence repair report on a failure', () => {
+  const reporter = createDefaultReplayTestReporter();
+  const { context, stdout } = createReporterContext({ stderrIsTty: false });
+  reporter.onSuiteEnd?.(failingSuiteWithDivergence(), context);
+  const out = stdout.join('');
+  // The test text surface must carry the same repair data as --json.
+  assert.match(out, /Divergence at step 2 \(\/tmp\/flow\.ad:2\)/);
+  assert.match(out, /Screen: 1 actionable ref\(s\) captured \(refsGeneration 4\)/);
+  assert.match(out, /@e5 \[button\] "Save"/);
+  assert.match(out, /Suggestions:/);
+  assert.match(out, /\[id\] "Save" id="save"/);
 });

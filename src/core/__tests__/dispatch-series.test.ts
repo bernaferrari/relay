@@ -2,12 +2,11 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   requireIntInRange,
-  shouldUseIosDragSeries,
   shouldUseIosPressSequence,
   chunkRunnerSequenceStepsByBudget,
 } from '../dispatch-series.ts';
-import { AppError } from '../../kernel/errors.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 
 const iosDevice: DeviceInfo = { platform: 'apple', id: 'test', name: 'iPhone', kind: 'simulator' };
 const androidDevice: DeviceInfo = {
@@ -46,16 +45,6 @@ test('requireIntInRange throws for non-finite values', () => {
       (e: unknown) => e instanceof AppError && e.code === 'INVALID_ARGS',
     );
   }
-});
-
-// --- shouldUseIosDragSeries ---
-
-test('shouldUseIosDragSeries returns true for iOS with count > 1', () => {
-  assert.equal(shouldUseIosDragSeries(iosDevice, 2), true);
-});
-
-test('shouldUseIosDragSeries returns false when count is 1', () => {
-  assert.equal(shouldUseIosDragSeries(iosDevice, 1), false);
 });
 
 // --- shouldUseIosPressSequence ---

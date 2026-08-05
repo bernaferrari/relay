@@ -1,4 +1,4 @@
-import type { LeaseBackend } from '../kernel/contracts.ts';
+import type { LeaseBackend } from '@agent-device/kernel/contracts';
 import { stripUndefined } from '../utils/parsing.ts';
 
 const PROXY_LEASE_PROVIDER = 'proxy';
@@ -208,6 +208,9 @@ export function leaseScopeToConnectionMetadata(
   return Object.keys(connection).length > 0 ? connection : undefined;
 }
 
+/**
+ * @internal Lease diagnostics seam exposed for unit tests.
+ */
 export function buildLeaseDiagnosticsContext(
   leaseScope: LeaseScope | undefined,
 ): LeaseDiagnosticsContext | undefined {

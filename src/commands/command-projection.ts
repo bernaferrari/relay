@@ -1,9 +1,9 @@
-import { createBatchDaemonWriter, type BatchCommandName } from './batch/index.ts';
+import { createBatchDaemonWriter } from './batch/index.ts';
 import type { CommandInput, DaemonCommandRequest, DaemonWriter } from './cli-grammar/types.ts';
 import { findCommandMetadata } from './command-metadata.ts';
 import { readMetadataCommandFlags } from './command-flags.ts';
 import { listCommandFamilyDaemonWriters } from './family/registry.ts';
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 
 const daemonWriters: Record<string, DaemonWriter> = {
   ...listCommandFamilyDaemonWriters(),
@@ -11,8 +11,6 @@ const daemonWriters: Record<string, DaemonWriter> = {
 };
 
 export type DaemonCommandName = keyof typeof daemonWriters;
-
-export type { BatchCommandName };
 
 function prepareBatchDaemonCommandRequest(
   command: string,

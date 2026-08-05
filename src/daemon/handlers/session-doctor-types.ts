@@ -1,6 +1,4 @@
-export type DoctorStatus = 'pass' | 'warn' | 'fail' | 'info';
-
-export type DoctorKind = 'auto' | 'react-native' | 'expo';
+import type { DoctorKind } from '@agent-device/contracts/observability';
 
 export type DoctorOptions = {
   targetApp?: string;
@@ -9,13 +7,4 @@ export type DoctorOptions = {
   kind: DoctorKind;
   shouldProbeMetro: boolean;
   remote: boolean;
-};
-
-export type DoctorCheck = {
-  id: string;
-  status: DoctorStatus;
-  summary: string;
-  hint?: string;
-  command?: string;
-  evidence?: Record<string, unknown>;
 };

@@ -1,51 +1,27 @@
-import type { CliFlags, DaemonExcludedCliFlag } from '../cli/parser/cli-flags.ts';
-import type { ScreenshotDispatchFlags } from '../contracts/screenshot.ts';
-import type { DaemonBatchStep } from './batch.ts';
-import type { BackMode } from './back-mode.ts';
-import type { ClickButton } from './click-button.ts';
-import type { ElementSelectorKey } from './interactor-types.ts';
-import type { SwipePattern } from './scroll-gesture.ts';
-import type { SessionSurface } from './session-surface.ts';
-import type { RunnerLogicalLeaseContext } from './runner-lease-context.ts';
-
-export type MaestroRuntimeFlags = {
-  allowNonHittableCoordinateFallback?: boolean;
-  allowAlreadyPastLoading?: boolean;
-  optional?: boolean;
-  prewarmRunnerBeforeOpen?: boolean;
-  runScriptEnv?: Record<string, string>;
-};
-
-export type CommandFlags = Omit<CliFlags, DaemonExcludedCliFlag> & {
-  batchSteps?: DaemonBatchStep[];
-  clearAppState?: boolean;
-  interactionOutcome?: {
-    retryOnNoChange?: boolean;
-  };
-  launchArgs?: string[];
-  kind?: string;
-  maestro?: MaestroRuntimeFlags;
-  postGestureStabilization?: boolean;
-  leaseProvider?: string;
-  provider?: string;
-  deviceKey?: string;
-  clientId?: string;
-  devicePort?: number;
-  hostPort?: number;
-  portReverseName?: string;
-  replayBackend?: string;
-  shardCount?: number;
-  shardIndex?: number;
-};
+// CommandFlags and MaestroRuntimeFlags are declared in contracts/ so both sides of the process
+// boundary can be stated in terms of them; re-exported here because this is where consumers
+// already import them from.
+export type { CommandFlags } from '@agent-device/contracts/command';
+import type { ScreenshotDispatchFlags } from '@agent-device/contracts/capture';
+import type {
+  BackMode,
+  ClickButton,
+  ElementSelectorKey,
+  SwipePattern,
+} from '@agent-device/contracts/interaction';
+import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/platform';
+import type { SessionSurface } from '@agent-device/contracts/session';
+import type { Point } from '@agent-device/kernel/snapshot';
 
 export type DispatchContext = ScreenshotDispatchFlags & {
   requestId?: string;
+  signal?: AbortSignal;
   appBundleId?: string;
   activity?: string;
   launchConsole?: string;
   launchArgs?: string[];
-  // iOS simulator only: relaunch via a single `simctl launch
-  // --terminate-running-process` instead of a separate terminate + launch.
+  // iOS simulator only: terminate the current app inside the platform open,
+  // either during `simctl launch` or immediately before `simctl openurl`.
   terminateRunningApp?: boolean;
   clearAppState?: boolean;
   verbose?: boolean;
@@ -55,11 +31,13 @@ export type DispatchContext = ScreenshotDispatchFlags & {
   iosXctestDerivedDataPath?: string;
   iosXctestEnvDir?: string;
   runnerLeaseContext?: RunnerLogicalLeaseContext;
+  screenshotCaptureBackend?: 'runner';
   snapshotInteractiveOnly?: boolean;
   snapshotDepth?: number;
   snapshotScope?: string;
   snapshotRaw?: boolean;
   snapshotIncludeRects?: boolean;
+  snapshotIncludeHiddenContentHints?: boolean;
   skipIosSimulatorBootCheck?: boolean;
   count?: number;
   intervalMs?: number;
@@ -79,5 +57,6 @@ export type DispatchContext = ScreenshotDispatchFlags & {
     value: string;
     raw: string;
     allowNonHittableCoordinateFallback?: boolean;
+    expectedPoint?: Point;
   };
 };

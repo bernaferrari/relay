@@ -1,15 +1,10 @@
+import type {
+  AppPushOptions,
+  AppTriggerEventOptions,
+  JsonObject,
+} from '@agent-device/contracts/client';
+import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { AppPushOptions, AppTriggerEventOptions } from '../../client/client-types.ts';
-import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
-import {
-  jsonSchemaField,
-  looseObjectField,
-  looseObjectSchema,
-  requiredField,
-  stringField,
-  stringSchema,
-} from '../command-input.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import {
   commonInputFromFlags,
   direct,
@@ -17,13 +12,23 @@ import {
   requiredString,
 } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
+import { defineExecutableCommand } from '../command-contract.ts';
+import {
+  jsonSchemaField,
+  looseObjectField,
+  looseObjectSchema,
+  requiredField,
+  stringField,
+  stringSchema,
+  type CommandField,
+} from '../command-input.ts';
 import { defineCommandFacet } from '../family/types.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 
 const pushCommandMetadata = defineFieldCommandMetadata('push', 'Deliver a push payload.', {
   app: requiredField(stringField()),
   payload: requiredField(
-    jsonSchemaField<string | Record<string, unknown>>({
+    jsonSchemaField<string | JsonObject>({
       oneOf: [stringSchema(), looseObjectSchema()],
     }),
   ),
@@ -34,7 +39,7 @@ const triggerAppEventCommandMetadata = defineFieldCommandMetadata(
   'Trigger an app-defined event.',
   {
     event: requiredField(stringField()),
-    payload: looseObjectField(),
+    payload: jsonObjectField(),
   },
 );
 
@@ -112,4 +117,8 @@ function pushPositionals(input: AppPushOptions): string[] {
 
 function triggerEventPositionals(input: AppTriggerEventOptions): string[] {
   return [input.event, ...(input.payload ? [JSON.stringify(input.payload)] : [])];
+}
+
+function jsonObjectField(): CommandField<JsonObject> {
+  return looseObjectField() as CommandField<JsonObject>;
 }

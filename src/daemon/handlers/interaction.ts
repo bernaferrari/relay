@@ -8,12 +8,13 @@ import { createInteractionRuntime } from './interaction-runtime.ts';
 import { finalizeTouchInteraction } from './interaction-common.ts';
 import { errorResponse, noActiveSessionError, requireCommandSupported } from './response.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { normalizeError } from '../../kernel/errors.ts';
+import { normalizeError } from '@agent-device/kernel/errors';
 import { successText } from '../../utils/success-text.ts';
 import {
   ensureAndroidBlockingSystemDialogReady,
   recoverAndroidBlockingSystemDialog,
 } from '../android-system-dialog.ts';
+import { dispatchGestureViaRuntime, dispatchSwipeViaRuntime } from './interaction-gesture.ts';
 
 export async function handleInteractionCommands(
   params: InteractionHandlerParams,
@@ -28,6 +29,16 @@ export async function handleInteractionCommands(
   }
 
   switch (params.req.command) {
+    case PUBLIC_COMMANDS.gesture:
+      return await dispatchGestureViaRuntime({
+        ...params,
+        captureSnapshotForSession,
+      });
+    case PUBLIC_COMMANDS.swipe:
+      return await dispatchSwipeViaRuntime({
+        ...params,
+        captureSnapshotForSession,
+      });
     case PUBLIC_COMMANDS.type:
       return await dispatchTypeViaRuntime({
         ...params,

@@ -2,16 +2,21 @@ import type {
   ElementTarget,
   InteractionTarget,
   InternalRequestOptions,
-} from '../../client/client-types.ts';
-import { splitSelectorFromArgs } from '../../utils/selectors-parse.ts';
-import type { CliFlags } from '../../cli/parser/cli-flags.ts';
-import { AppError } from '../../kernel/errors.ts';
+} from '@agent-device/contracts/client';
+import type { CliFlags } from '@agent-device/contracts/command';
+import { AppError } from '@agent-device/kernel/errors';
+import {
+  checkElementTargetArgs,
+  checkGetFormat,
+  SELECTOR_EXPRESSION_REQUIRED_MESSAGE,
+  splitSelectorFromArgs,
+} from '@agent-device/selectors';
 import { compactRecord, type SelectorSnapshotInput } from '../command-input.ts';
 import type {
+  CommandInput,
+  DaemonCommandRequest,
   DaemonWriter,
   SelectionOptions,
-  DaemonCommandRequest,
-  CommandInput,
 } from './types.ts';
 
 export function direct(
@@ -25,8 +30,14 @@ export function request(
   command: string,
   positionals: string[],
   options: CommandInput,
+  input?: Record<string, unknown>,
 ): DaemonCommandRequest {
-  return { command, positionals, options: normalizeCommonRequestOptions(options) };
+  return {
+    command,
+    positionals,
+    ...(input ? { input } : {}),
+    options: normalizeCommonRequestOptions(options),
+  };
 }
 
 function normalizeCommonRequestOptions(options: CommandInput): InternalRequestOptions {
@@ -46,6 +57,20 @@ function readDeviceTarget(value: unknown): InternalRequestOptions['target'] | un
 
 export function commonInputFromFlags(flags: CliFlags): Record<string, unknown> {
   return compactRecord({
+    // `--no-record` is a COMMON flag (`COMMON_COMMAND_SUPPORTED_FLAG_KEYS`): it
+    // is accepted on, and meaningful for, every recordable command. It rides
+    // the common seam every reader already spreads, so a reader cannot forget
+    // it and a new reader inherits it for free. The three seams it must survive
+    // are this one, `readCommonInput`, and `commonToClientOptions`
+    // (`commands/command-input.ts`) — a drop at any one of them silently
+    // disables the flag (#1304/#1305 fixed only the reader layer, so the flag
+    // still never reached the daemon).
+    //
+    // `--record` deliberately does NOT ride here: it is scoped to the
+    // observation-only commands the repair-segment exclusion can drop
+    // (ADR 0012 decision 6 amendment), so it stays on the narrow
+    // `observationRecordInputFromFlags` seam below.
+    noRecord: flags.noRecord,
     session: flags.session,
     platform: flags.platform,
     deviceTarget: flags.target,
@@ -60,8 +85,32 @@ export function commonInputFromFlags(flags: CliFlags): Record<string, unknown> {
   });
 }
 
+/**
+ * #1271 stage 2 (ADR 0012 decision 6 amendment): the `--record` opt-in that
+ * forces an observation-only action into a repair-armed heal. Spread ONLY by
+ * readers whose command can be excluded by default — `snapshot`, `get`, `is`,
+ * and `find`. Every one of those readers must ALSO spread
+ * the common `commonInputFromFlags` seam, which carries `--no-record` for every
+ * recordable command, mutations included.
+ */
+export function observationRecordInputFromFlags(flags: CliFlags): Record<string, unknown> {
+  return compactRecord({
+    record: flags.record,
+  });
+}
+
+/**
+ * The reader layer has TWO parallel common seams, not one: this builds the
+ * client-options shape (`target`) for readers that construct a typed Options
+ * object directly (`is`/`find`/`wait`/`settings`), while `commonInputFromFlags`
+ * above builds the reader-input shape (`deviceTarget`). They are different
+ * projections, not duplicates — so `--no-record` has to ride BOTH or the
+ * readers using this one silently drop it (which is what #1304/#1305's
+ * per-reader helper was papering over).
+ */
 export function selectionOptionsFromFlags(flags: CliFlags): SelectionOptions {
   return {
+    noRecord: flags.noRecord,
     platform: flags.platform,
     target: flags.target,
     device: flags.device,
@@ -86,6 +135,17 @@ export function selectorSnapshotOptionsFromFlags(flags: CliFlags): SelectorSnaps
     scope: flags.snapshotScope,
     raw: flags.snapshotRaw,
   };
+}
+
+// Descriptor post-action observation commands use --settle (#1101).
+// --timeout doubles as the settle deadline only when --settle is present; a
+// bare --timeout stays compatible and is ignored by touch commands.
+export function settleInputFromFlags(flags: CliFlags): Record<string, unknown> {
+  return compactRecord({
+    settle: flags.settle,
+    settleQuietMs: flags.settleQuietMs,
+    timeoutMs: flags.timeoutMs,
+  });
 }
 
 export function repeatedInputFromFlags(flags: CliFlags): Record<string, unknown> {
@@ -155,17 +215,18 @@ function optionalTargetLabel(value: unknown): string[] {
 }
 
 export function readElementTargetFromPositionals(positionals: string[]): ElementTarget {
-  if (positionals[0]?.startsWith('@')) {
-    return { ref: positionals[0], label: optionalTrimmedText(positionals.slice(1)) };
+  const target = checkElementTargetArgs(positionals);
+  if (!target.ok) throw new AppError(target.code, target.message);
+  if ('ref' in target) {
+    return { ref: target.ref, label: optionalTrimmedText(positionals.slice(1)) };
   }
-  const selector = positionals.join(' ').trim();
-  if (!selector) throw new AppError('INVALID_ARGS', 'get requires @ref or selector expression');
-  return { selector };
+  return { selector: target.selector };
 }
 
 export function readGetFormat(value: string | undefined): 'text' | 'attrs' {
-  if (value === 'text' || value === 'attrs') return value;
-  throw new AppError('INVALID_ARGS', 'get only supports text or attrs');
+  const checked = checkGetFormat(value);
+  if (!checked.ok) throw new AppError(checked.code, checked.message);
+  return checked.format;
 }
 
 export function splitRequiredSelector(
@@ -173,7 +234,8 @@ export function splitRequiredSelector(
   options: { preferTrailingValue?: boolean } = {},
 ) {
   const split = splitSelectorFromArgs(positionals, options);
-  if (!split) throw new AppError('INVALID_ARGS', 'is requires a selector expression');
+  // Shares `is`'s refusal with the daemon, which reaches it through checkIsArgs.
+  if (!split) throw new AppError('INVALID_ARGS', SELECTOR_EXPRESSION_REQUIRED_MESSAGE);
   return split;
 }
 

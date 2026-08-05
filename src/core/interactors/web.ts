@@ -1,25 +1,21 @@
-import type { Interactor } from '../interactor-types.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { Interactor } from '@agent-device/contracts/interaction';
+import { AppError } from '@agent-device/kernel/errors';
 import { withDiagnosticTimer } from '../../utils/diagnostics.ts';
 import { resolveWebProvider } from '../../platforms/web/provider.ts';
+import { createUnsupportedInteractor } from '../../platforms/unsupported-interactor.ts';
 
 export function createWebInteractor(): Interactor {
   const provider = () => resolveWebProvider();
   return {
+    ...createUnsupportedInteractor('web'),
     open: (target, options) => provider().open(options?.url ?? target, { url: options?.url }),
     openDevice: () => provider().open('about:blank'),
     close: (target) => provider().close(target),
     tap: (x, y) => provider().click(x, y),
-    doubleTap: () => unsupportedWebOperation('doubleTap'),
-    swipe: () => unsupportedWebOperation('swipe'),
-    pan: () => unsupportedWebOperation('pan'),
-    fling: () => unsupportedWebOperation('fling'),
-    longPress: () => unsupportedWebOperation('longPress'),
     focus: (x, y) => provider().click(x, y),
     type: (text, delayMs) => provider().typeText(text, { delayMs }),
     fill: (x, y, text, delayMs) => provider().fill(x, y, text, { delayMs }),
     scroll: (direction, options) => provider().scroll(direction, options),
-    pinch: () => unsupportedWebOperation('pinch'),
     screenshot: (outPath, options) => provider().screenshot(outPath, options),
     setViewport: (width, height) => provider().setViewport(width, height),
     snapshot: async (options) => {
@@ -34,18 +30,8 @@ export function createWebInteractor(): Interactor {
         backend: 'web',
       };
     },
-    back: () => unsupportedWebOperation('back'),
-    home: () => unsupportedWebOperation('home'),
-    rotate: () => unsupportedWebOperation('rotate'),
-    rotateGesture: () => unsupportedWebOperation('rotateGesture'),
-    transformGesture: () => unsupportedWebOperation('transformGesture'),
-    appSwitcher: () => unsupportedWebOperation('appSwitcher'),
-    readClipboard: () => unsupportedWebOperation('readClipboard'),
-    writeClipboard: () => unsupportedWebOperation('writeClipboard'),
-    setSetting: () => unsupportedWebOperation('setSetting'),
+    setOrientation: async () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'orientation is not supported on web');
+    },
   };
-}
-
-async function unsupportedWebOperation(operation: string): Promise<never> {
-  throw new AppError('UNSUPPORTED_OPERATION', `${operation} is not supported on web`);
 }

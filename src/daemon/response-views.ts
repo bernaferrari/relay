@@ -1,5 +1,5 @@
-import type { ResponseLevel } from '../kernel/contracts.ts';
-import type { ScreenshotOverlayRef, SnapshotNode } from '../kernel/snapshot.ts';
+import type { ResponseLevel } from '@agent-device/kernel/contracts';
+import type { ScreenshotOverlayRef, SnapshotNode } from '@agent-device/kernel/snapshot';
 import type { DaemonResponseData } from './types.ts';
 
 /**
@@ -33,10 +33,20 @@ function snapshotView(data: DaemonResponseData, level: ResponseLevel): DaemonRes
     truncated: data.truncated,
     ...(data.visibility !== undefined ? { visibility: data.visibility } : {}),
     ...(data.snapshotQuality !== undefined ? { snapshotQuality: data.snapshotQuality } : {}),
+    // #1076 versioned refs: the one-number generation is the pinning signal for
+    // the refs above — cheap, and dropping it would strand auto-pinning clients.
+    ...(data.refsGeneration !== undefined ? { refsGeneration: data.refsGeneration } : {}),
   };
 }
 
 const DIGEST_OVERLAY_LIMIT = 12;
+const SCREENSHOT_DIGEST_NUMBER_FIELDS = [
+  'width',
+  'height',
+  'logicalWidth',
+  'logicalHeight',
+  'pixelDensity',
+] as const;
 
 /**
  * Token-cheap screenshot digest: the captured `path` (the primary result), the
@@ -57,11 +67,20 @@ function screenshotView(data: DaemonResponseData, level: ResponseLevel): DaemonR
     .slice(0, DIGEST_OVERLAY_LIMIT)
     .map((overlay) => ({ ref: overlay.ref, label: overlay.label }));
   return {
-    ...(typeof data.path === 'string' ? { path: data.path } : {}),
+    ...pickScreenshotDigestMetadata(data),
     overlayCount: overlays.length,
     overlayRefs,
     ...(data.artifacts !== undefined ? { artifacts: data.artifacts } : {}),
   };
+}
+
+function pickScreenshotDigestMetadata(data: DaemonResponseData): DaemonResponseData {
+  const metadata: DaemonResponseData = {};
+  if (typeof data.path === 'string') metadata.path = data.path;
+  for (const field of SCREENSHOT_DIGEST_NUMBER_FIELDS) {
+    if (typeof data[field] === 'number') metadata[field] = data[field];
+  }
+  return metadata;
 }
 
 // The semantic attributes of a single matched node an agent reasons about. The
@@ -120,9 +139,131 @@ function selectorReadView(data: DaemonResponseData, level: ResponseLevel): Daemo
   return { ...data, node: compactSelectorNode(node as SnapshotNode) };
 }
 
+// Token-cheap interaction digest: settle + resolution transforms compose;
+// non-digest levels stay byte-identical.
+function interactionDigestView(data: DaemonResponseData, level: ResponseLevel): DaemonResponseData {
+  if (level !== 'digest') return data;
+  return applySettleDigest(applyResolutionDigest(data));
+}
+
+// Like the settle digest, the verdict fields are the digest answer and the
+// verbose list (`alternatives`) is the default-level payload (ADR 0012).
+function applyResolutionDigest(data: DaemonResponseData): DaemonResponseData {
+  const resolution = data.resolution;
+  if (!resolution || typeof resolution !== 'object' || Array.isArray(resolution)) return data;
+  const record = resolution as Record<string, unknown>;
+  if (record.kind !== 'disambiguated') return data;
+  const { alternatives: _alternatives, ...rest } = record;
+  return { ...data, resolution: rest };
+}
+
+/**
+ * Token-cheap settle digest for interaction commands (#1101). CONSERVATIVE:
+ * only acts on a result that carries a `settle.diff` payload (the `--settle`
+ * opt-in) and otherwise returns the data UNCHANGED, so plain interaction
+ * responses stay byte-identical at every level. The digest keeps the verdict
+ * fields and the changed-line COUNTS (`diff.summary`) plus `refsGeneration`,
+ * and drops the diff line texts — the changed-count summary is the digest
+ * answer; the lines are the default-level payload. The unchanged-interactive
+ * `tail` (when present) is capped to the same DIGEST_REF_LIMIT as the other
+ * ref lists here.
+ */
+function applySettleDigest(data: DaemonResponseData): DaemonResponseData {
+  const settle = data.settle;
+  if (!settle || typeof settle !== 'object' || Array.isArray(settle)) return data;
+  const { diff, tail, ...rest } = settle as Record<string, unknown>;
+  if (!diff || typeof diff !== 'object' || Array.isArray(diff)) return data;
+  const diffRecord = diff as Record<string, unknown>;
+  const summary = diffRecord.summary;
+  const refs = readSettleDigestRefs(diffRecord.lines);
+  return {
+    ...data,
+    settle: {
+      ...rest,
+      ...(refs.length > 0 ? { refs } : {}),
+      ...cappedSettleDigestTail(tail),
+      diff: { summary },
+    },
+  };
+}
+
+function cappedSettleDigestTail(tail: unknown): Record<string, unknown> {
+  if (!Array.isArray(tail) || tail.length === 0) return {};
+  return { tail: tail.slice(0, DIGEST_REF_LIMIT) };
+}
+
+type DigestRef = { ref: string };
+
+function readSettleDigestRefs(lines: unknown): DigestRef[] {
+  if (!Array.isArray(lines)) return [];
+  return lines.flatMap(readSettleDigestRef).slice(0, DIGEST_REF_LIMIT);
+}
+
+function readSettleDigestRef(line: unknown): DigestRef[] {
+  const record = readObjectRecord(line);
+  if (record?.kind !== 'added') return [];
+  return readDigestRef(record.ref);
+}
+
+function readDigestRef(ref: unknown): DigestRef[] {
+  return typeof ref === 'string' && ref.length > 0 ? [{ ref }] : [];
+}
+
+function readObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+// Verbose per-entry network payload fields a digest drops. Each is the raw HTTP
+// header/body material or the unparsed log line — the dominant token sink in a
+// `network ... --include all` dump. Every actionable identity field
+// (method/url/status/timestamp/durationMs/packetId/line and any additive field
+// such as `metadata`) is kept, so a failed request stays diagnosable.
+const NETWORK_DIGEST_DROPPED_ENTRY_FIELDS: readonly string[] = [
+  'headers',
+  'requestHeaders',
+  'responseHeaders',
+  'requestBody',
+  'responseBody',
+  'raw',
+];
+
+/**
+ * Token-cheap network digest (#1186). CONSERVATIVE and opt-in: it acts only at
+ * `digest` and otherwise returns the data UNCHANGED, so `default` (byte-identical
+ * wire shape) and `full` are never narrowed. It preserves the ENTIRE top-level
+ * dump — `path`, `exists`, `active`, `state`, `backend`, `include`,
+ * `scannedLines`, `matchedLines`, `limits`, `notes`, and any additive fields —
+ * and EVERY entry, dropping only the verbose per-entry payload material
+ * (headers/bodies/raw log line). Nothing is capped or reordered.
+ */
+function networkView(data: DaemonResponseData, level: ResponseLevel): DaemonResponseData {
+  if (level !== 'digest') return data;
+  const entries = data.entries;
+  if (!Array.isArray(entries)) return data;
+  return { ...data, entries: entries.map(compactNetworkEntry) };
+}
+
+function compactNetworkEntry(entry: unknown): unknown {
+  const record = readObjectRecord(entry);
+  if (!record) return entry;
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (NETWORK_DIGEST_DROPPED_ENTRY_FIELDS.includes(key)) continue;
+    compact[key] = value;
+  }
+  return compact;
+}
+
 export const RESPONSE_VIEWS: Record<string, ResponseView> = {
   snapshot: snapshotView,
   screenshot: screenshotView,
   find: selectorReadView,
   get: selectorReadView,
+  press: interactionDigestView,
+  click: interactionDigestView,
+  fill: interactionDigestView,
+  longpress: interactionDigestView,
+  network: networkView,
 };

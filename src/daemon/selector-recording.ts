@@ -1,5 +1,13 @@
 import type { DaemonRequest } from './types.ts';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import { stripAndroidSystemChromeProvenanceFromNode } from '@agent-device/contracts/platform';
 import { SessionStore } from './session-store.ts';
+import { isInteractiveObservation } from './session-action-recorder.ts';
+import {
+  computeTargetEvidence,
+  type RecordedTargetCapture,
+  type TargetEvidenceMode,
+} from './session-target-evidence.ts';
 
 export function buildFindRecordResult(
   result: Record<string, unknown>,
@@ -18,7 +26,12 @@ export function buildFindRecordResult(
   };
 }
 
-export function toDaemonFindData(result: Record<string, unknown>): Record<string, unknown> {
+type DaemonFindResult =
+  | { kind: 'found'; waitedMs?: number }
+  | { kind: 'text'; ref: string; text: string; node: SnapshotNode }
+  | { kind: 'attrs'; ref: string; node: SnapshotNode };
+
+export function toDaemonFindData(result: DaemonFindResult): Record<string, unknown> {
   if (result.kind === 'found') {
     return {
       found: true,
@@ -26,9 +39,9 @@ export function toDaemonFindData(result: Record<string, unknown>): Record<string
     };
   }
   return {
-    ...(typeof result.ref === 'string' ? { ref: result.ref } : {}),
-    ...(typeof result.text === 'string' ? { text: result.text } : {}),
-    ...(result.node && typeof result.node === 'object' ? { node: result.node } : {}),
+    ref: result.ref,
+    ...(result.kind === 'text' ? { text: result.text } : {}),
+    node: stripAndroidSystemChromeProvenanceFromNode(result.node),
   };
 }
 
@@ -55,14 +68,30 @@ export function buildGetRecordResult(
   };
 }
 
-export function toDaemonGetData(result: Record<string, unknown>): Record<string, unknown> {
-  const target = getResolvedTarget(result);
+type DaemonGetResult = {
+  target: { kind: 'ref'; ref: string } | { kind: 'selector'; selector: string };
+  text?: string;
+  node: SnapshotNode;
+};
+
+export function toDaemonGetData(result: DaemonGetResult): Record<string, unknown> {
+  const { target } = result;
   return {
-    ...(target?.kind === 'ref' ? { ref: normalizeDaemonRef(target.ref) } : {}),
-    ...(target?.kind === 'selector' ? { selector: target.selector } : {}),
+    ...(target.kind === 'ref' ? { ref: normalizeDaemonRef(target.ref) } : {}),
+    ...(target.kind === 'selector' ? { selector: target.selector } : {}),
     ...(typeof result.text === 'string' ? { text: result.text } : {}),
-    ...(result.node && typeof result.node === 'object' ? { node: result.node } : {}),
+    node: stripAndroidSystemChromeProvenanceFromNode(result.node),
   };
+}
+
+/**
+ * #1349: a recorded `wait`/`is` entry without the result's resolution
+ * payload — `node`/`preActionNodes` feed `computeTargetEvidence` once and
+ * must not be retained on `session.actions` for the session's lifetime.
+ */
+export function stripResolutionPayload<T extends Record<string, unknown>>(result: T): T {
+  const { node: _node, preActionNodes: _preActionNodes, ...recordResult } = result;
+  return recordResult as T;
 }
 
 export function toDaemonWaitData(result: Record<string, unknown>): Record<string, unknown> {
@@ -70,6 +99,9 @@ export function toDaemonWaitData(result: Record<string, unknown>): Record<string
     waitedMs: result.waitedMs,
     ...(typeof result.text === 'string' ? { text: result.text } : {}),
     ...(typeof result.selector === 'string' ? { selector: result.selector } : {}),
+    ...(typeof result.captures === 'number' ? { captures: result.captures } : {}),
+    ...(typeof result.nodeCount === 'number' ? { nodeCount: result.nodeCount } : {}),
+    ...(typeof result.hint === 'string' ? { hint: result.hint } : {}),
   };
 }
 
@@ -83,14 +115,28 @@ export function recordIfSession(
   sessionName: string,
   req: DaemonRequest,
   result: Record<string, unknown>,
+  /** ADR 0012 decision 3: record-time input for the `target-v1` annotation. */
+  recordedTarget?: RecordedTargetCapture,
+  /** #1349: `landmark` for wait's existence-semantics evidence; defaults to `action`. */
+  evidenceMode?: TargetEvidenceMode,
 ): void {
   const session = sessionStore.get(sessionName);
   if (!session) return;
+  const targetEvidence =
+    session.recordSession && recordedTarget
+      ? computeTargetEvidence(recordedTarget, { mode: evidenceMode })
+      : undefined;
   sessionStore.recordAction(session, {
     command: req.command,
     positionals: req.positionals ?? [],
     flags: req.flags ?? {},
     result,
+    // #1271 stage 2: the shared recorder for `get`, `is`, `wait`, and read-only
+    // `find`. `isInteractiveObservation` decides both halves — the command
+    // class AND the provenance — so an authored plan step recorded through
+    // this same path keeps its place in the healed script.
+    interactiveObservation: isInteractiveObservation(req),
+    ...(targetEvidence ? { targetEvidence } : {}),
   });
 }
 

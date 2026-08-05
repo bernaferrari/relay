@@ -1,11 +1,18 @@
-import { appleOsCapabilities } from '../../core/platform-plugin/apple-os-capabilities.ts';
-import type { PlatformPlugin } from '../../core/platform-plugin/plugin.ts';
+import { appleOsCapabilities } from './capabilities.ts';
+import type { PlatformPlugin } from '@agent-device/contracts/platform';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { isAudioProbeSupportedDevice } from '../../kernel/audio-probe-support.ts';
-import { shouldUseHostMacFastPath } from '../../core/platform-inventory.ts';
-import { isMacOs, type DeviceInfo } from '../../kernel/device.ts';
-import type { DeviceInventoryRequest } from '../../core/platform-inventory.ts';
-import type { RunnerContext } from '../../core/interactor-types.ts';
+import { isAudioProbeSupportedDevice } from '@agent-device/contracts/platform';
+import {
+  shouldUseHostMacFastPath,
+  type DeviceInventoryRequest,
+} from '@agent-device/contracts/device';
+import {
+  isMacOs,
+  isTvOsDevice,
+  resolveDeviceAppleOs,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
+import type { RunnerContext } from '@agent-device/contracts/interaction';
 
 // ---------------------------------------------------------------------------
 // Apple family per-command capability closures. Originally RELOCATED VERBATIM from
@@ -30,19 +37,27 @@ const supportsAppAndDeviceLifecycle = (device: DeviceInfo): boolean => {
   return caps ? caps.appAndDeviceLifecycle : true;
 };
 
+const supportsCoreDevicePhysicalOperation = (device: DeviceInfo): boolean =>
+  device.platform !== 'apple' ||
+  device.kind !== 'device' ||
+  device.iosPhysicalDeviceBackend !== 'xctest';
+
+const supportsAppInstallation = (device: DeviceInfo): boolean =>
+  supportsAppAndDeviceLifecycle(device) && supportsCoreDevicePhysicalOperation(device);
+
 // `keyboard` (was `android || (ios && target !== 'tv')`). Off Apple: `android`.
 const supportsKeyboard = (device: DeviceInfo): boolean => {
   const caps = appleOsCapabilities(device);
   return caps ? caps.keyboard : device.platform === 'android';
 };
 
-// `rotate` (was `android || (ios && target !== 'tv')`). Off Apple: `android`.
+// `orientation` (was `android || (ios && target !== 'tv')`). Off Apple: `android`.
 const supportsOrientation = (device: DeviceInfo): boolean => {
   const caps = appleOsCapabilities(device);
   return caps ? caps.orientation : device.platform === 'android';
 };
 
-// The Apple arm shared by `clipboard`/`alert`/`settings` (was `macos || simulator`):
+// The Apple arm shared by `clipboard`/`settings` (was `macos || simulator`):
 // reachable on the macOS host directly, on every other Apple OS only on the simulator.
 // Off Apple this preserves the trailing `device.kind === 'simulator'` term verbatim.
 const supportsHostOrSimulatorSurface = (device: DeviceInfo): boolean => {
@@ -52,36 +67,32 @@ const supportsHostOrSimulatorSurface = (device: DeviceInfo): boolean => {
     : device.kind === 'simulator';
 };
 
-// `pinch`/`rotate-gesture`/`transform-gesture` (was `android || (ios && simulator &&
-// target !== 'tv')`). Apple: the OS multi-touch model AND a simulator (physical iOS
-// cannot synthesize). Off Apple: only `android`.
-const supportsSynthesisGesture = (device: DeviceInfo): boolean => {
-  const caps = appleOsCapabilities(device);
-  return caps
-    ? caps.multiTouchSynthesis && device.kind === 'simulator'
-    : device.platform === 'android';
-};
-
-const synthesisGestureUnsupportedHint = (device: DeviceInfo): string | undefined => {
-  const caps = appleOsCapabilities(device);
-  if (!caps) return undefined; // non-Apple: no multi-touch gate, no hint
-  // OS-level block (macOS: no multi-touch; tvOS: no touch) comes from the table.
-  if (caps.multiTouchUnsupportedHint) return caps.multiTouchUnsupportedHint;
-  // iOS family: multi-touch exists but synthesis is simulator-only — the remaining
-  // block is the kind-shaped physical-device case, kept device-shaped in the leaf
-  // rather than flattened into the table (do-not-flatten; see docs/adr/0009).
-  if (device.kind === 'device')
-    return 'Two-finger gesture synthesis is iOS-simulator only — not available on physical iOS devices.';
-  return undefined;
+// Alerts use the host/simulator surface plus physical iOS, whose XCTest path is
+// device-verified. iPadOS/visionOS remain closed until independently verified.
+const supportsAlertSurface = (device: DeviceInfo): boolean =>
+  device.platform === 'android' ||
+  (device.platform === 'apple' && resolveDeviceAppleOs(device) === 'ios') ||
+  supportsHostOrSimulatorSurface(device);
+// `tv-remote` is Android-TV or tvOS only. Off Apple this preserves the Android-TV
+// branch so the relocated Apple closure stays equivalent to the full original
+// supports predicate under the parity guard; the closure is only consulted for Apple
+// devices in production capability routing.
+const supportsTvRemote = (device: DeviceInfo): boolean => {
+  if (device.platform === 'android') return device.target === 'tv';
+  return isTvOsDevice(device);
 };
 
 // Per-command support gates the Apple family applies by default, keyed exactly as in
 // the command-descriptor registry (a command absent here has no Apple gate).
 const APPLE_SUPPORTS_BY_DEFAULT: Record<string, (device: DeviceInfo) => boolean> = {
   [PUBLIC_COMMANDS.boot]: supportsAppAndDeviceLifecycle,
-  [PUBLIC_COMMANDS.install]: supportsAppAndDeviceLifecycle,
-  [PUBLIC_COMMANDS.reinstall]: supportsAppAndDeviceLifecycle,
-  [PUBLIC_COMMANDS.installFromSource]: supportsAppAndDeviceLifecycle,
+  [PUBLIC_COMMANDS.apps]: supportsCoreDevicePhysicalOperation,
+  [PUBLIC_COMMANDS.install]: supportsAppInstallation,
+  [PUBLIC_COMMANDS.reinstall]: supportsAppInstallation,
+  [PUBLIC_COMMANDS.installFromSource]: supportsAppInstallation,
+  [PUBLIC_COMMANDS.logs]: supportsCoreDevicePhysicalOperation,
+  [PUBLIC_COMMANDS.perf]: supportsCoreDevicePhysicalOperation,
+  [PUBLIC_COMMANDS.record]: supportsCoreDevicePhysicalOperation,
   [PUBLIC_COMMANDS.push]: supportsAppAndDeviceLifecycle,
   [PUBLIC_COMMANDS.home]: supportsAppAndDeviceLifecycle,
   [PUBLIC_COMMANDS.appSwitcher]: supportsAppAndDeviceLifecycle,
@@ -90,25 +101,45 @@ const APPLE_SUPPORTS_BY_DEFAULT: Record<string, (device: DeviceInfo) => boolean>
     device.platform === 'linux' ||
     supportsHostOrSimulatorSurface(device),
   [PUBLIC_COMMANDS.keyboard]: supportsKeyboard,
-  [PUBLIC_COMMANDS.rotate]: supportsOrientation,
-  [PUBLIC_COMMANDS.alert]: (device) =>
-    device.platform === 'android' || supportsHostOrSimulatorSurface(device),
+  [PUBLIC_COMMANDS.orientation]: supportsOrientation,
+  [PUBLIC_COMMANDS.tvRemote]: supportsTvRemote,
+  [PUBLIC_COMMANDS.alert]: supportsAlertSurface,
   [PUBLIC_COMMANDS.settings]: (device) =>
     device.platform === 'android' || supportsHostOrSimulatorSurface(device),
   [PUBLIC_COMMANDS.audio]: isAudioProbeSupportedDevice,
-  pinch: supportsSynthesisGesture,
-  'rotate-gesture': supportsSynthesisGesture,
-  'transform-gesture': supportsSynthesisGesture,
 };
 
 const APPLE_UNSUPPORTED_HINT_BY_DEFAULT: Record<
   string,
   (device: DeviceInfo) => string | undefined
 > = {
-  pinch: synthesisGestureUnsupportedHint,
-  'rotate-gesture': synthesisGestureUnsupportedHint,
-  'transform-gesture': synthesisGestureUnsupportedHint,
+  [PUBLIC_COMMANDS.apps]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.install]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.reinstall]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.installFromSource]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.logs]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.perf]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.record]: coreDeviceOnlyPhysicalOperationHint,
+  [PUBLIC_COMMANDS.viewport]: (device) =>
+    device.platform === 'apple'
+      ? 'viewport resizes web targets only (--platform web). Apple screen geometry is fixed by the selected simulator or device type — open a different simulator to test another screen size.'
+      : undefined,
+  [PUBLIC_COMMANDS.tvRemote]: (device) =>
+    device.platform === 'android'
+      ? device.target === 'tv'
+        ? undefined
+        : 'tv-remote is supported only on Android TV targets.'
+      : !appleOsCapabilities(device)
+        ? undefined
+        : isTvOsDevice(device)
+          ? undefined
+          : 'tv-remote is supported only on tvOS devices.',
 };
+
+function coreDeviceOnlyPhysicalOperationHint(device: DeviceInfo): string | undefined {
+  if (supportsCoreDevicePhysicalOperation(device)) return undefined;
+  return 'This command requires a CoreDevice-backed physical iOS device. The selected XCTest backend supports open, close, interactions, snapshots, and screenshots.';
+}
 
 // The Apple plugin WRAPS today's existing factories (its `createInteractor` in
 // `./interactor.ts`) and the inventory if-chain (src/core/platform-inventory.ts) as
@@ -136,8 +167,10 @@ export const applePlugin = {
       isMacOs(device) ? 'macos' : device.kind === 'device' ? 'ios-device' : 'ios-simulator',
   },
   // Wraps the Apple arm of `supportsPlatformPerfMetrics`: every Apple device
-  // (ios/macos, any kind/target) reports perf-metrics support.
-  perf: { supportsMetrics: () => true },
+  // (ios/macos, any kind/target) reports perf-metrics support. `metricsSamplerTag`
+  // wraps the else-arm of the former `buildPerfResponseData` sampling branch: every
+  // supported Apple device routes to the Apple `perf metrics` sampler.
+  perf: { supportsMetrics: () => true, metricsSamplerTag: () => 'apple' },
   // Wraps the Apple arm of `resolveRecordingBackendForDevice` verbatim: macOS ->
   // 'macos'; an iOS `device` -> 'ios-device'; every other iOS kind (simulator, incl.
   // tvOS/iPadOS/visionOS) -> 'ios-simulator'. Mirrors the appLog resolveBackend shape.

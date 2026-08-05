@@ -1,9 +1,12 @@
-import type { RawSnapshotNode } from '../../../kernel/snapshot.ts';
+import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
+import { rectArea, rectContains } from '@agent-device/kernel/rect';
 import {
   isReactNativeCollapsedWarningWrapperCandidate,
   isReactNativeCollapsedWarningWrapperWithVisibleBanner,
+  isReactNativeOverlayDismissLabel,
+  isReactNativeOverlayMinimizeLabel,
 } from '../../../core/react-native-overlay.ts';
-import { normalizeType } from '../../../snapshot/snapshot-processing.ts';
+import { normalizeType } from '@agent-device/contracts/snapshot';
 import { collectIosScrollIndicatorPresentation } from './scroll.ts';
 import {
   areRectsApproximatelyEqual,
@@ -13,6 +16,7 @@ import {
   isRepeatedStaticNode,
   isScrollableSnapshotType,
   isSemanticActionNode,
+  mergeReplacement,
   type SnapshotTreeRuleContext,
 } from '../tree.ts';
 
@@ -21,13 +25,88 @@ export function collectIosPresentationNoiseSuppression(
   context: SnapshotTreeRuleContext,
 ): void {
   const { suppressedIndexes } = context;
-  collectIosOffscreenKeyboardSuppression(nodes, suppressedIndexes);
+  collectIosOffscreenKeyboardSuppression(nodes, context.sourceNodesByIndex, suppressedIndexes);
   collectIosStructuralIdentifierSuppression(nodes, suppressedIndexes);
   collectIosScrollIndicatorPresentation(nodes, context);
-  collectIosSearchToolbarSuppression(nodes, suppressedIndexes);
+  collectIosSearchToolbarSuppression(nodes, context.sourceNodesByIndex, suppressedIndexes);
   collectIosActionWrapperSuppression(nodes, suppressedIndexes);
+  collectIosReactNativeOverlayActionPresentation(nodes, context.replacements);
   collectIosReactNativeOverlayWrapperSuppression(nodes, suppressedIndexes);
-  collectIosRepeatedStaticSuppression(nodes, suppressedIndexes);
+  collectIosRepeatedStaticSuppression(
+    nodes,
+    suppressedIndexes,
+    context.semanticRepresentativeIndexes,
+  );
+}
+
+function collectIosReactNativeOverlayActionPresentation(
+  nodes: RawSnapshotNode[],
+  replacements: Map<number, RawSnapshotNode>,
+): void {
+  forEachOtherNodeWithLabel(nodes, (node, nodeLabel, position) => {
+    if (!isReactNativeOverlayDismissLabel(nodeLabel) || !node.rect) return;
+    const minimize = findDescendant(
+      nodes,
+      position,
+      (descendant) =>
+        Boolean(descendant.rect) &&
+        isReactNativeOverlayMinimizeLabel(descendant.label?.trim() ?? ''),
+    );
+    if (!minimize?.rect) return;
+    const dismissRect = remainingHorizontalPartition(node.rect, minimize.rect);
+    if (!dismissRect) return;
+    const representativeRect = smallestContainedDismissRect(nodes, position, dismissRect);
+    mergeReplacement(replacements, node, { rect: representativeRect });
+    forEachDescendant(nodes, position, (descendant) => {
+      if (isReactNativeOverlayDismissLabel(descendant.label?.trim() ?? '')) {
+        mergeReplacement(replacements, descendant, { rect: representativeRect });
+      }
+    });
+  });
+}
+
+function smallestContainedDismissRect(
+  nodes: RawSnapshotNode[],
+  position: number,
+  partition: NonNullable<RawSnapshotNode['rect']>,
+): NonNullable<RawSnapshotNode['rect']> {
+  let representative = partition;
+  forEachDescendant(nodes, position, (descendant) => {
+    const label = descendant.label?.trim() ?? '';
+    if (!descendant.rect || !isReactNativeOverlayDismissLabel(label)) return;
+    if (!rectContains(partition, descendant.rect)) return;
+    if (rectArea(descendant.rect) < rectArea(representative)) {
+      representative = descendant.rect;
+    }
+  });
+  return representative;
+}
+
+function remainingHorizontalPartition(
+  wrapper: NonNullable<RawSnapshotNode['rect']>,
+  occupied: NonNullable<RawSnapshotNode['rect']>,
+): NonNullable<RawSnapshotNode['rect']> | undefined {
+  const wrapperRight = wrapper.x + wrapper.width;
+  const occupiedRight = occupied.x + occupied.width;
+  const expectedRightPartition = {
+    x: occupied.x,
+    y: wrapper.y,
+    width: wrapperRight - occupied.x,
+    height: wrapper.height,
+  };
+  if (occupied.x > wrapper.x && areRectsApproximatelyEqual(occupied, expectedRightPartition)) {
+    return { ...wrapper, width: occupied.x - wrapper.x };
+  }
+  const expectedLeftPartition = {
+    x: wrapper.x,
+    y: wrapper.y,
+    width: occupiedRight - wrapper.x,
+    height: wrapper.height,
+  };
+  if (occupiedRight < wrapperRight && areRectsApproximatelyEqual(occupied, expectedLeftPartition)) {
+    return { ...wrapper, x: occupiedRight, width: wrapperRight - occupiedRight };
+  }
+  return undefined;
 }
 
 function collectIosReactNativeOverlayWrapperSuppression(
@@ -58,6 +137,7 @@ function collectDescendantNodes(nodes: RawSnapshotNode[], position: number): Raw
 function collectIosRepeatedStaticSuppression(
   nodes: RawSnapshotNode[],
   suppressedIndexes: Set<number>,
+  semanticRepresentativeIndexes: ReadonlySet<number>,
 ): void {
   for (let position = 0; position < nodes.length; position += 1) {
     const node = nodes[position];
@@ -66,7 +146,14 @@ function collectIosRepeatedStaticSuppression(
       continue;
     }
 
-    collectRepeatedStaticSuppressionForNode(nodes, position, node, nodeLabel, suppressedIndexes);
+    collectRepeatedStaticSuppressionForNode(
+      nodes,
+      position,
+      node,
+      nodeLabel,
+      suppressedIndexes,
+      semanticRepresentativeIndexes,
+    );
   }
 }
 
@@ -76,10 +163,17 @@ function collectRepeatedStaticSuppressionForNode(
   node: RawSnapshotNode,
   nodeLabel: string,
   suppressedIndexes: Set<number>,
+  semanticRepresentativeIndexes: ReadonlySet<number>,
 ): void {
   const type = normalizeType(node.type ?? '');
   if (type === 'statictext' || type === 'link') {
-    suppressRepeatedStaticDescendants(nodes, position, nodeLabel, suppressedIndexes);
+    suppressRepeatedStaticDescendants(
+      nodes,
+      position,
+      nodeLabel,
+      suppressedIndexes,
+      semanticRepresentativeIndexes,
+    );
     return;
   }
   if (type !== 'other') {
@@ -89,7 +183,13 @@ function collectRepeatedStaticSuppressionForNode(
     suppressedIndexes.add(node.index);
     return;
   }
-  suppressRepeatedStaticDescendants(nodes, position, nodeLabel, suppressedIndexes);
+  suppressRepeatedStaticDescendants(
+    nodes,
+    position,
+    nodeLabel,
+    suppressedIndexes,
+    semanticRepresentativeIndexes,
+  );
 }
 
 function hasEquivalentSemanticDescendant(
@@ -113,9 +213,13 @@ function suppressRepeatedStaticDescendants(
   position: number,
   label: string,
   suppressedIndexes: Set<number>,
+  semanticRepresentativeIndexes: ReadonlySet<number>,
 ): void {
   forEachDescendant(nodes, position, (descendant) => {
-    if (isRepeatedStaticNode(descendant, label)) {
+    if (
+      !semanticRepresentativeIndexes.has(descendant.index) &&
+      isRepeatedStaticNode(descendant, label)
+    ) {
       suppressedIndexes.add(descendant.index);
     }
   });
@@ -179,6 +283,7 @@ function isFullscreenActionLabelWrapper(
 
 function collectIosOffscreenKeyboardSuppression(
   nodes: RawSnapshotNode[],
+  sourceNodesByIndex: ReadonlyMap<number, RawSnapshotNode>,
   suppressedIndexes: Set<number>,
 ): void {
   const viewport = findLargestViewportRect(nodes);
@@ -192,7 +297,7 @@ function collectIosOffscreenKeyboardSuppression(
       continue;
     }
     suppressedIndexes.add(node.index);
-    suppressOffscreenKeyboardAncestors(node, nodes, suppressedIndexes, screenBottom);
+    suppressOffscreenKeyboardAncestors(node, sourceNodesByIndex, suppressedIndexes, screenBottom);
     forEachDescendant(nodes, position, (descendant) => {
       suppressedIndexes.add(descendant.index);
     });
@@ -208,16 +313,18 @@ function isOffscreenKeyboardNode(node: RawSnapshotNode, screenBottom: number): b
 
 function suppressOffscreenKeyboardAncestors(
   node: RawSnapshotNode,
-  nodes: RawSnapshotNode[],
+  sourceNodesByIndex: ReadonlyMap<number, RawSnapshotNode>,
   suppressedIndexes: Set<number>,
   screenBottom: number,
 ): void {
-  const byIndex = new Map(nodes.map((candidate) => [candidate.index, candidate]));
-  let current = typeof node.parentIndex === 'number' ? byIndex.get(node.parentIndex) : undefined;
+  let current =
+    typeof node.parentIndex === 'number' ? sourceNodesByIndex.get(node.parentIndex) : undefined;
   while (current?.rect && current.rect.y >= screenBottom) {
     suppressedIndexes.add(current.index);
     current =
-      typeof current.parentIndex === 'number' ? byIndex.get(current.parentIndex) : undefined;
+      typeof current.parentIndex === 'number'
+        ? sourceNodesByIndex.get(current.parentIndex)
+        : undefined;
   }
 }
 
@@ -241,20 +348,18 @@ function collectIosStructuralIdentifierSuppression(
 
 function collectIosSearchToolbarSuppression(
   nodes: RawSnapshotNode[],
+  sourceNodesByIndex: ReadonlyMap<number, RawSnapshotNode>,
   suppressedIndexes: Set<number>,
 ): void {
   for (let position = 0; position < nodes.length; position += 1) {
     const node = nodes[position];
-    if (!node || normalizeType(node.type ?? '') !== 'searchfield') {
-      continue;
-    }
-    if (node.label === 'Search') {
+    if (!node) continue;
+    if (isExposedSearchField(node)) {
       suppressSearchToolbarDescendants(nodes, position, null, suppressedIndexes);
       continue;
     }
-    if (node.label !== 'Toolbar') {
-      continue;
-    }
+    if (!isSearchToolbar(node)) continue;
+
     const innerSearch = findDescendant(
       nodes,
       position,
@@ -266,9 +371,18 @@ function collectIosSearchToolbarSuppression(
     }
 
     suppressedIndexes.add(node.index);
-    suppressToolbarAncestors(node, nodes, suppressedIndexes);
+    suppressToolbarAncestors(node, sourceNodesByIndex, suppressedIndexes);
     suppressSearchToolbarDescendants(nodes, position, innerSearch.index, suppressedIndexes);
   }
+}
+
+function isExposedSearchField(node: RawSnapshotNode): boolean {
+  return normalizeType(node.type ?? '') === 'searchfield' && node.label === 'Search';
+}
+
+function isSearchToolbar(node: RawSnapshotNode): boolean {
+  const type = normalizeType(node.type ?? '');
+  return node.label === 'Toolbar' && (type === 'toolbar' || type === 'searchfield');
 }
 
 function suppressSearchToolbarDescendants(
@@ -289,13 +403,12 @@ function suppressSearchToolbarDescendants(
 
 function suppressToolbarAncestors(
   node: RawSnapshotNode,
-  nodes: RawSnapshotNode[],
+  sourceNodesByIndex: ReadonlyMap<number, RawSnapshotNode>,
   suppressedIndexes: Set<number>,
 ): void {
-  const byIndex = new Map(nodes.map((candidate) => [candidate.index, candidate]));
   let current = node;
   while (typeof current.parentIndex === 'number') {
-    const parent = byIndex.get(current.parentIndex);
+    const parent = sourceNodesByIndex.get(current.parentIndex);
     if (!parent || parent.label !== 'Toolbar') {
       return;
     }

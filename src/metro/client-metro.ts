@@ -1,3 +1,12 @@
+// The result PAYLOADS are declared in contracts/metro.ts so the public API can name them
+// without depending on this zone; re-exported here for existing consumers.
+export type { PrepareMetroRuntimeResult, ReloadMetroResult } from '@agent-device/contracts/remote';
+import type {
+  MetroPrepareKind,
+  PrepareMetroRuntimeResult,
+  ReloadMetroResult,
+  ResolvedMetroKind,
+} from '@agent-device/contracts/remote';
 import fs from 'node:fs';
 import path from 'node:path';
 import { sleep } from '../utils/timeouts.ts';
@@ -9,10 +18,10 @@ import type {
   MetroBridgeRuntimePayload,
   MetroRuntimeHints,
 } from './metro-types.ts';
-import { AppError } from '../kernel/errors.ts';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
 import { runCmdSync, runCmdDetached } from '../utils/exec.ts';
 import { resolveUserPath } from '../utils/path-resolution.ts';
-import { waitForProcessExit } from '../utils/process-identity.ts';
+import { waitForProcessExit } from '../utils/host-process.ts';
 import {
   detectProjectRuntimeKindFromPackageJson,
   readProjectPackageJson,
@@ -20,23 +29,19 @@ import {
 } from '../utils/project-runtime.ts';
 import { buildBundleUrl, normalizeBaseUrl } from '../utils/url.ts';
 import {
-  resolveRuntimeTransportHints,
-  type ResolvedRuntimeTransport,
-} from '../utils/runtime-transport.ts';
+  EXPO_VIRTUAL_ENTRY_BUNDLE_PATH,
+  parsePort,
+  resolveMetroReloadEndpoints,
+} from './metro-reload-endpoints.ts';
 
-const DEFAULT_METRO_HOST = 'localhost';
-const DEFAULT_METRO_PORT = 8081;
+const DEV_SERVER_STATUS_READY_TEXT = 'packager-status:running';
 const METRO_TERM_TIMEOUT_MS = 1_000;
 const METRO_KILL_TIMEOUT_MS = 1_000;
 
-export type MetroPrepareKind = 'auto' | 'react-native' | 'expo';
-type ResolvedMetroKind = Exclude<MetroPrepareKind, 'auto'>;
 type EnvSource = NodeJS.ProcessEnv | Record<string, string | undefined>;
+type RepackBundlerKind = 'rspack' | 'webpack';
 
-export type {
-  CompanionTunnelScope,
-  MetroBridgeScope,
-} from '../client/client-companion-tunnel-contract.ts';
+export type { MetroBridgeScope } from '../client/client-companion-tunnel-contract.ts';
 
 type PackageManagerConfig = {
   command: string;
@@ -51,6 +56,7 @@ type ResolvedMetroPrepareSettings = {
   env: EnvSource;
   projectRoot: string;
   kind: ResolvedMetroKind;
+  repackBundler: RepackBundlerKind | null;
   metroPort: number;
   listenHost: string;
   statusHost: string;
@@ -95,35 +101,12 @@ export type PrepareMetroRuntimeOptions = {
   env?: EnvSource;
 };
 
-export type PrepareMetroRuntimeResult = {
-  projectRoot: string;
-  kind: ResolvedMetroKind;
-  dependenciesInstalled: boolean;
-  packageManager: string | null;
-  started: boolean;
-  reused: boolean;
-  pid: number;
-  logPath: string;
-  statusUrl: string;
-  runtimeFilePath: string | null;
-  iosRuntime: MetroRuntimeHints;
-  androidRuntime: MetroRuntimeHints;
-  bridge: MetroBridgeResult | null;
-};
-
 export type ReloadMetroOptions = {
   metroHost?: string;
   metroPort?: number | string;
   bundleUrl?: string;
   runtime?: MetroRuntimeHints;
   timeoutMs?: number | string;
-};
-
-export type ReloadMetroResult = {
-  reloaded: true;
-  reloadUrl: string;
-  status: number;
-  body: string;
 };
 
 type ProxyBridgeRequestOptions = {
@@ -176,23 +159,72 @@ function readPackageJson(projectRoot: string): PackageJsonShape {
   return packageJson;
 }
 
-function detectPackageManager(projectRoot: string): PackageManagerConfig {
-  if (fileExists(path.join(projectRoot, 'pnpm-lock.yaml'))) {
-    return { command: 'pnpm', installArgs: ['install'] };
+// Nearest lockfile walking up from projectRoot wins (workspace monorepos keep it at the repo
+// root); the walk is bounded at the nearest .git entry.
+const LOCKFILE_PACKAGE_MANAGERS: ReadonlyArray<{ file: string; command: string }> = [
+  { file: 'pnpm-lock.yaml', command: 'pnpm' },
+  { file: 'yarn.lock', command: 'yarn' },
+  { file: 'bun.lock', command: 'bun' },
+  { file: 'bun.lockb', command: 'bun' },
+  { file: 'package-lock.json', command: 'npm' },
+];
+
+function findLockfilePackageManager(startDir: string): PackageManagerConfig | null {
+  let dir = startDir;
+  for (;;) {
+    for (const { file, command } of LOCKFILE_PACKAGE_MANAGERS) {
+      if (fileExists(path.join(dir, file))) {
+        return { command, installArgs: ['install'] };
+      }
+    }
+    // .git may be a directory (regular clone) or a file (worktree); either marks the repo root.
+    if (fileExists(path.join(dir, '.git'))) return null;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  if (fileExists(path.join(projectRoot, 'yarn.lock'))) {
-    return { command: 'yarn', installArgs: ['install'] };
-  }
-  return { command: 'npm', installArgs: ['install'] };
 }
 
-function detectMetroKind(projectRoot: string, requestedKind: MetroPrepareKind): ResolvedMetroKind {
+function detectPackageManager(projectRoot: string): PackageManagerConfig {
+  return findLockfilePackageManager(projectRoot) ?? { command: 'npm', installArgs: ['install'] };
+}
+
+function detectMetroKind(
+  packageJson: PackageJsonShape,
+  requestedKind: MetroPrepareKind,
+): ResolvedMetroKind {
   if (requestedKind !== 'auto') {
     return requestedKind;
   }
 
-  const detected = detectProjectRuntimeKindFromPackageJson(readPackageJson(projectRoot));
-  return detected === 'expo' ? 'expo' : 'react-native';
+  const detected = detectProjectRuntimeKindFromPackageJson(packageJson);
+  if (detected === 'expo' || detected === 'repack') return detected;
+  return 'react-native';
+}
+
+function hasPackageDependency(packageJson: PackageJsonShape, dependencyName: string): boolean {
+  const dependencies = {
+    ...(packageJson.dependencies ?? {}),
+    ...(packageJson.devDependencies ?? {}),
+  };
+  return typeof dependencies[dependencyName] === 'string';
+}
+
+function hasBundlerConfig(projectRoot: string, basename: RepackBundlerKind): boolean {
+  return ['js', 'mjs', 'cjs', 'ts', 'mts', 'cts'].some((extension) =>
+    fileExists(path.join(projectRoot, `${basename}.config.${extension}`)),
+  );
+}
+
+function detectRepackBundler(
+  projectRoot: string,
+  packageJson: PackageJsonShape,
+): RepackBundlerKind {
+  if (hasBundlerConfig(projectRoot, 'rspack')) return 'rspack';
+  if (hasBundlerConfig(projectRoot, 'webpack')) return 'webpack';
+  if (hasPackageDependency(packageJson, '@rspack/core')) return 'rspack';
+  if (hasPackageDependency(packageJson, 'webpack')) return 'webpack';
+  return 'rspack';
 }
 
 function parseTimeout(
@@ -210,21 +242,18 @@ function parseTimeout(
   return Math.max(parsed, minimum);
 }
 
-function parsePort(value: number | string | undefined, fallback: number): number {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new AppError('INVALID_ARGS', `Invalid Metro port: ${String(value)}. Use 1-65535.`);
-  }
-  return parsed;
+function metroBundleEntryPath(kind: ResolvedMetroKind): string {
+  return kind === 'expo' ? EXPO_VIRTUAL_ENTRY_BUNDLE_PATH : 'index.bundle';
 }
 
-function buildMetroRuntimeHints(baseUrl: string, platform: 'ios' | 'android'): MetroRuntimeHints {
+function buildMetroRuntimeHints(
+  baseUrl: string,
+  platform: 'ios' | 'android',
+  kind: ResolvedMetroKind,
+): MetroRuntimeHints {
   return {
     platform,
-    bundleUrl: buildBundleUrl(baseUrl, platform),
+    bundleUrl: buildBundleUrl(baseUrl, platform, metroBundleEntryPath(kind)),
   };
 }
 
@@ -250,11 +279,33 @@ function installDependenciesIfNeeded(
   }
 
   const packageManager = detectPackageManager(projectRoot);
-  runCmdSync(packageManager.command, packageManager.installArgs, {
-    cwd: projectRoot,
-    env: env as NodeJS.ProcessEnv,
-  });
+  try {
+    runCmdSync(packageManager.command, packageManager.installArgs, {
+      cwd: projectRoot,
+      env: env as NodeJS.ProcessEnv,
+    });
+  } catch (error) {
+    throw wrapDependencyInstallError(error, packageManager);
+  }
   return { installed: true, packageManager: packageManager.command };
+}
+
+function wrapDependencyInstallError(
+  error: unknown,
+  packageManager: PackageManagerConfig,
+): AppError {
+  const appErr = asAppError(error);
+  const hint =
+    `Dependency install failed using detected package manager "${packageManager.command}". ` +
+    'If dependencies are already installed (for example via a monorepo root install), pass ' +
+    '--no-install-deps to skip this step, or install manually with ' +
+    `"${packageManager.command} ${packageManager.installArgs.join(' ')}" from the project root.`;
+  return new AppError(
+    appErr.code,
+    appErr.message,
+    { ...(appErr.details ?? {}), hint, packageManager: packageManager.command },
+    appErr,
+  );
 }
 
 async function wait(ms: number): Promise<void> {
@@ -278,7 +329,7 @@ async function fetchText(
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error(`Timed out fetching ${url} after ${timeoutMs}ms`);
+      throw new AppError('COMMAND_FAILED', `Timed out fetching ${url} after ${timeoutMs}ms`);
     }
     throw error;
   }
@@ -287,73 +338,15 @@ async function fetchText(
 async function isMetroReady(statusUrl: string, timeoutMs: number): Promise<boolean> {
   try {
     const response = await fetchText(statusUrl, timeoutMs);
-    return response.ok && response.body.includes('packager-status:running');
+    return response.ok && response.body.includes(DEV_SERVER_STATUS_READY_TEXT);
   } catch {
     return false;
   }
 }
 
-function buildReloadUrl(transport: ResolvedRuntimeTransport, pathName: string): string {
-  const url = new URL(`${transport.scheme}://localhost`);
-  url.hostname = transport.host;
-  url.port = String(transport.port);
-  url.pathname = pathName;
-  return url.toString();
-}
-
-function resolveMetroReloadPath(bundleUrl: string | undefined): string {
-  const value = normalizeOptionalString(bundleUrl);
-  if (!value) return '/reload';
-  const url = new URL(value);
-  const bundlePath = url.pathname.replace(/\/+$/, '');
-  if (!bundlePath.endsWith('/index.bundle')) return '/reload';
-  return `${bundlePath.slice(0, -'/index.bundle'.length)}/reload`;
-}
-
-function resolveReloadMetroHost(
-  input: ReloadMetroOptions,
-  hasExplicitBundleUrl: boolean,
-  hasBundleUrl: boolean,
-): string | undefined {
-  return (
-    normalizeOptionalString(input.metroHost) ??
-    (hasExplicitBundleUrl ? undefined : normalizeOptionalString(input.runtime?.metroHost)) ??
-    (hasBundleUrl ? undefined : DEFAULT_METRO_HOST)
-  );
-}
-
-function resolveReloadMetroPort(
-  input: ReloadMetroOptions,
-  hasExplicitBundleUrl: boolean,
-  hasBundleUrl: boolean,
-): number | undefined {
-  if (input.metroPort !== undefined) {
-    return parsePort(input.metroPort, DEFAULT_METRO_PORT);
-  }
-  if (hasExplicitBundleUrl) {
-    return undefined;
-  }
-  return input.runtime?.metroPort ?? (hasBundleUrl ? undefined : DEFAULT_METRO_PORT);
-}
-
-function resolveMetroReloadUrl(input: ReloadMetroOptions): string {
-  const explicitBundleUrl = normalizeOptionalString(input.bundleUrl);
-  const bundleUrl = explicitBundleUrl ?? input.runtime?.bundleUrl;
-  const hasExplicitBundleUrl = Boolean(explicitBundleUrl);
-  const hasBundleUrl = Boolean(normalizeOptionalString(bundleUrl));
-  const transport = resolveRuntimeTransportHints({
-    metroHost: resolveReloadMetroHost(input, hasExplicitBundleUrl, hasBundleUrl),
-    metroPort: resolveReloadMetroPort(input, hasExplicitBundleUrl, hasBundleUrl),
-    bundleUrl,
-  });
-  if (!transport) {
-    throw new AppError('INVALID_ARGS', 'Unable to resolve Metro host and port for reload.');
-  }
-  return buildReloadUrl(transport, resolveMetroReloadPath(bundleUrl));
-}
-
 function buildMetroCommand(
   kind: ResolvedMetroKind,
+  repackBundler: RepackBundlerKind | null,
   port: number,
   listenHost: string,
 ): PackageManagerConfig {
@@ -361,6 +354,13 @@ function buildMetroCommand(
     return {
       command: 'npx',
       installArgs: ['expo', 'start', '--host', 'lan', '--port', String(port)],
+    };
+  }
+  if (kind === 'repack') {
+    const commandName = repackBundler === 'webpack' ? 'webpack-start' : 'rspack-start';
+    return {
+      command: 'npx',
+      installArgs: ['react-native', commandName, '--host', listenHost, '--port', String(port)],
     };
   }
 
@@ -373,16 +373,18 @@ function buildMetroCommand(
 function startMetroProcess(
   projectRoot: string,
   kind: ResolvedMetroKind,
+  repackBundler: RepackBundlerKind | null,
   port: number,
   listenHost: string,
   logPath: string,
   env: EnvSource,
 ): MetroProcessResult {
-  const metro = buildMetroCommand(kind, port, listenHost);
+  const metro = buildMetroCommand(kind, repackBundler, port, listenHost);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const logFd = fs.openSync(logPath, 'a');
   let pid = 0;
   try {
+    // cwd is --project-root; monorepo-root module resolution beyond that is Expo's own behavior.
     pid = runCmdDetached(metro.command, metro.installArgs, {
       cwd: projectRoot,
       env: env as NodeJS.ProcessEnv,
@@ -393,7 +395,10 @@ function startMetroProcess(
   }
 
   if (!Number.isInteger(pid) || pid <= 0) {
-    throw new Error('Failed to start Metro. Expected a detached child PID.');
+    throw new AppError(
+      'COMMAND_FAILED',
+      'Failed to start React Native dev server. Expected a detached child PID.',
+    );
   }
 
   return {
@@ -433,7 +438,7 @@ function createMetroBridgeRequestError(
   message: string,
   retryable: boolean,
 ): MetroBridgeRequestError {
-  const error = new Error(message) as MetroBridgeRequestError;
+  const error = new AppError('COMMAND_FAILED', message) as MetroBridgeRequestError;
   error.retryable = retryable;
   return error;
 }
@@ -598,7 +603,8 @@ function describeBridgeFailure(
 
 function requireBridgeRuntimeDescriptor(baseUrl: string, bridge: MetroBridgeResult | null): void {
   if (!bridge?.iosRuntime.bundleUrl) {
-    throw new Error(
+    throw new AppError(
+      'COMMAND_FAILED',
       describeBridgeFailure(
         baseUrl,
         'bridge descriptor is missing ios_runtime.metro_bundle_url',
@@ -688,6 +694,20 @@ function resolveMetroPrepareSettings(
   const env = input.env ?? process.env;
   const cwd = process.cwd();
   const projectRoot = resolvePath(input.projectRoot ?? cwd, env, cwd);
+  const requestedKind = input.kind ?? 'auto';
+  let packageJson: PackageJsonShape | null = null;
+  let kind: ResolvedMetroKind;
+  if (requestedKind === 'auto') {
+    packageJson = readPackageJson(projectRoot);
+    kind = detectMetroKind(packageJson, requestedKind);
+  } else {
+    kind = requestedKind;
+  }
+  let repackBundler: RepackBundlerKind | null = null;
+  if (kind === 'repack') {
+    packageJson ??= readPackageJson(projectRoot);
+    repackBundler = detectRepackBundler(projectRoot, packageJson);
+  }
   const publicBaseUrl = normalizeOptionalBaseUrl(input.publicBaseUrl);
   const proxyBaseUrlInput = normalizeOptionalBaseUrl(input.proxyBaseUrl);
   requireMetroBaseUrl(publicBaseUrl, proxyBaseUrlInput);
@@ -701,7 +721,8 @@ function resolveMetroPrepareSettings(
   return {
     env,
     projectRoot,
-    kind: detectMetroKind(projectRoot, input.kind ?? 'auto'),
+    kind,
+    repackBundler,
     metroPort: parsePort(input.metroPort ?? 8081, 8081),
     listenHost: normalizeOptionalString(input.listenHost) ?? '0.0.0.0',
     statusHost: normalizeOptionalString(input.statusHost) ?? '127.0.0.1',
@@ -769,7 +790,8 @@ async function configureMetroBridgeUntilReady(options: {
     } catch (error) {
       lastBridgeError = error instanceof Error ? error.message : String(error);
       if (!isRetryableBridgeError(error)) {
-        throw new Error(
+        throw new AppError(
+          'COMMAND_FAILED',
           describeBridgeFailure(
             options.baseUrl,
             lastBridgeError,
@@ -777,6 +799,8 @@ async function configureMetroBridgeUntilReady(options: {
             options.initialBridgeError,
             options.companionLogPath,
           ),
+          undefined,
+          error,
         );
       }
     }
@@ -787,7 +811,8 @@ async function configureMetroBridgeUntilReady(options: {
     }
   }
 
-  throw new Error(
+  throw new AppError(
+    'COMMAND_FAILED',
     describeBridgeFailure(
       options.baseUrl,
       lastBridgeError,
@@ -809,6 +834,7 @@ async function ensureMetroProcessReady(
   const startedProcess = startMetroProcess(
     settings.projectRoot,
     settings.kind,
+    settings.repackBundler,
     settings.metroPort,
     settings.listenHost,
     settings.logPath,
@@ -820,8 +846,10 @@ async function ensureMetroProcessReady(
   }
 
   await stopSpawnedMetroProcess(startedProcess.pid).catch(() => {});
-  throw new Error(
-    `Metro did not become ready at ${statusUrl} within ${settings.startupTimeoutMs}ms. Check ${settings.logPath}.`,
+  throw new AppError(
+    'COMMAND_FAILED',
+    `React Native dev server did not become ready at ${statusUrl} within ${settings.startupTimeoutMs}ms. Check ${settings.logPath}.`,
+    { logPath: settings.logPath },
   );
 }
 
@@ -886,13 +914,16 @@ async function configureProxyBridgeViaCompanion(
     });
     companionLogPath = companion.logPath;
   } catch (error) {
-    throw new Error(
+    throw new AppError(
+      'COMMAND_FAILED',
       describeBridgeFailure(
         settings.proxyBaseUrl,
         error instanceof Error ? error.message : String(error),
         bridge,
         initialBridgeError,
       ),
+      undefined,
+      error,
     );
   }
 
@@ -911,16 +942,19 @@ async function configureProxyBridgeViaCompanion(
   }
 }
 
-function buildBaseRuntimeHints(publicBaseUrl: string): {
+function buildBaseRuntimeHints(
+  publicBaseUrl: string,
+  kind: ResolvedMetroKind,
+): {
   baseIosRuntime: MetroRuntimeHints;
   baseAndroidRuntime: MetroRuntimeHints;
 } {
   return {
     baseIosRuntime: publicBaseUrl
-      ? buildMetroRuntimeHints(publicBaseUrl, 'ios')
+      ? buildMetroRuntimeHints(publicBaseUrl, 'ios', kind)
       : { platform: 'ios' as const },
     baseAndroidRuntime: publicBaseUrl
-      ? buildMetroRuntimeHints(publicBaseUrl, 'android')
+      ? buildMetroRuntimeHints(publicBaseUrl, 'android', kind)
       : { platform: 'android' as const },
   };
 }
@@ -944,7 +978,10 @@ export async function prepareMetroRuntime(
     ? installDependenciesIfNeeded(settings.projectRoot, settings.env)
     : { installed: false as const };
   const processState = await ensureMetroProcessReady(settings);
-  const { baseIosRuntime, baseAndroidRuntime } = buildBaseRuntimeHints(settings.publicBaseUrl);
+  const { baseIosRuntime, baseAndroidRuntime } = buildBaseRuntimeHints(
+    settings.publicBaseUrl,
+    settings.kind,
+  );
   const bridge = await configureProxyBridgeForRuntime(input, settings);
 
   const iosRuntime = bridge?.iosRuntime ?? baseIosRuntime;
@@ -969,22 +1006,86 @@ export async function prepareMetroRuntime(
   return result;
 }
 
+// An HTML document on a 2xx means the server has no HTTP reload route and answered with the app
+// page fallback (Expo does this), so a 200 there must not be reported as a successful reload.
+function looksLikeHtmlDocumentBody(body: string): boolean {
+  const head = body.trimStart().slice(0, 15).toLowerCase();
+  return head.startsWith('<!doctype') || head.startsWith('<html');
+}
+
+// {"version":2,"method":"reload"} on the /message websocket is the broadcast the dev-server CLIs
+// send for the `r` key; servers without an HTTP /reload route (Expo) only support this channel.
+async function broadcastReloadOverMessageSocket(
+  messageSocketUrl: string,
+  timeoutMs: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(messageSocketUrl);
+    const fail = (message: string): void => {
+      clearTimeout(timer);
+      try {
+        socket.close();
+      } catch {
+        // Socket may already be closed.
+      }
+      reject(new AppError('COMMAND_FAILED', message));
+    };
+    const timer = setTimeout(() => {
+      fail(`Timed out broadcasting reload to ${messageSocketUrl} after ${timeoutMs}ms`);
+    }, timeoutMs);
+    socket.addEventListener('open', () => {
+      socket.send(JSON.stringify({ version: 2, method: 'reload' }));
+      const settle = (): void => {
+        if (socket.bufferedAmount === 0) {
+          clearTimeout(timer);
+          socket.close();
+          resolve();
+          return;
+        }
+        setTimeout(settle, 20);
+      };
+      settle();
+    });
+    socket.addEventListener('error', () => {
+      fail(`Failed to reach the dev server message socket at ${messageSocketUrl}`);
+    });
+  });
+}
+
 export async function reloadMetro(input: ReloadMetroOptions = {}): Promise<ReloadMetroResult> {
   const timeoutMs = parseTimeout(input.timeoutMs, 10_000, 1_000);
-  const reloadUrl = resolveMetroReloadUrl(input);
+  const { reloadUrl, messageSocketUrl } = resolveMetroReloadEndpoints(input);
   const response = await fetchText(reloadUrl, timeoutMs);
-  if (!response.ok) {
-    throw new AppError('COMMAND_FAILED', `Metro reload failed (${response.status}).`, {
+  if (response.ok && !looksLikeHtmlDocumentBody(response.body)) {
+    return {
+      reloaded: true,
       reloadUrl,
       status: response.status,
       body: response.body,
-      hint: 'Verify Metro is running and the target React Native app is connected to this Metro instance.',
-    });
+      transport: 'http',
+    };
+  }
+  try {
+    await broadcastReloadOverMessageSocket(messageSocketUrl, timeoutMs);
+  } catch (error) {
+    throw new AppError(
+      'COMMAND_FAILED',
+      `React Native dev server reload failed (${response.status}).`,
+      {
+        reloadUrl,
+        status: response.status,
+        body: response.body.slice(0, 500),
+        messageSocketUrl,
+        hint: 'Verify Metro or Re.Pack is running and the target React Native app is connected to this dev server instance.',
+      },
+      error instanceof Error ? error : undefined,
+    );
   }
   return {
     reloaded: true,
-    reloadUrl,
+    reloadUrl: messageSocketUrl,
     status: response.status,
-    body: response.body,
+    body: '',
+    transport: 'message-socket',
   };
 }

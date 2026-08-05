@@ -1,21 +1,28 @@
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createAgentDeviceClient } from '../../../src/client/client.ts';
-import type {
-  AgentDeviceClient,
-  AgentDeviceDaemonTransport,
-} from '../../../src/client/client-types.ts';
+import { createAgentDeviceClient } from '../../../src/agent-device-client.ts';
+import type { AgentDeviceDaemonTransport } from '@agent-device/contracts/client';
+import type { AgentDeviceClient } from '../../../src/client/client-types.ts';
 import {
   createRequestHandler,
   type RequestRouterDeps,
 } from '../../../src/daemon/request-router.ts';
+import type { RecordingProcess } from '../../../src/daemon/recording-provider.ts';
 import { trackDownloadableArtifact } from '../../../src/daemon/artifact-tracking.ts';
 import { LeaseRegistry } from '../../../src/daemon/lease-registry.ts';
 import { SessionStore } from '../../../src/daemon/session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../../../src/daemon/types.ts';
+import type { ExecResult } from '../../../src/utils/exec.ts';
 
 const PROVIDER_SCENARIO_TOKEN = 'provider-scenario-token';
+const PROVIDER_SCENARIO_TEMP_REMOVE_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 5,
+  retryDelay: 50,
+} as const;
 
 export type ProviderScenarioRpcResult = { statusCode: number; json: any };
 
@@ -24,10 +31,16 @@ export type ProviderScenarioHarness = {
     command: string,
     positionals?: string[],
     flags?: DaemonRequest['flags'],
-    options?: { meta?: DaemonRequest['meta']; runtime?: DaemonRequest['runtime'] },
+    options?: {
+      input?: DaemonRequest['input'];
+      meta?: DaemonRequest['meta'];
+      runtime?: DaemonRequest['runtime'];
+      session?: string;
+    },
   ) => Promise<ProviderScenarioRpcResult>;
   client: () => AgentDeviceClient;
   session: (name?: string) => SessionState | undefined;
+  setSession: (name: string, session: SessionState) => void;
   close: () => Promise<void>;
 };
 
@@ -42,7 +55,7 @@ export async function createProviderScenarioHarness(
     path.join(os.tmpdir(), 'agent-device-provider-scenario-session-'),
   );
   const sessionStore = new SessionStore(sessionDir);
-  const handleRequest = createRequestHandler({
+  const requestHandler = createRequestHandler({
     logPath: path.join(os.tmpdir(), 'agent-device-provider-scenario-daemon.log'),
     token: PROVIDER_SCENARIO_TOKEN,
     sessionStore,
@@ -50,6 +63,11 @@ export async function createProviderScenarioHarness(
     trackDownloadableArtifact,
     ...deps,
   });
+  const handleRequest: typeof requestHandler = async (request) => {
+    const response = await requestHandler(request);
+    assertNoInternalChromeProvenance(response);
+    return response;
+  };
 
   const transport: AgentDeviceDaemonTransport = async (req) =>
     await handleRequest({
@@ -57,6 +75,7 @@ export async function createProviderScenarioHarness(
       session: req.session ?? 'default',
       command: req.command,
       positionals: req.positionals,
+      input: req.input,
       flags: req.flags,
       runtime: req.runtime,
       meta: req.meta as DaemonRequest['meta'],
@@ -70,8 +89,9 @@ export async function createProviderScenarioHarness(
       ),
     client: () => createAgentDeviceClient({}, { transport }),
     session: (name = 'default') => sessionStore.get(name),
+    setSession: (name, session) => sessionStore.set(name, session),
     close: async () => {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
+      removeProviderScenarioTempDir(sessionDir);
     },
   };
 }
@@ -105,8 +125,12 @@ export async function withProviderScenarioTempDir<TResult>(
   try {
     return await run(dir);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeProviderScenarioTempDir(dir);
   }
+}
+
+function removeProviderScenarioTempDir(dir: string): void {
+  fs.rmSync(dir, PROVIDER_SCENARIO_TEMP_REMOVE_OPTIONS);
 }
 
 export function restoreEnv(key: string, previous: string | undefined): void {
@@ -116,6 +140,28 @@ export function restoreEnv(key: string, previous: string | undefined): void {
 
 export function likelyPlayableMp4Container(): Buffer {
   return Buffer.concat([atom('ftyp', Buffer.from('isom0000isom')), atom('moov')]);
+}
+
+export function createProviderIosSimulatorRecordingProcess(
+  outPath: string,
+  onSignal?: (signal: NodeJS.Signals | number | undefined) => void,
+): RecordingProcess {
+  fs.writeFileSync(outPath, Buffer.alloc(0));
+  let resolveWait: ((result: ExecResult) => void) | undefined;
+  const wait = new Promise<ExecResult>((resolve) => {
+    resolveWait = resolve;
+  });
+  return {
+    child: {
+      kill: (signal) => {
+        onSignal?.(signal);
+        fs.writeFileSync(outPath, likelyPlayableMp4Container());
+        resolveWait?.({ stdout: '', stderr: '', exitCode: 0 });
+        return true;
+      },
+    },
+    wait,
+  };
 }
 
 function atom(type: string, payload = Buffer.alloc(0)): Buffer {
@@ -129,13 +175,19 @@ function commandRequest(
   command: string,
   positionals: string[] = [],
   flags: DaemonRequest['flags'] = {},
-  options: { meta?: DaemonRequest['meta']; runtime?: DaemonRequest['runtime'] } = {},
+  options: {
+    input?: DaemonRequest['input'];
+    meta?: DaemonRequest['meta'];
+    runtime?: DaemonRequest['runtime'];
+    session?: string;
+  } = {},
 ): DaemonRequest {
   return {
     token: PROVIDER_SCENARIO_TOKEN,
-    session: 'default',
+    session: options.session ?? 'default',
     command,
     positionals,
+    input: options.input,
     flags,
     runtime: options.runtime,
     meta: options.meta,
@@ -161,4 +213,12 @@ function responseToRpcResult(response: DaemonResponse, id: string): ProviderScen
           },
         },
   };
+}
+
+function assertNoInternalChromeProvenance(response: DaemonResponse): void {
+  assert.equal(
+    JSON.stringify(response).includes('"systemChrome"'),
+    false,
+    'Public daemon responses must not expose Android-internal systemChrome provenance',
+  );
 }

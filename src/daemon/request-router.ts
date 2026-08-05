@@ -1,16 +1,22 @@
+import { withTargetDeviceResolutionScope } from '../core/dispatch-resolve.ts';
+import type {
+  DeviceInventoryProvider,
+  LeaseLifecycleProvider,
+} from '@agent-device/contracts/device';
 import {
-  type DeviceInventoryProvider,
-  withTargetDeviceResolutionScope,
-} from '../core/dispatch-resolve.ts';
-import { AppError, normalizeError, retriableForErrorCode } from '../kernel/errors.ts';
+  AppError,
+  normalizeError,
+  retriableForErrorCode,
+  type DaemonError,
+} from '@agent-device/kernel/errors';
 import { supportedPlatformsForCommand } from '../core/capabilities.ts';
 import { timingSafeStringEqual } from '../utils/timing-safe-equal.ts';
-import type { DaemonError, ResponseCost } from '../kernel/contracts.ts';
-import type { CloudArtifactProvider } from '../cloud-artifacts.ts';
+import type { DaemonArtifactType, ResponseCost } from '@agent-device/kernel/contracts';
+import type { CloudArtifactProvider } from '@agent-device/contracts/observability';
 import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, DaemonResponseData } from './types.ts';
 import { RESPONSE_VIEWS } from './response-views.ts';
 import { SessionStore } from './session-store.ts';
-import { noActiveSessionError } from './handlers/response.ts';
+import { errorResponse, noActiveSessionError } from './handlers/response.ts';
 import {
   type AndroidAdbProviderResolver,
   type AppleRunnerProviderResolver,
@@ -19,6 +25,7 @@ import {
   type LinuxToolProviderResolver,
   type RequestPlatformProviderScope,
   type RecordingProviderResolver,
+  type VegaToolProviderResolver,
   type WebProviderResolver,
   withRequestPlatformProviderScope,
 } from './request-platform-providers.ts';
@@ -27,20 +34,26 @@ import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
   getDiagnosticsMeta,
+  registerDiagnosticSensitiveValue,
   withDiagnosticsScope,
 } from '../utils/diagnostics.ts';
 import type { LeaseRegistry } from './lease-registry.ts';
-import { dispatchGenericCommand } from './request-generic-dispatch.ts';
-import { runRequestHandlerChain } from './request-handler-chain.ts';
+import {
+  loadGenericRequestHandlerModule,
+  runRequestHandlerChain,
+} from './request-handler-chain.ts';
 import {
   createRequestExecutionScope,
   type LockedRequestScope,
   prepareLockedRequestScope,
   type RequestExecutionScope,
 } from './request-execution-scope.ts';
+import { buildRequestFinishedEvent, shouldRecordEventForRequest } from './session-event-log.ts';
+import { unsupportedSaveScriptFlagResponse } from './request-save-script-policy.ts';
 import { canRunReplayScopedAction } from './daemon-command-registry.ts';
 import { createAgentBrowserWebProvider } from '../platforms/web/agent-browser-provider.ts';
-import type { LeaseLifecycleProvider } from './handlers/lease.ts';
+import { openWebSessionNames } from './web-session-names.ts';
+import { inferFillText } from './action-utils.ts';
 
 // ---------------------------------------------------------------------------
 // Request handler API
@@ -56,16 +69,20 @@ export type RequestRouterDeps = {
   appleRunnerProvider?: AppleRunnerProviderResolver;
   appleToolProvider?: AppleToolProviderResolver;
   linuxToolProvider?: LinuxToolProviderResolver;
+  vegaToolProvider?: VegaToolProviderResolver;
   webProvider?: WebProviderResolver;
   appLogProvider?: AppLogProviderResolver;
   recordingProvider?: RecordingProviderResolver;
   deviceInventoryProvider?: DeviceInventoryProvider;
+  providerRuntimeIds?: readonly string[];
+  providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
   trackDownloadableArtifact: (opts: {
     artifactPath: string;
     tenantId?: string;
+    artifactType: DaemonArtifactType | undefined;
     fileName?: string;
   }) => string;
 };
@@ -79,10 +96,13 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     appleRunnerProvider,
     appleToolProvider,
     linuxToolProvider,
+    vegaToolProvider,
     webProvider,
     appLogProvider,
     recordingProvider,
     deviceInventoryProvider,
+    providerRuntimeIds,
+    providerRuntimeRequiredIds,
     leaseLifecycleProvider,
     cloudArtifactProvider,
     providerDeviceRuntimeScope,
@@ -109,7 +129,11 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
         // wasted round-trip. Returned unchanged when neither applies, so the
         // default error wire shape is preserved.
         if (!response.ok) {
-          return { ok: false, error: enrichDaemonError(req.command, response.error) };
+          // ADR 0012 decision 6, R7 (C5a): a command that finds no session but
+          // hits a live repair tombstone gets `REPAIR_SESSION_EXPIRED` with
+          // re-run guidance, never a bare SESSION_NOT_FOUND.
+          const error = repairExpiredIfTombstoned(req, response.error, sessionStore);
+          return { ok: false, error: enrichDaemonError(req.command, error) };
         }
         // Phase 4 (agent-cost) grafts on the success path. Runs inside the
         // diagnostics scope so cost can read this request's runner-round-trip tally.
@@ -122,10 +146,18 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     if (!timingSafeStringEqual(req.token, token)) {
       return unauthorizedResponse();
     }
+    registerParameterizedFillDiagnosticValue(req);
+    const invalidRecordingFlags = recordingFlagsResponse(req);
+    if (invalidRecordingFlags) return invalidRecordingFlags;
+    // #1478: raw `flags.saveScript` on a non-owner command never reaches
+    // admission, device work, or a handler that could arm publication.
+    const unsupportedSaveScript = unsupportedSaveScriptFlagResponse(req);
+    if (unsupportedSaveScript) return unsupportedSaveScript;
 
+    let scope: RequestExecutionScope | undefined;
     try {
       return await withTargetDeviceResolutionScope(deviceInventoryProvider, async () => {
-        const scope = await createRequestExecutionScope({
+        scope = await createRequestExecutionScope({
           req,
           sessionStore,
           leaseRegistry,
@@ -133,7 +165,9 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
         return await executeRequestScope(scope);
       });
     } catch (error) {
-      return finalizeThrownRequestError(error);
+      const response = finalizeThrownRequestError(error);
+      recordThrownRequestEvent(sessionStore, scope, response);
+      return response;
     }
   }
 
@@ -172,10 +206,11 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
                 appleRunnerProvider,
                 appleToolProvider,
                 linuxToolProvider,
+                vegaToolProvider,
                 webProvider:
                   webProvider ??
                   (shouldUseDefaultWebProvider(lockedScope)
-                    ? createDefaultWebProvider(stateDir)
+                    ? createDefaultWebProvider(stateDir, sessionStore)
                     : undefined),
                 appLogProvider,
                 recordingProvider,
@@ -201,6 +236,8 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       sessionStore,
       leaseRegistry,
       leaseLifecycleProvider,
+      providerRuntimeIds,
+      providerRuntimeRequiredIds,
       cloudArtifactProvider,
       invoke: handleRequest,
       invokeReplayAction: allowReplayActions
@@ -227,14 +264,28 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       if (!timingSafeStringEqual(req.token, token)) {
         return unauthorizedResponse();
       }
+      registerParameterizedFillDiagnosticValue(req);
 
+      let childScope: RequestExecutionScope | undefined;
       try {
-        const childScope = await createRequestExecutionScope({ req, sessionStore, leaseRegistry });
+        const scopedReq = bindReplayDeviceExecutionLock(req, parentScope);
+        childScope = await createRequestExecutionScope({
+          req: scopedReq,
+          sessionStore,
+          leaseRegistry,
+        });
+        // The outer replay keeps its stable session lock plus the device lock
+        // from the first device binding through response projection and ref
+        // finalization. A same-session replay action reuses that admitted scope
+        // instead of reacquiring the non-reentrant locks. Nested changes remain
+        // visible to capture lineage through snapshot/frame/runtime/store state.
         return childScope.sessionName === parentScope.sessionName
           ? await executeRequestScope(childScope, providerScope)
-          : await handleRequest(req);
+          : await executeRequestScope(childScope);
       } catch (error) {
-        return finalizeThrownRequestError(error);
+        const response = finalizeThrownRequestError(error);
+        recordThrownRequestEvent(sessionStore, childScope, response);
+        return response;
       }
     };
   }
@@ -243,9 +294,13 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
 }
 
 const createDefaultWebProvider =
-  (stateDir: string | undefined): WebProviderResolver =>
+  (stateDir: string | undefined, sessionStore: SessionStore): WebProviderResolver =>
   ({ req, session }) =>
-    createAgentBrowserWebProvider({ session: session?.name ?? req.session, stateDir });
+    createAgentBrowserWebProvider({
+      session: session?.name ?? req.session,
+      stateDir,
+      openWebSessionNames: () => openWebSessionNames(sessionStore),
+    });
 
 function shouldUseDefaultWebProvider(scope: LockedRequestScope): boolean {
   return scope.existingSession?.device.platform === 'web' || scope.req.flags?.platform === 'web';
@@ -256,6 +311,41 @@ function unauthorizedResponse(): DaemonResponse {
     ok: false,
     error: normalizeError(new AppError('UNAUTHORIZED', 'Invalid token')),
   };
+}
+
+/**
+ * #1271 stage 2 (ADR 0012 amendment): `--record` and `--no-record` express
+ * opposite recording intents for the same action — force it into a
+ * repair-armed heal versus opt it out entirely — so both together is a
+ * contradiction the daemon rejects up front, uniformly for every surface
+ * (CLI/Node client/MCP all funnel through this same request entry point),
+ * rather than silently letting one win.
+ */
+function mutuallyExclusiveRecordFlagsResponse(): DaemonResponse {
+  return errorResponse(
+    'INVALID_ARGS',
+    '--record and --no-record are mutually exclusive; pass at most one.',
+  );
+}
+
+function recordingFlagsResponse(req: DaemonRequest): DaemonResponse | undefined {
+  if (req.flags?.record && req.flags?.noRecord) return mutuallyExclusiveRecordFlagsResponse();
+  if (req.flags?.recordAs !== undefined && req.command !== 'fill') {
+    return errorResponse('INVALID_ARGS', '--record-as is supported only by fill.');
+  }
+  return undefined;
+}
+
+function registerParameterizedFillDiagnosticValue(req: DaemonRequest): void {
+  if (req.command !== 'fill' || typeof req.flags?.recordAs !== 'string') return;
+  registerDiagnosticSensitiveValue(
+    inferFillText({
+      ts: 0,
+      command: 'fill',
+      positionals: req.positionals ?? [],
+      flags: req.flags,
+    }),
+  );
 }
 
 async function dispatchGenericForLockedScope(params: {
@@ -269,6 +359,7 @@ async function dispatchGenericForLockedScope(params: {
     return lockedScope.finalize(noActiveSessionError());
   }
 
+  const { dispatchGenericCommand } = await loadGenericRequestHandlerModule();
   const dispatchResponse = await dispatchGenericCommand({
     req: lockedScope.req,
     session,
@@ -278,6 +369,24 @@ async function dispatchGenericForLockedScope(params: {
     contextFromFlags: lockedScope.contextFromFlags,
   });
   return lockedScope.finalize(dispatchResponse);
+}
+
+function bindReplayDeviceExecutionLock(
+  req: DaemonRequest,
+  parentScope: LockedRequestScope,
+): DaemonRequest {
+  if (req.command !== 'open') return req;
+  const retainDeviceExecutionLock = req.internal?.retainDeviceExecutionLock;
+  return {
+    ...req,
+    internal: {
+      ...req.internal,
+      retainDeviceExecutionLock: async (deviceId) => {
+        await parentScope.retainDeviceExecutionLock(deviceId);
+        await retainDeviceExecutionLock?.(deviceId);
+      },
+    },
+  };
 }
 
 function canRunReplayActionInCurrentScope(
@@ -304,6 +413,62 @@ function finalizeThrownRequestError(error: unknown): DaemonResponse {
   return { ok: false, error: normalizedError };
 }
 
+function recordThrownRequestEvent(
+  sessionStore: SessionStore,
+  scope: RequestExecutionScope | undefined,
+  response: DaemonResponse,
+): void {
+  if (!scope || !shouldRecordEventForRequest(scope.req)) return;
+  sessionStore.recordEvent(
+    scope.sessionName,
+    buildRequestFinishedEvent({
+      req: scope.req,
+      response,
+      durationMs: Math.max(0, Date.now() - scope.startedAtMs),
+    }),
+  );
+}
+
+/**
+ * ADR 0012 decision 6, R7 (C5a, BLOCKER 2): when a request finds no session
+ * (SESSION_NOT_FOUND) but a live repair tombstone exists for its session key,
+ * rewrite the error to an actionable recovery error. Any other error, or the
+ * absence of a (non-expired) tombstone, passes through untouched.
+ *
+ * BLOCKER 2: a tombstone carrying `commitFailure` means the transaction
+ * actually COMPLETED and a commit was attempted at teardown but FAILED (e.g.
+ * no-clobber refusal, a filesystem error) — that is a materially different,
+ * more specific situation than "reaped before it ever finished", so it gets
+ * its own `REPAIR_COMMIT_FAILED` code carrying the real cause, rather than
+ * being folded into the generic `REPAIR_SESSION_EXPIRED` expiry message.
+ */
+function repairExpiredIfTombstoned(
+  req: DaemonRequest,
+  error: DaemonError,
+  sessionStore: SessionStore,
+): DaemonError {
+  if (error.code !== 'SESSION_NOT_FOUND') return error;
+  const tombstone = sessionStore.readRepairTombstone(req.session);
+  if (!tombstone) return error;
+  const reRun = tombstone.sourcePath
+    ? `re-run: replay ${tombstone.sourcePath} --save-script`
+    : 're-run your replay <script> --save-script from the start';
+  if (tombstone.commitFailure) {
+    return normalizeError(
+      new AppError(
+        'REPAIR_COMMIT_FAILED',
+        `The repair transaction for session "${req.session}" completed, but committing its healed script failed at teardown: ${tombstone.commitFailure.message}. ${reRun}.`,
+      ),
+    );
+  }
+  return normalizeError(
+    new AppError(
+      'REPAIR_SESSION_EXPIRED',
+      `The --save-script repair session "${req.session}" was reaped before it was finalized (idle-reap); ${reRun}.`,
+    ),
+  );
+}
+
 // Phase 2 typed-error graft: add machine-readable signals to an error response.
 // Returns the error unchanged unless a signal applies, so the default wire shape
 // is preserved for the common codes.
@@ -313,7 +478,9 @@ function enrichDaemonError(command: string, error: DaemonError): DaemonError {
       ? supportedPlatformsForCommand(command)
       : [];
   const supportedOn = supportedPlatforms.length > 0 ? supportedPlatforms.join(', ') : undefined;
-  const retriable = retriableForErrorCode(error.code);
+  // A throw-site classification (lifted from details by normalizeError) wins
+  // over the conservative code-level policy.
+  const retriable = error.retriable ?? retriableForErrorCode(error.code);
   if (supportedOn === undefined && retriable === undefined) return error;
   return {
     ...error,

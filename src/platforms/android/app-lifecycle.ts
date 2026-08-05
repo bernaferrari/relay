@@ -2,15 +2,16 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveFileOverridePath, runCmd, whichCmd } from '../../utils/exec.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { sleep } from '../../utils/timeouts.ts';
-import type { AppsFilter } from '../../contracts/app-inventory.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import { isDeepLinkTarget } from '../../core/open-target.ts';
+import type { AppsFilter } from '@agent-device/contracts/device';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { isDeepLinkTarget } from '@agent-device/contracts/command';
 import { createAppResolutionCache, type AppResolutionCacheScope } from '../app-resolution-cache.ts';
 import { waitForAndroidBoot } from './devices.ts';
 import { runAndroidAdb } from './adb.ts';
 import {
+  androidAdbResultError,
   createAndroidPortReverseManager,
   installAndroidAdbPackage,
   resolveAndroidAdbProvider,
@@ -27,13 +28,7 @@ import {
   type AndroidForegroundApp,
 } from './app-parsers.ts';
 
-export {
-  parseAndroidForegroundApp,
-  parseAndroidLaunchablePackages,
-  parseAndroidUserInstalledPackages,
-  type AndroidBlockingDialogFocus,
-  type AndroidForegroundApp,
-} from './app-parsers.ts';
+export type { AndroidBlockingDialogFocus, AndroidForegroundApp } from './app-parsers.ts';
 
 const ALIASES: Record<string, { type: 'intent' | 'package'; value: string }> = {
   settings: { type: 'intent', value: 'android.settings.SETTINGS' },
@@ -308,9 +303,9 @@ export type OpenAndroidAppOptions = {
 // `adb shell` joins its argv with spaces and feeds the result to a device
 // shell, which re-tokenises. The other `am start` arguments (action, category,
 // component, etc.) are well-known and never contain shell-significant
-// characters, so they round-trip untouched. Launch arguments are user-supplied
-// and may contain JSON, spaces, `#`, etc.; each is single-quoted unless it
-// consists entirely of safe shell characters.
+// characters, so they round-trip untouched. URLs and launch arguments are
+// user-supplied and may contain JSON, spaces, `#`, or `&`; each is single-quoted
+// unless it consists entirely of safe shell characters.
 function quoteAndroidShellArg(arg: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg)) return arg;
   return `'${arg.replace(/'/g, `'\\''`)}'`;
@@ -372,7 +367,7 @@ async function openAndroidDeepLink(
     '-a',
     'android.intent.action.VIEW',
     '-d',
-    target,
+    quoteAndroidShellArg(target),
     ...androidDeepLinkPackageArgs(options.appBundleId),
     ...androidLaunchArgs(options),
   ]);
@@ -393,6 +388,7 @@ async function openAndroidAppBoundDeepLink(
   if (!isDeepLinkTarget(deepLinkUrl)) {
     throw new AppError('INVALID_ARGS', 'Android app-bound open requires a valid URL target');
   }
+  await ensureAndroidLocalhostReverse(device, deepLinkUrl);
   const resolved = await resolveAndroidPackageForOpen(device, app, 'app-bound open');
   await runAndroidAdb(device, [
     'shell',
@@ -402,7 +398,7 @@ async function openAndroidAppBoundDeepLink(
     '-a',
     'android.intent.action.VIEW',
     '-d',
-    deepLinkUrl,
+    quoteAndroidShellArg(deepLinkUrl),
     '-p',
     resolved,
     ...androidLaunchArgs(options),
@@ -479,10 +475,7 @@ async function openAndroidPackage(
     if (!(await isAndroidPackageInstalled(device, packageName))) {
       throw buildAndroidPackageNotInstalledError(packageName);
     }
-    throw new AppError('COMMAND_FAILED', `Failed to launch ${packageName}`, {
-      stdout: primaryResult.stdout,
-      stderr: primaryResult.stderr,
-    });
+    throw androidAdbResultError(`Failed to launch ${packageName}`, primaryResult);
   }
   await runAndroidAdb(device, buildAndroidActivityLaunchArgs(component, launchCategory, options));
 }
@@ -726,11 +719,7 @@ async function uninstallAndroidApp(device: DeviceInfo, app: string): Promise<{ p
   if (result.exitCode !== 0) {
     const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
     if (!output.includes('unknown package') && !output.includes('not installed')) {
-      throw new AppError('COMMAND_FAILED', `adb uninstall failed for ${resolved.value}`, {
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-      });
+      throw androidAdbResultError(`adb uninstall failed for ${resolved.value}`, result);
     }
   }
   return { package: resolved.value };

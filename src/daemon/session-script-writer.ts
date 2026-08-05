@@ -1,20 +1,89 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { publicPlatformString } from '../kernel/device.ts';
+import { publicPlatformString } from '@agent-device/kernel/device';
 import { inferFillText } from './action-utils.ts';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { formatPortableActionLine } from '../replay/script-formatting.ts';
-import { expandSessionPath, safeSessionName } from './session-paths.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   appendScriptSeriesFlags,
+  formatPortableActionLine,
   formatScriptArg,
   formatScriptStringLiteral,
+  formatTargetAnnotationLines,
   isClickLikeCommand,
   isTouchTargetCommand,
-} from '../replay/script-utils.ts';
+  stripRecordedRefGeneration,
+} from '@agent-device/ad-script';
+import { expandSessionPath, safeSessionName } from './session-paths.ts';
 import type { SessionAction, SessionState } from './types.ts';
+import {
+  NO_SCRIPT_PUBLICATION,
+  commitRepair,
+  isRepairCommittable,
+  scriptTargetPath,
+} from './session-script-publication-state.ts';
+import { isRepairArmedSession, repairSessionBoundary } from './session-replay-transaction.ts';
+import {
+  assertActivePublicationPortability,
+  toActivePublicationFailure,
+  validateActivePublicationActions,
+} from './session-script-active-publication.ts';
 
-export type SessionScriptWriteResult = { written: false } | { written: true; path: string };
+/**
+ * `{ written: true; path }` — committed. `{ written: false }` (no `error`) —
+ * intentionally not written (not recording, an aborted/incomplete repair
+ * transaction, or an idempotent already-committed no-op). `{ written: false;
+ * error }` — ADR 0012 decision 6 (BLOCKER 2): a repair COMMIT was attempted but
+ * FAILED (no-clobber refusal, a bare-`@ref` R4 failure, or a filesystem write
+ * error). The `error` (a distinct AppError code/message) is surfaced to
+ * close/teardown so the failure is reportable and the session can be kept for
+ * retry, never swallowed into a silent skip.
+ */
+export type SessionScriptWriteResult =
+  | { written: true; path: string; actionCount: number }
+  | { written: false; error?: AppError };
+
+export type SessionScriptWriteOptions = {
+  force?: boolean;
+  /** ADR 0016 publishes an armed ordinary recording while keeping its session live. */
+  publication?: 'teardown' | 'active';
+};
+
+/**
+ * ADR 0012 decision 6 (Fix 4, C2): trailer comment marking a healed `.ad` as a
+ * COMPLETE, review-worthy repair artifact. An ordinary `#` comment to every
+ * reader (old and new) — it binds to nothing (`parseTargetAnnotationCommentLine`
+ * only recognizes the `target-v1` prefix), so it never participates in the
+ * target-annotation binding rule. Written only when a repair-armed session's
+ * write reaches this point at all, since `write()` already gated that on the
+ * transaction being COMPLETE — so every write carrying it IS a complete,
+ * committed transaction.
+ */
+export const HEAL_COMPLETE_SENTINEL = '# agent-device:heal-complete';
+
+/**
+ * ADR 0012 decision 6, R7 + commit semantics (C2): a repair-armed session is a
+ * live transaction, COMMITTED only on completion — `true` means "do not publish
+ * now":
+ * - Already committed -> idempotent no-op (never a duplicate/second write).
+ * - Not COMPLETE (the plan never ran to its last executable step) -> ABORT:
+ *   publish NOTHING. This is what stops a `close`/`close --save-script` issued
+ *   after a divergence but before the plan finishes from committing a PREFIX;
+ *   every non-completion teardown (divergence-only exit, daemon shutdown,
+ *   idle-reap) lands here too.
+ * Ordinary (non-repair) recording is never blocked here (no repair variant) —
+ * this gate only decides whether `write()` attempts a publish AT ALL. It says
+ * nothing about what happens once it does: `publishHealedScriptAtomically`'s
+ * refuse-on-exist applies to that attempted publish uniformly, repair-armed or
+ * not (see its doc comment) — ordinary recording is never blocked from trying,
+ * but it can still be refused if the target already exists.
+ */
+function isRepairArmedWriteBlocked(session: SessionState): boolean {
+  const state = session.scriptPublication ?? NO_SCRIPT_PUBLICATION;
+  if (state.kind !== 'repair') return false;
+  if (state.status === 'committed') return true;
+  return !isRepairCommittable(state);
+}
 
 export class SessionScriptWriter {
   private readonly sessionsDir: string;
@@ -23,59 +92,249 @@ export class SessionScriptWriter {
     this.sessionsDir = sessionsDir;
   }
 
-  write(session: SessionState): SessionScriptWriteResult {
+  write(session: SessionState, options?: SessionScriptWriteOptions): SessionScriptWriteResult {
+    const repairArmed = isRepairArmedSession(session);
+    const activePublication = options?.publication === 'active';
     let scriptPath: string | undefined;
     try {
       if (!session.recordSession) return { written: false };
+      if (isRepairArmedWriteBlocked(session)) return { written: false };
+      const prepared = prepareSessionScript(session, {
+        appendCompleteSentinel: repairArmed,
+        activePublication,
+      });
       scriptPath = this.resolveScriptPath(session);
       const scriptDir = path.dirname(scriptPath);
       if (!fs.existsSync(scriptDir)) fs.mkdirSync(scriptDir, { recursive: true });
-      const script = formatSessionScript(session);
-      fs.writeFileSync(scriptPath, script);
-      return { written: true, path: scriptPath };
-    } catch (error) {
-      emitDiagnostic({
-        level: 'warn',
-        phase: 'session_script_write_failed',
-        data: {
-          session: session.name,
-          path: scriptPath,
-          error: error instanceof Error ? error.message : String(error),
-        },
+      // #1258: `options.force` is the caller's already-merged decision
+      // (`effectiveWriteForce` — a live flag or the per-target grant), not
+      // read from `session` directly here, so this stays a pure
+      // formatting+publish step.
+      publishHealedScriptAtomically({
+        scriptPath,
+        script: prepared.script,
+        force: options?.force,
       });
-      return { written: false };
+      // COMMITTED: idempotent guard above + teardown's abort/tombstone routing.
+      if (repairArmed) {
+        session.scriptPublication = commitRepair(
+          session.scriptPublication ?? NO_SCRIPT_PUBLICATION,
+        );
+      }
+      return { written: true, path: scriptPath, actionCount: prepared.actionCount };
+    } catch (error) {
+      return handleSessionScriptWriteFailure({
+        session,
+        error,
+        scriptPath,
+        repairArmed,
+        activePublication,
+      });
     }
   }
 
   private resolveScriptPath(session: SessionState): string {
-    if (session.saveScriptPath) {
-      return expandSessionPath(session.saveScriptPath);
+    const targetPath = scriptTargetPath(session.scriptPublication ?? NO_SCRIPT_PUBLICATION);
+    if (targetPath) {
+      return expandSessionPath(targetPath);
     }
-    if (!fs.existsSync(this.sessionsDir)) fs.mkdirSync(this.sessionsDir, { recursive: true });
     const safeName = safeSessionName(session.name);
     const timestamp = new Date(session.createdAt).toISOString().replace(/[:.]/g, '-');
     return path.join(this.sessionsDir, `${safeName}-${timestamp}.ad`);
   }
 }
 
-function formatSessionScript(session: SessionState): string {
-  return formatScript(session, buildOptimizedActions(session));
+function prepareSessionScript(
+  session: SessionState,
+  options: { appendCompleteSentinel: boolean; activePublication: boolean },
+): { script: string; actionCount: number } {
+  const actions = buildOptimizedActions(session, { strictPortableRefs: options.activePublication });
+  if (options.activePublication) validateActivePublicationActions(actions);
+  return {
+    script: formatScript(session, actions, options.appendCompleteSentinel),
+    actionCount: actions.length,
+  };
 }
 
-function buildOptimizedActions(session: SessionState): SessionAction[] {
+/**
+ * `write()`'s catch-block classifier, extracted verbatim (no behavior change):
+ * diagnose, then route by whether the session is repair-armed.
+ *
+ * ADR 0012 decision 6, R4 + BLOCKER 2: a repair COMMIT failure must be
+ * SURFACED (no-clobber refusal, bare-`@ref`, or a filesystem error alike) so
+ * close/teardown can report it and keep the session for retry — never
+ * swallowed into a silent `{written:false}`. Ordinary (non-repair) recording
+ * keeps its existing SHAPE of behavior: an AppError still fails loud (thrown,
+ * not swallowed into `{written:false}`) and any other fs error is a quiet
+ * skip — but an AppError is no longer only theoretical here. Since
+ * `publishHealedScriptAtomically` refuses ANY pre-existing target uniformly
+ * (maintainer-approved: refuse-on-exist applies to ordinary recording too, not
+ * just repair heals), an ordinary `open`/`close --save-script` write against
+ * an existing target now throws that same no-clobber AppError, surfacing here
+ * as a genuine "fails loud" case rather than the "none is raised on that path"
+ * it was before that change.
+ */
+function handleSessionScriptWriteFailure(params: {
+  session: SessionState;
+  error: unknown;
+  scriptPath: string | undefined;
+  repairArmed: boolean;
+  activePublication: boolean;
+}): SessionScriptWriteResult {
+  const { session, error, scriptPath, repairArmed, activePublication } = params;
+  emitDiagnostic({
+    level: 'warn',
+    phase: 'session_script_write_failed',
+    data: {
+      session: session.name,
+      path: scriptPath,
+      error: error instanceof Error ? error.message : String(error),
+    },
+  });
+  if (repairArmed) {
+    return { written: false, error: toRepairCommitFailure(error, scriptPath) };
+  }
+  if (activePublication) {
+    return { written: false, error: toActivePublicationFailure(error, scriptPath) };
+  }
+  if (error instanceof AppError) throw error;
+  return { written: false };
+}
+
+/**
+ * ADR 0012 decision 6 (BLOCKER 2c): normalizes a repair-commit failure into a
+ * distinct, surfaceable AppError. A no-clobber refusal or a bare-`@ref` failure
+ * arrives as an AppError already (with its own message) and passes through
+ * unchanged; anything else is a filesystem write failure, wrapped with a clear
+ * message and hint so the two are distinguishable to the agent.
+ */
+function toRepairCommitFailure(error: unknown, scriptPath: string | undefined): AppError {
+  if (error instanceof AppError) return error;
+  const detail = error instanceof Error ? error.message : String(error);
+  return new AppError(
+    'COMMAND_FAILED',
+    `Failed to write the healed script${scriptPath ? ` to ${scriptPath}` : ''}: ${detail}`,
+    {
+      hint: 'The repair transaction completed but the healed .ad could not be published; check the target path and permissions, then retry close --save-script.',
+    },
+  );
+}
+
+/**
+ * ADR 0012 decision 6, no-clobber (maintainer-approved simplification):
+ * publishes `script` to `scriptPath` atomically, refusing ANY pre-existing
+ * target — complete or partial, the default healed sibling or an explicit
+ * `--save-script=<path>` alike — UNLESS `force` is set (#1258).
+ *
+ * This is `write()`'s ONLY publish primitive, called unconditionally for
+ * every target — a repair-armed heal AND an ordinary, non-repair
+ * `open`/`close --save-script` recording alike. There is no
+ * repair-armed-vs-ordinary branch here: an ordinary recording's target is
+ * refused exactly like a healed repair's, and `force` overwrites exactly
+ * like a healed repair's.
+ *
+ * The temp file is created in the SAME DIRECTORY as the target (never
+ * `/tmp`). Default (no `force`): the publish is a single intra-directory
+ * `linkSync`: atomic create-exclusive, first writer wins. That single
+ * primitive is enough — a concurrent complete-vs-complete race is already
+ * correct this way (the loser sees `EEXIST` and is refused), and a partial
+ * healed file left behind by an aborted/reaped repair is a degenerate
+ * state: the caller clears it explicitly (remove it, or pick another
+ * `--save-script` path) rather than having it silently replaced. No lock,
+ * no lease, no steal, no overwrite.
+ *
+ * `force`/`--overwrite` (#1258): `renameSync` instead — an atomic REPLACE
+ * within the same directory (on POSIX; Node's Windows implementation uses
+ * `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`), so there is no window
+ * where `scriptPath` is briefly missing and no separate unlink step. The
+ * caller opted into overwriting explicitly (a live `--force`/`--overwrite`,
+ * or one persisted on the session from arm time — see
+ * `SessionState.saveScriptForce`), so first-writer-wins no longer applies:
+ * the last write wins instead, same as any ordinary file overwrite.
+ */
+function publishHealedScriptAtomically(params: {
+  scriptPath: string;
+  script: string;
+  force?: boolean;
+}): void {
+  const { scriptPath, script, force } = params;
+  const dir = path.dirname(scriptPath);
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(scriptPath)}.${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
+  );
+  fs.writeFileSync(tempPath, script);
+  try {
+    if (force) {
+      fs.renameSync(tempPath, scriptPath);
+      return;
+    }
+    // Atomic create-exclusive: EEXIST iff a file already sits at scriptPath.
+    fs.linkSync(tempPath, scriptPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    throw new AppError(
+      'COMMAND_FAILED',
+      `A file already exists at ${scriptPath}; remove it, pass replay --save-script=<other-path>, or pass --force/--overwrite to replace it.`,
+      { reason: 'script_target_exists', path: scriptPath },
+    );
+  } finally {
+    // linkSync leaves the temp hard-link behind on success; an error leaves
+    // it too — always clean up whatever of our own temp remains. A `force`
+    // rename already consumed tempPath (it no longer exists at this path),
+    // so this is a harmless no-op in that branch.
+    fs.rmSync(tempPath, { force: true });
+  }
+}
+
+function buildOptimizedActions(
+  session: SessionState,
+  options: { strictPortableRefs?: boolean } = {},
+): SessionAction[] {
+  // ADR 0012 decision 6, R6: a repair-armed session (armed by `replay
+  // --save-script`) serializes only the actions from its boundary watermark
+  // onward — the repair run's own execution path — never the whole session
+  // history. Absent a boundary (ordinary `open`/`close --save-script`), this
+  // slices from 0: unchanged, full-history behavior.
+  const boundary = repairSessionBoundary(session);
+  const repairArmed = boundary !== undefined;
+  const relevantActions = session.actions.slice(boundary ?? 0);
   const optimized: SessionAction[] = [];
-  for (const action of session.actions) {
+  for (const action of relevantActions) {
     if (action.command === 'snapshot') continue;
     const optimizedAction = optimizeSelectorChainAction(action);
     if (optimizedAction) {
       optimized.push(optimizedAction);
       continue;
     }
+    // R4 is scoped to a repair-armed session, not the existing refLabel/
+    // scoped-snapshot fallback ordinary `open`/`close --save-script` keeps.
+    if (repairArmed || options.strictPortableRefs) assertNoUnresolvedRefFallback(action);
     const scopedSnapshot = buildScopedSnapshotAction(session, action);
     if (scopedSnapshot) optimized.push(scopedSnapshot);
     optimized.push(action);
   }
+  if (options.strictPortableRefs) assertActivePublicationPortability(optimized);
   return optimized;
+}
+
+/**
+ * ADR 0012 decision 6, R4: a selector-targeting action whose ref never
+ * resolved to a `selectorChain` would otherwise fall through to a bare
+ * `@ref` line here — meaningless outside the session that minted it, since a
+ * fresh replay session mints its own refs. Refuse loudly instead of writing
+ * an unreplayable script (see `write()`'s catch, which rethrows this rather
+ * than swallowing it like an ordinary fs failure).
+ */
+function assertNoUnresolvedRefFallback(action: SessionAction): void {
+  if (!isSelectorTargetingCommand(action.command)) return;
+  const refPositional =
+    action.command === 'get' ? action.positionals?.[1] : action.positionals?.[0];
+  if (!refPositional?.startsWith('@')) return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    `Cannot write recorded step "${action.command} ${refPositional}" to a script: it never resolved to a selector, so the ref would not resolve in a fresh replay session.`,
+  );
 }
 
 function optimizeSelectorChainAction(action: SessionAction): SessionAction | undefined {
@@ -153,7 +412,11 @@ function buildScopedSnapshotAction(
   };
 }
 
-function formatScript(session: SessionState, actions: SessionAction[]): string {
+function formatScript(
+  session: SessionState,
+  actions: SessionAction[],
+  appendCompleteSentinel: boolean,
+): string {
   const lines: string[] = [];
   const kind = session.device.kind ? ` kind=${session.device.kind}` : '';
   const theme = 'unknown';
@@ -163,8 +426,13 @@ function formatScript(session: SessionState, actions: SessionAction[]): string {
   );
   for (const action of actions) {
     if (action.flags?.noRecord) continue;
+    lines.push(...formatTargetAnnotationLines(action));
     lines.push(formatActionLine(action));
   }
+  // ADR 0012 decision 6 (Fix 4): only a repair-armed session's healed script
+  // carries the completeness sentinel — `write()` already refused to reach
+  // here unless it was finalized, so every repair-armed write IS complete.
+  if (appendCompleteSentinel) lines.push(HEAL_COMPLETE_SENTINEL);
   return `${lines.join('\n')}\n`;
 }
 
@@ -192,7 +460,9 @@ function formatClickLikeActionLine(parts: string[], action: SessionAction): stri
   const first = action.positionals?.[0];
   if (!first) return undefined;
   if (first.startsWith('@')) {
-    parts.push(formatScriptArg(first));
+    // Recorded refs may carry a `~s<generation>` pin (#1076); scripts store the
+    // plain ref — generations are meaningless outside the minting session.
+    parts.push(formatScriptArg(stripRecordedRefGeneration(first)));
     appendRefLabel(parts, action);
     appendScriptSeriesFlags(parts, action);
     return parts.join(' ');
@@ -208,7 +478,7 @@ function formatClickLikeActionLine(parts: string[], action: SessionAction): stri
 function formatFillActionLine(parts: string[], action: SessionAction): string | undefined {
   const ref = action.positionals?.[0];
   if (!ref?.startsWith('@')) return undefined;
-  parts.push(formatScriptArg(ref));
+  parts.push(formatScriptArg(stripRecordedRefGeneration(ref)));
   appendRefLabel(parts, action);
   const text = action.positionals.slice(1).join(' ');
   // Preserve explicit empty-string fill arguments.
@@ -224,7 +494,7 @@ function formatGetActionLine(parts: string[], action: SessionAction): string | u
   const ref = action.positionals?.[1];
   if (!sub || !ref) return undefined;
   parts.push(formatScriptArg(sub));
-  parts.push(formatScriptArg(ref));
+  parts.push(formatScriptArg(stripRecordedRefGeneration(ref)));
   if (ref.startsWith('@')) appendRefLabel(parts, action);
   return parts.join(' ');
 }

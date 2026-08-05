@@ -1,13 +1,12 @@
-import type { InteractionTarget, InternalRequestOptions } from '../../client/client-types.ts';
+import type { InternalRequestOptions } from '@agent-device/contracts/client';
 import type { CommandFlags } from '../../core/dispatch-context.ts';
-import type { CliFlags } from '../../cli/parser/cli-flags.ts';
-import type { ClickButton } from '../../core/click-button.ts';
-import type { DecodedFillTarget } from '../../core/interaction-positionals.ts';
-import type { WaitParsed } from '../../core/wait-positionals.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
+import type { ClickButton } from '@agent-device/contracts/interaction';
 
 export type DaemonCommandRequest = {
   command: string;
   positionals: string[];
+  input?: Record<string, unknown>;
   options: InternalRequestOptions;
   metadataFlags?: Partial<CommandFlags>;
 };
@@ -38,6 +37,7 @@ export type CommandInput = Omit<InternalRequestOptions, 'batchSteps' | 'target'>
     from?: PointInput;
     include?: CliFlags['networkInclude'];
     kind?: string;
+    keepSession?: boolean;
     locator?: string;
     mode?: 'in-app' | 'system' | 'full' | 'limited';
     button?: ClickButton;
@@ -54,6 +54,11 @@ export type CommandInput = Omit<InternalRequestOptions, 'batchSteps' | 'target'>
     query?: string;
     retainPaths?: boolean;
     retentionMs?: number;
+    // ADR 0012 decision 4 / migration step 5: replay-only resume. Named
+    // `resumeFrom`/`resumePlanDigest` (not `from`/`planDigest`) — `from` is
+    // already a gesture `PointInput` on this shared flat type.
+    resumeFrom?: number;
+    resumePlanDigest?: string;
     scale?: number;
     selector?: string;
     source?: InternalRequestOptions['installSource'];
@@ -63,12 +68,13 @@ export type CommandInput = Omit<InternalRequestOptions, 'batchSteps' | 'target'>
     update?: boolean;
     url?: string;
     value?: string;
-    velocity?: number;
     x?: number;
     y?: number;
   } & Record<string, unknown>;
 
 export type SelectionOptions = {
+  /** `--no-record`: common to every recordable command (see `selectionOptionsFromFlags`). */
+  noRecord?: boolean;
   platform?: CliFlags['platform'];
   target?: CliFlags['target'];
   device?: string;
@@ -81,5 +87,3 @@ export type SelectionOptions = {
 export type CliInput = Record<string, unknown>;
 export type CliReader = (positionals: string[], flags: CliFlags) => CliInput;
 export type DaemonWriter = (input: CommandInput) => DaemonCommandRequest;
-
-export type { DecodedFillTarget, InteractionTarget, WaitParsed };

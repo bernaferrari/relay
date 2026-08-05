@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'vitest';
 import { resolveAgentBrowserTool } from './agent-browser-tool.ts';
 import { installFakeManagedAgentBrowser } from './__tests__/test-utils.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 
 test('managed agent-browser tool reports actionable guidance when install is missing', async () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-web-tool-'));
@@ -33,6 +33,8 @@ test('managed agent-browser tool uses short runtime home for backend state', asy
     assert.equal(tool.command, status.binaryPath);
     assert.equal(tool.env?.HOME, status.runtimeHomeDir);
     assert.equal(tool.env?.AGENT_BROWSER_SOCKET_DIR, status.socketDir);
+    assert.equal(tool.env?.AGENT_BROWSER_IDLE_TIMEOUT_MS, '300000');
+    assert.match(tool.env?.AGENT_BROWSER_ARGS ?? '', /^--agent-device-managed-web=[a-f0-9]{16}$/);
     assert.notEqual(status.runtimeHomeDir, status.homeDir);
     assert.ok(fs.existsSync(status.runtimeHomeDir));
     assert.ok(fs.existsSync(status.socketDir));

@@ -12,10 +12,10 @@ import type {
   AppOpenOptions,
   MetroPrepareOptions,
   MetroReloadOptions,
-} from '../client/client.ts';
-import type { SettingsUpdateOptions } from '../client/client-types.ts';
-import { AppError } from '../kernel/errors.ts';
-import { resolveCliOptions } from '../utils/cli-options.ts';
+} from '../agent-device-client.ts';
+import type { SettingsUpdateOptions } from '@agent-device/contracts/client';
+import { AppError } from '@agent-device/kernel/errors';
+import { resolveCliOptions } from '../cli/resolve-cli-options.ts';
 
 test('install-from-source forwards URL and repeated headers to client.apps.installFromSource', async () => {
   let observed: AppInstallFromSourceOptions | undefined;
@@ -348,6 +348,7 @@ test('metro reload forwards host, port, bundle URL, and timeout to client.metro.
         reloadUrl: 'http://127.0.0.1:9090/reload',
         status: 200,
         body: 'OK',
+        transport: 'http',
       };
     },
   });
@@ -377,6 +378,53 @@ test('metro reload forwards host, port, bundle URL, and timeout to client.metro.
     timeoutMs: 1500,
   });
   assert.equal(stdout, 'Reloaded React Native apps via http://127.0.0.1:9090/reload\n');
+});
+
+test('events prints a parsed session timeline from the generic CLI route', async () => {
+  let observed: Parameters<AgentDeviceClient['observability']['events']>[0] | undefined;
+  const client = createStubClient({
+    installFromSource: async () => {
+      throw new Error('unexpected install call');
+    },
+    events: async (options) => {
+      observed = options;
+      return {
+        path: '/tmp/session/events.ndjson',
+        cursor: '0',
+        limit: 100,
+        events: [
+          {
+            version: 1,
+            ts: '2026-07-02T12:00:00.000Z',
+            session: 'default',
+            kind: 'action.recorded',
+            command: 'click',
+            summary: 'Tapped @e14',
+            details: { ref: '@e14' },
+          },
+        ],
+      };
+    },
+  });
+
+  const output = await captureOutput(async () => {
+    const handled = await tryRunClientBackedCommand({
+      command: 'events',
+      positionals: [],
+      flags: {
+        json: false,
+        help: false,
+        version: false,
+      },
+      client,
+    });
+    assert.equal(handled, true);
+  });
+
+  assert.equal(observed?.limit, undefined);
+  assert.equal(observed?.cursor, undefined);
+  assert.match(output.stdout, /action click\s+Tapped @e14/);
+  assert.match(output.stderr, /path=\/tmp\/session\/events\.ndjson/);
 });
 
 test('screenshot forwards --overlay-refs to the client capture API', async () => {
@@ -650,7 +698,6 @@ click text="Continue"
         json: false,
         help: false,
         version: false,
-        replayExportFormat: 'maestro',
         out: outPath,
       },
       client,
@@ -1074,6 +1121,7 @@ async function captureOutput(
 function createStubClient(params: {
   installFromSource: AgentDeviceClient['apps']['installFromSource'];
   listApps?: AgentDeviceClient['apps']['list'];
+  events?: AgentDeviceClient['observability']['events'];
   prepareMetro?: AgentDeviceClient['metro']['prepare'];
   reloadMetro?: AgentDeviceClient['metro']['reload'];
   open?: AgentDeviceClient['apps']['open'];
@@ -1088,6 +1136,7 @@ function createStubClient(params: {
     command,
     devices: {
       list: async () => [],
+      capabilities: unexpectedCommandCall,
       boot: unexpectedCommandCall,
       shutdown: unexpectedCommandCall,
     },
@@ -1095,6 +1144,7 @@ function createStubClient(params: {
       list: async () => [],
       stateDir: async () => '/tmp/agent-device-state',
       close: async () => ({ session: 'default', identifiers: { session: 'default' } }),
+      saveScript: unexpectedCommandCall,
       artifacts: unexpectedCommandCall,
     },
     apps: {
@@ -1178,6 +1228,7 @@ function createStubClient(params: {
           reloadUrl: 'http://127.0.0.1:8081/reload',
           status: 200,
           body: 'OK',
+          transport: 'http' as const,
         })),
     },
     capture: {
@@ -1197,7 +1248,10 @@ function createStubClient(params: {
     interactions: createThrowingMethodGroup<AgentDeviceClient['interactions']>(),
     replay: createThrowingMethodGroup<AgentDeviceClient['replay']>(),
     batch: createThrowingMethodGroup<AgentDeviceClient['batch']>(),
-    observability: createThrowingMethodGroup<AgentDeviceClient['observability']>(),
+    observability: {
+      ...createThrowingMethodGroup<AgentDeviceClient['observability']>(),
+      events: params.events ?? unexpectedCommandCall,
+    },
     debug: createThrowingMethodGroup<AgentDeviceClient['debug']>(),
     recording: createThrowingMethodGroup<AgentDeviceClient['recording']>(),
     settings: {

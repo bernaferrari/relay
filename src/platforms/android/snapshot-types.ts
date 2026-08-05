@@ -5,12 +5,11 @@ import type {
 } from './snapshot-helper-types.ts';
 
 export type AndroidSnapshotBackendMetadata = {
-  backend: 'android-helper' | 'uiautomator-dump';
+  backend: 'android-helper';
   helperVersion?: string;
   helperApiVersion?: string;
   helperTransport?: AndroidSnapshotHelperTransport;
   helperSessionReused?: boolean;
-  fallbackReason?: string;
   installReason?: AndroidSnapshotHelperInstallReason;
   waitForIdleTimeoutMs?: number;
   waitForIdleQuietMs?: number;
@@ -19,6 +18,7 @@ export type AndroidSnapshotBackendMetadata = {
   maxNodes?: number;
   rootPresent?: boolean;
   captureMode?: AndroidSnapshotCaptureMode;
+  systemSurfaceOnly?: boolean;
   windowCount?: number;
   nodeCount?: number;
   helperTruncated?: boolean;

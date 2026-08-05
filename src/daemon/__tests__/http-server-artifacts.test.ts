@@ -16,10 +16,12 @@ import {
   listenOnLoopback,
   skipWhenLoopbackUnavailable,
 } from '../../__tests__/test-utils/index.ts';
+import { ANDROID_ARTIFACTS_CONTRACT_EVIDENCE } from './http-server-artifacts.coverage.ts';
 
 type ArtifactInventoryResponse = {
   artifacts: Array<{
     id: string;
+    artifactType?: string;
     filename: string;
     mimeType: string;
     sizeBytes: number;
@@ -28,7 +30,7 @@ type ArtifactInventoryResponse = {
   }>;
 };
 
-test('downloadable artifact inventory is filtered by tenant', async () => {
+test(ANDROID_ARTIFACTS_CONTRACT_EVIDENCE.testName, async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-artifacts-tenants-'));
   const publicPath = path.join(tempDir, 'public.txt');
   const tenantAPath = path.join(tempDir, 'tenant-a.txt');
@@ -37,15 +39,21 @@ test('downloadable artifact inventory is filtered by tenant', async () => {
   fs.writeFileSync(tenantAPath, 'tenant-a');
   fs.writeFileSync(tenantBPath, 'tenant-b');
   const artifactIds = [
-    trackDownloadableArtifact({ artifactPath: publicPath, fileName: 'public.txt' }),
+    trackDownloadableArtifact({
+      artifactPath: publicPath,
+      artifactType: 'test-public-file',
+      fileName: 'public.txt',
+    }),
     trackDownloadableArtifact({
       artifactPath: tenantAPath,
       tenantId: 'tenant-a',
+      artifactType: 'test-tenant-file',
       fileName: 'tenant-a.txt',
     }),
     trackDownloadableArtifact({
       artifactPath: tenantBPath,
       tenantId: 'tenant-b',
+      artifactType: 'test-tenant-file',
       fileName: 'tenant-b.txt',
     }),
   ];
@@ -79,8 +87,16 @@ test('downloadable artifact inventory skips directory artifacts that fail to arc
   fs.mkdirSync(tracePath, { recursive: true });
   fs.writeFileSync(path.join(tracePath, 'metadata.json'), '{}\n');
   const artifactIds = [
-    trackDownloadableArtifact({ artifactPath: filePath, fileName: 'report.json' }),
-    trackDownloadableArtifact({ artifactPath: tracePath, fileName: 'profile.trace' }),
+    trackDownloadableArtifact({
+      artifactPath: filePath,
+      artifactType: 'test-report',
+      fileName: 'report.json',
+    }),
+    trackDownloadableArtifact({
+      artifactPath: tracePath,
+      artifactType: 'trace-log',
+      fileName: 'profile.trace',
+    }),
   ];
 
   try {
@@ -112,6 +128,7 @@ test('daemon artifact inventory exposes directory artifacts as tar.gz downloads'
   fs.writeFileSync(path.join(tracePath, 'metadata.json'), '{"ok":true}\n');
   const artifactId = trackDownloadableArtifact({
     artifactPath: tracePath,
+    artifactType: 'trace-log',
     fileName: 'profile.trace',
   });
   const server = await createDaemonHttpServer({
@@ -174,6 +191,7 @@ test('daemon artifact inventory lists artifacts and downloads consume them', asy
   fs.writeFileSync(artifactPath, 'png-body');
   const artifactId = trackDownloadableArtifact({
     artifactPath,
+    artifactType: 'screenshot',
     fileName: 'shot.png',
   });
   const server = await createDaemonHttpServer({
@@ -191,6 +209,7 @@ test('daemon artifact inventory lists artifacts and downloads consume them', asy
     const body = (await inventory.json()) as ArtifactInventoryResponse;
     const artifact = body.artifacts.find((entry) => entry.id === artifactId);
     assert.ok(artifact, `expected ${artifactId} in artifact inventory`);
+    assert.equal(artifact.artifactType, 'screenshot');
     assert.equal(artifact.filename, 'shot.png');
     assert.equal(artifact.mimeType, 'application/octet-stream');
     assert.equal(artifact.sizeBytes, 'png-body'.length);
@@ -228,6 +247,7 @@ test('daemon artifact downloads can keep the source file while consuming the inv
   fs.writeFileSync(artifactPath, 'runner-output');
   const artifactId = trackDownloadableArtifact({
     artifactPath,
+    artifactType: 'runner-output',
     fileName: 'runner-output.txt',
     deleteAfterDownload: false,
   });
@@ -256,12 +276,11 @@ test('daemon artifact downloads can keep the source file while consuming the inv
     assert.equal(await consumingDownload.text(), 'runner-output');
     assert.equal(fs.existsSync(artifactPath), true);
 
-    const inventoryAfterConsume = await fetch(`${baseUrl}/artifacts`, { headers: auth });
-    const consumedBody = (await inventoryAfterConsume.json()) as ArtifactInventoryResponse;
-    assert.equal(
-      consumedBody.artifacts.some((entry) => entry.id === artifactId),
-      false,
-    );
+    await waitFor(async () => {
+      const inventoryAfterConsume = await fetch(`${baseUrl}/artifacts`, { headers: auth });
+      const consumedBody = (await inventoryAfterConsume.json()) as ArtifactInventoryResponse;
+      return !consumedBody.artifacts.some((entry) => entry.id === artifactId);
+    });
   } finally {
     cleanupDownloadableArtifact(artifactId);
     await closeLoopbackServer(server);
@@ -277,6 +296,7 @@ test('daemon artifact downloads can be forced retained by server option', async 
   fs.writeFileSync(artifactPath, 'log-body');
   const artifactId = trackDownloadableArtifact({
     artifactPath,
+    artifactType: 'session-log',
     fileName: 'session-log.txt',
   });
   const server = await createDaemonHttpServer({
@@ -314,9 +334,10 @@ test('daemon artifact downloads can be forced retained by server option', async 
   }
 });
 
-async function waitFor(condition: () => boolean): Promise<void> {
+async function waitFor(condition: () => boolean | Promise<boolean>): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    if (condition()) return;
+    if (await condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+  throw new Error('Timed out waiting for condition');
 }

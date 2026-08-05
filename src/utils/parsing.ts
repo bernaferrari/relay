@@ -1,6 +1,6 @@
-import { AppError } from '../kernel/errors.ts';
-import type { DeviceKind, DeviceTarget, PublicPlatform } from '../kernel/device.ts';
-import type { Point, Rect } from '../kernel/snapshot.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { DeviceKind, DeviceTarget, PublicPlatform } from '@agent-device/kernel/device';
+import type { Point, Rect } from '@agent-device/kernel/snapshot';
 
 function readRequired<T>(
   record: Record<string, unknown>,
@@ -116,6 +116,7 @@ function parsePlatform(value: unknown): PublicPlatform | undefined {
   return value === 'ios' ||
     value === 'macos' ||
     value === 'android' ||
+    value === 'vega' ||
     value === 'linux' ||
     value === 'web'
     ? value
@@ -143,8 +144,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function stripUndefined<T extends Record<string, unknown>>(value: T): T {
-  const output = {} as T;
+export function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+type WithoutUndefined<T extends Record<string, unknown>> = {
+  [K in keyof T as undefined extends T[K] ? never : K]: T[K];
+} & {
+  [K in keyof T as undefined extends T[K] ? K : never]?: Exclude<T[K], undefined>;
+};
+
+export function stripUndefined<T extends Record<string, unknown>>(value: T): WithoutUndefined<T> {
+  const output = {} as WithoutUndefined<T>;
   for (const [key, current] of Object.entries(value)) {
     if (current !== undefined) {
       (output as Record<string, unknown>)[key] = current;

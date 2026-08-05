@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { doctorCliOutput, managementCliOutputFormatters, openCliOutput } from './output.ts';
-import { markDoctorProgressRendered } from '../../cli-doctor-output.ts';
+import { markDoctorProgressRendered } from '../../utils/doctor-progress.ts';
 import { withNoColor } from '../../__tests__/test-utils/index.ts';
-import type { AppOpenResult } from '../../client/client-types.ts';
+import type { AppOpenResult } from '@agent-device/contracts/client';
 
 describe('openCliOutput', () => {
   test('prints session state directory on a second line', () => {
@@ -31,6 +31,19 @@ describe('openCliOutput', () => {
     const output = openCliOutput(result);
 
     expect(output.data).not.toHaveProperty('timing');
+  });
+
+  test('preserves open warnings in JSON data and renders them immediately', () => {
+    const warning =
+      'Script publication was aborted by a second successful open; start a fresh session.';
+    const output = openCliOutput({
+      session: 'authoring',
+      warnings: [warning],
+      identifiers: { session: 'authoring' },
+    });
+
+    expect(output.data).toMatchObject({ warnings: [warning] });
+    expect(output.text).toBe(`Opened: authoring\nWarning: ${warning}`);
   });
 });
 
@@ -90,6 +103,7 @@ describe('artifactsCliOutput', () => {
         artifacts: [
           {
             id: 'artifact-1',
+            artifactType: 'screenshot',
             filename: 'screenshot.png',
             mimeType: 'application/octet-stream',
             sizeBytes: 123,
@@ -100,10 +114,12 @@ describe('artifactsCliOutput', () => {
       },
     });
 
-    expect(output.text).toBe('screenshot.png: application/octet-stream 123 bytes id=artifact-1');
+    expect(output.text).toBe(
+      'screenshot.png (screenshot): application/octet-stream 123 bytes id=artifact-1',
+    );
     expect(output.data).toMatchObject({
       source: 'daemon',
-      artifacts: [{ id: 'artifact-1', filename: 'screenshot.png' }],
+      artifacts: [{ id: 'artifact-1', artifactType: 'screenshot', filename: 'screenshot.png' }],
     });
   });
 });

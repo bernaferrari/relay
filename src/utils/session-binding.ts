@@ -1,16 +1,13 @@
-import { AppError } from '../kernel/errors.ts';
-import type { CliFlags } from '../cli/parser/cli-flags.ts';
-import type { DaemonLockPolicy } from '../daemon/types.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { CliFlags } from '@agent-device/contracts/command';
+import type { DaemonLockPolicy } from '@agent-device/kernel/contracts';
 
 export type BindingSettings = {
   defaultPlatform?: CliFlags['platform'];
   lockPolicy?: DaemonLockPolicy;
 };
 
-type BindingPolicyOverrides = Pick<
-  Partial<CliFlags>,
-  'sessionLock' | 'sessionLocked' | 'sessionLockConflicts'
->;
+type BindingPolicyOverrides = Pick<Partial<CliFlags>, 'sessionLock'>;
 
 type LockableFlags = Pick<
   Partial<CliFlags>,
@@ -66,14 +63,11 @@ function resolveLockMode(
   env: NodeJS.ProcessEnv,
   defaultSessionConfigured: boolean,
 ): DaemonLockPolicy | undefined {
-  const explicitPolicy =
-    overrides?.sessionLock ??
-    overrides?.sessionLockConflicts ??
-    readConflictMode(env.AGENT_DEVICE_SESSION_LOCK);
+  const explicitPolicy = overrides?.sessionLock ?? readConflictMode(env.AGENT_DEVICE_SESSION_LOCK);
   if (explicitPolicy) {
     return explicitPolicy;
   }
-  if (overrides?.sessionLocked === true || defaultSessionConfigured) {
+  if (defaultSessionConfigured) {
     return 'reject';
   }
   return undefined;

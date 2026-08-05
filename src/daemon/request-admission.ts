@@ -1,4 +1,4 @@
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { normalizeTenantId, resolveSessionIsolationMode } from './config.ts';
 import { isLeaseAdmissionExempt } from './daemon-command-registry.ts';
 import {
@@ -9,7 +9,8 @@ import {
   resolveRequestOrSessionLeaseScope,
 } from './lease-context.ts';
 import { leaseScopeToHeartbeatRequest } from '../core/lease-scope.ts';
-import type { DeviceLease, LeaseRegistry } from './lease-registry.ts';
+import type { LeaseRegistry } from './lease-registry.ts';
+import type { DeviceLease } from '@agent-device/contracts/device';
 import type { DaemonRequest, SessionState } from './types.ts';
 
 export function scopeRequestSession(req: DaemonRequest): DaemonRequest {

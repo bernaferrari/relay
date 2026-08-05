@@ -1,5 +1,7 @@
 node_modules/
-examples/test-app/.env.local
+.env
+.env.*
+!.env.example
 scripts/perf/.results/
 .pnpm-store/
 .fallow/
@@ -33,8 +35,11 @@ xcuserdata/
 *.app
 *.xctestrun
 *.xcarchive
-.skillgym-results/
-android-snapshot-helper/build/
-android-snapshot-helper/dist/
-android-multitouch-helper/build/
-android-multitouch-helper/dist/
+android/snapshot-helper/build/
+android/snapshot-helper/dist/
+android/ime-helper/build/
+android/ime-helper/dist/
+
+# Workspace package declaration output (tsc -b project references)
+packages/*/dist-types/
+*.tsbuildinfo

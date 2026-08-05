@@ -1,11 +1,87 @@
-import {
-  INTERNAL_COMMANDS,
-  listMcpExposedCommandNames,
-  PUBLIC_COMMANDS,
-} from '../../command-catalog.ts';
 import type { CommandCapability } from '../capabilities.ts';
-import type { DaemonRequest } from '../../daemon/types.ts';
-import type { CommandDescriptor } from './types.ts';
+// The typed-flags request from contracts/, not the daemon's server-side refinement: these
+// descriptors read `command`, `positionals` and `flags` and never touch `internal`.
+import type { DispatchedCommand } from '@agent-device/contracts/command';
+import type { RefFrameEffect } from '@agent-device/contracts/replay';
+import { isReadOnlyFindAction, parseFindArgs } from '@agent-device/selectors';
+import { resolveWaitBudgetMs } from '../wait-positionals.ts';
+import {
+  DEFAULT_TIMEOUT_POLICY,
+  INSTALL_REQUEST_TIMEOUT_MS,
+  PREPARE_REQUEST_TIMEOUT_MS,
+} from './timeout-policy.ts';
+import { resolvePostActionObservationSupport } from './post-action-observation.ts';
+import type { PostActionObservationSupport } from './post-action-observation.ts';
+import type {
+  CommandCatalogGroup,
+  CommandDescriptor,
+  RecordingEffect,
+  CommandResponseDataTransform,
+  CommandTimeoutPolicy,
+  TargetIdentityVerification,
+} from './types.ts';
+
+type RawCommandDescriptorShape<T> = T extends CommandDescriptor
+  ? Omit<T, 'mcpExposed'> & {
+      mcpExposed?: boolean;
+      ownerFiles?: readonly [string, ...string[]];
+    }
+  : never;
+type RawCommandDescriptor = RawCommandDescriptorShape<CommandDescriptor>;
+
+type RawCommandCatalogGroup<T> = T extends { catalog: { group: infer Group } } ? Group : never;
+
+type RawCommandCatalogKey<T> = T extends { catalog: { key: infer Key extends string } }
+  ? Key
+  : T extends { name: infer Name extends string }
+    ? Name
+    : never;
+
+export type DescriptorCommandNameForCatalogGroup<Group extends CommandCatalogGroup> =
+  Extract<(typeof commandDescriptors)[number], { name: string }> extends infer Descriptor
+    ? Descriptor extends { name: infer Name extends string }
+      ? RawCommandCatalogGroup<Descriptor> extends Group
+        ? Name
+        : never
+      : never
+    : never;
+
+export type DescriptorCliCommandName =
+  | DescriptorCommandNameForCatalogGroup<'public'>
+  | DescriptorCommandNameForCatalogGroup<'local-cli'>;
+
+export type DescriptorCatalogRecord<Group extends CommandCatalogGroup> = {
+  readonly [Descriptor in Extract<
+    (typeof commandDescriptors)[number],
+    { name: string }
+  > as RawCommandCatalogGroup<Descriptor> extends Group
+    ? RawCommandCatalogKey<Descriptor>
+    : never]: Descriptor['name'];
+};
+
+export type DescriptorDispatchCommandName =
+  Extract<(typeof commandDescriptors)[number], { dispatch: object }> extends infer Descriptor
+    ? Descriptor extends { name: infer Name extends string }
+      ? Name
+      : never
+    : never;
+
+/**
+ * The literal union of every command whose `daemon.route` is `'session'`.
+ * Drives `SESSION_COMMAND_HANDLER_IMPLS` in `src/daemon/handlers/session.ts`
+ * (mirrors `DescriptorDispatchCommandName` above): adding a session-routed
+ * descriptor without a matching handler table entry is a compile error rather
+ * than a runtime routing gap caught only by `expectHandlerResponse`.
+ */
+export type DescriptorSessionRouteCommandName =
+  Extract<
+    (typeof commandDescriptors)[number],
+    { daemon: { route: 'session' } }
+  > extends infer Descriptor
+    ? Descriptor extends { name: infer Name extends string }
+      ? Name
+      : never
+    : never;
 
 // ---------------------------------------------------------------------------
 // Daemon request-policy trait bundles — copied VERBATIM from
@@ -25,12 +101,67 @@ const REQUEST_EXECUTION_EXEMPT = {
 
 const allowAnyDeviceSessionless = (): boolean => true;
 
-const isRecordingStartRequest = (req: DaemonRequest): boolean =>
+const isRecordingStartRequest = (req: DispatchedCommand): boolean =>
   (req.positionals?.[0] ?? '').toLowerCase() === 'start';
 
-const isShardedTestRequest = (req: DaemonRequest): boolean =>
-  req.command === PUBLIC_COMMANDS.test &&
+const isShardedTestRequest = (req: DispatchedCommand): boolean =>
+  req.command === 'test' &&
   (typeof req.flags?.shardAll === 'number' || typeof req.flags?.shardSplit === 'number');
+
+// ADR 0014 request-sensitive ref-frame resolvers. The action is the leading
+// positional (see keyboard/alert daemon writers in src/commands/system/index.ts
+// and src/commands/capture/alert.ts). Only the read-only status probes preserve
+// the frame; every mutating subaction crosses a device side effect.
+//
+// keyboard actions are status/get/dismiss/enter/return (src/commands/system/
+// runtime/system.ts): status/get inspect, while dismiss hides the keyboard and
+// enter/return dispatch a real return key. Anything other than a read is
+// classified may-invalidate (the honest superset for unknown subactions).
+const KEYBOARD_READ_ONLY_ACTIONS = new Set(['status', 'get']);
+const keyboardRefFrameEffect = (req: DispatchedCommand): RefFrameEffect =>
+  readOnlySubactionRefFrameEffect(req, KEYBOARD_READ_ONLY_ACTIONS, 'status');
+
+// alert actions are get/wait/accept/dismiss: get/wait read, accept/dismiss act.
+const ALERT_READ_ONLY_ACTIONS = new Set(['get', 'wait']);
+const alertRefFrameEffect = (req: DispatchedCommand): RefFrameEffect =>
+  readOnlySubactionRefFrameEffect(req, ALERT_READ_ONLY_ACTIONS, 'get');
+
+const keyboardRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
+  readOnlySubactionRecordingEffect(req, KEYBOARD_READ_ONLY_ACTIONS, 'status');
+
+const alertRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
+  readOnlySubactionRecordingEffect(req, ALERT_READ_ONLY_ACTIONS, 'get');
+
+const findRecordingEffect = (req: DispatchedCommand): RecordingEffect => {
+  try {
+    return isReadOnlyFindAction(parseFindArgs(req.positionals ?? []).action)
+      ? 'observes-app'
+      : 'mutates-app';
+  } catch {
+    // Invalid requests never record, but classify the unknown shape conservatively.
+    return 'mutates-app';
+  }
+};
+
+function readOnlySubactionRefFrameEffect(
+  req: DispatchedCommand,
+  readOnlyActions: ReadonlySet<string>,
+  defaultAction: string,
+): RefFrameEffect {
+  return readOnlyActions.has((req.positionals?.[0] ?? defaultAction).toLowerCase())
+    ? 'preserve'
+    : 'may-invalidate';
+}
+
+function readOnlySubactionRecordingEffect(
+  req: DispatchedCommand,
+  readOnlyActions: ReadonlySet<string>,
+  defaultAction: string,
+): RecordingEffect {
+  return readOnlyActions.has((req.positionals?.[0] ?? defaultAction).toLowerCase())
+    ? 'observes-app'
+    : 'mutates-app';
+}
 
 // ---------------------------------------------------------------------------
 // Capability matrices — platform/kind buckets, copied VERBATIM from
@@ -47,6 +178,7 @@ const isShardedTestRequest = (req: DaemonRequest): boolean =>
 
 const APPLE_SIM_AND_DEVICE = { simulator: true, device: true };
 const ANDROID_ALL = { emulator: true, device: true, unknown: true };
+const VEGA_VVD = { emulator: true };
 const LINUX_DEVICE = { device: true };
 const LINUX_NONE = {};
 
@@ -56,6 +188,10 @@ const ALL_DEVICE_COMMAND_CAPABILITY = {
   linux: LINUX_DEVICE,
 } satisfies CommandCapability;
 const APP_RUNTIME_CAPABILITY = ALL_DEVICE_COMMAND_CAPABILITY;
+const VEGA_APP_RUNTIME_CAPABILITY = {
+  ...APP_RUNTIME_CAPABILITY,
+  vega: VEGA_VVD,
+} satisfies CommandCapability;
 const APP_INVENTORY_CAPABILITY = {
   apple: APPLE_SIM_AND_DEVICE,
   android: ANDROID_ALL,
@@ -67,470 +203,1134 @@ const APP_INSTALL_CAPABILITY = {
   linux: LINUX_NONE,
 } satisfies CommandCapability;
 
+const GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS = {
+  recordsSessionAction: true,
+  recordingEffect: 'mutates-app',
+  daemon: {
+    route: 'generic',
+    refFrameEffect: 'may-invalidate',
+    androidBlockingDialogGuard: true,
+  },
+  dispatch: {},
+  capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
+  timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+  batchable: true,
+} as const satisfies Pick<
+  Extract<CommandDescriptor, { recordsSessionAction: true }>,
+  | 'recordsSessionAction'
+  | 'recordingEffect'
+  | 'daemon'
+  | 'dispatch'
+  | 'capability'
+  | 'timeoutPolicy'
+  | 'batchable'
+>;
+
 // ---------------------------------------------------------------------------
-// The additive single source. Each entry carries the daemon route/traits +
-// capability + batchable flag copied VERBATIM from today's hand tables.
-//
-// Entry order matches DAEMON_COMMAND_DESCRIPTORS exactly (the two trailing
-// entries — `app-switcher` and `install-from-source` — have no daemon route and
-// live only in the capability/batch hand tables).
+// Timeout policies — descriptor-owned request-envelope budget source and
+// on-timeout daemon policy (ADR 0008). This replaces the two deleted client
+// hand lists (`isExplicitTimeoutCommand` in daemon-client.ts and
+// `DAEMON_PRESERVING_TIMEOUT_COMMANDS` in daemon-client-timeout.ts) plus the
+// per-command envelope branches of `resolveDaemonRequestTimeoutMs`.
 // ---------------------------------------------------------------------------
 
-const RAW_COMMAND_DESCRIPTORS = [
+// Read-only capture commands that can block in platform accessibility bridges
+// while the app is crashed or never idle share snapshot's failure mode. Keep the
+// daemon/session alive on their timeouts so callers can still collect
+// screenshot/perf/log evidence and close the session after the runner abort
+// path has been triggered — resetting the daemon here turned one timed-out wait
+// into a lost session for every session the daemon owned.
+const PRESERVE_DAEMON_TIMEOUT_POLICY: CommandTimeoutPolicy = {
+  ...DEFAULT_TIMEOUT_POLICY,
+  onTimeout: 'preserve-daemon',
+};
+
+// Installs run long device subprocesses; their envelope stays above the longest
+// platform install subprocess timeout (see INSTALL_REQUEST_TIMEOUT_MS).
+const INSTALL_TIMEOUT_POLICY: CommandTimeoutPolicy = {
+  ...DEFAULT_TIMEOUT_POLICY,
+  envelopeMs: INSTALL_REQUEST_TIMEOUT_MS,
+};
+
+const DEFAULT_SETTLE_TIMEOUT_MS = 10_000;
+
+// Settle-capable interaction commands also resolve their target through the
+// same platform accessibility capture as snapshot/find (#1105): a hung capture
+// is their dominant timeout mode, so on top of the --settle flag-sourced
+// widening envelope above, keep the daemon (and sessions) alive on timeout too.
+const SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY: CommandTimeoutPolicy = {
+  ...DEFAULT_TIMEOUT_POLICY,
+  // --settle (#1101) makes --timeout bound the SETTLE wait, not the whole
+  // request. Widen the envelope by the settle budget so selector/action
+  // overhead still has room before the post-action wait.
+  budget: {
+    source: 'flag',
+    envelope: 'widen',
+    defaultBudgetMs: DEFAULT_SETTLE_TIMEOUT_MS,
+  },
+  onTimeout: 'preserve-daemon',
+};
+
+const TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM = {
+  fields: {
+    count: { defaultValue: 1, omitDefault: true },
+    intervalMs: { defaultValue: 0, omitDefault: true },
+    holdMs: { defaultValue: 0, omitDefault: true },
+    jitterPx: { defaultValue: 0, omitDefault: true },
+    doubleTap: { defaultValue: false, omitDefault: true },
+  },
+} as const satisfies CommandResponseDataTransform;
+
+const FILL_INTERACTION_RESPONSE_DATA_TRANSFORM = {
+  fields: {
+    delayMs: { defaultValue: 0 },
+  },
+} as const satisfies CommandResponseDataTransform;
+
+function interactionTimeoutPolicy(command: string): CommandTimeoutPolicy {
+  return resolvePostActionObservationSupport(command) !== undefined
+    ? SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY
+    : PRESERVE_DAEMON_TIMEOUT_POLICY;
+}
+
+function postActionObservation(command: string): PostActionObservationSupport {
+  const support = resolvePostActionObservationSupport(command);
+  if (support === undefined) {
+    throw new Error(`Missing post-action observation descriptor support for ${command}`);
+  }
+  return support;
+}
+
+// ---------------------------------------------------------------------------
+// The additive single source. Each entry carries the command identity facets
+// plus whichever daemon, capability, batch, MCP, timeout, observation, and
+// platform-dispatch traits that command owns. Public catalog identity and the
+// non-public dispatch aliases now live here too; leaf views derive from this
+// array rather than recreating command-name sets.
+// ---------------------------------------------------------------------------
+
+const ownerFilesEnabled = typeof __OWNER_FILES__ === 'undefined' || __OWNER_FILES__;
+
+export const RAW_COMMAND_DESCRIPTORS = [
   // -- lease (route: lease) --
   {
-    name: INTERNAL_COMMANDS.leaseAllocate,
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    name: 'lease_allocate',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
+    catalog: { group: 'internal', key: 'leaseAllocate' },
+    recordsSessionAction: false,
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: INTERNAL_COMMANDS.leaseHeartbeat,
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    name: 'lease_heartbeat',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
+    catalog: { group: 'internal', key: 'leaseHeartbeat' },
+    recordsSessionAction: false,
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: INTERNAL_COMMANDS.leaseRelease,
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    name: 'lease_release',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
+    catalog: { group: 'internal', key: 'leaseRelease' },
+    recordsSessionAction: false,
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.artifacts,
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    name: 'artifacts',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/artifacts.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
 
   // -- session (route: session) --
   {
-    name: INTERNAL_COMMANDS.sessionList,
-    daemon: { route: 'session', sessionKind: 'inventory', ...REQUEST_EXECUTION_EXEMPT },
+    name: 'session_list',
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/session-inventory.ts'] as const }
+      : {}),
+    catalog: { group: 'internal', key: 'sessionList' },
+    recordsSessionAction: false,
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'inventory',
+      ...REQUEST_EXECUTION_EXEMPT,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.devices,
+    name: 'session_save_script',
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/session-script-publication.ts'] as const }
+      : {}),
+    catalog: { group: 'internal', key: 'sessionSaveScript' },
+    recordsSessionAction: false,
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'publication',
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'devices',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       ...REQUEST_EXECUTION_EXEMPT,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.doctor,
+    name: 'capabilities',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'inventory',
+      lockPolicySelectorOverride: true,
+      preferExplicitDeviceOverExistingSession: true,
+      ...REQUEST_EXECUTION_EXEMPT,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: true,
+  },
+  {
+    name: 'doctor',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/doctor.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       allowSessionlessDefaultDevice: allowAnyDeviceSessionless,
       ...REQUEST_EXECUTION_EXEMPT,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.apps,
+    name: 'apps',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       preferExplicitDeviceOverExistingSession: true,
     },
     capability: APP_INVENTORY_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.boot,
-    daemon: { route: 'session', sessionKind: 'state' },
+    name: 'boot',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.shutdown,
-    daemon: { route: 'session', sessionKind: 'state' },
+    name: 'shutdown',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
     capability: {
       apple: { simulator: true },
       android: { emulator: true },
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.appState,
-    daemon: { route: 'session', sessionKind: 'state' },
+    name: 'appstate',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'appState' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'state' },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.perf,
-    daemon: { route: 'session', sessionKind: 'observability' },
+    name: 'perf',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/perf/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.logs,
-    daemon: { route: 'session', sessionKind: 'observability' },
+    name: 'logs',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.network,
-    daemon: { route: 'session', sessionKind: 'observability' },
+    name: 'events',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'observability',
+      allowInvalidRecording: true,
+      ...REQUEST_EXECUTION_EXEMPT,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'network',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.audio,
-    daemon: { route: 'session', sessionKind: 'observability' },
+    name: 'audio',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: { emulator: true },
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.replay,
+    name: 'replay',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/replay/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
     daemon: {
       route: 'session',
+      refFrameEffect: 'delegated',
       sessionKind: 'replay',
       skipSessionlessProviderDevice: isShardedTestRequest,
+      saveScriptFlagOwner: true,
     },
+    // Replay durations are script-dependent; --timeout bounds the envelope.
+    timeoutPolicy: { ...DEFAULT_TIMEOUT_POLICY, budget: { source: 'flag' } },
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.test,
+    name: 'test',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/replay/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
     daemon: {
       route: 'session',
+      refFrameEffect: 'delegated',
       sessionKind: 'replay',
       skipSessionlessProviderDevice: isShardedTestRequest,
     },
+    // Test runs stream per-scenario progress and are budgeted downstream; no
+    // client envelope at all.
+    timeoutPolicy: { ...DEFAULT_TIMEOUT_POLICY, envelopeMs: 'unbounded' },
     batchable: true,
   },
   {
-    name: INTERNAL_COMMANDS.runtime,
-    daemon: { route: 'session' },
+    name: 'runtime',
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/session-runtime-command.ts'] as const }
+      : {}),
+    catalog: { group: 'internal' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve' },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.clipboard,
-    daemon: { route: 'session', replayScopedAction: true },
+    name: 'clipboard',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'session', refFrameEffect: 'preserve' },
+    dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_DEVICE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.keyboard,
-    daemon: { route: 'session', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'keyboard',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: keyboardRecordingEffect,
+    daemon: {
+      route: 'session',
+      refFrameEffect: keyboardRefFrameEffect,
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.install,
-    daemon: { route: 'session' },
+    name: 'install',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     capability: APP_INSTALL_CAPABILITY,
+    timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.reinstall,
-    daemon: { route: 'session' },
+    name: 'reinstall',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     capability: APP_INSTALL_CAPABILITY,
+    timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: INTERNAL_COMMANDS.installSource,
-    daemon: { route: 'session' },
+    name: 'install_source',
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
+      : {}),
+    catalog: { group: 'internal', key: 'installSource' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
+    timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: INTERNAL_COMMANDS.releaseMaterializedPaths,
-    daemon: { route: 'session', ...REQUEST_EXECUTION_EXEMPT },
+    name: 'release_materialized_paths',
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
+      : {}),
+    catalog: { group: 'internal', key: 'releaseMaterializedPaths' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve', ...REQUEST_EXECUTION_EXEMPT },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.push,
-    daemon: { route: 'session' },
+    name: 'push',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
+    dispatch: {},
     capability: {
       apple: { simulator: true },
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.triggerAppEvent,
-    daemon: { route: 'session' },
+    name: 'trigger-app-event',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'triggerAppEvent' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
+    dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.open,
-    daemon: { route: 'session', allowSessionlessDefaultDevice: allowAnyDeviceSessionless },
-    capability: APP_RUNTIME_CAPABILITY,
+    name: 'open',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'may-invalidate',
+      allowSessionlessDefaultDevice: allowAnyDeviceSessionless,
+      saveScriptFlagOwner: true,
+    },
+    dispatch: {},
+    capability: VEGA_APP_RUNTIME_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.prepare,
-    daemon: { route: 'session' },
+    name: 'prepare',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/prepare.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'preserve' },
+    // `ios-runner` has no Android implementation; admission must agree with
+    // the handler rather than advertising a command that always rejects later.
+    capability: { apple: APPLE_SIM_AND_DEVICE, android: {}, linux: LINUX_NONE },
+    // Runner warm-up builds are the longest fixed envelope; --timeout overrides.
+    timeoutPolicy: {
+      budget: { source: 'flag' },
+      envelopeMs: PREPARE_REQUEST_TIMEOUT_MS,
+      onTimeout: 'reset-daemon',
+    },
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'batch',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/batch/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: false,
+    daemon: { route: 'session', refFrameEffect: 'delegated' },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
-    name: PUBLIC_COMMANDS.batch,
-    daemon: { route: 'session' },
-    batchable: false,
-  },
-  {
-    name: PUBLIC_COMMANDS.close,
-    daemon: { route: 'session', allowInvalidRecording: true },
-    capability: APP_RUNTIME_CAPABILITY,
+    name: 'close',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'may-invalidate',
+      allowInvalidRecording: true,
+      saveScriptFlagOwner: true,
+    },
+    dispatch: {},
+    capability: VEGA_APP_RUNTIME_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
 
   // -- snapshot (route: snapshot) --
   {
-    name: PUBLIC_COMMANDS.snapshot,
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    name: 'snapshot',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/snapshot.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve' },
+    dispatch: {},
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    // First Apple snapshot on a device can sit behind runner startup; --timeout
+    // widens the envelope, and a timeout must not tear down the daemon.
+    timeoutPolicy: { ...PRESERVE_DAEMON_TIMEOUT_POLICY, budget: { source: 'flag' } },
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.diff,
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    name: 'diff',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/diff.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve' },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.wait,
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    name: 'wait',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/wait.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    // #1349: a wait's landmark may legitimately be absent when the step
+    // starts, so identity verification runs inside its polling resolution.
+    targetIdentityVerification: 'post-resolution',
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve' },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    // The wait budget travels as a positional, not a flag; parse it the same
+    // way the daemon will so the request envelope extends past it (#1075).
+    timeoutPolicy: {
+      ...PRESERVE_DAEMON_TIMEOUT_POLICY,
+      budget: { source: 'positional-parser', parser: resolveWaitBudgetMs },
+    },
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.alert,
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    name: 'alert',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/alert.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: alertRecordingEffect,
+    daemon: { route: 'snapshot', refFrameEffect: alertRefFrameEffect },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.settings,
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    name: 'settings',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/settings.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'snapshot', refFrameEffect: 'may-invalidate' },
+    dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
 
   // -- specialized routes --
   {
-    name: PUBLIC_COMMANDS.reactNative,
-    daemon: { route: 'reactNative', replayScopedAction: true },
+    name: 'react-native',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/react-native/index.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'reactNative' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'reactNative', refFrameEffect: 'may-invalidate' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.record,
+    name: 'record',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/recording/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
     daemon: {
       route: 'recordTrace',
-      replayScopedAction: true,
+      refFrameEffect: 'preserve',
       allowInvalidRecording: true,
       allowSessionlessDefaultDevice: isRecordingStartRequest,
     },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.trace,
-    daemon: { route: 'recordTrace' },
+    name: 'trace',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/recording/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'recordTrace', refFrameEffect: 'preserve' },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.find,
-    daemon: { route: 'find', replayScopedAction: true },
+    name: 'find',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: findRecordingEffect,
+    daemon: { route: 'find', refFrameEffect: 'may-invalidate' },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
     batchable: true,
   },
 
   // -- interaction (route: interaction) --
+  // Interaction commands resolve their target through the same platform accessibility
+  // capture as snapshot, so a hung capture is their dominant timeout mode. Resetting the
+  // daemon here destroyed every app session the daemon owned while the app itself was
+  // still healthy (#1105): keep the daemon (and sessions) alive like snapshot/wait/find,
+  // and rely on request cancellation + the per-request runner recycle budget to abort the
+  // stuck Apple runner work.
   {
-    name: PUBLIC_COMMANDS.click,
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'click',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
+    timeoutPolicy: interactionTimeoutPolicy('click'),
+    postActionObservation: postActionObservation('click'),
+    responseDataTransform: TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.fill,
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'fill',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
+    timeoutPolicy: interactionTimeoutPolicy('fill'),
+    postActionObservation: postActionObservation('fill'),
+    responseDataTransform: FILL_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.longPress,
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'longpress',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public', key: 'longPress' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
+    timeoutPolicy: {
+      ...SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY,
+      // Android's cold path may inspect/install the helper, hand off a running
+      // snapshot helper, hold for 120 seconds, then use 15 seconds of helper
+      // completion overhead. Keep that complete route inside the envelope.
+      envelopeMs: 210_000,
+    },
+    postActionObservation: postActionObservation('longpress'),
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.press,
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'press',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
+    timeoutPolicy: interactionTimeoutPolicy('press'),
+    postActionObservation: postActionObservation('press'),
+    responseDataTransform: TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.type,
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'type',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: interactionTimeoutPolicy('type'),
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.get,
-    daemon: { route: 'interaction', replayScopedAction: true },
+    name: 'get',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'interaction', refFrameEffect: 'preserve' },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: interactionTimeoutPolicy('get'),
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.is,
-    daemon: { route: 'interaction', replayScopedAction: true },
+    name: 'read',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/interaction.ts'] as const } : {}),
+    catalog: { group: 'dispatch-alias' },
+    recordsSessionAction: false,
+    dispatch: {},
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'is',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    targetIdentityVerification: 'pre-dispatch',
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'interaction', refFrameEffect: 'preserve' },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: interactionTimeoutPolicy('is'),
     batchable: true,
   },
 
   // -- generic (route: generic) --
   {
-    name: PUBLIC_COMMANDS.back,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    batchable: true,
-  },
-  {
-    name: PUBLIC_COMMANDS.gesture,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    batchable: true,
-  },
-  {
-    name: PUBLIC_COMMANDS.home,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    name: 'back',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS,
     capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_DEVICE,
+      ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS.capability,
+      vega: VEGA_VVD,
     },
-    batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.rotate,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
+    name: 'gesture',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
     },
-    batchable: true,
-  },
-  {
-    name: PUBLIC_COMMANDS.scroll,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    batchable: true,
-  },
-  {
-    name: PUBLIC_COMMANDS.swipe,
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    batchable: true,
-  },
-  {
-    name: 'pinch',
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
-    batchable: false,
-  },
-  {
-    name: PUBLIC_COMMANDS.focus,
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    batchable: true,
-  },
-  {
-    name: PUBLIC_COMMANDS.screenshot,
-    daemon: { route: 'generic', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.viewport,
-    daemon: { route: 'generic', replayScopedAction: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
-    batchable: false,
+    name: 'home',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS,
+    capability: {
+      ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS.capability,
+      vega: VEGA_VVD,
+    },
   },
   {
-    name: 'pan',
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
+    name: 'tv-remote',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'tvRemote' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
+    capability: {
+      apple: APPLE_SIM_AND_DEVICE,
+      android: ANDROID_ALL,
+      vega: VEGA_VVD,
+      linux: LINUX_NONE,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: true,
+  },
+  {
+    name: 'orientation',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
+    dispatch: {},
+    capability: {
+      apple: APPLE_SIM_AND_DEVICE,
+      android: ANDROID_ALL,
+      linux: LINUX_NONE,
+    },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: true,
+  },
+  {
+    name: 'scroll',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS,
+  },
+  {
+    name: 'swipe',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    batchable: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: true,
   },
   {
-    name: 'fling',
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
-    batchable: false,
+    name: 'focus',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    ...GENERIC_MUTATING_LINUX_DEVICE_COMMAND_TRAITS,
   },
   {
-    name: 'rotate-gesture',
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
-    batchable: false,
+    name: 'screenshot',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/screenshot.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'observes-app',
+    daemon: { route: 'generic', refFrameEffect: 'preserve' },
+    dispatch: {},
+    capability: ALL_DEVICE_COMMAND_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: true,
   },
   {
-    name: 'transform-gesture',
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
-    capability: {
-      apple: APPLE_SIM_AND_DEVICE,
-      android: ANDROID_ALL,
-      linux: LINUX_NONE,
-    },
+    name: 'viewport',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/viewport.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    daemon: { route: 'generic', refFrameEffect: 'may-invalidate' },
+    dispatch: {},
+    // Viewport resizing is a web-surface contract (`WEB_SETTING_COMMANDS` in
+    // src/core/capabilities.ts adds the only admitting bucket). No device platform
+    // has a durable viewport set/read/reset lifecycle: Apple screen geometry is
+    // fixed by the selected simulator/device type and neither simctl nor XCTest can
+    // resize it, and Android has no backend either. Deny both instead of admitting a
+    // command dispatch can only reject (#1407).
+    capability: { apple: {}, android: {}, linux: LINUX_NONE },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
-
   // -- capability/batch-only commands (no daemon route) --
   {
-    name: PUBLIC_COMMANDS.appSwitcher,
+    name: 'app-switcher',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'appSwitcher' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
+    // ADR 0014: app-switcher previously reached the generic daemon leaf via the
+    // registry's generic fallback with no daemon facet, so it could not be
+    // classified. Add the facet (route unchanged) so its device mutation is
+    // covered by the completeness gate; this is the escape hatch the ADR calls
+    // out, not a new specialized route.
+    daemon: { route: 'generic', refFrameEffect: 'may-invalidate' },
+    dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
       linux: LINUX_NONE,
     },
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
   {
-    name: PUBLIC_COMMANDS.installFromSource,
+    name: 'install-from-source',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
+    catalog: { group: 'public', key: 'installFromSource' },
+    recordsSessionAction: true,
+    recordingEffect: 'mutates-app',
     capability: APP_INSTALL_CAPABILITY,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
-] as const satisfies readonly Omit<CommandDescriptor, 'mcpExposed'>[];
 
-const MCP_EXPOSED_COMMAND_NAMES = new Set<string>(listMcpExposedCommandNames());
+  // -- local client-backed CLI/MCP commands (no daemon route/capability) --
+  {
+    name: 'debug',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/debugging/index.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'daemon',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/daemon.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'device',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/device.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'metro',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/metro/index.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'session',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/session.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+  },
+  {
+    name: 'cdp',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/agent-cdp.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'auth',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/auth.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'connect',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'connection',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'disconnect',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'mcp',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/bin.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'proxy',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/proxy.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'react-devtools',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/react-devtools.ts'] as const } : {}),
+    catalog: { group: 'local-cli', key: 'reactDevtools' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+  {
+    name: 'web',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/web.ts'] as const } : {}),
+    catalog: { group: 'local-cli' },
+    recordsSessionAction: false,
+    timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
+    batchable: false,
+    mcpExposed: false,
+  },
+] as const satisfies readonly RawCommandDescriptor[];
+
+/**
+ * Compile-time owner-claim totality. `keyof` on a union contains only keys
+ * shared by every member, so removing `ownerFiles` from any raw descriptor
+ * makes this resolve to `false` and fail the `AssertTrue` constraint.
+ */
+type AssertTrue<T extends true> = T;
+/** Exported only so `noUnusedLocals` keeps the guard alive. */
+export type CommandOwnerFileClaimsAreComplete = AssertTrue<
+  'ownerFiles' extends keyof (typeof RAW_COMMAND_DESCRIPTORS)[number] ? true : false
+>;
+
+const CLI_CATALOG_GROUPS = new Set<CommandCatalogGroup>(['public', 'local-cli']);
+
+const CLI_COMMAND_NAMES = new Set<string>(
+  RAW_COMMAND_DESCRIPTORS.filter((descriptor) =>
+    CLI_CATALOG_GROUPS.has(readCatalogGroup(descriptor)),
+  ).map((descriptor) => descriptor.name),
+);
 
 /**
  * The additive single source of truth (ADR-0008, Phase 1 step 1). Proven
@@ -540,10 +1340,176 @@ const MCP_EXPOSED_COMMAND_NAMES = new Set<string>(listMcpExposedCommandNames());
  * so each entry keeps its literal `name`. That is what makes the {@link Command}
  * union below a precise set of command-name literals rather than `string`.
  */
-export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => ({
-  ...descriptor,
-  mcpExposed: MCP_EXPOSED_COMMAND_NAMES.has(descriptor.name),
-})) satisfies readonly CommandDescriptor[];
+export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => {
+  if (!ownerFilesEnabled) {
+    return {
+      ...descriptor,
+      mcpExposed: resolveMcpExposure(descriptor),
+    };
+  }
+
+  const { ownerFiles: _, ...runtimeDescriptor } = descriptor;
+  return {
+    ...runtimeDescriptor,
+    mcpExposed: resolveMcpExposure(descriptor),
+  };
+}) satisfies readonly CommandDescriptor[];
 
 /** The literal union of every registered command name. */
 export type Command = (typeof commandDescriptors)[number]['name'];
+
+/**
+ * @internal Introspection helper used by parity tests.
+ */
+export function listDescriptorCatalogCommandNames<Group extends CommandCatalogGroup>(
+  group: Group,
+): Array<DescriptorCommandNameForCatalogGroup<Group>> {
+  return listDescriptorCatalogEntries(group)
+    .map(([, name]) => name)
+    .sort();
+}
+
+export function listDescriptorCatalogEntries<Group extends CommandCatalogGroup>(
+  group: Group,
+): Array<readonly [key: string, name: DescriptorCommandNameForCatalogGroup<Group>]> {
+  return commandDescriptors
+    .filter((descriptor) => readCatalogGroup(descriptor) === group)
+    .map(
+      (descriptor) =>
+        [
+          readCatalogKey(descriptor),
+          descriptor.name as DescriptorCommandNameForCatalogGroup<Group>,
+        ] as const,
+    );
+}
+
+export function listMcpExposedCommandNames(): DescriptorCliCommandName[] {
+  return commandDescriptors
+    .filter((descriptor) => isMcpExposedCliCommand(descriptor))
+    .map((descriptor) => descriptor.name as DescriptorCliCommandName)
+    .sort();
+}
+
+const COMMAND_DESCRIPTOR_BY_NAME: ReadonlyMap<string, CommandDescriptor> = new Map(
+  commandDescriptors.map((descriptor) => [descriptor.name, descriptor]),
+);
+
+function isCliCommandName(command: string): command is DescriptorCliCommandName {
+  return CLI_COMMAND_NAMES.has(command);
+}
+
+function resolveMcpExposure(descriptor: RawCommandDescriptor): boolean {
+  return descriptor.mcpExposed ?? CLI_COMMAND_NAMES.has(descriptor.name);
+}
+
+function isMcpExposedCliCommand(descriptor: CommandDescriptor): boolean {
+  return descriptor.mcpExposed && isCliCommandName(descriptor.name);
+}
+
+function readCatalogGroup(descriptor: {
+  name: string;
+  catalog: { group: CommandCatalogGroup; key?: string };
+}): CommandCatalogGroup {
+  return descriptor.catalog.group;
+}
+
+function readCatalogKey(descriptor: {
+  name: string;
+  catalog: { group: CommandCatalogGroup; key?: string };
+}): string {
+  return descriptor.catalog.key ?? descriptor.name;
+}
+
+const TIMEOUT_POLICY_BY_COMMAND: ReadonlyMap<string, CommandTimeoutPolicy> = new Map(
+  commandDescriptors.map((descriptor) => [descriptor.name, descriptor.timeoutPolicy]),
+);
+
+const RESPONSE_DATA_TRANSFORM_BY_COMMAND: ReadonlyMap<string, CommandResponseDataTransform> =
+  new Map(
+    Array.from(COMMAND_DESCRIPTOR_BY_NAME.values()).flatMap((descriptor) =>
+      descriptor.responseDataTransform
+        ? [[descriptor.name, descriptor.responseDataTransform] as const]
+        : [],
+    ),
+  );
+
+export function resolveCommandPostActionObservationSupport(
+  command: string | undefined,
+): PostActionObservationSupport | undefined {
+  if (command === undefined) return undefined;
+  return COMMAND_DESCRIPTOR_BY_NAME.get(command)?.postActionObservation;
+}
+
+export function commandSupportsSettleObservation(command: string | undefined): boolean {
+  return resolveCommandPostActionObservationSupport(command) !== undefined;
+}
+
+export function commandSupportsVerifyEvidence(command: string | undefined): boolean {
+  return resolveCommandPostActionObservationSupport(command) === 'settle-and-verify';
+}
+
+/**
+ * The declared timeout policy for a command (ADR 0008). Command names outside
+ * the registry (internal probes, unknown commands) fall back to
+ * {@link DEFAULT_TIMEOUT_POLICY} — standard envelope, reset-daemon — exactly as
+ * the deleted hand lists treated unlisted commands.
+ */
+export function resolveCommandTimeoutPolicy(command: string | undefined): CommandTimeoutPolicy {
+  if (command === undefined) return DEFAULT_TIMEOUT_POLICY;
+  return TIMEOUT_POLICY_BY_COMMAND.get(command) ?? DEFAULT_TIMEOUT_POLICY;
+}
+
+export function resolveCommandResponseDataTransform(
+  command: string | undefined,
+): CommandResponseDataTransform | undefined {
+  if (command === undefined) return undefined;
+  return RESPONSE_DATA_TRANSFORM_BY_COMMAND.get(command);
+}
+
+export function resolveCommandRecordsSessionAction(command: string | undefined): boolean {
+  if (command === undefined) return false;
+  return COMMAND_DESCRIPTOR_BY_NAME.get(command)?.recordsSessionAction ?? false;
+}
+
+/**
+ * ADR 0012 / #1349: the replay verification phase for one command's recorded
+ * `target-v1` evidence, or `undefined` for a command whose steps never carry
+ * it (an annotation on such a step is inert, exactly like an old reader).
+ */
+export function resolveTargetIdentityVerification(
+  command: string,
+): TargetIdentityVerification | undefined {
+  return COMMAND_DESCRIPTOR_BY_NAME.get(command)?.targetIdentityVerification;
+}
+
+/** ADR 0016 request-sensitive app-state effect for one recorded request. */
+export function resolveCommandRecordingEffect(req: DispatchedCommand): RecordingEffect | undefined {
+  const descriptor = COMMAND_DESCRIPTOR_BY_NAME.get(req.command);
+  if (!descriptor?.recordsSessionAction) return undefined;
+  return typeof descriptor.recordingEffect === 'function'
+    ? descriptor.recordingEffect(req)
+    : descriptor.recordingEffect;
+}
+
+/**
+ * @internal Introspection helper used by parity tests.
+ */
+export function listCommandResponseDataTransforms(): Array<{
+  command: string;
+  transform: CommandResponseDataTransform;
+}> {
+  return Array.from(RESPONSE_DATA_TRANSFORM_BY_COMMAND, ([command, transform]) => ({
+    command,
+    transform,
+  }));
+}
+
+export function listCommandResponseDataTransformFieldNames(): string[] {
+  return [
+    ...new Set(
+      Array.from(RESPONSE_DATA_TRANSFORM_BY_COMMAND.values()).flatMap((transform) =>
+        Object.keys(transform.fields),
+      ),
+    ),
+  ].sort();
+}

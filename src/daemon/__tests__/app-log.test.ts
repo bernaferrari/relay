@@ -4,21 +4,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { finished } from 'node:stream/promises';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import { withAppleToolProvider } from '../../platforms/apple/core/tool-provider.ts';
 import type { ExecResult } from '../../utils/exec.ts';
+import { runAppLogDoctor, rotateAppLogIfNeeded } from '../app-log.ts';
+import { assertAndroidPackageArgSafe } from '../app-log-android.ts';
 import {
-  APP_LOG_PID_FILENAME,
-  assertAndroidPackageArgSafe,
   buildAppleLogPredicate,
   buildIosDeviceConsoleLaunchArgs,
   buildIosSimulatorLogStreamArgs,
-  cleanupStaleAppLogProcesses,
-  runAppLogDoctor,
-  rotateAppLogIfNeeded,
-} from '../app-log.ts';
-import { startIosDeviceAppLog } from '../app-log-ios.ts';
+  startIosDeviceAppLog,
+} from '../app-log-ios.ts';
+import { APP_LOG_PID_FILENAME, cleanupStaleAppLogProcesses } from '../app-log-process.ts';
 
 const IOS_DEVICE_ID = '00008150-0000AAAA';
 const IOS_DEVICE: DeviceInfo = {

@@ -1,4 +1,4 @@
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type { AndroidAdbExecutor } from './adb-executor.ts';
 import { isAmStartError, parseAndroidLaunchComponent } from './app-lifecycle.ts';
 
@@ -92,6 +92,8 @@ export async function openAndroidAppWithAdb(
 
   const component = await resolveAndroidLaunchComponentWithAdb(adb, packageName, [category]);
   if (!component) {
+    // exec-guard-allow: reachable at exit 0 (am start "succeeds" with an error
+    // in its output); the trio is the primary attempt's context, not an exit wrap.
     throw new AppError(
       'COMMAND_FAILED',
       `Failed to resolve Android launch component for ${packageName}`,

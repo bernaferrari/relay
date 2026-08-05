@@ -1,11 +1,11 @@
-import crypto from 'node:crypto';
 import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
-import { AppError } from '../../kernel/errors.ts';
-import type { CliFlags } from '../parser/cli-flags.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { CliFlags } from '@agent-device/contracts/command';
 import type { EnvMap } from '../../utils/env-map.ts';
 import { readMetroProfileFields } from './profile-fields.ts';
 import { persistAndResolveGeneratedProfile } from './generated-config.ts';
 import { resolveRequestedLeaseBackend } from '../commands/connection-runtime.ts';
+import { buildConnectClientId } from './client-id.ts';
 
 export function resolveProxyConnectProfile(options: {
   flags: CliFlags;
@@ -20,7 +20,7 @@ export function resolveProxyConnectProfile(options: {
       'connect proxy requires --daemon-base-url <url> or AGENT_DEVICE_DAEMON_BASE_URL.',
     );
   }
-  const clientId = buildProxyClientId(options.stateDir, daemonBaseUrl, options.flags.session);
+  const clientId = buildConnectClientId(options.stateDir, daemonBaseUrl, options.flags.session);
   const profile: RemoteConfigProfile = {
     daemonBaseUrl,
     daemonTransport: options.flags.daemonTransport ?? 'http',
@@ -57,16 +57,4 @@ export function resolveProxyConnectProfile(options: {
       daemonTransport: options.flags.daemonTransport ?? 'http',
     },
   });
-}
-
-function buildProxyClientId(
-  stateDir: string,
-  daemonBaseUrl: string,
-  session: string | undefined,
-): string {
-  return crypto
-    .createHash('sha256')
-    .update(`${stateDir}\0${daemonBaseUrl}\0${session ?? ''}`)
-    .digest('hex')
-    .slice(0, 16);
 }

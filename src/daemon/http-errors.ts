@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import { normalizeError } from '../kernel/errors.ts';
+import { normalizeError } from '@agent-device/kernel/errors';
 
 export type NormalizedHttpError = ReturnType<typeof normalizeError>;
 
@@ -10,6 +10,9 @@ export function statusCodeForNormalizedError(code: string): number {
     case 'UNAUTHORIZED':
       return 401;
     case 'SESSION_NOT_FOUND':
+    // ADR 0012 R7 (C5a): a reaped repair session is a gone-session state, like
+    // SESSION_NOT_FOUND — not an internal error.
+    case 'REPAIR_SESSION_EXPIRED':
       return 404;
     default:
       return 500;

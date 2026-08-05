@@ -1,6 +1,7 @@
+import type { PlatformGatedProviderResolverKey } from '@agent-device/contracts/platform';
 import { resolveTargetDevice } from '../core/dispatch-resolve.ts';
 import { registerBuiltinPlatformPlugins } from '../core/interactors/register-builtins.ts';
-import { tryGetPlugin } from '../core/platform-plugin/plugin.ts';
+import { tryGetPlugin } from '../core/platform-plugin-registry.ts';
 import type { AndroidAdbExecutor, AndroidAdbProvider } from '../platforms/android/adb-executor.ts';
 import type {
   AppleRunnerCommandExecutor,
@@ -11,8 +12,9 @@ import type {
   AppleToolProvider,
 } from '../platforms/apple/core/tool-provider.ts';
 import type { LinuxToolProvider } from '../platforms/linux/tool-provider.ts';
+import type { VegaToolProvider } from '../platforms/vega/tool-provider.ts';
 import type { WebProvider } from '../platforms/web/provider.ts';
-import type { DeviceInfo } from '../kernel/device.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { AppLogProvider } from './app-log.ts';
 import { hasExplicitDeviceSelector } from './device-selector-intent.ts';
 import type { RecordingProvider } from './recording-provider.ts';
@@ -42,6 +44,8 @@ export type AppleToolProviderResolver = PlatformProviderResolver<
 
 export type LinuxToolProviderResolver = PlatformProviderResolver<LinuxToolProvider | undefined>;
 
+export type VegaToolProviderResolver = PlatformProviderResolver<VegaToolProvider | undefined>;
+
 export type WebProviderResolver = PlatformProviderResolver<WebProvider | undefined>;
 
 export type AppLogProviderResolver = PlatformProviderResolver<AppLogProvider | undefined>;
@@ -53,34 +57,16 @@ export type PlatformProviderResolvers = {
   appleRunnerProvider?: AppleRunnerProviderResolver;
   appleToolProvider?: AppleToolProviderResolver;
   linuxToolProvider?: LinuxToolProviderResolver;
+  vegaToolProvider?: VegaToolProviderResolver;
   webProvider?: WebProviderResolver;
   appLogProvider?: AppLogProviderResolver;
   recordingProvider?: RecordingProviderResolver;
 };
 
-/**
- * The request provider resolvers whose application is PLATFORM-GATED — each ran behind
- * a hand `device.platform === …` predicate inside its descriptor's `resolve`. The
- * PlatformPlugin `providers` facet (issue #974) declares, per family, which of these
- * apply to that family's devices (data-only: a plain string list, type-only in the
- * plugin), and `platformGatedResolverApplies` routes the gate through it. The daemon
- * still OWNS the resolver invocation, wrapper composition, and request-scope
- * concurrency isolation — only the platform GATE moved to data.
- *
- * `appLogProvider` / `recordingProvider` are deliberately ABSENT: they carry no
- * platform gate (they apply on every platform), so they stay ungated in the daemon and
- * are not part of the facet.
- */
-export type PlatformGatedProviderResolverKey =
-  | 'androidAdbProvider'
-  | 'appleRunnerProvider'
-  | 'appleToolProvider'
-  | 'linuxToolProvider'
-  | 'webProvider';
-
 // Compile-time: every gated key is a real resolver key (so the facet can never name a
 // resolver the daemon does not compose).
 type AssertTrue<T extends true> = T;
+/** Exported only so `noUnusedLocals` keeps the guard alive. */
 export type GatedKeysAreResolverKeys = AssertTrue<
   [PlatformGatedProviderResolverKey] extends [keyof PlatformProviderResolvers] ? true : false
 >;
@@ -135,6 +121,9 @@ type ResolvedRequestPlatformProviders = {
   };
   linuxTool?: {
     provider?: LinuxToolProvider;
+  };
+  vegaTool?: {
+    provider?: VegaToolProvider;
   };
   web?: {
     provider?: WebProvider;
@@ -236,6 +225,20 @@ const REQUEST_PLATFORM_PROVIDER_DESCRIPTORS = [
     },
   },
   {
+    resolverKey: 'vegaToolProvider',
+    resolve(providers, context) {
+      const vegaToolProvider = providers.vegaToolProvider;
+      if (!vegaToolProvider || !platformGatedResolverApplies('vegaToolProvider', context.device))
+        return {};
+      return { vegaTool: { provider: vegaToolProvider(context) } };
+    },
+    async appendWrapper(scopedProviders, wrappers) {
+      if (!scopedProviders.vegaTool?.provider) return;
+      const { withVegaToolProvider } = await import('../platforms/vega/tool-provider.ts');
+      appendRequestProviderWrapper(wrappers, scopedProviders.vegaTool, withVegaToolProvider);
+    },
+  },
+  {
     resolverKey: 'linuxToolProvider',
     resolve(providers, context) {
       const linuxToolProvider = providers.linuxToolProvider;
@@ -271,7 +274,7 @@ const REQUEST_PLATFORM_PROVIDER_DESCRIPTORS = [
     },
     async appendWrapper(scopedProviders, wrappers) {
       if (!scopedProviders.appLog?.provider) return;
-      const { withAppLogProvider } = await import('./app-log.ts');
+      const { withAppLogProvider } = await import('./app-log-request-scope.ts');
       appendRequestProviderWrapper(wrappers, scopedProviders.appLog, withAppLogProvider);
     },
   },
@@ -349,7 +352,14 @@ async function resolveScopedProviderDevice(
       return existingSession?.device;
     case 'explicit-device':
     case 'sessionless-default-device':
-      return await resolveTargetDevice(req.flags ?? {});
+      // Provider-scope plumbing only: an unresolvable device means "no provider
+      // scope for this request", never a failed request — the command's own
+      // device resolution still reports its errors downstream.
+      try {
+        return await resolveTargetDevice(req.flags ?? {});
+      } catch {
+        return undefined;
+      }
     case 'skip':
       return undefined;
   }

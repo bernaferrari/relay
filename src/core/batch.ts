@@ -1,32 +1,29 @@
+// The step SHAPE lives in contracts/ so the public API vocabulary can be stated in terms of it
+// without depending on core/; re-exported here for this module's existing consumers.
+export type { DaemonBatchStep } from '@agent-device/contracts/command';
+import type { DaemonBatchStep } from '@agent-device/contracts/command';
 import {
   type DaemonRequest,
   type DaemonResponse,
   type ResponseLevel,
   isNonDefaultResponseLevel,
-} from '../kernel/contracts.ts';
-import { AppError, asAppError } from '../kernel/errors.ts';
+} from '@agent-device/kernel/contracts';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
 import { isRecord } from '../utils/parsing.ts';
 import {
   DEFAULT_BATCH_MAX_STEPS,
   assertBatchStepCount,
   isValidBatchMaxSteps,
   parseBatchStepRuntime,
-} from '../batch-contract.ts';
+} from '@agent-device/contracts/command';
 import {
   BATCH_DAEMON_STEP_KEYS,
   INHERITED_PARENT_FLAG_KEYS,
   assertBatchRuntimeCommandAllowed,
   normalizeBatchCommandName,
-} from '../batch-policy.ts';
+} from './batch-policy.ts';
 
 const batchAllowedStepKeys = new Set<string>(BATCH_DAEMON_STEP_KEYS);
-
-export type DaemonBatchStep = {
-  command: string;
-  positionals?: string[];
-  flags?: Record<string, unknown>;
-  runtime?: DaemonRequest['runtime'];
-};
 
 export type BatchFlags = Record<string, unknown> & {
   batchOnError?: 'stop';
@@ -43,6 +40,7 @@ export type BatchInvoke = (req: BatchRequest) => Promise<DaemonResponse>;
 export type NormalizedBatchStep = {
   command: string;
   positionals: string[];
+  input?: Record<string, unknown>;
   flags: Record<string, unknown>;
   runtime?: DaemonRequest['runtime'];
 };
@@ -158,7 +156,7 @@ export function validateAndNormalizeBatchSteps(
       const fields = unknownKeys.map((key) => `"${key}"`).join(', ');
       throw new AppError(
         'INVALID_ARGS',
-        `Batch step ${index + 1} has unknown field(s): ${fields}. Allowed fields: command, positionals, flags, runtime.`,
+        `Batch step ${index + 1} has unknown field(s): ${fields}. Allowed fields: command, positionals, input, flags, runtime.`,
       );
     }
     const command = normalizeBatchCommandName(step.command);
@@ -179,9 +177,13 @@ export function validateAndNormalizeBatchSteps(
     if (step.flags !== undefined && !isRecord(step.flags)) {
       throw new AppError('INVALID_ARGS', `Batch step ${index + 1} flags must be an object.`);
     }
+    if (step.input !== undefined && !isRecord(step.input)) {
+      throw new AppError('INVALID_ARGS', `Batch step ${index + 1} input must be an object.`);
+    }
     normalized.push({
       command,
       positionals: positionals as string[],
+      input: step.input as Record<string, unknown> | undefined,
       flags: (step.flags ?? {}) as Record<string, unknown>,
       runtime: parseBatchStepRuntime(step.runtime, index + 1),
     });
@@ -269,6 +271,7 @@ async function runBatchStep(
     session: sessionName,
     command: step.command,
     positionals: step.positionals,
+    input: step.input,
     flags: stepFlags,
     runtime: step.runtime === undefined ? req.runtime : step.runtime,
     meta: batchStepMeta(req.meta, isFinalStep),

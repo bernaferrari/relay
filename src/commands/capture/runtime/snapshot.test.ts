@@ -149,22 +149,25 @@ test('runtime snapshot emits filtered Android guidance from backend analysis', a
   ]);
 });
 
-test('runtime snapshot warns when Android helper falls back to stock UIAutomator', async () => {
+test('runtime snapshot renders the system-surface disclosure from Android annotations', async () => {
   const device = createSnapshotOnlyDevice({
-    nodes: [{ ref: 'e1', index: 0, depth: 0, type: 'Window', label: 'Home' }],
+    nodes: [
+      { ref: 'e1', index: 0, depth: 0, type: 'FrameLayout', label: 'Quick settings' },
+      { ref: 'e2', index: 1, depth: 1, parentIndex: 0, type: 'Switch', label: 'Internet' },
+    ],
     truncated: false,
     backend: 'android',
     androidSnapshot: {
-      backend: 'uiautomator-dump',
-      fallbackReason: 'helper artifact missing',
+      backend: 'android-helper',
+      systemSurfaceOnly: true,
     },
   });
 
-  const result = await device.capture.snapshot({ session: 'default', interactiveOnly: true });
+  const result = await device.capture.snapshot({ session: 'default' });
 
-  assert.deepEqual(result.warnings, [
-    'Android snapshot helper unavailable; using stock UIAutomator dump, which can time out on busy React Native UIs. Reason: helper artifact missing',
-  ]);
+  assert.equal(result.warnings?.length, 1);
+  assert.match(String(result.warnings?.[0]), /system surface \(notification shade, quick settings/);
+  assert.match(String(result.warnings?.[0]), /press back or swipe up/);
 });
 
 test('runtime snapshot warns when iOS interactive output is root-only', async () => {
@@ -253,9 +256,11 @@ test('runtime snapshot renders the structured quality verdict and skips legacy d
   assert.equal(result.warnings?.length, 2);
   assert.match(
     String(result.warnings?.[0]),
-    /Recovered this snapshot with the queries accessibility backend/,
+    /Detected an overly complex or slow accessibility tree/,
   );
-  assert.match(String(result.warnings?.[0]), /fixing the app's accessibility is the real cure/);
+  assert.match(String(result.warnings?.[0]), /queries snapshot backend/);
+  assert.match(String(result.warnings?.[0]), /It is OK to continue/);
+  assert.match(String(result.warnings?.[0]), /snapshotQuality\.reason/);
   assert.match(String(result.warnings?.[1]), /@e2 \[Other\] merges many labels/);
   assert.deepEqual(result.snapshotQuality?.state, 'recovered');
 });

@@ -1,17 +1,16 @@
-import { isIosFamily } from '../../../../kernel/device.ts';
+import { isIosFamily } from '@agent-device/kernel/device';
 import { beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import {
-  createLocalAppleToolProvider,
   isAppleProductType,
   isAppleTvProductType,
   isSupportedAppleDevicectlDevice,
   listAppleDevices,
   parseXctracePhysicalAppleDevices,
   resolveAppleTargetFromDevicectlDevice,
-  withAppleToolProvider,
 } from '../devices.ts';
+import { createLocalAppleToolProvider, withAppleToolProvider } from '../tool-provider.ts';
 import type { ExecResult } from '../../../../utils/exec.ts';
 
 const toolCalls: Array<[string, string[]]> = [];
@@ -184,6 +183,7 @@ test('parseXctracePhysicalAppleDevices parses only physical devices from the Dev
       kind: 'device',
       target: 'mobile',
       appleOs: 'ios',
+      iosPhysicalDeviceBackend: 'xctest',
       booted: true,
     },
     {
@@ -193,6 +193,7 @@ test('parseXctracePhysicalAppleDevices parses only physical devices from the Dev
       kind: 'device',
       target: 'tv',
       appleOs: 'tvos',
+      iosPhysicalDeviceBackend: 'xctest',
       booted: true,
     },
   ]);
@@ -210,6 +211,7 @@ test('parseXctracePhysicalAppleDevices tags physical iPads as iPadOS', () => {
       kind: 'device',
       target: 'mobile',
       appleOs: 'ipados',
+      iosPhysicalDeviceBackend: 'xctest',
       booted: true,
     },
   ]);
@@ -227,6 +229,80 @@ test('parseXctracePhysicalAppleDevices tags Apple Vision devices as visionOS', (
       kind: 'device',
       target: 'mobile',
       appleOs: 'visionos',
+      iosPhysicalDeviceBackend: 'xctest',
+      booted: true,
+    },
+  ]);
+});
+
+test('parseXctracePhysicalAppleDevices parses the parenthesized physical device format', () => {
+  const parsed = parseXctracePhysicalAppleDevices(
+    [
+      '== Devices ==',
+      'iPhone 8 Plus (16.7.16) (00008020-001C2D2234567890)',
+      'Studio iPad Pro (17.0) (ipad-udid-1)',
+      'Living Room Apple TV (16.0) (tv-udid-1)',
+    ].join('\n'),
+  );
+
+  assert.deepEqual(parsed, [
+    {
+      platform: 'apple',
+      id: '00008020-001C2D2234567890',
+      name: 'iPhone 8 Plus',
+      kind: 'device',
+      target: 'mobile',
+      appleOs: 'ios',
+      iosPhysicalDeviceBackend: 'xctest',
+      booted: true,
+    },
+    {
+      platform: 'apple',
+      id: 'ipad-udid-1',
+      name: 'Studio iPad Pro',
+      kind: 'device',
+      target: 'mobile',
+      appleOs: 'ipados',
+      iosPhysicalDeviceBackend: 'xctest',
+      booted: true,
+    },
+    {
+      platform: 'apple',
+      id: 'tv-udid-1',
+      name: 'Living Room Apple TV',
+      kind: 'device',
+      target: 'tv',
+      appleOs: 'tvos',
+      iosPhysicalDeviceBackend: 'xctest',
+      booted: true,
+    },
+  ]);
+});
+
+test('parseXctracePhysicalAppleDevices preserves parentheses in bracket-format names', () => {
+  const parsed = parseXctracePhysicalAppleDevices(
+    ['== Devices ==', "Alex's (iPhone) [alex-udid]", 'Office iPhone (2) [office-udid]'].join('\n'),
+  );
+
+  assert.deepEqual(parsed, [
+    {
+      platform: 'apple',
+      id: 'alex-udid',
+      name: "Alex's (iPhone)",
+      kind: 'device',
+      target: 'mobile',
+      appleOs: 'ios',
+      iosPhysicalDeviceBackend: 'xctest',
+      booted: true,
+    },
+    {
+      platform: 'apple',
+      id: 'office-udid',
+      name: 'Office iPhone (2)',
+      kind: 'device',
+      target: 'mobile',
+      appleOs: 'ios',
+      iosPhysicalDeviceBackend: 'xctest',
       booted: true,
     },
   ]);
@@ -498,6 +574,44 @@ test('listAppleDevices prefers devicectl metadata when xctrace reports the same 
 
   assert.equal(physicalDevices.length, 1);
   assert.equal(physicalDevices[0]?.name, 'Primary Name');
+});
+
+test('listAppleDevices falls back to xctrace parenthesized devices when devicectl reports none', async () => {
+  mockRunCommand = async (_cmd, args) => {
+    if (args.join(' ') === 'simctl list devices -j') {
+      return { stdout: createSimctlDevicesPayload(), stderr: '', exitCode: 0 };
+    }
+
+    if (args[0] === 'devicectl' && args[1] === 'list' && args[2] === 'devices') {
+      const jsonPath = String(args[4]);
+      await fs.writeFile(jsonPath, JSON.stringify({ result: { devices: [] } }), 'utf8');
+      return { stdout: '', stderr: '', exitCode: 0 };
+    }
+
+    if (args.join(' ') === 'xctrace list devices') {
+      return {
+        stdout: ['== Devices ==', 'iPhone 8 Plus (16.7.16) (00008020-001C2D2234567890)'].join('\n'),
+        stderr: '',
+        exitCode: 0,
+      };
+    }
+
+    throw new Error(`unexpected xcrun args: ${args.join(' ')}`);
+  };
+
+  const devices = await withMockedPlatform(
+    'darwin',
+    async () => await withMockedAppleTools(async () => await listAppleDevices()),
+  );
+
+  const physicalDevices = devices.filter(
+    (device) => device.kind === 'device' && isIosFamily(device),
+  );
+
+  assert.equal(physicalDevices.length, 1);
+  assert.equal(physicalDevices[0]?.id, '00008020-001C2D2234567890');
+  assert.equal(physicalDevices[0]?.name, 'iPhone 8 Plus');
+  assert.equal(physicalDevices[0]?.iosPhysicalDeviceBackend, 'xctest');
 });
 
 test('listAppleDevices keeps physical discovery disabled for simulator-set scoped runs', async () => {

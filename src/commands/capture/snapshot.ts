@@ -1,8 +1,12 @@
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { SNAPSHOT_FLAGS } from '../../cli/parser/cli-flags.ts';
+import { SNAPSHOT_FLAGS } from '../cli-grammar/flag-groups.ts';
 import { booleanField, integerField, stringField } from '../command-input.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
-import { commonInputFromFlags, direct } from '../cli-grammar/common.ts';
+import {
+  commonInputFromFlags,
+  direct,
+  observationRecordInputFromFlags,
+} from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
 import { defineCommandFacet } from '../family/types.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
@@ -22,6 +26,14 @@ const snapshotCommandMetadata = defineFieldCommandMetadata(
     raw: booleanField(),
     forceFull: booleanField(),
     timeoutMs: integerField('Maximum wall-clock time for the snapshot command.'),
+    // #1271 stage 2: `snapshot` is observation-only, so a repair-armed heal
+    // excludes an out-of-band one by default (ADR 0012 amendment). Exposed
+    // here so the Node SDK's typed options and the MCP tool schema can set
+    // both flags, mirroring `--no-record`/`--record` on the CLI.
+    noRecord: booleanField('Do not record this action.'),
+    record: booleanField(
+      'Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this.',
+    ),
   },
 );
 
@@ -36,11 +48,12 @@ const snapshotCliSchema = {
   helpDescription:
     'Capture accessibility tree or diff against the previous session baseline. For iOS raw-coordinate fallback after a no-op ref press, inspect rects with snapshot -i --json, press the rect center, then verify with diff snapshot -i or snapshot --diff.',
   summary: 'Capture accessibility tree or diff against the previous session baseline',
-  allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs'],
+  allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs', 'record'],
 } as const;
 
 export const snapshotCliReader: CliReader = (_positionals, flags) => ({
   ...commonInputFromFlags(flags),
+  ...observationRecordInputFromFlags(flags),
   interactiveOnly: flags.snapshotInteractiveOnly,
   depth: flags.snapshotDepth,
   scope: flags.snapshotScope,

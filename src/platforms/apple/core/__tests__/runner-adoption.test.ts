@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { DeviceInfo } from '../../../../kernel/device.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   buildDetachedRunnerLease,
   buildRunnerLease,
   readStaleRunnerLease,
+  RUNNER_OWNER_START_TIME,
   writeRunnerLease,
   type RunnerLease,
 } from '../runner/runner-lease.ts';
@@ -15,19 +16,27 @@ import {
   tryAdoptRunnerSessionFromLease,
 } from '../runner/runner-adoption.ts';
 import { sendRunnerCommandOnce } from '../runner/runner-transport.ts';
-import { isProcessAlive } from '../../../../utils/process-identity.ts';
-import {
-  resolveExpectedRunnerCacheMetadata,
-  resolveRunnerDerivedPath,
-} from '../runner/runner-xctestrun.ts';
+import { isProcessAlive } from '../../../../utils/host-process.ts';
 
 vi.mock('../runner/runner-transport.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../runner/runner-transport.ts')>();
   return { ...actual, sendRunnerCommandOnce: vi.fn() };
 });
-vi.mock('../../../../utils/process-identity.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../utils/process-identity.ts')>();
-  return { ...actual, isProcessAlive: vi.fn(() => false) };
+vi.mock('../../../../utils/host-process.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../utils/host-process.ts')>();
+  return {
+    ...actual,
+    isProcessAlive: vi.fn(() => false),
+    readProcessStartTime: vi.fn(() => 'test-process-start'),
+  };
+});
+vi.mock('../runner/runner-xctestrun.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runner/runner-xctestrun.ts')>();
+  return {
+    ...actual,
+    resolveExpectedRunnerCacheMetadata: vi.fn(() => ({})),
+    resolveRunnerDerivedPath: vi.fn(() => expectedDerived),
+  };
 });
 
 const mockSendRunnerCommandOnce = vi.mocked(sendRunnerCommandOnce);
@@ -69,10 +78,7 @@ function writeStaleLease(overrides: Partial<RunnerLease> = {}): RunnerLease {
 beforeEach(() => {
   leaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-lease-test-'));
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = leaseDir;
-  expectedDerived = resolveRunnerDerivedPath(
-    simulator,
-    resolveExpectedRunnerCacheMetadata(simulator),
-  );
+  expectedDerived = path.join(leaseDir, 'derived');
   mockSendRunnerCommandOnce.mockReset();
   mockIsProcessAlive.mockReset();
   mockIsProcessAlive.mockReturnValue(false);
@@ -170,4 +176,25 @@ test('adoption is disabled by the kill switch', async () => {
   process.env.AGENT_DEVICE_IOS_RUNNER_DETACH = '0';
 
   expect(await tryAdoptRunnerSessionFromLease(simulator, {})).toBeNull();
+});
+
+test('adoption is refused when the owner state dir is gone but the owner process is alive', async () => {
+  // The owner daemon is ALIVE (same pid/start-time as this process) but its
+  // AGENT_DEVICE_STATE_DIR was deleted. Such a lease is reclaimable, but only
+  // via the force-stop path: silently adopting a runner whose live owner
+  // still believes it owns it would create two masters. Adoption must refuse
+  // it outright - before ever probing the runner.
+  const goneStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-adopt-dir-gone-'));
+  fs.rmSync(goneStateDir, { recursive: true, force: true });
+  writeStaleLease({
+    ownerToken: 'owner-foreign-dir-gone',
+    ownerPid: process.pid,
+    ownerStartTime: RUNNER_OWNER_START_TIME,
+    ownerStateDir: goneStateDir,
+  });
+  mockIsProcessAlive.mockReturnValue(true);
+
+  expect(readStaleRunnerLease(simulator.id)).toBeNull();
+  expect(await tryAdoptRunnerSessionFromLease(simulator, {})).toBeNull();
+  expect(mockSendRunnerCommandOnce).not.toHaveBeenCalled();
 });

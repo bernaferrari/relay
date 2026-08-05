@@ -1,0 +1,119 @@
+import fs from 'node:fs';
+import { defineConfig } from 'tsdown';
+
+const typeScriptPackageJsonUrl = import.meta.resolve('typescript/package.json');
+const { default: getTypeScript7ExePath } = await import(
+  new URL('lib/getExePath.js', typeScriptPackageJsonUrl).href
+);
+
+const packageJson = JSON.parse(
+  fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
+
+const publicSdkChunkGroups = [
+  [
+    'sdk-contracts',
+    /packages[\\/]kernel[\\/]src[\\/]contracts\.d\.[cm]?ts$/,
+    /packages[\\/]kernel[\\/]src[\\/]contracts\.ts$/,
+  ],
+  [
+    'sdk-errors',
+    /packages[\\/]kernel[\\/]src[\\/]errors\.d\.[cm]?ts$/,
+    /packages[\\/]kernel[\\/]src[\\/]errors\.ts$/,
+  ],
+  [
+    'sdk-device',
+    /packages[\\/]kernel[\\/]src[\\/]device\.d\.[cm]?ts$/,
+    /packages[\\/]kernel[\\/]src[\\/]device\.ts$/,
+  ],
+  [
+    'sdk-snapshot',
+    /packages[\\/]kernel[\\/]src[\\/]snapshot\.d\.[cm]?ts$/,
+    /packages[\\/]kernel[\\/]src[\\/]snapshot\.ts$/,
+  ],
+  ['sdk-io', /src[\\/]io\.d\.[cm]?ts$/, /src[\\/]io\.ts$/],
+  ['sdk-batch', /src[\\/]batch-policy\.d\.[cm]?ts$/, /src[\\/]batch-policy\.ts$/],
+  ['sdk-batch-runner', /src[\\/]core[\\/]batch\.d\.[cm]?ts$/, /src[\\/]core[\\/]batch\.ts$/],
+  ['sdk-finders', /src[\\/]finders\.d\.[cm]?ts$/, /src[\\/]finders\.ts$/],
+  [
+    'sdk-android-adb',
+    /src[\\/]platforms[\\/]android[\\/]adb-executor\.d\.[cm]?ts$/,
+    /src[\\/]platforms[\\/]android[\\/]adb-executor\.ts$/,
+  ],
+  [
+    'sdk-app-inventory',
+    /src[\\/]contracts[\\/]app-inventory\.d\.[cm]?ts$/,
+    /src[\\/]contracts[\\/]app-inventory\.ts$/,
+  ],
+  [
+    'sdk-remote-config',
+    /src[\\/]remote[\\/]remote-config-schema\.d\.[cm]?ts$/,
+    /src[\\/]remote[\\/]remote-config-schema\.ts$/,
+  ],
+  ['sdk-selectors', /src[\\/]sdk[\\/]selectors\.d\.[cm]?ts$/, /src[\\/]sdk[\\/]selectors\.ts$/],
+] as const;
+
+export default defineConfig({
+  entry: {
+    index: 'src/sdk/index.ts',
+    io: 'src/sdk/io.ts',
+    artifacts: 'src/sdk/artifacts.ts',
+    batch: 'src/sdk/batch.ts',
+    metro: 'src/sdk/metro.ts',
+    'remote-config': 'src/sdk/remote-config.ts',
+    'install-source': 'src/sdk/install-source.ts',
+    'android-adb': 'src/sdk/android-adb.ts',
+    limrun: 'src/sdk/limrun.ts',
+    contracts: 'src/sdk/contracts.ts',
+    selectors: 'src/sdk/selectors.ts',
+    finders: 'src/sdk/finders.ts',
+    'internal/bin': 'src/bin.ts',
+    'internal/companion-tunnel': 'src/client/companion-tunnel.ts',
+    'internal/daemon': 'src/daemon.ts',
+    'internal/png-worker': 'src/utils/png-worker.ts',
+    'internal/update-check-entry': 'src/utils/update-check-entry.ts',
+  },
+  deps: {
+    alwaysBundle: [/^@agent-device\//, 'pngjs'],
+  },
+  inputOptions: {
+    // A build with missing workspace links resolves nothing under `alwaysBundle` and emits the
+    // specifiers as externals instead. That is how 0.20.4 shipped an unresolvable
+    // `@agent-device/ad-script` import: rolldown warned, exited 0, and `prepack` packed the result.
+    // An unresolved import in a bundle that is supposed to inline its workspace is never a warning.
+    onLog(level, log, handler) {
+      if (log.code === 'UNRESOLVED_IMPORT') {
+        throw new Error(
+          `${log.message}\nRun \`pnpm install\` to restore workspace links: unresolved imports would ship as unresolvable externals.`,
+        );
+      }
+      handler(level, log);
+    },
+  },
+  format: 'esm',
+  platform: 'node',
+  target: 'es2022',
+  outDir: 'dist/src',
+  tsconfig: 'tsconfig.lib.json',
+  define: {
+    __AGENT_DEVICE_VERSION__: JSON.stringify(packageJson.version),
+    __OWNER_FILES__: 'false',
+  },
+  shims: true,
+  hash: false,
+  outputOptions: {
+    codeSplitting: {
+      groups: publicSdkChunkGroups.flatMap(([name, dtsTest, jsTest]) => [
+        { test: dtsTest, name: `${name}.d` },
+        { test: jsTest, name },
+      ]),
+    },
+  },
+  outExtensions: () => ({ js: '.js', dts: '.d.ts' }),
+  minify: true,
+  dts: {
+    tsgo: {
+      path: getTypeScript7ExePath(),
+    },
+  },
+});

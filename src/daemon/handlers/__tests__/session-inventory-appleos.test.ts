@@ -12,7 +12,7 @@ import { handleSessionInventoryCommands } from '../session-inventory.ts';
 import { listDeviceInventory } from '../../../core/dispatch-resolve.ts';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
 import type { DaemonRequest, DaemonResponse } from '../../types.ts';
-import type { AppleOS, DeviceInfo } from '../../../kernel/device.ts';
+import type { AppleOS, DeviceInfo } from '@agent-device/kernel/device';
 import {
   ANDROID_EMULATOR,
   IOS_SIMULATOR,
@@ -91,6 +91,14 @@ test('devices omits appleOs for non-Apple devices', async () => {
 
   const ios = devices.find((device) => device.id === IOS_SIMULATOR.id);
   expect(ios?.appleOs).toBe('ios');
+});
+
+test('devices omits internal physical-device backend evidence', async () => {
+  const devices = await listPublicDevices([
+    { ...IOS_SIMULATOR, iosPhysicalDeviceBackend: 'xctest' },
+  ]);
+
+  expect(devices[0]).not.toHaveProperty('iosPhysicalDeviceBackend');
 });
 
 test('devices drops a stray appleOs on a non-Apple device (gated to Apple platforms)', async () => {

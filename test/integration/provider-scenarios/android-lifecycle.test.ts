@@ -13,18 +13,64 @@ import {
 import { createAndroidSettingsWorld, waitForFileContent } from './android-world.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
 import { createProviderScenarioTempPath, withProviderScenarioResource } from './harness.ts';
+import {
+  ANDROID_LIFECYCLE_CONTRACT_EVIDENCE,
+  ANDROID_TOUCH_CONTRACT_EVIDENCE,
+} from './android-lifecycle.coverage.ts';
 
 type AndroidSettingsWorld = Awaited<ReturnType<typeof createAndroidSettingsWorld>>;
 
-test('Provider-backed integration Android Settings flow uses scripted ADB provider', async () => {
-  await withProviderScenarioResource(createAndroidSettingsWorld, async (world) => {
-    const client = world.daemon.client();
-    await runAndroidSetupAndInstallWorkflow(world, client);
-    await runAndroidAppControlAndObservabilityWorkflow(world, client);
-    await runAndroidCaptureInteractionAndReplayWorkflow(world, client);
-    assertAndroidProviderContract(world);
-  });
-}, 15_000);
+const ANDROID_SYSTEM_SURFACE_XML = `<hierarchy>
+  <node class="android.widget.FrameLayout" package="com.android.systemui" window-type="3" window-active="true" window-focused="true" bounds="[0,0][390,844]">
+    <node class="android.widget.FrameLayout" package="com.android.systemui" resource-id="com.android.systemui:id/status_bar_launch_animation_container" bounds="[0,0][390,80]">
+      <node class="android.widget.TextView" package="com.android.systemui" text="7:03" bounds="[10,10][80,60]"/>
+    </node>
+    <node class="android.widget.SeekBar" package="com.android.systemui" text="Display brightness" clickable="true" bounds="[20,120][370,170]"/>
+    <node class="android.widget.Button" package="com.android.systemui" text="Wi-Fi" clickable="true" bounds="[20,200][180,280]"/>
+    <node class="android.widget.Button" package="com.android.systemui" text="Bluetooth" clickable="true" bounds="[200,200][370,280]"/>
+  </node>
+</hierarchy>`;
+
+test(
+  ANDROID_LIFECYCLE_CONTRACT_EVIDENCE.testName,
+  async () => {
+    await withProviderScenarioResource(createAndroidSettingsWorld, async (world) => {
+      const client = world.daemon.client();
+      await runAndroidSetupAndInstallWorkflow(world, client);
+      await runAndroidAppControlAndObservabilityWorkflow(world, client);
+      await runAndroidCaptureInteractionAndReplayWorkflow(world, client);
+      assertAndroidProviderContract(world);
+    });
+  },
+  15_000,
+);
+
+test('Provider-backed Android reads keep chrome provenance internal across public node payloads', async () => {
+  await withProviderScenarioResource(
+    async () => await createAndroidSettingsWorld({ snapshotXml: () => ANDROID_SYSTEM_SURFACE_XML }),
+    async (world) => {
+      const client = world.daemon.client();
+      await client.apps.open({ app: 'settings', ...world.selection });
+
+      const response = await world.daemon.callCommand('snapshot', [], world.selection);
+      const snapshot = assertRpcOk<{ nodes: Array<{ ref: string; label?: string }> }>(response);
+
+      assert.equal(
+        snapshot.nodes.some((node) => node.label === 'Display brightness'),
+        true,
+      );
+
+      const clock = snapshot.nodes.find((node) => node.label === '7:03');
+      assert.ok(clock?.ref);
+      assertRpcOk(
+        await world.daemon.callCommand('get', ['attrs', `@${clock.ref}`], world.selection),
+      );
+      assertRpcOk(
+        await world.daemon.callCommand('find', ['label', '7:03', 'get', 'attrs'], world.selection),
+      );
+    },
+  );
+});
 
 test('Provider-backed integration Android text provider handles Unicode without shell input text', async () => {
   await withProviderScenarioResource(
@@ -78,19 +124,59 @@ test('Provider-backed integration Android text provider handles Unicode without 
   );
 });
 
-test('Provider-backed integration Android touch provider handles multi-touch gestures', async () => {
+test(ANDROID_TOUCH_CONTRACT_EVIDENCE.testName, async () => {
   await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ nativeTouchInjection: true }),
+    async () => await createAndroidSettingsWorld(),
     async (world) => {
       const client = world.daemon.client();
       await client.apps.open({ app: 'settings', ...world.selection });
 
-      await client.interactions.swipe({
-        from: { x: 340, y: 400 },
-        to: { x: 60, y: 400 },
+      await client.interactions.longPress({
+        x: 195,
+        y: 320,
+        durationMs: 750,
+        ...world.selection,
+      });
+
+      await client.interactions.scroll({
+        direction: 'down',
+        pixels: 120,
+        durationMs: 350,
+        ...world.selection,
+      });
+
+      await client.interactions.pan({
+        x: 340,
+        y: 400,
+        dx: -280,
+        dy: 0,
         durationMs: 300,
         ...world.selection,
       });
+
+      const oneFingerPan = await client.interactions.pan({
+        x: 195,
+        y: 320,
+        dx: 20,
+        dy: 0,
+        durationMs: 500,
+        ...world.selection,
+      });
+      assert.equal(oneFingerPan.pointerCount, 1);
+      assert.equal(world.daemon.session()?.actions.at(-1)?.flags.pointerCount, undefined);
+
+      const twoFingerPan = await client.interactions.pan({
+        x: 195,
+        y: 320,
+        dx: 40,
+        dy: -20,
+        pointerCount: 2,
+        durationMs: 500,
+        ...world.selection,
+      });
+      assert.equal(twoFingerPan.pointerCount, 2);
+      assert.equal(twoFingerPan.backend, 'provider-native-touch');
+      assert.equal(world.daemon.session()?.actions.at(-1)?.flags.pointerCount, 2);
 
       const pinch = await client.interactions.pinch({
         scale: 2,
@@ -98,7 +184,8 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         y: 320,
         ...world.selection,
       });
-      assert.equal(pinch.scale, 2);
+      assert.equal(pinch.kind, 'pinch');
+      assert.equal(pinch.pointerCount, 2);
       assert.equal(pinch.backend, 'provider-native-touch');
 
       const rotate = await client.interactions.rotateGesture({
@@ -107,7 +194,8 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         y: 320,
         ...world.selection,
       });
-      assert.equal(rotate.degrees, 145);
+      assert.equal(rotate.kind, 'rotate');
+      assert.equal(rotate.pointerCount, 2);
       assert.equal(rotate.backend, 'provider-native-touch');
 
       const transform = await client.interactions.transformGesture({
@@ -120,32 +208,27 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         durationMs: 700,
         ...world.selection,
       });
-      assert.equal(transform.scale, 1.5);
-      assert.equal(transform.degrees, 35);
+      assert.equal(transform.kind, 'transform');
+      assert.equal(transform.pointerCount, 2);
       assert.equal(transform.backend, 'provider-native-touch');
 
-      assert.deepEqual(world.touchInjectionCalls, [
-        { kind: 'swipe', x1: 340, y1: 400, x2: 60, y2: 400, durationMs: 300 },
-        { kind: 'pinch', x: 195, y: 320, scale: 2, durationMs: undefined },
-        { kind: 'rotate', x: 195, y: 320, degrees: 145, durationMs: undefined },
-        {
-          kind: 'transform',
-          x: 195,
-          y: 320,
-          dx: 40,
-          dy: -20,
-          scale: 1.5,
-          degrees: 35,
-          durationMs: 700,
-        },
+      const touchCalls = world.touchInjectionCalls.map((plan) => ({
+        topology: plan.topology,
+        intent: plan.intent,
+        pointerCount: plan.pointers.length,
+        durationMs: plan.durationMs,
+      }));
+      assert.deepEqual(touchCalls, [
+        { topology: 'single', intent: 'longPress', pointerCount: 1, durationMs: 750 },
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 350 },
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 300 },
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 500 },
+        { topology: 'two', intent: 'pan', pointerCount: 2, durationMs: 500 },
+        { topology: 'two', intent: 'pinch', pointerCount: 2, durationMs: 300 },
+        { topology: 'two', intent: 'rotate', pointerCount: 2, durationMs: 784 },
+        { topology: 'two', intent: 'transform', pointerCount: 2, durationMs: 700 },
       ]);
-      assert.equal(
-        world.adbCalls.some(
-          (call) => call[0] === 'shell' && call[1] === 'am' && call[2] === 'instrument',
-        ),
-        false,
-        JSON.stringify(world.adbCalls),
-      );
+      assert.equal(world.gestureViewportCalls, 8);
     },
   );
 });
@@ -491,6 +574,7 @@ async function runAndroidSetupAndInstallWorkflow(
     },
     ...selection,
   });
+  assert.equal(push.platform, 'android');
   assert.equal(push.package, 'com.example.demo');
   assert.equal(push.action, 'com.example.demo.PUSH');
   assert.equal(push.extrasCount, 3);
@@ -745,6 +829,10 @@ async function runAndroidAppControlAndObservabilityWorkflow(
     ),
     JSON.stringify(sessionAfterTriggeredEvent?.actions),
   );
+  const tracePath = path.join(world.tempRoot, 'android-provider.adtrace');
+  const finalTracePath = path.join(world.tempRoot, 'android-provider-final.adtrace');
+  const traceStart = await daemon.callCommand('trace', ['start', tracePath], selection);
+  assert.equal(traceStart.json?.result?.data?.trace, 'started');
   await client.settings.update({
     setting: 'permission',
     state: 'grant',
@@ -826,6 +914,18 @@ async function runAndroidAppControlAndObservabilityWorkflow(
     ),
     JSON.stringify(metrics.fps),
   );
+
+  const events = await client.observability.events({ limit: 100, ...selection });
+  const eventEntries = Array.isArray(events.events)
+    ? (events.events as Array<{ command?: string }>)
+    : [];
+  assert.ok(eventEntries.some((event) => event.command === 'trigger-app-event'));
+  assert.ok(eventEntries.some((event) => event.command === 'perf'));
+
+  const traceStop = await daemon.callCommand('trace', ['stop', finalTracePath], selection);
+  assert.equal(traceStop.json?.result?.data?.trace, 'stopped');
+  assert.equal(traceStop.json?.result?.data?.outPath, finalTracePath);
+  assert.equal(fs.existsSync(finalTracePath), true);
 
   const explicitMetrics = await client.observability.perf({ area: 'metrics', ...selection });
   assert.deepEqual(Object.keys(explicitMetrics.metrics as Record<string, unknown>).sort(), [
@@ -987,16 +1087,19 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
   assert.equal(diff.baselineInitialized, false);
   assert.deepEqual(diff.summary, { additions: 0, removals: 0, unchanged: 3 });
 
-  const rotate = await client.command.rotate({
+  const rotate = await client.command.orientation({
     orientation: 'landscape-left',
     ...selection,
   });
-  assert.equal(rotate.action, 'rotate');
+  assert.equal(rotate.action, 'orientation');
   assert.equal(rotate.orientation, 'landscape-left');
 
   const appSwitcher = await client.command.appSwitcher(selection);
   assert.equal(appSwitcher.action, 'app-switcher');
 
+  // ADR 0014: rotate + app-switcher expired the frame, so re-observe before
+  // acting through a ref again (the mock re-captures the same tree).
+  await client.capture.snapshot({ interactiveOnly: true, ...selection });
   const press = await client.interactions.press({ ref: `@${apps.ref}`, ...selection });
   assert.equal(press.x, 88);
   assert.equal(press.y, 151);
@@ -1013,6 +1116,8 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
   assert.equal(heldPress.holdMs, 5);
   assert.equal(heldPress.jitterPx, 1);
 
+  // ADR 0014: the press + held coordinate press expired the frame — re-observe.
+  await client.capture.snapshot({ interactiveOnly: true, ...selection });
   const click = await client.interactions.click({ ref: `@${apps.ref}`, ...selection });
   assert.equal(click.x, 88);
   assert.equal(click.y, 151);
@@ -1034,6 +1139,8 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     false,
   );
 
+  // ADR 0014: the ref click expired the frame — re-observe before filling.
+  await client.capture.snapshot({ interactiveOnly: true, ...selection });
   const fill = await client.interactions.fill({
     ref: `@${search.ref}`,
     text: 'Display',
@@ -1066,6 +1173,15 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     pattern: 'ping-pong',
     ...selection,
   });
+  assert.deepEqual(swipe.from, { x: 20, y: 200 });
+  assert.deepEqual(swipe.to, { x: 20, y: 100 });
+  assert.equal(swipe.x1, 20);
+  assert.equal(swipe.y1, 200);
+  assert.equal(swipe.x2, 20);
+  assert.equal(swipe.y2, 100);
+  assert.equal(swipe.durationMs, 100);
+  assert.equal(swipe.effectiveDurationMs, 100);
+  assert.equal(swipe.timingMode, 'direct');
   assert.equal(swipe.count, 2);
   assert.equal(swipe.pauseMs, 1);
   assert.equal(swipe.pattern, 'ping-pong');
@@ -1078,10 +1194,10 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     durationMs: 400,
     ...selection,
   });
-  assert.equal(pan.x, 100);
-  assert.equal(pan.y, 200);
-  assert.equal(pan.x2, 150);
-  assert.equal(pan.y2, 180);
+  assert.equal(pan.kind, 'pan');
+  assert.equal(pan.pointerCount, 1);
+  assert.deepEqual(pan.from, { x: 100, y: 200 });
+  assert.deepEqual(pan.to, { x: 150, y: 180 });
   assert.equal(pan.durationMs, 400);
 
   const fling = await client.interactions.fling({
@@ -1091,12 +1207,11 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     distance: 180,
     ...selection,
   });
-  assert.equal(fling.direction, 'right');
-  assert.equal(fling.x, 100);
-  assert.equal(fling.y, 200);
-  assert.equal(fling.x2, 280);
-  assert.equal(fling.y2, 200);
-  assert.equal(fling.distance, 180);
+  assert.equal(fling.kind, 'fling');
+  assert.equal(fling.pointerCount, 1);
+  assert.deepEqual(fling.from, { x: 100, y: 200 });
+  assert.deepEqual(fling.to, { x: 280, y: 200 });
+  assert.equal(fling.durationMs, 100);
 
   const batch = await client.batch.run({
     steps: [
@@ -1118,6 +1233,10 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     [
       'snapshot -i',
       'press @e2 Apps --count 2 --interval-ms 1',
+      // ADR 0014: the ref press expired the frame, so the script re-observes
+      // before mutating through another ref (a legacy multi-ref-from-one-snapshot
+      // script would now fail closed).
+      'snapshot -i',
       'fill @e3 Search "Network"',
       'get text @e3 Search',
       '',
@@ -1128,7 +1247,7 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     update: true,
     ...selection,
   });
-  assert.equal(updateReplay.replayed, 4);
+  assert.equal(updateReplay.replayed, 5);
   assert.equal(updateReplay.healed, 0);
 
   const replayEnvPath = path.join(tempRoot, 'settings-env.ad');
@@ -1142,6 +1261,36 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     ...selection,
   });
   assert.equal(replayEnv.replayed, 3);
+
+  // ADR 0012 step 5: replay resume. A full run diverges at step 2 (a
+  // selector matching nothing); the report's resume object carries the plan
+  // digest. Resuming at the next index after the failed step (the documented
+  // "completed the failed action manually" loop) skips steps 1-2 without
+  // executing them and replays only the tail.
+  const resumePath = path.join(tempRoot, 'settings-resume.ad');
+  fs.writeFileSync(
+    resumePath,
+    ['snapshot -i', 'press label="NoSuchControl"', 'get text @e3 Search', ''].join('\n'),
+  );
+  const divergenceError = await client.replay.run({ path: resumePath, ...selection }).then(
+    () => null,
+    (error: unknown) => error as { code?: string; details?: Record<string, unknown> },
+  );
+  assert.ok(divergenceError, 'expected the replay to diverge on the missing selector');
+  assert.equal(divergenceError.code, 'REPLAY_DIVERGENCE');
+  const divergenceReport = divergenceError.details?.divergence as {
+    resume: { allowed: boolean; from: number; planDigest: string };
+  };
+  assert.equal(divergenceReport.resume.allowed, true);
+  assert.equal(divergenceReport.resume.from, 2);
+  assert.match(divergenceReport.resume.planDigest, /^[0-9a-f]{64}$/);
+  const resumedReplay = await client.replay.run({
+    path: resumePath,
+    resumeFrom: divergenceReport.resume.from + 1,
+    resumePlanDigest: divergenceReport.resume.planDigest,
+    ...selection,
+  });
+  assert.equal(resumedReplay.replayed, 1);
 
   const screenshot = await client.capture.screenshot({
     path: screenshotPath,
@@ -1176,7 +1325,22 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
   assert.equal(beforeCloseOpen.appBundleId, 'com.example.demo');
   const logsBeforeClose = await client.observability.logs({ action: 'start', ...selection });
   assert.equal(logsBeforeClose.started, true);
+
+  // close --save-script now requires the session to have been armed at open (recording-time
+  // target-v1 evidence cannot be reconstructed retroactively for a session that never recorded
+  // it). End this long-lived unarmed session plainly, then arm a fresh one before exercising
+  // close --save-script + shutdown below.
+  const plainCloseBeforeArm = await daemon.callCommand('close');
+  assert.equal(plainCloseBeforeArm.statusCode, 200, JSON.stringify(plainCloseBeforeArm.json));
+  assert.equal(daemon.session(), undefined);
+
   const savedReplayPath = path.join(tempRoot, 'saved-session.ad');
+  const armedOpen = await client.apps.open({
+    app: 'com.example.demo',
+    saveScript: savedReplayPath,
+    ...selection,
+  });
+  assert.equal(armedOpen.appBundleId, 'com.example.demo');
   const close = await daemon.callCommand('close', [], {
     saveScript: savedReplayPath,
     shutdown: true,
@@ -1303,7 +1467,7 @@ function assertAndroidPushAndEventContract(world: AndroidSettingsWorld): void {
     '-a',
     'android.intent.action.VIEW',
     '-d',
-    'demo://agent-device/event?name=pre_open_ping&payload=%7B%22stage%22%3A%22explicit-selector%22%7D&platform=android',
+    "'demo://agent-device/event?name=pre_open_ping&payload=%7B%22stage%22%3A%22explicit-selector%22%7D&platform=android'",
   ]);
   assertCommandCall(adbCalls, [
     'shell',
@@ -1313,7 +1477,7 @@ function assertAndroidPushAndEventContract(world: AndroidSettingsWorld): void {
     '-a',
     'android.intent.action.VIEW',
     '-d',
-    'demo://agent-device/event?name=screenshot_taken&payload=%7B%22source%22%3A%22provider-scenario%22%2C%22foreground%22%3Atrue%7D&platform=android',
+    "'demo://agent-device/event?name=screenshot_taken&payload=%7B%22source%22%3A%22provider-scenario%22%2C%22foreground%22%3Atrue%7D&platform=android'",
     '-p',
     'com.example.demo',
   ]);
@@ -1383,13 +1547,26 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
   assert.ok(
     adbCalls.some(
       (call) =>
-        arrayEqual(call, ['exec-out', 'uiautomator', 'dump', '/dev/tty']) ||
-        (call[0] === 'shell' &&
-          call[1] === 'am' &&
-          call[2] === 'instrument' &&
-          call.includes('com.callstack.agentdevice.snapshothelper/.SnapshotInstrumentation')),
+        call[0] === 'shell' &&
+        call[1] === 'am' &&
+        call[2] === 'instrument' &&
+        call.includes('com.callstack.agentdevice.snapshothelper/.SnapshotInstrumentation'),
     ),
     JSON.stringify(adbCalls),
+  );
+  assert.deepEqual(
+    world.touchInjectionCalls.map((plan) => ({
+      intent: plan.intent,
+      durationMs: plan.durationMs,
+    })),
+    [
+      { intent: 'longPress', durationMs: 5 },
+      { intent: 'longPress', durationMs: 5 },
+      { intent: 'fling', durationMs: 100 },
+      { intent: 'fling', durationMs: 100 },
+      { intent: 'pan', durationMs: 400 },
+      { intent: 'fling', durationMs: 100 },
+    ],
   );
   assertCommandCall(adbCalls, ['shell', 'input', 'tap', '88', '151']);
   assertCommandCall(adbCalls, [
@@ -1407,12 +1584,6 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
     2,
   );
   assertCommandCall(adbCalls, ['shell', 'input', 'tap', '50', '60']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '30', '40', '30', '40', '5']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '31', '40', '31', '40', '5']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '200', '20', '100', '250']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '100', '20', '200', '250']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '150', '180', '400']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '280', '200', '50']);
   assert.equal(
     adbCalls.filter((call) => arrayEqual(call, ['shell', 'input', 'tap', '88', '151'])).length,
     5,

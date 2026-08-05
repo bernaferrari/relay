@@ -1,14 +1,19 @@
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { publicPlatformString } from '../../kernel/device.ts';
+import {
+  dispatchCommand,
+  dispatchGesturePlan,
+  dispatchGestureViewport,
+} from '../../core/dispatch.ts';
+import { publicPlatformString } from '@agent-device/kernel/device';
 import type {
   AgentDeviceBackend,
   BackendActionResult,
   BackendSnapshotResult,
 } from '../../backend.ts';
 import { createAgentDevice } from '../../runtime.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type { SessionState } from '../types.ts';
 import { setSessionSnapshot } from '../session-snapshot.ts';
+import { expireRefFrame } from '../ref-frame.ts';
 import type { InteractionHandlerParams } from './interaction-common.ts';
 import type { CaptureSnapshotForSession } from './interaction-snapshot.ts';
 import { createDaemonRuntimePolicy } from '../runtime-policy.ts';
@@ -16,12 +21,18 @@ import { createDaemonRuntimeSessionStore } from '../runtime-session.ts';
 import { resolveWebProvider, type WebProvider } from '../../platforms/web/provider.ts';
 import { stripAtPrefix } from './interaction-touch-targets.ts';
 import { NO_ACTIVE_SESSION_MESSAGE } from './response.ts';
+import type { Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
+import { getRequestSignal } from '../../request/cancel.ts';
+import { buildAppleRunnerRequestOptions } from '../apple-runner-options.ts';
+import { isLocalIosRunnerSession } from '../direct-ios-selector.ts';
+import { confirmIosOffscreenTargetVisible } from '../offscreen-target-probe.ts';
 
-export function createInteractionRuntime(
-  params: InteractionHandlerParams & {
-    captureSnapshotForSession: CaptureSnapshotForSession;
-  },
-) {
+type InteractionRuntimeParams = InteractionHandlerParams & {
+  captureSnapshotForSession: CaptureSnapshotForSession;
+  pairedGestureViewport?: Rect;
+};
+
+export function createInteractionRuntime(params: InteractionRuntimeParams) {
   const session = params.sessionStore.get(params.sessionName);
   if (!session) throw new AppError('SESSION_NOT_FOUND', NO_ACTIVE_SESSION_MESSAGE);
   return createAgentDevice({
@@ -30,26 +41,31 @@ export function createInteractionRuntime(
     sessions: createDaemonRuntimeSessionStore({
       sessionName: params.sessionName,
       getSession: () => session,
-      recordOptions: { includeSnapshot: true },
+      recordOptions: {
+        includeSnapshot: true,
+        // ADR 0014: a mutating find's internal dispatch already re-resolved its
+        // target by locator against the fresh capture, so it resolves against the
+        // observation, not the authorized frame tree.
+        omitRefFrameSnapshot: params.req.internal?.findResolvedTarget === true,
+      },
       setRecord: (record) => {
         if (!record.snapshot) return;
         setSessionSnapshot(session, record.snapshot);
         params.sessionStore.set(params.sessionName, session);
       },
     }),
+    signal: getRequestSignal(params.req.meta?.requestId),
   });
 }
 
 function createInteractionBackend(
-  params: InteractionHandlerParams & { session: SessionState } & {
-    captureSnapshotForSession: CaptureSnapshotForSession;
-  },
+  params: InteractionRuntimeParams & { session: SessionState },
 ): AgentDeviceBackend {
   const { req, session } = params;
   const webProvider = resolveNativeWebInteractionProvider(session);
   return {
     platform: publicPlatformString(session.device),
-    captureSnapshot: async (_context, options): Promise<BackendSnapshotResult> => ({
+    captureSnapshot: async (context, options): Promise<BackendSnapshotResult> => ({
       snapshot: await params.captureSnapshotForSession(
         session,
         req.flags,
@@ -58,11 +74,42 @@ function createInteractionBackend(
         {
           interactiveOnly: options?.interactiveOnly === true,
           includeRects: options?.includeRects === true,
+          signal: context.signal,
         },
       ),
     }),
-    tap: async (_context, point): Promise<BackendActionResult> =>
-      toBackendActionResult(
+    resolveGestureViewport: async () =>
+      params.pairedGestureViewport ??
+      (await dispatchGestureViewport(
+        session.device,
+        params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
+      )),
+    // #1542: iOS-only escape hatch for the off-screen refusal double-check.
+    // Local (non-provider) iOS sessions get a direct, AX-tree-independent
+    // probe (deliberately NOT skipped while postGestureStabilization is
+    // pending — see isLocalIosRunnerSession); every other platform/session
+    // omits this field, so the guard's decision stays exactly what it is
+    // today (fail closed).
+    confirmOffscreenTargetVisible: isLocalIosRunnerSession(session, {
+      skipPendingPostGestureStabilization: false,
+    })
+      ? async (_context, node: Pick<SnapshotNode, 'identifier' | 'label'>, rootViewport) =>
+          await confirmIosOffscreenTargetVisible({
+            session,
+            node,
+            rootViewport,
+            requestOptions: buildAppleRunnerRequestOptions({
+              req,
+              logPath: params.logPath,
+              traceLogPath: session.trace?.outPath,
+            }),
+          })
+      : undefined,
+    tap: async (_context, point): Promise<BackendActionResult> => {
+      // ADR 0014 side-effect seam: the point is resolved; expire the ref frame
+      // synchronously before dispatching so a later step cannot reuse it.
+      expireRefFrame(session);
+      return toBackendActionResult(
         await dispatchCommand(
           session.device,
           'press',
@@ -70,15 +117,18 @@ function createInteractionBackend(
           req.flags?.out,
           params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
         ),
-      ),
+      );
+    },
     tapTarget: webProvider?.clickRef
       ? async (_context, target): Promise<BackendActionResult> => {
+          expireRefFrame(session);
           await webProvider.clickRef?.(target.ref);
           return { ref: stripAtPrefix(target.ref) };
         }
       : undefined,
-    fill: async (_context, point, text): Promise<BackendActionResult> =>
-      toBackendActionResult(
+    fill: async (_context, point, text): Promise<BackendActionResult> => {
+      expireRefFrame(session);
+      return toBackendActionResult(
         await dispatchCommand(
           session.device,
           'fill',
@@ -86,9 +136,11 @@ function createInteractionBackend(
           req.flags?.out,
           params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
         ),
-      ),
+      );
+    },
     fillTarget: webProvider?.fillRef
       ? async (_context, target, text, options): Promise<BackendActionResult> => {
+          expireRefFrame(session);
           await webProvider.fillRef?.(target.ref, text, options);
           return {
             ref: stripAtPrefix(target.ref),
@@ -97,8 +149,9 @@ function createInteractionBackend(
           };
         }
       : undefined,
-    longPress: async (_context, point, options): Promise<BackendActionResult> =>
-      toBackendActionResult(
+    longPress: async (_context, point, options): Promise<BackendActionResult> => {
+      expireRefFrame(session);
+      return toBackendActionResult(
         await dispatchCommand(
           session.device,
           'longpress',
@@ -110,9 +163,21 @@ function createInteractionBackend(
           req.flags?.out,
           params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
         ),
-      ),
-    typeText: async (_context, text): Promise<BackendActionResult> =>
-      toBackendActionResult(
+      );
+    },
+    performGesture: async (_context, plan): Promise<BackendActionResult> => {
+      expireRefFrame(session);
+      return toBackendActionResult(
+        await dispatchGesturePlan(
+          session.device,
+          plan,
+          params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
+        ),
+      );
+    },
+    typeText: async (_context, text): Promise<BackendActionResult> => {
+      expireRefFrame(session);
+      return toBackendActionResult(
         await dispatchCommand(
           session.device,
           'type',
@@ -120,7 +185,8 @@ function createInteractionBackend(
           req.flags?.out,
           params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
         ),
-      ),
+      );
+    },
   };
 }
 

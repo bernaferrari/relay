@@ -121,10 +121,28 @@ test('Provider-backed integration Linux desktop flow uses semantic desktop and i
             positionals: ['42', '84', '1'],
           },
           {
-            name: 'swipe coordinates',
-            command: 'swipe',
-            positionals: ['10', '20', '30', '40', '16'],
-            expectData: { timingMode: 'direct' },
+            name: 'pan coordinates',
+            command: 'gesture',
+            input: {
+              kind: 'pan',
+              origin: { x: 10, y: 20 },
+              delta: { x: 20, y: 20 },
+              durationMs: 16,
+            },
+            expectData: {
+              kind: 'pan',
+              durationMs: 16,
+              pointerCount: 1,
+              from: { x: 10, y: 20 },
+              to: { x: 30, y: 40 },
+            },
+          },
+          {
+            // ADR 0014: the earlier ref press (and the coordinate gestures)
+            // expired the frame, so re-observe before the next ref mutation.
+            name: 're-observe before the next ref mutation',
+            command: 'snapshot',
+            flags: { snapshotInteractiveOnly: true },
           },
           {
             name: 'fill snapshot ref',

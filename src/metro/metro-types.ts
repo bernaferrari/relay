@@ -1,28 +1,11 @@
-import type { SessionRuntimeHints } from '../kernel/contracts.ts';
+import type { SessionRuntimeHints } from '@agent-device/kernel/contracts';
 
 /** Re-export of {@link SessionRuntimeHints} under the Metro-specific alias used by public API consumers. */
 export type MetroRuntimeHints = SessionRuntimeHints;
 
-export type MetroBridgeResult = {
-  enabled: boolean;
-  baseUrl: string;
-  statusUrl: string;
-  bundleUrl: string;
-  iosRuntime: MetroRuntimeHints;
-  androidRuntime: MetroRuntimeHints;
-  upstream: {
-    bundleUrl: string;
-    host: string;
-    port: number;
-    statusUrl: string;
-  };
-  probe: {
-    reachable: boolean;
-    statusCode: number;
-    latencyMs: number;
-    detail: string;
-  };
-};
+// The bridge RESULT shape is declared in contracts/metro.ts, because the public prepare result
+// embeds it and that shape had to move below both `metro/` and the command surface.
+export type { MetroBridgeResult } from '@agent-device/contracts/remote';
 
 export type MetroBridgeRuntimePayload = {
   metro_host?: string;

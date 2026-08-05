@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { resolveIosSimulatorDeviceSetPath } from '../../../../utils/device-isolation.ts';
 import { emitDiagnostic } from '../../../../utils/diagnostics.ts';
-import { isProcessAlive } from '../../../../utils/process-identity.ts';
+import { isProcessAlive } from '../../../../utils/host-process.ts';
 import { parseBooleanLiteral } from '../../../../utils/source-value.ts';
-import type { DeviceInfo } from '../../../../kernel/device.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { ExecResult } from '../../../../utils/exec.ts';
 import { sendRunnerCommandOnce } from './runner-transport.ts';
 import { withRunnerCommandId } from './runner-contract.ts';

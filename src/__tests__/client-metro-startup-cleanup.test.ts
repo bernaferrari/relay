@@ -9,12 +9,12 @@ vi.mock('../utils/exec.ts', () => ({
   runCmdSync: vi.fn(),
 }));
 
-vi.mock('../utils/process-identity.ts', () => ({
+vi.mock('../utils/host-process.ts', () => ({
   waitForProcessExit: vi.fn(),
 }));
 
 import { runCmdDetached } from '../utils/exec.ts';
-import { waitForProcessExit } from '../utils/process-identity.ts';
+import { waitForProcessExit } from '../utils/host-process.ts';
 import { prepareMetroRuntime } from '../metro/client-metro.ts';
 
 afterEach(() => {
@@ -64,7 +64,7 @@ test('prepareMetroRuntime stops a spawned Metro process when startup readiness t
 
     const expectedFailure = assert.rejects(
       preparePromise,
-      /Metro did not become ready at http:\/\/127\.0\.0\.1:8081\/status within 30000ms/,
+      /React Native dev server did not become ready at http:\/\/127\.0\.0\.1:8081\/status within 30000ms/,
     );
     await vi.advanceTimersByTimeAsync(30_000);
     await expectedFailure;

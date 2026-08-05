@@ -1,11 +1,10 @@
-import { AppError } from '../../kernel/errors.ts';
-import type { SnapshotOptions } from '../../kernel/snapshot.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { execFailureDetails } from '../../utils/exec.ts';
 import {
   parseInstrumentationRecords,
   readInstrumentationResultBoolean,
   readInstrumentationResultNumber,
 } from './instrumentation-helper.ts';
-import { parseUiHierarchy } from './ui-hierarchy.ts';
 import {
   ANDROID_SNAPSHOT_HELPER_COMMAND_OVERHEAD_MS,
   ANDROID_SNAPSHOT_HELPER_OUTPUT_FORMAT,
@@ -18,8 +17,11 @@ import type {
   AndroidSnapshotHelperCaptureOptions,
   AndroidSnapshotHelperMetadata,
   AndroidSnapshotHelperOutput,
-  AndroidSnapshotHelperParsedSnapshot,
 } from './snapshot-helper-types.ts';
+import {
+  recoverAndroidSnapshotHelperRetirement,
+  retireCanceledAndroidSnapshotHelperCapture,
+} from './snapshot-helper-retirement.ts';
 
 type AndroidSnapshotHelperChunk = {
   index: number | undefined;
@@ -49,21 +51,49 @@ export async function captureAndroidSnapshotWithHelper(
   options: AndroidSnapshotHelperCaptureOptions,
 ): Promise<AndroidSnapshotHelperOutput> {
   const resolved = resolveAndroidSnapshotHelperCaptureOptions(options);
-  const result = await options.adb(buildAndroidSnapshotHelperArgs(resolved), {
-    allowFailure: true,
-    timeoutMs: resolved.commandTimeoutMs,
+  const deviceKey = options.deviceKey ?? 'android:default';
+  await recoverAndroidSnapshotHelperRetirement({
+    deviceKey,
+    adb: options.adb,
+    signal: options.signal,
   });
+  let result: Awaited<ReturnType<AndroidSnapshotHelperCaptureOptions['adb']>>;
+  try {
+    result = await options.adb(buildAndroidSnapshotHelperArgs(resolved), {
+      allowFailure: true,
+      timeoutMs: resolved.commandTimeoutMs,
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (!options.signal?.aborted) throw error;
+    await retireCanceledAndroidSnapshotHelperCapture({
+      deviceKey,
+      packageName: resolved.packageName,
+      adb: options.adb,
+      cause: error,
+    });
+    options.signal.throwIfAborted();
+    throw error;
+  }
+  if (options.signal?.aborted) {
+    await retireCanceledAndroidSnapshotHelperCapture({
+      deviceKey,
+      packageName: resolved.packageName,
+      adb: options.adb,
+      cause: options.signal.reason,
+    });
+    options.signal.throwIfAborted();
+  }
   const { output, cleanupDone } = await readAndroidSnapshotHelperOutput(options, resolved, result);
   if (resolved.outputPath && !cleanupDone) {
     await removeHelperOutputFile(options.adb, resolved.outputPath);
   }
   if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', 'Android snapshot helper failed', {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      helper: output.metadata,
-    });
+    throw new AppError(
+      'COMMAND_FAILED',
+      'Android snapshot helper failed',
+      execFailureDetails(result, { helper: output.metadata }),
+    );
   }
   return output;
 }
@@ -156,6 +186,8 @@ async function readFallbackHelperOutputOrThrow(
   if (error instanceof AppError && result.exitCode !== 0 && error.details?.helper) throw error;
   const fileOutput = await readFallbackHelperOutputFile(options, resolved, result);
   if (fileOutput) return { output: fileOutput, cleanupDone: true };
+  // exec-guard-allow: reachable at exit 0 (helper output unparseable); the
+  // message already branches on the exit code.
   throw new AppError(
     'COMMAND_FAILED',
     result.exitCode === 0
@@ -265,20 +297,6 @@ export function parseAndroidSnapshotHelperOutput(output: string): AndroidSnapsho
   return {
     xml,
     metadata: { ...readHelperMetadata(finalResult), transport: 'instrumentation' },
-  };
-}
-
-export function parseAndroidSnapshotHelperXml(
-  xml: string,
-  metadata: AndroidSnapshotHelperMetadata = {
-    outputFormat: ANDROID_SNAPSHOT_HELPER_OUTPUT_FORMAT,
-  },
-  options: SnapshotOptions = {},
-  maxNodes?: number,
-): AndroidSnapshotHelperParsedSnapshot {
-  return {
-    ...parseUiHierarchy(xml, maxNodes, options),
-    metadata,
   };
 }
 
@@ -426,11 +444,6 @@ function readOptionalCaptureMode(
 ): AndroidSnapshotHelperMetadata['captureMode'] {
   return value === 'interactive-windows' || value === 'active-window' ? value : undefined;
 }
-
-export {
-  readInstrumentationResultNumber as readAndroidSnapshotHelperMetadataNumber,
-  readInstrumentationResultBoolean as readAndroidSnapshotHelperMetadataBoolean,
-};
 
 const readOptionalNumber = readInstrumentationResultNumber;
 const readOptionalBoolean = readInstrumentationResultBoolean;

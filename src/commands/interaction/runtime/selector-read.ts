@@ -1,36 +1,30 @@
 import {
+  FIND_VALUE_REQUIRED_MESSAGE,
   findBestMatchesByLocator,
-  parseFindSelectorExpression,
-  type FindAction,
-  type FindLocator,
-} from '../../../utils/finders.ts';
-import type { SnapshotNode } from '../../../kernel/snapshot.ts';
-import { findNodeByRef, normalizeRef } from '../../../kernel/snapshot.ts';
-import {
-  isSparseSnapshotQualityVerdict,
-  type SnapshotQualityVerdict,
-} from '../../../snapshot/snapshot-quality.ts';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
-import { AppError } from '../../../kernel/errors.ts';
-import { parseSelectorChain, type SelectorChain } from '../../../utils/selectors-parse.ts';
-import {
   findSelectorChainMatch,
   formatSelectorFailure,
   resolveSelectorChain,
-} from '../../../daemon/selectors.ts';
-import { buildSelectorChainForNode } from '../../../utils/selector-build.ts';
-import {
+  selectorFailureHint,
+  buildSelectorChainForNode,
+  checkIsPredicate,
   evaluateIsPredicate,
-  isSupportedPredicate,
-  type IsPredicate,
-} from '../../../utils/selector-is-predicates.ts';
+  IS_TEXT_VALUE_REQUIRED_MESSAGE,
+  readSelectorAlternatives,
+  parseFindSelectorExpression,
+  type FindAction,
+  type FindLocator,
+} from '@agent-device/selectors';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import { isSparseSnapshotQualityVerdict } from '../../../snapshot/snapshot-quality.ts';
+import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import type {
   ElementTarget,
-  RefTarget,
   ResolvedTarget,
   SelectorTarget,
-} from '../../../contracts/interaction.ts';
+} from '@agent-device/contracts/interaction';
 import type { RuntimeCommand } from '../../runtime-types.ts';
+import { assertExpectedResolvedTarget, type ExpectedResolvedTarget } from './resolution.ts';
 import {
   type CapturedSnapshot,
   type SelectorSnapshotOptions,
@@ -39,11 +33,29 @@ import {
   requireSnapshotSession,
   resolveRefNode,
 } from './selector-read-shared.ts';
-import { findNodeByLabel, resolveRefLabel, shouldScopeFind } from './selector-read-utils.ts';
-import { now, sleep, toBackendContext } from '../../runtime-common.ts';
+import { findSnapshotScope, sparseSelectorSnapshotError } from './selector-read-utils.ts';
+import { deriveSelectorCapturePolicy } from './selector-capture-policy.ts';
+import { createWaitPolling, type WaitPollDeadline, waitTimeoutError } from './wait-polling.ts';
+import {
+  createSelectorWaitCommands,
+  type WaitCommandOptions,
+  type WaitCommandResult,
+  type WaitForTextCommandOptions,
+} from './selector-wait.ts';
+import {
+  DEFAULT_STABLE_QUIET_MS,
+  runStableCaptureLoop,
+  TINY_STABLE_TREE_HINT,
+  TINY_STABLE_TREE_NODE_COUNT,
+} from './stable-capture.ts';
 
 export type { SelectorSnapshotOptions } from './selector-read-shared.ts';
-export type { ElementTarget, RefTarget, ResolvedTarget, SelectorTarget };
+export type {
+  WaitCommandOptions,
+  WaitCommandResult,
+  WaitForTextCommandOptions,
+} from './selector-wait.ts';
+export type { ElementTarget, ResolvedTarget, SelectorTarget };
 
 export type FindReadCommandOptions = CommandContext & {
   locator?: FindLocator;
@@ -61,6 +73,8 @@ export type GetCommandOptions = CommandContext &
   SelectorSnapshotOptions & {
     property: 'text' | 'attrs';
     target: ElementTarget;
+    /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
+    expectedResolvedTarget?: ExpectedResolvedTarget;
   };
 
 export type GetCommandResult =
@@ -70,12 +84,16 @@ export type GetCommandResult =
       text: string;
       node: SnapshotNode;
       selectorChain?: string[];
+      /** ADR 0012 decision 3: the tree `node` was resolved from, for record-time evidence. */
+      preActionNodes: SnapshotNode[];
     }
   | {
       kind: 'attrs';
       target: ResolvedTarget;
       node: SnapshotNode;
       selectorChain?: string[];
+      /** ADR 0012 decision 3: the tree `node` was resolved from, for record-time evidence. */
+      preActionNodes: SnapshotNode[];
     };
 
 export type GetTextCommandOptions = CommandContext &
@@ -90,9 +108,11 @@ export type GetAttrsCommandOptions = CommandContext &
 
 export type IsCommandOptions = CommandContext &
   SelectorSnapshotOptions & {
-    predicate: 'visible' | 'hidden' | 'exists' | 'editable' | 'selected' | 'text';
+    predicate: 'visible' | 'hidden' | 'exists' | 'editable' | 'selected' | 'focused' | 'text';
     selector: string;
     expectedText?: string;
+    /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
+    expectedResolvedTarget?: ExpectedResolvedTarget;
   };
 
 export type IsCommandResult = {
@@ -102,47 +122,34 @@ export type IsCommandResult = {
   matches?: number;
   text?: string;
   selectorChain?: string[];
+  /** ADR 0012 decision 3 / #1349: the resolved node and its tree, for record-time evidence (absent for `exists`). */
+  node?: SnapshotNode;
+  preActionNodes?: SnapshotNode[];
 };
-
-export type WaitCommandOptions = CommandContext &
-  SelectorSnapshotOptions & {
-    target:
-      | { kind: 'sleep'; durationMs: number }
-      | { kind: 'text'; text: string; timeoutMs?: number | null }
-      | { kind: 'ref'; ref: string; timeoutMs?: number | null }
-      | { kind: 'selector'; selector: string; timeoutMs?: number | null };
-  };
-
-export type WaitCommandResult =
-  | { kind: 'sleep'; waitedMs: number }
-  | { kind: 'text'; waitedMs: number; text: string }
-  | { kind: 'selector'; waitedMs: number; selector: string };
-
-export type WaitForTextCommandOptions = CommandContext &
-  SelectorSnapshotOptions & {
-    text: string;
-    timeoutMs?: number | null;
-  };
 
 export type IsSelectorCommandOptions = CommandContext &
   SelectorSnapshotOptions & {
     target: SelectorTarget;
   };
 
-export function selector(expression: string): SelectorTarget {
-  return { kind: 'selector', selector: expression };
-}
+const selectorWaitCommands = createSelectorWaitCommands<AgentDeviceRuntime>({
+  captureSnapshot: captureSelectorSnapshot,
+  requireSnapshot: requireSnapshotSession,
+  stable: {
+    defaultQuietMs: DEFAULT_STABLE_QUIET_MS,
+    tinyTreeHint: TINY_STABLE_TREE_HINT,
+    tinyTreeNodeCount: TINY_STABLE_TREE_NODE_COUNT,
+    capture: runStableCaptureLoop,
+  },
+});
 
-export function ref(refInput: string, options: { fallbackLabel?: string } = {}): RefTarget {
-  return {
-    kind: 'ref',
-    ref: refInput,
-    ...(options.fallbackLabel ? { fallbackLabel: options.fallbackLabel } : {}),
-  };
-}
+export const waitCommand: RuntimeCommand<WaitCommandOptions, WaitCommandResult> =
+  selectorWaitCommands.waitCommand;
 
-const DEFAULT_TIMEOUT_MS = 10_000;
-const POLL_INTERVAL_MS = 300;
+export const waitForTextCommand: RuntimeCommand<
+  WaitForTextCommandOptions,
+  Extract<WaitCommandResult, { kind: 'text' }>
+> = selectorWaitCommands.waitForTextCommand;
 
 export const findCommand: RuntimeCommand<FindReadCommandOptions, FindReadCommandResult> = async (
   runtime,
@@ -150,7 +157,7 @@ export const findCommand: RuntimeCommand<FindReadCommandOptions, FindReadCommand
 ): Promise<FindReadCommandResult> => {
   const locator = options.locator ?? 'any';
   if (!options.query) {
-    throw new AppError('INVALID_ARGS', 'find requires a value');
+    throw new AppError('INVALID_ARGS', FIND_VALUE_REQUIRED_MESSAGE);
   }
   if (options.action === 'wait') {
     return await waitForFindMatch(runtime, options, locator);
@@ -179,24 +186,39 @@ export const getCommand: RuntimeCommand<GetCommandOptions, GetCommandResult> = a
       invalidRefMessage: 'get text requires a ref like @e2',
       notFoundMessage: `Ref ${options.target.ref} not found`,
     });
+    assertExpectedResolvedTarget(
+      resolved.node,
+      capture.snapshot.nodes,
+      options.expectedResolvedTarget,
+      'get',
+    );
     const selectorChain = buildSelectorChainForNode(resolved.node, runtime.backend.platform, {
       action: 'get',
+      nodes: capture.snapshot.nodes,
     });
     const target = { kind: 'ref' as const, ref: `@${resolved.ref}` };
+    const preActionNodes = capture.snapshot.nodes;
     if (options.property === 'attrs') {
-      return { kind: 'attrs', target, node: resolved.node, selectorChain };
+      return { kind: 'attrs', target, node: resolved.node, selectorChain, preActionNodes };
     }
     const text = await readText(runtime, capture, resolved.node);
-    return { kind: 'text', target, text, node: resolved.node, selectorChain };
+    return { kind: 'text', target, text, node: resolved.node, selectorChain, preActionNodes };
   }
 
   const resolved = await resolveSelectorNode(runtime, options, options.session ?? 'default', {
     selector: options.target.selector,
     disambiguateAmbiguous: options.property === 'text',
   });
+  assertExpectedResolvedTarget(
+    resolved.node,
+    resolved.capture.snapshot.nodes,
+    options.expectedResolvedTarget,
+    'get',
+  );
 
   const selectorChain = buildSelectorChainForNode(resolved.node, runtime.backend.platform, {
     action: 'get',
+    nodes: resolved.capture.snapshot.nodes,
   });
 
   if (options.property === 'attrs') {
@@ -205,6 +227,7 @@ export const getCommand: RuntimeCommand<GetCommandOptions, GetCommandResult> = a
       target: { kind: 'selector', selector: resolved.selector },
       node: resolved.node,
       selectorChain,
+      preActionNodes: resolved.capture.snapshot.nodes,
     };
   }
 
@@ -215,6 +238,7 @@ export const getCommand: RuntimeCommand<GetCommandOptions, GetCommandResult> = a
     text,
     node: resolved.node,
     selectorChain,
+    preActionNodes: resolved.capture.snapshot.nodes,
   };
 };
 
@@ -252,54 +276,70 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
   runtime,
   options,
 ): Promise<IsCommandResult> => {
-  if (!isSupportedPredicate(options.predicate)) {
-    throw new AppError(
-      'INVALID_ARGS',
-      'is requires predicate: visible|hidden|exists|editable|selected|text',
-    );
+  const admitted = checkIsPredicate(options.predicate);
+  if (!admitted.ok) throw new AppError(admitted.code, admitted.message, { hint: admitted.hint });
+  // Admission normalizes case, so every decision below reads the ADMITTED value: the raw
+  // option would send an uppercase predicate past the gate and then evaluate it against
+  // lower-case branches, admitting `EXISTS`/`TEXT` and returning the wrong answer.
+  const predicate = admitted.predicate;
+  if (predicate === 'text' && !options.expectedText) {
+    throw new AppError('INVALID_ARGS', IS_TEXT_VALUE_REQUIRED_MESSAGE);
   }
-  if (options.predicate === 'text' && !options.expectedText) {
-    throw new AppError('INVALID_ARGS', 'is text requires expected text value');
-  }
-  const includeRects = predicateNeedsRects(options.predicate);
+  const selectorExpression = options.selector;
   const capture = await captureSelectorSnapshot(runtime, options, {
     updateSession: true,
-    includeRects,
+    ...deriveSelectorCapturePolicy(predicate),
   });
-  const chain = parseSelectorChain(options.selector);
 
-  if (options.predicate === 'exists') {
-    const matched = findSelectorChainMatch(capture.snapshot.nodes, chain, {
+  if (predicate === 'exists') {
+    const matched = findSelectorChainMatch(capture.snapshot.nodes, selectorExpression, {
       platform: runtime.backend.platform,
     });
     if (!matched) {
-      throw new AppError('COMMAND_FAILED', formatSelectorFailure(chain, [], { unique: false }));
+      throw new AppError(
+        'COMMAND_FAILED',
+        formatSelectorFailure(selectorExpression, [], { unique: false }),
+        {
+          hint: selectorFailureHint([]),
+        },
+      );
     }
     return {
-      predicate: options.predicate,
+      predicate: predicate,
       pass: true,
-      selector: matched.selector.raw,
+      selector: matched.selector,
       matches: matched.matches,
-      selectorChain: chain.selectors.map((entry) => entry.raw),
+      selectorChain: readSelectorAlternatives(selectorExpression),
     };
   }
 
-  const resolved = resolveSelectorChain(capture.snapshot.nodes, chain, {
+  const resolved = resolveSelectorChain(capture.snapshot.nodes, selectorExpression, {
     platform: runtime.backend.platform,
     requireRect: false,
     requireUnique: true,
     disambiguateAmbiguous: false,
   });
   if (!resolved) {
-    throw new AppError('COMMAND_FAILED', formatSelectorFailure(chain, [], { unique: true }), {
-      command: 'is',
-      reason: 'selector_not_found',
-      predicate: options.predicate,
-      selector: chain.raw,
-    });
+    throw new AppError(
+      'COMMAND_FAILED',
+      formatSelectorFailure(selectorExpression, [], { unique: true }),
+      {
+        command: 'is',
+        reason: 'selector_not_found',
+        predicate: predicate,
+        selector: selectorExpression,
+        hint: selectorFailureHint([]),
+      },
+    );
   }
+  assertExpectedResolvedTarget(
+    resolved.node,
+    capture.snapshot.nodes,
+    options.expectedResolvedTarget,
+    'is',
+  );
   const result = evaluateIsPredicate({
-    predicate: options.predicate,
+    predicate: predicate,
     node: resolved.node,
     nodes: capture.snapshot.nodes,
     expectedText: options.expectedText,
@@ -308,22 +348,24 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
   if (!result.pass) {
     throw new AppError(
       'COMMAND_FAILED',
-      `is ${options.predicate} failed for selector ${resolved.selector.raw}: ${result.details}`,
+      `is ${predicate} failed for selector ${resolved.selector}: ${result.details}`,
       {
         command: 'is',
         reason: 'predicate_failed',
-        predicate: options.predicate,
-        selector: resolved.selector.raw,
+        predicate: predicate,
+        selector: resolved.selector,
         predicateDetails: result.details,
       },
     );
   }
   return {
-    predicate: options.predicate,
+    predicate: predicate,
     pass: true,
-    selector: resolved.selector.raw,
-    ...(options.predicate === 'text' ? { text: result.actualText } : {}),
-    selectorChain: chain.selectors.map((entry) => entry.raw),
+    selector: resolved.selector,
+    ...(predicate === 'text' ? { text: result.actualText } : {}),
+    selectorChain: readSelectorAlternatives(selectorExpression),
+    node: resolved.node,
+    preActionNodes: capture.snapshot.nodes,
   };
 };
 
@@ -347,81 +389,53 @@ export const isHiddenCommand: RuntimeCommand<IsSelectorCommandOptions, IsCommand
     selector: options.target.selector,
   });
 
-export const waitCommand: RuntimeCommand<WaitCommandOptions, WaitCommandResult> = async (
-  runtime,
-  options,
-): Promise<WaitCommandResult> => {
-  if (options.target.kind === 'sleep') {
-    await sleep(runtime, options.target.durationMs);
-    return { kind: 'sleep', waitedMs: options.target.durationMs };
-  }
-  if (options.target.kind === 'ref') {
-    const capture = await requireSnapshotSession(runtime, options.session);
-    const ref = normalizeRef(options.target.ref);
-    if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${options.target.ref}`);
-    const node = findNodeByRef(capture.snapshot.nodes, ref);
-    const text = node ? resolveRefLabel(node, capture.snapshot.nodes) : undefined;
-    if (!text) {
-      throw new AppError('COMMAND_FAILED', `Ref ${options.target.ref} not found or has no label`);
-    }
-    return await waitForText(runtime, options, text, options.target.timeoutMs);
-  }
-  if (options.target.kind === 'selector') {
-    return await waitForSelector(
-      runtime,
-      options,
-      options.target.selector,
-      options.target.timeoutMs,
-    );
-  }
-  if (!options.target.text) throw new AppError('INVALID_ARGS', 'wait requires text');
-  return await waitForText(runtime, options, options.target.text, options.target.timeoutMs);
-};
-
-export const waitForTextCommand: RuntimeCommand<
-  WaitForTextCommandOptions,
-  Extract<WaitCommandResult, { kind: 'text' }>
-> = async (runtime, options): Promise<Extract<WaitCommandResult, { kind: 'text' }>> => {
-  const result = await waitCommand(runtime, {
-    ...options,
-    target: { kind: 'text', text: options.text, timeoutMs: options.timeoutMs },
-  });
-  if (result.kind !== 'text') {
-    throw new AppError('COMMAND_FAILED', 'waitForText returned non-text result');
-  }
-  return result;
-};
-
 async function waitForFindMatch(
   runtime: AgentDeviceRuntime,
   options: FindReadCommandOptions,
   locator: FindLocator,
 ): Promise<FindReadCommandResult> {
-  const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const start = now(runtime);
-  while (now(runtime) - start < timeout) {
-    const { match } = await findFirstLocatorMatch(runtime, options, locator);
-    if (match) return { kind: 'found', found: true, waitedMs: now(runtime) - start };
-    await sleep(runtime, POLL_INTERVAL_MS);
+  const polling = createWaitPolling(runtime, options, options.timeoutMs);
+  let deadline: WaitPollDeadline | undefined;
+  while (polling.hasTimeRemaining()) {
+    // A presence check never consumes scroll hints, so every poll skips deriving them —
+    // otherwise a single pathological `dumpsys activity top` call can eat the whole wait
+    // budget from inside this loop (#1270).
+    const poll = await polling.capture(
+      async (signal) =>
+        await findFirstLocatorMatch(runtime, { ...options, signal }, locator, {
+          includeHiddenContentHints: false,
+        }),
+    );
+    if (poll.timedOut) {
+      deadline = poll.deadline;
+      break;
+    }
+    if (poll.value?.match) {
+      return { kind: 'found', found: true, waitedMs: polling.waitedMs() };
+    }
+    await polling.sleepUntilNextPoll();
   }
-  throw new AppError('COMMAND_FAILED', 'find wait timed out');
+  throw waitTimeoutError('find wait timed out', polling, deadline);
 }
 
 async function findFirstLocatorMatch(
   runtime: AgentDeviceRuntime,
   options: FindReadCommandOptions,
   locator: FindLocator,
+  captureOverrides?: { includeHiddenContentHints?: boolean },
 ): Promise<{ capture: CapturedSnapshot; match: SnapshotNode | undefined }> {
-  const selectorChain = parseFindSelectorExpression(locator, options.query);
+  const selectorExpression = parseFindSelectorExpression(locator, options.query);
   const capture = await captureSelectorSnapshot(runtime, options, {
     updateSession: true,
-    scope: findSnapshotScope(runtime, locator, options.query, selectorChain),
+    scope: findSnapshotScope(runtime.backend.platform, locator, options.query, selectorExpression),
+    includeHiddenContentHints: captureOverrides?.includeHiddenContentHints,
+    ...deriveSelectorCapturePolicy(),
   });
   if (isSparseSnapshotQualityVerdict(capture.snapshot.snapshotQuality)) {
     throw sparseSelectorSnapshotError(capture.snapshot.snapshotQuality);
   }
-  if (selectorChain) {
-    const resolved = resolveSelectorChain(capture.snapshot.nodes, selectorChain, {
+  if (selectorExpression) {
+    const resolved = resolveSelectorChain(capture.snapshot.nodes, selectorExpression, {
       platform: runtime.backend.platform,
       requireRect: false,
       requireUnique: false,
@@ -432,76 +446,6 @@ async function findFirstLocatorMatch(
     requireRect: false,
   }).matches[0];
   return { capture, match };
-}
-
-function findSnapshotScope(
-  runtime: AgentDeviceRuntime,
-  locator: FindLocator,
-  query: string,
-  selectorChain: SelectorChain | null,
-): string | undefined {
-  if (selectorChain) return undefined;
-  if (runtime.backend.platform === 'web') return undefined;
-  return shouldScopeFind(locator) ? query : undefined;
-}
-
-function sparseSelectorSnapshotError(verdict: SnapshotQualityVerdict): AppError {
-  return new AppError('COMMAND_FAILED', 'find could not read the current accessibility tree', {
-    reason: verdict.reason,
-    hint: 'The snapshot quality verdict is sparse. Use screenshot as visual truth, navigate with coordinates if needed, then retry find after reaching a readable screen.',
-  });
-}
-
-function predicateNeedsRects(predicate: IsPredicate): boolean {
-  return predicate === 'visible' || predicate === 'hidden';
-}
-
-async function waitForSelector(
-  runtime: AgentDeviceRuntime,
-  options: WaitCommandOptions,
-  selectorExpression: string,
-  timeoutMs: number | null | undefined,
-): Promise<WaitCommandResult> {
-  const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const start = now(runtime);
-  const chain = parseSelectorChain(selectorExpression);
-  while (now(runtime) - start < timeout) {
-    const capture = await captureSelectorSnapshot(runtime, options, { updateSession: true });
-    const match = findSelectorChainMatch(capture.snapshot.nodes, chain, {
-      platform: runtime.backend.platform,
-    });
-    if (match)
-      return { kind: 'selector', selector: match.selector.raw, waitedMs: now(runtime) - start };
-    await sleep(runtime, POLL_INTERVAL_MS);
-  }
-  throw new AppError('COMMAND_FAILED', `wait timed out for selector: ${selectorExpression}`);
-}
-
-async function waitForText(
-  runtime: AgentDeviceRuntime,
-  options: WaitCommandOptions,
-  text: string,
-  timeoutMs: number | null | undefined,
-): Promise<WaitCommandResult> {
-  const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const start = now(runtime);
-  while (now(runtime) - start < timeout) {
-    const found = runtime.backend.findText
-      ? (await runtime.backend.findText(toBackendContext(runtime, options), text)).found
-      : await snapshotContainsText(runtime, options, text);
-    if (found) return { kind: 'text', text, waitedMs: now(runtime) - start };
-    await sleep(runtime, POLL_INTERVAL_MS);
-  }
-  throw new AppError('COMMAND_FAILED', `wait timed out for text: ${text}`);
-}
-
-async function snapshotContainsText(
-  runtime: AgentDeviceRuntime,
-  options: WaitCommandOptions,
-  text: string,
-): Promise<boolean> {
-  const capture = await captureSelectorSnapshot(runtime, options, { updateSession: true });
-  return Boolean(findNodeByLabel(capture.snapshot.nodes, text));
 }
 
 async function resolveSelectorNode(
@@ -515,22 +459,28 @@ async function resolveSelectorNode(
     { ...options, session: sessionName },
     {
       updateSession: true,
+      ...deriveSelectorCapturePolicy(),
     },
   );
-  const chain = parseSelectorChain(params.selector);
-  const resolved = resolveSelectorChain(capture.snapshot.nodes, chain, {
+  const resolved = resolveSelectorChain(capture.snapshot.nodes, params.selector, {
     platform: runtime.backend.platform,
     requireRect: false,
     requireUnique: true,
     disambiguateAmbiguous: params.disambiguateAmbiguous,
   });
   if (!resolved) {
-    throw new AppError('COMMAND_FAILED', formatSelectorFailure(chain, [], { unique: true }));
+    throw new AppError(
+      'COMMAND_FAILED',
+      formatSelectorFailure(params.selector, [], { unique: true }),
+      {
+        hint: selectorFailureHint([]),
+      },
+    );
   }
   return {
     capture,
     node: resolved.node,
-    selector: resolved.selector.raw,
+    selector: resolved.selector,
     ref: `@${resolved.node.ref}`,
   };
 }

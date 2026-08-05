@@ -1,8 +1,8 @@
 import { runAndroidAdb } from '../platforms/android/adb.ts';
 import { getSimulatorState, shutdownSimulator } from '../platforms/apple/core/simulator.ts';
-import type { TargetShutdownResult } from '../target-shutdown-contract.ts';
-import type { DeviceInfo } from '../kernel/device.ts';
-import { normalizeError } from '../kernel/errors.ts';
+import type { TargetShutdownResult } from '@agent-device/contracts/device';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { normalizeError } from '@agent-device/kernel/errors';
 import { isAndroidEmulator, isIosSimulator } from './device-targets.ts';
 
 export type DeviceTargetShutdownResult = TargetShutdownResult;
@@ -71,7 +71,7 @@ async function shutdownAndroidEmulator(device: DeviceInfo): Promise<DeviceTarget
   return {
     success: result.exitCode === 0,
     exitCode: result.exitCode,
-    stdout: String(result.stdout ?? ''),
-    stderr: String(result.stderr ?? ''),
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
 }

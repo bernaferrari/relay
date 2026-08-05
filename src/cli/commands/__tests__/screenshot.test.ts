@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { createAgentDeviceClient } from '../../../client/client.ts';
-import type { DaemonResponse } from '../../../kernel/contracts.ts';
-import type { CliFlags } from '../../parser/cli-flags.ts';
+import { createAgentDeviceClient } from '../../../agent-device-client.ts';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
+import type { CliFlags } from '@agent-device/contracts/command';
 import { screenshotCommand } from '../screenshot.ts';
 
 async function captureStdout(fn: () => Promise<unknown>): Promise<string> {
@@ -40,7 +40,7 @@ test('screenshot --level digest --json preserves the digest payload through the 
     path: '/tmp/shot.png',
     overlayCount: 2,
     overlayRefs: [{ ref: 'e1', label: 'Login' }],
-    artifacts: [{ field: 'path', artifactId: 'a1' }],
+    artifacts: [{ field: 'path', artifactType: 'screenshot', artifactId: 'a1' }],
   };
   const client = clientReturning(digest, 'digest');
   const flags = { json: true, responseLevel: 'digest' } as CliFlags;
@@ -53,17 +53,26 @@ test('screenshot --level digest --json preserves the digest payload through the 
   assert.deepEqual(parsed.data, digest);
 });
 
-test('screenshot --json at the default level still emits the normalized { path, overlayRefs } shape', async () => {
+test('screenshot --json at the default level still emits normalized screenshot metadata', async () => {
   const full = {
     path: '/tmp/shot.png',
+    width: 402,
+    height: 874,
+    logicalWidth: 402,
+    logicalHeight: 874,
+    pixelDensity: 1,
     overlayRefs: [{ ref: 'e1', label: 'Login', x: 0, y: 0, width: 10, height: 10 }],
   };
   const client = clientReturning(full);
   const flags = { json: true } as CliFlags;
 
   const out = await captureStdout(() => screenshotCommand({ positionals: [], flags, client }));
-  const parsed = JSON.parse(out) as { data: { path: string; overlayCount?: number } };
+  const parsed = JSON.parse(out) as {
+    data: { path: string; width?: number; pixelDensity?: number };
+  };
 
   assert.equal(parsed.data.path, '/tmp/shot.png');
+  assert.equal(parsed.data.width, 402);
+  assert.equal(parsed.data.pixelDensity, 1);
   assert.ok(!('overlayCount' in parsed.data));
 });

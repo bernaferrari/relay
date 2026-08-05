@@ -1,20 +1,28 @@
 import { parseWaitPositionals } from '../core/wait-positionals.ts';
 import type { WaitParsed } from '../core/wait-positionals.ts';
-import { AppError, asAppError, normalizeError } from '../kernel/errors.ts';
-import type { SnapshotNode } from '../kernel/snapshot.ts';
+import { AppError, asAppError, normalizeError } from '@agent-device/kernel/errors';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { runAppleRunnerCommand } from '../platforms/apple/core/runner/runner-client.ts';
-import { buildAppleRunnerRequestOptions } from './apple-runner-options.ts';
+import {
+  buildAppleRunnerRequestOptions,
+  type AppleRunnerRequestOptions,
+} from './apple-runner-options.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from './types.ts';
 import { errorResponse, requireCommandSupported } from './handlers/response.ts';
+import { markSessionPartialRefsIssued, resolveRefStalenessWarning } from './session-snapshot.ts';
 import { resolveSessionDevice, withSessionlessRunnerCleanup } from './handlers/snapshot-session.ts';
-import { parseFindArgs, type FindAction } from '../utils/finders.ts';
-import { splitIsSelectorArgs } from './selectors.ts';
-import { refSnapshotFlagGuardResponse } from './handlers/interaction-flags.ts';
 import {
+  checkElementTargetArgs,
+  checkGetFormat,
+  checkIsArgs,
+  checkWaitText,
+  checkFindArgs,
   evaluateIsPredicate,
-  isSupportedPredicate,
+  isReadOnlyFindAction,
   type IsPredicate,
-} from '../utils/selector-is-predicates.ts';
+} from '@agent-device/selectors';
+import { refSnapshotFlagGuardResponse } from './handlers/interaction-flags.ts';
+import { parseVersionedRefPositional } from './handlers/interaction-touch-targets.ts';
 import {
   describeAndroidEscapeSurface,
   detectAndroidEscapeSurface,
@@ -23,12 +31,16 @@ import {
   buildFindRecordResult,
   buildGetRecordResult,
   recordIfSession,
+  stripResolutionPayload,
   stripSelectorChain,
   toDaemonFindData,
   toDaemonGetData,
   toDaemonWaitData,
 } from './selector-recording.ts';
+import type { RecordedTargetCapture } from './session-target-evidence.ts';
+import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
 import { maybeWaitTimeoutSurfaceResponse } from './wait-current-surface.ts';
+import { withSystemSurfaceDisclosure } from './handlers/system-surface-disclosure.ts';
 import {
   isDirectIosSelectorFallbackError,
   readSimpleIosSelectorTarget,
@@ -40,7 +52,7 @@ import {
   type SelectorRuntimeParams,
 } from './selector-runtime-backend.ts';
 
-type DirectIosSelectorQueryResult = {
+export type DirectIosSelectorQueryResult = {
   found: boolean;
   text?: string;
   node?: SnapshotNode;
@@ -68,12 +80,9 @@ export async function dispatchFindReadOnlyViaRuntime(
   const { req } = params;
   if (req.command !== 'find') return null;
   const args = req.positionals ?? [];
-  if (args.length === 0) return errorResponse('INVALID_ARGS', 'find requires a locator or text');
-  const parsed = parseFindArgs(args);
-  if (!parsed.query) return errorResponse('INVALID_ARGS', 'find requires a value');
-  if (req.flags?.findFirst && req.flags?.findLast) {
-    return errorResponse('INVALID_ARGS', 'find accepts only one of --first or --last');
-  }
+  const checked = checkFindArgs(args, req.flags);
+  if (!checked.ok) return errorResponse(checked.code, checked.message);
+  const parsed = checked.parsed;
   const action = parsed.action;
   if (!isReadOnlyFindAction(action)) return null;
 
@@ -83,7 +92,7 @@ export async function dispatchFindReadOnlyViaRuntime(
   });
   if (!resolvedRuntime.ok) return resolvedRuntime.response;
 
-  return await toDaemonResponse(async () => {
+  const response = await toDaemonResponse(async () => {
     const result = await resolvedRuntime.runtime.selectors.find({
       session: params.sessionName,
       requestId: req.meta?.requestId,
@@ -98,8 +107,35 @@ export async function dispatchFindReadOnlyViaRuntime(
       req,
       buildFindRecordResult(result, action),
     );
-    return toDaemonFindData(result);
+    const data = toDaemonFindData(result);
+    // #1076 clear choke point: this response returns a ref minted from the
+    // freshly captured (and stored) session snapshot, so the client now holds
+    // refs that match the stored tree again. As a ref-issuing response it also
+    // carries the stored tree's generation ONCE (`refsGeneration`) so clients
+    // can pin the ref (`@e12~s3`).
+    if (typeof data.ref === 'string') {
+      const session = params.sessionStore.get(params.sessionName);
+      if (session) {
+        // ADR 0014: a read-only find publishes exactly its one returned ref, so
+        // it activates a PARTIAL frame authorizing only that ref body.
+        markSessionPartialRefsIssued(session, [data.ref]);
+        params.sessionStore.set(params.sessionName, session);
+        if (session.snapshotGeneration !== undefined) {
+          return { ...data, refsGeneration: session.snapshotGeneration };
+        }
+      }
+    }
+    return data;
   });
+  // The consumed capture was just stored on the session: when it is an occluding system surface,
+  // both found and not-found outcomes must disclose that app content is occluded.
+  return withSystemSurfaceDisclosure(response, consumedSessionSnapshot(params));
+}
+
+function consumedSessionSnapshot(params: SelectorRuntimeParams) {
+  // The capture runtime reports the consumed snapshot directly; sessionless selector routes have
+  // no session record, so the stored-session read is only a fallback for pre-captured snapshots.
+  return params.consumedSnapshot?.state ?? params.sessionStore.get(params.sessionName)?.snapshot;
 }
 
 export async function dispatchGetViaRuntime(
@@ -107,17 +143,19 @@ export async function dispatchGetViaRuntime(
 ): Promise<DaemonResponse | null> {
   const { req } = params;
   if (req.command !== 'get') return null;
-  const sub = req.positionals?.[0];
-  if (sub !== 'text' && sub !== 'attrs') {
-    return errorResponse('INVALID_ARGS', 'get only supports text or attrs');
-  }
+  const format = checkGetFormat(req.positionals?.[0]);
+  if (!format.ok) return errorResponse(format.code, format.message);
+  const sub = format.format;
   const target = parseGetTarget(req);
   if (!target.ok) return target.response;
   if (target.target.kind === 'ref') {
     const invalidRefFlagsResponse = refSnapshotFlagGuardResponse('get', req.flags);
     if (invalidRefFlagsResponse) return invalidRefFlagsResponse;
   }
-  if (target.target.kind === 'selector') {
+  // ADR 0012 step 4: a guarded replay dispatch must resolve through the
+  // snapshot path so the post-resolution identity guard runs.
+  const replayTargetGuard = req.internal?.replayTargetGuard;
+  if (target.target.kind === 'selector' && !replayTargetGuard) {
     const directResponse = await dispatchDirectIosSelectorGet(params, sub, target.target.selector);
     if (directResponse) return directResponse;
   }
@@ -128,21 +166,41 @@ export async function dispatchGetViaRuntime(
   });
   if (!resolvedRuntime.ok) return resolvedRuntime.response;
 
-  return await toDaemonResponse(async () => {
+  // #1076 + ADR 0014: a get @ref binds against the retained ref-frame evidence,
+  // so it never silently retargets to a newer positional tree. Its warning is
+  // frame-derived: once the ref frame has expired any ref gets the frame-derived
+  // warning, else a pinned `@e12~s3` ref whose epoch no longer matches gets the
+  // precise generation-mismatch warning.
+  const staleRefsWarning =
+    target.target.kind === 'ref'
+      ? resolveRefStalenessWarning({
+          session: params.sessionStore.get(params.sessionName),
+          ref: target.target.ref,
+          mintedGeneration: target.refGeneration,
+        })
+      : undefined;
+  const response = await toDaemonResponse(async () => {
     const result = await resolvedRuntime.runtime.selectors.get({
       session: params.sessionName,
       requestId: req.meta?.requestId,
       property: sub,
       target: target.target,
+      expectedResolvedTarget: replayTargetGuard,
     });
     recordIfSession(
       params.sessionStore,
       params.sessionName,
       req,
       buildGetRecordResult(result, sub),
+      {
+        node: result.node,
+        preActionNodes: result.preActionNodes,
+      },
     );
-    return toDaemonGetData(result);
+    const data = toDaemonGetData(result);
+    return staleRefsWarning ? { ...data, warning: staleRefsWarning } : data;
   });
+  return withSystemSurfaceDisclosure(response, consumedSessionSnapshot(params));
 }
 
 export async function dispatchIsViaRuntime(
@@ -150,29 +208,30 @@ export async function dispatchIsViaRuntime(
 ): Promise<DaemonResponse | null> {
   const { req } = params;
   if (req.command !== 'is') return null;
-  const predicate = (req.positionals?.[0] ?? '').toLowerCase();
-  if (!isSupportedPredicate(predicate)) {
+  const checked = checkIsArgs(req.positionals ?? []);
+  if (!checked.ok) {
     return errorResponse(
-      'INVALID_ARGS',
-      'is requires predicate: visible|hidden|exists|editable|selected|text',
+      checked.code,
+      checked.message,
+      checked.hint ? { hint: checked.hint } : undefined,
     );
   }
-  const { split } = splitIsSelectorArgs(req.positionals ?? []);
-  if (!split) return errorResponse('INVALID_ARGS', 'is requires a selector expression');
-  const expectedText = split.rest.join(' ').trim();
-  if (predicate === 'text' && !expectedText) {
-    return errorResponse('INVALID_ARGS', 'is text requires expected text value');
+  const { predicate, expectedText } = checked;
+  const split = { selectorExpression: checked.selectorExpression };
+  // ADR 0012 decision 3 / #1349: recording and a guarded replay dispatch both
+  // require the snapshot path — evidence and the post-resolution identity
+  // guard are computed from the resolution tree.
+  const replayTargetGuard = req.internal?.replayTargetGuard;
+  const recordingSession = params.sessionStore.get(params.sessionName)?.recordSession === true;
+  if (!replayTargetGuard && !recordingSession) {
+    const directResponse = await dispatchDirectIosSelectorIs(
+      params,
+      predicate as IsPredicate,
+      split.selectorExpression,
+      expectedText,
+    );
+    if (directResponse) return directResponse;
   }
-  if (predicate !== 'text' && split.rest.length > 0) {
-    return errorResponse('INVALID_ARGS', `is ${predicate} does not accept trailing values`);
-  }
-  const directResponse = await dispatchDirectIosSelectorIs(
-    params,
-    predicate as IsPredicate,
-    split.selectorExpression,
-    expectedText,
-  );
-  if (directResponse) return directResponse;
 
   const resolvedRuntime = await createSelectorRuntime(params, {
     requireSession: true,
@@ -187,11 +246,17 @@ export async function dispatchIsViaRuntime(
       predicate: predicate as IsPredicate,
       selector: split.selectorExpression,
       expectedText,
+      expectedResolvedTarget: replayTargetGuard,
     });
-    recordIfSession(params.sessionStore, params.sessionName, req, result);
-    return stripSelectorChain(result);
+    const recordedTarget = readRecordedResolutionTarget(result);
+    const strippedResult = stripResolutionPayload(result);
+    recordIfSession(params.sessionStore, params.sessionName, req, strippedResult, recordedTarget);
+    return stripSelectorChain(strippedResult);
   });
-  return await maybeAndroidForegroundBlockerResponse(params, response, `is ${predicate}`);
+  return withSystemSurfaceDisclosure(
+    await maybeAndroidForegroundBlockerResponse(params, response, `is ${predicate}`),
+    consumedSessionSnapshot(params),
+  );
 }
 
 export async function dispatchWaitViaRuntime(
@@ -205,7 +270,11 @@ export async function dispatchWaitViaRuntime(
     const unsupported = requireCommandSupported('wait', device);
     if (unsupported) return unsupported;
   }
-  if (parsed.kind === 'selector') {
+  // ADR 0012 / #1349: recording and a replayed landmark check both need the
+  // snapshot polling path — evidence and the identity comparison are computed
+  // from the resolution tree the direct runner query never captures.
+  const recordedLandmark = req.internal?.replayLandmarkGuard;
+  if (parsed.kind === 'selector' && !recordedLandmark && !session?.recordSession) {
     const directResponse = await dispatchDirectIosSelectorWait({
       ...params,
       session,
@@ -215,6 +284,28 @@ export async function dispatchWaitViaRuntime(
     });
     if (directResponse) return directResponse;
   }
+  // #1076 + ADR 0014: a wait @ref names an element from the retained ref-frame
+  // evidence, and its staleness is frame-derived rather than a property of the
+  // live polling capture the condition is checked against. Once the ref frame
+  // has expired any ref gets the frame-derived warning, else a pinned `@e12~s3`
+  // ref whose epoch no longer matches gets the precise generation-mismatch
+  // warning. The pin is split off HERE so the runtime and recording only ever
+  // see the plain `@e12` form.
+  let waitParsed = parsed;
+  let staleRefsWarning: string | undefined;
+  if (parsed.kind === 'ref') {
+    const versionedRef = parseVersionedRefPositional(parsed.rawRef);
+    if (!versionedRef.ok) return versionedRef.response;
+    waitParsed = { ...parsed, rawRef: versionedRef.ref };
+    staleRefsWarning = resolveRefStalenessWarning({
+      session,
+      ref: versionedRef.ref,
+      mintedGeneration: versionedRef.generation,
+    });
+  }
+  // Wait builds its runtime directly (no createSelectorRuntime), so the consumed-snapshot slot
+  // must be initialized here too or sessionless waits have nowhere to report the capture from.
+  params.consumedSnapshot ??= {};
   const execute = async () => {
     const runtime = createSelectorRuntimeForDevice({
       ...params,
@@ -225,10 +316,19 @@ export async function dispatchWaitViaRuntime(
       const result = await runtime.selectors.wait({
         session: sessionName,
         requestId: req.meta?.requestId,
-        target: toWaitTarget(parsed, session),
+        target: toWaitTarget(waitParsed, session, recordedLandmark),
       });
-      recordIfSession(sessionStore, sessionName, req, result);
-      return toDaemonWaitData(result);
+      const recordedTarget = readRecordedResolutionTarget(result);
+      recordIfSession(
+        sessionStore,
+        sessionName,
+        req,
+        stripResolutionPayload(result),
+        recordedTarget,
+        'landmark',
+      );
+      const data = toDaemonWaitData(result);
+      return staleRefsWarning ? { ...data, warning: staleRefsWarning } : data;
     });
     const enrichedResponse = await maybeWaitTimeoutSurfaceResponse(
       { req, logPath: params.logPath, session, device },
@@ -237,8 +337,39 @@ export async function dispatchWaitViaRuntime(
     // Keep generic wait-surface details first so Android blocker detection can own the top-level message.
     return await maybeAndroidForegroundBlockerResponse(params, enrichedResponse, 'wait');
   };
+  // A pure sleep consumes no capture, so it never earns the system-surface disclosure below.
   if (parsed.kind === 'sleep') return await execute();
-  return await withSessionlessRunnerCleanup(session, device, execute);
+  // Both a satisfied wait and a timeout consumed the polled capture stored on the session:
+  // when it is an occluding system surface, the outcome must disclose the occlusion.
+  return withSystemSurfaceDisclosure(
+    await withSessionlessRunnerCleanup(session, device, execute),
+    consumedSessionSnapshot(params),
+  );
+}
+
+/** ADR 0012 decision 3 / #1349: a wait/is result's resolution payload, when the tree path produced one. */
+function readRecordedResolutionTarget(
+  result: Record<string, unknown>,
+): RecordedTargetCapture | undefined {
+  const node = result.node;
+  const preActionNodes = result.preActionNodes;
+  if (!node || typeof node !== 'object' || !Array.isArray(preActionNodes)) return undefined;
+  return { node: node as SnapshotNode, preActionNodes: preActionNodes as SnapshotNode[] };
+}
+
+function readDirectIosGetSelector(
+  session: SessionState | undefined,
+  property: 'text' | 'attrs',
+  selectorExpression: string,
+): DirectIosSelectorTarget | null {
+  // ADR 0012 decision 3: recording requires the snapshot path so target
+  // evidence can be computed from the resolution tree.
+  if (!session || session.recordSession) return null;
+  const selector = readSimpleIosSelectorTarget({ session, selectorExpression });
+  // get text intentionally disambiguates label/text/value triplets from snapshots; the runner
+  // direct query rejects those ambiguous matches before the shared selector resolver can rank them.
+  if (property === 'text' && selector?.key !== 'id') return null;
+  return selector;
 }
 
 async function dispatchDirectIosSelectorGet(
@@ -247,17 +378,13 @@ async function dispatchDirectIosSelectorGet(
   selectorExpression: string,
 ): Promise<DaemonResponse | null> {
   const session = params.sessionStore.get(params.sessionName);
-  const selector = readSimpleIosSelectorTarget({ session, selectorExpression });
+  const selector = readDirectIosGetSelector(session, property, selectorExpression);
   if (!session || !selector) return null;
-  // get text intentionally disambiguates label/text/value triplets from snapshots; the runner
-  // direct query rejects those ambiguous matches before the shared selector resolver can rank them.
-  if (property === 'text' && selector.key !== 'id') return null;
 
   const result = await queryDirectIosSelectorOrFallback(params, session, selector);
   if (isDirectIosSelectorErrorResult(result)) return result.response;
   if (!result) return null;
-  const directQuery = { session, selector, result };
-  const payload = buildDirectIosGetResult(property, directQuery.selector.raw, directQuery.result);
+  const payload = buildDirectIosGetResult(property, selector.raw, result);
   if (!payload) return null;
   recordIfSession(
     params.sessionStore,
@@ -324,7 +451,7 @@ async function dispatchDirectIosSelectorWait(
     selectorChain: [selector.raw],
   };
   recordIfSession(params.sessionStore, params.sessionName, params.req, payload);
-  const response: DaemonResponse = { ok: true, data: payload };
+  const response: DaemonResponse = { ok: true, data: stripSelectorChain(payload) };
   return await maybeWaitTimeoutSurfaceResponse(
     { req: params.req, logPath: params.logPath, session: params.session, device: params.device },
     response,
@@ -344,10 +471,18 @@ async function resolveDirectIosSelectorQuery(
   return { session, selector, result };
 }
 
-async function queryDirectIosSelector(
-  params: SelectorRuntimeParams,
+/**
+ * The single querySelector client for the local XCTest runner: a live,
+ * tree-independent read (and its found/text/node shape) for exactly one
+ * selector. Decoupled from `SelectorRuntimeParams` on purpose — the offscreen
+ * refusal double-check (`src/daemon/offscreen-target-probe.ts`) reuses this
+ * SAME function from a plain daemon session, not a selector-runtime request,
+ * so it must not depend on that request bag.
+ */
+export async function queryDirectIosSelector(
   session: SessionState,
-  selector: DirectIosSelectorTarget,
+  selector: Pick<DirectIosSelectorTarget, 'key' | 'value'>,
+  requestOptions: AppleRunnerRequestOptions,
 ): Promise<DirectIosSelectorQueryResult> {
   const data = await runAppleRunnerCommand(
     session.device,
@@ -357,11 +492,7 @@ async function queryDirectIosSelector(
       selectorValue: selector.value,
       appBundleId: session.appBundleId,
     },
-    buildAppleRunnerRequestOptions({
-      req: params.req,
-      logPath: params.logPath,
-      traceLogPath: session.trace?.outPath,
-    }),
+    requestOptions,
   );
   const found = data.found === true;
   const node = readDirectIosSelectorNode(data);
@@ -378,7 +509,15 @@ async function queryDirectIosSelectorOrFallback(
   selector: DirectIosSelectorTarget,
 ): Promise<DirectIosSelectorFallbackResult> {
   try {
-    return await queryDirectIosSelector(params, session, selector);
+    return await queryDirectIosSelector(
+      session,
+      selector,
+      buildAppleRunnerRequestOptions({
+        req: params.req,
+        logPath: params.logPath,
+        traceLogPath: session.trace?.outPath,
+      }),
+    );
   } catch (error) {
     if (isDirectIosSelectorFallbackError(error, { allowElementNotFound: true })) return null;
     return { kind: 'error', response: { ok: false, error: normalizeError(error) } };
@@ -395,16 +534,16 @@ function buildDirectIosGetResult(
   property: 'text' | 'attrs',
   selector: string,
   result: DirectIosSelectorQueryResult,
-): Record<string, unknown> | null {
+) {
   if (!result.found || !result.node) return null;
   const base = {
     target: { kind: 'selector' as const, selector },
     node: result.node,
     selectorChain: [selector],
   };
-  if (property === 'attrs') return { kind: 'attrs', ...base };
+  if (property === 'attrs') return { kind: 'attrs' as const, ...base };
   if (typeof result.text !== 'string') return null;
-  return { kind: 'text', ...base, text: result.text };
+  return { kind: 'text' as const, ...base, text: result.text };
 }
 
 function buildDirectIosIsResult(
@@ -444,36 +583,44 @@ function parseGetTarget(req: DaemonRequest):
       target:
         | { kind: 'ref'; ref: string; fallbackLabel?: string }
         | { kind: 'selector'; selector: string };
+      /** Minted generation from a pinned `@e12~s3` ref (#1076), split off the ref. */
+      refGeneration?: number;
     }
   | { ok: false; response: DaemonResponse } {
   const refInput = req.positionals?.[1] ?? '';
   if (refInput.startsWith('@')) {
+    const versionedRef = parseVersionedRefPositional(refInput);
+    if (!versionedRef.ok) return { ok: false, response: versionedRef.response };
     return {
       ok: true,
       target: {
         kind: 'ref',
-        ref: refInput,
+        ref: versionedRef.ref,
         fallbackLabel: req.positionals.length > 2 ? req.positionals.slice(2).join(' ').trim() : '',
       },
+      refGeneration: versionedRef.generation,
     };
   }
-  const selector = req.positionals?.slice(1).join(' ').trim() ?? '';
-  if (!selector) {
-    return {
-      ok: false,
-      response: errorResponse('INVALID_ARGS', 'get requires @ref or selector expression'),
-    };
+  const target = checkElementTargetArgs(req.positionals?.slice(1) ?? []);
+  if (!target.ok) {
+    return { ok: false, response: errorResponse(target.code, target.message) };
   }
+  const selector = 'selector' in target ? target.selector : '';
   return { ok: true, target: { kind: 'selector', selector } };
 }
 
-function toWaitTarget(parsed: WaitParsed, session: SessionState | undefined) {
+function toWaitTarget(
+  parsed: WaitParsed,
+  session: SessionState | undefined,
+  recordedLandmark?: TargetAnnotationV1,
+) {
   if (parsed.kind === 'sleep') return { kind: 'sleep' as const, durationMs: parsed.durationMs };
   if (parsed.kind === 'selector') {
     return {
       kind: 'selector' as const,
       selector: parsed.selectorExpression,
       timeoutMs: parsed.timeoutMs,
+      ...(recordedLandmark ? { recordedLandmark } : {}),
     };
   }
   if (parsed.kind === 'ref') {
@@ -482,8 +629,16 @@ function toWaitTarget(parsed: WaitParsed, session: SessionState | undefined) {
     }
     return { kind: 'ref' as const, ref: parsed.rawRef, timeoutMs: parsed.timeoutMs };
   }
-  if (!parsed.text) throw new AppError('INVALID_ARGS', 'wait requires text');
-  return { kind: 'text' as const, text: parsed.text, timeoutMs: parsed.timeoutMs };
+  if (parsed.kind === 'stable') {
+    return {
+      kind: 'stable' as const,
+      quietMs: parsed.quietMs,
+      timeoutMs: parsed.timeoutMs,
+    };
+  }
+  const waitText = checkWaitText(parsed.text);
+  if (!waitText.ok) throw new AppError(waitText.code, waitText.message);
+  return { kind: 'text' as const, text: waitText.text, timeoutMs: parsed.timeoutMs };
 }
 
 async function toDaemonResponse(
@@ -521,13 +676,5 @@ async function maybeAndroidForegroundBlockerResponse(
       blockedBy: 'android_foreground_surface',
       originalMessage: response.error.message,
     },
-  );
-}
-
-function isReadOnlyFindAction(
-  action: FindAction['kind'],
-): action is 'exists' | 'wait' | 'get_text' | 'get_attrs' {
-  return (
-    action === 'exists' || action === 'wait' || action === 'get_text' || action === 'get_attrs'
   );
 }

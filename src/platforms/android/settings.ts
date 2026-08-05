@@ -1,5 +1,5 @@
-import { AppError } from '../../kernel/errors.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { requireLocationCoordinates } from '../../utils/location-coordinates.ts';
 import {
   summarizeCommandAttemptFailures,
@@ -9,10 +9,11 @@ import {
   parsePermissionAction,
   parsePermissionTarget,
   type SettingOptions,
-} from '../permission-utils.ts';
+} from '@agent-device/contracts/settings';
 import { parseAppearanceAction } from '../appearance.ts';
 import { parseSettingState } from '../setting-state.ts';
 import { runAndroidAdb } from './adb.ts';
+import { androidAdbResultError } from './adb-executor.ts';
 import { resolveAndroidApp } from './app-lifecycle.ts';
 
 const ANDROID_ANIMATION_SCALE_SETTINGS = [
@@ -117,6 +118,8 @@ export async function setAndroidSetting(
         allowFailure: true,
       });
       if (result.exitCode !== 0 || !/\bSuccess\b/i.test(result.stdout)) {
+        // exec-guard-allow: pm clear can exit 0 without printing Success; the
+        // guard also covers that non-exit failure mode.
         throw new AppError(
           'COMMAND_FAILED',
           `Failed to clear Android app data for ${resolved.value}`,
@@ -150,10 +153,16 @@ export async function setAndroidSetting(
       }
       const pmAction = action === 'grant' ? 'grant' : 'revoke';
       if (target.type === 'photos') {
-        await setAndroidPhotoPermission(device, appPackage, pmAction);
+        const permission = await setAndroidPhotoPermission(device, appPackage, pmAction);
+        if (action === 'reset') {
+          await clearAndroidPermissionFlags(device, appPackage, permission);
+        }
         return;
       }
       await runAndroidAdb(device, ['shell', 'pm', pmAction, appPackage, target.value]);
+      if (action === 'reset') {
+        await clearAndroidPermissionFlags(device, appPackage, target.value);
+      }
       return;
     }
     default:
@@ -252,11 +261,7 @@ async function resolveAndroidAppearanceTarget(
     allowFailure: true,
   });
   if (currentResult.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', 'Failed to read current Android appearance', {
-      stdout: currentResult.stdout,
-      stderr: currentResult.stderr,
-      exitCode: currentResult.exitCode,
-    });
+    throw androidAdbResultError('Failed to read current Android appearance', currentResult);
   }
   const current = parseAndroidAppearance(currentResult.stdout, currentResult.stderr);
   if (!current) {
@@ -324,7 +329,7 @@ async function setAndroidPhotoPermission(
   device: DeviceInfo,
   appPackage: string,
   pmAction: 'grant' | 'revoke',
-): Promise<void> {
+): Promise<string> {
   const sdkInt = await getAndroidSdkInt(device);
   const candidates =
     sdkInt !== null && sdkInt >= 33
@@ -336,7 +341,7 @@ async function setAndroidPhotoPermission(
     const result = await runAndroidAdb(device, ['shell', 'pm', pmAction, appPackage, permission], {
       allowFailure: true,
     });
-    if (result.exitCode === 0) return;
+    if (result.exitCode === 0) return permission;
     failures.push({ permission, stderr: result.stderr, exitCode: result.exitCode });
   }
 
@@ -363,19 +368,27 @@ async function setAndroidNotificationPermission(
       allowFailure: true,
     });
     if (action === 'reset') {
-      await runAndroidAdb(
-        device,
-        ['shell', 'pm', 'clear-permission-flags', appPackage, target.permission, 'user-set'],
-        { allowFailure: true },
-      );
-      await runAndroidAdb(
-        device,
-        ['shell', 'pm', 'clear-permission-flags', appPackage, target.permission, 'user-fixed'],
-        { allowFailure: true },
-      );
+      await clearAndroidPermissionFlags(device, appPackage, target.permission);
     }
   }
   await runAndroidAdb(device, ['shell', 'appops', 'set', appPackage, target.appOps, appOpsMode]);
+}
+
+async function clearAndroidPermissionFlags(
+  device: DeviceInfo,
+  appPackage: string,
+  permission: string,
+): Promise<void> {
+  await runAndroidAdb(
+    device,
+    ['shell', 'pm', 'clear-permission-flags', appPackage, permission, 'user-set'],
+    { allowFailure: true },
+  );
+  await runAndroidAdb(
+    device,
+    ['shell', 'pm', 'clear-permission-flags', appPackage, permission, 'user-fixed'],
+    { allowFailure: true },
+  );
 }
 
 async function getAndroidSdkInt(device: DeviceInfo): Promise<number | null> {

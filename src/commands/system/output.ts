@@ -1,8 +1,8 @@
+import type { AppStateCommandResult } from '@agent-device/contracts/device';
 import type {
-  AppStateCommandResult,
   ClipboardCommandResult,
   KeyboardCommandResult,
-} from '../../client/client-types.ts';
+} from '@agent-device/contracts/interaction';
 import type { CliOutput } from '../command-contract.ts';
 import {
   messageCliOutput,
@@ -44,10 +44,11 @@ export const systemCliOutputFormatters = {
   appstate: resultOutput(appStateCliOutput),
   back: messageOutput,
   home: messageOutput,
-  rotate: messageOutput,
+  orientation: messageOutput,
   'app-switcher': messageOutput,
   keyboard: resultOutput(keyboardCliOutput),
   clipboard: resultOutput(clipboardCliOutput),
+  'tv-remote': messageOutput,
 } as const satisfies Record<string, CliOutputFormatter>;
 
 function formatAppState(data: AppStateCommandResult): string | null {

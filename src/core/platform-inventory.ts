@@ -1,43 +1,10 @@
+import { type DeviceInfo } from '@agent-device/kernel/device';
 import {
-  isIosFamily,
-  isMacOs,
-  type DeviceInfo,
-  type DeviceTarget,
-  type PlatformSelector,
-} from '../kernel/device.ts';
-
-export const LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS = ['android', 'apple', 'linux'] as const;
-
-export type DeviceInventoryRequest = {
-  platform?: PlatformSelector;
-  target?: DeviceTarget;
-  deviceName?: string;
-  udid?: string;
-  serial?: string;
-  leaseId?: string;
-  leaseProvider?: string;
-  deviceKey?: string;
-  clientId?: string;
-  iosSimulatorSetPath?: string;
-  androidSerialAllowlist?: string[];
-};
-
-export type DeviceInventoryGroup = 'android' | 'apple' | 'linux' | 'web';
-export type DeviceInventoryGroupCounts = Record<
-  DeviceInventoryGroup,
-  { available: number; booted: number }
->;
-
-// Exported so the web platform-plugin's `discoverDevices` reuses the SAME static
-// device instance instead of carrying a divergent copy.
-export const WEB_DESKTOP_DEVICE: DeviceInfo = {
-  platform: 'web',
-  id: 'agent-browser-chrome',
-  name: 'Agent Browser Chrome',
-  kind: 'device',
-  target: 'desktop',
-  booted: true,
-};
+  LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS,
+  shouldUseHostMacFastPath,
+  WEB_DESKTOP_DEVICE,
+  type DeviceInventoryRequest,
+} from '@agent-device/contracts/device';
 
 export async function listLocalDeviceInventory(
   request: DeviceInventoryRequest,
@@ -59,10 +26,13 @@ export async function listLocalDeviceInventory(
   if (request.platform === 'android') {
     const { listAndroidDevices } = await import('../platforms/android/devices.ts');
     return await listAndroidDevices({
-      serialAllowlist: request.androidSerialAllowlist
-        ? new Set(request.androidSerialAllowlist)
-        : undefined,
+      serialAllowlist: resolveAndroidDiscoverySerialAllowlist(request),
     });
+  }
+
+  if (request.platform === 'vega') {
+    const { listVegaDevices } = await import('../platforms/vega/devices.ts');
+    return await listVegaDevices();
   }
 
   if (request.platform) {
@@ -73,49 +43,35 @@ export async function listLocalDeviceInventory(
     });
   }
 
-  const devices: DeviceInfo[] = [];
-  // Linux local device is appended last so it does not displace
-  // connected Android/Apple devices in implicit auto-selection.
-  for (const platform of LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS) {
-    try {
-      devices.push(...(await listLocalDeviceInventory({ ...request, platform })));
-    } catch {}
-  }
-  return devices;
-}
-
-export function countDeviceInventoryByGroup(devices: DeviceInfo[]): DeviceInventoryGroupCounts {
-  const counts = emptyDeviceInventoryGroupCounts();
-  for (const device of devices) {
-    const group = deviceInventoryGroupForDevice(device);
-    counts[group].available += 1;
-    if (device.booted === true) counts[group].booted += 1;
-  }
-  return counts;
-}
-
-function emptyDeviceInventoryGroupCounts(): DeviceInventoryGroupCounts {
-  return {
-    android: { available: 0, booted: 0 },
-    apple: { available: 0, booted: 0 },
-    linux: { available: 0, booted: 0 },
-    web: { available: 0, booted: 0 },
-  };
-}
-
-function deviceInventoryGroupForDevice(device: DeviceInfo): DeviceInventoryGroup {
-  if (isIosFamily(device) || isMacOs(device)) return 'apple';
-  return device.platform;
-}
-
-// Exported so the Apple platform-plugin's `discoverDevices` reuses the SAME
-// host-mac fast-path predicate instead of carrying a divergent copy.
-export function shouldUseHostMacFastPath(selector: {
-  platform?: PlatformSelector;
-  target?: DeviceTarget;
-}): boolean {
-  return (
-    selector.platform === 'macos' ||
-    (selector.platform === 'apple' && selector.target === 'desktop')
+  // Probed concurrently: each platform shells out to its own toolchain, and
+  // awaiting them in turn made an unfiltered lookup cost their sum — measured
+  // at 6.7s on a host with the Apple, Android and Vega toolchains installed,
+  // most of it spent enumerating platforms the request could not target.
+  //
+  // Results are still concatenated in selector order, so the Linux local device
+  // stays last and does not displace connected Android/Apple devices in
+  // implicit auto-selection.
+  const perPlatform = await Promise.all(
+    LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS.map(async (platform) => {
+      try {
+        const listed = await listLocalDeviceInventory({ ...request, platform });
+        // A platform that answers with anything but a list contributes nothing,
+        // exactly as before: spreading a non-array used to throw into the catch.
+        return Array.isArray(listed) ? listed : [];
+      } catch {
+        return [];
+      }
+    }),
   );
+  return perPlatform.flat();
+}
+
+export function resolveAndroidDiscoverySerialAllowlist(
+  request: DeviceInventoryRequest,
+): ReadonlySet<string> | undefined {
+  const policyAllowlist = request.androidSerialAllowlist;
+  const selectedSerial = request.serial?.trim();
+  if (!selectedSerial) return policyAllowlist ? new Set(policyAllowlist) : undefined;
+  if (!policyAllowlist) return new Set([selectedSerial]);
+  return new Set(policyAllowlist.includes(selectedSerial) ? [selectedSerial] : []);
 }

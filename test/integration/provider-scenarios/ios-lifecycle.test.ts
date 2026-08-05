@@ -13,6 +13,7 @@ import {
   PROVIDER_SCENARIO_IOS_SIMULATOR,
 } from './fixtures.ts';
 import { withProviderScenarioResource } from './harness.ts';
+import { PARALLEL_PROVIDER_SCENARIO_TIMEOUT_MS } from './test-timeouts.ts';
 
 test('Provider-backed integration iOS Settings flow uses scripted simctl and runner providers', async () => {
   await withProviderScenarioResource(
@@ -128,47 +129,78 @@ test('Provider-backed integration iOS Settings flow uses scripted simctl and run
         {
           name: 'pinch current app',
           command: 'gesture',
-          positionals: ['pinch', '0.8', '196', '122'],
-          expectData: { scale: 0.8, x: 196, y: 122 },
+          input: { kind: 'pinch', scale: 0.8, origin: { x: 196, y: 122 } },
+          expectData: {
+            kind: 'pinch',
+            durationMs: 300,
+            pointerCount: 2,
+            from: { x: 196, y: 122 },
+            to: { x: 196, y: 122 },
+          },
         },
         {
           name: 'pan current app',
           command: 'gesture',
-          positionals: ['pan', '196', '122', '80', '0', '500'],
-          expectData: { x: 196, y: 122, dx: 80, dy: 0, x2: 276, y2: 122, durationMs: 500 },
+          input: {
+            kind: 'pan',
+            origin: { x: 196, y: 122 },
+            delta: { x: 80, y: 0 },
+            durationMs: 500,
+          },
+          expectData: {
+            kind: 'pan',
+            durationMs: 500,
+            pointerCount: 1,
+            from: { x: 196, y: 122 },
+            to: { x: 276, y: 122 },
+          },
         },
         {
           name: 'fling current app',
           command: 'gesture',
-          positionals: ['fling', 'right', '196', '122', '180'],
-          expectData: {
+          input: {
+            kind: 'fling',
             direction: 'right',
-            x: 196,
-            y: 122,
-            x2: 376,
-            y2: 122,
+            origin: { x: 196, y: 122 },
             distance: 180,
-            durationMs: 50,
+          },
+          expectData: {
+            kind: 'fling',
+            durationMs: 100,
+            pointerCount: 1,
+            from: { x: 196, y: 122 },
+            to: { x: 376, y: 122 },
           },
         },
         {
           name: 'rotate current app content',
           command: 'gesture',
-          positionals: ['rotate', '35', '196', '122'],
-          expectData: { degrees: 35, x: 196, y: 122, velocity: 1 },
+          input: { kind: 'rotate', degrees: 35, origin: { x: 196, y: 122 } },
+          expectData: {
+            kind: 'rotate',
+            durationMs: 300,
+            pointerCount: 2,
+            from: { x: 196, y: 122 },
+            to: { x: 196, y: 122 },
+          },
         },
         {
           name: 'transform current app content',
           command: 'gesture',
-          positionals: ['transform', '196', '122', '40', '-20', '1.5', '35', '700'],
-          expectData: {
-            x: 196,
-            y: 122,
-            dx: 40,
-            dy: -20,
+          input: {
+            kind: 'transform',
+            origin: { x: 196, y: 122 },
+            delta: { x: 40, y: -20 },
             scale: 1.5,
             degrees: 35,
             durationMs: 700,
+          },
+          expectData: {
+            kind: 'transform',
+            durationMs: 700,
+            pointerCount: 2,
+            from: { x: 196, y: 122 },
+            to: { x: 236, y: 102 },
           },
         },
         {
@@ -267,39 +299,43 @@ test('Provider-backed integration iOS Settings flow uses scripted simctl and run
   );
 });
 
-test('Provider-backed integration iOS regular snapshot preserves fixed bottom tabs after scroll content', async () => {
-  await withProviderScenarioResource(
-    createIosBottomTabsSnapshotWorld,
-    async ({ daemon, runnerTranscript }) => {
-      await daemon.callCommand('open', ['org.reactnavigation.playground'], {
-        platform: 'ios',
-        udid: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
-      });
+test(
+  'Provider-backed integration iOS regular snapshot preserves fixed bottom tabs after scroll content',
+  async () => {
+    await withProviderScenarioResource(
+      createIosBottomTabsSnapshotWorld,
+      async ({ daemon, runnerTranscript }) => {
+        await daemon.callCommand('open', ['org.reactnavigation.playground'], {
+          platform: 'ios',
+          udid: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
+        });
 
-      const snapshot = await daemon.callCommand('snapshot');
-      const data = snapshot.json?.result?.data;
-      const nodes = data?.nodes ?? [];
-      assert.equal(data?.truncated, false);
-      assert.ok(
-        nodes.some((node: { identifier?: string }) => node.identifier === 'article'),
-        JSON.stringify(nodes),
-      );
-      assert.ok(
-        nodes.some((node: { identifier?: string }) => node.identifier === 'contacts'),
-        JSON.stringify(nodes),
-      );
-      assert.ok(
-        nodes.some((node: { identifier?: string }) => node.identifier === 'albums'),
-        JSON.stringify(nodes),
-      );
-      assert.equal(
-        nodes.find((node: { label?: string }) => node.label === 'Contacts')?.hiddenContentBelow,
-        true,
-      );
-      runnerTranscript.assertComplete();
-    },
-  );
-});
+        const snapshot = await daemon.callCommand('snapshot');
+        const data = snapshot.json?.result?.data;
+        const nodes = data?.nodes ?? [];
+        assert.equal(data?.truncated, false);
+        assert.ok(
+          nodes.some((node: { identifier?: string }) => node.identifier === 'article'),
+          JSON.stringify(nodes),
+        );
+        assert.ok(
+          nodes.some((node: { identifier?: string }) => node.identifier === 'contacts'),
+          JSON.stringify(nodes),
+        );
+        assert.ok(
+          nodes.some((node: { identifier?: string }) => node.identifier === 'albums'),
+          JSON.stringify(nodes),
+        );
+        assert.equal(
+          nodes.find((node: { label?: string }) => node.label === 'Contacts')?.hiddenContentBelow,
+          true,
+        );
+        runnerTranscript.assertComplete();
+      },
+    );
+  },
+  PARALLEL_PROVIDER_SCENARIO_TIMEOUT_MS,
+);
 
 test('Provider-backed integration iOS physical reinstall uses scripted devicectl provider', async () => {
   await withProviderScenarioResource(

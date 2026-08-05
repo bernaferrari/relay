@@ -11,16 +11,19 @@ import {
   homeAndroid,
   longPressAndroid,
   pressAndroid,
-  rotateAndroid,
+  pressAndroidTvRemote,
   scrollAndroid,
+  setAndroidOrientation,
   typeAndroid,
 } from '../../platforms/android/input-actions.ts';
 import {
-  pinchAndroid,
-  rotateGestureAndroid,
-  swipeGestureAndroid,
-  transformGestureAndroid,
-} from '../../platforms/android/multitouch-helper.ts';
+  executeAndroidTouchPlan,
+  readAndroidGestureViewport,
+} from '../../platforms/android/touch-executor.ts';
+import {
+  withAndroidAdbProvider,
+  type AndroidAdbProvider,
+} from '../../platforms/android/adb-executor.ts';
 import {
   readAndroidClipboardText,
   writeAndroidClipboardText,
@@ -29,12 +32,17 @@ import { setAndroidSetting } from '../../platforms/android/settings.ts';
 import { snapshotAndroid } from '../../platforms/android/snapshot.ts';
 import { screenshotAndroid } from '../../platforms/android/screenshot.ts';
 import { withDiagnosticTimer } from '../../utils/diagnostics.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import type { Interactor } from '../interactor-types.ts';
-import { snapshotCaptureAnnotationsFrom } from '../../snapshot-capture-annotations.ts';
+import { withMethodScope } from '../../utils/method-scope.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
+import { snapshotCaptureAnnotationsFrom } from '@agent-device/contracts/capture';
 
-export function createAndroidInteractor(device: DeviceInfo): Interactor {
-  return {
+export function createAndroidInteractor(
+  device: DeviceInfo,
+  provider?: AndroidAdbProvider,
+  runnerContext?: Pick<RunnerContext, 'signal'>,
+): Interactor {
+  const interactor: Interactor = {
     open: (app, options) =>
       openAndroidApp(device, app, {
         activity: options?.activity,
@@ -49,32 +57,30 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
       await pressAndroid(device, x, y);
       await pressAndroid(device, x, y);
     },
-    swipe: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
-    pan: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
-    fling: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
     longPress: (x, y, durationMs) => longPressAndroid(device, x, y, durationMs),
     focus: (x, y) => focusAndroid(device, x, y),
     type: (text, delayMs) => typeAndroid(device, text, delayMs),
     fill: (x, y, text, delayMs) => fillAndroid(device, x, y, text, delayMs),
     scroll: (direction, options) => scrollAndroid(device, direction, options),
-    pinch: (scale, x, y) => pinchAndroid(device, { scale, x, y }),
+    performGesture: (plan) => executeAndroidTouchPlan(device, plan),
+    gestureViewport: () => readAndroidGestureViewport(device),
     screenshot: (outPath, options) => screenshotAndroid(device, outPath, options),
     snapshot: async (options) => {
+      const snapshotOptions = options ?? {};
       const result = await withDiagnosticTimer(
         'snapshot_capture',
         async () =>
           await snapshotAndroid(device, {
-            appBundleId: options?.appBundleId,
-            interactiveOnly: options?.interactiveOnly,
-            depth: options?.depth,
-            scope: options?.scope,
-            raw: options?.raw,
+            appBundleId: snapshotOptions.appBundleId,
+            signal: snapshotOptions.signal ?? runnerContext?.signal,
+            interactiveOnly: snapshotOptions.interactiveOnly,
+            depth: snapshotOptions.depth,
+            scope: snapshotOptions.scope,
+            raw: snapshotOptions.raw,
+            includeHiddenContentHints: snapshotOptions.includeHiddenContentHints,
             // appBundleId is present for app-backed daemon sessions; keep the helper warm there,
             // but release it after standalone device snapshots so UiAutomation is not squatted.
-            helperSessionScope: options?.appBundleId ? 'daemon-session' : 'command',
+            helperSessionScope: snapshotOptions.appBundleId ? 'daemon-session' : 'command',
           }),
         { backend: 'android' },
       );
@@ -87,14 +93,16 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
     },
     back: (_mode) => backAndroid(device),
     home: () => homeAndroid(device),
-    rotate: (orientation) => rotateAndroid(device, orientation),
-    rotateGesture: (degrees, x, y, velocity) =>
-      rotateGestureAndroid(device, { degrees, x, y, velocity }),
-    transformGesture: (options) => transformGestureAndroid(device, options),
+    setOrientation: (orientation) => setAndroidOrientation(device, orientation),
     appSwitcher: () => appSwitcherAndroid(device),
+    tvRemote: (button, durationMs) => pressAndroidTvRemote(device, button, durationMs),
     readClipboard: () => readAndroidClipboardText(device),
     writeClipboard: (text) => writeAndroidClipboardText(device, text),
     setSetting: (setting, state, appId, options) =>
       setAndroidSetting(device, setting, state, appId, options),
   };
+  if (!provider) return interactor;
+  return withMethodScope(interactor, (task) =>
+    withAndroidAdbProvider(provider, { serial: device.id }, task),
+  );
 }

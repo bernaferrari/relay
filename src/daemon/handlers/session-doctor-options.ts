@@ -1,8 +1,9 @@
 import { detectProjectRuntimeKind } from '../../utils/project-runtime.ts';
-import { publicPlatformString } from '../../kernel/device.ts';
+import { publicPlatformString } from '@agent-device/kernel/device';
 import type { SessionStore } from '../session-store.ts';
 import type { DaemonRequest, SessionState } from '../types.ts';
-import type { DoctorCheck, DoctorKind, DoctorOptions } from './session-doctor-types.ts';
+import type { DoctorOptions } from './session-doctor-types.ts';
+import type { DoctorCheck, DoctorKind } from '@agent-device/contracts/observability';
 
 const DEFAULT_METRO_HOST = '127.0.0.1';
 const DEFAULT_METRO_PORT = 8081;
@@ -21,6 +22,14 @@ const REMOTE_PROVIDER_FLAG_KEYS = [
   'providerProject',
   'providerBuild',
   'providerSessionName',
+  'providerDeviceOrientation',
+  'providerGeoLocation',
+  'providerTimezone',
+  'providerLanguage',
+  'providerLocale',
+  'providerNetworkProfile',
+  'providerCustomNetwork',
+  'providerNoResignApp',
   'awsProjectArn',
   'awsDeviceArn',
   'awsAppArn',

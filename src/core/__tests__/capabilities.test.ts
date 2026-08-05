@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { isCommandSupportedOnDevice, unsupportedHintForDevice } from '../capabilities.ts';
-import { matchesPlatformSelector, type DeviceInfo } from '../../kernel/device.ts';
+import { matchesPlatformSelector, type DeviceInfo } from '@agent-device/kernel/device';
 import { WEB_DESKTOP_DEVICE } from '../../__tests__/test-utils/index.ts';
 
 const iosSimulator: DeviceInfo = {
@@ -18,6 +18,20 @@ const iosDevice: DeviceInfo = {
   kind: 'device',
 };
 
+const xctestIosDevice: DeviceInfo = {
+  ...iosDevice,
+  id: 'xctest-dev-1',
+  iosPhysicalDeviceBackend: 'xctest',
+};
+
+const iPadOsDevice: DeviceInfo = {
+  platform: 'apple',
+  appleOs: 'ipados',
+  id: 'ipad-dev-1',
+  name: 'iPad',
+  kind: 'device',
+};
+
 const androidDevice: DeviceInfo = {
   platform: 'android',
   id: 'and-1',
@@ -30,6 +44,14 @@ const androidEmulator: DeviceInfo = {
   id: 'emulator-5554',
   name: 'Pixel Emulator',
   kind: 'emulator',
+};
+
+const androidTvEmulator: DeviceInfo = {
+  platform: 'android',
+  id: 'emulator-5556',
+  name: 'Android TV',
+  kind: 'emulator',
+  target: 'tv',
 };
 
 const macOsDevice: DeviceInfo = {
@@ -80,20 +102,11 @@ function assertCommandSupport(commands: string[], checks: SupportCheck[]): void 
 test('device capability matrix stays consistent across shared command groups', () => {
   const scenarios: Array<{ commands: string[]; checks: SupportCheck[] }> = [
     {
-      commands: ['pinch'],
-      checks: [
-        { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: false, label: 'on iOS device' },
-        { device: androidDevice, expected: true, label: 'on Android' },
-        { device: macOsDevice, expected: false, label: 'on macOS' },
-        { device: tvOsSimulator, expected: false, label: 'on tvOS simulator' },
-      ],
-    },
-    {
       commands: ['alert'],
       checks: [
         { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: false, label: 'on iOS device' },
+        { device: iosDevice, expected: true, label: 'on iOS device' },
+        { device: iPadOsDevice, expected: false, label: 'on iPadOS device' },
         { device: androidDevice, expected: true, label: 'on Android' },
         { device: macOsDevice, expected: true, label: 'on macOS' },
       ],
@@ -125,6 +138,16 @@ test('device capability matrix stays consistent across shared command groups', (
       ],
     },
     {
+      commands: ['tv-remote'],
+      checks: [
+        { device: iosSimulator, expected: false, label: 'on iOS sim' },
+        { device: androidDevice, expected: false, label: 'on Android phone' },
+        { device: androidTvEmulator, expected: true, label: 'on Android TV' },
+        { device: macOsDevice, expected: false, label: 'on macOS' },
+        { device: tvOsSimulator, expected: true, label: 'on tvOS simulator' },
+      ],
+    },
+    {
       commands: ['shutdown'],
       checks: [
         { device: iosSimulator, expected: true, label: 'on iOS sim' },
@@ -145,52 +168,12 @@ test('device capability matrix stays consistent across shared command groups', (
       ],
     },
     {
-      commands: ['swipe'],
+      commands: ['gesture', 'swipe'],
       checks: [
         { device: iosSimulator, expected: true, label: 'on iOS sim' },
         { device: iosDevice, expected: true, label: 'on iOS device' },
         { device: androidDevice, expected: true, label: 'on Android' },
         { device: macOsDevice, expected: true, label: 'on macOS' },
-      ],
-    },
-    {
-      commands: ['pan'],
-      checks: [
-        { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: true, label: 'on iOS device' },
-        { device: androidDevice, expected: true, label: 'on Android' },
-        { device: macOsDevice, expected: true, label: 'on macOS' },
-        { device: linuxDevice, expected: true, label: 'on Linux' },
-      ],
-    },
-    {
-      commands: ['fling'],
-      checks: [
-        { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: true, label: 'on iOS device' },
-        { device: androidDevice, expected: true, label: 'on Android' },
-        { device: macOsDevice, expected: true, label: 'on macOS' },
-        { device: linuxDevice, expected: false, label: 'on Linux' },
-      ],
-    },
-    {
-      commands: ['rotate-gesture'],
-      checks: [
-        { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: false, label: 'on iOS device' },
-        { device: androidDevice, expected: true, label: 'on Android' },
-        { device: macOsDevice, expected: false, label: 'on macOS' },
-        { device: tvOsSimulator, expected: false, label: 'on tvOS simulator' },
-      ],
-    },
-    {
-      commands: ['transform-gesture'],
-      checks: [
-        { device: iosSimulator, expected: true, label: 'on iOS sim' },
-        { device: iosDevice, expected: false, label: 'on iOS device' },
-        { device: androidDevice, expected: true, label: 'on Android' },
-        { device: macOsDevice, expected: false, label: 'on macOS' },
-        { device: tvOsSimulator, expected: false, label: 'on tvOS simulator' },
       ],
     },
   ];
@@ -222,7 +205,7 @@ test('core commands support iOS simulator, iOS device, and Android', () => {
       'perf',
       'press',
       'record',
-      'rotate',
+      'orientation',
       'screenshot',
       'scroll',
       'snapshot',
@@ -235,6 +218,60 @@ test('core commands support iOS simulator, iOS device, and Android', () => {
       { device: iosDevice, expected: true, label: 'on iOS device' },
       { device: androidDevice, expected: true, label: 'on Android' },
     ],
+  );
+});
+
+test('Android denies Apple runner preparation until a durable backend exists', () => {
+  assertCommandSupport(
+    ['prepare'],
+    [
+      { device: iosSimulator, expected: true, label: 'on iOS simulator' },
+      { device: macOsDevice, expected: true, label: 'on macOS' },
+      { device: tvOsSimulator, expected: true, label: 'on tvOS simulator' },
+      { device: androidDevice, expected: false, label: 'on Android device' },
+      { device: androidEmulator, expected: false, label: 'on Android emulator' },
+    ],
+  );
+});
+
+test('viewport resizing is admitted only on web, where a backend exists', () => {
+  assertCommandSupport(
+    ['viewport'],
+    [
+      { device: webDevice, expected: true, label: 'on web' },
+      { device: iosSimulator, expected: false, label: 'on iOS simulator' },
+      { device: iosDevice, expected: false, label: 'on iOS device' },
+      { device: macOsDevice, expected: false, label: 'on macOS' },
+      { device: tvOsSimulator, expected: false, label: 'on tvOS simulator' },
+      { device: androidDevice, expected: false, label: 'on Android device' },
+      { device: androidEmulator, expected: false, label: 'on Android emulator' },
+      { device: linuxDevice, expected: false, label: 'on linux' },
+    ],
+  );
+  assert.match(unsupportedHintForDevice('viewport', iosSimulator) ?? '', /--platform web/);
+  assert.equal(unsupportedHintForDevice('viewport', webDevice), undefined);
+});
+
+test('capabilities reject CoreDevice-only commands for XCTest-backed devices', () => {
+  const coreDeviceOnlyCommands = [
+    'apps',
+    'install',
+    'install-from-source',
+    'logs',
+    'perf',
+    'record',
+    'reinstall',
+  ];
+  assertCommandSupport(coreDeviceOnlyCommands, [
+    { device: iosDevice, expected: true, label: 'on CoreDevice' },
+    { device: xctestIosDevice, expected: false, label: 'on XCTest backend' },
+  ]);
+  for (const command of coreDeviceOnlyCommands) {
+    assert.match(unsupportedHintForDevice(command, xctestIosDevice) ?? '', /CoreDevice-backed/);
+  }
+  assertCommandSupport(
+    ['close', 'open', 'screenshot', 'snapshot'],
+    [{ device: xctestIosDevice, expected: true, label: 'on XCTest backend' }],
   );
 });
 
@@ -264,6 +301,7 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
       'scroll',
       'snapshot',
       'swipe',
+      'gesture',
       'trigger-app-event',
       'type',
       'wait',
@@ -277,10 +315,9 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
       'home',
       'install',
       'install-from-source',
-      'pinch',
       'push',
       'reinstall',
-      'rotate',
+      'orientation',
     ],
     [{ device: macOsDevice, expected: false, label: 'on macOS' }],
   );
@@ -312,6 +349,7 @@ test('tvOS follows iOS capability matrix by device kind', () => {
       'back',
       'home',
       'app-switcher',
+      'tv-remote',
       'record',
     ],
     [{ device: tvOsSimulator, expected: true, label: 'on tvOS' }],
@@ -321,19 +359,14 @@ test('tvOS follows iOS capability matrix by device kind', () => {
     [{ device: tvOsSimulator, expected: true, label: 'on tvOS simulator' }],
   );
   assert.equal(
-    isCommandSupportedOnDevice('pinch', tvOsSimulator),
-    false,
-    'pinch on tvOS simulator',
-  );
-  assert.equal(
     isCommandSupportedOnDevice('keyboard', tvOsSimulator),
     false,
     'keyboard on tvOS simulator',
   );
   assert.equal(
-    isCommandSupportedOnDevice('rotate', tvOsSimulator),
+    isCommandSupportedOnDevice('orientation', tvOsSimulator),
     false,
-    'rotate on tvOS simulator',
+    'orientation on tvOS simulator',
   );
 });
 
@@ -375,11 +408,10 @@ test('Linux supports desktop interaction commands and blocks mobile/unsupported 
       'logs',
       'network',
       'perf',
-      'pinch',
       'push',
       'record',
       'reinstall',
-      'rotate',
+      'orientation',
       'settings',
       'shutdown',
       'trigger-app-event',
@@ -420,19 +452,17 @@ test('web supports only the initial browser interaction slice', () => {
       'boot',
       'clipboard',
       'diff',
-      'fling',
+      'gesture',
       'home',
       'install',
       'install-from-source',
       'keyboard',
       'logs',
       'longpress',
-      'pan',
       'perf',
-      'pinch',
       'push',
       'reinstall',
-      'rotate',
+      'orientation',
       'settings',
       'shutdown',
       'swipe',
@@ -467,34 +497,4 @@ test('unknown commands default to supported', () => {
   assert.equal(isCommandSupportedOnDevice('some-future-cmd', iosSimulator), true);
   assert.equal(isCommandSupportedOnDevice('some-future-cmd', androidDevice), true);
   assert.equal(isCommandSupportedOnDevice('some-future-cmd', linuxDevice), true);
-});
-
-test('synthesis gestures carry an actionable unsupported hint at admission', () => {
-  // macOS / tvOS / physical iOS are rejected at admission; the hint redirects to where the
-  // two-finger synthesis path actually works, so callers do not just see a bare "not supported".
-  for (const command of ['pinch', 'rotate-gesture', 'transform-gesture']) {
-    assert.match(
-      unsupportedHintForDevice(command, macOsDevice) ?? '',
-      /multi-touch/i,
-      `${command} macOS hint`,
-    );
-    assert.match(
-      unsupportedHintForDevice(command, tvOsSimulator) ?? '',
-      /touch/i,
-      `${command} tvOS hint`,
-    );
-    assert.match(
-      unsupportedHintForDevice(command, iosDevice) ?? '',
-      /simulator/i,
-      `${command} iOS device hint`,
-    );
-    // Where the gesture IS supported there is nothing to hint.
-    assert.equal(
-      unsupportedHintForDevice(command, iosSimulator),
-      undefined,
-      `${command} iOS sim (supported) hint`,
-    );
-  }
-  // Commands without a hint hook return undefined (admission keeps its generic message).
-  assert.equal(unsupportedHintForDevice('tap', macOsDevice), undefined);
 });

@@ -1,24 +1,26 @@
-import { dispatchCommand, resolveTargetDevice } from '../../core/dispatch.ts';
-import { sleep } from '../../utils/timeouts.ts';
+import { dispatchCommand } from '../../core/dispatch.ts';
 import {
   findBestMatchesByLocator,
-  parseFindArgs,
+  isReadOnlyFindAction,
+  checkFindArgs,
   parseFindSelectorExpression,
   type FindLocator,
-} from '../../utils/finders.ts';
-import { centerOfRect, type SnapshotState } from '../../kernel/snapshot.ts';
+  resolveSelectorChain,
+} from '@agent-device/selectors';
+import { centerOfRect, type SnapshotState } from '@agent-device/kernel/snapshot';
+import { expireRefFrame } from '../ref-frame.ts';
 import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { contextFromFlags } from '../context.ts';
-import { ensureDeviceReady } from '../device-ready.ts';
-import { extractNodeText } from '../../snapshot/snapshot-processing.ts';
 import {
   resolveActionableTouchNode,
   resolveActionableTouchResolution,
 } from '../../core/interaction-targeting.ts';
 import { isSnapshotNodeInteractionBlocked } from '../../snapshot/snapshot-occlusion.ts';
-import { readTextForNode } from './interaction-read.ts';
+import { formatSnapshotLine } from '../../snapshot/snapshot-lines.ts';
+import { readCommandMessage, successText } from '../../utils/success-text.ts';
 import { errorResponse, noActiveSessionError } from './response.ts';
+import { withSystemSurfaceDisclosure } from './system-surface-disclosure.ts';
 import { recordSessionAction } from './handler-utils.ts';
 import { stripInternalInteractionFlags } from '../interaction-outcome-policy.ts';
 import { dispatchFindReadOnlyViaRuntime } from '../selector-runtime.ts';
@@ -27,19 +29,14 @@ import {
   isSparseSnapshotQualityVerdict,
   type SnapshotQualityVerdict,
 } from '../../snapshot/snapshot-quality.ts';
-import { resolveSelectorChain } from '../selectors.ts';
-import type { SelectorChain } from '../../utils/selectors-parse.ts';
-
-export { parseFindArgs } from '../../utils/finders.ts';
-
 type FindContext = {
   req: DaemonRequest;
   sessionName: string;
   logPath: string;
   sessionStore: SessionStore;
   invoke: DaemonInvokeFn;
-  session: ReturnType<SessionStore['get']>;
-  device: NonNullable<ReturnType<SessionStore['get']>>['device'];
+  session: SessionState;
+  device: SessionState['device'];
   command: string;
   locator: FindLocator;
   query: string;
@@ -70,15 +67,20 @@ export async function handleFindCommands(params: {
   if (command !== 'find') return null;
 
   const args = req.positionals ?? [];
-  if (args.length === 0) {
-    return errorResponse('INVALID_ARGS', 'find requires a locator or text');
-  }
-  const { locator, query, action, value, timeoutMs } = parseFindArgs(args);
-  if (!query) {
-    return errorResponse('INVALID_ARGS', 'find requires a value');
-  }
-  if (req.flags?.findFirst && req.flags?.findLast) {
-    return errorResponse('INVALID_ARGS', 'find accepts only one of --first or --last');
+  const checked = checkFindArgs(args, req.flags);
+  if (!checked.ok) return errorResponse(checked.code, checked.message);
+  const { locator, query, action, value } = checked.parsed;
+  // #1271 stage 2: `--record` only means something for an action the
+  // repair-segment exclusion can drop. `find`'s observe-vs-mutate split is a
+  // POSITIONAL, so unlike snapshot/get/is it cannot be settled by the CLI
+  // grammar's per-command `allowedFlags` — it is validated here instead, before
+  // any device work, so every surface (CLI/Node/MCP) inherits the same refusal
+  // rather than silently ignoring the flag on a mutating find.
+  if (req.flags?.record && !isReadOnlyFindAction(action)) {
+    return errorResponse(
+      'INVALID_ARGS',
+      `find ${action} is a mutating action and is always recorded; --record only applies to a read-only find (exists, wait, get text, get attrs).`,
+    );
   }
   const runtimeResponse = await dispatchFindReadOnlyViaRuntime({
     req,
@@ -87,23 +89,13 @@ export async function handleFindCommands(params: {
     sessionStore,
   });
   if (runtimeResponse) return runtimeResponse;
+  // Read-only find actions (exists/wait/get_text/get_attrs) always return from
+  // the selector runtime above, so only mutating actions (click/fill/focus/type)
+  // reach this point — and every mutating find needs an active session.
   const session = sessionStore.get(sessionName);
-  const isReadOnly = isReadOnlyFindAction(action);
-  if (!session && !isReadOnly) {
-    return noActiveSessionError();
-  }
-  const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
-  if (!session) {
-    await ensureDeviceReady(device);
-  }
-  const requiresRect = findActionRequiresRect(action);
-  // Interaction targets need the full interactive tree so duplicate labels can be
-  // resolved against viewport visibility before an off-screen subtree wins.
-  const selectorChain = parseFindSelectorExpression(locator, query);
-  const scope =
-    device.platform !== 'web' && !selectorChain && shouldScopeFind(locator) && !requiresRect
-      ? query
-      : undefined;
+  if (!session) return noActiveSessionError();
+  const device = session.device;
+  const selectorExpression = parseFindSelectorExpression(locator, query);
   const fetchNodes = createFindNodeFetcher({
     device,
     session,
@@ -111,8 +103,6 @@ export async function handleFindCommands(params: {
     logPath,
     locator,
     query,
-    scope,
-    interactiveOnly: requiresRect,
     sessionStore,
     sessionName,
   });
@@ -131,10 +121,6 @@ export async function handleFindCommands(params: {
     publicFlags: publicFindFlags(req.flags),
   };
 
-  if (action === 'wait') {
-    return handleFindWait(ctx, fetchNodes, locator, query, timeoutMs);
-  }
-
   const snapshotResult = await fetchNodes();
   if (isSparseSnapshotQualityVerdict(snapshotResult.snapshotQuality)) {
     return sparseFindSnapshotResponse(snapshotResult.snapshotQuality);
@@ -144,22 +130,35 @@ export async function handleFindCommands(params: {
     nodes,
     locator,
     query,
-    selectorChain,
-    requiresRect,
+    selectorExpression,
     flags: req.flags,
     platform: device.platform,
   });
-  if (!matchResult.ok) return matchResult.response;
+  // Matched and unmatched outcomes both consumed this capture: when it is an occluding system
+  // surface, the response must disclose that app content is occluded.
+  if (!matchResult.ok) return withSystemSurfaceDisclosure(matchResult.response, snapshotResult);
   const node = matchResult.node;
-  const resolvedNode = requiresRect ? resolveInteractiveMatchNode(nodes, node) : node;
+  const resolvedNode = resolveInteractiveMatchNode(nodes, node);
   const ref = `@${resolvedNode.ref}`;
   const actionFlags = { ...(req.flags ?? {}), noRecord: true };
   const match: ResolvedMatch = { node, resolvedNode, ref, nodes, actionFlags };
 
+  const response = await dispatchFindAction(ctx, match, action, value);
+  return response ? withSystemSurfaceDisclosure(response, snapshotResult) : response;
+}
+
+/**
+ * Run the selected mutating find action. A mutating find (click/fill/focus/type)
+ * returns `data.ref` solely as diagnostic pre-action identity (ADR 0014) — it
+ * must omit `refsGeneration` so MCP cannot pin and reuse it after the action.
+ */
+async function dispatchFindAction(
+  ctx: FindContext,
+  match: ResolvedMatch,
+  action: string,
+  value: string | undefined,
+): Promise<DaemonResponse | null> {
   const actionHandlers: Record<string, () => Promise<DaemonResponse | null>> = {
-    exists: () => handleFindExists(ctx),
-    get_text: () => handleFindGetText(ctx, match),
-    get_attrs: () => handleFindGetAttrs(ctx, match),
     click: () => handleFindClick(ctx, match),
     fill: () => handleFindFill(ctx, match, value),
     focus: () => handleFindFocus(ctx, match),
@@ -167,43 +166,31 @@ export async function handleFindCommands(params: {
   };
 
   const handler = actionHandlers[action];
-  return handler ? handler() : null;
+  if (!handler) return null;
+  return await handler();
 }
 
 // --- Per-action handlers ---
 
-function isReadOnlyFindAction(action: string): boolean {
-  return (
-    action === 'exists' || action === 'wait' || action === 'get_text' || action === 'get_attrs'
-  );
-}
-
-function findActionRequiresRect(action: string): boolean {
-  return action === 'click' || action === 'focus' || action === 'fill' || action === 'type';
-}
-
 type FindSnapshotResult = {
   nodes: SnapshotState['nodes'];
-  truncated?: boolean;
-  backend?: SnapshotState['backend'];
   snapshotQuality?: SnapshotQualityVerdict;
+  systemSurfaceOnly?: boolean;
 };
 
 type FindNodeFetcher = () => Promise<FindSnapshotResult>;
 
 function createFindNodeFetcher(params: {
   device: SessionState['device'];
-  session: SessionState | undefined;
+  session: SessionState;
   req: DaemonRequest;
   logPath: string;
   locator: FindLocator;
   query: string;
-  scope: string | undefined;
-  interactiveOnly: boolean;
   sessionStore: SessionStore;
   sessionName: string;
 }): FindNodeFetcher {
-  const { device, session, req, logPath, locator, query, scope, interactiveOnly } = params;
+  const { device, session, req, logPath, locator, query } = params;
   const { sessionStore, sessionName } = params;
   const captureRuntime = createSelectorCaptureRuntime({
     device,
@@ -214,33 +201,29 @@ function createFindNodeFetcher(params: {
     logPath,
   });
   return async () => {
+    // Interaction targets need the full interactive tree so duplicate labels can
+    // be resolved against viewport visibility before an off-screen subtree wins.
     const { snapshot } = await captureRuntime.capture({
       flags: {
         ...req.flags,
-        snapshotInteractiveOnly: interactiveOnly,
+        snapshotInteractiveOnly: true,
       },
-      snapshotScope: scope,
-      recovery: interactiveOnly
-        ? {
-            legacyIosSparse: {
-              query,
-              scope,
-              shouldScope: shouldScopeFind(locator),
-            },
-            sparseVerdictQueryScope: {
-              query,
-              shouldScope: shouldScopeFind(locator),
-            },
-          }
-        : undefined,
+      recovery: {
+        legacyIosSparse: {
+          query,
+          shouldScope: shouldScopeFind(locator),
+        },
+        sparseVerdictQueryScope: {
+          query,
+          shouldScope: shouldScopeFind(locator),
+        },
+      },
     });
-    const snapshotResult = {
+    return {
       nodes: snapshot.nodes,
-      truncated: snapshot.truncated,
-      backend: snapshot.backend,
       snapshotQuality: snapshot.snapshotQuality,
+      systemSurfaceOnly: snapshot.systemSurfaceOnly,
     };
-    return snapshotResult;
   };
 }
 
@@ -255,19 +238,16 @@ function resolveFindMatch(params: {
   nodes: SnapshotState['nodes'];
   locator: FindLocator;
   query: string;
-  selectorChain: SelectorChain | null;
-  requiresRect: boolean;
+  selectorExpression: string | null;
   flags: DaemonRequest['flags'];
   platform: SessionState['device']['platform'];
 }): FindMatchResult {
-  const { nodes, locator, query, selectorChain, requiresRect, flags, platform } = params;
-  const searchableNodes = requiresRect
-    ? nodes.filter((node) => !isRootInteractionContainer(node, nodes[0]))
-    : nodes;
-  if (selectorChain) {
-    const resolved = resolveSelectorChain(searchableNodes, selectorChain, {
+  const { nodes, locator, query, selectorExpression, flags, platform } = params;
+  const searchableNodes = nodes.filter((node) => !isRootInteractionContainer(node, nodes[0]));
+  if (selectorExpression) {
+    const resolved = resolveSelectorChain(searchableNodes, selectorExpression, {
       platform,
-      requireRect: requiresRect,
+      requireRect: true,
       requireUnique: false,
     });
     if (!resolved) {
@@ -279,13 +259,11 @@ function resolveFindMatch(params: {
     return { ok: true, node: resolved.node };
   }
   const bestMatches = findBestMatchesByLocator(searchableNodes, locator, query, {
-    requireRect: requiresRect,
+    requireRect: true,
   });
-  if (requiresRect) {
-    bestMatches.matches = preferOnscreenMatches(bestMatches.matches, nodes);
-  }
+  bestMatches.matches = preferOnscreenMatches(bestMatches.matches, nodes);
 
-  if (requiresRect && bestMatches.matches.length > 1) {
+  if (bestMatches.matches.length > 1) {
     const narrowed = narrowMultipleMatches(bestMatches.matches, flags);
     if (!narrowed) {
       return { ok: false, response: buildAmbiguousMatchError(bestMatches.matches, locator, query) };
@@ -409,85 +387,6 @@ function rectsMatch(
   );
 }
 
-async function handleFindWait(
-  ctx: FindContext,
-  fetchNodes: FindNodeFetcher,
-  locator: FindLocator,
-  query: string,
-  timeoutMs: number | undefined,
-): Promise<DaemonResponse> {
-  const { req, sessionStore, session, command, publicFlags } = ctx;
-  const timeout = timeoutMs ?? 10000;
-  const start = Date.now();
-  let sparseVerdict: SnapshotQualityVerdict | undefined;
-  while (Date.now() - start < timeout) {
-    const { nodes, snapshotQuality } = await fetchNodes();
-    if (isSparseSnapshotQualityVerdict(snapshotQuality)) {
-      sparseVerdict = snapshotQuality;
-      await sleep(300);
-      continue;
-    }
-    const match = findBestMatchesByLocator(nodes, locator, query, { requireRect: false })
-      .matches[0];
-    if (match) {
-      recordSessionAction(
-        sessionStore,
-        session,
-        req,
-        command,
-        { found: true, waitedMs: Date.now() - start },
-        { flags: publicFlags },
-      );
-      return { ok: true, data: { found: true, waitedMs: Date.now() - start } };
-    }
-    await sleep(300);
-  }
-  if (sparseVerdict) return sparseFindSnapshotResponse(sparseVerdict);
-  return errorResponse('COMMAND_FAILED', 'find wait timed out');
-}
-
-async function handleFindExists(ctx: FindContext): Promise<DaemonResponse> {
-  const { req, sessionStore, session, command, publicFlags } = ctx;
-  recordSessionAction(sessionStore, session, req, command, { found: true }, { flags: publicFlags });
-  return { ok: true, data: { found: true } };
-}
-
-async function handleFindGetText(ctx: FindContext, match: ResolvedMatch): Promise<DaemonResponse> {
-  const { req, sessionStore, session, command, device, logPath, publicFlags } = ctx;
-  const text = await readTextForNode({
-    device,
-    node: match.node,
-    flags: req.flags,
-    appBundleId: session?.appBundleId,
-    traceOutPath: session?.trace?.outPath,
-    surface: session?.surface,
-    contextFromFlags: (flags, appBundleId, traceLogPath) =>
-      contextFromFlags(logPath, flags, appBundleId, traceLogPath),
-  });
-  recordSessionAction(
-    sessionStore,
-    session,
-    req,
-    command,
-    { ref: match.ref, action: 'get text', text },
-    { flags: publicFlags },
-  );
-  return { ok: true, data: { ref: match.ref, text, node: match.node } };
-}
-
-async function handleFindGetAttrs(ctx: FindContext, match: ResolvedMatch): Promise<DaemonResponse> {
-  const { req, sessionStore, session, command, publicFlags } = ctx;
-  recordSessionAction(
-    sessionStore,
-    session,
-    req,
-    command,
-    { ref: match.ref, action: 'get attrs' },
-    { flags: publicFlags },
-  );
-  return { ok: true, data: { ref: match.ref, node: match.node } };
-}
-
 async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore, session, invoke, command, locator, query, publicFlags } =
     ctx;
@@ -497,6 +396,7 @@ async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<
     command: 'click',
     positionals: [match.ref],
     flags: match.actionFlags,
+    internal: { findResolvedTarget: true },
   });
   if (!response.ok) return response;
   const matchCoords = match.resolvedNode.rect
@@ -509,6 +409,10 @@ async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<
     matchData.x = matchCoords.x;
     matchData.y = matchCoords.y;
   }
+  const clickMessage =
+    readCommandMessage(response.data as Record<string, unknown>) ??
+    `Tapped ${match.ref}${matchCoords ? ` (${matchCoords.x}, ${matchCoords.y})` : ''}`;
+  Object.assign(matchData, successText(clickMessage));
   recordSessionAction(
     sessionStore,
     session,
@@ -535,6 +439,7 @@ async function handleFindFill(
     command: 'fill',
     positionals: [match.ref, value],
     flags: match.actionFlags,
+    internal: { findResolvedTarget: true },
   });
   if (!response.ok) return response;
   recordSessionAction(
@@ -566,8 +471,11 @@ async function handleFindType(
   }
   const focusResponse = await dispatchFocusForFindMatch(ctx, match);
   if (!focusResponse.ok) return focusResponse;
+  // The focus above already crossed the seam; expiry is idempotent, but keep it
+  // explicit at the type dispatch so it does not rely on the focus-first order.
+  expireRefFrame(session);
   const response = await dispatchCommand(device, 'type', [value], req.flags?.out, {
-    ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
+    ...contextFromFlags(logPath, req.flags, session.appBundleId, session.trace?.outPath),
   });
   recordFindAction(ctx, match, 'type');
   return { ok: true, data: response ?? { ref: match.ref } };
@@ -584,13 +492,17 @@ async function dispatchFocusForFindMatch(
   if (!coords) {
     return errorResponse('COMMAND_FAILED', 'matched element has no bounds');
   }
+  // ADR 0014 side-effect seam: mutating find focus/type dispatch the device
+  // command directly (they do not re-enter the interaction leaf), so expire the
+  // frame here before the device op. Pre-seam guards above preserve the frame.
+  expireRefFrame(session);
   const response = await dispatchCommand(
     device,
     'focus',
     [String(coords.x), String(coords.y)],
     req.flags?.out,
     {
-      ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
+      ...contextFromFlags(logPath, req.flags, session.appBundleId, session.trace?.outPath),
     },
   );
   return { ok: true, data: response ?? { ref: match.ref } };
@@ -628,16 +540,28 @@ function publicFindFlags(flags: DaemonRequest['flags']): Record<string, unknown>
   return { ...(stripInternalInteractionFlags(flags) ?? {}) };
 }
 
-function buildAmbiguousMatchError(
+// #1597: an agent reading an ambiguous-match error must be able to act on the
+// right @ref immediately, without a follow-up snapshot round trip. Candidate
+// lines reuse the exact snapshot-line renderer (`formatSnapshotLine`) so a
+// candidate reads identically to its row in `snapshot -i` output: ref, role,
+// label/identifier. Capped at AMBIGUOUS_MATCH_CANDIDATE_LIMIT to bound the
+// error payload — `matches` (the true total) is what a "+N more" marker is
+// computed from at render time (src/utils/output.ts, src/mcp/tool-error.ts).
+// Module-local: no consumer outside this file needs the raw cap, only the
+// already-capped `candidates` array on the response.
+const AMBIGUOUS_MATCH_CANDIDATE_LIMIT = 5;
+
+// Exported as the single AMBIGUOUS_MATCH producer so the help-benchmark
+// sample parity test renders the exact error this handler returns; a message
+// change here fails that gate instead of drifting past it.
+export function buildAmbiguousMatchError(
   matches: SnapshotState['nodes'],
   locator: FindLocator,
   query: string,
 ): DaemonResponse {
-  const candidates = matches.slice(0, 8).map((candidate) => {
-    const label =
-      extractNodeText(candidate) || candidate.label || candidate.identifier || candidate.type || '';
-    return `@${candidate.ref}${label ? `(${label})` : ''}`;
-  });
+  const candidates = matches
+    .slice(0, AMBIGUOUS_MATCH_CANDIDATE_LIMIT)
+    .map((candidate) => formatSnapshotLine(candidate, 0, false));
   return errorResponse(
     'AMBIGUOUS_MATCH',
     `find matched ${matches.length} elements for ${locator} "${query}". Use a more specific locator or selector.`,

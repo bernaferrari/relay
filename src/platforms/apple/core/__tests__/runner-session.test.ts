@@ -8,8 +8,8 @@ import { IOS_DEVICE, IOS_SIMULATOR } from '../../../../__tests__/test-utils/inde
 import {
   type RequestProgressEvent,
   withRequestProgressSink,
-} from '../../../../daemon/request-progress.ts';
-import { AppError } from '../../../../kernel/errors.ts';
+} from '../../../../request/progress.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   flushDiagnosticsToSessionFile,
   withDiagnosticsScope,
@@ -24,6 +24,7 @@ const {
   mockIsProcessAlive,
   mockIsProcessGroupAlive,
   mockPrepareXctestrunWithEnv,
+  mockReadProcessStartTime,
   mockResolveExpectedRunnerCacheMetadata,
   mockResolveRunnerDerivedPath,
   mockRunAppleToolCommand,
@@ -40,6 +41,12 @@ const {
   mockIsProcessAlive: vi.fn(),
   mockIsProcessGroupAlive: vi.fn(),
   mockPrepareXctestrunWithEnv: vi.fn(),
+  // Non-empty default: RUNNER_OWNER_START_TIME below is computed at module
+  // load (before beforeEach), and readProcessStartTime's real implementation
+  // shells out to `ps` with a 1s timeout that can miss under CPU contention,
+  // flipping a live owner to 'owner-process-dead'. Deterministic value, no
+  // shell-out; identity is still enforced by pid in beforeEach below.
+  mockReadProcessStartTime: vi.fn((_pid: number) => 'fixed-test-owner-start-time' as string | null),
   mockResolveExpectedRunnerCacheMetadata: vi.fn(),
   mockResolveRunnerDerivedPath: vi.fn(),
   mockRunAppleToolCommand: vi.fn(),
@@ -60,14 +67,15 @@ vi.mock('../../../../utils/exec.ts', async () => {
   };
 });
 
-vi.mock('../../../../utils/process-identity.ts', async () => {
-  const actual = await vi.importActual<typeof import('../../../../utils/process-identity.ts')>(
-    '../../../../utils/process-identity.ts',
+vi.mock('../../../../utils/host-process.ts', async () => {
+  const actual = await vi.importActual<typeof import('../../../../utils/host-process.ts')>(
+    '../../../../utils/host-process.ts',
   );
   return {
     ...actual,
     isProcessAlive: mockIsProcessAlive,
     isProcessGroupAlive: mockIsProcessGroupAlive,
+    readProcessStartTime: mockReadProcessStartTime,
   };
 });
 
@@ -156,6 +164,12 @@ beforeEach(async () => {
   mockRunAppleToolCommand.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
   mockIsProcessAlive.mockReturnValue(true);
   mockIsProcessGroupAlive.mockReturnValue(false);
+  // Our pid reads back its fixed start time; any other pid reads as
+  // not-found, same as a real `ps` miss. Dead-lease tests use fabricated
+  // pids already rejected by mockIsProcessAlive before this is consulted.
+  mockReadProcessStartTime.mockImplementation((pid: number) =>
+    pid === process.pid ? RUNNER_OWNER_START_TIME : null,
+  );
   mockWaitForRunner.mockResolvedValue(runnerResponse({ uptimeMs: 1 }));
 });
 
@@ -840,6 +854,10 @@ test('runner session startup rejects live foreign runner lease', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-session-busy-lease-sim' };
   const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
   process.env.AGENT_DEVICE_STATE_DIR = '/tmp/agent-device-current';
+  // The owner state dir must exist on disk: an owner whose state dir is gone
+  // classifies as stale (reclaimable), not busy - see the state-dir-gone test
+  // below for that case.
+  fs.mkdirSync('/tmp/agent-device-owner', { recursive: true });
   writeRunnerLease(
     makeRunnerLease({
       deviceId: device.id,
@@ -895,6 +913,7 @@ test('runner session startup rejects live foreign runner lease', async () => {
       false,
     );
   } finally {
+    fs.rmSync('/tmp/agent-device-owner', { recursive: true, force: true });
     if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
     else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
   }
@@ -902,6 +921,7 @@ test('runner session startup rejects live foreign runner lease', async () => {
 
 test('runner session busy error includes logical lease context after admission', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-session-logical-busy-lease-sim' };
+  fs.mkdirSync('/tmp/agent-device-owner', { recursive: true });
   writeRunnerLease(
     makeRunnerLease({
       deviceId: device.id,
@@ -913,49 +933,57 @@ test('runner session busy error includes logical lease context after admission',
   );
 
   let thrown: unknown;
-  await assert.rejects(async () => {
-    try {
-      await ensureRunnerSession(device, {
-        runnerLeaseContext: {
-          tenantId: 'tenant-123',
-          runId: 'run-456',
-          leaseId: 'lease-789',
-          leaseProvider: 'ios-simulator',
-        },
-      });
-    } catch (error) {
-      thrown = error;
-      throw error;
-    }
-  }, /busy after device lease admission/);
+  try {
+    await assert.rejects(async () => {
+      try {
+        await ensureRunnerSession(device, {
+          runnerLeaseContext: {
+            tenantId: 'tenant-123',
+            runId: 'run-456',
+            leaseId: 'lease-789',
+            leaseProvider: 'ios-simulator',
+          },
+        });
+      } catch (error) {
+        thrown = error;
+        throw error;
+      }
+    }, /busy after device lease admission/);
 
-  assert.ok(thrown instanceof AppError);
-  assert.deepEqual(thrown.details?.logicalLeaseContext, {
-    tenantId: 'tenant-123',
-    runId: 'run-456',
-    leaseId: 'lease-789',
-    leaseProvider: 'ios-simulator',
-    deviceKey: device.id,
-  });
-  assert.match(String(thrown.details?.hint), /five-minute inactivity lease expires/);
-  assert.match(
-    String(thrown.details?.hint),
-    /^If it is stuck, stop the owning agent-device daemon for AGENT_DEVICE_STATE_DIR='\/tmp\/agent-device-owner' and retry/,
-  );
-  assert.doesNotMatch(String(thrown.details?.hint), /pnpm|clean:daemon/);
-  assert.match(
-    String(thrown.details?.hint),
-    /Runner owner: PID \d+ with AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner/,
-  );
-  assert.doesNotMatch(
-    String(thrown.details?.hint),
-    /AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner\./,
-  );
-  assert.equal(mockRunCmdBackground.mock.calls.length, 0);
+    assert.ok(thrown instanceof AppError);
+    assert.deepEqual(thrown.details?.logicalLeaseContext, {
+      tenantId: 'tenant-123',
+      runId: 'run-456',
+      leaseId: 'lease-789',
+      leaseProvider: 'ios-simulator',
+      deviceKey: device.id,
+    });
+    assert.match(String(thrown.details?.hint), /five-minute inactivity lease expires/);
+    assert.match(
+      String(thrown.details?.hint),
+      /^If it is stuck, stop the owning agent-device daemon for AGENT_DEVICE_STATE_DIR='\/tmp\/agent-device-owner' and retry/,
+    );
+    assert.doesNotMatch(String(thrown.details?.hint), /pnpm|clean:daemon/);
+    assert.match(
+      String(thrown.details?.hint),
+      /Runner owner: PID \d+ with AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner/,
+    );
+    assert.doesNotMatch(
+      String(thrown.details?.hint),
+      /AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner\./,
+    );
+    assert.equal(mockRunCmdBackground.mock.calls.length, 0);
+  } finally {
+    fs.rmSync('/tmp/agent-device-owner', { recursive: true, force: true });
+  }
 });
 
 test('runner session startup reclaims live foreign runner lease after proxy lease admission', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-session-proxy-takeover-sim' };
+  // The owner state dir must exist so this exercises the logical-lease
+  // takeover carve-out for a genuinely busy (alive owner) lease, not the
+  // separate state-dir-gone stale path.
+  fs.mkdirSync('/tmp/agent-device-owner', { recursive: true });
   writeRunnerLease(
     makeRunnerLease({
       deviceId: device.id,
@@ -967,22 +995,26 @@ test('runner session startup reclaims live foreign runner lease after proxy leas
     }),
   );
 
-  const session = await ensureRunnerSession(device, {
-    runnerLeaseContext: {
-      tenantId: 'proxy',
-      runId: 'run-456',
-      leaseId: 'lease-789',
-      leaseProvider: 'proxy',
-      clientId: 'client-a',
-      deviceKey: `ios:mobile:${device.id}`,
-    },
-  });
+  try {
+    const session = await ensureRunnerSession(device, {
+      runnerLeaseContext: {
+        tenantId: 'proxy',
+        runId: 'run-456',
+        leaseId: 'lease-789',
+        leaseProvider: 'proxy',
+        clientId: 'client-a',
+        deviceKey: `ios:mobile:${device.id}`,
+      },
+    });
 
-  assert.equal(session.deviceId, device.id);
-  assert.equal(mockRunCmdBackground.mock.calls.length, 1);
-  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
-  assert.ok(pkillCalls.length >= 2);
-  assert.match(String(pkillCalls[0]?.[1]?.[2] ?? ''), /owner-foreign-proxy-live/);
+    assert.equal(session.deviceId, device.id);
+    assert.equal(mockRunCmdBackground.mock.calls.length, 1);
+    const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
+    assert.ok(pkillCalls.length >= 2);
+    assert.match(String(pkillCalls[0]?.[1]?.[2] ?? ''), /owner-foreign-proxy-live/);
+  } finally {
+    fs.rmSync('/tmp/agent-device-owner', { recursive: true, force: true });
+  }
 });
 
 test('runner session startup reclaims live foreign runner lease from same state dir', async () => {
@@ -990,6 +1022,9 @@ test('runner session startup reclaims live foreign runner lease from same state 
   const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
   const stateDir = '/tmp/agent-device-proxy-state';
   process.env.AGENT_DEVICE_STATE_DIR = stateDir;
+  // Same-state-dir reclaim is checked for a genuinely busy (alive owner)
+  // lease, so the owner state dir must exist on disk.
+  fs.mkdirSync(stateDir, { recursive: true });
   writeRunnerLease(
     makeRunnerLease({
       deviceId: device.id,
@@ -1014,6 +1049,7 @@ test('runner session startup reclaims live foreign runner lease from same state 
     assert.ok(pkillCalls.length >= 2);
     assert.match(String(pkillCalls[0]?.[1]?.[2] ?? ''), /owner-foreign-same-state/);
   } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
     if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
     else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
   }
@@ -1025,6 +1061,7 @@ test('runner session startup reclaims same-state live lease from daemon runtime 
   const stateDir = '/tmp/agent-device-runtime-state';
   delete process.env.AGENT_DEVICE_STATE_DIR;
   setRunnerLeaseOwnerStateDir(stateDir);
+  fs.mkdirSync(stateDir, { recursive: true });
   writeRunnerLease(
     makeRunnerLease({
       deviceId: device.id,
@@ -1045,6 +1082,7 @@ test('runner session startup reclaims same-state live lease from daemon runtime 
     assert.ok(pkillCalls.length >= 2);
     assert.match(String(pkillCalls[0]?.[1]?.[2] ?? ''), /owner-foreign-runtime-state/);
   } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
     setRunnerLeaseOwnerStateDir(undefined);
     if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
     else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
@@ -1073,6 +1111,104 @@ test('runner session startup reclaims dead foreign runner lease before launching
     String(pkillCalls[0]?.[1]?.[2] ?? ''),
     /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-runner-session-dead-lease-sim-owner-dead-foreign-/,
   );
+});
+
+test('runner session startup reclaims a foreign runner lease whose owner state dir is gone', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-owner-state-dir-gone-sim' };
+  const goneStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-owner-state-dir-gone-'));
+  fs.rmSync(goneStateDir, { recursive: true, force: true });
+  // The owner PID is alive (isProcessAlive defaults to true in beforeEach) but
+  // its AGENT_DEVICE_STATE_DIR no longer exists - the orphaned-daemon shape
+  // reported after deleted codex/claude sandboxes: the process never exited,
+  // but nothing can ever reach it again, so its runner lease must be
+  // reclaimable instead of blocking every future daemon for this device.
+  writeRunnerLease(
+    makeRunnerLease({
+      deviceId: device.id,
+      ownerToken: 'owner-state-dir-gone',
+      ownerPid: process.pid,
+      ownerStartTime: RUNNER_OWNER_START_TIME,
+      ownerStateDir: goneStateDir,
+      runnerPid: 4_321,
+    }),
+  );
+
+  const session = await ensureRunnerSession(device, {});
+
+  assert.equal(session.deviceId, device.id);
+  // Force-stop path, never adoption: the alive-but-orphaned owner may still
+  // hold a live runner connection, so the old runner (pid 4321) must be
+  // killed and a FRESH runner launched instead of silently adopting it.
+  assert.equal(mockRunCmdBackground.mock.calls.length, 1);
+  assert.notEqual(session.child.pid, 4_321);
+  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
+  assert.ok(pkillCalls.length >= 2);
+  assert.match(String(pkillCalls[0]?.[1]?.[2] ?? ''), /owner-state-dir-gone/);
+});
+
+test('runner session startup fails closed when the owner state dir cannot be statted', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-owner-state-dir-eacces-sim' };
+  const unreadableStateDir = '/tmp/agent-device-owner-state-dir-eacces';
+  writeRunnerLease(
+    makeRunnerLease({
+      deviceId: device.id,
+      ownerToken: 'owner-state-dir-eacces',
+      ownerPid: process.pid,
+      ownerStartTime: RUNNER_OWNER_START_TIME,
+      ownerStateDir: unreadableStateDir,
+    }),
+  );
+  // A stat error that is NOT proof-of-absence (EACCES on an ancestor,
+  // transient IO failure) must classify the owner as ALIVE: taking over on a
+  // guess could steal the runner from a healthy daemon. fs.existsSync would
+  // swallow this error into `false` (gone), so the implementation must stat
+  // and inspect the error code instead.
+  const realStatSync = fs.statSync.bind(fs);
+  const statSyncSpy = vi.spyOn(fs, 'statSync').mockImplementation(((
+    target: fs.PathLike,
+    options?: fs.StatSyncOptions,
+  ) => {
+    if (target === unreadableStateDir) {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    }
+    return realStatSync(target, options);
+  }) as typeof fs.statSync);
+
+  try {
+    await assert.rejects(
+      () => ensureRunnerSession(device, {}),
+      /already owned by another agent-device daemon/,
+    );
+    assert.equal(mockRunCmdBackground.mock.calls.length, 0);
+  } finally {
+    statSyncSpy.mockRestore();
+  }
+});
+
+test('runner session startup still rejects a live foreign lease whose owner state dir exists', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-owner-state-dir-present-sim' };
+  const liveStateDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-owner-state-dir-present-'),
+  );
+  writeRunnerLease(
+    makeRunnerLease({
+      deviceId: device.id,
+      ownerToken: 'owner-state-dir-present',
+      ownerPid: process.pid,
+      ownerStartTime: RUNNER_OWNER_START_TIME,
+      ownerStateDir: liveStateDir,
+    }),
+  );
+
+  try {
+    await assert.rejects(
+      () => ensureRunnerSession(device, {}),
+      /already owned by another agent-device daemon/,
+    );
+    assert.equal(mockRunCmdBackground.mock.calls.length, 0);
+  } finally {
+    fs.rmSync(liveStateDir, { recursive: true, force: true });
+  }
 });
 
 test('runner lease cleanup reclaims only leases owned by the stopped daemon', async () => {
@@ -1472,6 +1608,25 @@ test('runner session preflights with conservative_command for non-allowlisted mu
   assert.match(diagnostics, /"reason":"conservative_command"/);
 });
 
+test('runner session sends targetReset without a readiness preflight', async () => {
+  const session = makeRunnerSession({ ready: true });
+  mockSendRunnerCommandOnce.mockResolvedValueOnce(runnerResponse({ targetReset: true }));
+
+  const diagnostics = await captureDiagnostics(async () => {
+    await executeRunnerCommandWithSession(
+      IOS_SIMULATOR,
+      session,
+      { command: 'targetReset' },
+      '/tmp/runner.log',
+      30_000,
+    );
+  });
+
+  assert.equal(mockWaitForRunner.mock.calls.length, 0);
+  assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 1);
+  assert.match(diagnostics, /"reason":"preflight_exempt_command"/);
+});
+
 test('runner session preflights with no_recent_healthy_mutation when ready without a record', async () => {
   const session = makeRunnerSession({ ready: true });
   mockWaitForRunner.mockResolvedValueOnce(runnerResponse({ uptimeMs: 42 }));
@@ -1647,6 +1802,38 @@ test('runner session clears recency when an allowlisted command returns XCTest r
   );
 
   assert.equal(session.lastHealthyMutation, undefined);
+  assert.equal(getRunnerSessionSnapshot(device.id), null);
+});
+
+test('runner session invalidates when the runner reports abandoned main-thread work is wedged', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-wedged-sim' };
+  const session = await ensureRunnerSession(device, {});
+  session.ready = true;
+  mockWaitForRunner.mockClear();
+  mockWaitForRunner.mockResolvedValueOnce(runnerResponse({ uptimeMs: 42 }));
+  mockSendRunnerCommandOnce.mockResolvedValueOnce(
+    runnerError({
+      code: 'RUNNER_WEDGED',
+      message: 'The runner main thread is wedged.',
+    }),
+  );
+
+  await assert.rejects(
+    () =>
+      executeRunnerCommandWithSession(
+        device,
+        session,
+        { command: 'tap', x: 1, y: 2, appBundleId: 'com.example.demo' },
+        '/tmp/runner.log',
+        30_000,
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'RUNNER_WEDGED');
+      return true;
+    },
+  );
+
   assert.equal(getRunnerSessionSnapshot(device.id), null);
 });
 

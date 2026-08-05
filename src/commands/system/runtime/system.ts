@@ -4,10 +4,12 @@ import type {
   BackendAlertResult,
   BackendDeviceOrientation,
   BackendKeyboardResult,
+  BackendTvRemoteOptions,
 } from '../../../backend.ts';
 import type { CommandContext } from '../../../runtime-contract.ts';
-import type { BackMode } from '../../../core/back-mode.ts';
-import { AppError } from '../../../kernel/errors.ts';
+import type { BackMode } from '@agent-device/contracts/interaction';
+import { parseTvRemoteButton } from '@agent-device/contracts/interaction';
+import { AppError } from '@agent-device/kernel/errors';
 import { successText } from '../../../utils/success-text.ts';
 import { requireIntInRange } from '../../../utils/validation.ts';
 import { isKeyboardAction } from '../../../utils/keyboard-actions.ts';
@@ -35,12 +37,12 @@ export type SystemHomeCommandResult = {
   kind: 'systemHome';
 } & BackendResultEnvelope;
 
-export type SystemRotateCommandOptions = CommandContext & {
+export type SystemOrientationCommandOptions = CommandContext & {
   orientation: BackendDeviceOrientation;
 };
 
-export type SystemRotateCommandResult = {
-  kind: 'systemRotated';
+export type SystemOrientationCommandResult = {
+  kind: 'systemOrientationSet';
   orientation: BackendDeviceOrientation;
 } & BackendResultEnvelope;
 
@@ -127,6 +129,14 @@ export type SystemAppSwitcherCommandResult = {
   kind: 'appSwitcherOpened';
 } & BackendResultEnvelope;
 
+export type SystemTvRemoteCommandOptions = CommandContext & BackendTvRemoteOptions;
+
+export type SystemTvRemoteCommandResult = {
+  kind: 'tvRemotePressed';
+  button: BackendTvRemoteOptions['button'];
+  durationMs?: number;
+} & BackendResultEnvelope;
+
 export const backCommand: RuntimeCommand<
   SystemBackCommandOptions | undefined,
   SystemBackCommandResult
@@ -166,21 +176,50 @@ export const homeCommand: RuntimeCommand<
   };
 };
 
-export const rotateCommand: RuntimeCommand<
-  SystemRotateCommandOptions,
-  SystemRotateCommandResult
-> = async (runtime, options): Promise<SystemRotateCommandResult> => {
-  if (!runtime.backend.rotate) {
-    throw new AppError('UNSUPPORTED_OPERATION', 'system.rotate is not supported by this backend');
+export const tvRemoteCommand: RuntimeCommand<
+  SystemTvRemoteCommandOptions,
+  SystemTvRemoteCommandResult
+> = async (runtime, options): Promise<SystemTvRemoteCommandResult> => {
+  if (!runtime.backend.pressTvRemote) {
+    throw new AppError('UNSUPPORTED_OPERATION', 'system.tvRemote is not supported by this backend');
+  }
+  const button = parseTvRemoteButton(options.button);
+  const durationMs =
+    options.durationMs === undefined
+      ? undefined
+      : requireIntInRange(options.durationMs, 'durationMs', 0, 10_000);
+  const backendResult = await runtime.backend.pressTvRemote(toBackendContext(runtime, options), {
+    button,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  });
+  const formattedBackendResult = toBackendResult(backendResult);
+  return {
+    kind: 'tvRemotePressed',
+    button,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+    ...successText(`Pressed TV remote ${button}`),
+  };
+};
+
+export const orientationCommand: RuntimeCommand<
+  SystemOrientationCommandOptions,
+  SystemOrientationCommandResult
+> = async (runtime, options): Promise<SystemOrientationCommandResult> => {
+  if (!runtime.backend.setOrientation) {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'system.orientation is not supported by this backend',
+    );
   }
   const orientation = requireOrientation(options.orientation);
-  const backendResult = await runtime.backend.rotate(
+  const backendResult = await runtime.backend.setOrientation(
     toBackendContext(runtime, options),
     orientation,
   );
   const formattedBackendResult = toBackendResult(backendResult);
   return {
-    kind: 'systemRotated',
+    kind: 'systemOrientationSet',
     orientation,
     ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
     ...successText(`Rotated to ${orientation}`),
@@ -329,7 +368,7 @@ function requireOrientation(orientation: BackendDeviceOrientation): BackendDevic
     default:
       throw new AppError(
         'INVALID_ARGS',
-        'system.rotate orientation must be portrait, portrait-upside-down, landscape-left, or landscape-right',
+        'system.orientation must be portrait, portrait-upside-down, landscape-left, or landscape-right',
       );
   }
 }
@@ -370,8 +409,20 @@ function normalizeKeyboardDismissResult(
     action,
     state,
     ...(backendResult ? { backendResult } : {}),
-    ...successText(state.dismissed === false ? 'Keyboard already hidden' : 'Keyboard dismissed'),
+    ...successText(keyboardDismissMessage(state)),
   };
+}
+
+// Mirrors the CLI/daemon dispatch message (src/core/dispatch.ts) so both
+// public surfaces disclose the same thing (#1598): only a dismiss-key tap is as
+// trustworthy as tapping a real dismiss key, and callers should be able to
+// tell the two apart from the message alone.
+function keyboardDismissMessage(state: BackendKeyboardResult): string {
+  if (state.dismissed === false) return 'Keyboard already hidden';
+  if (state.mechanism === 'dismissKey') {
+    return 'Keyboard dismissed via its dismiss key';
+  }
+  return 'Keyboard dismissed';
 }
 
 function normalizeKeyboardStateResult(

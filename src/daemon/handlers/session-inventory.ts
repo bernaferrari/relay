@@ -1,6 +1,7 @@
+import { isCommandSupportedOnDevice, listCapabilityCommands } from '../../core/capabilities.ts';
 import { listDeviceInventory } from '../../core/dispatch-resolve.ts';
-import { assertResolvedAppsFilter } from '../../contracts/app-inventory.ts';
-import { asAppError } from '../../kernel/errors.ts';
+import { assertResolvedAppsFilter } from '@agent-device/contracts/device';
+import { asAppError } from '@agent-device/kernel/errors';
 import {
   isApplePlatform,
   isMacOs,
@@ -9,7 +10,7 @@ import {
   resolveAppleSimulatorSetPathForSelector,
   type DeviceInfo,
   type PlatformSelector,
-} from '../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import {
   resolveAndroidSerialAllowlist,
   resolveIosSimulatorDeviceSetPath,
@@ -104,13 +105,7 @@ export async function handleSessionInventoryCommands(params: {
       // `platform` stays the PUBLIC leaf via `publicPlatformString` (approach b). The
       // internal-only `simulatorSetPath` is still stripped. `appleOs` values never equal
       // the internal `apple` token, so this does not affect the apple-leak guard.
-      const publicDevices = filtered.map(
-        ({ simulatorSetPath: _simulatorSetPath, appleOs, ...device }) => ({
-          ...device,
-          platform: publicPlatformString({ platform: device.platform, appleOs }),
-          ...(isApplePlatform(device.platform) && appleOs ? { appleOs } : {}),
-        }),
-      );
+      const publicDevices = filtered.map(publicDeviceInfo);
       return { ok: true, data: { devices: publicDevices } };
     } catch (err) {
       const appErr = asAppError(err);
@@ -118,17 +113,36 @@ export async function handleSessionInventoryCommands(params: {
     }
   }
 
-  if (req.command === 'apps') {
-    const session = sessionStore.get(sessionName);
-    const flags = req.flags ?? {};
-    const guard = requireSessionOrExplicitSelector(req.command, session, flags);
-    if (guard) return guard;
+  if (req.command === 'capabilities') {
+    const resolution = await resolveInventoryCommandDevice({
+      req,
+      sessionName,
+      sessionStore,
+      ensureReady: false,
+      allowStoppedAndroidAvdPlaceholders: true,
+    });
+    if ('response' in resolution) return resolution.response;
+    const { device } = resolution;
+    return {
+      ok: true,
+      data: {
+        device: publicDeviceInfo(device),
+        availableCommands: listCapabilityCommands().filter((command) =>
+          isCommandSupportedOnDevice(command, device),
+        ),
+      },
+    };
+  }
 
-    const device = await resolveCommandDevice({
-      session,
-      flags,
+  if (req.command === 'apps') {
+    const resolution = await resolveInventoryCommandDevice({
+      req,
+      sessionName,
+      sessionStore,
       ensureReady: true,
     });
+    if ('response' in resolution) return resolution.response;
+    const { device } = resolution;
     const unsupported = requireCommandSupported('apps', device);
     if (unsupported) return unsupported;
 
@@ -157,6 +171,43 @@ export async function handleSessionInventoryCommands(params: {
   }
 
   return null;
+}
+
+async function resolveInventoryCommandDevice(params: {
+  req: DaemonRequest;
+  sessionName: string;
+  sessionStore: SessionStore;
+  ensureReady: boolean;
+  allowStoppedAndroidAvdPlaceholders?: boolean;
+}): Promise<{ device: DeviceInfo } | { response: DaemonResponse }> {
+  const { req, sessionName, sessionStore, ensureReady, allowStoppedAndroidAvdPlaceholders } =
+    params;
+  const session = sessionStore.get(sessionName);
+  const flags = req.flags ?? {};
+  const response = requireSessionOrExplicitSelector(req.command, session, flags);
+  if (response) return { response };
+
+  return {
+    device: await resolveCommandDevice({
+      session,
+      flags,
+      ensureReady,
+      allowStoppedAndroidAvdPlaceholders,
+    }),
+  };
+}
+
+function publicDeviceInfo({
+  simulatorSetPath: _simulatorSetPath,
+  iosPhysicalDeviceBackend: _iosPhysicalDeviceBackend,
+  appleOs,
+  ...device
+}: DeviceInfo): Record<string, unknown> {
+  return {
+    ...device,
+    platform: publicPlatformString({ platform: device.platform, appleOs }),
+    ...(isApplePlatform(device.platform) && appleOs ? { appleOs } : {}),
+  };
 }
 
 function matchesRequestedPlatform(

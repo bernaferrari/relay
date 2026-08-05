@@ -1,15 +1,29 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { STRUCTURED_BATCH_COMMAND_NAMES } from '../../../batch-policy.ts';
-import { PUBLIC_COMMANDS } from '../../../command-catalog.ts';
+import { STRUCTURED_BATCH_COMMAND_NAMES } from '../../batch-policy.ts';
+import {
+  INTERNAL_COMMANDS,
+  listCliCommandNames,
+  PUBLIC_COMMANDS,
+} from '../../../command-catalog.ts';
 import { BASE_COMMAND_CAPABILITY_MATRIX } from '../../capabilities.ts';
 import {
   DAEMON_COMMAND_DESCRIPTORS,
+  canRunReplayScopedAction,
   type DaemonCommandDescriptor,
 } from '../../../daemon/daemon-command-registry.ts';
 import type { DaemonRequest } from '../../../daemon/types.ts';
+import { listRegisteredDispatchCommandNames } from '../../dispatch.ts';
 import { deriveDaemonCommandDescriptors, deriveStructuredBatchCommandNames } from '../derive.ts';
-import { commandDescriptors } from '../registry.ts';
+import {
+  commandDescriptors,
+  listDescriptorCatalogCommandNames,
+  listMcpExposedCommandNames,
+  resolveCommandRecordsSessionAction,
+  resolveCommandRecordingEffect,
+  resolveTargetIdentityVerification,
+  RAW_COMMAND_DESCRIPTORS,
+} from '../registry.ts';
 
 // Function-valued traits cannot be deep-equaled across re-authored closures, so
 // (mirroring daemon-command-registry.test.ts) they are compared by presence and
@@ -21,10 +35,11 @@ const DAEMON_FUNCTION_TRAITS = [
 
 // Public commands that intentionally have no daemon route — they live only in the
 // capability/batch tables, so the daemon registry has never covered them.
-const UNROUTED_PUBLIC_COMMANDS = new Set<string>([
-  PUBLIC_COMMANDS.appSwitcher,
-  PUBLIC_COMMANDS.installFromSource,
-]);
+// `install-from-source` projects to the daemon via the `install_source` internal
+// command (its daemon writer), never by its own name, so the daemon registry has
+// never covered it. (`app-switcher` gained a daemon facet under ADR 0014 so its
+// device mutation could be classified, so it is no longer unrouted.)
+const UNROUTED_PUBLIC_COMMANDS = new Set<string>([PUBLIC_COMMANDS.installFromSource]);
 
 // Public commands that intentionally carry no capability entry — pure control-plane
 // or always-admitted commands, so the capability matrix has never covered them.
@@ -32,14 +47,17 @@ const NO_CAPABILITY_PUBLIC_COMMANDS = new Set<string>([
   PUBLIC_COMMANDS.appState,
   PUBLIC_COMMANDS.artifacts,
   PUBLIC_COMMANDS.batch,
+  PUBLIC_COMMANDS.capabilities,
   PUBLIC_COMMANDS.devices,
   PUBLIC_COMMANDS.doctor,
-  PUBLIC_COMMANDS.gesture,
+  PUBLIC_COMMANDS.events,
   PUBLIC_COMMANDS.prepare,
   PUBLIC_COMMANDS.replay,
   PUBLIC_COMMANDS.test,
   PUBLIC_COMMANDS.trace,
 ]);
+
+type TestCommandDescriptor = (typeof commandDescriptors)[number];
 
 function makeRequest(command: string, positionals: string[] = []): DaemonRequest {
   return { command, token: 'parity-token', session: 'parity-session', positionals, flags: {} };
@@ -57,6 +75,26 @@ function sampleRequests(command: string): DaemonRequest[] {
     { ...makeRequest(PUBLIC_COMMANDS.test), flags: { shardAll: 2 } },
     { ...makeRequest(PUBLIC_COMMANDS.test), flags: { shardSplit: 1 } },
   ];
+}
+
+function hasDaemonFacet(descriptor: TestCommandDescriptor): boolean {
+  return 'daemon' in descriptor && descriptor.daemon !== undefined;
+}
+
+function hasCapabilityFacet(descriptor: TestCommandDescriptor): boolean {
+  return 'capability' in descriptor && descriptor.capability !== undefined;
+}
+
+function readCatalogGroupForTest(descriptor: TestCommandDescriptor): string {
+  return descriptor.catalog.group;
+}
+
+function isDescriptorOnlyCommand(descriptor: TestCommandDescriptor): boolean {
+  return !hasDaemonFacet(descriptor) && !hasCapabilityFacet(descriptor) && !descriptor.batchable;
+}
+
+function readDaemonRouteForTest(descriptor: TestCommandDescriptor): string | undefined {
+  return 'daemon' in descriptor ? descriptor.daemon?.route : undefined;
 }
 
 test('derived daemon registry holds its routing invariants', () => {
@@ -103,6 +141,61 @@ test('derived daemon descriptors preserve closure traits by presence and behavio
   }
 });
 
+test('command catalog projections are built from descriptor catalog facets', () => {
+  const publicCommands = listDescriptorCatalogCommandNames('public');
+  const internalCommands = listDescriptorCatalogCommandNames('internal');
+  const localCliCommands = listDescriptorCatalogCommandNames('local-cli');
+
+  assert.deepEqual(Object.values(PUBLIC_COMMANDS).sort(), publicCommands);
+  assert.deepEqual(Object.values(INTERNAL_COMMANDS).sort(), internalCommands);
+  assert.deepEqual(listCliCommandNames(), [...publicCommands, ...localCliCommands].sort());
+
+  assert.equal(PUBLIC_COMMANDS.appState, 'appstate');
+  assert.equal(PUBLIC_COMMANDS.longPress, 'longpress');
+  assert.equal(INTERNAL_COMMANDS.leaseAllocate, 'lease_allocate');
+});
+
+test('descriptor-only commands explicitly declare a non-public catalog group', () => {
+  const publicCommands = new Set<string>(listDescriptorCatalogCommandNames('public'));
+
+  for (const descriptor of commandDescriptors) {
+    if (!isDescriptorOnlyCommand(descriptor)) continue;
+
+    const group = readCatalogGroupForTest(descriptor);
+    assert.notEqual(group, 'public', `${descriptor.name} declares a non-public catalog group`);
+    assert.equal(publicCommands.has(descriptor.name), false, `${descriptor.name} is not public`);
+  }
+});
+
+test('platform dispatch command list is built from descriptor dispatch facets', () => {
+  const dispatchCommands = commandDescriptors
+    .filter((descriptor) => 'dispatch' in descriptor && descriptor.dispatch !== undefined)
+    .map((descriptor) => descriptor.name)
+    .sort();
+
+  assert.deepEqual(listRegisteredDispatchCommandNames(), dispatchCommands);
+  assert.ok(dispatchCommands.includes('read'), 'read stays dispatch-only');
+  assert.equal(
+    dispatchCommands.includes(PUBLIC_COMMANDS.gesture),
+    false,
+    'gesture executes through the typed runtime/backend seam',
+  );
+});
+
+test('generic route commands that reach platform dispatch declare the dispatch facet', () => {
+  const nonDispatchGenericCommands = new Set<string>([PUBLIC_COMMANDS.gesture]);
+
+  for (const descriptor of commandDescriptors) {
+    const route = readDaemonRouteForTest(descriptor);
+    if (route !== 'generic' || nonDispatchGenericCommands.has(descriptor.name)) continue;
+
+    assert.ok(
+      'dispatch' in descriptor && descriptor.dispatch !== undefined,
+      `${descriptor.name} declares dispatch coverage`,
+    );
+  }
+});
+
 test('capability matrix holds its admission invariants', () => {
   // BASE_COMMAND_CAPABILITY_MATRIX is now BUILT from these derived descriptors
   // (the hand-authored literal was deleted after #906 proved byte-equality,
@@ -116,7 +209,11 @@ test('capability matrix holds its admission invariants', () => {
 
   for (const [command, capability] of entries) {
     const hasPlatformBucket = Boolean(
-      capability.apple || capability.android || capability.linux || capability.web,
+      capability.apple ||
+      capability.android ||
+      capability.vega ||
+      capability.linux ||
+      capability.web,
     );
     // Every capability entry is now selectable purely by its platform buckets: the
     // per-command `supports()` gate was relocated onto the owning PlatformPlugin
@@ -136,12 +233,7 @@ const NON_BATCHABLE_COMMANDS = [
   PUBLIC_COMMANDS.batch,
   PUBLIC_COMMANDS.replay,
   PUBLIC_COMMANDS.prepare,
-  'pinch',
   'viewport',
-  'pan',
-  'fling',
-  'rotate-gesture',
-  'transform-gesture',
 ];
 
 test('structured-batch allowlist is built from descriptors', () => {
@@ -172,4 +264,155 @@ test('structured-batch allowlist is built from descriptors', () => {
   for (const excluded of NON_BATCHABLE_COMMANDS) {
     assert.ok(!batchable.has(excluded), `${excluded} is not batchable`);
   }
+});
+
+test('MCP exposure list is built from descriptors', () => {
+  const cliCommands = new Set<string>(listCliCommandNames());
+  const expected = commandDescriptors
+    .filter((descriptor) => descriptor.mcpExposed && cliCommands.has(descriptor.name))
+    .map((descriptor) => descriptor.name)
+    .sort();
+  const expectedNames = new Set<string>(expected);
+
+  assert.deepEqual(listMcpExposedCommandNames(), expected);
+  assert.ok(expectedNames.has('debug'), 'local debug command stays MCP-exposed');
+  assert.ok(expectedNames.has('metro'), 'local metro command stays MCP-exposed');
+  assert.ok(expectedNames.has('session'), 'local session command stays MCP-exposed');
+  assert.equal(expectedNames.has(PUBLIC_COMMANDS.prepare), false, 'prepare stays out of MCP');
+  assert.equal(expectedNames.has('auth'), false, 'schema-only auth command stays out of MCP');
+});
+
+test('capability-checked command list is built from descriptor capabilities', () => {
+  const cliCommands = new Set<string>(listCliCommandNames());
+  const expected = commandDescriptors
+    .filter(
+      (descriptor) =>
+        'capability' in descriptor && descriptor.capability && cliCommands.has(descriptor.name),
+    )
+    .map((descriptor) => descriptor.name)
+    .sort();
+  const expectedNames = new Set<string>(expected);
+
+  assert.ok(expectedNames.has(PUBLIC_COMMANDS.snapshot), 'snapshot remains capability-checked');
+  assert.ok(expectedNames.has(PUBLIC_COMMANDS.gesture), 'gesture remains capability-checked');
+  assert.equal(
+    expectedNames.has(PUBLIC_COMMANDS.capabilities),
+    false,
+    'control-plane capabilities command stays capability-exempt',
+  );
+  assert.equal(expectedNames.has('debug'), false, 'local debug command stays capability-exempt');
+});
+
+// #1310: every raw descriptor explicitly decides recording; the daemon
+// replayScopedAction trait and MCP schema projection are both derived from it.
+test('recordsSessionAction is explicit on every raw descriptor and drives daemon replay policy', () => {
+  for (const descriptor of RAW_COMMAND_DESCRIPTORS) {
+    assert.equal(
+      typeof descriptor.recordsSessionAction,
+      'boolean',
+      `${descriptor.name} declares an explicit recordsSessionAction boolean`,
+    );
+    assert.equal(
+      'recordingEffect' in descriptor,
+      descriptor.recordsSessionAction,
+      `${descriptor.name} classifies app-state effect iff it records session actions`,
+    );
+    const daemon = ('daemon' in descriptor ? descriptor.daemon : undefined) as
+      | { replayScopedAction?: boolean }
+      | undefined;
+    assert.equal(
+      'replayScopedAction' in (daemon ?? {}),
+      false,
+      `${descriptor.name} does not set replayScopedAction on the daemon trait (it is derived)`,
+    );
+  }
+
+  for (const descriptor of commandDescriptors) {
+    assert.equal(
+      typeof resolveCommandRecordsSessionAction(descriptor.name),
+      'boolean',
+      `${descriptor.name} has a resolved recordsSessionAction boolean`,
+    );
+    // replayScopedAction only exists for daemon-routed commands; the MCP schema
+    // projection uses recordsSessionAction directly and covers commands whose
+    // public surface maps to an internal daemon command (e.g. install-from-source).
+    if (!('daemon' in descriptor)) continue;
+    assert.equal(
+      resolveCommandRecordsSessionAction(descriptor.name),
+      canRunReplayScopedAction(descriptor.name),
+      `${descriptor.name} recordsSessionAction matches daemon replayScopedAction`,
+    );
+  }
+
+  const recordable = commandDescriptors
+    .filter((descriptor) => resolveCommandRecordsSessionAction(descriptor.name))
+    .map((descriptor) => descriptor.name)
+    .sort();
+  assert.ok(recordable.includes('press'), 'press is classified as recordable');
+  assert.ok(recordable.includes('click'), 'click is classified as recordable');
+  assert.ok(recordable.includes('close'), 'close is classified as recordable');
+  assert.ok(recordable.includes('open'), 'open is classified as recordable');
+  assert.ok(
+    recordable.includes('install-from-source'),
+    'install-from-source is classified as recordable',
+  );
+  assert.ok(!recordable.includes('devices'), 'devices is not classified as recordable');
+});
+
+test('recordingEffect resolves request-sensitive observation and mutation subcommands', () => {
+  assert.equal(
+    resolveCommandRecordingEffect({ command: 'keyboard', positionals: ['status'], flags: {} }),
+    'observes-app',
+  );
+  assert.equal(
+    resolveCommandRecordingEffect({ command: 'keyboard', positionals: ['dismiss'], flags: {} }),
+    'mutates-app',
+  );
+  assert.equal(
+    resolveCommandRecordingEffect({ command: 'alert', positionals: ['get'], flags: {} }),
+    'observes-app',
+  );
+  assert.equal(
+    resolveCommandRecordingEffect({ command: 'alert', positionals: ['accept'], flags: {} }),
+    'mutates-app',
+  );
+  assert.equal(
+    resolveCommandRecordingEffect({
+      command: 'find',
+      positionals: ['text', 'Ready', 'exists'],
+      flags: {},
+    }),
+    'observes-app',
+  );
+  assert.equal(
+    resolveCommandRecordingEffect({
+      command: 'find',
+      positionals: ['text', 'Continue', 'click'],
+      flags: {},
+    }),
+    'mutates-app',
+  );
+});
+
+test('targetIdentityVerification pins exactly the evidence-carrying command set (ADR 0012 / #1349)', () => {
+  const declared = RAW_COMMAND_DESCRIPTORS.flatMap((descriptor) => {
+    const phase = resolveTargetIdentityVerification(descriptor.name);
+    return phase ? [[descriptor.name, phase] as const] : [];
+  });
+  // A new evidence-carrying command must choose its replay verification phase
+  // here explicitly instead of silently entering the generic pre-dispatch
+  // path — wait is the only command whose target may legitimately be absent
+  // when its step starts.
+  assert.deepEqual(
+    [...declared].sort(([a], [b]) => a.localeCompare(b)),
+    [
+      ['click', 'pre-dispatch'],
+      ['fill', 'pre-dispatch'],
+      ['get', 'pre-dispatch'],
+      ['is', 'pre-dispatch'],
+      ['longpress', 'pre-dispatch'],
+      ['press', 'pre-dispatch'],
+      ['wait', 'post-resolution'],
+    ],
+  );
 });

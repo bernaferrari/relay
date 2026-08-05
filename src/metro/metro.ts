@@ -1,4 +1,4 @@
-import type { SessionRuntimeHints } from '../kernel/contracts.ts';
+import type { SessionRuntimeHints } from '@agent-device/kernel/contracts';
 import { stopMetroCompanion } from './client-metro-companion.ts';
 import { resolveRuntimeTransportHints } from '../utils/runtime-transport.ts';
 
@@ -86,8 +86,6 @@ export type MetroTunnelResponseMessage =
   | MetroTunnelWebSocketOpenResultMessage
   | MetroTunnelWebSocketFrameMessage
   | MetroTunnelWebSocketCloseMessage;
-
-export type MetroTunnelMessage = MetroTunnelRequestMessage | MetroTunnelResponseMessage;
 
 export type StopMetroTunnelOptions = {
   projectRoot: string;

@@ -1,16 +1,22 @@
 import path from 'node:path';
-import { AppError, normalizeError, toAppErrorCode } from '../kernel/errors.ts';
+import { AppError, normalizeError, toAppErrorCode } from '@agent-device/kernel/errors';
 import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
   getDiagnosticsMeta,
 } from '../utils/diagnostics.ts';
-import type { DaemonArtifact, DaemonRequest, DaemonResponse, DaemonResponseData } from './types.ts';
+import type { DaemonRequest, DaemonResponse, DaemonResponseData } from './types.ts';
+import type { DaemonArtifact, DaemonArtifactType } from '@agent-device/kernel/contracts';
 
 export function finalizeDaemonResponse(
   req: DaemonRequest,
   response: DaemonResponse,
-  trackArtifact: (opts: { artifactPath: string; tenantId?: string; fileName?: string }) => string,
+  trackArtifact: (opts: {
+    artifactPath: string;
+    tenantId?: string;
+    artifactType: DaemonArtifactType | undefined;
+    fileName?: string;
+  }) => string,
 ): DaemonResponse {
   const details = getDiagnosticsMeta();
   if (!response.ok) {
@@ -23,6 +29,16 @@ export function finalizeDaemonResponse(
       },
     });
     const logPathOnFailure = flushDiagnosticsToSessionFile({ force: true }) ?? undefined;
+    // ADR 0012 decision 6, BLOCKER 2 (second follow-up): every handler-RETURNED
+    // (as opposed to thrown) failure response is rebuilt here into a fresh
+    // AppError before re-normalizing — this used to copy `hint`/`diagnosticId`/
+    // `logPath` from the incoming `response.error` but NOT `retriable`/
+    // `supportedOn`, so a handler that set them at the correct top-level
+    // location (matching `DaemonError`'s wire contract) still lost them at
+    // this reconstruction, regardless of how correctly the handler itself
+    // built its response. Both are now carried through the same way, with the
+    // same defensive `details` fallback `hint` already used (some cause
+    // objects still carry them nested under `details` instead of top-level).
     const normalizedError = normalizeError(
       new AppError(toAppErrorCode(response.error.code), response.error.message, {
         ...(response.error.details ?? {}),
@@ -33,6 +49,16 @@ export function finalizeDaemonResponse(
             : undefined),
         diagnosticId: response.error.diagnosticId,
         logPath: response.error.logPath,
+        retriable:
+          response.error.retriable ??
+          (typeof response.error.details?.retriable === 'boolean'
+            ? response.error.details.retriable
+            : undefined),
+        supportedOn:
+          response.error.supportedOn ??
+          (typeof response.error.details?.supportedOn === 'string'
+            ? response.error.details.supportedOn
+            : undefined),
       }),
       {
         diagnosticId: details.diagnosticId,
@@ -52,7 +78,12 @@ export function finalizeDaemonResponse(
 function registerDownloadableArtifacts(
   req: DaemonRequest,
   data: DaemonResponseData | undefined,
-  trackArtifact: (opts: { artifactPath: string; tenantId?: string; fileName?: string }) => string,
+  trackArtifact: (opts: {
+    artifactPath: string;
+    tenantId?: string;
+    artifactType: DaemonArtifactType | undefined;
+    fileName?: string;
+  }) => string,
 ): DaemonResponseData | undefined {
   if (!data) return data;
   const pendingArtifacts = collectPendingArtifacts(req, data);
@@ -63,9 +94,13 @@ function registerDownloadableArtifacts(
       const artifactPath = artifact.path as string;
       return {
         field: artifact.field,
+        // Omitted (not null/undefined-valued) when untyped, matching the
+        // optional wire contract on DaemonArtifact.
+        ...(artifact.artifactType !== undefined ? { artifactType: artifact.artifactType } : {}),
         artifactId: trackArtifact({
           artifactPath,
           tenantId: req.meta?.tenantId,
+          artifactType: artifact.artifactType,
           fileName: artifact.fileName,
         }),
         fileName: artifact.fileName,
@@ -82,6 +117,7 @@ function collectPendingArtifacts(req: DaemonRequest, data: DaemonResponseData): 
   if (req.command === 'screenshot' && !hasField('path') && typeof data.path === 'string') {
     artifacts.push({
       field: 'path',
+      artifactType: 'screenshot',
       path: data.path,
       localPath: req.meta?.clientArtifactPaths?.path,
       fileName: path.basename(req.meta?.clientArtifactPaths?.path ?? data.path),

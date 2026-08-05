@@ -1,14 +1,13 @@
-import type { CommandRequestResult } from '../../client/client.ts';
-import { renderReplayTestResponse } from '../../replay/test/reporting.ts';
+import type { CommandRequestResult } from '../../agent-device-client.ts';
 import { runCliCommandWithOutput } from '../../commands/cli-runner.ts';
 import type { CommandName } from '../../commands/command-metadata.ts';
 import type { CliOutput } from '../../commands/command-contract.ts';
-import type { ReplaySuiteResult } from '../../daemon/types.ts';
-import type { CliFlags } from '../parser/cli-flags.ts';
+import type { ReplaySuiteResult } from '@agent-device/contracts/replay';
+import type { CliFlags } from '@agent-device/contracts/command';
 import { readCommandMessage } from '../../utils/success-text.ts';
-import { isNonDefaultResponseLevel } from '../../kernel/contracts.ts';
+import { isNonDefaultResponseLevel } from '@agent-device/kernel/contracts';
 import { writeCommandOutput } from './shared.ts';
-import type { ClientBackedCliCommandName } from '../../command-catalog.ts';
+import type { ClientBackedCliCommandName } from './client-backed.ts';
 import type { ClientCommandParams } from './router-types.ts';
 
 export async function runGenericClientBackedCommand({
@@ -54,15 +53,18 @@ function writeGenericCliOutput(
   options: Pick<ClientCommandParams, 'debug' | 'replayTestReporterRuntime'> = {},
 ): Promise<number> | number {
   if (command === 'test') {
-    return renderReplayTestResponse({
-      suite: data as ReplaySuiteResult,
-      debug: options.debug,
-      verbose: flags.verbose,
-      json: flags.json,
-      reporter: flags.reporter,
-      reportJunit: flags.reportJunit,
-      reporterRuntime: options.replayTestReporterRuntime,
-    });
+    // Lazy: keeps the replay test reporting runtime off every other command's path.
+    return import('../../replay/test/reporting.ts').then(({ renderReplayTestResponse }) =>
+      renderReplayTestResponse({
+        suite: data as ReplaySuiteResult,
+        debug: options.debug,
+        verbose: flags.verbose,
+        json: flags.json,
+        reporter: flags.reporter,
+        reportJunit: flags.reportJunit,
+        reporterRuntime: options.replayTestReporterRuntime,
+      }),
+    );
   }
   writeCommandOutput(flags, data, () =>
     readCommandMessage(data as Record<string, unknown> | undefined),

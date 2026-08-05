@@ -1,21 +1,19 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AppError } from '../../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   isIosFamily,
   sortAppleDevicesForSelection,
   type AppleOS,
   type DeviceInfo,
   type DeviceTarget,
-} from '../../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import { resolveIosSimulatorDeviceSetPath } from '../../../utils/device-isolation.ts';
 import { buildHostMacDevice } from '../os/macos/devices.ts';
 import { buildSimctlArgs } from './simctl.ts';
 import { markSimulatorBooted } from './simulator.ts';
 import { resolveAppleToolProvider, runXcrun } from './tool-provider.ts';
-
-export { createLocalAppleToolProvider, withAppleToolProvider } from './tool-provider.ts';
 
 const IOS_DEVICECTL_LIST_TIMEOUT_MS = 8_000;
 const APPLE_PRODUCT_TYPE_PATTERN = /^(iphone|ipad|ipod|appletv|realitydevice)/i;
@@ -60,7 +58,8 @@ type IosDeviceDiscoveryOptions = {
 };
 
 const XCTRACE_SECTION_HEADER_PATTERN = /^==\s*(.+?)\s*==$/;
-const XCTRACE_DEVICE_LINE_PATTERN = /^(?<name>.+?)\s+\[(?<id>[^[\]]+)\]\s*$/;
+const XCTRACE_DEVICE_LINE_PATTERN =
+  /^(?<name>.+?)\s+(?:\[(?<idBracket>[^[\]]+)\]|\((?<osVersion>[^)]+)\)\s+\((?<idParen>[^)]+)\))\s*$/;
 
 function normalizeAppleDescriptor(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase();
@@ -250,10 +249,48 @@ function mapDevicectlAppleDevices(payload: DevicectlListDevicesPayload): DeviceI
         resolveDevicectlAppleProductType(device),
         ...resolveDevicectlAppleLabels(device),
       ]),
+      iosPhysicalDeviceBackend: 'coredevice',
       booted: true,
     });
   }
   return devices;
+}
+
+function parseXctraceDeviceLine(
+  line: string,
+): { name: string; id: string; osVersion?: string } | null {
+  const match = XCTRACE_DEVICE_LINE_PATTERN.exec(line);
+  if (!match?.groups) return null;
+
+  const name = match.groups.name?.trim() ?? '';
+  const id = match.groups.idBracket?.trim() ?? match.groups.idParen?.trim() ?? '';
+  const osVersion = match.groups.osVersion?.trim();
+  if (!name || !id) return null;
+
+  return { name, id, osVersion };
+}
+
+function buildXctracePhysicalDevice(
+  name: string,
+  id: string,
+  osVersion: string | undefined,
+): DeviceInfo | null {
+  const target = resolveAppleTargetFromLabel(name);
+  if (!target) return null;
+
+  return {
+    platform: 'apple',
+    id,
+    name,
+    kind: 'device',
+    target,
+    appleOs: resolveAppleOs(target, osVersion ? [name, osVersion] : [name]),
+    iosPhysicalDeviceBackend: 'xctest',
+    // xctrace lists currently connected devices in the "Devices" section.
+    // The "Devices Offline" section is excluded above, so treating these as
+    // booted preserves the existing physical-device selection semantics.
+    booted: true,
+  };
 }
 
 export function parseXctracePhysicalAppleDevices(output: string): DeviceInfo[] {
@@ -272,25 +309,11 @@ export function parseXctracePhysicalAppleDevices(output: string): DeviceInfo[] {
 
     if (section !== 'Devices') continue;
 
-    const deviceMatch = XCTRACE_DEVICE_LINE_PATTERN.exec(line);
-    const id = deviceMatch?.groups?.id?.trim() ?? '';
-    const name = deviceMatch?.groups?.name?.trim() ?? '';
-    if (!id || !name) continue;
-    const target = resolveAppleTargetFromLabel(name);
-    if (!target) continue;
+    const parsedLine = parseXctraceDeviceLine(line);
+    if (!parsedLine) continue;
 
-    devices.push({
-      platform: 'apple',
-      id,
-      name,
-      kind: 'device',
-      target,
-      appleOs: resolveAppleOs(target, [name]),
-      // xctrace lists currently connected devices in the "Devices" section.
-      // The "Devices Offline" section is excluded above, so treating these as
-      // booted preserves the existing physical-device selection semantics.
-      booted: true,
-    });
+    const device = buildXctracePhysicalDevice(parsedLine.name, parsedLine.id, parsedLine.osVersion);
+    if (device) devices.push(device);
   }
 
   return devices;

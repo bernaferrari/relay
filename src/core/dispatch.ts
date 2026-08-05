@@ -1,43 +1,40 @@
-import { promises as fs } from 'node:fs';
-import pathModule from 'node:path';
-import { AppError } from '../kernel/errors.ts';
-import { isIosFamily, type DeviceInfo } from '../kernel/device.ts';
-import { getInteractor } from './interactors.ts';
-import type { Interactor, RunnerContext } from './interactor-types.ts';
-import { isDeepLinkTarget } from './open-target.ts';
-import { parseTriggerAppEventArgs, resolveAppEventUrl } from './app-events.ts';
+import { screenshotOptionsFromFlags } from '@agent-device/contracts/capture';
+import { isDeepLinkTarget } from '@agent-device/contracts/command';
+import { parseDeviceRotation } from '@agent-device/contracts/device';
+import type { GesturePlan, Interactor, RunnerContext } from '@agent-device/contracts/interaction';
+import { parseTvRemoteButton } from '@agent-device/contracts/interaction';
 import {
   LAUNCH_CONSOLE_DIRECT_APP_ONLY_MESSAGE,
   LAUNCH_CONSOLE_IOS_SIMULATOR_ONLY_MESSAGE,
-} from './launch-console.ts';
+} from '@agent-device/contracts/observability';
+import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import type { Rect } from '@agent-device/kernel/snapshot';
+import { promises as fs } from 'node:fs';
+import pathModule from 'node:path';
 import { emitDiagnostic, withDiagnosticTimer } from '../utils/diagnostics.ts';
+import { isKeyboardAction, type KeyboardAction } from '../utils/keyboard-actions.ts';
 import { readLocationCoordinate } from '../utils/location-coordinates.ts';
 import { successText, withSuccessText } from '../utils/success-text.ts';
-import { screenshotOptionsFromFlags } from '../contracts/screenshot.ts';
-import { isKeyboardAction, type KeyboardAction } from '../utils/keyboard-actions.ts';
+import { requireIntInRange } from '../utils/validation.ts';
+import { parseTriggerAppEventArgs, resolveAppEventUrl } from './app-events.ts';
+import type { DescriptorDispatchCommandName } from './command-descriptor/registry.ts';
 import type { DispatchContext } from './dispatch-context.ts';
 import {
   handleFillCommand,
-  handleFlingCommand,
   handleFocusCommand,
   handleLongPressCommand,
-  handlePanCommand,
-  handlePinchCommand,
   handlePressCommand,
   handleReadCommand,
-  handleRotateGestureCommand,
   handleScrollCommand,
-  handleSwipeCommand,
-  handleSwipePresetCommand,
-  handleTransformGestureCommand,
   handleTypeCommand,
 } from './dispatch-interactions.ts';
 import { readNotificationPayload } from './dispatch-payload.ts';
-import { parseDeviceRotation } from './device-rotation.ts';
+import { getInteractor } from './interactors.ts';
 import { readViewportDimension } from './viewport-dimension.ts';
 
-export { resolveTargetDevice } from './dispatch-resolve.ts';
 export type { CommandFlags, DispatchContext } from './dispatch-context.ts';
+export { resolveTargetDevice } from './dispatch-resolve.ts';
 
 export async function dispatchCommand(
   device: DeviceInfo,
@@ -46,17 +43,7 @@ export async function dispatchCommand(
   outPath?: string,
   context?: DispatchContext,
 ): Promise<Record<string, unknown> | void> {
-  const runnerCtx: RunnerContext = {
-    requestId: context?.requestId,
-    appBundleId: context?.appBundleId,
-    verbose: context?.verbose,
-    logPath: context?.logPath,
-    traceLogPath: context?.traceLogPath,
-    iosXctestrunFile: context?.iosXctestrunFile,
-    iosXctestDerivedDataPath: context?.iosXctestDerivedDataPath,
-    iosXctestEnvDir: context?.iosXctestEnvDir,
-    runnerLeaseContext: context?.runnerLeaseContext,
-  };
+  const runnerCtx = runnerContextFromDispatchContext(context);
   const interactor = await getInteractor(device, runnerCtx);
   emitDiagnostic({
     level: 'debug',
@@ -87,43 +74,42 @@ export async function dispatchCommand(
   );
 }
 
-/**
- * The exact set of commands routed by {@link dispatchKnownCommand}. Hand-authored
- * to match the former `switch` cases verbatim: it is NOT the registry's `generic`
- * daemon route (that set is both narrower — e.g. it has no `open`/`type`/`read` —
- * and includes `gesture`, which dispatch never handled), and `swipe-preset` /
- * `read` are not registry command names at all. Keeping it explicit makes the
- * dispatch surface self-describing and lets the `Record` below enforce coverage.
- */
-type DispatchCommand =
-  | 'open'
-  | 'close'
-  | 'press'
-  | 'swipe'
-  | 'swipe-preset'
-  | 'pan'
-  | 'fling'
-  | 'longpress'
-  | 'focus'
-  | 'type'
-  | 'fill'
-  | 'scroll'
-  | 'pinch'
-  | 'rotate-gesture'
-  | 'transform-gesture'
-  | 'trigger-app-event'
-  | 'screenshot'
-  | 'viewport'
-  | 'back'
-  | 'home'
-  | 'rotate'
-  | 'app-switcher'
-  | 'clipboard'
-  | 'keyboard'
-  | 'settings'
-  | 'push'
-  | 'snapshot'
-  | 'read';
+export async function dispatchGesturePlan(
+  device: DeviceInfo,
+  plan: GesturePlan,
+  context?: DispatchContext,
+): Promise<Record<string, unknown> | void> {
+  const interactor = await getInteractor(device, runnerContextFromDispatchContext(context));
+  if (!interactor.performGesture) {
+    throw new AppError('UNSUPPORTED_OPERATION', 'Gesture execution is unavailable');
+  }
+  return await interactor.performGesture(plan);
+}
+
+export async function dispatchGestureViewport(
+  device: DeviceInfo,
+  context?: DispatchContext,
+): Promise<Rect | undefined> {
+  const interactor = await getInteractor(device, runnerContextFromDispatchContext(context));
+  return await interactor.gestureViewport?.();
+}
+
+function runnerContextFromDispatchContext(context?: DispatchContext): RunnerContext {
+  return {
+    requestId: context?.requestId,
+    signal: context?.signal,
+    appBundleId: context?.appBundleId,
+    verbose: context?.verbose,
+    logPath: context?.logPath,
+    traceLogPath: context?.traceLogPath,
+    iosXctestrunFile: context?.iosXctestrunFile,
+    iosXctestDerivedDataPath: context?.iosXctestDerivedDataPath,
+    iosXctestEnvDir: context?.iosXctestEnvDir,
+    runnerLeaseContext: context?.runnerLeaseContext,
+  };
+}
+
+type DispatchCommand = DescriptorDispatchCommandName;
 
 type DispatchHandlerArgs = {
   device: DeviceInfo;
@@ -137,11 +123,12 @@ type DispatchHandlerArgs = {
 type DispatchHandler = (args: DispatchHandlerArgs) => Promise<Record<string, unknown> | void>;
 
 /**
- * Registry-driven exhaustive dispatch table. The `Record<DispatchCommand, …>`
- * type forces every dispatch command to have a handler — a missing entry is a
- * COMPILE error, which replaces the former runtime `default: throw` as the
- * coverage safety net. Each entry routes to the IDENTICAL handler with the
- * IDENTICAL arguments the `switch` used, so dispatch stays strictly behaviorless.
+ * Descriptor-driven exhaustive dispatch table. The `Record<DispatchCommand, …>`
+ * type forces every descriptor-declared dispatch command to have a handler — a
+ * missing entry is a COMPILE error, which replaces the former runtime `default:
+ * throw` as the coverage safety net. Each entry routes to the IDENTICAL handler
+ * with the IDENTICAL arguments the `switch` used, so dispatch stays strictly
+ * behaviorless.
  */
 const DISPATCH_HANDLERS: Record<DispatchCommand, DispatchHandler> = {
   open: ({ device, interactor, positionals, context }) =>
@@ -159,12 +146,6 @@ const DISPATCH_HANDLERS: Record<DispatchCommand, DispatchHandler> = {
   },
   press: ({ device, interactor, positionals, context }) =>
     handlePressCommand(device, interactor, positionals, context),
-  swipe: ({ device, interactor, positionals, context }) =>
-    handleSwipeCommand(device, interactor, positionals, context),
-  'swipe-preset': ({ device, interactor, positionals, context }) =>
-    handleSwipePresetCommand(device, interactor, positionals, context),
-  pan: ({ interactor, positionals }) => handlePanCommand(interactor, positionals),
-  fling: ({ interactor, positionals }) => handleFlingCommand(interactor, positionals),
   longpress: ({ interactor, positionals }) => handleLongPressCommand(interactor, positionals),
   focus: ({ interactor, positionals }) => handleFocusCommand(interactor, positionals),
   type: ({ interactor, positionals, context }) =>
@@ -173,12 +154,6 @@ const DISPATCH_HANDLERS: Record<DispatchCommand, DispatchHandler> = {
     handleFillCommand(interactor, positionals, context),
   scroll: ({ interactor, positionals, context }) =>
     handleScrollCommand(interactor, positionals, context),
-  pinch: ({ device, interactor, positionals, context }) =>
-    handlePinchCommand(device, interactor, positionals, context),
-  'rotate-gesture': ({ device, interactor, positionals }) =>
-    handleRotateGestureCommand(device, interactor, positionals),
-  'transform-gesture': ({ device, interactor, positionals }) =>
-    handleTransformGestureCommand(device, interactor, positionals),
   'trigger-app-event': ({ device, interactor, positionals, context }) =>
     handleTriggerAppEventCommand(device, interactor, positionals, context),
   screenshot: ({ interactor, positionals, outPath, context }) =>
@@ -192,10 +167,11 @@ const DISPATCH_HANDLERS: Record<DispatchCommand, DispatchHandler> = {
     await interactor.home();
     return { action: 'home', ...successText('Home') };
   },
-  rotate: async ({ interactor, positionals }) => {
-    const orientation = parseDeviceRotation(positionals[0]);
-    await interactor.rotate(orientation);
-    return { action: 'rotate', orientation, ...successText(`Rotated to ${orientation}`) };
+  orientation: async ({ interactor, positionals }) => {
+    const requestedOrientation = parseDeviceRotation(positionals[0]);
+    const result = await interactor.setOrientation(requestedOrientation);
+    const orientation = result?.orientation ?? requestedOrientation;
+    return { action: 'orientation', orientation, ...successText(`Rotated to ${orientation}`) };
   },
   'app-switcher': async ({ interactor }) => {
     await interactor.appSwitcher();
@@ -204,12 +180,21 @@ const DISPATCH_HANDLERS: Record<DispatchCommand, DispatchHandler> = {
   clipboard: ({ interactor, positionals }) => handleClipboardCommand(interactor, positionals),
   keyboard: ({ device, positionals, context, runnerCtx }) =>
     handleKeyboardCommand(device, positionals, context, runnerCtx),
+  'tv-remote': ({ device, interactor, positionals, context }) =>
+    handleTvRemoteCommand(device, interactor, positionals, context),
   settings: ({ device, interactor, positionals, context }) =>
     handleSettingsCommand(device, interactor, positionals, context),
   push: ({ device, positionals, context }) => handlePushCommand(device, positionals, context),
   snapshot: ({ interactor, context }) => handleSnapshotCommand(interactor, context),
   read: ({ device, positionals, context }) => handleReadCommand(device, positionals, context),
 };
+
+/**
+ * @internal Introspection helper used by parity tests.
+ */
+export function listRegisteredDispatchCommandNames(): string[] {
+  return Object.keys(DISPATCH_HANDLERS).sort();
+}
 
 async function dispatchKnownCommand(
   device: DeviceInfo,
@@ -283,6 +268,7 @@ async function handleOpenCommand(
       activity: context?.activity,
       appBundleId: context?.appBundleId,
       launchArgs,
+      terminateRunningApp: context?.terminateRunningApp,
       url,
     });
     return { app, url, ...successText(`Opened: ${app}`) };
@@ -338,11 +324,13 @@ async function handleScreenshotCommand(
   const screenshotOptions = screenshotOptionsFromFlags(context);
   await interactor.screenshot(screenshotPath, {
     appBundleId: context?.appBundleId,
+    pixelDensity: screenshotOptions.pixelDensity,
     fullscreen: screenshotOptions.fullscreen,
     normalizeStatusBar: screenshotOptions.normalizeStatusBar,
     stabilize: screenshotOptions.stabilize,
     surface: context?.surface,
     skipIosSimulatorBootCheck: context?.skipIosSimulatorBootCheck,
+    captureBackend: context?.screenshotCaptureBackend,
   });
   return { path: screenshotPath, ...successText(`Saved screenshot: ${screenshotPath}`) };
 }
@@ -387,6 +375,34 @@ async function handleClipboardCommand(
     action,
     textLength: Array.from(text).length,
     ...successText('Clipboard updated'),
+  };
+}
+
+async function handleTvRemoteCommand(
+  device: DeviceInfo,
+  interactor: Interactor,
+  positionals: string[],
+  context: DispatchContext | undefined,
+): Promise<Record<string, unknown>> {
+  if (device.target !== 'tv') {
+    throw new AppError('UNSUPPORTED_OPERATION', 'tv-remote is supported only on TV targets', {
+      hint: 'Select an Android TV, tvOS, or Vega OS target with --target tv.',
+    });
+  }
+  if (positionals.length !== 1) {
+    throw new AppError('INVALID_ARGS', 'tv-remote requires exactly one button');
+  }
+  const button = parseTvRemoteButton(positionals[0]);
+  const durationMs =
+    context?.durationMs === undefined
+      ? undefined
+      : requireIntInRange(context.durationMs, 'durationMs', 0, 10_000);
+  await interactor.tvRemote(button, durationMs);
+  return {
+    action: 'tv-remote',
+    button,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...successText(`Pressed TV remote ${button}`),
   };
 }
 
@@ -495,14 +511,31 @@ async function handleIosKeyboardCommand(
     { command: 'keyboardDismiss', appBundleId: context?.appBundleId },
     runnerCtx,
   );
+  const mechanism =
+    typeof result.keyboardDismissMechanism === 'string'
+      ? result.keyboardDismissMechanism
+      : undefined;
   return {
     platform: 'ios',
     action: 'dismiss',
     wasVisible: result.wasVisible,
     dismissed: result.dismissed,
     visible: result.visible,
-    ...successText(result.dismissed ? 'Keyboard dismissed' : 'Keyboard already hidden'),
+    mechanism,
+    ...successText(iosKeyboardDismissMessage(result.dismissed === true, mechanism)),
   };
+}
+
+// Discloses which mechanism actually resigned the keyboard (#1598): a
+// Discloses that the keyboard's own dismiss key did the work (#1598); a bare
+// "dismissed" would leave the caller unable to tell a vouched-for control tap
+// from app-side coincidence.
+function iosKeyboardDismissMessage(dismissed: boolean, mechanism: string | undefined): string {
+  if (!dismissed) return 'Keyboard already hidden';
+  if (mechanism === 'dismissKey') {
+    return 'Keyboard dismissed via its dismiss key';
+  }
+  return 'Keyboard dismissed';
 }
 
 async function handleSettingsCommand(
@@ -615,14 +648,17 @@ async function handleSnapshotCommand(
   interactor: Interactor,
   context: DispatchContext | undefined,
 ): Promise<Record<string, unknown>> {
+  const snapshotContext = context ?? {};
   return await interactor.snapshot({
-    appBundleId: context?.appBundleId,
-    interactiveOnly: context?.snapshotInteractiveOnly,
-    depth: context?.snapshotDepth,
-    scope: context?.snapshotScope,
-    raw: context?.snapshotRaw,
-    includeRects: context?.snapshotIncludeRects,
-    surface: context?.surface,
+    appBundleId: snapshotContext.appBundleId,
+    signal: snapshotContext.signal,
+    interactiveOnly: snapshotContext.snapshotInteractiveOnly,
+    depth: snapshotContext.snapshotDepth,
+    scope: snapshotContext.snapshotScope,
+    raw: snapshotContext.snapshotRaw,
+    includeRects: snapshotContext.snapshotIncludeRects,
+    includeHiddenContentHints: snapshotContext.snapshotIncludeHiddenContentHints,
+    surface: snapshotContext.surface,
   });
 }
 

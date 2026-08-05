@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { exportReplayScriptToMaestro } from '../../compat/maestro/export-flow.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { exportReplayActionsToMaestro, MAESTRO_SELECTOR_PROJECTION } from '@agent-device/maestro';
+import { AppError } from '@agent-device/kernel/errors';
+import { parseReplayScriptDetailed, readReplayScriptMetadata } from '@agent-device/ad-script';
+import { projectSelectorExpression } from '@agent-device/selectors';
 import { resolveUserPath } from '../../utils/path-resolution.ts';
 import { writeCommandOutput } from './shared.ts';
 import type { ClientCommandHandler } from './router-types.ts';
@@ -20,11 +22,8 @@ function handleReplayRunCommand({ positionals, flags }: ReplayCommandParams): fa
   if (positionals.length > 1) {
     throw new AppError('INVALID_ARGS', 'replay accepts exactly one input path: replay <path>');
   }
-  if (flags.replayExportFormat !== undefined || flags.out !== undefined) {
-    throw new AppError(
-      'INVALID_ARGS',
-      'replay --format/--out are only supported with replay export.',
-    );
+  if (flags.out !== undefined) {
+    throw new AppError('INVALID_ARGS', 'replay --out is only supported with replay export.');
   }
   return false;
 }
@@ -41,7 +40,13 @@ async function handleReplayExportCommand({
 
   const sourcePath = resolveUserPath(inputPath);
   const script = fs.readFileSync(sourcePath, 'utf8');
-  const result = exportReplayScriptToMaestro(script);
+  const parsed = parseReplayScriptDetailed(script);
+  const result = exportReplayActionsToMaestro(parsed.actions, {
+    actionLines: parsed.actionLines,
+    metadata: readReplayScriptMetadata(script),
+    resolveSelector: (expression) =>
+      projectSelectorExpression(expression, MAESTRO_SELECTOR_PROJECTION),
+  });
   const outputPath = typeof flags.out === 'string' ? resolveUserPath(flags.out) : undefined;
   if (outputPath) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -54,7 +59,7 @@ async function handleReplayExportCommand({
   writeCommandOutput(
     flags,
     {
-      format: flags.replayExportFormat ?? 'maestro',
+      format: 'maestro',
       sourcePath,
       ...(outputPath ? { path: outputPath } : { yaml: result.yaml }),
       warnings: result.warnings,
@@ -82,9 +87,5 @@ function validateReplayExportOptions(
   }
   if (flags.replayEnv?.length) {
     throw new AppError('INVALID_ARGS', 'replay export does not evaluate --env substitutions.');
-  }
-  const format = flags.replayExportFormat ?? 'maestro';
-  if (format !== 'maestro') {
-    throw new AppError('INVALID_ARGS', `Unsupported replay export format: ${format}`);
   }
 }

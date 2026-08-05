@@ -1,10 +1,10 @@
-export { parseFindArgs } from './utils/finders.ts';
+export { parseFindArgs } from '@agent-device/selectors';
 
 import {
   findBestMatchesByLocator as findBestMatchesByLocatorInternal,
   type FindLocator,
-} from './utils/finders.ts';
-import type { SnapshotNode } from './kernel/snapshot.ts';
+} from '@agent-device/selectors';
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 
 export type FindMatchOptions = {
   requireRect?: boolean;

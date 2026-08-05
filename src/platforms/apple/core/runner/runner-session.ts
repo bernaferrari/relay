@@ -1,4 +1,4 @@
-import { AppError, toAppErrorCode } from '../../../../kernel/errors.ts';
+import { AppError, toAppErrorCode } from '@agent-device/kernel/errors';
 import {
   runCmdBackground,
   type ExecResult,
@@ -6,13 +6,16 @@ import {
 } from '../../../../utils/exec.ts';
 import { withKeyedLock } from '../../../../utils/keyed-lock.ts';
 import { Deadline } from '../../../../utils/retry.ts';
-import { isIosFamily, isApplePlatform, type DeviceInfo } from '../../../../kernel/device.ts';
-import type { RunnerLogicalLeaseContext } from '../../../../core/runner-lease-context.ts';
+import { isIosFamily, isApplePlatform, type DeviceInfo } from '@agent-device/kernel/device';
+import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/platform';
 import type { AppleRunnerLifecycleOptions } from './runner-provider.ts';
-import { emitRequestProgress } from '../../../../daemon/request-progress.ts';
+import { emitRequestProgress } from '../../../../request/progress.ts';
+import { createRequestCanceledError } from '../../../../request/cancel.ts';
 import { emitDiagnostic, withDiagnosticTimer } from '../../../../utils/diagnostics.ts';
 import { buildSimctlArgsForDevice } from '../simctl.ts';
 import { runAppleToolCommand, runXcrun } from '../tool-provider.ts';
+import { resolveRunnerDestination } from '../apple-runner-platform.ts';
+import { resolveRunnerMaxConcurrentDestinationsFlag } from './runner-cache-metadata.ts';
 import {
   waitForRunner,
   sendRunnerCommandOnce,
@@ -28,13 +31,16 @@ import {
   prepareXctestrunWithEnv,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerDerivedPath,
-  resolveRunnerDestination,
-  resolveRunnerMaxConcurrentDestinationsFlag,
 } from './runner-xctestrun.ts';
-import { withRunnerCommandId, type RunnerCommand } from './runner-contract.ts';
+import {
+  resolveRunnerRequestSignal,
+  withRunnerCommandId,
+  type RunnerCommand,
+} from './runner-contract.ts';
 import {
   canSkipRunnerReadinessPreflightAfterHealthyMutation,
   isReadOnlyRunnerCommand,
+  isRunnerReadinessPreflightExempt,
   isRunnerReadinessProbeCommand,
 } from './runner-command-traits.ts';
 import {
@@ -87,7 +93,7 @@ type RunnerReadinessPreflightDecision =
     }
   | {
       action: 'skip';
-      reason: 'read_only_startup_command' | 'readiness_probe_command';
+      reason: 'read_only_startup_command' | 'readiness_probe_command' | 'preflight_exempt_command';
     }
   | {
       action: 'skip';
@@ -125,6 +131,11 @@ async function startRunnerSessionWithLease(
   options: RunnerSessionOptions,
 ): Promise<RunnerSession> {
   const startupTimings: Record<string, number> = {};
+  // The owning request's abort signal so a client disconnect kills the blocking
+  // xctestrun build and runner launch (killProcessTree via exec) instead of
+  // orphaning them. Request-scoped: only this request's device startup reacts,
+  // and a signal-less internal caller (shutdown) simply gets undefined.
+  const signal = resolveRunnerRequestSignal(options);
   const logicalLeaseContext = normalizeRunnerLogicalLeaseContext(
     options.runnerLeaseContext,
     device.id,
@@ -174,7 +185,7 @@ async function startRunnerSessionWithLease(
   const xctestrunArtifact = await measureRunnerStartupStep(
     startupTimings,
     'ensure_xctestrun',
-    async () => await ensureXctestrunArtifact(device, options),
+    async () => await ensureXctestrunArtifact(device, { ...options, signal }),
   );
   startupTimings.build_xctestrun = xctestrunArtifact.buildMs;
   const port = await measureRunnerStartupStep(
@@ -237,6 +248,7 @@ async function startRunnerSessionWithLease(
           allowFailure: true,
           env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
           detached: true,
+          signal,
         }),
     ));
   } catch (error) {
@@ -276,6 +288,13 @@ async function startRunnerSessionWithLease(
     simulatorSetRedirect: simulatorSetRedirect ?? undefined,
     lease,
   };
+  if (signal?.aborted) {
+    await disposeRunnerSession(session, {
+      graceful: false,
+      waitTimeoutMs: RUNNER_INVALIDATE_WAIT_TIMEOUT_MS,
+    });
+    throw createRequestCanceledError();
+  }
   try {
     writeRunnerLease(lease);
   } catch (error) {
@@ -536,11 +555,10 @@ export async function detachIosSimulatorRunnerSessionsForShutdown(): Promise<num
   let detached = 0;
   for (const [deviceId, session] of runnerSessions) {
     if (session.device.kind !== 'simulator') continue;
-    // A held device-set redirect means this runner depends on the global
-    // XCTestDevices symlink pointing at a custom simulator set for its whole
-    // lifetime. Handing it off would either restore the symlink under a live
-    // runner or leak the redirect lock, so scoped-set runners keep the normal
-    // dispose-and-restore path.
+    // CONSERVATIVE: Scoped simulator sets depend on the global XCTestDevices symlink for their
+    // whole runner lifetime; handoff could restore the symlink under a live runner or leak the
+    // redirect lock. Revisit only if simulator-set redirects become runner-owned instead of
+    // daemon-session-owned.
     if (session.simulatorSetRedirect) continue;
     if (!session.lease || !isRunnerProcessAlive(session.child.pid)) continue;
     try {
@@ -844,43 +862,58 @@ export async function parseRunnerResponse(
   session: Pick<RunnerSession, 'ready'>,
   logPath?: string,
 ): Promise<Record<string, unknown>> {
-  const text = await response.text();
-  let json: RunnerResponsePayload;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    json = parsed && typeof parsed === 'object' ? (parsed as RunnerResponsePayload) : {};
-  } catch {
-    throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
-  }
+  const json = parseRunnerResponsePayload(await response.text());
   if (!json.ok) {
-    const rawCode = json.error?.code;
-    const errorCode =
-      typeof rawCode === 'string' && rawCode.trim().length > 0
-        ? toAppErrorCode(rawCode)
-        : 'COMMAND_FAILED';
-    const errorMessage = typeof json.error?.message === 'string' ? json.error.message : undefined;
-    const hint = typeof json.error?.hint === 'string' ? json.error.hint : undefined;
     throw await enrichRunnerFailureFromLog({
-      error: new AppError(errorCode, errorMessage ?? 'Runner error', {
-        runner: json,
-        xcodebuild: {
-          exitCode: 1,
-          stdout: '',
-          stderr: '',
-        },
-        hint,
-        logPath,
-      }),
+      error: buildRunnerResponseError(json, logPath),
       logPath,
     });
   }
   session.ready = true;
-  if (json.data && typeof json.data === 'object' && !Array.isArray(json.data)) {
-    const data = json.data as Record<string, unknown>;
-    emitRunnerResponseDiagnostics(data);
-    return data;
+  return readRunnerResponseData(json);
+}
+
+function parseRunnerResponsePayload(text: string): RunnerResponsePayload {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? (parsed as RunnerResponsePayload) : {};
+  } catch {
+    throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
   }
-  return {};
+}
+
+function buildRunnerResponseError(json: RunnerResponsePayload, logPath?: string): AppError {
+  const runnerErrorCode = readRunnerErrorCode(json.error?.code);
+  const errorMessage = typeof json.error?.message === 'string' ? json.error.message : undefined;
+  const hint = typeof json.error?.hint === 'string' ? json.error.hint : undefined;
+  return new AppError(runnerAppErrorCode(runnerErrorCode), errorMessage ?? 'Runner error', {
+    runner: json,
+    runnerErrorCode,
+    retriable: runnerErrorCode === 'RUNNER_BUSY' ? true : undefined,
+    xcodebuild: {
+      exitCode: 1,
+      stdout: '',
+      stderr: '',
+    },
+    hint,
+    logPath,
+  });
+}
+
+function readRunnerErrorCode(rawCode: unknown): string | undefined {
+  return typeof rawCode === 'string' && rawCode.trim().length > 0 ? rawCode.trim() : undefined;
+}
+
+function runnerAppErrorCode(runnerErrorCode: string | undefined): AppError['code'] {
+  if (runnerErrorCode === 'RUNNER_BUSY') return 'COMMAND_FAILED';
+  return runnerErrorCode ? toAppErrorCode(runnerErrorCode) : 'COMMAND_FAILED';
+}
+
+function readRunnerResponseData(json: RunnerResponsePayload): Record<string, unknown> {
+  if (!json.data || typeof json.data !== 'object' || Array.isArray(json.data)) return {};
+  const data = json.data as Record<string, unknown>;
+  emitRunnerResponseDiagnostics(data);
+  return data;
 }
 
 function emitRunnerResponseDiagnostics(data: Record<string, unknown>): void {
@@ -909,6 +942,10 @@ function resolveRunnerFatalErrorReason(error: unknown): string | undefined {
   if (!(error instanceof AppError)) return undefined;
   if (error.code === 'IOS_AX_SNAPSHOT_FAILED') return 'ax_snapshot_failure';
   if (error.code === 'XCTEST_RECORDED_FAILURE') return 'xctest_recorded_failure';
+  // The runner reported its main thread stuck in abandoned work past the wedge threshold
+  // (#1105): only a restart cures it. The per-request recycle budget still bounds how many
+  // boots one request pays for.
+  if (error.code === 'RUNNER_WEDGED') return 'runner_main_thread_wedged';
   return undefined;
 }
 
@@ -917,6 +954,9 @@ function resolveRunnerReadinessPreflightDecision(
   command: RunnerCommand,
 ): RunnerReadinessPreflightDecision {
   const readOnlyCommand = isReadOnlyRunnerCommand(command.command);
+  if (isRunnerReadinessPreflightExempt(command.command)) {
+    return { action: 'skip', reason: 'preflight_exempt_command' };
+  }
   if (!session.ready) {
     if (readOnlyCommand) {
       return {
@@ -936,6 +976,9 @@ function resolveRunnerReadinessPreflightDecision(
     };
   }
   if (!canSkipRunnerReadinessPreflightAfterHealthyMutation(command.command)) {
+    // CONSERVATIVE: Commands outside the healthy-mutation allowlist still preflight because their
+    // terminal runner state is not proven by recency. Revisit when lifecycle status coverage can
+    // distinguish every mutating command's safe terminal state.
     return {
       action: 'run',
       reason: 'conservative_command',

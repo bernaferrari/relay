@@ -3,13 +3,13 @@ name: CI
 on:
   pull_request:
     paths-ignore:
-      - "docs/**"
-      - "website/**"
-      - "README.md"
-      - ".github/actions/build-docs/action.yml"
-      - ".github/workflows/deploy.yml"
-      - ".github/workflows/pr-preview.yml"
-      - ".github/workflows/pr-preview-cleanup.yml"
+      - 'docs/**'
+      - 'website/**'
+      - 'README.md'
+      - '.github/actions/build-docs/action.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/pr-preview.yml'
+      - '.github/workflows/pr-preview-cleanup.yml'
   push:
     branches:
       - main
@@ -22,8 +22,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ios-runner-swift-compat:
-    name: iOS Runner Swift Compatibility
+  # Two single-`rg`-assertion jobs (formerly `ios-runner-swift-compat`,
+  # `no-test-di-seams`, added independently in b79bd8601 / 9eb060406) folded
+  # into steps here: each was checkout + one grep, paying full job
+  # scheduling/checkout overhead and its own PR status-check line for what is
+  # a single assertion. Each step keeps its own failure message. See #1462.
+  static-checks:
+    name: Static Checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -32,8 +37,15 @@ jobs:
 
       - name: Disallow trailing commas before closing parenthesis in Swift
         run: |
-          if rg -nU --glob '*.swift' ',\s*\n\s*\)' apple-runner; then
+          if rg -nU --glob '*.swift' ',\s*\n\s*\)' apple/runner; then
             echo "Found trailing commas before ')' in Swift files. This syntax requires Swift 6.1+ and breaks older Xcode toolchains."
+            exit 1
+          fi
+
+      - name: Fail if test-only DI seams reappear in production code
+        run: |
+          if rg '\?\s*:\s*typeof\s+' src/ --glob '!**/__tests__/**' --glob '!*.test.ts'; then
+            echo "Found test-only DI seams (optional typeof params) in production code."
             exit 1
           fi
 
@@ -48,28 +60,14 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Compile Swift runner unit-test surface
-        uses: ./.github/actions/setup-apple-replay
+      - name: Restore and compile Swift runner unit-test surface
+        uses: ./.github/actions/setup-apple-runner-build
         with:
           derived-path: ${{ github.workspace }}/.tmp/swift-runner-unit-derived
           cache-key-prefix: swift-runner-unit
           build-command: AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS=1 pnpm build:xcuitest:macos
           xcuitest-platform: macos
-
-  no-test-di-seams:
-    name: No test-only DI seams
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Fail if test-only DI seams reappear in production code
-        run: |
-          if rg '\?\s*:\s*typeof\s+' src/ --glob '!**/__tests__/**' --glob '!*.test.ts'; then
-            echo "Found test-only DI seams (optional typeof params) in production code."
-            exit 1
-          fi
+          xcuitest-destination: platform=macOS,arch=arm64
 
   lint:
     name: Lint & Format
@@ -96,17 +94,102 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # This job used to run with install-deps: false, and R8 still holds every
+      # remaining zero-dep job to that contract. The layering guard itself opted out
+      # when R7 (SessionState ownership) started parsing the daemon with `oxc-parser`
+      # instead of matching assignment operators with a regex: a regex cannot see
+      # `??=` or a computed `session[key] =` write, so the choice was a real parser or
+      # a rule with holes in it. Keep install-deps enabled.
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
 
-      - name: Check import-direction DAG (kernel-sink, commands-floor, platforms-seam)
+      - name: Check import-direction DAG
         # Generalizes the former inline commands/-import grep into a structured
         # import-direction lint over the resolved graph. See scripts/layering/check.ts
-        # and CONTEXT.md (Architecture: folder DAG + layering lint). Invoked directly
-        # (no deps needed) so the job stays fast and does not require a pnpm install.
-        run: node --experimental-strip-types scripts/layering/check.ts
+        # and CONTEXT.md (Architecture: folder DAG + layering lint).
+        run: pnpm check:layering
+
+      - name: Check the depgraph report agrees with the gate
+        # scripts/depgraph reads the same model as the gate, so its inversion count must
+        # reproduce TYPE_INVERSION_BASELINE. Free two-sources check: if the tree changes
+        # and only one side is updated, this fails and names the difference. Runs here
+        # rather than in its own job so the two can never be green independently.
+        run: pnpm depgraph:test
+
+  affected-selector:
+    name: Affected-check Selector
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # The selector's entry closure reaches `@agent-device/kernel` workspace
+      # specifiers through src/utils/exec.ts and diagnostics.ts (#1490 W0), and
+      # workspace package resolution needs the pnpm link in node_modules. The
+      # R8 relative-import exception is reserved for scripts, not production
+      # src files, so this job installs dependencies instead.
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      # The selector is fail-open and advisory (GitHub CI stays authoritative),
+      # so the gate only guards the derivation model.
+      - name: Check affected-selector model
+        run: pnpm check:affected:test
+
+  maestro-conformance:
+    name: Maestro Conformance Oracle
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Unlike the layering/affected guards, this job DOES install deps: the
+      # verifier parses corpus flows with the live engine, and the Maestro parser
+      # imports the `yaml` package. Keep install-deps enabled.
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      # Layers 1-2 of the conformance oracle: replay the JVM-generated fixtures
+      # against the live engine. Deterministic and Java-free — the generated
+      # fixtures are checked in and only regenerated on an upstream-pin bump. The
+      # device-backed layer 3 runs on the scheduled conformance-differential
+      # workflow. See scripts/maestro-conformance/README.md.
+      - name: Verify Maestro conformance fixtures
+        run: pnpm maestro:conformance
+
+  packaged-cli-node-22-12:
+    name: Packaged CLI Node 22.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup build toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build CLI
+        run: |
+          pnpm build
+          pnpm check:bundle-owner-files
+
+      # The build runs on the default toolchain Node and the package is verified on the minimum
+      # supported Node, so this job covers what a user on `engines.node` floor actually installs.
+      - name: Setup Node.js 22.12
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '22.12'
+
+      # Packs, lints the tarball with publint/attw, installs it outside the workspace, and imports
+      # every published entry point before running the CLI. See scripts/check-package.ts.
+      #
+      # Runs the script directly rather than through `pnpm check:package`: the repo's pinned pnpm
+      # requires Node >= 22.13 and refuses to start on the 22.12 floor this job exists to cover. The
+      # gate itself only needs `node` and `npm`, so it is the package.json script minus the launcher.
+      - name: Verify the published package on Node.js 22.12
+        run: node --experimental-strip-types scripts/check-package.ts
 
   fallow:
     name: Fallow Code Quality
@@ -126,33 +209,77 @@ jobs:
           FALLOW_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: pnpm check:fallow --base "$FALLOW_BASE"
 
-  unit:
-    name: Unit Tests
+      - name: Check for production-unused exports
+        run: pnpm check:production-exports
+
+  replay-compat-provenance:
+    # The frozen replay-compat corpus (#1417) claims each entry was published by
+    # a released tag. Only a full-history checkout can re-derive that claim, so
+    # this job exists separately from the shallow-clone-safe unit lane.
+    name: Replay-Compat Provenance
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Run unit tests
-        run: pnpm test:unit
+      - name: Verify corpus entries against their released blobs
+        run: pnpm check:replay-compat
 
   coverage:
+    # Runs the full unit + provider-integration suites under coverage with
+    # thresholds, so a separate unit-tests job would rerun the same tests.
     name: Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
 
+      - name: Test changed-line coverage gate
+        run: pnpm check:coverage-changed:test
+
+      # The retry list is an enumerated set of owned waivers, so an expired entry
+      # must fail before the suite runs rather than quietly keeping its retry.
+      - name: Check contention retry policy
+        run: pnpm check:contention-retry
+
+      # Wrapped in the single-retry policy (#1419): a timeout-shaped failure in
+      # an enumerated contention-flaky file reruns that file once and reports it
+      # in the job summary. Assertion failures fail here on the first run.
       - name: Run coverage
-        run: pnpm test:coverage
+        env:
+          OUTPUT_ECONOMY_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: pnpm test:coverage:ci
+
+      - name: Upload contention-retry envelope
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contention-retry-envelope
+          if-no-files-found: ignore
+          path: .tmp/contention-retry/lane-envelope.json
+
+      # Reuses the lcov the coverage step just wrote (never runs coverage twice)
+      # and fails when changed-line coverage < the threshold in
+      # scripts/coverage-changed/model.ts. The `coverage-waiver` PR label maps to
+      # the waiver env, which skips the failure but still prints the numbers.
+      - name: Enforce changed-line coverage gate
+        if: always() && github.event_name == 'pull_request'
+        env:
+          AGENT_DEVICE_COVERAGE_WAIVER: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-waiver') }}
+        run: pnpm check:coverage-changed --base "${{ github.event.pull_request.base.sha }}"
 
   typecheck:
     name: Typecheck
@@ -167,6 +294,23 @@ jobs:
 
       - name: Run typecheck
         run: pnpm typecheck
+
+  freerange:
+    name: FreeRange
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Check numeric ranges
+        run: pnpm check:freerange
 
   integration:
     name: Integration Tests
@@ -184,18 +328,32 @@ jobs:
           pnpm clean:daemon
           pnpm test:integration:node
 
+      - name: Run seeded concurrency torture lane (fast PR sweep)
+        # #1416's nightly torture lane lives under test/integration/nightly/, out
+        # of the test:integration:node glob, so this is a *deliberate* fast PR
+        # sweep (TORTURE_RUNS default 128 seeds, ~sub-second) — not an accidental
+        # glob inclusion. The Concurrency Torture Nightly workflow sweeps a much
+        # larger seed range on schedule.
+        run: pnpm test:concurrency-torture
+
       - name: Run provider-backed integration tests
         run: pnpm test:integration:provider
 
       - name: Check Provider-backed integration architecture progress
         run: pnpm test:integration:progress:check
 
+      # A build-cache lookup outage must degrade setup-fixture-app to an inline
+      # build, not fail the caller. This drives that step's real shell against a
+      # failing `gh`.
+      - name: Setup-fixture-app cache-failure fallback
+        run: sh ./test/scripts/setup-fixture-app-fallback-smoke.sh
+
   web-smoke:
     name: Web Platform Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      AGENT_DEVICE_WEB_E2E: "1"
+      AGENT_DEVICE_WEB_E2E: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -203,7 +361,7 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "24.13"
+          node-version: '24.13'
 
       - name: Run live web smoke
         run: |

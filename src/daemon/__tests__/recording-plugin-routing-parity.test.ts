@@ -1,3 +1,4 @@
+import type { RecordingBackendTag } from '@agent-device/contracts/recording';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
@@ -8,7 +9,7 @@ import {
   type DeviceInfo,
   type DeviceKind,
   type DeviceTarget,
-} from '../../kernel/device.ts';
+} from '@agent-device/kernel/device';
 import {
   ANDROID_EMULATOR,
   ANDROID_TV_DEVICE,
@@ -21,12 +22,9 @@ import {
   VISIONOS_SIMULATOR,
   WEB_DESKTOP_DEVICE,
 } from '../../__tests__/test-utils/index.ts';
-import { getPlugin, tryGetPlugin } from '../../core/platform-plugin/plugin.ts';
+import { getPlugin, tryGetPlugin } from '../../core/platform-plugin-registry.ts';
 import { registerBuiltinPlatformPlugins } from '../../core/interactors/register-builtins.ts';
-import {
-  resolveRecordingBackendForDevice,
-  type RecordingBackendTag,
-} from '../handlers/record-trace-recording-backends.ts';
+import { resolveRecordingBackendForDevice } from '../handlers/record-trace-recording-backends.ts';
 
 // Phase 3 step b.3 (issue #974) parity gate for the daemon recording facet. The
 // per-platform branch of `resolveRecordingBackendForDevice` now flows through the

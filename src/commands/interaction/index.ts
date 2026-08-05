@@ -1,25 +1,33 @@
 import type {
   ClickOptions,
-  FindOptions,
   FillOptions,
+  FindOptions,
   FlingOptions,
   FocusOptions,
   GetOptions,
+  IsOptions,
+  LongPressOptions,
   PanOptions,
   PinchOptions,
   PressOptions,
-  IsOptions,
-  LongPressOptions,
   RotateGestureOptions,
   ScrollOptions,
   SwipeGestureOptions,
   SwipeOptions,
   TransformGestureOptions,
   TypeTextOptions,
-} from '../../client/client-types.ts';
-import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
-import { REPEATED_TOUCH_FLAGS, SELECTOR_SNAPSHOT_FLAGS } from '../../cli/parser/cli-flags.ts';
-import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
+} from '@agent-device/contracts/client';
+import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import {
+  commandSupportsSettleObservation,
+  commandSupportsVerifyEvidence,
+} from '../../core/command-descriptor/registry.ts';
+import {
+  REPEATED_TOUCH_FLAGS,
+  SELECTOR_SNAPSHOT_FLAGS,
+  SETTLE_FLAGS,
+} from '../cli-grammar/flag-groups.ts';
+import { type FlagKey } from '../cli-grammar/flag-types.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
 import {
   commonToClientOptions,
@@ -28,6 +36,9 @@ import {
   toRepeatedOptions,
   toSelectorSnapshotOptions,
 } from '../command-input.ts';
+import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
+import { gestureCliReaders, gestureDaemonWriters } from './gesture.ts';
+import { interactionCliReaders, interactionDaemonWriters } from './interactions.ts';
 import {
   interactionCommandMetadata,
   type ClickInput,
@@ -42,8 +53,6 @@ import {
   type SwipeGestureInput,
   type TransformInput,
 } from './metadata.ts';
-import { gestureCliReaders, gestureDaemonWriters } from './gesture.ts';
-import { interactionCliReaders, interactionDaemonWriters } from './interactions.ts';
 import { interactionCliOutputFormatters } from './output.ts';
 import { selectorCliReaders, selectorDaemonWriters } from './selectors.ts';
 
@@ -51,7 +60,8 @@ const interactionCliSchemas = {
   get: {
     usageOverride: 'get text|attrs <@ref|selector>',
     positionalArgs: ['subcommand', 'target'],
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
+    allowsExtraPositionals: true,
+    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'record'],
   },
   find: {
     usageOverride: 'find <locator|text> <action> [value] [--first|--last]',
@@ -59,18 +69,23 @@ const interactionCliSchemas = {
     summary: 'Find an element and act',
     positionalArgs: ['query', 'action', 'value?'],
     allowsExtraPositionals: true,
-    allowedFlags: ['snapshotDepth', 'snapshotRaw', 'findFirst', 'findLast'],
+    allowedFlags: ['snapshotDepth', 'snapshotRaw', 'findFirst', 'findLast', 'record'],
   },
   is: {
     positionalArgs: ['predicate', 'selector', 'value?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'record'],
   },
   click: {
     usageOverride: 'click <x y|@ref|selector>',
     positionalArgs: ['target'],
     allowsExtraPositionals: true,
-    allowedFlags: [...REPEATED_TOUCH_FLAGS, 'clickButton', ...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [
+      ...REPEATED_TOUCH_FLAGS,
+      'clickButton',
+      ...postActionObservationCliFlags('click'),
+      ...SELECTOR_SNAPSHOT_FLAGS,
+    ],
   },
   press: {
     usageOverride: 'press <x y|@ref|selector>',
@@ -78,7 +93,11 @@ const interactionCliSchemas = {
       'Short press a semantic UI target by ref, selector, or point. For native context menus or hold gestures, use longpress <target> <durationMs> instead of press --hold-ms.',
     positionalArgs: ['targetOrX', 'y?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...REPEATED_TOUCH_FLAGS, ...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [
+      ...REPEATED_TOUCH_FLAGS,
+      ...postActionObservationCliFlags('press'),
+      ...SELECTOR_SNAPSHOT_FLAGS,
+    ],
   },
   longpress: {
     usageOverride: 'longpress <x y|@ref|selector> [durationMs]',
@@ -86,21 +105,25 @@ const interactionCliSchemas = {
       'Open native context menus or long-press targets by ref, selector, or point. Duration is positional, for example longpress @e12 800 or longpress 300 500 800.',
     positionalArgs: ['targetOrX', 'yOrDurationMs?', 'durationMs?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [...postActionObservationCliFlags('longpress'), ...SELECTOR_SNAPSHOT_FLAGS],
   },
   swipe: {
-    helpDescription: 'Swipe coordinates with optional repeat pattern',
-    positionalArgs: ['x1', 'y1', 'x2', 'y2', 'durationMs?'],
+    helpDescription: 'Quick coordinate fling with optional repeat pattern.',
+    positionalArgs: ['x1', 'y1', 'x2', 'y2'],
+    // Arity is enforced by swipePayloadFromPositionals (assertGestureArity), so
+    // an extra positional reaches that migration-hint error, not this schema's.
+    allowsExtraPositionals: true,
     allowedFlags: ['count', 'pauseMs', 'pattern'],
   },
   gesture: {
     usageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform> ...',
     listUsageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform> ...',
     helpDescription:
-      'Run touch gestures: pan <x> <y> <dx> <dy> [durationMs], fling <up|down|left|right> <x> <y> [distance] [durationMs], swipe <left|right|left-edge|right-edge> [durationMs], pinch <scale> [x] [y], rotate <degrees> [x] [y] [velocity], or transform <x> <y> <dx> <dy> <scale> <degrees> [durationMs]. For command plans, output only command lines. Android transform verification should use all app-observable effects, for example wait text "pan changed yes", wait text "pinch changed yes", and wait text "rotate changed yes", not exact transform values.',
+      'Run touch gestures: pan <x> <y> <dx> <dy> [durationMs], fling <up|down|left|right> <x> <y> [distance], swipe <left|right|left-edge|right-edge>, pinch <scale> [x] [y], rotate <degrees> [x] [y], or transform <x> <y> <dx> <dy> <scale> <degrees> [durationMs]. For command plans, output only command lines. Android transform verification should use all app-observable effects, for example wait text "pan changed yes", wait text "pinch changed yes", and wait text "rotate changed yes", not exact transform values.',
     summary: 'Run pan, fling, swipe, pinch, rotate, or transform gestures',
     positionalArgs: ['pan|fling|swipe|pinch|rotate|transform', 'args?'],
     allowsExtraPositionals: true,
+    allowedFlags: ['pointerCount'],
   },
   focus: {
     positionalArgs: ['x', 'y'],
@@ -114,7 +137,12 @@ const interactionCliSchemas = {
     usageOverride: 'fill <x> <y> <text> | fill <@ref|selector> <text>',
     positionalArgs: ['targetOrX', 'yOrText', 'text?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'delayMs'],
+    allowedFlags: [
+      ...SELECTOR_SNAPSHOT_FLAGS,
+      'delayMs',
+      'recordAs',
+      ...postActionObservationCliFlags('fill'),
+    ],
   },
   scroll: {
     usageOverride: 'scroll <direction|top|bottom> [amount] [--pixels <n>] [--duration-ms <ms>]',
@@ -127,8 +155,12 @@ const interactionCliSchemas = {
 
 type InteractionCommandMetadata = (typeof interactionCommandMetadata)[number];
 type InteractionCommandName = InteractionCommandMetadata['name'];
-const { gesture: _gestureDaemonWriter, ...gestureProjectionAliasDaemonWriters } =
-  gestureDaemonWriters;
+function postActionObservationCliFlags(command: InteractionCommandName): readonly FlagKey[] {
+  const flags: FlagKey[] = [];
+  if (commandSupportsVerifyEvidence(command)) flags.push('verify');
+  if (commandSupportsSettleObservation(command)) flags.push(...SETTLE_FLAGS);
+  return flags;
+}
 
 const clickCommandDefinition = defineExecutableCommand(metadata('click'), (client, input) =>
   client.interactions.click(toClickOptions(input)),
@@ -221,6 +253,7 @@ const fillCommandFacet = defineCommandFacet({
   cliSchema: interactionCliSchemas.fill,
   cliReader: interactionCliReaders.fill,
   daemonWriter: interactionDaemonWriters.fill,
+  cliOutputFormatter: interactionCliOutputFormatters.fill,
 });
 
 const longPressCommandFacet = defineCommandFacet({
@@ -230,6 +263,7 @@ const longPressCommandFacet = defineCommandFacet({
   cliSchema: interactionCliSchemas.longpress,
   cliReader: interactionCliReaders.longpress,
   daemonWriter: interactionDaemonWriters.longpress,
+  cliOutputFormatter: interactionCliOutputFormatters.longpress,
 });
 
 const swipeCommandFacet = defineCommandFacet({
@@ -305,7 +339,6 @@ const gestureCommandFacet = defineCommandFacet({
   cliSchema: interactionCliSchemas.gesture,
   cliReader: gestureCliReaders.gesture,
   daemonWriter: gestureDaemonWriters.gesture,
-  extraDaemonWriters: gestureProjectionAliasDaemonWriters,
 });
 
 export const interactionCommandFamily = defineCommandFamilyFromFacets({
@@ -342,6 +375,8 @@ function toClickOptions(input: ClickInput): ClickOptions {
     ...toSelectorSnapshotOptions(input),
     ...toRepeatedOptions(input),
     button: input.button,
+    verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -351,6 +386,8 @@ function toPressOptions(input: PressInput): PressOptions {
     ...toClientInteractionTarget(input.target),
     ...toSelectorSnapshotOptions(input),
     ...toRepeatedOptions(input),
+    verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -361,6 +398,9 @@ function toFillOptions(input: FillInput): FillOptions {
     ...toSelectorSnapshotOptions(input),
     text: input.text,
     delayMs: input.delayMs,
+    recordAs: input.recordAs,
+    verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -370,6 +410,19 @@ function toLongPressOptions(input: LongPressInput): LongPressOptions {
     ...toClientInteractionTarget(input.target),
     ...toSelectorSnapshotOptions(input),
     durationMs: input.durationMs,
+    ...toSettleOptions(input),
+  };
+}
+
+function toSettleOptions(input: {
+  settle?: boolean;
+  settleQuietMs?: number;
+  timeoutMs?: number;
+}): Pick<PressOptions, 'settle' | 'settleQuietMs' | 'timeoutMs'> {
+  return {
+    settle: input.settle,
+    settleQuietMs: input.settleQuietMs,
+    timeoutMs: input.timeoutMs,
   };
 }
 
@@ -379,6 +432,14 @@ function toGetOptions(input: GetInput): GetOptions {
     ...toClientElementTarget(input.target),
     ...toSelectorSnapshotOptions(input),
     format: input.format,
+    // `--record` is scoped (ADR 0012 decision 6 amendment), so it does NOT ride
+    // the common seam and each observation-capable projection forwards it
+    // explicitly. `is`/`find`/`snapshot` pass their whole input through, so
+    // `get` — the one that rebuilds its options object — is the only place this
+    // is needed. Without it `get --record` parses, reaches the reader, survives
+    // `readInput`, and is then dropped here (#1303 regression, same re-projection
+    // cause as the `--no-record` gap this change fixes).
+    record: input.record,
   };
 }
 
@@ -389,6 +450,7 @@ function toPanOptions(input: PanInput): PanOptions {
     y: input.origin.y,
     dx: input.delta.x,
     dy: input.delta.y,
+    pointerCount: input.pointerCount,
     durationMs: input.durationMs,
   };
 }
@@ -400,7 +462,6 @@ function toFlingOptions(input: FlingInput): FlingOptions {
     x: input.origin.x,
     y: input.origin.y,
     distance: input.distance,
-    durationMs: input.durationMs,
   };
 }
 
@@ -408,7 +469,6 @@ function toSwipeGestureOptions(input: SwipeGestureInput): SwipeGestureOptions {
   return {
     ...commonToClientOptions(input),
     preset: input.preset,
-    durationMs: input.durationMs,
   };
 }
 
@@ -427,7 +487,6 @@ function toRotateOptions(input: RotateInput): RotateGestureOptions {
     degrees: input.degrees,
     x: input.origin?.x,
     y: input.origin?.y,
-    velocity: input.velocity,
   };
 }
 

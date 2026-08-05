@@ -1,7 +1,8 @@
-import type { Rect, SnapshotNode } from '../kernel/snapshot.ts';
-import { centerOfRect } from '../kernel/snapshot.ts';
-import { containsPoint, pickLargestRect } from '../utils/rect-visibility.ts';
-import { findNearestHittableAncestor, normalizeType } from '../snapshot/snapshot-processing.ts';
+import type { Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
+import { centerOfRect } from '@agent-device/kernel/snapshot';
+import { containsPoint, pickLargestRect } from '@agent-device/kernel/rect';
+import { normalizeType } from '@agent-device/contracts/snapshot';
+import { findNearestHittableAncestor } from '../snapshot/snapshot-processing.ts';
 import { isSnapshotNodeInteractionBlocked } from '../snapshot/snapshot-occlusion.ts';
 import {
   areRectsApproximatelyEqual,
@@ -104,7 +105,14 @@ function findPreferredActionableDescendant(
   return current === node ? null : current;
 }
 
-function isSemanticTouchTarget(node: SnapshotNode): boolean {
+/**
+ * THE canonical interactive-role classification for touch: a node whose
+ * type/role/subrole names a control that independently receives taps. Shared
+ * by the hittable-ancestor promotion above and #1280's press-retarget
+ * competing-descendant guard (`press-retarget.ts`) — one list, never a
+ * parallel copy.
+ */
+export function isSemanticTouchTarget(node: SnapshotNode): boolean {
   const roles = [node.type, node.role, node.subrole].map((value) => normalizeType(value ?? ''));
   return roles.some(isSemanticTouchRole);
 }

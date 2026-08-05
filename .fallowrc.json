@@ -1,7 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
-    "rslib.config.ts",
+    "tsdown.config.ts",
+    "vitest.mutation.config.ts",
     "src/sdk/index.ts",
     "src/sdk/io.ts",
     "src/sdk/artifacts.ts",
@@ -18,7 +19,20 @@
     "src/utils/png-worker.ts",
     "scripts/patch-xcuitest-runner-icon.ts",
     "scripts/runner-request-count/run.ts",
+    "scripts/lib/contention-retry-run.ts",
+    "scripts/vitest-runner-timeout-setup.ts",
+    "test/contention-retry-fixtures/vitest.fixture.config.ts",
+    "test/contention-retry-fixtures/timeout-provenance.fixture.ts",
+    // #1596 regression fixtures: run as real `node --experimental-strip-types`
+    // subprocesses (test/integration/daemon-replace-exit-flush.test.ts), so
+    // dependency analysis cannot follow the runCmdSync string path to either.
+    "test/integration/support/exit-naive.ts",
+    "test/integration/support/exit-after-flush.ts",
     "src/utils/update-check-entry.ts",
+    "examples/sdk/client-session.ts",
+    "examples/sdk/metro-runtime.ts",
+    "examples/sdk/contracts-result.ts",
+    "examples/sdk/batch-orchestration.ts",
     "test/scripts/metro-prepare-packaged-smoke.mjs",
     "test/integration/*.test.ts",
     "website/docs/404.mdx",
@@ -28,70 +42,117 @@
     "examples/test-app/**",
     "scripts/perf/**",
     "scripts/layering/**",
-    "apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests.xctestplan",
-    "scripts/write-xcuitest-cache-metadata.mjs"
+    "scripts/maestro-conformance/corpus/**",
+    "apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests.xctestplan",
+    "scripts/write-xcuitest-cache-metadata.mjs",
+    "scripts/help-conformance-sample-outputs.d.mts"
   ],
-  "ignoreDependencies": ["@microsoft/api-extractor", "@theme"],
+  "ignoreDependencies": [
+    "@theme",
+    // @agent-device/maestro owns the source import, while the published root
+    // build externalizes yaml and retains runtime imports in packed chunks.
+    "yaml",
+    // @agent-device/provider-limrun owns the source import, while the published
+    // root build externalizes @limrun/api and retains runtime imports in packed chunks.
+    "@limrun/api",
+    // Packaging linters with no importable API surface here: scripts/check-package.ts runs their
+    // `node_modules/.bin` shims as subprocesses, which dependency analysis cannot follow to an import.
+    "publint",
+    "@arethetypeswrong/cli"
+  ],
   "ignoreExports": [
     {
-      "file": "src/__tests__/test-utils/index.ts",
+      "comment": "Daemon route handlers are reached only through the dynamic `import()` table in request-handler-chain.ts, which --production analysis cannot follow to a consumer.",
+      "file": "src/daemon/handlers/{lease,session,snapshot,react-native,record-trace,find,interaction}.ts",
+      "exports": [
+        "handleLeaseCommands",
+        "handleSessionCommands",
+        "handleSnapshotCommands",
+        "handleReactNativeCommands",
+        "handleRecordTraceCommands",
+        "handleFindCommands",
+        "handleInteractionCommands"
+      ]
+    },
+    {
+      "comment": "Published package surface (see package.json#exports); consumed by SDK users, not internally.",
+      "file": "src/sdk/*.ts",
       "exports": ["*"]
     },
     {
-      "file": "src/__tests__/test-utils/device-fixtures.ts",
-      "exports": ["LINUX_DEVICE", "ANDROID_TV_DEVICE", "TVOS_SIMULATOR"]
+      "comment": "Tool config default exports, loaded by the tool rather than imported.",
+      "file": "{tsdown.config.ts,vitest.mutation.config.ts,website/rspress.config.ts}",
+      "exports": ["default"]
     },
     {
-      "file": "src/__tests__/test-utils/mocked-binaries.ts",
-      "exports": ["withMockedXcrun"]
-    },
-    {
-      "file": "src/daemon/app-log.ts",
-      "exports": ["readRecentAndroidLogcatForPackage"]
-    },
-    {
-      "file": "src/platforms/android/app-lifecycle.ts",
+      "comment": "Type-level `AssertTrue<...>` registry-totality guards. Exported only so `noUnusedLocals` keeps them alive; a consumer would defeat the point.",
+      "file": "{src/core/command-descriptor/registry.ts,src/core/interactors/register-builtins.ts,src/core/platform-descriptor/registry.ts,src/daemon/request-platform-providers.ts}",
       "exports": [
-        "parseAndroidForegroundApp",
-        "parseAndroidLaunchablePackages",
-        "parseAndroidUserInstalledPackages",
-        "installAndroidInstallablePath"
+        "CommandOwnerFileClaimsAreComplete",
+        "BuiltinPluginsCoverAllPlatforms",
+        "PlatformDescriptorsAreTotal",
+        "GatedKeysAreResolverKeys"
       ]
     },
     {
-      "file": "src/platforms/android/index.ts",
-      "exports": ["installAndroidInstallablePath"]
+      "comment": "Contention retry lane (#1419): the reporter default is loaded by Vitest from a `--reporter=<path>` string, and SUBPROCESS_STUB_TESTS is consumed by vitest.config.ts \u2014 a tool config outside --production analysis.",
+      "file": "scripts/lib/{contention-retry.ts,contention-retry-reporter.ts}",
+      "exports": ["default", "SUBPROCESS_STUB_TESTS"]
     },
     {
-      "file": "src/platforms/apple/core/apps.ts",
-      "exports": ["listSimulatorApps", "uninstallIosApp"]
+      "comment": "Contention retry gate fixtures (#1419): the config default is loaded by the child `vitest run --config` the gate test spawns.",
+      "file": "test/contention-retry-fixtures/vitest.fixture.config.ts",
+      "exports": ["default"]
     },
     {
-      "file": "src/platforms/apple/core/runner/runner-contract.ts",
-      "exports": ["resolveRunnerEarlyExitHint"]
+      "comment": "Mutation-lane seam: readTestScope is consumed by vitest.mutation.config.ts, a tool config outside --production analysis.",
+      "file": "scripts/mutation/test-scope.ts",
+      "exports": ["readTestScope"]
     },
     {
-      "file": "src/platforms/apple/core/runner/runner-session.ts",
-      "exports": ["stopAllIosRunnerSessions"]
+      "comment": "Mutation-lane completeness gate: ownedTestFiles enumerates the whole derived ownership map, which only the assertion in ownership.test.ts consumes — a production consumer would defeat the point.",
+      "file": "scripts/mutation/ownership.ts",
+      "exports": ["ownedTestFiles"]
     },
     {
-      "file": "src/platforms/apple/core/runner/runner-xctestrun.ts",
+      "comment": "ADR 0010 shared-hint pin: the facade re-export's only consumer is src/__tests__/is-argument-surface-parity.test.ts, which asserts the daemon and CLI `is` surfaces raise the SAME hint text. The constant is live inside the package (predicates.ts raises it); a production consumer of the re-export would defeat the point, since it exists so neither surface copies the string.",
+      "file": "packages/selectors/src/index.ts",
+      "exports": ["IS_PREDICATE_USAGE_HINT"]
+    },
+    {
+      "comment": "Help-benchmark conformance seams: helpTopicIds feeds the topic-coverage gate and PRIVATE_AX_RECOVERY_SAMPLE feeds the bench sample producers; both consumers are test-tree files outside --production analysis.",
+      "file": "{src/cli/parser/cli-help.ts,scripts/help-conformance-sample-outputs.mjs}",
+      "exports": ["helpTopicIds", "PRIVATE_AX_RECOVERY_SAMPLE"]
+    },
+    {
+      "comment": "#1458: getSessionCommandKind's former production consumer (the session.ts if-chain) was replaced by SESSION_COMMAND_HANDLER_IMPLS, which encodes command-kind groupings directly via shared handler references instead of a kind lookup. The accessor and its SessionCommandKind classification remain covered by daemon-command-registry.test.ts, a test-tree file outside --production analysis.",
+      "file": "src/daemon/daemon-command-registry.ts",
+      "exports": ["getSessionCommandKind"]
+    },
+    {
+      "comment": "Workspace-package symbols whose only consumers are test-tree files, which --production analysis does not see. Each import is the package specifier, so the façade entry is load-bearing: parseTargetAnnotationV1Payload/TARGET_ANNOTATION_MAX_FIELD_BYTES from src/daemon/__tests__/session-target-evidence.test.ts, MAESTRO_COMPAT_* from src/cli/parser/__tests__/maestro-support-matrix.test.ts.",
+      "file": "packages/{ad-script,maestro}/src/index.ts",
       "exports": [
-        "resolveRunnerBuildDestination",
-        "resolveRunnerAppBundleId",
-        "resolveRunnerSigningBuildSettings",
-        "resolveRunnerBundleBuildSettings",
-        "assertSafeDerivedCleanup"
+        "parseTargetAnnotationV1Payload",
+        "TARGET_ANNOTATION_MAX_FIELD_BYTES",
+        "MAESTRO_COMPAT_LIMITATIONS",
+        "MAESTRO_COMPAT_SUPPORTED_CAPABILITIES"
       ]
     },
     {
-      "file": "src/cloud-webdriver.ts",
-      "exports": ["CLOUD_WEBDRIVER_PROVIDERS"]
+      "comment": "Deliberately kept off the @agent-device/maestro façade (index.test.ts asserts its absence) and consumed only by the conformance harness under packages/maestro/test/.",
+      "file": "packages/maestro/src/internal/program-ir-command-parser.ts",
+      "exports": ["SUPPORTED_MAESTRO_COMMAND_NAMES"]
+    },
+    {
+      "comment": "Published type surface: re-exported by src/sdk/limrun.ts to agent-device/limrun, where test/integration/limrun-public-types.test.ts pins that consumers can import it. Its only importer compiles in a temp checkout, so no static in-repo edge reaches it — the same reason src/sdk/*.ts is exempt above.",
+      "file": "packages/provider-limrun/src/index.ts",
+      "exports": ["LimrunIosCommandExecution"]
     }
   ],
   "usedClassMembers": ["name", "listActiveLeases", "delete", "values", "elapsedMs", "isExpired"],
   "rules": {
-    "unused-types": "off",
+    "unused-types": "error",
     "duplicate-exports": "off"
   },
   "production": {
@@ -101,5 +162,10 @@
   "audit": {
     "deadCodeBaseline": "fallow-baselines/dead-code.json",
     "healthBaseline": "fallow-baselines/health.json"
+  },
+  "includeEntryExports": true,
+  "ignoreExportsUsedInFile": {
+    "type": true,
+    "interface": true
   }
 }

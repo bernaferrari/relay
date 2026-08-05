@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PUBLIC_COMMANDS } from '../src/command-catalog.ts';
 import { listCommandMetadata } from '../src/commands/command-metadata.ts';
-import { getFlagDefinitions } from '../src/cli/parser/cli-flags.ts';
+import { getFlagDefinitions } from '../src/commands/cli-grammar/flag-registry.ts';
+import { walkFiles } from './lib/walk-files.ts';
 
 const EMPTY_COVERAGE_METRIC = { pct: 0 };
 const EMPTY_STATEMENT_COVERAGE = { covered: 0, pct: 0, total: 0 };
@@ -11,14 +12,14 @@ export function buildIntegrationProgressModel({ root = process.cwd() } = {}) {
   const coverageSummary = path.join(root, 'coverage/coverage-summary.json');
   const handlerTestDir = path.join(root, 'src/daemon/handlers/__tests__');
   const providerScenarioDir = path.join(root, 'test/integration/provider-scenarios');
-  const commandContractFiles = listFiles(path.join(root, 'src/commands'), (file) =>
+  const commandContractFiles = walkFiles(path.join(root, 'src/commands'), (file) =>
     isCommandContractSource(file),
   );
   const clientCommandMethods = readClientCommandMethods(commandContractFiles);
 
-  const handlerTests = listFiles(handlerTestDir, (file) => file.endsWith('.test.ts'));
-  const providerScenarioTests = listFiles(providerScenarioDir, (file) => file.endsWith('.test.ts'));
-  const providerScenarioSources = listFiles(providerScenarioDir, (file) => file.endsWith('.ts'));
+  const handlerTests = walkFiles(handlerTestDir, (file) => file.endsWith('.test.ts'));
+  const providerScenarioTests = walkFiles(providerScenarioDir, (file) => file.endsWith('.test.ts'));
+  const providerScenarioSources = walkFiles(providerScenarioDir, (file) => file.endsWith('.ts'));
   const providerScenarioSupportSources = providerScenarioSources.filter(
     (file) => !file.endsWith('.test.ts'),
   );
@@ -147,12 +148,15 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['retainPaths', 'retained install-source materialization'],
     ['retentionMs', 'install-source materialization TTL'],
     ['count', 'repeated press/click/swipe input'],
+    ['pointerCount', 'one- vs two-pointer pan gesture topology'],
     ['fps', 'recording frame-rate request'],
     ['quality', 'recording quality scaling'],
     ['hideTouches', 'recording without touch overlays'],
+    ['recordingScope', 'recording app vs whole-screen scope', ['scope']],
     ['intervalMs', 'repeated press interval'],
     ['delayMs', 'typing/fill delay'],
-    ['durationMs', 'scroll and gesture duration'],
+    ['recordAs', 'parameterized fill publication for recorded scripts'],
+    ['durationMs', 'scroll, gesture, and TV remote duration'],
     ['holdMs', 'press hold duration'],
     ['jitterPx', 'press jitter'],
     ['pixels', 'scroll distance'],
@@ -173,8 +177,12 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['restart', 'logs clear --restart workflow'],
     ['networkInclude', 'network dump include modes', ['include']],
     ['noRecord', 'action recording suppression'],
-    ['replayUpdate', 'selector-healing replay update', ['update']],
+    ['record', 'repair-segment observation-only recording opt-in (ADR 0012)'],
+    ['replayUpdate', 'retired --update no-op replays without rewriting (ADR 0012)', ['update']],
     ['replayEnv', 'replay/test variable injection', ['env']],
+    ['replayFrom', 'replay resume skips completed steps (ADR 0012)', ['resumeFrom']],
+    ['replayPlanDigest', 'replay resume plan-digest preflight binding', ['resumePlanDigest']],
+    ['replayKeepSession', 'native replay terminal-close suppression', ['keepSession']],
     ['failFast', 'test suite stops after first failure'],
     ['timeoutMs', 'wait/test timeout flags'],
     ['retries', 'test suite retry budget flows through request path'],
@@ -184,6 +192,9 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['batchMaxSteps', 'batch max-step guard', ['maxSteps']],
     ['findFirst', 'find first disambiguation'],
     ['findLast', 'find last disambiguation'],
+    ['verify', 'descriptor post-action evidence capture'],
+    ['settle', 'descriptor post-action settled-diff observation'],
+    ['settleQuietMs', 'settle quiet-window tuning'],
   ];
   const sources = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
   return flagTargets.map(([key, reason, aliases = []]) => {
@@ -230,7 +241,7 @@ function summarizeProviderScenarioFlagExclusions() {
     {
       name: 'remote connection and session-lock policy',
       owner: 'connection/runtime/request policy tests',
-      keys: ['force', 'noLogin', 'sessionLock', 'sessionLocked', 'sessionLockConflicts'],
+      keys: ['force', 'noLogin', 'sessionLock'],
     },
     {
       name: 'cloud artifact provider lookup',
@@ -244,6 +255,14 @@ function summarizeProviderScenarioFlagExclusions() {
         'providerProject',
         'providerBuild',
         'providerSessionName',
+        'providerDeviceOrientation',
+        'providerGeoLocation',
+        'providerTimezone',
+        'providerLanguage',
+        'providerLocale',
+        'providerNetworkProfile',
+        'providerCustomNetwork',
+        'providerNoResignApp',
         'awsProjectArn',
         'awsDeviceArn',
         'awsAppArn',
@@ -301,7 +320,6 @@ function summarizeProviderScenarioFlagExclusions() {
         'reporter',
         'reportJunit',
         'replayMaestro',
-        'replayExportFormat',
         'recordVideo',
         'shardAll',
         'shardSplit',
@@ -309,17 +327,23 @@ function summarizeProviderScenarioFlagExclusions() {
         'stepsFile',
         'proxyHost',
         'proxyPort',
+        'stale',
       ],
+    },
+    {
+      name: 'daemon lifecycle control',
+      owner: 'daemon CLI lifecycle tests',
+      keys: ['clean'],
     },
     {
       name: 'platform boot fallback without provider seam',
       owner: 'handler and Android platform unit tests',
-      keys: ['headless'],
+      keys: ['headless', 'testIme'],
     },
     {
-      name: 'Apple screenshot status-bar normalization',
+      name: 'Apple simulator screenshot rendering options',
       owner: 'iOS platform and screenshot-diff runtime tests',
-      keys: ['screenshotNormalizeStatusBar'],
+      keys: ['screenshotNormalizeStatusBar', 'screenshotPixelDensity'],
     },
   ];
 }
@@ -330,16 +354,6 @@ function readPublicCliFlagKeys() {
       .filter((definition) => definition.names.some((name) => name.startsWith('-')))
       .map((definition) => definition.key),
   );
-}
-
-function listFiles(dir, predicate) {
-  if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  return entries.flatMap((entry) => {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) return listFiles(fullPath, predicate);
-    return predicate(fullPath) ? [fullPath] : [];
-  });
 }
 
 function isCommandContractSource(file) {

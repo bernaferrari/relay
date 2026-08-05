@@ -76,3 +76,54 @@ test('malformed command params (command as number) yield 400 / -32602', async (t
     assert.equal(body.error?.data?.code, 'INVALID_ARGS');
   }, t);
 });
+
+// `DaemonRequest.internal` carries semantics-affecting bits stamped inside the
+// daemon — `replayPlanStep` controls recording provenance and
+// `observationOnly` suppresses snapshot ref issuance for daemon-composed
+// Maestro reads. Two independent allowlists keep both unreachable from the
+// HTTP wire: `commandRpcParamsSchema` projects only its eight named fields, and
+// `toDaemonRequest` then builds the request field by field. Both would have to
+// regress for a caller to stamp these semantics; this pins the resulting
+// boundary contract so neither drifts silently.
+test('the rpc boundary never accepts internal request fields from the wire', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t)) return;
+
+  const received: DaemonRequest[] = [];
+  const handleRequest = async (req: DaemonRequest): Promise<DaemonResponse> => {
+    received.push(req);
+    return { ok: true, data: { ok: true } };
+  };
+  const server = await createDaemonHttpServer({ handleRequest });
+
+  try {
+    const port = await listenOnLoopback(server);
+    const response = await fetch(`http://127.0.0.1:${port}/rpc`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'req-1',
+        method: 'agent_device.command',
+        params: {
+          command: 'snapshot',
+          positionals: [],
+          internal: {
+            observationOnly: true,
+            replayPlanStep: true,
+            replayTargetGuard: { ref: '@e1' },
+          },
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(received.length, 1);
+    assert.equal(
+      received[0]?.internal,
+      undefined,
+      'a wire-supplied `internal` must never reach the daemon request',
+    );
+  } finally {
+    await closeLoopbackServer(server);
+  }
+});

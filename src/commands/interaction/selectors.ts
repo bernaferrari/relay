@@ -1,11 +1,17 @@
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { FindOptions, IsOptions } from '../../client/client-types.ts';
-import type { CliFlags } from '../../cli/parser/cli-flags.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { FindOptions, IsOptions } from '@agent-device/contracts/client';
+import type { CliFlags } from '@agent-device/contracts/command';
+import { AppError } from '@agent-device/kernel/errors';
+import {
+  checkIsPredicate,
+  normalizeIsPositionals,
+  UNSUPPORTED_FIND_ACTION_HINT,
+} from '@agent-device/selectors';
 import {
   direct,
   optionalCliNumber,
   optionalNumber,
+  observationRecordInputFromFlags,
   request,
   selectionOptionsFromFlags,
   selectorSnapshotOptionsFromFlags,
@@ -59,6 +65,7 @@ function readFindOptionsFromPositionals(positionals: string[], flags: CliFlags):
   const base = {
     ...findSnapshotOptionsFromFlags(flags),
     ...selectionOptionsFromFlags(flags),
+    ...observationRecordInputFromFlags(flags),
     first: flags.findFirst,
     last: flags.findLast,
   };
@@ -99,34 +106,33 @@ function readFindOptionsFromPositionals(positionals: string[], flags: CliFlags):
   if (action === 'click' || action === 'focus' || action === 'exists') {
     return { ...base, locator, query: readRequiredQuery(query), action };
   }
-  throw new AppError('INVALID_ARGS', `Unsupported find action: ${action}`);
+  throw new AppError('INVALID_ARGS', `Unsupported find action: ${action}`, {
+    hint: UNSUPPORTED_FIND_ACTION_HINT,
+  });
 }
 
 function readIsOptionsFromPositionals(positionals: string[], flags: CliFlags): IsOptions {
   const base = {
     ...selectorSnapshotOptionsFromFlags(flags),
     ...selectionOptionsFromFlags(flags),
+    ...observationRecordInputFromFlags(flags),
   };
-  const predicate = positionals[0];
-  const split = splitRequiredSelector(positionals.slice(1), {
+  const normalized = normalizeIsPositionals(positionals);
+  const admitted = checkIsPredicate(normalized[0] ?? '');
+  if (!admitted.ok) {
+    throw new AppError(admitted.code, admitted.message, { hint: admitted.hint });
+  }
+  // The admitted predicate is lower-cased, matching what the daemon accepts. The inlined
+  // check this replaced compared the raw token, so the CLI used to be stricter than the
+  // executor it hands the command to.
+  const predicate = admitted.predicate;
+  const split = splitRequiredSelector(normalized.slice(1), {
     preferTrailingValue: predicate === 'text',
   });
   if (predicate === 'text') {
     return { ...base, predicate, selector: split.selectorExpression, value: split.rest.join(' ') };
   }
-  if (
-    predicate === 'visible' ||
-    predicate === 'hidden' ||
-    predicate === 'exists' ||
-    predicate === 'editable' ||
-    predicate === 'selected'
-  ) {
-    return { ...base, predicate, selector: split.selectorExpression };
-  }
-  throw new AppError(
-    'INVALID_ARGS',
-    'is requires predicate: visible|hidden|exists|editable|selected|text',
-  );
+  return { ...base, predicate, selector: split.selectorExpression };
 }
 
 function readFindLocator(value: string | undefined): FindOptions['locator'] | undefined {

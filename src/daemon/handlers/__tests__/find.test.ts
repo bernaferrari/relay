@@ -3,7 +3,10 @@ import { handleFindCommands } from '../find.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../../types.ts';
 import { buildSnapshotSignatures } from '../../android-snapshot-freshness.ts';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
-import { makeIosSession as makeSession } from '../../../__tests__/test-utils/session-factories.ts';
+import {
+  makeIosSession as makeSession,
+  makeAuthoringSession,
+} from '../../../__tests__/test-utils/session-factories.ts';
 
 vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
@@ -75,6 +78,24 @@ async function runFindClickScenario(options: {
   return { response: response!, invokeCalls, session };
 }
 
+test('mutating find focus crosses the ADR 0014 side-effect seam and expires the ref frame', async () => {
+  // find focus/type dispatch the device command directly (they do NOT re-enter
+  // the interaction leaf like find click/fill), so the seam must live in find.
+  const node = {
+    index: 0,
+    type: 'Button',
+    label: 'Save',
+    hittable: true,
+    rect: { x: 10, y: 20, width: 100, height: 40 },
+  };
+  const { response, session } = await runFindClickScenario({
+    positionals: ['Save', 'focus'],
+    nodes: [node],
+  });
+  expect(response.ok).toBe(true);
+  expect(session.refFrameState).toBe('expired');
+});
+
 test('handleFindCommands click returns deterministic metadata across locator variants', async () => {
   const hittableParentNoRect = { index: 0, type: 'View', hittable: true, depth: 0 };
   const nonHittableChildWithRect = {
@@ -93,7 +114,9 @@ test('handleFindCommands click returns deterministic metadata across locator var
       positionals: ['Increment', 'click'],
       nodes: [hittableParentNoRect, nonHittableChildWithRect],
       invoke: async () => ({ platformSpecificRef: 'XCUIElementTypeView' }),
-      expectedKeys: ['locator', 'query', 'ref', 'x', 'y'],
+      // ADR 0014: a mutating find (click) omits refsGeneration — its ref is
+      // diagnostic pre-action identity, never a pinnable issued ref.
+      expectedKeys: ['locator', 'message', 'query', 'ref', 'x', 'y'],
       expectedLocator: 'any',
       expectedQuery: 'Increment',
       expectedCoordinates: { x: 100, y: 50 },
@@ -122,6 +145,37 @@ test('handleFindCommands click returns deterministic metadata across locator var
     expect(invokeCalls.length).toBe(1);
     expect(invokeCalls[0]!.positionals?.[0]).toBe(scenario.expectedRef);
   }
+});
+
+test('handleFindCommands click reports the same success message as a direct press', async () => {
+  const nodes = [
+    { index: 0, type: 'View', hittable: true, depth: 0 },
+    {
+      index: 1,
+      type: 'Button',
+      label: 'Catalog',
+      hittable: true,
+      rect: { x: 50, y: 0, width: 100, height: 100 },
+      depth: 1,
+      parentIndex: 0,
+    },
+  ];
+
+  // Default action (no explicit `click` token) must also confirm the tap.
+  const synthesized = await runFindClickScenario({ positionals: ['Catalog'], nodes });
+  expect(synthesized.response.ok).toBe(true);
+  const synthesizedData = (synthesized.response as { data: Record<string, unknown> }).data;
+  expect(synthesizedData.message).toBe('Tapped @e2 (100, 50)');
+
+  // When the delegated click supplies its own success message, it is passed through.
+  const delegated = await runFindClickScenario({
+    positionals: ['Catalog', 'click'],
+    nodes,
+    invoke: async () => ({ message: 'Tapped @e2 (100, 50)', x: 100, y: 50 }),
+  });
+  expect(delegated.response.ok).toBe(true);
+  const delegatedData = (delegated.response as { data: Record<string, unknown> }).data;
+  expect(delegatedData.message).toBe('Tapped @e2 (100, 50)');
 });
 
 test('handleFindCommands click prefers on-screen duplicate text matches', async () => {
@@ -454,6 +508,95 @@ test('handleFindCommands click prefers semantic controls over matching container
   expect(invokeCalls[0]!.positionals?.[0]).toBe('@e5');
 });
 
+// #1597: an ambiguous find must let the agent act on the right @ref straight
+// from the error, so the response carries snapshot-line-rendered candidates
+// (ref, role, label) instead of a bare "matched N elements" message. Capped
+// at AMBIGUOUS_MATCH_CANDIDATE_LIMIT (5); the true total keeps riding
+// `matches` so a "+N more" marker can be computed at render time.
+test('handleFindCommands ambiguous match lists snapshot-line candidates capped at 5', async () => {
+  const followButton = (ref: string, index: number, x: number) => ({
+    index,
+    ref,
+    type: 'Button',
+    label: 'Follow',
+    hittable: true,
+    rect: { x, y: 100, width: 80, height: 40 },
+    parentIndex: 0,
+  });
+
+  const { response } = await runFindClickScenario({
+    positionals: ['Follow', 'click'],
+    nodes: [
+      { index: 0, ref: 'e1', type: 'Application', rect: { x: 0, y: 0, width: 800, height: 1200 } },
+      followButton('e2', 1, 0),
+      followButton('e3', 2, 90),
+      followButton('e4', 3, 180),
+      followButton('e5', 4, 270),
+      followButton('e6', 5, 360),
+      followButton('e7', 6, 450),
+    ],
+  });
+
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('AMBIGUOUS_MATCH');
+  // The old bare message ("find matched 6 elements ... Use a more specific
+  // locator or selector.") gave the agent nothing to act on directly — this
+  // proves the fix red against that shape: `candidates` must exist, be
+  // snapshot-line rendered, and be capped below the true match count.
+  expect(response.error.details?.matches).toBe(6);
+  const candidates = response.error.details?.candidates;
+  expect(Array.isArray(candidates)).toBe(true);
+  expect(candidates).toHaveLength(5);
+  expect(candidates).toEqual([
+    '@e2 [button] "Follow"',
+    '@e3 [button] "Follow"',
+    '@e4 [button] "Follow"',
+    '@e5 [button] "Follow"',
+    '@e6 [button] "Follow"',
+  ]);
+});
+
+test('handleFindCommands ambiguous match with few candidates lists them all uncapped', async () => {
+  const { response } = await runFindClickScenario({
+    positionals: ['Follow', 'click'],
+    nodes: [
+      { index: 0, ref: 'e1', type: 'Application', rect: { x: 0, y: 0, width: 800, height: 1200 } },
+      {
+        index: 1,
+        ref: 'e2',
+        type: 'Button',
+        label: 'Follow',
+        hittable: true,
+        rect: { x: 0, y: 100, width: 80, height: 40 },
+        parentIndex: 0,
+      },
+      {
+        index: 2,
+        ref: 'e3',
+        type: 'Button',
+        // No label — exact-matches "Follow" via its identifier instead, so
+        // this candidate exercises the label/identifier fallback.
+        identifier: 'FOLLOW',
+        hittable: true,
+        rect: { x: 90, y: 100, width: 80, height: 40 },
+        parentIndex: 0,
+      },
+    ],
+  });
+
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('AMBIGUOUS_MATCH');
+  expect(response.error.details?.matches).toBe(2);
+  // No label on e3, so the candidate line falls back to its identifier —
+  // "label/identifier" per #1597, same as any other snapshot line.
+  expect(response.error.details?.candidates).toEqual([
+    '@e2 [button] "Follow"',
+    '@e3 [button] "FOLLOW"',
+  ]);
+});
+
 test('handleFindCommands focus uses the promoted actionable node center', async () => {
   const { response } = await runFindClickScenario({
     positionals: ['Account', 'focus'],
@@ -697,5 +840,109 @@ test('handleFindCommands wait captures fresh snapshots while polling', async () 
   if (!response.ok) {
     expect(response.error.message).toContain('find wait timed out');
   }
-  expect(mockDispatch).toHaveBeenCalledTimes(2);
+  // What this test guards is that every poll re-captures instead of reusing the first tree.
+  // The exact poll count is a timing artifact and is not assertable: the loop's last sleep
+  // consumes whatever remains of the budget, so it lands on `remainingMs() === 0`, and a
+  // sleep that returns a millisecond early admits one more poll. Pinning this to 2 made the
+  // test fail under CI load on unrelated PRs. Assert the property, not the artifact.
+  expect(mockDispatch.mock.calls.length).toBeGreaterThanOrEqual(2);
+  expect(mockDispatch.mock.calls.every(([, command]) => command === 'snapshot')).toBe(true);
+});
+
+test('handleFindCommands click omits refsGeneration — a mutating find never issues a pinnable ref (ADR 0014)', async () => {
+  const sessionName = 'default';
+  const session = makeSession(sessionName);
+  // Two earlier tree replacements happened in this session.
+  session.snapshotGeneration = 2;
+
+  const { response, session: storedSession } = await runFindClickScenario({
+    positionals: ['Increment', 'click'],
+    nodes: [
+      {
+        index: 0,
+        type: 'Button',
+        label: 'Increment',
+        hittable: true,
+        rect: { x: 50, y: 0, width: 100, height: 100 },
+        depth: 0,
+      },
+    ],
+    session,
+  });
+
+  expect(response.ok).toBe(true);
+  // The find capture still replaced the stored tree (generation 3)…
+  expect(storedSession.snapshotGeneration).toBe(3);
+  if (response.ok) {
+    // …but a mutating find must NOT report refsGeneration: its acted ref is
+    // diagnostic pre-action identity, so MCP cannot pin and reuse it after the
+    // action.
+    expect((response.data as Record<string, unknown>).refsGeneration).toBeUndefined();
+  }
+});
+
+// #1271 stage 2: `find`'s observe-vs-mutate split is a positional, so unlike
+// snapshot/get/is it cannot be settled by the CLI grammar's per-command
+// `allowedFlags`. A mutating find always records, so `--record` on one is
+// meaningless — refuse it loudly rather than accept and ignore it. Enforced
+// daemon-side so every surface (CLI/Node/MCP) inherits the same refusal.
+test('find rejects --record on a mutating action before any device work', async () => {
+  const { response, invokeCalls } = await runFindClickScenario({
+    positionals: ['label', 'Apps', 'click'],
+    flags: { record: true },
+  });
+
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('INVALID_ARGS');
+  expect(response.error.message).toMatch(/--record only applies to a read-only find/);
+  // Refused before the action dispatched.
+  expect(invokeCalls).toHaveLength(0);
+});
+
+test('read-only find while recording is intentionally deferred from target-v1 evidence (#1349)', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'default';
+  const session = makeAuthoringSession(sessionName);
+  sessionStore.set(sessionName, session);
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command === 'snapshot') {
+      return {
+        nodes: [
+          {
+            index: 0,
+            depth: 0,
+            type: 'Button',
+            label: 'Save',
+            rect: { x: 10, y: 10, width: 40, height: 20 },
+            enabled: true,
+            hittable: true,
+          },
+        ],
+      };
+    }
+    return {};
+  });
+
+  const response = await handleFindCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'find',
+      positionals: ['text', 'Save', 'exists'],
+      flags: {},
+    },
+    sessionName,
+    logPath: '/tmp/test.log',
+    sessionStore,
+    invoke: async () => ({ ok: true, data: {} }),
+  });
+
+  expect(response?.ok).toBe(true);
+  const recordedAction = sessionStore.get(sessionName)?.actions[0];
+  expect(recordedAction?.command).toBe('find');
+  // The fuzzy-locator resolution has no selector-chain identity token for
+  // replay verification, so read-only find records NO annotation in v1 —
+  // an explicit deferral, not an accident.
+  expect(recordedAction?.targetEvidence).toBeUndefined();
 });

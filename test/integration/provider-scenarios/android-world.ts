@@ -9,6 +9,10 @@ import type {
   AndroidAdbProvider,
 } from '../../../src/platforms/android/adb-executor.ts';
 import type { DeviceInventoryRequest } from '../../../src/core/dispatch-resolve.ts';
+import {
+  ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+  androidSnapshotHelperOutput,
+} from '../../../src/__tests__/test-utils/index.ts';
 import { runCmd } from '../../../src/utils/exec.ts';
 import { validPng } from './assertions.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
@@ -32,6 +36,7 @@ type AndroidSettingsWorld = {
   ) => unknown
     ? TRequest[]
     : never;
+  gestureViewportCalls: number;
   inventoryRequests: DeviceInventoryRequest[];
   apkInstallCalls: Array<{ apkPath: string; replace?: boolean }>;
   bundleInstallCalls: Array<{ bundlePath: string; mode: string }>;
@@ -47,7 +52,7 @@ type AndroidSettingsWorld = {
 
 export async function createAndroidSettingsWorld(options?: {
   nativeTextInjection?: boolean;
-  nativeTouchInjection?: boolean;
+  onTextInjection?: (request: AndroidSettingsWorld['textInjectionCalls'][number]) => void;
   snapshotXml?: () => string;
   dumpsysWindow?: () => string;
   onAdbExec?: (args: string[]) => void;
@@ -56,6 +61,7 @@ export async function createAndroidSettingsWorld(options?: {
   const adbCalls: string[][] = [];
   const textInjectionCalls: AndroidSettingsWorld['textInjectionCalls'] = [];
   const touchInjectionCalls: AndroidSettingsWorld['touchInjectionCalls'] = [];
+  let gestureViewportCalls = 0;
   const inventoryRequests: DeviceInventoryRequest[] = [];
   const apkInstallCalls: Array<{ apkPath: string; replace?: boolean }> = [];
   const bundleInstallCalls: Array<{ bundlePath: string; mode: string }> = [];
@@ -77,6 +83,11 @@ export async function createAndroidSettingsWorld(options?: {
     packageName: 'io.example.demo_manifest',
   });
   const adbProvider: AndroidAdbProvider = {
+    snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+    gestureViewport: async () => {
+      gestureViewportCalls += 1;
+      return { x: 0, y: 0, width: 390, height: 600 };
+    },
     exec: async (args) => {
       adbCalls.push([...args]);
       options?.onAdbExec?.([...args]);
@@ -91,6 +102,10 @@ export async function createAndroidSettingsWorld(options?: {
           options?.dumpsysWindow ?? (() => androidForegroundWindowDump(appState.foreground)),
         pidof: (packageName) => androidPidofResult(appState, packageName),
       });
+    },
+    touch: async (request) => {
+      touchInjectionCalls.push({ ...request });
+      return { backend: 'provider-native-touch' };
     },
     install: async (apk, options) => {
       apkInstallCalls.push({ apkPath: apk, replace: options?.replace });
@@ -132,14 +147,9 @@ export async function createAndroidSettingsWorld(options?: {
   };
   if (options?.nativeTextInjection) {
     adbProvider.text = async (request) => {
+      options.onTextInjection?.(request);
       textInjectionCalls.push({ ...request });
       shellState.searchText = request.text;
-    };
-  }
-  if (options?.nativeTouchInjection) {
-    adbProvider.touch = async (request) => {
-      touchInjectionCalls.push({ ...request });
-      return { backend: 'provider-native-touch' };
     };
   }
   const daemon = await createProviderScenarioHarness({
@@ -156,6 +166,9 @@ export async function createAndroidSettingsWorld(options?: {
     adbCalls,
     textInjectionCalls,
     touchInjectionCalls,
+    get gestureViewportCalls() {
+      return gestureViewportCalls;
+    },
     inventoryRequests,
     apkInstallCalls,
     bundleInstallCalls,
@@ -350,6 +363,9 @@ function androidForegroundWindowDump(foreground: string | null): string {
 }
 
 function androidMetricsAdbResult(key: string): AndroidAdbResult | undefined {
+  if (key === 'shell wm size') {
+    return { stdout: 'Physical size: 1080x1920\n', stderr: '', exitCode: 0 };
+  }
   if (key === 'shell dumpsys cpuinfo') {
     return {
       stdout: [
@@ -429,16 +445,16 @@ function androidCaptureAdbResult(
   searchText: string,
   snapshotXml?: () => string,
 ): AndroidAdbResult | undefined {
-  if (key.startsWith('shell am instrument ')) {
+  if (key.includes('com.callstack.agentdevice.multitouchhelper/.MultiTouchInstrumentation')) {
     return {
-      stdout: androidSnapshotHelperOutput(snapshotXml?.() ?? androidSettingsXml(searchText)),
+      stdout: androidMultiTouchHelperOutput(),
       stderr: '',
       exitCode: 0,
     };
   }
-  if (key === 'exec-out uiautomator dump /dev/tty') {
+  if (key.startsWith('shell am instrument ')) {
     return {
-      stdout: snapshotXml?.() ?? androidSettingsXml(searchText),
+      stdout: androidSnapshotHelperOutput(snapshotXml?.() ?? androidSettingsXml(searchText)),
       stderr: '',
       exitCode: 0,
     };
@@ -449,18 +465,16 @@ function androidCaptureAdbResult(
   return undefined;
 }
 
-export function androidSnapshotHelperOutput(xml: string): string {
+export { androidSnapshotHelperOutput };
+
+function androidMultiTouchHelperOutput(): string {
   return [
-    'INSTRUMENTATION_STATUS: agentDeviceProtocol=android-snapshot-helper-v1',
-    'INSTRUMENTATION_STATUS: helperApiVersion=1',
-    'INSTRUMENTATION_STATUS: outputFormat=uiautomator-xml',
-    'INSTRUMENTATION_STATUS: chunkIndex=0',
-    'INSTRUMENTATION_STATUS: chunkCount=1',
-    `INSTRUMENTATION_STATUS: payloadBase64=${Buffer.from(xml, 'utf8').toString('base64')}`,
-    'INSTRUMENTATION_STATUS_CODE: 1',
-    'INSTRUMENTATION_RESULT: agentDeviceProtocol=android-snapshot-helper-v1',
+    'INSTRUMENTATION_RESULT: agentDeviceProtocol=android-multitouch-helper-v1',
     'INSTRUMENTATION_RESULT: helperApiVersion=1',
+    'INSTRUMENTATION_RESULT: kind=swipe',
     'INSTRUMENTATION_RESULT: ok=true',
+    'INSTRUMENTATION_RESULT: injectedEvents=2',
+    'INSTRUMENTATION_RESULT: elapsedMs=100',
     'INSTRUMENTATION_CODE: 0',
   ].join('\n');
 }

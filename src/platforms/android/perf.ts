@@ -1,19 +1,21 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { requireExecSuccess } from '../../utils/exec.ts';
 import { splitNonEmptyTrimmedLines } from '../../utils/parsing.ts';
-import { resolveAndroidAdbExecutor, type AndroidAdbExecutor } from './adb-executor.ts';
+import {
+  androidAdbResultError,
+  resolveAndroidAdbExecutor,
+  type AndroidAdbExecutor,
+} from './adb-executor.ts';
 import { parseNumericToken } from './perf-parsing.ts';
 import { roundPercent } from '../perf-utils.ts';
 export {
   ANDROID_FRAME_SAMPLE_DESCRIPTION,
   ANDROID_FRAME_SAMPLE_METHOD,
-  parseAndroidFramePerfSample,
   resetAndroidFramePerfStats,
   sampleAndroidFramePerf,
-  type AndroidFrameDropWindow,
-  type AndroidFramePerfSample,
 } from './perf-frame.ts';
 export {
   cleanupAndroidNativePerfSession,
@@ -24,10 +26,6 @@ export {
   writeAndroidSimpleperfReport,
   type AndroidNativePerfKind,
   type AndroidNativePerfSession,
-  type AndroidNativePerfStartResult,
-  type AndroidNativePerfStopResult,
-  type AndroidNativePerfType,
-  type AndroidSimpleperfReportResult,
 } from './perf-native.ts';
 
 export const ANDROID_CPU_SAMPLE_METHOD = 'adb-shell-dumpsys-cpuinfo';
@@ -125,26 +123,20 @@ export async function captureAndroidHeapSnapshot(
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   const hadLocalArtifact = await fileExists(outPath);
   try {
-    const dumpResult = await adb(['shell', 'am', 'dumpheap', packageName, remotePath], {
-      allowFailure: true,
-      timeoutMs: ANDROID_HEAP_DUMP_TIMEOUT_MS,
-    });
-    if (dumpResult.exitCode !== 0) {
-      throw new AppError(
-        'COMMAND_FAILED',
-        `Failed to capture Android heap dump for ${packageName}`,
-        {
-          kind: 'android-hprof',
-          package: packageName,
-          pid,
-          remotePath,
-          exitCode: dumpResult.exitCode,
-          stdout: dumpResult.stdout,
-          stderr: dumpResult.stderr,
-          hint: resolveAndroidHeapDumpHint(dumpResult.stdout, dumpResult.stderr),
-        },
-      );
-    }
+    requireExecSuccess(
+      await adb(['shell', 'am', 'dumpheap', packageName, remotePath], {
+        allowFailure: true,
+        timeoutMs: ANDROID_HEAP_DUMP_TIMEOUT_MS,
+      }),
+      `Failed to capture Android heap dump for ${packageName}`,
+      (dumpResult) => ({
+        kind: 'android-hprof',
+        package: packageName,
+        pid,
+        remotePath,
+        hint: resolveAndroidHeapDumpHint(dumpResult.stdout, dumpResult.stderr),
+      }),
+    );
 
     const pullResult = await adb(['pull', remotePath, outPath], {
       allowFailure: true,
@@ -152,19 +144,24 @@ export async function captureAndroidHeapSnapshot(
     });
     if (pullResult.exitCode !== 0) {
       await cleanupLocalArtifact(outPath, hadLocalArtifact);
-      throw new AppError('COMMAND_FAILED', `Failed to pull Android heap dump for ${packageName}`, {
-        kind: 'android-hprof',
-        package: packageName,
-        pid,
-        remotePath,
-        path: outPath,
-        exitCode: pullResult.exitCode,
-        stdout: pullResult.stdout,
-        stderr: pullResult.stderr,
-        hint: 'Verify the daemon can write the requested --out path and retry. The heap dump stays on-device only until cleanup runs.',
-      });
+      // The site hint wins over the classified one (attachAdbFailureHint never
+      // overwrites), but the classifier still tags adbFailure/retriable.
+      // fallow-ignore-next-line code-duplication
+      throw androidAdbResultError(
+        `Failed to pull Android heap dump for ${packageName}`,
+        pullResult,
+        {
+          kind: 'android-hprof',
+          package: packageName,
+          pid,
+          remotePath,
+          path: outPath,
+          hint: 'Verify the daemon can write the requested --out path and retry. The heap dump stays on-device only until cleanup runs.',
+        },
+      );
     }
 
+    // fallow-ignore-next-line code-duplication
     const stat = await fs.stat(outPath).catch(() => null);
     if (!stat?.isFile() || stat.size <= 0) {
       await cleanupLocalArtifact(outPath, hadLocalArtifact);

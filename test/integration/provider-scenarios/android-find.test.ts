@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
+import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../../src/__tests__/test-utils/index.ts';
 import type { AndroidAdbProvider } from '../../../src/platforms/android/adb-executor.ts';
 import { arrayEqual, assertCommandCall } from './assertions.ts';
 import { androidSettingsXml, androidSnapshotHelperOutput } from './android-world.ts';
@@ -11,6 +12,7 @@ test('Provider-backed integration Android find flow covers refs, wait, ambiguity
   let searchText = '';
   let includeDuplicateAppsRow = false;
   const adbProvider: AndroidAdbProvider = {
+    snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
     exec: async (args) => {
       adbCalls.push([...args]);
       if (args[0] === 'shell' && args[1] === 'input' && args[2] === 'text') {
@@ -45,6 +47,12 @@ test('Provider-backed integration Android find flow covers refs, wait, ambiguity
     assertString(attrsRef, 'find attrs ref');
     assert.match(attrsRef, /^@e\d+$/);
     assert.equal((attrs.node as { label?: string } | undefined)?.label, 'Apps');
+    // ADR 0014: a read-only find partially publishes its returned ref, so it is
+    // consumed in pinned form (`@eN~s<gen>`) — a plain ref would require a
+    // complete frame.
+    const attrsGeneration = (attrs as { refsGeneration?: number }).refsGeneration;
+    assert.equal(typeof attrsGeneration, 'number');
+    const attrsPinnedRef = `${attrsRef}~s${attrsGeneration}`;
 
     const exists = await client.interactions.find({
       locator: 'label',
@@ -54,7 +62,7 @@ test('Provider-backed integration Android find flow covers refs, wait, ambiguity
     });
     assert.equal(exists.found, true);
 
-    const pressFoundRef = await client.interactions.press({ ref: attrsRef, ...selection });
+    const pressFoundRef = await client.interactions.press({ ref: attrsPinnedRef, ...selection });
     assert.equal(pressFoundRef.x, 88);
     assert.equal(pressFoundRef.y, 151);
 
@@ -185,13 +193,6 @@ function androidFindAdbResult(
   if (args.join(' ') === 'shell dumpsys window windows') {
     return {
       stdout: 'mCurrentFocus=Window{42 u0 com.android.settings/.Settings}\n',
-      stderr: '',
-      exitCode: 0,
-    };
-  }
-  if (args.join(' ') === 'exec-out uiautomator dump /dev/tty') {
-    return {
-      stdout: androidSettingsXml(searchText, { duplicateAppsRow: includeDuplicateAppsRow }),
       stderr: '',
       exitCode: 0,
     };

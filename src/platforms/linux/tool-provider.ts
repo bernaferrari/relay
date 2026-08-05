@@ -1,15 +1,14 @@
-import { runCmd, whichCmd, type ExecOptions, type ExecResult } from '../../utils/exec.ts';
+import type { ClickButton, ScrollDirection } from '@agent-device/contracts/interaction';
+import { AppError } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
-import { AppError } from '../../kernel/errors.ts';
+import { runCmd, whichCmd, type ExecOptions, type ExecResult } from '../../utils/exec.ts';
 import { createScopedProvider } from '../../utils/scoped-provider.ts';
 import { sleep } from '../../utils/timeouts.ts';
-import type { ClickButton } from '../../core/click-button.ts';
 import type {
   LinuxAccessibilityTree,
   LinuxSnapshotSurface,
   LinuxTraversalOptions,
 } from './accessibility-types.ts';
-import type { ScrollDirection } from '../../core/scroll-gesture.ts';
 
 export type LinuxToolCommandExecutor = (
   cmd: string,

@@ -1,0 +1,236 @@
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import { AppError } from '@agent-device/kernel/errors';
+import { tryParseSelectorChain } from './parse.ts';
+
+export const FIND_LOCATORS = ['any', 'text', 'label', 'value', 'role', 'id'] as const;
+export type FindLocator = (typeof FIND_LOCATORS)[number];
+const FIND_LOCATOR_TOKENS = [
+  'text',
+  'label',
+  'value',
+  'role',
+  'id',
+] as const satisfies readonly FindLocator[];
+
+export type FindAction =
+  | { kind: 'click' }
+  | { kind: 'focus' }
+  | { kind: 'fill'; value: string }
+  | { kind: 'type'; value: string }
+  | { kind: 'get_text' }
+  | { kind: 'get_attrs' }
+  | { kind: 'exists' }
+  | { kind: 'wait'; timeoutMs?: number };
+
+export type ReadOnlyFindAction = 'exists' | 'wait' | 'get_text' | 'get_attrs';
+
+/**
+ * `find` is the one command whose observation-vs-mutation split is a
+ * POSITIONAL, not the command name — so it cannot be settled statically by the
+ * CLI grammar the way `snapshot`/`get`/`is` are. Both the read-only dispatch
+ * (`dispatchFindReadOnlyViaRuntime`) and the mutating handler
+ * (`handleFindCommands`) read this one definition, so `--record`'s dynamic
+ * validation (#1271 stage 2) and the read-only routing can never disagree
+ * about which sub-actions observe.
+ */
+export function isReadOnlyFindAction(action: FindAction['kind']): action is ReadOnlyFindAction {
+  return (
+    action === 'exists' || action === 'wait' || action === 'get_text' || action === 'get_attrs'
+  );
+}
+
+export type FindMatchOptions = {
+  requireRect?: boolean;
+};
+
+type FindBestMatches = {
+  matches: SnapshotNode[];
+  score: number;
+};
+
+export function findBestMatchesByLocator(
+  nodes: SnapshotNode[],
+  locator: FindLocator,
+  query: string,
+  options: FindMatchOptions = {},
+): FindBestMatches {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return { matches: [], score: 0 };
+  let bestScore = 0;
+  const matches: SnapshotNode[] = [];
+  for (const node of nodes) {
+    if (options.requireRect && !node.rect) continue;
+    const score = matchNode(node, locator, normalizedQuery);
+    if (score <= 0) continue;
+    if (score > bestScore) {
+      bestScore = score;
+      matches.length = 0;
+      matches.push(node);
+      continue;
+    }
+    if (score === bestScore) {
+      matches.push(node);
+    }
+  }
+  return { matches, score: bestScore };
+}
+
+function matchNode(node: SnapshotNode, locator: FindLocator, query: string): number {
+  switch (locator) {
+    case 'role':
+      return matchRole(node.type, query);
+    case 'label':
+      return matchText(node.label, query);
+    case 'value':
+      return matchText(node.value, query);
+    case 'id':
+      return matchText(node.identifier, query);
+    case 'text':
+    case 'any':
+    default:
+      return Math.max(
+        matchText(node.label, query),
+        matchText(node.value, query),
+        matchText(node.identifier, query),
+      );
+  }
+}
+
+function matchText(value: string | undefined, query: string): number {
+  const normalized = normalizeText(value ?? '');
+  if (!normalized) return 0;
+  if (normalized === query) return 2;
+  if (normalized.includes(query)) return 1;
+  return 0;
+}
+
+function matchRole(value: string | undefined, query: string): number {
+  const normalized = normalizeRole(value ?? '');
+  if (!normalized) return 0;
+  if (normalized === query) return 2;
+  if (normalized.includes(query)) return 1;
+  return 0;
+}
+
+export function normalizeText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function normalizeRole(value: string): string {
+  let normalized = value.trim();
+  if (!normalized) return '';
+  const lastSegment = normalized.split('.').pop() ?? normalized;
+  normalized = lastSegment.replace(/XCUIElementType/gi, '').toLowerCase();
+  return normalized;
+}
+
+export type ParsedFindArgs = {
+  locator: FindLocator;
+  query: string;
+  action: FindAction['kind'];
+  value?: string;
+  timeoutMs?: number;
+};
+
+/** Shared by `checkFindArgs` and `findCommand`, which validates already-parsed options. */
+export const FIND_VALUE_REQUIRED_MESSAGE = 'find requires a value';
+
+/**
+ * Shared by both `Unsupported find action` throw sites (this file's raw-token
+ * parser and `src/commands/interaction/selectors.ts`'s typed CLI reader) so
+ * the recovery guidance cannot drift between them. `find` has no press/
+ * longpress/swipe action of its own — the fix is to resolve the ref through
+ * `find`, then dispatch the gesture as its own top-level command.
+ */
+export const UNSUPPORTED_FIND_ACTION_HINT =
+  'find actions: click (default), focus, fill, type, exists, wait, get text, get attrs — ' +
+  'there is no press/longpress/swipe find action. Run find "<text>" to list matches, then ' +
+  'act on the resolved @ref directly, e.g. press @eNN.';
+
+export type FindArgumentCheck =
+  | { ok: true; parsed: ParsedFindArgs }
+  | { ok: false; code: 'INVALID_ARGS'; message: string };
+
+/**
+ * `find`'s positional and flag validation, in one place for the same reason
+ * {@link isReadOnlyFindAction} is: both daemon entry points (the read-only
+ * `dispatchFindReadOnlyViaRuntime` fast path and the mutating `handleFindCommands`) ran
+ * their own copies of these three checks with hand-repeated messages, so a rule change
+ * had to be made twice to hold. The caller decides how to surface a failure — the
+ * daemon returns it as a response, other surfaces may throw — so this returns the
+ * refusal instead of choosing a mechanism.
+ *
+ * Action-token validation still comes from {@link parseFindArgs}, which throws; that is
+ * unchanged and callers see it exactly as before.
+ */
+export function checkFindArgs(
+  args: readonly string[],
+  flags?: { findFirst?: boolean; findLast?: boolean },
+): FindArgumentCheck {
+  if (args.length === 0) {
+    return { ok: false, code: 'INVALID_ARGS', message: 'find requires a locator or text' };
+  }
+  const parsed = parseFindArgs([...args]);
+  if (!parsed.query) {
+    return { ok: false, code: 'INVALID_ARGS', message: FIND_VALUE_REQUIRED_MESSAGE };
+  }
+  if (flags?.findFirst && flags?.findLast) {
+    return {
+      ok: false,
+      code: 'INVALID_ARGS',
+      message: 'find accepts only one of --first or --last',
+    };
+  }
+  return { ok: true, parsed };
+}
+
+export function parseFindArgs(args: string[]): ParsedFindArgs {
+  let locator: FindLocator = 'any';
+  let queryIndex = 0;
+  if (FIND_LOCATOR_TOKENS.includes(args[0] as (typeof FIND_LOCATOR_TOKENS)[number])) {
+    locator = args[0] as FindLocator;
+    queryIndex = 1;
+  }
+  const query = args[queryIndex] ?? '';
+  const actionTokens = args.slice(queryIndex + 1);
+  if (actionTokens.length === 0) {
+    return { locator, query, action: 'click' };
+  }
+  const action = actionTokens[0]?.toLowerCase();
+  if (action === 'get') {
+    const sub = actionTokens[1]?.toLowerCase();
+    if (sub === 'text') return { locator, query, action: 'get_text' };
+    if (sub === 'attrs') return { locator, query, action: 'get_attrs' };
+    throw new AppError('INVALID_ARGS', 'find get only supports text or attrs');
+  }
+  if (action === 'wait') {
+    const timeoutMs = parseTimeout(actionTokens[1]);
+    return { locator, query, action: 'wait', timeoutMs: timeoutMs ?? undefined };
+  }
+  if (action === 'exists') return { locator, query, action: 'exists' };
+  if (action === 'click') return { locator, query, action: 'click' };
+  if (action === 'focus') return { locator, query, action: 'focus' };
+  if (action === 'fill') {
+    const value = actionTokens.slice(1).join(' ');
+    return { locator, query, action: 'fill', value };
+  }
+  if (action === 'type') {
+    const value = actionTokens.slice(1).join(' ');
+    return { locator, query, action: 'type', value };
+  }
+  throw new AppError('INVALID_ARGS', `Unsupported find action: ${actionTokens[0]}`, {
+    hint: UNSUPPORTED_FIND_ACTION_HINT,
+  });
+}
+
+export function parseFindSelectorExpression(locator: FindLocator, query: string): string | null {
+  if (locator !== 'any') return null;
+  if (!query.includes('=') && !query.includes('||')) return null;
+  return tryParseSelectorChain(query) ? query : null;
+}
+
+function parseTimeout(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}

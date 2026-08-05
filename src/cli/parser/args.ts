@@ -1,16 +1,19 @@
-import { AppError } from '../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { mergeDefinedFlags } from '../../utils/merge-flags.ts';
 import {
   applyCommandDefaults,
+  assertCommandPositionalArity,
   getCommandSchema,
   getFlagDefinition,
   getFlagDefinitions,
   type CliFlags,
   type FlagDefinition,
   type FlagKey,
-} from '../../utils/command-schema.ts';
-import { buildCommandUsageText, buildUsageText } from './cli-help.ts';
-import { isFlagSupportedForCommand } from '../../utils/cli-option-schema.ts';
+} from '../../cli-schema/command-schema.ts';
+import { isFlagSupportedForCommand } from '../../cli-schema/option-schema.ts';
+import { isKnownCliCommandName } from '../../command-catalog.ts';
+import { cliCommandAlias, normalizeCliCommandAlias } from '../../commands/cli-command-aliases.ts';
+import { formatUnknownFlagMessage, suggestCommandFor } from './command-suggestions.ts';
 
 type ParsedArgs = {
   command: string | null;
@@ -36,6 +39,9 @@ type FinalizeArgsOptions = ParseArgsOptions & {
   defaultFlags?: Partial<CliFlags>;
 };
 
+/**
+ * @internal High-level argv parser used by unit tests and build scripts.
+ */
 export function parseArgs(argv: string[], options?: FinalizeArgsOptions): ParsedArgs {
   return finalizeParsedArgs(parseRawArgs(argv), options);
 }
@@ -43,6 +49,7 @@ export function parseArgs(argv: string[], options?: FinalizeArgsOptions): Parsed
 export function parseRawArgs(argv: string[]): RawParsedArgs {
   const flags: CliFlags = { json: false, help: false, version: false };
   let command: string | null = null;
+  let rawCommand: string | null = null;
   const positionals: string[] = [];
   const warnings: string[] = [];
   const providedFlags: ParsedFlagRecord[] = [];
@@ -55,8 +62,10 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
       continue;
     }
     if (!parseFlags) {
-      if (!command) command = normalizeCommandAlias(arg);
-      else positionals.push(arg);
+      if (!command) {
+        rawCommand = arg;
+        command = normalizeCommandAlias(arg);
+      } else positionals.push(arg);
       continue;
     }
     if (shouldPreservePostCommandArgs(command)) {
@@ -66,8 +75,10 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
     const isLongFlag = arg.startsWith('--');
     const isShortFlag = arg.startsWith('-') && arg.length > 1;
     if (!isLongFlag && !isShortFlag) {
-      if (!command) command = normalizeCommandAlias(arg);
-      else positionals.push(arg);
+      if (!command) {
+        rawCommand = arg;
+        command = normalizeCommandAlias(arg);
+      } else positionals.push(arg);
       continue;
     }
 
@@ -86,7 +97,7 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
         else positionals.push(arg);
         continue;
       }
-      throw new AppError('INVALID_ARGS', `Unknown flag: ${token}`);
+      throw new AppError('INVALID_ARGS', formatUnknownFlagMessage(token));
     }
 
     const parsed = parseFlagValue(definition, token, inlineValue, argv[i + 1]);
@@ -105,7 +116,15 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
     providedFlags.push({ key: definition.key, token });
   }
 
+  applyAliasImpliedFlags(rawCommand, flags);
   return { command, positionals, flags, warnings, providedFlags };
+}
+
+function applyAliasImpliedFlags(rawCommand: string | null, flags: CliFlags): void {
+  if (!rawCommand) return;
+  for (const key of cliCommandAlias(rawCommand)?.impliedFlags ?? []) {
+    flags[key] = true;
+  }
 }
 
 function isLegacyIgnoredSnapshotShortFlag(command: string | null, token: string): boolean {
@@ -148,6 +167,18 @@ export function finalizeParsedArgs(
     options?.defaultFlags ?? {},
   );
   mergeDefinedFlags(flags, parsed.flags);
+
+  // Check if the command is known before validating flags
+  // This ensures "Unknown command" errors take precedence over flag validation errors
+  // However, skip this check if --help is provided, since cli.ts will handle it gracefully
+  if (parsed.command && !isKnownCliCommandName(parsed.command) && !flags.help) {
+    const hint = suggestCommandFor(parsed.command);
+    const message = hint
+      ? `Unknown command: ${parsed.command}. Did you mean ${hint}?`
+      : `Unknown command: ${parsed.command}`;
+    throw new AppError('INVALID_ARGS', message);
+  }
+
   const disallowed = parsed.providedFlags.filter(
     (entry) => !isFlagSupportedForCommand(entry.key, parsed.command),
   );
@@ -170,7 +201,14 @@ export function finalizeParsedArgs(
   }
   assertNoConflictingBackModeFlags(parsed);
   applyCommandDefaults(parsed.command, flags);
-  if (parsed.command === 'batch') {
+  const normalized = normalizeParsedCommandAliases({
+    command: parsed.command,
+    positionals: parsed.positionals,
+    flags,
+    warnings,
+  });
+  assertCommandPositionalArity(normalized.command, normalized.positionals);
+  if (normalized.command === 'batch') {
     const stepSourceCount = (flags.steps ? 1 : 0) + (flags.stepsFile ? 1 : 0);
     if (stepSourceCount !== 1) {
       throw new AppError(
@@ -179,12 +217,7 @@ export function finalizeParsedArgs(
       );
     }
   }
-  return normalizeParsedCommandAliases({
-    command: parsed.command,
-    positionals: parsed.positionals,
-    flags,
-    warnings,
-  });
+  return normalized;
 }
 
 function assertNoConflictingBackModeFlags(parsed: RawParsedArgs): void {
@@ -344,16 +377,24 @@ function formatUnsupportedFlagMessage(command: string | null, unsupported: strin
     : `Flags ${unsupported.join(', ')} are not supported for command ${command}.`;
 }
 
-export function usage(): string {
+// Usage text lives in cli-help.ts, which pulls the full command schema surface.
+// Callers load it lazily so plain command invocations never parse the help text.
+export async function usage(): Promise<string> {
+  const { buildUsageText } = await import('./cli-help.ts');
   return buildUsageText();
 }
 
-export function usageForCommand(command: string): string | null {
+export async function usageForCommand(command: string): Promise<string | null> {
+  const { buildCommandUsageText } = await import('./cli-help.ts');
   return buildCommandUsageText(normalizeCommandAlias(command));
 }
 
 function normalizeCommandAlias(command: string): string {
-  if (command === 'long-press') return 'longpress';
-  if (command === 'metrics') return 'perf';
-  return command;
+  if (command.toLowerCase() === 'rotate') {
+    throw new AppError(
+      'INVALID_ARGS',
+      'rotate was renamed to orientation; for the two-finger gesture use: gesture rotate',
+    );
+  }
+  return normalizeCliCommandAlias(command);
 }

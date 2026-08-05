@@ -1,5 +1,13 @@
-import { describe, expect, test } from 'vitest';
-import type { CliFlags } from '../../cli/parser/cli-flags.ts';
+import { describe, expect, expectTypeOf, test } from 'vitest';
+import type {
+  AgentDeviceCommandClient,
+  AppSwitcherCommandOptions,
+  BackCommandOptions,
+  OrientationCommandOptions,
+  TvRemoteCommandOptions,
+} from '../../client/client-types.ts';
+import type { CommandResult } from '../../core/command-descriptor/command-result.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
 import {
   appStateCliReader,
   appStateDaemonWriter,
@@ -13,8 +21,11 @@ import {
   homeDaemonWriter,
   keyboardCliReader,
   keyboardDaemonWriter,
-  rotateCliReader,
-  rotateDaemonWriter,
+  orientationCliReader,
+  orientationDaemonWriter,
+  tvRemoteCliReader,
+  tvRemoteDaemonWriter,
+  systemCommandFamily,
 } from './index.ts';
 
 function flags(overrides: Partial<CliFlags> = {}): CliFlags {
@@ -31,6 +42,50 @@ function expectInvalidArgs(fn: () => unknown, messageFragment: string) {
 }
 
 describe('system command interface', () => {
+  test('navigation executable contracts project the public client signatures', () => {
+    expectTypeOf<AgentDeviceCommandClient['back']>().toEqualTypeOf<
+      (options?: BackCommandOptions) => Promise<CommandResult<'back'>>
+    >();
+    expectTypeOf<AgentDeviceCommandClient['orientation']>().toEqualTypeOf<
+      (options: OrientationCommandOptions) => Promise<CommandResult<'orientation'>>
+    >();
+    expectTypeOf<AgentDeviceCommandClient['appSwitcher']>().toEqualTypeOf<
+      (options?: AppSwitcherCommandOptions) => Promise<CommandResult<'app-switcher'>>
+    >();
+    expectTypeOf<AgentDeviceCommandClient['tvRemote']>().toEqualTypeOf<
+      (options: TvRemoteCommandOptions) => Promise<CommandResult<'tv-remote'>>
+    >();
+  });
+
+  test('system command family projects Node client command methods', () => {
+    expect(systemCommandFamily.clientCommandMethods).toEqual({
+      appState: 'appstate',
+      back: 'back',
+      home: 'home',
+      orientation: 'orientation',
+      appSwitcher: 'app-switcher',
+      keyboard: 'keyboard',
+      clipboard: 'clipboard',
+      tvRemote: 'tv-remote',
+    });
+  });
+
+  test('navigation executable contracts own their MCP output schemas', () => {
+    expect(
+      Object.fromEntries(
+        systemCommandFamily.definitions.flatMap((definition) =>
+          'projection' in definition ? [[definition.name, definition.projection.clientMethod]] : [],
+        ),
+      ),
+    ).toEqual({
+      back: 'back',
+      home: 'home',
+      orientation: 'orientation',
+      'app-switcher': 'appSwitcher',
+      'tv-remote': 'tvRemote',
+    });
+  });
+
   test('parameterless readers project common selection flags through', () => {
     for (const reader of [appStateCliReader, homeCliReader, appSwitcherCliReader]) {
       expect(reader([], flags({ platform: 'ios' }))).toEqual({
@@ -63,16 +118,19 @@ describe('system command interface', () => {
     ).toBeUndefined();
   });
 
-  test('rotate reader and writer normalize orientation', () => {
-    expect(rotateCliReader(['left'], flags())).toMatchObject({
+  test('orientation reader and writer normalize orientation', () => {
+    expect(orientationCliReader(['left'], flags())).toMatchObject({
       orientation: 'landscape-left',
     });
-    expect(rotateDaemonWriter({ orientation: 'portrait' }).positionals).toEqual(['portrait']);
+    expect(orientationDaemonWriter({ orientation: 'portrait' }).positionals).toEqual(['portrait']);
   });
 
-  test('rotate reader and writer reject missing orientation', () => {
-    expectInvalidArgs(() => rotateCliReader([], flags()), 'rotate requires an orientation');
-    expectInvalidArgs(() => rotateDaemonWriter({}), 'rotate requires orientation');
+  test('orientation reader and writer reject missing orientation', () => {
+    expectInvalidArgs(
+      () => orientationCliReader([], flags()),
+      'orientation requires an orientation',
+    );
+    expectInvalidArgs(() => orientationDaemonWriter({}), 'orientation requires orientation');
   });
 
   test('keyboard reader maps aliases and validates arguments', () => {
@@ -116,5 +174,48 @@ describe('system command interface', () => {
       'write',
       'copied',
     ]);
+  });
+
+  test('tv-remote reader parses button and optional press subcommand', () => {
+    expect(tvRemoteCliReader(['down'], flags({ durationMs: 250 }))).toMatchObject({
+      button: 'down',
+      durationMs: 250,
+    });
+    expect(tvRemoteCliReader(['press', 'select'], flags())).toMatchObject({
+      button: 'select',
+    });
+    expect(tvRemoteCliReader(['ok'], flags())).toMatchObject({ button: 'select' });
+    expect(tvRemoteCliReader(['center'], flags())).toMatchObject({ button: 'select' });
+    expect(tvRemoteCliReader(['enter'], flags())).toMatchObject({ button: 'select' });
+  });
+
+  test('tv-remote reader maps longpress subcommand to duration preset', () => {
+    expect(tvRemoteCliReader(['longpress', 'select'], flags())).toMatchObject({
+      button: 'select',
+      durationMs: 500,
+    });
+    expect(tvRemoteCliReader(['longpress', 'back'], flags({ durationMs: 900 }))).toMatchObject({
+      button: 'back',
+      durationMs: 900,
+    });
+  });
+
+  test('tv-remote reader and writer validate button arguments', () => {
+    expect(
+      tvRemoteDaemonWriter({ button: 'right' } as Record<string, unknown>).positionals,
+    ).toEqual(['right']);
+    expectInvalidArgs(
+      () => tvRemoteCliReader([], flags()),
+      'tv-remote requires exactly one button',
+    );
+    expectInvalidArgs(
+      () => tvRemoteCliReader(['press', 'left', 'extra'], flags()),
+      'tv-remote requires exactly one button',
+    );
+    expectInvalidArgs(
+      () => tvRemoteCliReader(['longpress', 'left', 'extra'], flags()),
+      'tv-remote requires exactly one button',
+    );
+    expectInvalidArgs(() => tvRemoteCliReader(['blue'], flags()), 'button must be one of');
   });
 });

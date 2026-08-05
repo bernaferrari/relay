@@ -1,6 +1,8 @@
 import { listCommandTools, commandToolExecutor, type ToolResult } from './command-tools.ts';
 import { readVersion } from '../utils/version.ts';
-import type { JsonRpcId, JsonRpcRequestEnvelope } from '../kernel/contracts.ts';
+import type { JsonRpcId, JsonRpcRequestEnvelope } from '@agent-device/kernel/contracts';
+import { AppError } from '@agent-device/kernel/errors';
+import { formatToolErrorText, normalizeToolError } from './tool-error.ts';
 
 const MCP_SERVER_NAME = 'agent-device';
 const SUPPORTED_PROTOCOL_VERSION = '2025-11-25';
@@ -60,9 +62,12 @@ async function callTool(params: unknown): Promise<ToolResult> {
   const record = asRecord(params);
   const name = stringField(record, 'name');
   try {
-    return await commandToolExecutor.execute(name, record.arguments);
+    // Command-level failures are handled (and ref-pinned) by the executor's
+    // own catch; this one covers failures outside a resolved command call
+    // (unknown tool name, malformed params).
+    return await commandToolExecutor.execute(name, optionalArguments(record.arguments));
   } catch (error) {
-    return textToolResult(error instanceof Error ? error.message : String(error), true);
+    return textToolResult(formatToolErrorText(normalizeToolError(error)), true);
   }
 }
 
@@ -87,15 +92,19 @@ function errorResponse(id: JsonRpcId, code: number, message: string): JsonRpcRes
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Expected object parameters.');
+    throw new AppError('INVALID_ARGS', 'Expected object parameters.');
   }
   return value as Record<string, unknown>;
+}
+
+function optionalArguments(value: unknown): Record<string, unknown> {
+  return value === undefined ? {} : asRecord(value);
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Expected ${key} to be a non-empty string.`);
+    throw new AppError('INVALID_ARGS', `Expected ${key} to be a non-empty string.`);
   }
   return value;
 }

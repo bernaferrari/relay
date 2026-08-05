@@ -1,54 +1,54 @@
-import { AppError } from '../../../kernel/errors.ts';
-import type { ClickButton } from '../../../core/click-button.ts';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
-import { isFillableType } from '../../../snapshot/snapshot-processing.ts';
-import type { Point } from '../../../kernel/snapshot.ts';
-import { requireIntInRange } from '../../../utils/validation.ts';
-import { successText } from '../../../utils/success-text.ts';
-import { findMistargetedTypeRefToken } from '../../../utils/type-target-warning.ts';
 import type {
+  ClickButton,
   FillCommandResult,
   PressCommandResult,
   ResolvedTarget,
-} from '../../../contracts/interaction.ts';
+} from '@agent-device/contracts/interaction';
+import { AppError } from '@agent-device/kernel/errors';
+import type { Point } from '@agent-device/kernel/snapshot';
+import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
+import { isFillableType } from '@agent-device/contracts/snapshot';
+import { successText } from '../../../utils/success-text.ts';
+import { findMistargetedTypeRefToken } from '../../../utils/type-target-warning.ts';
+import { requireIntInRange } from '../../../utils/validation.ts';
+import type { RepeatedInput } from '../../command-input.ts';
 import { toBackendContext } from '../../runtime-common.ts';
 import {
   toBackendResult,
   type BackendResultEnvelope,
   type RuntimeCommand,
 } from '../../runtime-types.ts';
-import type { RepeatedInput } from '../../command-input.ts';
-import { type InteractionTarget, resolveInteractionTarget } from './resolution.ts';
+import {
+  applyPostActionObservation,
+  planPostActionObservation,
+  type PostActionObservationOptions,
+} from './post-action-observation.ts';
+import {
+  EXACT_REF_RESOLUTION,
+  preflightNativeRefInteraction,
+  resolveInteractionTarget,
+  type ExpectedResolvedTarget,
+  type InteractionTarget,
+} from './resolution.ts';
 
-export {
-  focusCommand,
-  longPressCommand,
-  pinchCommand,
-  scrollCommand,
-  swipeCommand,
-} from './gestures.ts';
+export { focusCommand, longPressCommand, scrollCommand } from './gestures.ts';
 export type {
   FocusCommandOptions,
   FocusCommandResult,
-  GestureDirection,
   LongPressCommandOptions,
   LongPressCommandResult,
-  PinchCommandOptions,
-  PinchCommandResult,
   ScrollCommandOptions,
   ScrollCommandResult,
-  ScrollTarget,
-  SwipeCommandOptions,
-  SwipeCommandResult,
-  SwipeOptions,
 } from './gestures.ts';
-export type { InteractionTarget, PointTarget, ResolvedInteractionTarget } from './resolution.ts';
+export type { InteractionTarget } from './resolution.ts';
 
 export type PressCommandOptions = CommandContext &
   RepeatedInput & {
     target: InteractionTarget;
     button?: ClickButton;
-  };
+    /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
+    expectedResolvedTarget?: ExpectedResolvedTarget;
+  } & PostActionObservationOptions;
 
 export type ClickCommandOptions = PressCommandOptions;
 
@@ -58,7 +58,9 @@ export type FillCommandOptions = CommandContext & {
   target: InteractionTarget;
   text: string;
   delayMs?: number;
-};
+  /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
+  expectedResolvedTarget?: ExpectedResolvedTarget;
+} & PostActionObservationOptions;
 
 export type TypeTextCommandOptions = CommandContext & {
   text: string;
@@ -86,13 +88,18 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult> 
   options,
 ): Promise<FillCommandResult> => {
   if (!options.text) throw new AppError('INVALID_ARGS', 'fill requires text');
-  const nativeRefFill = await maybeFillRefTarget(runtime, options);
+  const observation = planPostActionObservation(options);
+  const nativeRefFill = observation.needsPreActionBaseline
+    ? null
+    : await maybeFillRefTarget(runtime, options);
   if (nativeRefFill) return nativeRefFill;
 
   const resolved = await resolveInteractionTarget(runtime, options, {
     action: 'fill',
     requireInteractive: true,
     promoteToHittableAncestor: false,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
+    expectedResolvedTarget: options.expectedResolvedTarget,
   });
   if (!runtime.backend.fill) {
     throw new AppError('UNSUPPORTED_OPERATION', 'fill is not supported by this backend');
@@ -110,12 +117,18 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult> 
     nodeType && !isFillableType(nodeType, runtime.backend.platform)
       ? `fill target ${formatTargetForWarning(resolved)} resolved to "${nodeType}", attempting fill anyway.`
       : undefined;
-  return {
-    ...resolved,
-    text: options.text,
-    ...(warning ? { warning } : {}),
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-  };
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      text: options.text,
+      ...(warning ? { warning } : {}),
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+    },
+    observation,
+  );
 };
 
 export const typeTextCommand: RuntimeCommand<
@@ -156,13 +169,18 @@ async function tapCommand(
   options: PressCommandOptions,
   action: 'click' | 'press',
 ): Promise<PressCommandResult> {
-  const nativeRefTap = await maybeTapRefTarget(runtime, options, action);
+  const observation = planPostActionObservation(options);
+  const nativeRefTap = observation.needsPreActionBaseline
+    ? null
+    : await maybeTapRefTarget(runtime, options, action);
   if (nativeRefTap) return nativeRefTap;
 
   const resolved = await resolveInteractionTarget(runtime, options, {
     action,
     requireInteractive: true,
     promoteToHittableAncestor: true,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
+    expectedResolvedTarget: options.expectedResolvedTarget,
   });
   if (!runtime.backend.tap) {
     throw new AppError('UNSUPPORTED_OPERATION', 'tap is not supported by this backend');
@@ -177,10 +195,16 @@ async function tapCommand(
     doubleTap: options.doubleTap,
   });
   const formattedBackendResult = toBackendResult(backendResult);
-  return {
-    ...resolved,
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-  };
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+    },
+    observation,
+  );
 }
 
 function requireResolvedPoint(result: { point?: Point }): Point {
@@ -199,6 +223,14 @@ async function maybeTapRefTarget(
     return null;
   }
   if (hasNonDefaultTapOptions(options)) return null;
+  // ADR 0012 step 4: a guarded replay action needs the runtime resolution
+  // path so the post-resolution identity guard actually runs.
+  if (options.expectedResolvedTarget) return null;
+  // ADR 0011 native-ref preflight: the shared occlusion/offscreen guards run
+  // against the stored session snapshot node before the backend call (a
+  // backend fast path can silently "succeed", so errors must be raised here).
+  // No snapshot / no usable rect → no-op; never adds a capture round trip.
+  const preflight = await preflightNativeRefInteraction(runtime, options, options.target, action);
   const backendResult = await runtime.backend.tapTarget(toBackendContext(runtime, options), {
     kind: 'ref',
     ref: options.target.ref,
@@ -208,6 +240,8 @@ async function maybeTapRefTarget(
   return {
     kind: 'ref',
     target: { kind: 'ref', ref: options.target.ref },
+    resolution: EXACT_REF_RESOLUTION,
+    ...preflight,
     ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
   };
 }
@@ -217,6 +251,10 @@ async function maybeFillRefTarget(
   options: FillCommandOptions,
 ): Promise<FillCommandResult | null> {
   if (options.target.kind !== 'ref' || !runtime.backend.fillTarget) return null;
+  // ADR 0012 step 4: guarded replay actions take the runtime path — see maybeTapRefTarget.
+  if (options.expectedResolvedTarget) return null;
+  // ADR 0011 native-ref preflight — see maybeTapRefTarget.
+  const preflight = await preflightNativeRefInteraction(runtime, options, options.target, 'fill');
   const backendResult = await runtime.backend.fillTarget(
     toBackendContext(runtime, options),
     {
@@ -232,6 +270,8 @@ async function maybeFillRefTarget(
     kind: 'ref',
     target: { kind: 'ref', ref: options.target.ref },
     text: options.text,
+    resolution: EXACT_REF_RESOLUTION,
+    ...preflight,
     ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
   };
 }

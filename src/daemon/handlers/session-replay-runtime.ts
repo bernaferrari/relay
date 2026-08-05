@@ -1,198 +1,170 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { type CommandFlags } from '../../core/dispatch.ts';
-import { parseReplayInput } from '../../compat/replay-input.ts';
-import { asAppError } from '../../kernel/errors.ts';
-import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, SessionAction } from '../types.ts';
-import {
-  emitRequestProgress,
-  readReplayTestActionProgress,
-  type ReplayTestProgressEvent,
-} from '../request-progress.ts';
+import { asAppError } from '@agent-device/kernel/errors';
+import type { DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
-import { type ReplayScriptMetadata, writeReplayScript } from '../../replay/script.ts';
-import { healReplayAction } from './session-replay-heal.ts';
-import { formatScriptActionSummary } from '../../replay/script-utils.ts';
 import { errorResponse } from './response.ts';
-import { invokeReplayAction } from './session-replay-action-runtime.ts';
-import { tryParseSelectorChain } from '../selectors.ts';
+import { runAdReplay } from '@agent-device/ad-replay';
+import type { SnapshotTimingSample } from '@agent-device/contracts/capture';
+import { summarizeSnapshotTimingSamples } from '@agent-device/contracts/capture';
+import type { ReplayCommandResult } from '@agent-device/contracts/replay';
+import { isMaestroYamlPath, maestroBackendRequiredMessage } from '../../replay/format.ts';
+import { getRequestSignal } from '../../request/cancel.ts';
+import { createReplayCoordinator, type ReplayCoordinator } from '../session-replay-coordinator.ts';
 import {
-  buildReplayVarScope,
-  collectReplayShellEnv,
-  parseReplayCliEnvEntries,
-  readReplayCliEnvEntries,
-  readReplayShellEnvSource,
-} from '../../replay/vars.ts';
+  createAdReplayStepRuntime,
+  type ReplayStepContext,
+} from './session-replay-runtime-engine-adapter.ts';
 import {
-  summarizeSnapshotTimingSamples,
-  type SnapshotDiagnosticsSummary,
-  type SnapshotTimingSample,
-} from '../../snapshot-diagnostics.ts';
+  prepareReplayPlan,
+  routeMaestroReplay,
+  type ReplayScriptFileParams,
+} from './session-replay-runtime-plan.ts';
+import { prepareReplaySession } from './session-replay-runtime-session.ts';
 
-// fallow-ignore-next-line complexity
-export async function runReplayScriptFile(params: {
-  req: DaemonRequest;
-  sessionName: string;
-  logPath: string;
-  sessionStore: SessionStore;
-  tracePath?: string;
-  invoke: DaemonInvokeFn;
-}): Promise<DaemonResponse> {
-  const { req, sessionName, logPath, sessionStore, tracePath, invoke } = params;
+/**
+ * #1555 P5 (decomposition): the replay request's own orchestration — routing, plan resolution,
+ * session preparation, the engine step loop, and run completion — kept thin by extracting the
+ * three cohesive pieces it drives into their own modules:
+ *  - the plan-side helpers (`validateReplayBackendFlag`, `inspectReplayPlanManifest`,
+ *    `resolveReplayPlanEntryIndex`, `routeMaestroReplay`, and `prepareReplayPlan` itself) live in
+ *    `session-replay-runtime-plan.ts`, alongside the digest/resume metadata helper that was
+ *    already there.
+ *  - session preparation (the R2 repair preflight, resume-state consumption, and save-script
+ *    arming) lives in `session-replay-runtime-session.ts`.
+ *  - the `AdReplayStepRuntime` engine adapter (`createAdReplayStepRuntime`, its `build*Failure`
+ *    capability implementations, and the `lastResponse`/`lastObservation` side-map mechanics)
+ *    lives in `session-replay-runtime-engine-adapter.ts`.
+ * This file is what remains: the one place `runReplayScriptFile` composes them, and the run's
+ * completion (`completeReplayRun`/`requireLiveSessionForKeepSession`), which runs after the engine
+ * loop returns and never touches the step runtime itself.
+ *
+ * Coordinator ownership is unchanged by this split: `createReplayCoordinator` is still called
+ * here, and only here — see `src/daemon/__tests__/replay-coordinator-ownership.test.ts` — every
+ * extracted module receives the already-constructed `ReplayCoordinator` as a parameter instead of
+ * constructing its own.
+ */
+
+export async function runReplayScriptFile(params: ReplayScriptFileParams): Promise<DaemonResponse> {
+  const { req, sessionName, logPath, sessionStore, tracePath, onStep, invoke } = params;
   const filePath = req.positionals?.[0];
   if (!filePath) {
     return errorResponse('INVALID_ARGS', 'replay requires a path');
   }
 
+  const startedAt = Date.now();
+  const keepSession = req.flags?.replayKeepSession === true;
   let resolved = '';
+  // The run's ONE artifact ledger (#1478 P5 follow-up): `createAdReplayStepRuntime`'s
+  // `dispatchStep` is its only writer and hands its contents back to the engine,
+  // which threads them as a plain value rather than accumulating a second set of
+  // its own. Read below by the catch block, so a mid-loop exception still reports
+  // the artifacts collected up to that point.
   const artifactPaths = new Set<string>();
+  // #1478 P4b: the one locked coordinator this request reaches the repair
+  // transaction and resume watermark through.
+  const coordinator = createReplayCoordinator({ sessionStore, sessionName });
   try {
     resolved = SessionStore.expandHome(filePath, req.meta?.cwd);
-    const script = fs.readFileSync(resolved, 'utf8');
-    const firstNonWhitespace = script.trimStart()[0];
-    if (firstNonWhitespace === '{' || firstNonWhitespace === '[') {
-      return errorResponse(
-        'INVALID_ARGS',
-        'replay accepts .ad script files. JSON replay payloads are no longer supported.',
-      );
+    if (isMaestroYamlPath(resolved) && req.flags?.replayBackend !== 'maestro') {
+      return errorResponse('INVALID_ARGS', maestroBackendRequiredMessage('replay', filePath));
     }
-
-    const parsed = parseReplayInput(script, req.flags, { sourcePath: resolved });
-    const metadata = parsed.metadata;
-    const replayReq =
-      metadata.platform || metadata.target
-        ? { ...req, flags: buildReplayMetadataFlags(req.flags, metadata) }
-        : req;
-    const actions = parsed.actions;
-    const actionLines = parsed.actionLines;
-    if (req.flags?.replayUpdate === true && parsed.updateUnsupportedMessage) {
-      return errorResponse('INVALID_ARGS', parsed.updateUnsupportedMessage);
-    }
-    if (req.flags?.replayUpdate === true && metadata.env && Object.keys(metadata.env).length > 0) {
-      return errorResponse(
-        'INVALID_ARGS',
-        'replay -u does not yet preserve env directives. Temporarily remove the env lines, run replay -u, then restore them.',
-      );
-    }
-    if (req.flags?.replayUpdate === true && actionsContainInterpolation(actions)) {
-      return errorResponse(
-        'INVALID_ARGS',
-        'replay -u does not yet preserve ${VAR} substitutions. Resolve or inline the variables before running with -u.',
-      );
-    }
-    const scope = buildReplayVarScope({
-      builtins: buildReplayBuiltinVars({
-        req: replayReq,
-        sessionName,
-        metadata,
-        resolvedPath: resolved,
-      }),
-      fileEnv: metadata.env,
-      shellEnv: collectReplayShellEnv(readReplayShellEnvSource(req.flags?.replayShellEnv)),
-      cliEnv: parseReplayCliEnvEntries(readReplayCliEnvEntries(req.flags?.replayEnv)),
+    const maestroResponse = await routeMaestroReplay({
+      resolved,
+      req,
+      keepSession,
+      coordinator,
+      maestroParams: params,
     });
-    const shouldUpdate = req.flags?.replayUpdate === true;
-    const actionTracePath = tracePath ?? sessionStore.get(sessionName)?.trace?.outPath;
-    const snapshotDiagnosticSamples: SnapshotTimingSample[] = [];
-    let healed = 0;
-    for (let index = 0; index < actions.length; index += 1) {
-      const action = actions[index];
-      if (!action || action.command === 'replay') continue;
-      emitReplayTestActionProgress(resolved, index, actions.length, action);
-
-      const sampleStart = readSessionSnapshotSampleCount(sessionStore, sessionName);
-      let response = await invokeReplayAction({
-        req: replayReq,
-        sessionName,
-        action,
-        scope,
-        filePath: resolved,
-        line: actionLines[index] ?? 0,
-        step: index + 1,
-        tracePath: actionTracePath,
-        invoke,
-      });
-      snapshotDiagnosticSamples.push(
-        ...readSessionSnapshotSamplesSince(sessionStore, sessionName, sampleStart),
-      );
-      if (response.ok) {
-        collectReplayActionArtifactPaths(response).forEach((entry) => artifactPaths.add(entry));
-        continue;
-      }
-      collectReplayActionArtifactPaths(response).forEach((entry) => artifactPaths.add(entry));
-      if (!shouldUpdate) {
-        return withReplayFailureDiagnostics(
-          response,
-          action,
-          index,
-          resolved,
-          [...artifactPaths],
-          snapshotDiagnosticSamples,
-        );
-      }
-
-      const nextAction = await healReplayAction({
-        action,
-        sessionName,
-        logPath,
-        sessionStore,
-      });
-      if (!nextAction) {
-        return withReplayFailureDiagnostics(
-          response,
-          action,
-          index,
-          resolved,
-          [...artifactPaths],
-          snapshotDiagnosticSamples,
-        );
-      }
-
-      actions[index] = nextAction;
-      const healedSampleStart = readSessionSnapshotSampleCount(sessionStore, sessionName);
-      response = await invokeReplayAction({
-        req: replayReq,
-        sessionName,
-        action: nextAction,
-        scope,
-        filePath: resolved,
-        line: actionLines[index] ?? 0,
-        step: index + 1,
-        tracePath: actionTracePath,
-        invoke,
-      });
-      snapshotDiagnosticSamples.push(
-        ...readSessionSnapshotSamplesSince(sessionStore, sessionName, healedSampleStart),
-      );
-      if (!response.ok) {
-        collectReplayActionArtifactPaths(response).forEach((entry) => artifactPaths.add(entry));
-        return withReplayFailureDiagnostics(
-          response,
-          nextAction,
-          index,
-          resolved,
-          [...artifactPaths],
-          snapshotDiagnosticSamples,
-        );
-      }
-      collectReplayActionArtifactPaths(response).forEach((entry) => artifactPaths.add(entry));
-      healed += 1;
-    }
-
-    if (shouldUpdate && healed > 0) {
-      writeReplayScript(resolved, actions, sessionStore.get(sessionName));
-    }
-    const snapshotDiagnosticsSummary = summarizeSnapshotTimingSamples(snapshotDiagnosticSamples);
-    return {
-      ok: true,
-      data: {
-        replayed: actions.length,
-        healed,
-        session: sessionName,
-        artifactPaths: [...artifactPaths],
-        ...(snapshotDiagnosticsSummary ? { snapshotDiagnostics: snapshotDiagnosticsSummary } : {}),
-      },
+    if (maestroResponse) return maestroResponse;
+    const planPreparation = prepareReplayPlan({
+      req,
+      sessionName,
+      sessionStore,
+      tracePath,
+      resolved,
+      coordinator,
+    });
+    if (!planPreparation.ok) return planPreparation.response;
+    const {
+      replayReq,
+      actions,
+      actionLines,
+      actionSourcePaths,
+      planDigest,
+      entryIndex,
+      varSources,
+      actionTracePath,
+    } = planPreparation.value;
+    const sessionPreparation = prepareReplaySession({
+      req,
+      entryIndex,
+      sessionStore,
+      sessionName,
+      sourcePath: resolved,
+      coordinator,
+    });
+    if (!sessionPreparation.ok) return sessionPreparation.response;
+    const stepContext: ReplayStepContext = {
+      replayReq,
+      sessionName,
+      sessionStore,
+      logPath,
+      resolved,
+      actions,
+      actionLines,
+      actionSourcePaths,
+      planDigest,
+      actionTracePath,
+      responseLevel: req.meta?.responseLevel,
+      invoke,
+      signal: getRequestSignal(req.meta?.requestId),
+      coordinator,
     };
+    const { runtime, readLastResponse } = createAdReplayStepRuntime({
+      ctx: stepContext,
+      req,
+      artifactPaths,
+      onStep,
+      armSaveScript: sessionPreparation.armSaveScript,
+    });
+    const outcome = await runAdReplay(
+      {
+        actions,
+        entryIndex,
+        keepSession,
+        actionLines,
+        actionSourcePaths,
+        resolvedPath: resolved,
+        varSources,
+      },
+      runtime,
+    );
+    if (outcome.status === 'failed') {
+      // #1555 P1 (neutral outcomes): `runAdReplay` never holds or returns a
+      // `DaemonResponse` — it only reports WHICH step failed. The real wire
+      // response was built (and wrapped with diagnostics/repair-hold marking)
+      // by this adapter's own dispatch/build-failure capabilities, which
+      // stashed it in `readLastResponse`'s closure as it went; reading it
+      // back here is what makes the final response byte-identical to the
+      // pre-split code that threaded it straight through the engine's return
+      // value. The fallback below is unreachable in practice (a response is
+      // always recorded before any failure can be reported) and exists only
+      // so this stays total.
+      return (
+        readLastResponse() ??
+        errorResponse('COMMAND_FAILED', 'replay step failed with no recorded response')
+      );
+    }
+    return completeReplayRun({
+      startedAt,
+      sessionName,
+      sessionStore,
+      replayed: outcome.replayed,
+      artifactPaths: outcome.artifactPaths,
+      snapshotDiagnosticSamples: outcome.snapshotDiagnosticSamples,
+      armSaveScript: sessionPreparation.armSaveScript,
+      coordinator,
+      keepSession,
+    });
   } catch (err) {
     const appErr = asAppError(err);
     return errorResponse(
@@ -203,240 +175,87 @@ export async function runReplayScriptFile(params: {
   }
 }
 
-// fallow-ignore-next-line complexity
-function buildReplayBuiltinVars(params: {
-  req: DaemonRequest;
+function completeReplayRun(params: {
+  startedAt: number;
   sessionName: string;
-  metadata: ReplayScriptMetadata;
-  resolvedPath: string;
-}): Record<string, string> {
-  const { req, sessionName, metadata, resolvedPath } = params;
-  const flags = req.flags ?? {};
-  const cwd = req.meta?.cwd ?? process.cwd();
-  const filename = path.relative(cwd, resolvedPath) || resolvedPath;
-  const builtins: Record<string, string> = {
-    AD_SESSION: sessionName,
-    AD_FILENAME: filename,
-  };
-  const platform = (flags.platform as string | undefined) ?? metadata.platform;
-  if (platform) builtins.AD_PLATFORM = platform;
-  const target = (flags.target as string | undefined) ?? metadata.target;
-  if (target) builtins.AD_TARGET = target;
-  const device = flags.device;
-  if (typeof device === 'string' && device.length > 0) builtins.AD_DEVICE = device;
-  const deviceId = typeof flags.serial === 'string' ? flags.serial : flags.udid;
-  if (typeof deviceId === 'string' && deviceId.length > 0) {
-    builtins.AD_DEVICE_ID = deviceId;
-  }
-  if (typeof flags.shardIndex === 'number') {
-    const shardIndex = String(flags.shardIndex);
-    builtins.AD_SHARD_INDEX = shardIndex;
-  }
-  if (typeof flags.shardCount === 'number') builtins.AD_SHARD_COUNT = String(flags.shardCount);
-  const artifactsDir = flags.artifactsDir;
-  if (typeof artifactsDir === 'string' && artifactsDir.length > 0) {
-    builtins.AD_ARTIFACTS = artifactsDir;
-  }
-  return builtins;
-}
-
-function emitReplayTestActionProgress(
-  file: string,
-  actionIndex: number,
-  actionTotal: number,
-  action: SessionAction,
-): void {
-  const progress = readReplayTestActionProgress();
-  if (!progress) return;
-  emitRequestProgress({
-    type: 'replay-test',
-    ...progress,
-    file: progress.file || file,
-    status: 'progress',
-    stepIndex: actionIndex + 1,
-    stepTotal: actionTotal,
-    ...formatReplayTestActionProgress(action),
-  });
-}
-
-function formatReplayTestActionProgress(
-  action: SessionAction,
-): Pick<ReplayTestProgressEvent, 'stepCommand' | 'stepValue'> {
-  return {
-    stepCommand: formatReplayTestProgressCommand(action.command),
-    ...formatReplayTestProgressValue(action),
-  };
-}
-
-function formatReplayTestProgressCommand(command: string): string {
-  if (!command.startsWith('__maestro')) return command;
-  const name = command.slice('__maestro'.length);
-  return name.length > 0 ? name[0]!.toLowerCase() + name.slice(1) : command;
-}
-
-function formatReplayTestProgressValue(
-  action: SessionAction,
-): Pick<ReplayTestProgressEvent, 'stepValue'> {
-  const positionals = action.positionals ?? [];
-  const selectorValue = readSelectorDisplayValue(positionals[0]);
-  if (selectorValue) return { stepValue: selectorValue };
-  if (action.command === '__maestroTapPointPercent' && positionals.length >= 2) {
-    return { stepValue: `${positionals[0]},${positionals[1]}%` };
-  }
-  if (positionals.length === 0) return {};
-  return { stepValue: positionals.join(' ') };
-}
-
-function readSelectorDisplayValue(selector: string | undefined): string | undefined {
-  if (!selector) return undefined;
-  const parsed = tryParseSelectorChain(selector);
-  if (!parsed) return undefined;
-  const values = parsed.selectors.flatMap((entry) =>
-    entry.terms.flatMap((term) =>
-      (term.key === 'label' || term.key === 'text' || term.key === 'id') &&
-      typeof term.value === 'string'
-        ? [term.value]
-        : [],
-    ),
-  );
-  if (values.length === 0) return undefined;
-  const first = values[0];
-  return first && values.every((value) => value === first) ? first : undefined;
-}
-
-function buildReplayMetadataFlags(
-  flags: CommandFlags | undefined,
-  metadata: ReplayScriptMetadata,
-): CommandFlags {
-  return {
-    ...(flags ?? {}),
-    ...(metadata.platform !== undefined && flags?.platform === undefined
-      ? { platform: metadata.platform }
-      : {}),
-    ...(metadata.target !== undefined && flags?.target === undefined
-      ? { target: metadata.target }
-      : {}),
-  };
-}
-
-function withReplayFailureDiagnostics(
-  response: DaemonResponse,
-  action: SessionAction,
-  index: number,
-  replayPath: string,
-  artifactPaths: string[],
-  snapshotDiagnosticSamples: SnapshotTimingSample[],
-): DaemonResponse {
-  return withReplayFailureContext(
-    response,
-    action,
-    index,
-    replayPath,
+  sessionStore: SessionStore;
+  replayed: number;
+  artifactPaths: readonly string[];
+  snapshotDiagnosticSamples: readonly SnapshotTimingSample[];
+  armSaveScript: () => void;
+  coordinator: ReplayCoordinator;
+  keepSession: boolean;
+}): DaemonResponse {
+  const {
+    startedAt,
+    sessionName,
+    sessionStore,
+    replayed,
     artifactPaths,
-    summarizeSnapshotTimingSamples(snapshotDiagnosticSamples),
-  );
-}
-
-function withReplayFailureContext(
-  response: DaemonResponse,
-  action: SessionAction,
-  index: number,
-  replayPath: string,
-  artifactPaths: string[] = [],
-  snapshotDiagnostics?: SnapshotDiagnosticsSummary,
-): DaemonResponse {
-  if (response.ok) return response;
-  const step = index + 1;
+    snapshotDiagnosticSamples,
+    armSaveScript,
+    coordinator,
+    keepSession,
+  } = params;
+  armSaveScript();
+  coordinator.markCompleteIfArmed();
+  const completedSession = sessionStore.get(sessionName);
+  const keepSessionFailure = requireLiveSessionForKeepSession({
+    keepSession,
+    sessionName,
+    completedSession,
+    artifactPaths,
+  });
+  if (keepSessionFailure) return keepSessionFailure;
+  const snapshotDiagnosticsSummary = summarizeSnapshotTimingSamples([...snapshotDiagnosticSamples]);
   return {
-    ok: false,
-    error: {
-      code: response.error.code,
-      message: `Replay failed at step ${step} (${formatScriptActionSummary(action)}): ${response.error.message}`,
-      hint: response.error.hint,
-      diagnosticId: response.error.diagnosticId,
-      logPath: response.error.logPath,
-      details: {
-        ...(response.error.details ?? {}),
-        replayPath,
-        step,
-        action: action.command,
-        positionals: action.positionals ?? [],
-        artifactPaths,
-        ...(snapshotDiagnostics ? { snapshotDiagnostics } : {}),
-      },
-    },
+    ok: true,
+    data: {
+      replayed,
+      healed: 0,
+      session: sessionName,
+      sessionActive: completedSession !== undefined,
+      artifactPaths: [...artifactPaths],
+      ...(snapshotDiagnosticsSummary ? { snapshotDiagnostics: snapshotDiagnosticsSummary } : {}),
+      message: formatReplaySuccessMessage(replayed, Date.now() - startedAt),
+    } satisfies ReplayCommandResult,
   };
 }
 
-// fallow-ignore-next-line complexity
-export function collectReplayActionArtifactPaths(response: DaemonResponse): string[] {
-  if (!response.ok) {
-    const paths = response.error.details?.artifactPaths;
-    return Array.isArray(paths)
-      ? [
-          ...new Set(
-            paths.filter(
-              (candidate): candidate is string =>
-                typeof candidate === 'string' && isReplayArtifactPath(candidate),
-            ),
-          ),
-        ]
-      : [];
-  }
-  if (!response.data) return [];
-  const candidates: string[] = [];
-  if (typeof response.data.path === 'string') candidates.push(response.data.path);
-  if (typeof response.data.outPath === 'string') candidates.push(response.data.outPath);
-  if (Array.isArray(response.data.artifacts)) {
-    for (const artifact of response.data.artifacts) {
-      if (!artifact || typeof artifact !== 'object') continue;
-      const artifactRecord = artifact as Record<string, unknown>;
-      const localPath =
-        typeof artifactRecord.localPath === 'string' ? artifactRecord.localPath : undefined;
-      const artifactPath =
-        typeof artifactRecord.path === 'string' ? artifactRecord.path : undefined;
-      if (localPath) candidates.push(localPath);
-      else if (artifactPath) candidates.push(artifactPath);
-    }
-  }
-  return [...new Set(candidates.filter((candidate) => isReplayArtifactPath(candidate)))];
+/**
+ * `--keep-session`'s postcondition (#1554): a suppressed terminal close only
+ * ever promises a live session, so a session that is gone by completion
+ * anyway (some other action closed or otherwise removed it) must fail loudly
+ * rather than silently report `sessionActive: false` as if `--keep-session`
+ * had never been requested. Stays daemon-side, unlike the terminal-close
+ * suppression itself (`resolveSuppressedTerminalCloseIndex`,
+ * `@agent-device/ad-replay`'s step loop): it inspects `SessionState`, which
+ * the engine never sees.
+ */
+/**
+ * #1555 review P1 (second pass, "keep success formatting daemon-side"):
+ * moved verbatim from `@agent-device/ad-replay`'s `step-loop.ts` — pure
+ * presentation of the run's own `replayed` count/wall-clock duration, not
+ * engine policy, so it sits beside its one caller (`completeReplayRun`
+ * above) instead of behind the façade.
+ */
+function formatReplaySuccessMessage(replayed: number, wallClockMs: number): string {
+  const seconds = (wallClockMs / 1000).toFixed(1);
+  const noun = replayed === 1 ? 'step' : 'steps';
+  return `Replayed ${replayed} ${noun} in ${seconds}s`;
 }
 
-function readSessionSnapshotSampleCount(sessionStore: SessionStore, sessionName: string): number {
-  return sessionStore.get(sessionName)?.snapshotDiagnostics?.samples.length ?? 0;
-}
-
-function readSessionSnapshotSamplesSince(
-  sessionStore: SessionStore,
-  sessionName: string,
-  start: number,
-): SnapshotTimingSample[] {
-  return sessionStore.get(sessionName)?.snapshotDiagnostics?.samples.slice(start) ?? [];
-}
-
-function isReplayArtifactPath(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isFile();
-  } catch {
-    return false;
-  }
-}
-
-// fallow-ignore-next-line complexity
-function actionsContainInterpolation(actions: SessionAction[]): boolean {
-  for (const action of actions) {
-    for (const positional of action.positionals ?? []) {
-      if (typeof positional === 'string' && positional.includes('${')) return true;
-    }
-    if (containsInterpolation(action.flags)) return true;
-    if (containsInterpolation(action.runtime)) return true;
-  }
-  return false;
-}
-
-function containsInterpolation(value: unknown): boolean {
-  if (typeof value === 'string') return value.includes('${');
-  if (Array.isArray(value)) return value.some(containsInterpolation);
-  if (value && typeof value === 'object') return Object.values(value).some(containsInterpolation);
-  return false;
+function requireLiveSessionForKeepSession(params: {
+  keepSession: boolean;
+  sessionName: string;
+  completedSession: SessionState | undefined;
+  artifactPaths: readonly string[];
+}): DaemonResponse | undefined {
+  const { keepSession, sessionName, completedSession, artifactPaths } = params;
+  if (!keepSession || completedSession) return undefined;
+  return errorResponse(
+    'COMMAND_FAILED',
+    `Replay completed but --keep-session could not preserve session "${sessionName}". Run the script again after checking which action closed the session.`,
+    artifactPaths.length > 0 ? { artifactPaths: [...artifactPaths] } : undefined,
+  );
 }

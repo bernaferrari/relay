@@ -1,10 +1,21 @@
-import { AppError } from '../../kernel/errors.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
+import { DEVICE_ROTATION_SURFACE_INDEX, type DeviceRotation } from '@agent-device/contracts/device';
+import {
+  buildGesturePlan,
+  buildScrollGesturePlan,
+  GESTURE_DURATION_MIN_MS,
+  toAndroidTvRemoteKeyevent,
+  type ScrollDirection,
+  type TvRemoteButton,
+} from '@agent-device/contracts/interaction';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
-import type { DeviceRotation } from '../../core/device-rotation.ts';
-import { buildScrollGesturePlan, type ScrollDirection } from '../../core/scroll-gesture.ts';
+import {
+  resolveAndroidAdbExecutor,
+  resolveAndroidTextInjector,
+  type AndroidTextInputAction,
+} from './adb-executor.ts';
 import { runAndroidAdb, sleep } from './adb.ts';
-import { resolveAndroidTextInjector, type AndroidTextInputAction } from './adb-executor.ts';
 import { getAndroidKeyboardState, type AndroidKeyboardState } from './device-input-state.ts';
 import {
   androidFillFailureDetails,
@@ -12,6 +23,13 @@ import {
   verifyAndroidFilledText,
   type AndroidFillVerification,
 } from './fill-verification.ts';
+import {
+  clearAndroidImeHelperText,
+  resolveAndroidImeHelperArtifact,
+  sendAndroidImeHelperText,
+} from './ime-helper.ts';
+import { isAndroidTestImeActive } from './ime-lifecycle.ts';
+import { executeAndroidTouchPlan, readAndroidGestureViewport } from './touch-executor.ts';
 
 export { readAndroidTextAtPoint } from './fill-verification.ts';
 
@@ -19,24 +37,14 @@ export async function pressAndroid(device: DeviceInfo, x: number, y: number): Pr
   await runAndroidAdb(device, ['shell', 'input', 'tap', String(x), String(y)]);
 }
 
-export async function swipeAndroid(
+export async function pressAndroidTvRemote(
   device: DeviceInfo,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  durationMs = 250,
+  button: TvRemoteButton,
+  durationMs?: number,
 ): Promise<void> {
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(x1),
-    String(y1),
-    String(x2),
-    String(y2),
-    String(durationMs),
-  ]);
+  const keyevent = toAndroidTvRemoteKeyevent(button);
+  const keyeventArgs = durationMs && durationMs > 0 ? ['keyevent', '--longpress'] : ['keyevent'];
+  await runAndroidAdb(device, ['shell', 'input', ...keyeventArgs, keyevent]);
 }
 
 export async function backAndroid(device: DeviceInfo): Promise<void> {
@@ -51,7 +59,7 @@ export async function pressAndroidEnter(device: DeviceInfo): Promise<void> {
   await runAndroidAdb(device, ['shell', 'input', 'keyevent', 'ENTER']);
 }
 
-export async function rotateAndroid(
+export async function setAndroidOrientation(
   device: DeviceInfo,
   orientation: DeviceRotation,
 ): Promise<void> {
@@ -83,17 +91,22 @@ export async function longPressAndroid(
   x: number,
   y: number,
   durationMs = 800,
-): Promise<void> {
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(x),
-    String(y),
-    String(x),
-    String(y),
-    String(durationMs),
-  ]);
+): Promise<Record<string, unknown>> {
+  const point = { x, y };
+  return await executeAndroidTouchPlan(device, {
+    topology: 'single',
+    intent: 'longPress',
+    durationMs,
+    pointers: [
+      {
+        pointerId: 0,
+        samples: [
+          { offsetMs: 0, point },
+          { offsetMs: durationMs, point },
+        ],
+      },
+    ],
+  });
 }
 
 export async function typeAndroid(device: DeviceInfo, text: string, delayMs = 0): Promise<void> {
@@ -101,6 +114,10 @@ export async function typeAndroid(device: DeviceInfo, text: string, delayMs = 0)
   if (providerText) {
     await providerText({ action: 'type', text, delayMs });
     emitAndroidTextDiagnostic('type', 'provider-native', text);
+    return;
+  }
+  if (isAndroidTestImeActive(device)) {
+    await typeAndroidTestIme(device, text, delayMs);
     return;
   }
   assertAndroidShellTextSupported(text);
@@ -133,6 +150,11 @@ export async function fillAndroid(
     await providerText({ action: 'fill', target: { x, y }, text, delayMs });
     emitAndroidTextDiagnostic('fill', 'provider-native', text);
     const verification = await verifyAndroidFilledText(device, x, y, text);
+    if (verification.ok) return;
+    throwAndroidFillFailure(text, verification);
+  }
+  if (isAndroidTestImeActive(device)) {
+    const verification = await fillAndroidTestIme(device, x, y, text);
     if (verification.ok) return;
     throwAndroidFillFailure(text, verification);
   }
@@ -190,6 +212,53 @@ export async function fillAndroid(
   throwAndroidFillFailure(text, lastVerification);
 }
 
+async function typeAndroidTestIme(
+  device: DeviceInfo,
+  text: string,
+  delayMs: number,
+): Promise<void> {
+  const adb = resolveAndroidAdbExecutor(device);
+  const artifact = await resolveAndroidImeHelperArtifact();
+  const packageName = artifact.manifest.packageName;
+  const parts = text.split('\n');
+  for (const [partIndex, part] of parts.entries()) {
+    const chunks = delayMs > 0 ? chunkAndroidInputText(part, 1) : [part];
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      if (chunk) await sendAndroidImeHelperText(adb, packageName, chunk);
+      if (delayMs > 0 && (chunkIndex + 1 < chunks.length || partIndex + 1 < parts.length)) {
+        await sleep(delayMs);
+      }
+    }
+    if (partIndex + 1 < parts.length) {
+      await runAndroidAdb(device, ['shell', 'input', 'keyevent', 'ENTER']);
+    }
+  }
+  emitAndroidTextDiagnostic('type', 'test-ime', text);
+}
+
+async function fillAndroidTestIme(
+  device: DeviceInfo,
+  x: number,
+  y: number,
+  text: string,
+): Promise<AndroidFillVerification> {
+  const adb = resolveAndroidAdbExecutor(device);
+  const artifact = await resolveAndroidImeHelperArtifact();
+  const packageName = artifact.manifest.packageName;
+  let lastVerification: AndroidFillVerification | null = null;
+  // One retry covers the rare not-yet-bound InputConnection right after focus.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await focusAndroid(device, x, y);
+    await clearAndroidImeHelperText(adb, packageName);
+    if (text) await sendAndroidImeHelperText(adb, packageName, text);
+    const verification = await verifyAndroidFilledText(device, x, y, text);
+    lastVerification = verification;
+    if (verification.ok) break;
+  }
+  emitAndroidTextDiagnostic('fill', 'test-ime', text);
+  return lastVerification as AndroidFillVerification;
+}
+
 function throwAndroidFillFailure(
   expected: string,
   verification: AndroidFillVerification | null,
@@ -206,46 +275,56 @@ export async function scrollAndroid(
   direction: ScrollDirection,
   options?: { amount?: number; pixels?: number; durationMs?: number },
 ): Promise<Record<string, unknown>> {
-  const size = await getAndroidScreenSize(device);
-  const plan = buildScrollGesturePlan({
+  const viewport = await readAndroidGestureViewport(device);
+  const relativePlan = buildScrollGesturePlan({
     direction,
     amount: options?.amount,
     pixels: options?.pixels,
-    referenceWidth: size.width,
-    referenceHeight: size.height,
+    referenceWidth: viewport.width,
+    referenceHeight: viewport.height,
   });
-  const durationMs = options?.durationMs ?? 300;
-
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(plan.x1),
-    String(plan.y1),
-    String(plan.x2),
-    String(plan.y2),
-    String(durationMs),
-  ]);
+  const scrollPlan = {
+    ...relativePlan,
+    // Injected coordinates are absolute, so their zero-origin reference frame
+    // must include the viewport offset as well as its dimensions.
+    referenceWidth: viewport.x + viewport.width,
+    referenceHeight: viewport.y + viewport.height,
+    x1: viewport.x + relativePlan.x1,
+    y1: viewport.y + relativePlan.y1,
+    x2: viewport.x + relativePlan.x2,
+    y2: viewport.y + relativePlan.y2,
+  };
+  const durationMs = Math.max(options?.durationMs ?? 300, GESTURE_DURATION_MIN_MS);
+  const backend = await executeAndroidTouchPlan(
+    device,
+    buildGesturePlan(
+      {
+        intent: 'pan',
+        origin: { x: scrollPlan.x1, y: scrollPlan.y1 },
+        delta: {
+          x: scrollPlan.x2 - scrollPlan.x1,
+          y: scrollPlan.y2 - scrollPlan.y1,
+        },
+        durationMs,
+      },
+      viewport,
+      'android',
+    ),
+  );
 
   return {
-    ...plan,
-    ...(options?.durationMs !== undefined ? { durationMs: options.durationMs } : {}),
+    ...scrollPlan,
+    ...(options?.durationMs !== undefined ? { durationMs } : {}),
+    ...backend,
   };
 }
 
 function resolveAndroidUserRotation(orientation: DeviceRotation): string {
-  switch (orientation) {
-    case 'portrait':
-      return '0';
-    case 'landscape-left':
-      return '1';
-    case 'portrait-upside-down':
-      return '2';
-    case 'landscape-right':
-      return '3';
-    default:
-      throw new AppError('INVALID_ARGS', `Unsupported Android rotation: ${orientation}`);
+  const index = DEVICE_ROTATION_SURFACE_INDEX[orientation];
+  if (index === undefined) {
+    throw new AppError('INVALID_ARGS', `Unsupported Android rotation: ${orientation}`);
   }
+  return String(index);
 }
 
 async function assertAndroidShellInputIsAppOwned(
@@ -364,7 +443,7 @@ function isAndroidInputTextUnsupported(error: unknown): boolean {
 function unsupportedAndroidShellTextError(text: string, cause?: unknown): AppError {
   return new AppError(
     'COMMAND_FAILED',
-    'Android text input requires provider-native text injection for non-ASCII/control characters; the current adb-shell fallback supports ASCII text only.',
+    'Android text input requires provider-native text injection or the bundled test IME helper for non-ASCII/control characters; the adb-shell fallback supports ASCII text only. On emulators the test IME activates automatically; on real devices pass `open --test-ime` to enable it (see `agent-device doctor` for the current IME state).',
     {
       backend: 'adb-shell',
       textLength: Array.from(text).length,
@@ -386,7 +465,7 @@ function chunkAndroidInputText(text: string, chunkSize: number): string[] {
 
 function emitAndroidTextDiagnostic(
   action: AndroidTextInputAction,
-  backend: 'provider-native' | 'adb-shell',
+  backend: 'provider-native' | 'adb-shell' | 'test-ime',
   text: string,
 ): void {
   emitDiagnostic({

@@ -4,8 +4,8 @@ import path from 'node:path';
 import type { DaemonResponse, SessionState } from './types.ts';
 import { dispatchCommand } from '../core/dispatch.ts';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { normalizeError, type NormalizedError } from '../kernel/errors.ts';
-import type { ScreenshotOverlayRef } from '../kernel/snapshot.ts';
+import { normalizeError, type NormalizedError } from '@agent-device/kernel/errors';
+import type { ScreenshotOverlayRef } from '@agent-device/kernel/snapshot';
 import { contextFromFlags } from './context.ts';
 import { annotateScreenshotWithRefs } from './screenshot-overlay.ts';
 
@@ -170,16 +170,12 @@ function hasStringPath(value: unknown): value is { path: string } {
 function isAndroidSnapshotTimeoutError(error: NormalizedError): boolean {
   if (error.code !== 'COMMAND_FAILED') return false;
   return (
-    hasKnownAndroidSnapshotTimeoutMessage(error) ||
-    hasHelperTimeoutDetails(error.details?.helper) ||
-    hasUiAutomatorDumpTimeoutDetails(error.details)
+    hasKnownAndroidSnapshotTimeoutMessage(error) || hasHelperTimeoutDetails(error.details?.helper)
   );
 }
 
 function hasKnownAndroidSnapshotTimeoutMessage(error: NormalizedError): boolean {
   const text = `${error.message}\n${error.hint ?? ''}`;
-  if (/Android UI hierarchy dump timed out/i.test(text)) return true;
-  if (/Stock UIAutomator fallback was skipped/i.test(text)) return true;
   return /Android accessibility snapshots can be blocked/i.test(text);
 }
 
@@ -189,22 +185,4 @@ function hasHelperTimeoutDetails(helper: unknown): boolean {
   const errorType = String(helperRecord.errorType ?? '');
   const message = String(helperRecord.message ?? '');
   return /TimeoutException/i.test(errorType) || /timed out/i.test(message);
-}
-
-function hasUiAutomatorDumpTimeoutDetails(details: Record<string, unknown> | undefined): boolean {
-  if (!details) return false;
-  const timeoutMs = details?.timeoutMs;
-  const cmd = details?.cmd;
-  const args = normalizeArgList(details?.args);
-  return (
-    typeof timeoutMs === 'number' &&
-    cmd === 'adb' &&
-    args.includes('uiautomator') &&
-    args.includes('dump')
-  );
-}
-
-function normalizeArgList(rawArgs: unknown): string[] {
-  if (Array.isArray(rawArgs)) return rawArgs.map(String);
-  return typeof rawArgs === 'string' ? rawArgs.split(/\s+/) : [];
 }

@@ -1,5 +1,5 @@
-import { AppError, asAppError } from '../../kernel/errors.ts';
-import { publicPlatformString, type DeviceInfo } from '../../kernel/device.ts';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
+import { publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
 import type { CommandFlags } from '../../core/dispatch.ts';
 import type { DaemonRequest, SessionRuntimeHints, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
@@ -8,7 +8,12 @@ import {
   hasRuntimeTransportHints,
   trimRuntimeValue,
 } from '../runtime-hints.ts';
+import { isAndroidEmulator, isIosSimulator } from '../device-targets.ts';
 import { errorResponse, type DaemonFailureResponse } from './response.ts';
+
+// Loopback aliases an emulator/simulator app uses to reach the dev server on the host machine.
+const ANDROID_EMULATOR_LOOPBACK_HOST = '10.0.2.2';
+const IOS_SIMULATOR_LOOPBACK_HOST = '127.0.0.1';
 
 const RUNTIME_HINT_FIELD_NAMES = [
   'platform',
@@ -112,6 +117,28 @@ export function mergeRuntimeHints(
   };
 }
 
+function defaultMetroHostForDevice(device: DeviceInfo): string | undefined {
+  if (isAndroidEmulator(device)) return ANDROID_EMULATOR_LOOPBACK_HOST;
+  if (isIosSimulator(device)) return IOS_SIMULATOR_LOOPBACK_HOST;
+  return undefined;
+}
+
+// A port-only hint (`--metro-port` without `--metro-host`) otherwise writes no dev-server pref.
+// Emulator/simulator hosts are unambiguous, so fill in the loopback alias; physical devices stay
+// ambiguous and still require an explicit `--metro-host`.
+export function applyDeviceDefaultMetroHost(
+  runtime: SessionRuntimeHints | undefined,
+  device: DeviceInfo,
+): SessionRuntimeHints | undefined {
+  if (!runtime) return runtime;
+  if (trimRuntimeValue(runtime.metroHost)) return runtime;
+  if (trimRuntimeValue(runtime.bundleUrl)) return runtime; // bundleUrl carries its own host
+  if (runtime.metroPort === undefined) return runtime;
+  const host = defaultMetroHostForDevice(device);
+  if (!host) return runtime;
+  return { ...runtime, metroHost: host };
+}
+
 function normalizeExplicitRuntimeHints(params: {
   runtime: unknown;
   sessionName: string;
@@ -160,11 +187,12 @@ function resolveSessionRuntimeHints(
   sessionStore: SessionStore,
   sessionName: string,
   device?: DeviceInfo,
+  platform?: RuntimePlatform,
 ): SessionRuntimeHints | undefined {
   const runtime = sessionStore.getRuntimeHints(sessionName);
   if (!runtime) return undefined;
   const boundPlatform = device ? publicPlatformString(device) : undefined;
-  const deviceRuntimePlatform = toRuntimePlatform(boundPlatform);
+  const deviceRuntimePlatform = toRuntimePlatform(boundPlatform) ?? platform;
   if (runtime.platform && device && !deviceRuntimePlatform) {
     throw new AppError(
       'INVALID_ARGS',
@@ -187,34 +215,51 @@ function resolveOpenRuntimeHints(params: {
   req: DaemonRequest;
   sessionStore: SessionStore;
   sessionName: string;
-  device: DeviceInfo;
+  device?: DeviceInfo;
+  platform?: RuntimePlatform;
 }): {
   runtime: SessionRuntimeHints | undefined;
   previousRuntime: SessionRuntimeHints | undefined;
   replacedStoredRuntime: boolean;
 } {
   const { req, sessionStore, sessionName, device } = params;
+  const runtimePlatform = device
+    ? toRuntimePlatform(publicPlatformString(device))
+    : params.platform;
   const previousRuntime = sessionStore.getRuntimeHints(sessionName);
   const explicitRuntime = normalizeExplicitRuntimeHints({
     runtime: req.runtime,
     sessionName,
-    platform: toRuntimePlatform(publicPlatformString(device)),
+    platform: runtimePlatform,
   });
   if (req.runtime === undefined) {
+    const storedRuntime = resolveSessionRuntimeHints(
+      sessionStore,
+      sessionName,
+      device,
+      runtimePlatform,
+    );
     return {
-      runtime: resolveSessionRuntimeHints(sessionStore, sessionName, device),
+      runtime: device ? applyDeviceDefaultMetroHost(storedRuntime, device) : storedRuntime,
       previousRuntime,
       replacedStoredRuntime: false,
     };
   }
+  const selectedRuntime =
+    explicitRuntime && countConfiguredRuntimeHints(explicitRuntime) > 0
+      ? explicitRuntime
+      : undefined;
   return {
-    runtime:
-      explicitRuntime && countConfiguredRuntimeHints(explicitRuntime) > 0
-        ? explicitRuntime
-        : undefined,
+    runtime: device ? applyDeviceDefaultMetroHost(selectedRuntime, device) : selectedRuntime,
     previousRuntime,
     replacedStoredRuntime: true,
   };
+}
+
+export function resolveEffectiveOpenRuntimeHints(
+  params: Parameters<typeof resolveOpenRuntimeHints>[0],
+): SessionRuntimeHints | undefined {
+  return resolveOpenRuntimeHints(params).runtime;
 }
 
 export function tryResolveOpenRuntimeHints(

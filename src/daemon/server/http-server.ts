@@ -1,5 +1,5 @@
 import http, { type IncomingHttpHeaders } from 'node:http';
-import { AppError, normalizeError, toAppErrorCode } from '../../kernel/errors.ts';
+import { AppError, normalizeError, toAppErrorCode } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { timingSafeStringEqual } from '../../utils/timing-safe-equal.ts';
 import type {
@@ -7,27 +7,26 @@ import type {
   JsonRpcId,
   JsonRpcRequestEnvelope,
   LeaseBackend,
-} from '../../kernel/contracts.ts';
-import { commandRpcParamsSchema } from '../../kernel/contracts.ts';
+} from '@agent-device/kernel/contracts';
+import { commandRpcParamsSchema } from '@agent-device/kernel/contracts';
 import type { DaemonInstallSource, DaemonInvokeFn, DaemonRequest } from '../types.ts';
 import { normalizeTenantId } from '../config.ts';
 import {
-  clearRequestCanceled,
-  isRequestCanceled,
+  clearRequestAbortRegistration,
   markRequestCanceled,
   registerRequestAbort,
   resolveRequestTrackingId,
-} from '../request-cancel.ts';
+} from '../../request/cancel.ts';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { sleep } from '../../utils/timeouts.ts';
-import { type RequestProgressEvent, withRequestProgressSink } from '../request-progress.ts';
+import { type RequestProgressEvent, withRequestProgressSink } from '../../request/progress.ts';
 import {
   serializeDaemonProgressEnvelope,
   serializeDaemonRpcResponseEnvelope,
   shouldStreamRequestProgress,
 } from '../request-progress-protocol.ts';
 import { buildDaemonHealthPayload } from '../http-health.ts';
+import { DAEMON_HTTP_TENANT_HEADER } from '../http-contract.ts';
 import { sendRestJsonError, statusCodeForNormalizedError } from '../http-errors.ts';
 import { tryHandleUploadHttpRoute } from '../upload-http.ts';
 import { tryHandleDownloadableArtifactHttpRoute } from '../downloadable-artifact-http.ts';
@@ -71,9 +70,6 @@ type HttpAuthDecision =
   | { ok: false; statusCode: number; response: JsonRpcResponse };
 
 const MAX_HTTP_RPC_BODY_BYTES = 1024 * 1024;
-const CLIENT_DISCONNECT_ABORT_POLL_INTERVAL_MS = 200;
-const CLIENT_DISCONNECT_ABORT_MAX_WINDOW_MS = 15_000;
-const IOS_RUNNER_ABORT_REPLAY_COMMANDS = new Set(['replay', 'test']);
 const COMMAND_RPC_METHODS = new Set(['agent_device.command', 'agent-device.command']);
 const INSTALL_FROM_SOURCE_RPC_METHODS = new Set([
   'agent_device.install_from_source',
@@ -168,6 +164,7 @@ function toDaemonRequest(params: CommandRpcParams, headers: IncomingHttpHeaders)
     session: params.session ?? 'default',
     command: params.command ?? '',
     positionals: params.positionals ?? [],
+    input: params.input,
     // flags/runtime/meta are validated as objects at the boundary; their full shape is
     // validated in the session open handler downstream.
     flags: params.flags as DaemonRequest['flags'],
@@ -609,6 +606,7 @@ export async function createDaemonHttpServer(options: {
       }
 
       let requestIdForCleanup: string | undefined;
+      let requestAbortRegistration: ReturnType<typeof registerRequestAbort>;
       let handlerCompleted = false;
       try {
         const params = rpcRequest.params as Record<string, unknown>;
@@ -633,7 +631,7 @@ export async function createDaemonHttpServer(options: {
           ...daemonRequest.meta,
           requestId: requestIdForCleanup,
         };
-        registerRequestAbort(requestIdForCleanup);
+        requestAbortRegistration = registerRequestAbort(requestIdForCleanup);
 
         const authResult = await runHttpAuthHook(authHook, {
           headers: req.headers,
@@ -655,8 +653,14 @@ export async function createDaemonHttpServer(options: {
           };
         }
 
-        const abortIosRunnerOnDisconnect = shouldAbortIosRunnerSessionsOnDisconnect(daemonRequest);
         let canceledInFlight = false;
+        // Request-scoped cancellation: mark this request canceled whenever its client
+        // vanishes before the response finishes, regardless of whether headers were
+        // already sent. `markRequestCanceled` aborts only this request's AbortSignal,
+        // so in-flight runner work owned by the request is canceled without touching
+        // other requests, other devices, or non-Apple work. The guard below keys off
+        // the response's own completion state, so a normal end is never misclassified
+        // as a disconnect.
         const markCanceledIfResponseIncomplete = () => {
           if (handlerCompleted || res.writableFinished || canceledInFlight) return;
           canceledInFlight = true;
@@ -666,18 +670,14 @@ export async function createDaemonHttpServer(options: {
             phase: 'request_client_disconnected',
             data: {
               requestId: requestIdForCleanup,
-              abortIosRunnerSessions: abortIosRunnerOnDisconnect,
             },
           });
-          if (abortIosRunnerOnDisconnect) {
-            void abortInFlightIosRunnerSessionsWhileDisconnected(requestIdForCleanup);
-          }
         };
         req.on('aborted', markCanceledIfResponseIncomplete);
-        res.on('close', () => {
-          if (res.headersSent) markCanceledIfResponseIncomplete();
-        });
-        if (req.aborted || (res.destroyed && res.headersSent)) {
+        // `res` close fires for both pre-header and post-header disconnects; the
+        // completion guard distinguishes a real disconnect from a finished response.
+        res.on('close', markCanceledIfResponseIncomplete);
+        if (req.aborted || res.destroyed) {
           markCanceledIfResponseIncomplete();
         }
 
@@ -739,39 +739,10 @@ export async function createDaemonHttpServer(options: {
           statusCodeForNormalizedError(normalized.code),
         );
       } finally {
-        clearRequestCanceled(requestIdForCleanup);
+        clearRequestAbortRegistration(requestAbortRegistration);
       }
     });
   });
-}
-
-async function abortInFlightIosRunnerSessionsWhileDisconnected(
-  requestId: string | undefined,
-): Promise<void> {
-  try {
-    const deadline = Date.now() + CLIENT_DISCONNECT_ABORT_MAX_WINDOW_MS;
-    while (isRequestCanceled(requestId) && Date.now() < deadline) {
-      const { abortAllIosRunnerSessions } =
-        await import('../../platforms/apple/core/runner/runner-client.ts');
-      await abortAllIosRunnerSessions();
-      if (!isRequestCanceled(requestId)) break;
-      await sleep(CLIENT_DISCONNECT_ABORT_POLL_INTERVAL_MS);
-    }
-  } catch (error) {
-    emitDiagnostic({
-      level: 'error',
-      phase: 'request_client_disconnect_abort_failed',
-      data: {
-        message: error instanceof Error ? error.message : String(error),
-      },
-    });
-  }
-}
-
-function shouldAbortIosRunnerSessionsOnDisconnect(req: DaemonRequest): boolean {
-  if (req.flags?.platform === 'android') return false;
-  if (req.flags?.platform === 'ios') return true;
-  return IOS_RUNNER_ABORT_REPLAY_COMMANDS.has(req.command);
 }
 
 async function authorizeAuxiliaryHttpRequest(params: {
@@ -783,6 +754,7 @@ async function authorizeAuxiliaryHttpRequest(params: {
 }): Promise<{ tenantId?: string } | null> {
   const { req, res, authHook, expectedToken, daemonRequest } = params;
   const token = resolveToken({}, req.headers);
+  const tenantId = normalizeTenantId(readHeaderValue(req.headers, DAEMON_HTTP_TENANT_HEADER));
   const tokenError = enforceDaemonToken(token, expectedToken);
   if (tokenError) {
     sendRestJsonError(res, tokenError);
@@ -802,6 +774,7 @@ async function authorizeAuxiliaryHttpRequest(params: {
       session: 'default',
       command: daemonRequest.command,
       positionals: daemonRequest.positionals,
+      ...(tenantId ? { meta: { tenantId } } : {}),
     },
   });
   if (!authResult.ok) {
@@ -819,7 +792,14 @@ async function authorizeAuxiliaryHttpRequest(params: {
     return null;
   }
 
-  return { tenantId: authResult.tenantId };
+  // Auth-hook identity remains authoritative. The header fallback only preserves the
+  // client-declared tenant used by RPC when a deployment does not derive tenant scope in its hook.
+  return { tenantId: authResult.tenantId ?? tenantId };
+}
+
+function readHeaderValue(headers: IncomingHttpHeaders, name: string): string | undefined {
+  const value = headers[name];
+  return typeof value === 'string' ? value : undefined;
 }
 
 function enforceDaemonToken(

@@ -2,23 +2,38 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
+
+const { providerStartupCleanupMock } = vi.hoisted(() => ({
+  providerStartupCleanupMock: vi.fn(),
+}));
+
+vi.mock('./agent-browser-lifecycle.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agent-browser-lifecycle.ts')>();
+  return {
+    ...actual,
+    cleanupManagedAgentBrowserOrphansForProviderStartup: providerStartupCleanupMock,
+  };
+});
+
 import { createAgentBrowserWebProvider } from './agent-browser-provider.ts';
 import type { WebSnapshotResult } from './provider.ts';
 import { withCommandExecutorOverride, type ExecResult } from '../../utils/exec.ts';
-import { AppError } from '../../kernel/errors.ts';
-import {
-  buildSelectorChainForNode,
-  parseSelectorChain,
-  resolveSelectorChain,
-} from '../../daemon/selectors.ts';
-import { attachRefs } from '../../kernel/snapshot.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { buildSelectorChainForNode, resolveSelectorChain } from '@agent-device/selectors';
+import { attachRefs } from '@agent-device/kernel/snapshot';
 import { installFakeManagedAgentBrowser } from './__tests__/test-utils.ts';
 
 type AgentBrowserCall = {
   cmd: string;
   args: string[];
 };
+
+const mockProviderStartupCleanup = vi.mocked(providerStartupCleanupMock);
+
+beforeEach(() => {
+  mockProviderStartupCleanup.mockReset();
+});
 
 test('agent-browser provider maps supported operations to session-scoped JSON commands', async () => {
   await withManagedAgentBrowserProvider({ session: 'web-session' }, async (provider) => {
@@ -73,6 +88,52 @@ test('agent-browser provider maps supported operations to session-scoped JSON co
   });
 });
 
+test('agent-browser provider runs provider-startup cleanup before the first managed command', async () => {
+  const events: string[] = [];
+  mockProviderStartupCleanup.mockImplementation(async () => {
+    events.push('provider-startup-cleanup');
+  });
+
+  await withManagedAgentBrowserProvider(
+    { session: 'web-session', openWebSessionNames: () => [] },
+    async (provider) => {
+      await withCommandExecutorOverride(
+        async (cmd, args) => {
+          events.push(`${path.basename(cmd)} ${args[0] ?? ''}`);
+          return jsonResult({ success: true, data: {} });
+        },
+        async () => await provider.open('https://example.test'),
+      );
+    },
+  );
+
+  assert.deepEqual(events, ['provider-startup-cleanup', 'agent-browser open']);
+  assert.equal(mockProviderStartupCleanup.mock.calls.length, 1);
+  assert.deepEqual(mockProviderStartupCleanup.mock.calls[0]?.[1], {
+    openWebSessionNames: [],
+  });
+});
+
+test('agent-browser provider ignores provider-startup cleanup failures', async () => {
+  const calls: AgentBrowserCall[] = [];
+  mockProviderStartupCleanup.mockRejectedValue(new Error('ps failed'));
+
+  await withManagedAgentBrowserProvider(
+    { session: 'web-session', openWebSessionNames: () => [] },
+    async (provider) => {
+      await withCommandExecutorOverride(recordingExecutor(calls), async () => {
+        await provider.open('https://example.test');
+      });
+    },
+  );
+
+  assert.deepEqual(
+    calls.map((call) => call.args),
+    [['open', 'https://example.test', '--json', '--session', 'web-session']],
+  );
+  assert.equal(mockProviderStartupCleanup.mock.calls.length, 1);
+});
+
 test('agent-browser provider normalizes snapshot refs, labels, values, and parents', async () => {
   await withManagedAgentBrowserProvider({ session: 'web-session' }, async (provider) => {
     const calls: AgentBrowserCall[] = [];
@@ -96,6 +157,26 @@ test('agent-browser provider normalizes snapshot refs, labels, values, and paren
     assert.equal(calls.length, 1);
     assertNormalizedSnapshot(snapshot);
     assertRoleSelectorResolves(snapshot);
+  });
+});
+
+test('agent-browser provider passes snapshot cancellation to the CLI process', async () => {
+  await withManagedAgentBrowserProvider({ session: 'web-session' }, async (provider) => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    await withCommandExecutorOverride(
+      async (_cmd, _args, options) => {
+        receivedSignal = options?.signal;
+        return jsonResult({
+          success: true,
+          data: { nodes: [], refs: [], truncated: false },
+        });
+      },
+      async () => await provider.snapshot({ signal: controller.signal }),
+    );
+
+    assert.equal(receivedSignal, controller.signal);
   });
 });
 
@@ -336,35 +417,40 @@ test('agent-browser provider surfaces stale ref failures during requested snapsh
 });
 
 test('agent-browser provider adds doctor guidance for missing binary and invalid JSON', async () => {
-  const missingStateDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'agent-device-web-provider-missing-'),
-  );
-  try {
-    const provider = createAgentBrowserWebProvider({ stateDir: missingStateDir });
-    await assert.rejects(
-      async () => await provider.open('https://example.test'),
-      (error: unknown) =>
-        error instanceof AppError &&
-        error.code === 'TOOL_MISSING' &&
-        error.details?.hint === 'Run `agent-device web setup` to install the managed web backend.',
+  // Pin a web-supported Node version so the missing-binary path yields the
+  // setup hint instead of the Node upgrade hint on Node <24 hosts.
+  await withNodeRuntimeVersion('24.0.0', async () => {
+    const missingStateDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agent-device-web-provider-missing-'),
     );
-  } finally {
-    fs.rmSync(missingStateDir, { recursive: true, force: true });
-  }
+    try {
+      const provider = createAgentBrowserWebProvider({ stateDir: missingStateDir });
+      await assert.rejects(
+        async () => await provider.open('https://example.test'),
+        (error: unknown) =>
+          error instanceof AppError &&
+          error.code === 'TOOL_MISSING' &&
+          error.details?.hint ===
+            'Run `agent-device web setup` to install the managed web backend.',
+      );
+    } finally {
+      fs.rmSync(missingStateDir, { recursive: true, force: true });
+    }
 
-  await withManagedAgentBrowserProvider({}, async (installedProvider) => {
-    await assert.rejects(
-      () =>
-        withCommandExecutorOverride(
-          async () => ({ stdout: 'not-json', stderr: '', exitCode: 0 }),
-          async () => await installedProvider.open('https://example.test'),
-        ),
-      (error: unknown) =>
-        error instanceof AppError &&
-        error.code === 'COMMAND_FAILED' &&
-        error.message === 'agent-browser returned invalid JSON' &&
-        typeof error.details?.hint === 'string',
-    );
+    await withManagedAgentBrowserProvider({}, async (installedProvider) => {
+      await assert.rejects(
+        () =>
+          withCommandExecutorOverride(
+            async () => ({ stdout: 'not-json', stderr: '', exitCode: 0 }),
+            async () => await installedProvider.open('https://example.test'),
+          ),
+        (error: unknown) =>
+          error instanceof AppError &&
+          error.code === 'COMMAND_FAILED' &&
+          error.message === 'agent-browser returned invalid JSON' &&
+          typeof error.details?.hint === 'string',
+      );
+    });
   });
 });
 
@@ -391,7 +477,7 @@ test('agent-browser provider preserves Node version guidance for missing managed
 });
 
 async function withManagedAgentBrowserProvider(
-  options: { session?: string },
+  options: { session?: string; openWebSessionNames?: () => readonly string[] },
   testFn: (provider: ReturnType<typeof createAgentBrowserWebProvider>) => void | Promise<void>,
 ): Promise<void> {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-web-provider-'));
@@ -472,7 +558,7 @@ function assertRoleSelectorResolves(snapshot: WebSnapshotResult): void {
   const nodesWithRefs = attachRefs(snapshot.nodes);
   const selectorChain = buildSelectorChainForNode(nodesWithRefs[2]!, 'web');
   assert.deepEqual(selectorChain, ['role="button" label="Save"', 'label="Save"']);
-  const resolved = resolveSelectorChain(nodesWithRefs, parseSelectorChain(selectorChain[0]!), {
+  const resolved = resolveSelectorChain(nodesWithRefs, selectorChain[0]!, {
     platform: 'web',
   });
   assert.equal(resolved?.node.label, 'Save');

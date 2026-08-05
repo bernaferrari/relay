@@ -1,27 +1,24 @@
-import type { CliFlags } from '../parser/cli-flags.ts';
-import type { AgentDeviceClient } from '../../client/client.ts';
-import {
-  isClientBackedCliCommandName,
-  type ClientBackedCliCommandName,
-} from '../../command-catalog.ts';
+import type { CliFlags } from '@agent-device/contracts/command';
+import type { AgentDeviceClient } from '../../agent-device-client.ts';
+import { isClientBackedCliCommandName, type ClientBackedCliCommandName } from './client-backed.ts';
 import { connectCommand, connectionCommand, disconnectCommand } from './connection.ts';
 import { authCommand } from './auth.ts';
+import { daemonCommand } from './daemon.ts';
+import { deviceCommand } from './device.ts';
 import { proxyCommand } from './proxy.ts';
 import { replayCommand } from './replay.ts';
 import { screenshotCommand, diffCommand } from './screenshot.ts';
 import type { ClientCommandHandlerMap, ClientCommandParams } from './router-types.ts';
 
-export type {
-  ClientCommandHandler,
-  ClientCommandHandlerMap,
-  ClientCommandParams,
-} from './router-types.ts';
+export type { ClientCommandParams } from './router-types.ts';
 
 const dedicatedCliCommandHandlers = {
   connect: connectCommand,
   disconnect: disconnectCommand,
   connection: connectionCommand,
   auth: authCommand,
+  daemon: daemonCommand,
+  device: deviceCommand,
   proxy: proxyCommand,
   replay: replayCommand,
   screenshot: screenshotCommand,

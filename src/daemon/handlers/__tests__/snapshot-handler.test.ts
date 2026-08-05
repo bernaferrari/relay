@@ -7,13 +7,13 @@ import { handleSnapshotCommands } from '../snapshot.ts';
 import { withSessionlessRunnerCleanup } from '../snapshot-session.ts';
 import { captureSnapshot } from '../snapshot-capture.ts';
 import { SessionStore } from '../../session-store.ts';
-import type { SessionState } from '../../types.ts';
-import { AppError } from '../../../kernel/errors.ts';
+import type { DaemonResponse, SessionState } from '../../types.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { buildSnapshotSignatures } from '../../android-snapshot-freshness.ts';
 import { buildInteractionSurfaceSignature } from '../../interaction-outcome-policy.ts';
-import { buildSnapshotPresentationKey } from '../../../kernel/snapshot.ts';
+import { buildSnapshotPresentationKey } from '@agent-device/kernel/snapshot';
 import { snapshotCliOutput } from '../../../commands/capture/output.ts';
-import type { CaptureSnapshotResult } from '../../../client/client-types.ts';
+import type { CaptureSnapshotResult } from '@agent-device/contracts/client';
 
 vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
@@ -154,10 +154,10 @@ function mockAndroidTimeoutEvidenceDispatch(): void {
 function androidSnapshotTimeoutError(): AppError {
   return new AppError(
     'COMMAND_FAILED',
-    'Android UI hierarchy dump timed out while waiting for the UI to become idle.',
+    'Android snapshot helper timed out while waiting for the UI to become idle.',
     {
       cmd: 'adb',
-      args: ['exec-out', 'uiautomator', 'dump', '/dev/tty'],
+      args: ['shell', 'am', 'instrument'],
       timeoutMs: 8000,
       hint: 'Android accessibility snapshots can be blocked by busy or continuously changing app UI. Use screenshot as visual truth after this timeout.',
     },
@@ -169,7 +169,7 @@ function expectAndroidTimeoutEvidence(
 ) {
   if (!response) throw new Error('Expected snapshot response');
   if (response.ok) throw new Error('Expected snapshot timeout failure');
-  expect(response.error.message).toMatch(/UI hierarchy dump timed out/i);
+  expect(response.error.message).toMatch(/snapshot helper timed out/i);
   expect(response.error.hint).toMatch(/Use screenshot as visual truth/i);
   assertAndroidTimeoutEvidencePayload(response.error.details?.androidSnapshotTimeoutScreenshot);
 }
@@ -400,6 +400,172 @@ test('snapshot on iOS runs when the session tracks an app', async () => {
     undefined,
     expect.objectContaining({ appBundleId: 'org.reactnavigation.playground' }),
   );
+});
+
+test('snapshot re-activates a complete frame; diff preserves it (ADR 0014)', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-stale-refs-marker';
+  const session = makeSession(sessionName, androidDevice);
+  session.snapshot = {
+    nodes: [{ ref: 'e1', index: 0, depth: 0, type: 'android.widget.Button', label: 'Old' }],
+    createdAt: Date.now(),
+    backend: 'android',
+  };
+  // A prior device action expired the frame.
+  session.refFrameState = 'expired';
+  sessionStore.set(sessionName, session);
+  mockDispatch.mockResolvedValue({
+    nodes: [{ index: 0, depth: 0, type: 'android.widget.Button', label: 'Fresh' }],
+    truncated: false,
+    backend: 'android',
+  });
+
+  const snapshotResponse = await handleSnapshotCommands({
+    req: { token: 't', session: sessionName, command: 'snapshot', positionals: [], flags: {} },
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  // The snapshot response hands every stored node's ref to the client: it
+  // re-activates a complete frame, so refs are current again.
+  expect(snapshotResponse?.ok).toBe(true);
+  expect(sessionStore.get(sessionName)?.refFrameState).toBe('active');
+
+  const diffResponse = await handleSnapshotCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'diff',
+      positionals: ['snapshot'],
+      flags: {},
+    },
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  // diff replaces the observation but is a read (summary response): it preserves
+  // the authorized frame rather than expiring it.
+  expect(diffResponse?.ok).toBe(true);
+  expect(sessionStore.get(sessionName)?.refFrameState).toBe('active');
+});
+
+// #1076 versioned refs — shared harness for the refsGeneration tests below.
+async function runVersionedRefsCommand(params: {
+  sessionStore: ReturnType<typeof makeSessionStore>;
+  sessionName: string;
+  command: 'snapshot' | 'diff';
+}): Promise<Record<string, unknown> | undefined> {
+  const response = await handleSnapshotCommands({
+    req: {
+      token: 't',
+      session: params.sessionName,
+      command: params.command,
+      positionals: params.command === 'diff' ? ['snapshot'] : [],
+      flags: {},
+    },
+    sessionName: params.sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore: params.sessionStore,
+  });
+  expect(response?.ok).toBe(true);
+  return response?.ok ? response.data : undefined;
+}
+
+function makeVersionedRefsScenario(sessionName: string) {
+  const sessionStore = makeSessionStore();
+  sessionStore.set(sessionName, makeSession(sessionName, androidDevice));
+  mockDispatch.mockResolvedValue({
+    nodes: [{ index: 0, depth: 0, type: 'android.widget.Button', label: 'Fresh' }],
+    truncated: false,
+    backend: 'android',
+  });
+  return sessionStore;
+}
+
+function expectInternalObservationResult(params: {
+  response: DaemonResponse | null | undefined;
+  session: SessionState | undefined;
+  publishedGeneration: number | undefined;
+  publishedTree: SessionState['snapshot'];
+}): void {
+  expect(params.response?.ok).toBe(true);
+  expect(params.response?.ok ? params.response.data?.refsGeneration : undefined).toBeUndefined();
+  expect(params.session?.snapshotGeneration).toBe((params.publishedGeneration as number) + 1);
+  expect(params.session?.snapshot).not.toBe(params.publishedTree);
+  expect(params.session?.refFrameGeneration).toBe(params.publishedGeneration);
+  expect(params.session?.refFrameTree).toBe(params.publishedTree);
+}
+
+test('snapshot responses carry refsGeneration and advance it per capture (#1076 versioned refs)', async () => {
+  const sessionName = 'android-refs-generation';
+  const sessionStore = makeVersionedRefsScenario(sessionName);
+
+  const first = await runVersionedRefsCommand({ sessionStore, sessionName, command: 'snapshot' });
+  // Ref-issuing response reports the generation ONCE; the node tree itself
+  // stays plain `e1` refs (token economy). The first generation of a session
+  // lifetime is SEEDED (random 6-digit base), so assert relative bumps and
+  // echo the observed seed instead of literals.
+  const seed = first?.refsGeneration;
+  expect(typeof seed).toBe('number');
+  expect(sessionStore.get(sessionName)?.snapshotGeneration).toBe(seed);
+
+  const second = await runVersionedRefsCommand({ sessionStore, sessionName, command: 'snapshot' });
+  expect(second?.refsGeneration).toBe((seed as number) + 1);
+});
+
+test('diff advances the generation without issuing refsGeneration (#1076 versioned refs)', async () => {
+  const sessionName = 'android-refs-generation-diff';
+  const sessionStore = makeVersionedRefsScenario(sessionName);
+
+  await runVersionedRefsCommand({ sessionStore, sessionName, command: 'snapshot' });
+
+  const seed = sessionStore.get(sessionName)?.snapshotGeneration as number;
+
+  // diff replaces the stored tree too — the generation advances even though
+  // the summary response issues no refs, which is exactly what a ref pinned
+  // to the snapshot generation would then warn about.
+  const diffData = await runVersionedRefsCommand({ sessionStore, sessionName, command: 'diff' });
+  expect(diffData?.refsGeneration).toBeUndefined();
+  expect(sessionStore.get(sessionName)?.snapshotGeneration).toBe(seed + 1);
+});
+
+test('daemon-private snapshot observation advances capture state without publishing ref authority', async () => {
+  const sessionName = 'android-internal-observation';
+  const sessionStore = makeVersionedRefsScenario(sessionName);
+
+  await runVersionedRefsCommand({ sessionStore, sessionName, command: 'snapshot' });
+  const published = sessionStore.get(sessionName);
+  const publishedGeneration = published?.refFrameGeneration;
+  const publishedTree = published?.refFrameTree;
+
+  mockDispatch.mockResolvedValue({
+    nodes: [{ index: 0, depth: 0, type: 'android.widget.Button', label: 'Internal' }],
+    truncated: false,
+    backend: 'android',
+  });
+
+  const response = await handleSnapshotCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'snapshot',
+      positionals: [],
+      flags: {},
+      internal: { observationOnly: true },
+    },
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expectInternalObservationResult({
+    response,
+    session: sessionStore.get(sessionName),
+    publishedGeneration,
+    publishedTree,
+  });
 });
 
 test('snapshot surfaces filtered-to-zero Android guidance for interactive snapshots', async () => {
@@ -971,6 +1137,7 @@ test('captureSnapshot lazily retries pending no-change touch before returning fr
         y: 120,
         width: 160,
         height: 48,
+        discriminating: true,
       },
     ],
   };
@@ -1113,6 +1280,7 @@ test('captureSnapshot retries pending tap outcome before post-gesture stabilizat
         y: 1301,
         width: 476,
         height: 110,
+        discriminating: true,
       },
     ],
   };
@@ -1364,7 +1532,8 @@ test('wait text on Android uses freshness-aware capture instead of one-shot snap
       token: 't',
       session: sessionName,
       command: 'wait',
-      positionals: ['Create document', '50'],
+      // The wait budget includes Android's 250 ms freshness retry delay.
+      positionals: ['Create document', '500'],
       flags: {},
     },
     sessionName,
@@ -1391,7 +1560,7 @@ test('wait text timeout includes compact current-surface labels and buttons', as
     analysis: { rawNodeCount: 4, maxDepth: 1 },
   });
 
-  const response = await runWaitCommand(sessionName, androidDevice, ['Receipt uploaded', '0']);
+  const response = await runWaitCommand(sessionName, androidDevice, ['Receipt uploaded', '50']);
 
   expect(response?.ok).toBe(false);
   if (response && !response.ok) {
@@ -1414,7 +1583,7 @@ test('wait selector timeout includes compact current-surface details', async () 
     analysis: { rawNodeCount: 2, maxDepth: 0 },
   });
 
-  const response = await runWaitCommand(sessionName, androidDevice, ['id=receipt-uploaded', '0']);
+  const response = await runWaitCommand(sessionName, androidDevice, ['id=receipt-uploaded', '50']);
 
   expect(response?.ok).toBe(false);
   if (response && !response.ok) {
@@ -1425,6 +1594,79 @@ test('wait selector timeout includes compact current-surface details', async () 
       labels: ['Location required', 'Dismiss'],
       buttons: ['Dismiss'],
     });
+  }
+});
+
+test('wait selector polling skips hidden-content hint derivation on every poll (#1270)', async () => {
+  // The #1270 repro: `wait 'label="Battery"' 8000` on Android. A presence-only wait never
+  // consumes scroll hints, so every per-poll snapshot capture must disable hint derivation —
+  // otherwise a pathological `dumpsys activity top` call is charged against the wait budget.
+  const sessionName = 'android-wait-selector-skips-hints';
+  const withoutBattery = {
+    nodes: locationRequiredNodes,
+    truncated: false,
+    backend: 'android',
+    analysis: { rawNodeCount: 2, maxDepth: 0 },
+  };
+  const withBattery = {
+    nodes: [
+      {
+        index: 0,
+        depth: 0,
+        type: 'android.widget.TextView',
+        label: 'Battery',
+        rect: { x: 252, y: 780, width: 153, height: 65 },
+      },
+    ],
+    truncated: false,
+    backend: 'android',
+    analysis: { rawNodeCount: 1, maxDepth: 0 },
+  };
+  mockDispatch.mockResolvedValueOnce(withoutBattery).mockResolvedValueOnce(withBattery);
+
+  const response = await runWaitCommand(sessionName, androidDevice, ['label="Battery"', '8000']);
+
+  expect(response?.ok).toBe(true);
+  const snapshotCalls = mockDispatch.mock.calls.filter(([, command]) => command === 'snapshot');
+  expect(snapshotCalls.length).toBe(2);
+  for (const call of snapshotCalls) {
+    const context = call[4] as { snapshotIncludeHiddenContentHints?: boolean } | undefined;
+    expect(context?.snapshotIncludeHiddenContentHints).toBe(false);
+  }
+});
+
+test('wait text polling skips hidden-content hint derivation on every poll (#1270)', async () => {
+  const sessionName = 'android-wait-text-skips-hints';
+  const withoutBattery = {
+    nodes: locationRequiredNodes,
+    truncated: false,
+    backend: 'android',
+    analysis: { rawNodeCount: 2, maxDepth: 0 },
+  };
+  const withBattery = {
+    nodes: [
+      {
+        index: 0,
+        depth: 0,
+        type: 'android.widget.TextView',
+        label: 'Battery',
+        rect: { x: 252, y: 780, width: 153, height: 65 },
+      },
+    ],
+    truncated: false,
+    backend: 'android',
+    analysis: { rawNodeCount: 1, maxDepth: 0 },
+  };
+  mockDispatch.mockResolvedValueOnce(withoutBattery).mockResolvedValueOnce(withBattery);
+
+  const response = await runWaitCommand(sessionName, androidDevice, ['Battery', '8000']);
+
+  expect(response?.ok).toBe(true);
+  const snapshotCalls = mockDispatch.mock.calls.filter(([, command]) => command === 'snapshot');
+  expect(snapshotCalls.length).toBe(2);
+  for (const call of snapshotCalls) {
+    const context = call[4] as { snapshotIncludeHiddenContentHints?: boolean } | undefined;
+    expect(context?.snapshotIncludeHiddenContentHints).toBe(false);
   }
 });
 
@@ -1439,7 +1681,7 @@ test('wait timeout summary prefers content labels over chrome and identifier noi
 
   const response = await runWaitCommand(sessionName, iosSimulatorDevice, [
     'Impossible success text',
-    '0',
+    '50',
   ]);
 
   expect(response?.ok).toBe(false);
@@ -1461,7 +1703,7 @@ test('wait timeout summary prefers content labels over chrome and identifier noi
   }
 });
 
-test('wait timeout preserves current behavior when current-surface inspection fails', async () => {
+test('wait timeout without readable capture does not inspect the current surface', async () => {
   const sessionName = 'android-wait-timeout-surface-fails';
   mockDispatch.mockRejectedValue(new Error('snapshot unavailable'));
 
@@ -1470,8 +1712,11 @@ test('wait timeout preserves current behavior when current-surface inspection fa
   expect(response?.ok).toBe(false);
   if (response && !response.ok) {
     expect(response.error.message).toBe('wait timed out for text: Receipt uploaded');
-    expect(response.error.details).toBeUndefined();
+    expect(response.error.details?.reason).toBe('wait_capture_stalled');
+    expect(response.error.details?.retriable).toBe(true);
+    expect(response.error.details?.readableCaptures).toBe(0);
   }
+  expect(mockDispatch).not.toHaveBeenCalled();
 });
 
 test('settings rejects unsupported iOS physical devices', async () => {
@@ -1738,6 +1983,58 @@ test('wait text on iOS without app bundle id uses snapshot path', async () => {
 
   expect(response?.ok).toBe(true);
   expect(mockRunnerCommand).not.toHaveBeenCalled();
+  expect(mockDispatch).toHaveBeenCalledWith(
+    expect.anything(),
+    'snapshot',
+    [],
+    undefined,
+    expect.anything(),
+  );
+});
+
+test('wait text falls back to the canonical snapshot after an Apple runner miss', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-wait-runner-miss';
+  sessionStore.set(sessionName, {
+    ...makeSession(sessionName, iosSimulatorDevice),
+    appBundleId: 'com.example.app',
+  });
+
+  mockRunnerCommand.mockResolvedValue({ found: false });
+  mockDispatch.mockResolvedValue({
+    nodes: [
+      {
+        index: 0,
+        depth: 0,
+        type: 'Window',
+        rect: { x: 0, y: 0, width: 390, height: 844 },
+      },
+      {
+        index: 1,
+        depth: 1,
+        parentIndex: 0,
+        type: 'StaticText',
+        label: 'Agent Device Tester',
+        rect: { x: 20, y: 80, width: 240, height: 40 },
+      },
+    ],
+  });
+
+  const response = await handleSnapshotCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'wait',
+      positionals: ['Agent Device Tester', '5000'],
+      flags: {},
+    },
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockRunnerCommand).toHaveBeenCalledTimes(1);
   expect(mockDispatch).toHaveBeenCalledWith(
     expect.anything(),
     'snapshot',
@@ -2020,6 +2317,11 @@ test('alert accept retries on "alert not found" and succeeds on second attempt',
   expect(response).toBeTruthy();
   expect(response?.ok).toBe(true);
   expect(calls).toBe(2);
+  expect(mockRunnerCommand.mock.calls[0]?.[1]).toMatchObject({
+    command: 'alert',
+    action: 'accept',
+    timeoutMs: 10_000,
+  });
 });
 
 test('alert accept does not retry on non-alert errors', async () => {

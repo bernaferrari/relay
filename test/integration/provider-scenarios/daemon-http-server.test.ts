@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import { AppError } from '../../../src/kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   cleanupUploadedArtifact,
   prepareUploadedArtifact,
@@ -13,8 +13,8 @@ import {
 } from '../../../src/daemon/artifact-tracking.ts';
 import { DAEMON_RPC_PROTOCOL_VERSION } from '../../../src/daemon/http-health.ts';
 import { createDaemonHttpServer } from '../../../src/daemon/server/http-server.ts';
-import { emitRequestProgress } from '../../../src/daemon/request-progress.ts';
-import { getRequestSignal, isRequestCanceled } from '../../../src/daemon/request-cancel.ts';
+import { emitRequestProgress } from '../../../src/request/progress.ts';
+import { getRequestSignal, isRequestCanceled } from '../../../src/request/cancel.ts';
 import type { DaemonRequest, DaemonResponse } from '../../../src/daemon/types.ts';
 import {
   closeLoopbackServer,
@@ -476,6 +476,7 @@ test('Provider-backed integration daemon HTTP server accepts uploads and streams
   fs.writeFileSync(downloadablePath, 'png-binary');
   const artifactId = trackDownloadableArtifact({
     artifactPath: downloadablePath,
+    artifactType: 'screenshot',
     fileName: 'screen.png',
   });
   const server = await createDaemonHttpServer({
@@ -695,6 +696,55 @@ test('Provider-backed integration daemon HTTP server isolates same-artifact uplo
     assert.deepEqual(fs.readFileSync(prepareUploadedArtifact(firstFinalize)), content);
   } finally {
     for (const uploadId of trackedUploadIds) cleanupUploadedArtifact(uploadId);
+    await closeLoopbackServer(server);
+  }
+});
+
+test('Provider-backed integration daemon HTTP server reports unknown upload tickets as expired', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t, 'daemon HTTP integration coverage')) {
+    return;
+  }
+
+  const server = await createDaemonHttpServer({
+    token: 'provider-scenario-token',
+    handleRequest: async (): Promise<DaemonResponse> => ({ ok: true, data: {} }),
+  });
+
+  try {
+    const port = await listenOnLoopback(server);
+    const unknownUploadId = crypto.randomUUID();
+    const auth = { authorization: 'Bearer provider-scenario-token' };
+
+    const directChunk = await fetch(`http://127.0.0.1:${port}/upload/direct/${unknownUploadId}`, {
+      method: 'PUT',
+      headers: { ...auth, 'content-type': 'application/octet-stream' },
+      body: Buffer.from('late-chunk'),
+    });
+    assert.equal(directChunk.status, 500);
+    const directBody = (await directChunk.json()) as {
+      ok?: boolean;
+      code?: string;
+      error?: string;
+    };
+    assert.equal(directBody.ok, false);
+    assert.equal(directBody.code, 'COMMAND_FAILED');
+    assert.match(directBody.error ?? '', /not found or expired/);
+
+    const finalize = await fetch(`http://127.0.0.1:${port}/upload/finalize`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ uploadId: unknownUploadId }),
+    });
+    assert.equal(finalize.status, 500);
+    const finalizeBody = (await finalize.json()) as {
+      ok?: boolean;
+      code?: string;
+      error?: string;
+    };
+    assert.equal(finalizeBody.ok, false);
+    assert.equal(finalizeBody.code, 'COMMAND_FAILED');
+    assert.match(finalizeBody.error ?? '', /not found or expired/);
+  } finally {
     await closeLoopbackServer(server);
   }
 });

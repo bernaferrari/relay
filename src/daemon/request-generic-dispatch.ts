@@ -1,5 +1,4 @@
 import { dispatchCommand, type CommandFlags } from '../core/dispatch.ts';
-import { GESTURE_SUBCOMMAND_ERROR } from '../command-catalog.ts';
 import { requireCommandSupported } from './handlers/response.ts';
 import { SessionStore } from './session-store.ts';
 import type { DaemonCommandContext } from './context.ts';
@@ -24,18 +23,18 @@ import {
   recordTouchVisualizationEvent,
 } from './recording-gestures.ts';
 import { markPostGestureStabilization } from './post-gesture-stabilization.ts';
-import { normalizeError } from '../kernel/errors.ts';
-import { shouldGuardAndroidBlockingDialog } from './daemon-command-registry.ts';
+import { normalizeError } from '@agent-device/kernel/errors';
+import { expireRefFrame } from './ref-frame.ts';
+import {
+  resolveRefFrameEffect,
+  shouldGuardAndroidBlockingDialog,
+} from './daemon-command-registry.ts';
 import { isActiveProviderDevice } from '../provider-device-runtime.ts';
-
-const GESTURE_PLATFORM_COMMANDS: Readonly<Record<string, string>> = {
-  pan: 'pan',
-  fling: 'fling',
-  swipe: 'swipe-preset',
-  pinch: 'pinch',
-  rotate: 'rotate-gesture',
-  transform: 'transform-gesture',
-};
+import {
+  assertSupportedScreenshotPixelDensity,
+  readScreenshotResultMetadata,
+} from '../utils/screenshot-density.ts';
+import { buildActionEventResult } from './session-event-action-presentation.ts';
 
 export async function dispatchGenericCommand(params: {
   req: DaemonRequest;
@@ -50,17 +49,7 @@ export async function dispatchGenericCommand(params: {
   ) => DaemonCommandContext;
 }): Promise<DaemonResponse> {
   const { req, session, logPath, sessionStore, contextFromFlags } = params;
-  const commandResolution = resolveDispatchCommand(req);
-  if (!commandResolution.ok) {
-    return {
-      ok: false,
-      error: {
-        code: 'INVALID_ARGS',
-        message: commandResolution.message,
-      },
-    };
-  }
-  const { platformCommand, dispatchRequest, recordedCommand } = commandResolution;
+  const platformCommand = req.command;
 
   const readinessResponse = await ensureGenericCommandReady(session, platformCommand);
   if (readinessResponse) return readinessResponse;
@@ -68,19 +57,27 @@ export async function dispatchGenericCommand(params: {
   if ('response' in preflightReadiness) return preflightReadiness.response;
 
   const { resolvedPositionals, resolvedOut, recordedPositionals, recordedFlags } =
-    resolveCommandPositionals(dispatchRequest);
+    resolveCommandPositionals(req);
 
   const actionStartedAt = Date.now();
   const dispatchContext = {
     ...contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
     surface: session.surface,
   };
+  // ADR 0014 side-effect seam for generic-route leaves (back/home/rotate/scroll/
+  // tv-remote/app-switcher/viewport/focus, ...). The daemon effect classification
+  // is the honesty guard that decides which of these mutate; expire the frame
+  // before dispatching so a later ref cannot reuse it. Read-only generic leaves
+  // (screenshot) are classified `preserve` and leave the frame untouched.
+  if (resolveRefFrameEffect(req) === 'may-invalidate') {
+    expireRefFrame(session);
+  }
   let data = await executeGenericPlatformCommand({
     session,
     sessionName: params.sessionName,
     logPath,
     command: platformCommand,
-    request: dispatchRequest,
+    request: req,
     positionals: resolvedPositionals,
     out: resolvedOut,
     dispatchContext,
@@ -101,22 +98,18 @@ export async function dispatchGenericCommand(params: {
   }
 
   const actionFinishedAt = Date.now();
-  const actionRecordedPositionals =
-    recordedCommand === platformCommand ? recordedPositionals : (req.positionals ?? []);
-  const actionRecordedFlags =
-    recordedCommand === platformCommand ? recordedFlags : (req.flags ?? {});
   recordVisualizationAndAction({
     session,
     sessionStore,
     command: platformCommand,
-    recordedCommand,
     resolvedPositionals,
-    recordedPositionals: actionRecordedPositionals,
-    recordedFlags: actionRecordedFlags,
+    recordedPositionals,
+    recordedFlags,
     data,
     actionStartedAt,
     actionFinishedAt,
     flags: req.flags ?? {},
+    clientArtifactPaths: req.meta?.clientArtifactPaths,
   });
 
   if (isNavigationSensitiveAction(platformCommand)) {
@@ -185,12 +178,26 @@ async function executeGenericPlatformCommand(params: {
   out: string | undefined;
   dispatchContext: DaemonCommandContext;
 }): Promise<Record<string, unknown> | void> {
-  const { session, command, request, positionals, out, dispatchContext } = params;
-  if (command !== 'screenshot') {
-    return await dispatchCommand(session.device, command, positionals, out, {
-      ...dispatchContext,
-    });
+  const { session, command, positionals, out, dispatchContext } = params;
+  if (command === 'screenshot') {
+    return await executeScreenshotPlatformCommand(params);
   }
+  return await dispatchCommand(session.device, command, positionals, out, {
+    ...dispatchContext,
+  });
+}
+
+async function executeScreenshotPlatformCommand(params: {
+  session: SessionState;
+  sessionName: string;
+  logPath: string;
+  request: DaemonRequest;
+  positionals: string[];
+  out: string | undefined;
+  dispatchContext: DaemonCommandContext;
+}): Promise<Record<string, unknown>> {
+  const { session, request, positionals, out, dispatchContext } = params;
+  assertSupportedScreenshotPixelDensity(session.device, request.flags?.screenshotPixelDensity);
   const data = await dispatchScreenshotViaRuntime({
     session,
     sessionName: params.sessionName,
@@ -198,53 +205,22 @@ async function executeGenericPlatformCommand(params: {
     outputPlacement: resolveScreenshotOutputPlacement(request),
     dispatchContext,
   });
-  if (request.flags?.overlayRefs && typeof data?.path === 'string') {
+  if (typeof data.path !== 'string') {
+    return data;
+  }
+  if (request.flags?.overlayRefs) {
     await applyScreenshotOverlay(session, data, params.logPath);
   }
+  Object.assign(
+    data,
+    await readScreenshotResultMetadata({
+      device: session.device,
+      path: data.path,
+      requestedPixelDensity: request.flags?.screenshotPixelDensity,
+      maxSize: request.flags?.screenshotMaxSize,
+    }),
+  );
   return data;
-}
-
-type DispatchCommandResolution =
-  | {
-      ok: true;
-      platformCommand: string;
-      dispatchRequest: DaemonRequest;
-      recordedCommand: string;
-    }
-  | { ok: false; message: string };
-
-function resolveDispatchCommand(req: DaemonRequest): DispatchCommandResolution {
-  if (
-    req.command === 'pan' ||
-    req.command === 'fling' ||
-    req.command === 'rotate-gesture' ||
-    req.command === 'transform-gesture'
-  ) {
-    return {
-      ok: false,
-      message:
-        'Use gesture pan, gesture fling, gesture swipe, gesture rotate, or gesture transform.',
-    };
-  }
-  if (req.command !== 'gesture') {
-    return {
-      ok: true,
-      platformCommand: req.command,
-      dispatchRequest: req,
-      recordedCommand: req.command,
-    };
-  }
-  const [subcommand, ...positionals] = req.positionals ?? [];
-  const platformCommand = subcommand ? GESTURE_PLATFORM_COMMANDS[subcommand] : undefined;
-  if (!platformCommand) {
-    return { ok: false, message: GESTURE_SUBCOMMAND_ERROR };
-  }
-  return {
-    ok: true,
-    platformCommand,
-    dispatchRequest: { ...req, command: platformCommand, positionals },
-    recordedCommand: req.command,
-  };
 }
 
 function resolveScreenshotOutputPlacement(req: DaemonRequest): ScreenshotOutputPlacement {
@@ -337,7 +313,6 @@ function recordVisualizationAndAction(params: {
   session: SessionState;
   sessionStore: SessionStore;
   command: string;
-  recordedCommand: string;
   resolvedPositionals: string[];
   recordedPositionals: string[];
   recordedFlags: Record<string, unknown>;
@@ -345,12 +320,12 @@ function recordVisualizationAndAction(params: {
   actionStartedAt: number;
   actionFinishedAt: number;
   flags: Record<string, unknown>;
+  clientArtifactPaths: Record<string, string> | undefined;
 }): void {
   const {
     session,
     sessionStore,
     command,
-    recordedCommand,
     resolvedPositionals,
     recordedPositionals,
     recordedFlags,
@@ -358,6 +333,7 @@ function recordVisualizationAndAction(params: {
     actionStartedAt,
     actionFinishedAt,
     flags,
+    clientArtifactPaths,
   } = params;
   const visualizationData = augmentScrollVisualizationResult(
     session,
@@ -375,9 +351,9 @@ function recordVisualizationAndAction(params: {
     actionFinishedAt,
   );
   sessionStore.recordAction(session, {
-    command: recordedCommand,
+    command,
     positionals: recordedPositionals,
     flags: recordedFlags,
-    result: data ?? {},
+    result: buildActionEventResult({ command, meta: { clientArtifactPaths } }, data ?? {}),
   });
 }

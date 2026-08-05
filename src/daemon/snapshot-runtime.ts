@@ -1,23 +1,33 @@
-import { isIosFamily, publicPlatformString } from '../kernel/device.ts';
+import {
+  snapshotCaptureAnnotationsFrom,
+  summarizeSnapshotDiagnostics,
+} from '@agent-device/contracts/capture';
+import { stripAndroidSystemChromeProvenance } from '@agent-device/contracts/platform';
+import { isIosFamily, publicPlatformString } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import type { AgentDeviceBackend, BackendSnapshotResult } from '../backend.ts';
 import type { CommandSessionRecord } from '../runtime.ts';
 import { createAgentDevice } from '../runtime.ts';
-import { AppError } from '../kernel/errors.ts';
 import type { SnapshotDiffSummary } from '../snapshot/snapshot-diff.ts';
-import type { DaemonRequest, DaemonResponse, DaemonResponseData, SessionState } from './types.ts';
-import { SessionStore } from './session-store.ts';
+import { maybeBuildAndroidSnapshotTimeoutFailure } from './android-snapshot-timeout-evidence.ts';
 import { errorResponse, requireCommandSupported } from './handlers/response.ts';
 import { captureSnapshot, resolveSnapshotScope } from './handlers/snapshot-capture.ts';
-import { snapshotCaptureAnnotationsFrom } from '../snapshot-capture-annotations.ts';
 import {
   buildSnapshotSession,
   resolveSessionDevice,
   withSessionlessRunnerCleanup,
 } from './handlers/snapshot-session.ts';
+import { activateCompleteRefFrame } from './ref-frame.ts';
+import {
+  applyRecoveredWarningLatch,
+  type CapturedSnapshotQuality,
+} from './snapshot-quality-latch.ts';
 import { createDaemonRuntimePolicy } from './runtime-policy.ts';
 import { createDaemonRuntimeSessionStore } from './runtime-session.ts';
-import { maybeBuildAndroidSnapshotTimeoutFailure } from './android-snapshot-timeout-evidence.ts';
-import { summarizeSnapshotDiagnostics } from '../snapshot-diagnostics.ts';
+import { isInteractiveObservation } from './session-action-recorder.ts';
+import { setSnapshotLineage } from './session-snapshot.ts';
+import { SessionStore } from './session-store.ts';
+import type { DaemonRequest, DaemonResponse, DaemonResponseData, SessionState } from './types.ts';
 
 export async function dispatchSnapshotViaRuntime(params: {
   req: DaemonRequest;
@@ -38,8 +48,19 @@ export async function dispatchSnapshotViaRuntime(params: {
         raw: req.flags?.snapshotRaw,
         forceFull: req.flags?.snapshotForceFull,
       });
+      // #1076 versioned refs: the snapshot response is a ref-issuing response,
+      // so it carries the stored tree's generation ONCE (`refsGeneration`) —
+      // the node tree itself stays plain `e12` refs (token economy). The
+      // capture above already stored the next session via setRecord, so the
+      // store holds the generation these refs were minted from.
+      const refsGeneration = publishedSnapshotGeneration(req, params.sessionStore.get(sessionName));
+      // ADR 0014: retain provenance in the immutable operational/ref-frame tree;
+      // project only the published copy so settle and replay keep the full evidence.
+      const publicNodes = stripAndroidSystemChromeProvenance(result.nodes);
+      const publicResult =
+        publicNodes === result.nodes ? result : { ...result, nodes: publicNodes };
       return {
-        data: result,
+        data: refsGeneration === undefined ? publicResult : { ...publicResult, refsGeneration },
         record: {
           kind: 'snapshot',
           nodes: result.nodes.length,
@@ -48,6 +69,13 @@ export async function dispatchSnapshotViaRuntime(params: {
       };
     },
   });
+}
+
+function publishedSnapshotGeneration(
+  req: DaemonRequest,
+  session: SessionState | undefined,
+): number | undefined {
+  return req.internal?.observationOnly === true ? undefined : session?.snapshotGeneration;
 }
 
 export async function dispatchSnapshotDiffViaRuntime(params: {
@@ -120,6 +148,7 @@ async function dispatchSnapshotRuntimeCommand(
   if (iosAppSessionGuard) return iosAppSessionGuard;
 
   return await withSessionlessRunnerCleanup(session, device, async () => {
+    const capturedQuality: CapturedSnapshotQuality = {};
     const runtime = createSnapshotRuntime({
       req,
       sessionName,
@@ -128,6 +157,7 @@ async function dispatchSnapshotRuntimeCommand(
       session,
       device,
       snapshotScope: resolvedScope.scope,
+      capturedQuality,
     });
     let result: Awaited<ReturnType<SnapshotRuntimeCommandParams['execute']>>;
     try {
@@ -156,7 +186,12 @@ async function dispatchSnapshotRuntimeCommand(
     });
     return {
       ok: true,
-      data: result.data,
+      data: applyRecoveredWarningLatch({
+        session: sessionStore.get(sessionName),
+        data: result.data,
+        verdict: capturedQuality.value,
+        internalObservation: req.internal?.observationOnly === true,
+      }),
     };
   });
 }
@@ -183,6 +218,7 @@ function createSnapshotRuntime(params: {
   session: SessionState | undefined;
   device: SessionState['device'];
   snapshotScope: string | undefined;
+  capturedQuality: CapturedSnapshotQuality;
 }) {
   const { req, sessionName, logPath, sessionStore, session, device, snapshotScope } = params;
   return createAgentDevice({
@@ -192,6 +228,7 @@ function createSnapshotRuntime(params: {
       session,
       device,
       snapshotScope,
+      capturedQuality: params.capturedQuality,
     }),
     ...createDaemonRuntimePolicy('snapshot'),
     sessions: createDaemonRuntimeSessionStore({
@@ -209,6 +246,11 @@ function createSnapshotRuntime(params: {
             device,
             record: snapshotRecord,
             refScopedSnapshot: isRefScopedSnapshot(req),
+            // Only the snapshot command's response carries every stored node's
+            // ref back to the client; diff returns a summary, so its refreshed
+            // tree leaves client refs stale (#1076).
+            issuesRefsToClient:
+              req.command === 'snapshot' && req.internal?.observationOnly !== true,
           }),
         );
       },
@@ -222,6 +264,7 @@ function buildNextSnapshotSession(params: {
   device: SessionState['device'];
   record: CommandSessionRecord & { snapshot: NonNullable<CommandSessionRecord['snapshot']> };
   refScopedSnapshot: boolean;
+  issuesRefsToClient: boolean;
 }): SessionState {
   const { current, sessionName, device, record, refScopedSnapshot } = params;
   const keepCurrentSnapshot = shouldKeepCurrentSnapshot(current, record, refScopedSnapshot);
@@ -233,11 +276,16 @@ function buildNextSnapshotSession(params: {
     snapshot,
     appBundleId: record.appBundleId,
   });
-  nextSession.snapshotScopeSource = resolveNextSnapshotScopeSource({
-    current,
-    keepCurrentSnapshot,
-    refScopedSnapshot,
+  setSnapshotLineage(nextSession, {
+    scopeSource: resolveNextSnapshotScopeSource({
+      current,
+      keepCurrentSnapshot,
+      refScopedSnapshot,
+    }),
+    keptCurrentSnapshot: keepCurrentSnapshot,
+    previousGeneration: current?.snapshotGeneration,
   });
+  reactivateCompleteFrameIfIssuing(nextSession, keepCurrentSnapshot, params.issuesRefsToClient);
   if (record.appName) nextSession.appName = record.appName;
   return nextSession;
 }
@@ -254,6 +302,21 @@ function shouldKeepCurrentSnapshot(
   return (
     refScopedSnapshot && record.snapshot?.nodes.length === 0 && current?.snapshot !== undefined
   );
+}
+
+// ADR 0014: only a snapshot command hands the client the complete ref namespace,
+// so only it re-authorizes a complete frame (recovering usability after a
+// side-effect expiry). A diff (summary response) or a kept tree preserves the
+// prior authorization state buildSnapshotSession carried over; partial
+// publications (find/settled/divergence) never reach this path.
+function reactivateCompleteFrameIfIssuing(
+  session: SessionState,
+  keepCurrentSnapshot: boolean,
+  issuesRefsToClient: boolean,
+): void {
+  if (!keepCurrentSnapshot && issuesRefsToClient) {
+    activateCompleteRefFrame(session);
+  }
 }
 
 function resolveNextSnapshotScopeSource(params: {
@@ -273,6 +336,7 @@ function createDaemonSnapshotBackend(params: {
   session: SessionState | undefined;
   device: SessionState['device'];
   snapshotScope: string | undefined;
+  capturedQuality: CapturedSnapshotQuality;
 }): AgentDeviceBackend {
   const { req, logPath, session, device, snapshotScope } = params;
   return {
@@ -286,10 +350,15 @@ function createDaemonSnapshotBackend(params: {
         logPath,
         snapshotScope,
       });
+      const annotations = snapshotCaptureAnnotationsFrom(capture);
+      // Feed the latch seam the capture's own verdict: the stored session
+      // snapshot is not a substitute (an empty ref-scoped capture retains the
+      // previous snapshot, and diff never publishes the verdict).
+      params.capturedQuality.value = annotations.quality;
       const snapshotDiagnostics = summarizeSnapshotDiagnostics(session);
       return {
         snapshot: capture.snapshot,
-        ...snapshotCaptureAnnotationsFrom(capture),
+        ...annotations,
         ...(snapshotDiagnostics ? { snapshotDiagnostics } : {}),
         appName: session?.appBundleId ? (session.appName ?? session.appBundleId) : undefined,
         appBundleId: session?.appBundleId,
@@ -311,6 +380,12 @@ function recordSnapshotRuntimeAction(params: {
     positionals: params.req.positionals ?? [],
     flags: params.req.flags ?? {},
     result: toRecordedSnapshotRuntimeResult(params.result),
+    // #1271 stage 2: `snapshot` is observation-only and subject to the
+    // repair-segment default exclusion; `diff` reaches this same recorder and
+    // is deliberately NOT in the classifier's command set, so it is
+    // unaffected. An authored `snapshot` plan step carries replay provenance
+    // and stays in the heal.
+    interactiveObservation: isInteractiveObservation(params.req),
   });
 }
 

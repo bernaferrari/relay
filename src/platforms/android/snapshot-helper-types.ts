@@ -1,13 +1,12 @@
-import type { RawSnapshotNode } from '../../kernel/snapshot.ts';
 import type { AndroidAdbExecutor, AndroidAdbProvider } from './adb-executor.ts';
-import type { AndroidSnapshotAnalysis } from './ui-hierarchy.ts';
-import type { AndroidSnapshotBackendMetadata } from './snapshot-types.ts';
 
 export type AndroidSnapshotHelperTransport = 'instrumentation' | 'persistent-session';
 export type AndroidSnapshotCaptureMode = 'interactive-windows' | 'active-window';
 export type AndroidSnapshotHelperInstallReason =
   | 'missing'
   | 'outdated'
+  | 'mismatched'
+  | 'unverifiable'
   | 'forced'
   | 'current'
   | 'skipped';
@@ -47,26 +46,25 @@ export type AndroidSnapshotHelperArtifact = {
   manifest: AndroidSnapshotHelperManifest;
 };
 
-export type AndroidSnapshotHelperPreparedArtifact = AndroidSnapshotHelperArtifact & {
-  cleanup?: () => Promise<void>;
-};
-
 export type AndroidSnapshotHelperInstallPolicy = 'missing-or-outdated' | 'always' | 'never';
 
 export type AndroidSnapshotHelperInstallResult = {
   packageName: string;
   versionCode: number;
   installedVersionCode?: number;
+  installedSha256?: string;
   installed: boolean;
   reason: AndroidSnapshotHelperInstallReason;
 };
 
 export type AndroidSnapshotHelperCaptureOptions = {
   adb: AndroidAdbExecutor;
+  signal?: AbortSignal;
   adbProvider?: AndroidAdbProvider;
   deviceKey?: string;
   helperVersion?: string;
   helperVersionCode?: number;
+  helperSha256?: string;
   packageName?: string;
   instrumentationRunner?: string;
   waitForIdleTimeoutMs?: number;
@@ -101,12 +99,3 @@ export type AndroidSnapshotHelperOutput = {
   xml: string;
   metadata: AndroidSnapshotHelperMetadata;
 };
-
-export type AndroidSnapshotHelperParsedSnapshot = {
-  nodes: RawSnapshotNode[];
-  truncated?: boolean;
-  analysis: AndroidSnapshotAnalysis;
-  metadata: AndroidSnapshotHelperMetadata;
-};
-
-export type { AndroidSnapshotBackendMetadata };

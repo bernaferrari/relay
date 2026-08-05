@@ -1,15 +1,19 @@
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
-import type { DeviceInfo } from '../../kernel/device.ts';
-import { AppError } from '../../kernel/errors.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import { isClipboardShellUnsupported, sleep } from './adb.ts';
-import { resolveAndroidAdbExecutor, type AndroidAdbExecutor } from './adb-executor.ts';
+import {
+  androidAdbResultError,
+  resolveAndroidAdbExecutor,
+  type AndroidAdbExecutor,
+} from './adb-executor.ts';
 import {
   classifyAndroidInputOwner,
   isFallbackAndroidInputMethodPackage,
   isFallbackAndroidInputMethodResource,
   readAndroidActiveInputMethodPackage,
   type AndroidInputOwner,
-} from './input-ownership.ts';
+} from '@agent-device/contracts/platform';
 
 const ANDROID_INPUT_TYPE_CLASS_MASK = 0x0000000f;
 const ANDROID_INPUT_TYPE_CLASS_TEXT = 0x00000001;
@@ -84,11 +88,7 @@ export async function getAndroidKeyboardStatusWithAdb(
     allowFailure: true,
   });
   if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', 'Failed to query Android keyboard state', {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    });
+    throw androidAdbResultError('Failed to query Android keyboard state', result);
   }
   return parseAndroidKeyboardState(result.stdout);
 }
@@ -326,11 +326,7 @@ async function runAndroidClipboardShellCommand(
     );
   }
   if (result.exitCode !== 0) {
-    throw new AppError('COMMAND_FAILED', `Failed to ${operation} Android clipboard text`, {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    });
+    throw androidAdbResultError(`Failed to ${operation} Android clipboard text`, result);
   }
   return result.stdout;
 }

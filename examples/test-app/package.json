@@ -17,6 +17,7 @@
     "expo-constants": "56.0.18",
     "expo-dev-client": "~56.0.20",
     "expo-linking": "56.0.14",
+    "expo-modules-core": "56.0.17",
     "expo-router": "~56.2.11",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
@@ -25,9 +26,12 @@
     "react-native-gesture-handler": "^2.31.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.25.2",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
+    "@expo/fingerprint": "^0.19.4",
+    "@expo/repack-app": "^0.7.2",
     "@types/react": "~19.2.2",
     "expo-build-disk-cache": "^0.7.4",
     "typescript": "~6.0.3"

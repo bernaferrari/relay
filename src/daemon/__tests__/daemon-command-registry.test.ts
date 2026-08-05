@@ -40,6 +40,7 @@ test('daemon command registry owns specialized handler routes', () => {
 test('daemon command registry owns session handler subroutes', () => {
   assert.equal(getSessionCommandKind(INTERNAL_COMMANDS.sessionList), 'inventory');
   assert.equal(getSessionCommandKind(PUBLIC_COMMANDS.devices), 'inventory');
+  assert.equal(getSessionCommandKind(PUBLIC_COMMANDS.capabilities), 'inventory');
   assert.equal(getSessionCommandKind(PUBLIC_COMMANDS.doctor), 'inventory');
   assert.equal(getSessionCommandKind(PUBLIC_COMMANDS.apps), 'inventory');
   assert.equal(getSessionCommandKind(PUBLIC_COMMANDS.boot), 'state');
@@ -54,6 +55,7 @@ test('daemon command registry owns session handler subroutes', () => {
 test('daemon command registry preserves request admission traits', () => {
   for (const command of [
     INTERNAL_COMMANDS.sessionList,
+    PUBLIC_COMMANDS.capabilities,
     PUBLIC_COMMANDS.devices,
     PUBLIC_COMMANDS.doctor,
     INTERNAL_COMMANDS.releaseMaterializedPaths,
@@ -67,6 +69,7 @@ test('daemon command registry preserves request admission traits', () => {
 
   for (const command of [
     INTERNAL_COMMANDS.sessionList,
+    PUBLIC_COMMANDS.capabilities,
     PUBLIC_COMMANDS.devices,
     PUBLIC_COMMANDS.doctor,
     INTERNAL_COMMANDS.releaseMaterializedPaths,
@@ -82,35 +85,46 @@ test('daemon command registry preserves request admission traits', () => {
 test('daemon command registry preserves replay and recording traits', () => {
   for (const command of [
     PUBLIC_COMMANDS.alert,
+    PUBLIC_COMMANDS.appSwitcher,
     PUBLIC_COMMANDS.back,
     PUBLIC_COMMANDS.click,
     PUBLIC_COMMANDS.clipboard,
+    PUBLIC_COMMANDS.close,
     PUBLIC_COMMANDS.diff,
     PUBLIC_COMMANDS.fill,
     PUBLIC_COMMANDS.find,
+    PUBLIC_COMMANDS.focus,
     PUBLIC_COMMANDS.gesture,
     PUBLIC_COMMANDS.get,
     PUBLIC_COMMANDS.home,
+    PUBLIC_COMMANDS.install,
     PUBLIC_COMMANDS.is,
     PUBLIC_COMMANDS.keyboard,
     PUBLIC_COMMANDS.longPress,
-    'pinch',
+    PUBLIC_COMMANDS.open,
+    PUBLIC_COMMANDS.orientation,
+    PUBLIC_COMMANDS.perf,
     PUBLIC_COMMANDS.press,
-    PUBLIC_COMMANDS.record,
+    PUBLIC_COMMANDS.push,
     PUBLIC_COMMANDS.reactNative,
-    PUBLIC_COMMANDS.rotate,
+    PUBLIC_COMMANDS.record,
+    PUBLIC_COMMANDS.reinstall,
     PUBLIC_COMMANDS.screenshot,
     PUBLIC_COMMANDS.scroll,
     PUBLIC_COMMANDS.settings,
     PUBLIC_COMMANDS.snapshot,
     PUBLIC_COMMANDS.swipe,
+    PUBLIC_COMMANDS.trace,
+    PUBLIC_COMMANDS.triggerAppEvent,
+    PUBLIC_COMMANDS.tvRemote,
     PUBLIC_COMMANDS.type,
+    PUBLIC_COMMANDS.viewport,
     PUBLIC_COMMANDS.wait,
   ]) {
     assert.equal(canRunReplayScopedAction(command), true, `${command} replay scope`);
   }
 
-  assert.equal(canRunReplayScopedAction(PUBLIC_COMMANDS.focus), false);
+  assert.equal(canRunReplayScopedAction(PUBLIC_COMMANDS.apps), false);
   assert.equal(shouldBlockForInvalidRecording(PUBLIC_COMMANDS.record), false);
   assert.equal(shouldBlockForInvalidRecording(PUBLIC_COMMANDS.close), false);
   assert.equal(shouldBlockForInvalidRecording(PUBLIC_COMMANDS.snapshot), true);
@@ -126,15 +140,10 @@ test('daemon command registry preserves Android modal and lock-policy traits', (
     PUBLIC_COMMANDS.home,
     PUBLIC_COMMANDS.keyboard,
     PUBLIC_COMMANDS.longPress,
-    'fling',
-    'pan',
-    'pinch',
     PUBLIC_COMMANDS.press,
-    PUBLIC_COMMANDS.rotate,
-    'rotate-gesture',
+    PUBLIC_COMMANDS.orientation,
     PUBLIC_COMMANDS.scroll,
     PUBLIC_COMMANDS.swipe,
-    'transform-gesture',
     PUBLIC_COMMANDS.type,
   ]) {
     assert.equal(shouldGuardAndroidBlockingDialog(command), true, `${command} Android guard`);
@@ -142,6 +151,7 @@ test('daemon command registry preserves Android modal and lock-policy traits', (
 
   assert.equal(shouldGuardAndroidBlockingDialog(PUBLIC_COMMANDS.get), false);
   assert.equal(canOverrideLockPolicySelector(PUBLIC_COMMANDS.apps), true);
+  assert.equal(canOverrideLockPolicySelector(PUBLIC_COMMANDS.capabilities), true);
   assert.equal(canOverrideLockPolicySelector(PUBLIC_COMMANDS.devices), true);
   assert.equal(canOverrideLockPolicySelector(PUBLIC_COMMANDS.doctor), true);
   assert.equal(canOverrideLockPolicySelector(PUBLIC_COMMANDS.open), false);
@@ -150,6 +160,10 @@ test('daemon command registry preserves Android modal and lock-policy traits', (
 test('daemon command registry preserves provider device resolution traits', () => {
   assert.equal(
     shouldPreferExplicitDeviceOverExistingSession(makeRequest(PUBLIC_COMMANDS.apps)),
+    true,
+  );
+  assert.equal(
+    shouldPreferExplicitDeviceOverExistingSession(makeRequest(PUBLIC_COMMANDS.capabilities)),
     true,
   );
   assert.equal(
@@ -200,6 +214,27 @@ test('daemon command registry preserves provider device resolution traits', () =
     }),
     'explicit-device',
   );
+});
+
+test('every lease-route command skips sessionless provider-device resolution', () => {
+  // Enumerated from the registry route, not a hand list: lease-route requests
+  // manage lease lifecycle/artifacts, never a device session, so sessionless
+  // provider scoping must not trigger local device discovery for them.
+  const leaseRouteCommands = [
+    ...Object.values(PUBLIC_COMMANDS),
+    ...Object.values(INTERNAL_COMMANDS),
+  ].filter((command) => getDaemonCommandRoute(command) === 'lease');
+  assert.ok(leaseRouteCommands.length >= 4, 'expected the lease route to enumerate its commands');
+  for (const command of leaseRouteCommands) {
+    assert.equal(
+      resolveProviderDeviceResolutionIntent(makeRequest(command), {
+        hasExistingSession: false,
+        hasExplicitDeviceSelector: true,
+      }),
+      'skip',
+      `${command} must not resolve a provider device sessionless`,
+    );
+  }
 });
 
 function makeRequest(command: string, positionals: string[] = []): DaemonRequest {

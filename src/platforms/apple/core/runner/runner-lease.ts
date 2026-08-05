@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { emitDiagnostic } from '../../../../utils/diagnostics.ts';
-import { AppError } from '../../../../kernel/errors.ts';
+import { AppError } from '@agent-device/kernel/errors';
 import { acquireProcessLock } from '../../../../utils/process-lock.ts';
-import { isProcessAlive, readProcessStartTime } from '../../../../utils/process-identity.ts';
-import type { RunnerLogicalLeaseContext } from '../../../../core/runner-lease-context.ts';
+import { readProcessStartTime } from '../../../../utils/host-process.ts';
+import { classifyOwnerLiveness } from '../../../../utils/owner-identity.ts';
+import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/platform';
 
 const RUNNER_LEASE_SCHEMA_VERSION = 1;
 const RUNNER_LEASE_LOCK_TIMEOUT_MS = 30_000;
@@ -34,10 +35,17 @@ export type RunnerLease = {
   createdAtMs: number;
 };
 
+// Why a foreign lease classifies as stale (reclaimable). The distinction is
+// load-bearing: adoption (taking over a still-running runner without killing
+// it) is only safe when the owner PROCESS is proven dead - a dir-gone-but-
+// alive owner may still hold a live connection to the runner, so it must go
+// through the force-stop path (kill runner processes, rebuild) instead.
+type RunnerLeaseStaleReason = 'owner-process-dead' | 'owner-state-dir-gone';
+
 type RunnerLeaseState =
   | { type: 'empty' }
   | { type: 'owned'; lease: RunnerLease }
-  | { type: 'stale'; lease: RunnerLease }
+  | { type: 'stale'; lease: RunnerLease; staleReason: RunnerLeaseStaleReason }
   | { type: 'busy'; lease: RunnerLease };
 
 type RunnerLeaseRequiredFields = Pick<
@@ -111,7 +119,13 @@ function readRunnerLease(deviceId: string): RunnerLease | null {
 function classifyRunnerLease(lease: RunnerLease | null): RunnerLeaseState {
   if (!lease) return { type: 'empty' };
   if (lease.ownerToken === RUNNER_OWNER_TOKEN) return { type: 'owned', lease };
-  return isRunnerLeaseOwnerAlive(lease) ? { type: 'busy', lease } : { type: 'stale', lease };
+  if (!isRunnerLeaseOwnerProcessAlive(lease)) {
+    return { type: 'stale', lease, staleReason: 'owner-process-dead' };
+  }
+  if (isRunnerLeaseOwnerStateDirGone(lease)) {
+    return { type: 'stale', lease, staleReason: 'owner-state-dir-gone' };
+  }
+  return { type: 'busy', lease };
 }
 
 export async function prepareRunnerLeaseForStartup(
@@ -230,9 +244,14 @@ function shellQuote(value: string): string {
 // the adoption path probes it instead of killing it. Detached leases (graceful
 // daemon shutdown rewrote the token) classify as stale too once the owner pid
 // dies, so crash-orphans and deliberate handoffs share one recovery path.
+// Adoption is strictly PID-dead-gated: an owner whose state dir is gone but
+// whose process is still alive may still hold a live connection to the
+// runner, so adopting it would create two masters. Those leases return null
+// here and go through prepareRunnerLeaseForStartup's force-stop path (kill
+// the leased runner processes, then rebuild) instead.
 export function readStaleRunnerLease(deviceId: string): RunnerLease | null {
   const state = classifyRunnerLease(readRunnerLease(deviceId));
-  return state.type === 'stale' ? state.lease : null;
+  return state.type === 'stale' && state.staleReason === 'owner-process-dead' ? state.lease : null;
 }
 
 // Marks a lease as handed off during graceful shutdown: the token no longer
@@ -388,12 +407,31 @@ function readFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function isRunnerLeaseOwnerAlive(lease: RunnerLease): boolean {
-  if (!isProcessAlive(lease.ownerPid)) return false;
-  if (lease.ownerStartTime) {
-    return readProcessStartTime(lease.ownerPid) === lease.ownerStartTime;
-  }
-  return true;
+// A lease owner counts as gone - and its lease reclaimable as stale - when its
+// PID is dead/recycled (classified as owner-process-dead) OR its
+// AGENT_DEVICE_STATE_DIR no longer exists on disk (owner-state-dir-gone). The
+// state-dir check covers daemons left running by a deleted sandbox/worktree:
+// the process is technically still alive, but nothing can ever route a request
+// to it again (its info/lock/session files are gone with the directory), so it
+// can never legitimately contend for the runner. Leases written before this
+// field existed (no ownerStateDir) skip the check and fall back to PID
+// liveness only.
+function isRunnerLeaseOwnerProcessAlive(lease: RunnerLease): boolean {
+  return (
+    classifyOwnerLiveness({
+      owner: { pid: lease.ownerPid, startTime: lease.ownerStartTime },
+    }) === 'live'
+  );
+}
+
+function isRunnerLeaseOwnerStateDirGone(lease: RunnerLease): boolean {
+  if (!lease.ownerStateDir) return false;
+  return (
+    classifyOwnerLiveness({
+      owner: { pid: lease.ownerPid, startTime: lease.ownerStartTime },
+      stateDir: lease.ownerStateDir,
+    }) === 'owner-state-dir-gone'
+  );
 }
 
 async function cleanupLeasedRunnerProcesses(

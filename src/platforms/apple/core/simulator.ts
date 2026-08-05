@@ -1,6 +1,8 @@
-import type { DeviceInfo } from '../../../kernel/device.ts';
-import { AppError } from '../../../kernel/errors.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { execFailureDetails, requireExecSuccess } from '../../../utils/exec.ts';
 import { Deadline, retryWithPolicy } from '../../../utils/retry.ts';
+import { createTtlMemo } from '../../../utils/ttl-memo.ts';
 import { bootFailureHint, classifyBootFailure } from '../../boot-diagnostics.ts';
 
 import {
@@ -32,21 +34,14 @@ type EnsureBootedSimulatorOptions = {
 // simctl error instead of an auto-boot. Transitions we own update the memo.
 // Exported so unit tests can assert TTL behavior without duplicating the value.
 export const SIMULATOR_BOOTED_MEMO_TTL_MS = 5_000;
-const simulatorBootedMemo = new Map<string, number>();
+const simulatorBootedMemo = createTtlMemo<string, true>({ ttlMs: SIMULATOR_BOOTED_MEMO_TTL_MS });
 
 function simulatorBootedMemoKey(device: DeviceInfo): string {
   return `${device.id}|${device.simulatorSetPath ?? ''}`;
 }
 
 function readSimulatorBootedMemo(device: DeviceInfo): boolean {
-  const key = simulatorBootedMemoKey(device);
-  const observedAt = simulatorBootedMemo.get(key);
-  if (observedAt === undefined) return false;
-  if (Date.now() - observedAt > SIMULATOR_BOOTED_MEMO_TTL_MS) {
-    simulatorBootedMemo.delete(key);
-    return false;
-  }
-  return true;
+  return simulatorBootedMemo.get(simulatorBootedMemoKey(device)) === true;
 }
 
 // Also called by the device-inventory parser: a `simctl list` that reports a
@@ -55,15 +50,11 @@ function readSimulatorBootedMemo(device: DeviceInfo): boolean {
 // same request cost nothing. Callers must only pass FRESH observations —
 // seeding from a cached or persisted device listing would poison the memo.
 export function markSimulatorBooted(device: DeviceInfo): void {
-  simulatorBootedMemo.set(simulatorBootedMemoKey(device), Date.now());
+  simulatorBootedMemo.set(simulatorBootedMemoKey(device), true);
 }
 
 function clearSimulatorBootedMemo(device: DeviceInfo): void {
   simulatorBootedMemo.delete(simulatorBootedMemoKey(device));
-}
-
-export function __resetSimulatorBootedMemoForTests(): void {
-  simulatorBootedMemo.clear();
 }
 
 export function requireSimulatorDevice(device: DeviceInfo, command: string): void {
@@ -133,22 +124,18 @@ export async function ensureBootedSimulator(
           allowFailure: true,
           timeoutMs: remainingMs,
         });
-        bootResult = {
-          stdout: String(boot.stdout ?? ''),
-          stderr: String(boot.stderr ?? ''),
-          exitCode: boot.exitCode,
-        };
+        bootResult = boot;
 
         const bootOutput = `${bootResult.stdout}\n${bootResult.stderr}`.toLowerCase();
         const bootAlreadyDone =
           bootOutput.includes('already booted') || bootOutput.includes('current state: booted');
 
         if (bootResult.exitCode !== 0 && !bootAlreadyDone) {
-          throw new AppError('COMMAND_FAILED', 'simctl boot failed', {
-            stdout: bootResult.stdout,
-            stderr: bootResult.stderr,
-            exitCode: bootResult.exitCode,
-          });
+          throw new AppError(
+            'COMMAND_FAILED',
+            'simctl boot failed',
+            execFailureDetails(bootResult),
+          );
         }
 
         const bootStatus = await runXcrun(
@@ -158,19 +145,9 @@ export async function ensureBootedSimulator(
             timeoutMs: remainingMs,
           },
         );
-        bootStatusResult = {
-          stdout: String(bootStatus.stdout ?? ''),
-          stderr: String(bootStatus.stderr ?? ''),
-          exitCode: bootStatus.exitCode,
-        };
+        bootStatusResult = bootStatus;
 
-        if (bootStatusResult.exitCode !== 0) {
-          throw new AppError('COMMAND_FAILED', 'simctl bootstatus failed', {
-            stdout: bootStatusResult.stdout,
-            stderr: bootStatusResult.stderr,
-            exitCode: bootStatusResult.exitCode,
-          });
-        }
+        requireExecSuccess(bootStatusResult, 'simctl bootstatus failed');
 
         const nextState = await getSimulatorState(device);
         if (nextState !== 'Booted') {
@@ -240,8 +217,8 @@ export async function shutdownSimulator(device: DeviceInfo): Promise<{
   return {
     success: result.exitCode === 0,
     exitCode: result.exitCode,
-    stdout: String(result.stdout ?? ''),
-    stderr: String(result.stderr ?? ''),
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
 }
 
@@ -258,7 +235,7 @@ export async function getSimulatorState(deviceOrUdid: DeviceInfo | string): Prom
   if (result.exitCode !== 0) return null;
 
   try {
-    const payload = JSON.parse(String(result.stdout ?? '')) as {
+    const payload = JSON.parse(result.stdout) as {
       devices: Record<string, { udid: string; state: string }[]>;
     };
 

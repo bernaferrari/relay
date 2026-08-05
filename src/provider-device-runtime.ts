@@ -1,74 +1,53 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import type {
+  DeviceInventoryProvider,
+  DeviceLease,
+  LeaseLifecycleContext,
+  LeaseLifecycleProvider,
+  ProviderDeviceInstallOptions,
+  ProviderDeviceInstallResult,
+  ProviderDeviceRuntime,
+  ProviderExpiredLeaseRecovery,
+  ProviderPortReverseOptions,
+} from '@agent-device/contracts/device';
+import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
 import type {
   CloudArtifactProvider,
   CloudArtifactsQuery,
   CloudArtifactsResult,
-} from './cloud-artifacts.ts';
-import type { Interactor } from './core/interactor-types.ts';
-import type { DeviceInventoryProvider } from './core/dispatch-resolve.ts';
-import type { LeaseLifecycleContext, LeaseLifecycleProvider } from './daemon/handlers/lease.ts';
-import type { DeviceLease } from './daemon/lease-registry.ts';
-import { publicPlatformString, type DeviceInfo } from './kernel/device.ts';
-import { AppError } from './kernel/errors.ts';
+} from '@agent-device/contracts/observability';
+import { publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { AppleRunnerProviderResolver } from './daemon/request-platform-providers.ts';
+import type {
+  AppleRunnerCommandExecutor,
+  AppleRunnerProvider,
+} from './platforms/apple/core/runner/runner-provider.ts';
 
-export type ProviderDeviceInstallResult = {
-  bundleId?: string;
-  packageName?: string;
-  appName?: string;
-  launchTarget?: string;
-};
-
-export type ProviderDeviceInstallOptions = {
-  relaunch?: boolean;
-  appIdentifierHint?: string;
-  packageNameHint?: string;
-};
-
-export type ProviderDeviceRuntime = {
-  provider: string;
-  leaseLifecycle: LeaseLifecycleProvider;
-  cloudArtifacts?: CloudArtifactProvider;
-  deviceInventoryProvider: DeviceInventoryProvider;
-  ownsDevice(device: DeviceInfo): boolean;
-  getInteractor(device: DeviceInfo): Interactor | undefined;
-  installApp?(
+type AppleRunnerRuntimeExtension = ProviderDeviceRuntime & {
+  getAppleRunnerProvider(
     device: DeviceInfo,
-    app: string,
-    appPath: string,
-    options?: ProviderDeviceInstallOptions,
-  ): Promise<ProviderDeviceInstallResult | undefined>;
-  installInstallablePath?(
-    device: DeviceInfo,
-    installablePath: string,
-    options?: ProviderDeviceInstallOptions,
-  ): Promise<ProviderDeviceInstallResult | undefined>;
-  configurePortReverse?(
-    options: ProviderPortReverseOptions,
-  ): Promise<Record<string, unknown> | undefined>;
-  removePortReverse?(
-    options: ProviderPortReverseOptions,
-  ): Promise<Record<string, unknown> | undefined>;
-  shutdown(): Promise<void>;
-};
-
-export type ProviderPortReverseOptions = {
-  leaseId: string;
-  provider?: string;
-  devicePort: number;
-  hostPort: number;
-  name: string;
+  ): AppleRunnerProvider | AppleRunnerCommandExecutor | undefined;
 };
 
 export type ProviderDeviceRuntimeRequestProviders = {
+  providerRuntimeIds: readonly string[];
+  providerRuntimeRequiredIds: readonly string[];
+  recoverableProviderIds: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
+  recoverExpiredLease?: ProviderExpiredLeaseRecovery;
   cloudArtifactProvider?: CloudArtifactProvider;
   deviceInventoryProvider?: DeviceInventoryProvider;
+  appleRunnerProvider?: AppleRunnerProviderResolver;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
 };
 
 let activeProviderDeviceRuntimes: ProviderDeviceRuntime[] = [];
 const providerDeviceRuntimeScope = new AsyncLocalStorage<ProviderDeviceRuntime[]>();
 
+/**
+ * @internal Test isolation hook for the active provider runtime scope.
+ */
 export function setActiveProviderDeviceRuntimes(runtimes: ProviderDeviceRuntime[]): void {
   activeProviderDeviceRuntimes = [...runtimes];
 }
@@ -80,10 +59,13 @@ async function withProviderDeviceRuntimeScope<T>(
   return await providerDeviceRuntimeScope.run([...runtimes], task);
 }
 
-export function getProviderDeviceInteractor(device: DeviceInfo): Interactor | undefined {
+export function getProviderDeviceInteractor(
+  device: DeviceInfo,
+  runnerContext?: RunnerContext,
+): Interactor | undefined {
   for (const runtime of getActiveProviderDeviceRuntimes()) {
     if (!runtime.ownsDevice(device)) continue;
-    const interactor = runtime.getInteractor(device);
+    const interactor = runtime.getInteractor(device, runnerContext);
     if (interactor) return interactor;
   }
   return undefined;
@@ -139,49 +121,77 @@ export async function configureProviderPortReverse(
   return undefined;
 }
 
-export async function removeProviderPortReverse(
-  options: ProviderPortReverseOptions,
-): Promise<Record<string, unknown> | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtimeMatchesProvider(runtime, options.provider)) continue;
-    const result = await runtime.removePortReverse?.(options);
-    if (result) return result;
-  }
-  return undefined;
-}
-
 function getActiveProviderDeviceRuntimes(): ProviderDeviceRuntime[] {
   return providerDeviceRuntimeScope.getStore() ?? activeProviderDeviceRuntimes;
 }
 
 export function createProviderDeviceRuntimeRequestProviders(
   runtimes: ProviderDeviceRuntime[],
+  options: { providerRuntimeRequiredIds?: readonly string[] } = {},
 ): ProviderDeviceRuntimeRequestProviders {
+  const providerRuntimeIds = runtimes.map((runtime) => runtime.provider);
   return {
+    providerRuntimeIds,
+    providerRuntimeRequiredIds: uniqueProviderIds([
+      ...providerRuntimeIds,
+      ...(options.providerRuntimeRequiredIds ?? []),
+    ]),
     leaseLifecycleProvider: composeLeaseProvider(runtimes),
+    recoverableProviderIds: runtimes
+      .filter((runtime) => runtime.recoverExpiredLease !== undefined)
+      .map((runtime) => runtime.provider),
+    recoverExpiredLease: composeExpiredLeaseRecovery(runtimes),
     cloudArtifactProvider: composeCloudArtifactProvider(runtimes),
     deviceInventoryProvider: composeDeviceInventoryProvider(runtimes),
+    appleRunnerProvider: composeAppleRunnerProviderResolver(runtimes),
     providerDeviceRuntimeScope: async (task) =>
       await withProviderDeviceRuntimeScope(runtimes, task),
   };
 }
 
-export function composeCloudArtifactProviders(
-  ...providers: Array<CloudArtifactProvider | undefined>
-): CloudArtifactProvider | undefined {
-  const activeProviders = providers.filter(
-    (provider): provider is CloudArtifactProvider => provider !== undefined,
-  );
-  if (activeProviders.length === 0) return undefined;
-  return {
-    listCloudArtifacts: async (query) => {
-      for (const provider of activeProviders) {
-        const result = await provider.listCloudArtifacts?.(query);
-        if (result) return result;
-      }
-      return undefined;
-    },
+function composeAppleRunnerProviderResolver(
+  runtimes: ProviderDeviceRuntime[],
+): AppleRunnerProviderResolver | undefined {
+  if (!runtimes.some(hasAppleRunnerProvider)) return undefined;
+  return (context) => {
+    for (const runtime of runtimes) {
+      if (!hasAppleRunnerProvider(runtime) || !runtime.ownsDevice(context.device)) continue;
+      const provider = runtime.getAppleRunnerProvider(context.device);
+      if (provider) return provider;
+    }
+    return undefined;
   };
+}
+
+function hasAppleRunnerProvider(
+  runtime: ProviderDeviceRuntime,
+): runtime is AppleRunnerRuntimeExtension {
+  return (
+    'getAppleRunnerProvider' in runtime && typeof runtime.getAppleRunnerProvider === 'function'
+  );
+}
+
+function composeExpiredLeaseRecovery(
+  runtimes: ProviderDeviceRuntime[],
+): ProviderExpiredLeaseRecovery | undefined {
+  if (!runtimes.some((runtime) => runtime.recoverExpiredLease !== undefined)) return undefined;
+  return async (lease) => {
+    const runtime = runtimes.find((candidate) =>
+      runtimeMatchesProvider(candidate, lease.leaseProvider),
+    );
+    if (!runtime?.recoverExpiredLease) {
+      throw new AppError(
+        'UNSUPPORTED_OPERATION',
+        `Provider ${lease.leaseProvider ?? 'unknown'} cannot recover an expired lease.`,
+        { provider: lease.leaseProvider, leaseId: lease.leaseId },
+      );
+    }
+    await runtime.recoverExpiredLease(lease);
+  };
+}
+
+function uniqueProviderIds(providerIds: readonly string[]): string[] {
+  return [...new Set(providerIds)];
 }
 
 function composeLeaseProvider(

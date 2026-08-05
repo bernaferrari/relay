@@ -3,15 +3,44 @@ import type {
   InteractionTarget,
   LongPressCommandResult,
   PressCommandResult,
-} from '../../contracts/interaction.ts';
-import { readFillTargetFromPositionals } from '../../core/interaction-positionals.ts';
+} from '@agent-device/contracts/interaction';
+import {
+  readFillTargetFromPositionals,
+  type DecodedFillTarget,
+} from '../../core/interaction-positionals.ts';
 import type { DaemonResponse } from '../types.ts';
+import { REF_GRAMMAR_HINT, splitRefGenerationSuffix } from '@agent-device/kernel/snapshot';
 import { parseCoordinateTarget } from './interaction-targeting.ts';
 import { errorResponse } from './response.ts';
 
 export type ParsedTouchTarget =
-  | { ok: true; target: InteractionTarget; durationMs?: never }
+  | { ok: true; target: InteractionTarget; refGeneration?: number; durationMs?: never }
   | { ok: false; response: DaemonResponse };
+
+/**
+ * Daemon boundary for the versioned-ref suffix (#1076): a pinned `@e12~s3`
+ * target is split here so everything downstream (runtime resolution, backend
+ * fast paths, recording) sees exactly today's plain `@e12` ref, while the
+ * minted generation is surfaced separately for the staleness warning.
+ */
+type ParsedVersionedRef =
+  | { ok: true; ref: string; generation?: number }
+  | { ok: false; response: DaemonResponse };
+
+export function parseVersionedRefPositional(refInput: string): ParsedVersionedRef {
+  const split = splitRefGenerationSuffix(refInput);
+  if (!split) {
+    return {
+      ok: false,
+      response: errorResponse(
+        'INVALID_ARGS',
+        `Invalid ref "${refInput}" — malformed generation suffix.`,
+        { hint: REF_GRAMMAR_HINT },
+      ),
+    };
+  }
+  return { ok: true, ref: split.base, generation: split.generation };
+}
 
 export function parseTouchTarget(positionals: string[], commandLabel: string): ParsedTouchTarget {
   const coordinates = parseCoordinateTarget(positionals);
@@ -20,13 +49,16 @@ export function parseTouchTarget(positionals: string[], commandLabel: string): P
   }
   const first = positionals[0] ?? '';
   if (first.startsWith('@')) {
+    const versioned = parseVersionedRefPositional(first);
+    if (!versioned.ok) return { ok: false, response: versioned.response };
     return {
       ok: true,
       target: {
         kind: 'ref',
-        ref: first,
+        ref: versioned.ref,
         fallbackLabel: positionals.slice(1).join(' ').trim(),
       },
+      refGeneration: versioned.generation,
     };
   }
   const selector = positionals.join(' ').trim();
@@ -43,7 +75,7 @@ export function parseTouchTarget(positionals: string[], commandLabel: string): P
 }
 
 export type ParsedLongPressTarget =
-  | { ok: true; target: InteractionTarget; durationMs?: number }
+  | { ok: true; target: InteractionTarget; refGeneration?: number; durationMs?: number }
   | { ok: false; response: DaemonResponse };
 
 export function parseLongPressTarget(positionals: string[]): ParsedLongPressTarget {
@@ -62,17 +94,20 @@ export function parseLongPressTarget(positionals: string[]): ParsedLongPressTarg
   return {
     ok: true,
     target: parsedTarget.target,
+    refGeneration: parsedTarget.refGeneration,
     ...split.duration,
   };
 }
 
 export type ParsedFillTarget =
-  | { ok: true; target: InteractionTarget; text: string }
+  | { ok: true; target: InteractionTarget; refGeneration?: number; text: string }
   | { ok: false; response: DaemonResponse };
 
 export function parseFillTarget(positionals: string[]): ParsedFillTarget {
   const first = positionals[0] ?? '';
   if (first.startsWith('@')) {
+    const versioned = parseVersionedRefPositional(first);
+    if (!versioned.ok) return { ok: false, response: versioned.response };
     const parsed = readFillTargetFromPositionals(positionals);
     const text = parsed.text;
     if (!text)
@@ -81,9 +116,10 @@ export function parseFillTarget(positionals: string[]): ParsedFillTarget {
       ok: true,
       target: {
         kind: 'ref',
-        ref: first,
+        ref: versioned.ref,
         fallbackLabel: readRefFallbackLabel(positionals),
       },
+      refGeneration: versioned.generation,
       text,
     };
   }
@@ -99,8 +135,8 @@ export function parseFillTarget(positionals: string[]): ParsedFillTarget {
     return { ok: true, target: { kind: 'point', x: coordinates.x, y: coordinates.y }, text };
   }
 
-  const parsed = readFillTargetFromPositionals(positionals);
-  if (parsed.kind !== 'selector') {
+  const parsed = tryReadFillSelectorTarget(positionals);
+  if (!parsed || parsed.kind !== 'selector') {
     return {
       ok: false,
       response: errorResponse(
@@ -124,14 +160,35 @@ export function parseFillTarget(positionals: string[]): ParsedFillTarget {
   };
 }
 
+// Valid points and @refs are handled above, so a parse failure here only means
+// "not a selector either" — fold it into this handler's uniform INVALID_ARGS response.
+function tryReadFillSelectorTarget(positionals: string[]): DecodedFillTarget | null {
+  try {
+    return readFillTargetFromPositionals(positionals);
+  } catch {
+    return null;
+  }
+}
+
 export function interactionResultExtra(
   result: PressCommandResult | FillCommandResult | LongPressCommandResult,
 ): Record<string, unknown> {
+  // `evidence` (#1047, opt-in via --verify) is additive on press/fill only —
+  // LongPressCommandResult has no evidence field, so it reads as undefined
+  // (and gets dropped by the response layer) for longpress. `settle` (#1101,
+  // opt-in via --settle) is additive on all four touch commands.
+  const evidence = 'evidence' in result ? result.evidence : undefined;
+  const settle = result.settle;
   if (result.kind === 'ref') {
     return {
       ref: stripAtPrefix(result.target?.kind === 'ref' ? result.target.ref : undefined),
       refLabel: result.refLabel,
       selectorChain: result.selectorChain,
+      targetHittable: result.targetHittable,
+      hint: result.hint,
+      evidence,
+      settle,
+      resolution: result.resolution,
     };
   }
   if (result.kind === 'selector') {
@@ -139,9 +196,14 @@ export function interactionResultExtra(
       selector: result.target?.kind === 'selector' ? result.target.selector : undefined,
       selectorChain: result.selectorChain,
       refLabel: result.refLabel,
+      targetHittable: result.targetHittable,
+      hint: result.hint,
+      evidence,
+      settle,
+      resolution: result.resolution,
     };
   }
-  return {};
+  return { evidence, settle };
 }
 
 export function formatTouchTargetLabel(

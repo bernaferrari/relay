@@ -1,9 +1,10 @@
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { WaitCommandOptions } from '../../client/client-types.ts';
+import type { WaitCommandOptions } from '@agent-device/contracts/client';
 import { parseWaitPositionals } from '../../core/wait-positionals.ts';
-import { SELECTOR_SNAPSHOT_FLAGS, type CliFlags } from '../../cli/parser/cli-flags.ts';
-import { AppError } from '../../kernel/errors.ts';
-import { tryParseSelectorChain } from '../../utils/selectors-parse.ts';
+import { SELECTOR_SNAPSHOT_FLAGS } from '../cli-grammar/flag-groups.ts';
+import { type CliFlags } from '../cli-grammar/flag-types.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { isValidSelectorExpression } from '@agent-device/selectors';
 import {
   booleanField,
   enumField,
@@ -26,7 +27,7 @@ import { WAIT_KIND_VALUES } from './wait-command-contract.ts';
 
 const WAIT_COMMAND_NAME = 'wait';
 
-const waitCommandDescription = 'Wait for duration, text, ref, or selector.';
+const waitCommandDescription = 'Wait for duration, text, ref, selector, or stable UI.';
 
 const waitCommandMetadata = defineFieldCommandMetadata(WAIT_COMMAND_NAME, waitCommandDescription, {
   kind: enumField(WAIT_KIND_VALUES),
@@ -34,6 +35,8 @@ const waitCommandMetadata = defineFieldCommandMetadata(WAIT_COMMAND_NAME, waitCo
   text: stringField(),
   ref: stringField(),
   selector: stringField(),
+  stable: booleanField(),
+  quietMs: integerField(),
   timeoutMs: integerField(),
   depth: integerField(),
   scope: stringField(),
@@ -45,7 +48,7 @@ const waitCommandDefinition = defineExecutableCommand(waitCommandMetadata, (clie
 );
 
 const waitCliSchema = {
-  usageOverride: 'wait <ms>|text <text>|@ref|<selector> [timeoutMs]',
+  usageOverride: 'wait <ms>|text <text>|@ref|<selector>|stable [quietMs] [timeoutMs]',
   positionalArgs: ['durationOrSelector', 'timeoutMs?'],
   allowsExtraPositionals: true,
   allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
@@ -83,7 +86,7 @@ function readWaitOptionsFromPositionals(
   if (!parsed) {
     throw new AppError(
       'INVALID_ARGS',
-      'wait requires <ms>, text <text>, @ref, or <selector> [timeoutMs].',
+      'wait requires <ms>, text <text>, @ref, <selector> [timeoutMs], or stable [quietMs] [timeoutMs].',
     );
   }
   const base = {
@@ -97,6 +100,14 @@ function readWaitOptionsFromPositionals(
   }
   if (parsed.kind === 'ref') {
     return { ...base, ref: parsed.rawRef, ...readTimeoutOption(parsed.timeoutMs) };
+  }
+  if (parsed.kind === 'stable') {
+    return {
+      ...base,
+      stable: true,
+      ...readQuietOption(parsed.quietMs),
+      ...readTimeoutOption(parsed.timeoutMs),
+    };
   }
   return {
     ...base,
@@ -112,19 +123,27 @@ function waitPositionals(options: WaitCommandOptions): string[] {
     options.text !== undefined ? 'text' : undefined,
     options.ref !== undefined ? 'ref' : undefined,
     options.selector !== undefined ? 'selector' : undefined,
+    options.stable !== undefined ? 'stable' : undefined,
   ].filter(Boolean);
   if (targets.length !== 1) {
     throw new AppError(
       'INVALID_ARGS',
-      'wait command requires exactly one of durationMs, text, ref, or selector.',
+      'wait command requires exactly one of durationMs, text, ref, selector, or stable.',
     );
   }
   if (options.durationMs !== undefined) return [String(options.durationMs)];
   const timeout = optionalNumber(options.timeoutMs);
   if (options.text !== undefined) return ['text', options.text, ...timeout];
   if (options.ref !== undefined) return [options.ref, ...timeout];
+  if (options.stable !== undefined) {
+    const quiet = optionalNumber(options.quietMs);
+    if (quiet.length === 0 && timeout.length > 0) {
+      throw new AppError('INVALID_ARGS', 'wait stable requires quietMs before timeoutMs.');
+    }
+    return ['stable', ...quiet, ...timeout];
+  }
   const selector = options.selector!;
-  if (!tryParseSelectorChain(selector)) {
+  if (!isValidSelectorExpression(selector)) {
     throw new AppError('INVALID_ARGS', `Invalid wait selector: ${selector}`);
   }
   return [selector, ...timeout];
@@ -132,4 +151,8 @@ function waitPositionals(options: WaitCommandOptions): string[] {
 
 function readTimeoutOption(timeoutMs: number | null): { timeoutMs?: number } {
   return timeoutMs === null ? {} : { timeoutMs };
+}
+
+function readQuietOption(quietMs: number | null): { quietMs?: number } {
+  return quietMs === null ? {} : { quietMs };
 }

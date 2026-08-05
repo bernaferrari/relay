@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { attachRefs, type RawSnapshotNode } from '../../../kernel/snapshot.ts';
+import { attachRefs, type RawSnapshotNode } from '@agent-device/kernel/snapshot';
 import { buildSnapshotVisibility } from '../../../snapshot/snapshot-visibility.ts';
 import { presentIosInteractiveSnapshot } from './index.ts';
 
@@ -305,6 +305,121 @@ test('buildSnapshotState collapses iOS other wrappers around same-rect actions',
     ['Button', 'Press release, Expensify named Expense Platform of the Year', undefined, 0],
     ['Button', 'Open actions menu', 'floating-action-button', 0],
   ]);
+});
+
+test('buildSnapshotState narrows an iOS RedBox dismiss wrapper around its minimize action', () => {
+  const nodes = [
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      label: 'Example',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Other',
+      label: 'Log 1 of 1',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 2,
+      depth: 2,
+      parentIndex: 1,
+      type: 'StaticText',
+      label: 'Call Stack',
+      rect: { x: 12, y: 468, width: 369, height: 20 },
+    },
+    {
+      index: 3,
+      depth: 2,
+      parentIndex: 1,
+      type: 'Other',
+      label: 'Dismiss',
+      rect: { x: 0, y: 770, width: 393, height: 82 },
+    },
+    {
+      index: 4,
+      depth: 3,
+      parentIndex: 3,
+      type: 'Other',
+      label: 'Minimize',
+      rect: { x: 196.6666717529297, y: 770.25, width: 196.0833282470703, height: 81.5 },
+    },
+  ];
+
+  const state = buildSnapshotState({ nodes, backend: 'xctest' });
+
+  expect(state.nodes.find((node) => node.label === 'Dismiss')?.rect).toEqual({
+    x: 0,
+    y: 770,
+    width: 196.6666717529297,
+    height: 82,
+  });
+});
+
+test('buildSnapshotState uses the innermost iOS RedBox dismiss action geometry', () => {
+  const nodes = [
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      label: 'Example',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Other',
+      label: 'Log 1 of 1',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 2,
+      depth: 2,
+      parentIndex: 1,
+      type: 'Other',
+      label: 'Dismiss',
+      rect: { x: 0, y: 770, width: 393, height: 82 },
+    },
+    {
+      index: 3,
+      depth: 3,
+      parentIndex: 2,
+      type: 'Other',
+      label: 'Dismiss',
+      rect: { x: 0, y: 770, width: 196.6666717529297, height: 82 },
+    },
+    {
+      index: 4,
+      depth: 4,
+      parentIndex: 3,
+      type: 'StaticText',
+      label: 'Dismiss',
+      rect: { x: 0, y: 770, width: 196.6666717529297, height: 48 },
+    },
+    {
+      index: 5,
+      depth: 3,
+      parentIndex: 2,
+      type: 'Other',
+      label: 'Minimize',
+      rect: { x: 196.6666717529297, y: 770, width: 196.3333282470703, height: 82 },
+    },
+  ];
+
+  const state = buildSnapshotState({ nodes, backend: 'xctest' });
+
+  expect(state.nodes.find((node) => node.label === 'Dismiss')?.rect).toEqual({
+    x: 0,
+    y: 770,
+    width: 196.6666717529297,
+    height: 48,
+  });
+  expect(state.nodes.filter((node) => node.label === 'Dismiss')).toHaveLength(1);
 });
 
 test('buildSnapshotState promotes iOS scroll-contained other rows to cells', () => {
@@ -643,7 +758,7 @@ test('buildSnapshotState collapses duplicated iOS search toolbar wrappers', () =
       index: 2,
       depth: 2,
       parentIndex: 1,
-      type: 'SearchField',
+      type: 'Toolbar',
       label: 'Toolbar',
       identifier: 'Toolbar',
       rect: { x: 0, y: 788, width: 402, height: 86 },
