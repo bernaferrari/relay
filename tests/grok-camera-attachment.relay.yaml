@@ -10,6 +10,7 @@ variables:
   use_photo_label: Use photo
   use_photo_fallback: Done
   attachment_identifier: ask.toolbar.attachment.photo
+  camera_prompt: What is this? Describe the captured image briefly.
 steps:
   - kind: module
     recipeId: grok-open-composer
@@ -56,5 +57,21 @@ steps:
     timeoutMs: 10000
     optional: true
     note: Some Grok builds expose the thumbnail only as an unlabeled image; keep the captured screenshot as evidence in that case.
+  - kind: type
+    text: "{{camera_prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
   - kind: screenshot
-    caption: Camera photo returned to the Grok composer
+    caption: Camera photo response completed in the Grok composer

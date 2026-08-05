@@ -1214,11 +1214,28 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "job.start",
     path("job start"),
     path("run start", ["recipe"], undefined, {
-      summary: "Start an execution job",
+      summary: "Run an executable test or App Map recipe",
       argumentHelp: [
-        { name: "recipe", type: "string", description: "Compiled Flow recipe identifier" },
+        {
+          name: "recipe",
+          type: "string",
+          description: "Executable recipe identifier, such as grok-send-hello",
+        },
       ],
-      inputHelp: [{ name: "serial", type: "string", description: "Optional target device serial" }],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Optional target device serial" },
+        { name: "platform", type: "ios | android", description: "Target platform" },
+        { name: "targetKind", type: "device | browser", description: "Execution target kind" },
+        {
+          name: "variables",
+          type: "object",
+          description: "Per-run variable overrides; private values stay out of the recipe file",
+        },
+      ],
+      examples: [
+        'relay run start grok-send-hello --input \'{"serial":"<phone-serial>","platform":"android"}\'',
+        'relay run start grok-rich-response-judged --input \'{"variables":{"primary_model":"openai/gpt-4o-mini"}}\'',
+      ],
     }),
   ),
   mapped(
