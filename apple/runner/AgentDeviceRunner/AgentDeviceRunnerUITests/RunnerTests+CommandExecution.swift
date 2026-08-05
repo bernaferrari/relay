@@ -340,6 +340,105 @@ extension RunnerTests {
   }
 #endif
 
+#if os(iOS)
+  func testTypeWithoutResolvedInputReturnsTypedFailureBeforeDispatchingText() throws {
+    let command = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-without-focus","text":"hello"}"#
+    )
+
+    let response = executeTypeCommand(
+      activeApp: XCUIApplication(bundleIdentifier: "com.example.agentdevice.missing-input"),
+      command: command
+    )
+
+    XCTAssertFalse(response.ok)
+    XCTAssertEqual(response.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertEqual(
+      response.error?.hint,
+      "Focus a visible text input, then retry type or fill. If the input is not exposed by accessibility, use a coordinate focus command before typing."
+    )
+  }
+
+  func testBareTypeUsesTappedInputWhenSoftwareKeyboardIsHidden() throws {
+    // The fixture uses a real text responder with an empty input view to model hardware-keyboard input.
+    app.launchArguments = ["--agent-device-text-entry-regression"]
+    app.launch()
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    XCTAssertTrue(app.waitForExistence(timeout: appExistenceTimeout))
+
+    let textField = app.textFields["agent-device-hardware-keyboard-input"]
+    XCTAssertTrue(textField.waitForExistence(timeout: appExistenceTimeout))
+    let frame = textField.frame
+    XCTAssertFalse(frame.isEmpty)
+
+    let tapCommand = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-hardware-keyboard-input","selectorKey":"id","selectorValue":"agent-device-hardware-keyboard-input"}"#
+    )
+    let tapResponse = try executeOnMainPrepared(command: tapCommand, activeApp: app)
+    XCTAssertTrue(tapResponse.ok, String(describing: tapResponse.error))
+    XCTAssertFalse(
+      isKeyboardVisible(app: app),
+      "the test must exercise a focused responder with the software keyboard hidden"
+    )
+
+    let failureCountBefore = currentXCTestFailureCount()
+    let typeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-hardware-keyboard","text":"hardware-keyboard"}"#
+    )
+    let typeResponse = executeTypeCommand(activeApp: app, command: typeCommand)
+
+    XCTAssertTrue(typeResponse.ok, String(describing: typeResponse.error))
+    XCTAssertFalse(didRecordXCTestFailure(since: failureCountBefore))
+    XCTAssertEqual(String(describing: textField.value ?? ""), "hardware-keyboard")
+
+    let secondFailureCountBefore = currentXCTestFailureCount()
+    let secondTypeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-hardware-keyboard-again","text":"-again"}"#
+    )
+    let secondTypeResponse = executeTypeCommand(activeApp: app, command: secondTypeCommand)
+
+    XCTAssertFalse(secondTypeResponse.ok)
+    XCTAssertEqual(secondTypeResponse.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertFalse(didRecordXCTestFailure(since: secondFailureCountBefore))
+    XCTAssertEqual(String(describing: textField.value ?? ""), "hardware-keyboard")
+  }
+
+  func testBareDelayedTypeFailsWhenTappedInputDisappearsMidCommand() throws {
+    app.launchArguments = [
+      "--agent-device-text-entry-regression",
+      "--agent-device-text-entry-disappear-after-input",
+    ]
+    app.launch()
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    XCTAssertTrue(app.waitForExistence(timeout: appExistenceTimeout))
+
+    let textField = app.textFields["agent-device-hardware-keyboard-input"]
+    XCTAssertTrue(textField.waitForExistence(timeout: appExistenceTimeout))
+    let tapCommand = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-disappearing-input","selectorKey":"id","selectorValue":"agent-device-hardware-keyboard-input"}"#
+    )
+    let tapResponse = try executeOnMainPrepared(command: tapCommand, activeApp: app)
+    XCTAssertTrue(tapResponse.ok, String(describing: tapResponse.error))
+
+    let failureCountBefore = currentXCTestFailureCount()
+    let typeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-disappearing-input","text":"ab","delayMs":50}"#
+    )
+    let typeResponse = executeTypeCommand(activeApp: app, command: typeCommand)
+
+    XCTAssertFalse(didRecordXCTestFailure(since: failureCountBefore))
+    XCTAssertFalse(typeResponse.ok)
+    XCTAssertEqual(typeResponse.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertFalse(textField.exists)
+  }
+#endif
+
   func testXCTestRecordedFailureResponseFailsMutatingSuccesses() throws {
     let command = try runnerCommandFixture(#"{"command":"tap","commandId":"tap-1"}"#)
     let response = Response(ok: true, data: DataPayload(message: "tapped"))
@@ -1528,6 +1627,9 @@ extension RunnerTests {
     alertDeadline: Date? = nil
   ) throws -> Response {
     var activeApp = activeApp
+    if command.command != .tap && command.command != .type && !isReadOnlyCommand(command) {
+      clearRememberedTextEntryTap()
+    }
     switch command.command {
     case .status, .activate, .terminate, .targetReset, .shutdown, .recordStart, .recordStop, .uptime:
       return Response(
@@ -1556,6 +1658,7 @@ extension RunnerTests {
           expectedPoint: expectedPoint
         )
         if match.isAmbiguous {
+          clearRememberedTextEntryTap()
           return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
         }
         if let element = match.element {
@@ -1574,6 +1677,7 @@ extension RunnerTests {
               elementFrame: frame,
               windowFrame: onScreenWindowFrame(app: activeApp)
             ) {
+            clearRememberedTextEntryTap()
             return Response(ok: false, error: ErrorPayload(
               code: "ELEMENT_OFFSCREEN",
               message: "element resolved off-screen at (\(Int(frame.midX)), \(Int(frame.midY)))"))
@@ -1609,6 +1713,7 @@ extension RunnerTests {
               if isTextEntry {
                 waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
               }
+              rememberTextEntryTap(isTextEntry ? element : nil)
               return gestureResponse(
                 message: match.usedNonHittableFallback
                   ? "tapped via non-hittable coordinate fallback"
@@ -1639,11 +1744,13 @@ extension RunnerTests {
             return activateElement(app: activeApp, element: element, action: "tap by selector")
           }
           if let response = unsupportedResponse(for: outcome) {
+            clearRememberedTextEntryTap()
             return response
           }
           if isTextEntry {
             waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
           }
+          rememberTextEntryTap(isTextEntry ? element : nil)
           return gestureResponse(
             message: match.usedNonHittableFallback ? "tapped via non-hittable coordinate fallback" : "tapped",
             timing: timing,
@@ -1655,9 +1762,11 @@ extension RunnerTests {
               : nil
           )
         }
+        clearRememberedTextEntryTap()
         return Response(ok: false, error: ErrorPayload(code: "ELEMENT_NOT_FOUND", message: "element not found"))
       }
       if let x = command.x, let y = command.y {
+        let textInput = textInputAt(app: activeApp, x: x, y: y)
         var fallback: GestureFallback?
         if command.synthesized == true {
           let policyKind = SynthesizedGesturePolicyKind.coordinateTap
@@ -1670,6 +1779,7 @@ extension RunnerTests {
           }
           if case .performed = outcome {
             logSynthesizedGesturePolicyDecision(kind: policyKind, context: context, fallbackAttempted: false)
+            rememberTextEntryTap(textInput)
             return gestureResponse(message: "tapped", timing: timing)
           }
           logSynthesizedGesturePolicyDecision(kind: policyKind, context: context, fallbackAttempted: true)
@@ -1678,8 +1788,10 @@ extension RunnerTests {
         let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
         let (timing, outcome) = performGesture(activeApp) { tapAt(app: activeApp, x: x, y: y) }
         if let response = unsupportedResponse(for: outcome) {
+          clearRememberedTextEntryTap()
           return response
         }
+        rememberTextEntryTap(textInput)
         return gestureResponse(
           message: "tapped",
           timing: timing,
@@ -1687,6 +1799,7 @@ extension RunnerTests {
           fallback: fallback
         )
       }
+      clearRememberedTextEntryTap()
       return Response(ok: false, error: ErrorPayload(message: "tap requires a selector or x/y"))
     case .mouseClick:
       guard let x = command.x, let y = command.y else {
@@ -2578,6 +2691,12 @@ extension RunnerTests {
       synthesizer: PrivateXCTestTextEntrySynthesizer(),
       commandId: command.commandId
     )
+    if let failure = textResult.failure {
+      return Response(
+        ok: false,
+        error: ErrorPayload(code: failure.rawValue, message: failure.message, hint: failure.hint)
+      )
+    }
     if textResult.verified == false {
       let expected = textResult.expectedText ?? ""
       let observed = textResult.observedText ?? ""
