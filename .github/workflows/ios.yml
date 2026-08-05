@@ -1,0 +1,83 @@
+name: iOS
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - 'README.md'
+      - '.github/actions/build-docs/action.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/pr-preview.yml'
+      - '.github/workflows/pr-preview-cleanup.yml'
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-ios:
+    name: Smoke Tests
+    runs-on: macos-26
+    timeout-minutes: 80
+    env:
+      IOS_RUNTIME_VERSION: '26.2'
+      AGENT_DEVICE_STATE_DIR: ${{ github.workspace }}/.tmp/agent-device-state
+      AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/ios-runner-derived
+      AGENT_DEVICE_IOS_PREPARE_TIMEOUT_MS: '420000'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Apple replay
+        id: apple-replay
+        uses: ./.github/actions/setup-apple-replay
+        with:
+          derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
+          cache-key-prefix: ios-runner-prebuilt
+          cache-key-suffix: -ios-${{ env.IOS_RUNTIME_VERSION }}
+          build-command: sh ./scripts/build-xcuitest-apple.sh
+          xcuitest-platform: ios
+          xcuitest-destination: generic/platform=iOS Simulator
+
+      - name: Boot iOS test simulator
+        id: ios-simulator
+        uses: ./.github/actions/boot-ios-test-simulator
+        with:
+          runtime-version: ${{ env.IOS_RUNTIME_VERSION }}
+          preferred-device-name: iPhone 17 Pro
+
+      - name: Prepare iOS runner
+        run: |
+          pnpm clean:daemon
+          node --experimental-strip-types src/bin.ts prepare ios-runner --platform ios --udid "${{ steps.ios-simulator.outputs.simulator-udid }}" --timeout "$AGENT_DEVICE_IOS_PREPARE_TIMEOUT_MS" --json
+          pnpm clean:daemon
+
+      - name: Run iOS simulator smoke replay
+        run: |
+          node --experimental-strip-types src/bin.ts test test/integration/replays/ios/simulator/01-settings.ad --udid "${{ steps.ios-simulator.outputs.simulator-udid }}" --retries 2 --artifacts-dir test/artifacts/replays-ios-simulator-smoke --report-junit test/artifacts/replays-ios-simulator-smoke.junit.xml
+
+      - name: Run iOS physical device smoke replay
+        if: env.IOS_UDID != ''
+        env:
+          IOS_UDID: ${{ vars.IOS_UDID }}
+        run: |
+          pnpm clean:daemon
+          node --experimental-strip-types src/bin.ts test test/integration/replays/ios/device/01-physical-lifecycle.ad --udid "$IOS_UDID" --retries 2 --artifacts-dir test/artifacts/replays-ios-device-smoke --report-junit test/artifacts/replays-ios-device-smoke.junit.xml
+
+      - name: Upload iOS artifacts
+        if: always()
+        uses: ./.github/actions/upload-agent-device-artifacts
+        with:
+          artifact-name: ios-artifacts
+          agent-home-dir: ${{ env.AGENT_DEVICE_STATE_DIR }}
+          runner-derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}

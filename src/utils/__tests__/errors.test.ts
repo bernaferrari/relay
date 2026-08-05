@@ -1,0 +1,65 @@
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { AppError, normalizeError, toAppErrorCode } from '../../kernel/errors.ts';
+
+test('normalizeError adds default hint and strips diagnostic metadata from details', () => {
+  const err = new AppError('COMMAND_FAILED', 'runner failed', {
+    token: 'secret',
+    hint: 'custom hint',
+    diagnosticId: 'diag-1',
+    logPath: '/tmp/diag.log',
+    safe: 'ok',
+  });
+  const normalized = normalizeError(err);
+  assert.equal(normalized.code, 'COMMAND_FAILED');
+  assert.equal(normalized.message, 'runner failed');
+  assert.equal(normalized.hint, 'custom hint');
+  assert.equal(normalized.diagnosticId, 'diag-1');
+  assert.equal(normalized.logPath, '/tmp/diag.log');
+  assert.equal(normalized.details?.token, '[REDACTED]');
+  assert.equal(normalized.details?.safe, 'ok');
+  assert.equal(Object.hasOwn(normalized.details ?? {}, 'hint'), false);
+});
+
+test('normalizeError enriches generic command-failed message with stderr excerpt', () => {
+  const err = new AppError('COMMAND_FAILED', 'xcrun exited with code 1', {
+    exitCode: 1,
+    processExitError: true,
+    stderr: '\nOperation not permitted\nUnderlying error details',
+  });
+  const normalized = normalizeError(err);
+  assert.equal(normalized.message, 'Operation not permitted');
+});
+
+test('normalizeError skips simctl boilerplate wrappers in stderr', () => {
+  const err = new AppError('COMMAND_FAILED', 'xcrun exited with code 1', {
+    exitCode: 1,
+    processExitError: true,
+    stderr: [
+      'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=1):',
+      'Simulator device failed to complete the requested operation.',
+      'Operation not permitted',
+      'Underlying error (domain=NSPOSIXErrorDomain, code=1):',
+      '\tFailed to reset access',
+      '\tOperation not permitted',
+    ].join('\n'),
+  });
+  const normalized = normalizeError(err);
+  assert.equal(normalized.message, 'Operation not permitted');
+});
+
+test('normalizeError provides app discovery guidance for app-not-installed errors', () => {
+  const normalized = normalizeError(
+    new AppError('APP_NOT_INSTALLED', 'No package found matching "chat"'),
+  );
+  assert.match(
+    normalized.hint ?? '',
+    /Run apps to discover the exact installed package or bundle id/i,
+  );
+});
+
+test('toAppErrorCode falls back when code is missing or empty', () => {
+  assert.equal(toAppErrorCode(undefined), 'COMMAND_FAILED');
+  assert.equal(toAppErrorCode(''), 'COMMAND_FAILED');
+  assert.equal(toAppErrorCode(undefined, 'UNAUTHORIZED'), 'UNAUTHORIZED');
+});
