@@ -33,6 +33,6 @@ steps:
   - kind: assert-content
     input: answer
     expected: "{{expected_answer}}"
-    match: contains
+    match: exact
   - kind: screenshot
     caption: Verified hello response
