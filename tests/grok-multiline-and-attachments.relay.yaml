@@ -2,7 +2,7 @@ schemaVersion: 1
 recordingFormatVersion: 2
 id: grok-multiline-and-attachments
 name: Grok · multiline input and attachments
-description: Exercise multiline paste/copy, keyboard dismissal, scrolling, and the exact attachment menu.
+description: Exercise multiline paste/copy, keyboard dismissal, scrolling, and the exact five-item attachment menu.
 variables:
   short_text: Relay copy and paste should preserve this sentence.
   multiline_text: |-
@@ -97,8 +97,10 @@ steps:
       - Camera
       - Photo or Video
       - Files
+      - Skills
+      - Connectors
     timeoutMs: 5000
   - kind: screenshot
-    caption: Attachment menu contains only Camera, Photo or Video, and Files
+    caption: Attachment menu contains only Camera, Photo or Video, Files, Skills, and Connectors
   - kind: key
     key: back

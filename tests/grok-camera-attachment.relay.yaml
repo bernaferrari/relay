@@ -28,6 +28,8 @@ steps:
       - Camera
       - Photo or Video
       - Files
+      - Skills
+      - Connectors
     timeoutMs: 5000
   - kind: tap
     target:
