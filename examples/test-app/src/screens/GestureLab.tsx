@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Platform, Text, View, type GestureResponderEvent } from 'react-native';
+import { Image, Platform, Pressable, Text, View, type GestureResponderEvent } from 'react-native';
 import {
   Directions,
   FlingGestureHandler,
@@ -64,6 +64,7 @@ export function GestureLab() {
   const [canaryReady, setCanaryReady] = useState(false);
   const [transform, setTransform] = useState<TransformState>(initialTransform);
   const [counts, setCounts] = useState<GestureCounts>(initialCounts);
+  const [dragCompleted, setDragCompleted] = useState(false);
   const transformRef = useRef<TransformState>(initialTransform);
   const gestureStartRef = useRef<TransformState>(initialTransform);
   const androidTouchStartRef = useRef<AndroidTouchStart | undefined>(undefined);
@@ -191,6 +192,15 @@ export function GestureLab() {
     .minDistance(4)
     .runOnJS(true)
     .onStart(handleTwoPointerPan);
+  const holdDragGesture = Gesture.Pan()
+    .activateAfterLongPress(500)
+    .minDistance(10)
+    .runOnJS(true)
+    .onEnd((event, completed) => {
+      if (completed && Math.hypot(event.translationX, event.translationY) > 60) {
+        setDragCompleted(true);
+      }
+    });
   const legacyFlingRefs = [
     legacyFlingLeftRef,
     legacyFlingRightRef,
@@ -282,6 +292,32 @@ export function GestureLab() {
       title="Gesture lab"
       testID="gesture-lab-card"
     >
+      <View style={styles.dragRow} testID="drag-gesture-fixture">
+        <GestureDetector gesture={holdDragGesture}>
+          <Pressable
+            accessibilityLabel="Drag source"
+            accessibilityRole="button"
+            onPress={() => undefined}
+            style={styles.dragEndpoint}
+            testID="drag-source"
+          >
+            <Text style={styles.dragEndpointLabel}>Source</Text>
+          </Pressable>
+        </GestureDetector>
+        <Pressable
+          accessibilityLabel="Drag destination"
+          accessibilityRole="button"
+          onPress={() => undefined}
+          style={styles.dragEndpoint}
+          testID="drag-destination"
+        >
+          <Text style={styles.dragEndpointLabel}>Destination</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.metric} testID="drag-gesture-status">
+        drag completed {dragCompleted ? 'yes' : 'no'}
+      </Text>
+
       <View
         accessibilityLabel="Gesture test image"
         onTouchEnd={

@@ -4,7 +4,10 @@ import { tryGetPlugin } from './platform-plugin-registry.ts';
 import { registerBuiltinPlatformPlugins } from './interactors/register-builtins.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
-import type { GestureSemanticInput } from '@agent-device/contracts/interaction';
+import type {
+  GestureCommandInput,
+  GestureSemanticInput,
+} from '@agent-device/contracts/interaction';
 import { assertAppleMultiTouchSupported } from '@agent-device/contracts/platform';
 
 // Populate the PlatformPlugin registry once at module load (idempotent; registers
@@ -138,7 +141,11 @@ export function supportedPlatformsForCommand(command: string): string[] {
   return supported;
 }
 
-export function requireGestureSupported(input: GestureSemanticInput, device: DeviceInfo): void {
+export function requireGestureSupported(input: GestureCommandInput, device: DeviceInfo): void {
+  if (input.intent === 'drag') {
+    requireTargetAuthoredDragSupported(input, device);
+    return;
+  }
   if (device.platform === 'web' || device.appleOs === 'watchos') {
     throw unsupportedGesture(input, gesturePlatformMessage(input, device));
   }
@@ -154,6 +161,24 @@ export function requireGestureSupported(input: GestureSemanticInput, device: Dev
   if (input.intent === 'fling' && 'direction' in input && device.platform === 'linux') {
     throw unsupportedGesture(input, 'gesture fling is not supported on Linux');
   }
+}
+
+function requireTargetAuthoredDragSupported(
+  input: Extract<GestureCommandInput, { intent: 'drag' }>,
+  device: DeviceInfo,
+): void {
+  const supportedAndroidTouchDevice = device.platform === 'android' && device.target !== 'tv';
+  const supportedAppleTouchDevice =
+    device.platform === 'apple' &&
+    (device.appleOs === 'ios' ||
+      device.appleOs === 'ipados' ||
+      (device.appleOs === undefined && device.target !== 'desktop' && device.target !== 'tv'));
+  if (supportedAndroidTouchDevice || supportedAppleTouchDevice) return;
+  throw unsupportedGesture(
+    input,
+    gesturePlatformMessage(input, device),
+    'Target-authored drag requires an adapter that preserves source hold, timed movement, and destination hold; it is supported on Android touch devices and iOS/iPadOS.',
+  );
 }
 
 function isMultiTouchGesture(input: GestureSemanticInput): boolean {
@@ -176,11 +201,11 @@ function requireMultiTouchGestureSupported(input: GestureSemanticInput, device: 
   assertAppleMultiTouchSupported(device, input.intent);
 }
 
-function gesturePlatformMessage(input: GestureSemanticInput, device: DeviceInfo): string {
+function gesturePlatformMessage(input: GestureCommandInput, device: DeviceInfo): string {
   return `gesture ${input.intent} is not supported on ${device.appleOs ?? device.platform}`;
 }
 
-function unsupportedGesture(input: GestureSemanticInput, message: string, hint?: string): AppError {
+function unsupportedGesture(input: GestureCommandInput, message: string, hint?: string): AppError {
   return new AppError('UNSUPPORTED_OPERATION', message, {
     gesture: input.intent,
     ...(hint ? { hint } : {}),

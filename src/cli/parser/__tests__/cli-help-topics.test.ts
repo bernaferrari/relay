@@ -19,7 +19,7 @@ test('usage includes concise top-level commands', async () => {
   assert.match(usageText, /clipboard read \| clipboard write <text>/);
   assert.match(usageText, /keyboard \[action\]/);
   assert.match(usageText, /trigger-app-event\s{2,}Invoke app-defined automation\/test events/);
-  assert.match(usageText, /gesture <pan\|fling\|swipe\|pinch\|rotate\|transform> \.\.\./);
+  assert.match(usageText, /gesture <pan\|fling\|swipe\|pinch\|rotate\|transform\|drag> \.\.\./);
   assert.doesNotMatch(
     usageText,
     /install-from-source <url> \| install-from-source --github-actions-artifact/,
@@ -35,6 +35,12 @@ test('usage includes concise top-level commands', async () => {
   assert.match(usageText, /orientation <orientation>/);
   assert.match(usageText, /record start \[path\] \| record stop/);
   assert.match(usageText, /trace start <path> \| trace stop <path>/);
+});
+
+test('gesture help documents selectors and pinned refs for both drag endpoints', async () => {
+  const help = await usageForCommand('gesture');
+  assert.ok(help);
+  assert.match(help, /drag <source-selector\|pinned-ref> <destination-selector\|pinned-ref>/);
 });
 
 test('usage includes only global flags in the top-level global flags section', async () => {
