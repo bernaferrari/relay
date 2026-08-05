@@ -1759,6 +1759,59 @@ function assertAuthoringInteraction(value: unknown): void {
       if (interaction.mode === "replace" && interaction.target === undefined)
         fail("type target", "is required in replace mode");
       return;
+    case "clipboard":
+      if (!(["write", "read", "paste", "copy"] as unknown[]).includes(interaction.action))
+        fail("clipboard action", "must be write, read, paste, or copy");
+      if (interaction.text !== undefined) string(interaction.text, "clipboard text");
+      if (interaction.expect !== undefined) string(interaction.expect, "clipboard expectation");
+      if (interaction.target !== undefined) record(interaction.target, "clipboard target");
+      if (
+        interaction.match !== undefined &&
+        !["exact", "contains"].includes(String(interaction.match))
+      )
+        fail("clipboard match", "must be exact or contains");
+      return;
+    case "app":
+      if (
+        ![
+          "open",
+          "close",
+          "switcher",
+          "inspect",
+          "assert-installed",
+          "assert-not-installed",
+          "install",
+          "update",
+          "uninstall",
+        ].includes(String(interaction.action))
+      )
+        fail("app action", "is not supported");
+      for (const field of ["app", "url", "artifact", "as", "version"] as const) {
+        if (interaction[field] !== undefined) string(interaction[field], `app ${field}`);
+      }
+      if (interaction.relaunch !== undefined) boolean(interaction.relaunch, "app relaunch");
+      if (
+        interaction.versionMatch !== undefined &&
+        !["exact", "contains"].includes(String(interaction.versionMatch))
+      )
+        fail("app versionMatch", "must be exact or contains");
+      return;
+    case "device":
+      if (
+        !["lock", "unlock", "keyboard-dismiss", "keyboard-enter"].includes(
+          String(interaction.action),
+        )
+      )
+        fail("device action", "is not supported");
+      return;
+    case "rotate":
+      if (
+        !["portrait", "portrait-upside-down", "landscape-left", "landscape-right"].includes(
+          String(interaction.orientation),
+        )
+      )
+        fail("rotation orientation", "is not supported");
+      return;
     case "swipe":
       record(interaction.from, "swipe from");
       record(interaction.to, "swipe to");

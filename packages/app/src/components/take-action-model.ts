@@ -10,6 +10,10 @@ export type TakeActionKind = AuthoringInteraction["kind"];
 export const TAKE_ACTION_KINDS: Array<{ id: TakeActionKind; label: string }> = [
   { id: "tap", label: "Tap" },
   { id: "type", label: "Type text" },
+  { id: "clipboard", label: "Clipboard" },
+  { id: "app", label: "App control" },
+  { id: "device", label: "Device control" },
+  { id: "rotate", label: "Rotate device" },
   { id: "swipe", label: "Swipe" },
   { id: "key", label: "Device key" },
   { id: "wait", label: "Wait" },
@@ -40,6 +44,31 @@ export function interactionForAction(action: RecordingTakeAction): AuthoringInte
         ...(step.target ? { target: structuredClone(step.target) } : {}),
         ...(step.mode ? { mode: step.mode } : {}),
       };
+    case "clipboard":
+      return {
+        kind: "clipboard",
+        action: step.action,
+        ...(step.text !== undefined ? { text: step.text } : {}),
+        ...(step.target ? { target: structuredClone(step.target) } : {}),
+        ...(step.expect !== undefined ? { expect: step.expect } : {}),
+        ...(step.match ? { match: step.match } : {}),
+      };
+    case "app":
+      return {
+        kind: "app",
+        action: step.action,
+        ...(step.app !== undefined ? { app: step.app } : {}),
+        ...(step.url !== undefined ? { url: step.url } : {}),
+        ...(step.relaunch !== undefined ? { relaunch: step.relaunch } : {}),
+        ...(step.artifact !== undefined ? { artifact: step.artifact } : {}),
+        ...(step.as !== undefined ? { as: step.as } : {}),
+        ...(step.version !== undefined ? { version: step.version } : {}),
+        ...(step.versionMatch ? { versionMatch: step.versionMatch } : {}),
+      };
+    case "device":
+      return { kind: "device", action: step.action };
+    case "rotate":
+      return { kind: "rotate", orientation: step.orientation };
     case "swipe":
       return {
         kind: "swipe",
@@ -69,7 +98,8 @@ export function interactionForAction(action: RecordingTakeAction): AuthoringInte
 }
 
 function targetFrom(interaction: AuthoringInteraction): StepTarget | undefined {
-  if (interaction.kind === "tap" || interaction.kind === "type") return interaction.target;
+  if (interaction.kind === "tap" || interaction.kind === "type" || interaction.kind === "clipboard")
+    return interaction.target;
   return undefined;
 }
 
@@ -88,6 +118,14 @@ export function interactionWithKind(
         text: "",
         ...(target ? { target: structuredClone(target) } : {}),
       };
+    case "clipboard":
+      return { kind, action: "write", text: "" };
+    case "app":
+      return { kind, action: "switcher" };
+    case "device":
+      return { kind, action: "keyboard-dismiss" };
+    case "rotate":
+      return { kind, orientation: "portrait" };
     case "swipe":
       return { kind, from: { x: 540, y: 1_600 }, to: { x: 540, y: 800 }, durationMs: 300 };
     case "key":
@@ -151,6 +189,29 @@ export function takeActionError(interaction: AuthoringInteraction): string | und
     if (!interaction.text.trim()) return "Enter the text Relay should type.";
     if (interaction.target && !hasTarget(interaction.target))
       return "Finish the typing target or remove it.";
+  }
+  if (interaction.kind === "clipboard") {
+    if (
+      (interaction.action === "copy" || interaction.action === "paste") &&
+      !hasTarget(interaction.target)
+    )
+      return interaction.action === "copy"
+        ? "Choose the text field or element to copy from."
+        : "Choose the text field where Relay should paste.";
+  }
+  if (interaction.kind === "app") {
+    if (
+      interaction.action !== "switcher" &&
+      !interaction.app &&
+      !interaction.url &&
+      !interaction.artifact
+    )
+      return "Choose an app, link, or local artifact.";
+    if (
+      (interaction.action === "install" || interaction.action === "update") &&
+      !interaction.artifact
+    )
+      return "Choose the local app artifact to install.";
   }
   if (interaction.kind === "swipe") {
     const numbers = [interaction.from.x, interaction.from.y, interaction.to.x, interaction.to.y];

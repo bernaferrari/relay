@@ -66,6 +66,45 @@ test("runtime parsers reject malformed input and output", () => {
   );
 });
 
+test("authoring interactions expose system controls without opaque custom steps", () => {
+  const parse = operationDefinition("authoring.session.interact").input.parse;
+  assert.deepEqual(
+    parse({
+      sessionId: "session-a",
+      interaction: {
+        kind: "clipboard",
+        action: "paste",
+        text: "hello\nworld",
+        target: { identifier: "chat_text_input" },
+      },
+    }),
+    {
+      sessionId: "session-a",
+      interaction: {
+        kind: "clipboard",
+        action: "paste",
+        text: "hello\nworld",
+        target: { identifier: "chat_text_input" },
+      },
+    },
+  );
+  assert.deepEqual(
+    parse({ sessionId: "session-a", interaction: { kind: "app", action: "switcher" } }),
+    { sessionId: "session-a", interaction: { kind: "app", action: "switcher" } },
+  );
+  assert.deepEqual(
+    parse({
+      sessionId: "session-a",
+      interaction: { kind: "device", action: "keyboard-enter" },
+    }),
+    { sessionId: "session-a", interaction: { kind: "device", action: "keyboard-enter" } },
+  );
+  assert.throws(
+    () => parse({ sessionId: "session-a", interaction: { kind: "device", action: "volume-up" } }),
+    /device action/u,
+  );
+});
+
 test("capability manifest is serializable and contains no parser functions", () => {
   const manifest = operationManifest();
   const roundTrip = JSON.parse(JSON.stringify(manifest)) as typeof manifest;

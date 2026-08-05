@@ -39,6 +39,61 @@ const authoringInteraction = z.discriminatedUnion("kind", [
       kind: z.literal("type"),
       text: z.string(),
       target: stepTarget.optional(),
+      mode: z.enum(["append", "replace"]).optional(),
+      applied: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("clipboard"),
+      action: z.enum(["write", "read", "paste", "copy"]),
+      text: z.string().optional(),
+      target: stepTarget.optional(),
+      expect: z.string().optional(),
+      match: z.enum(["exact", "contains"]).optional(),
+      applied: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("app"),
+      action: z.enum([
+        "open",
+        "close",
+        "switcher",
+        "inspect",
+        "assert-installed",
+        "assert-not-installed",
+        "install",
+        "update",
+        "uninstall",
+      ]),
+      app: z.string().optional(),
+      url: z.url().optional(),
+      relaunch: z.boolean().optional(),
+      artifact: z.string().optional(),
+      as: z.string().optional(),
+      version: z.string().optional(),
+      versionMatch: z.enum(["exact", "contains"]).optional(),
+      applied: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("device"),
+      action: z.enum(["lock", "unlock", "keyboard-dismiss", "keyboard-enter"]),
+      applied: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("rotate"),
+      orientation: z.enum([
+        "portrait",
+        "portrait-upside-down",
+        "landscape-left",
+        "landscape-right",
+      ]),
       applied: z.boolean().optional(),
     })
     .strict(),

@@ -525,6 +525,39 @@ function stepsForInteraction(
         },
       ];
       break;
+    case "clipboard":
+      steps = [
+        {
+          kind: "clipboard",
+          action: interaction.action,
+          ...(interaction.text !== undefined ? { text: interaction.text } : {}),
+          ...(interaction.target ? { target: clone(interaction.target) } : {}),
+          ...(interaction.expect !== undefined ? { expect: interaction.expect } : {}),
+          ...(interaction.match ? { match: interaction.match } : {}),
+        },
+      ];
+      break;
+    case "app":
+      steps = [
+        {
+          kind: "app",
+          action: interaction.action,
+          ...(interaction.app !== undefined ? { app: interaction.app } : {}),
+          ...(interaction.url !== undefined ? { url: interaction.url } : {}),
+          ...(interaction.relaunch !== undefined ? { relaunch: interaction.relaunch } : {}),
+          ...(interaction.artifact !== undefined ? { artifact: interaction.artifact } : {}),
+          ...(interaction.as !== undefined ? { as: interaction.as } : {}),
+          ...(interaction.version !== undefined ? { version: interaction.version } : {}),
+          ...(interaction.versionMatch ? { versionMatch: interaction.versionMatch } : {}),
+        },
+      ];
+      break;
+    case "device":
+      steps = [{ kind: "device", action: interaction.action }];
+      break;
+    case "rotate":
+      steps = [{ kind: "rotate", orientation: interaction.orientation }];
+      break;
     case "swipe":
       steps = [
         {
@@ -570,7 +603,11 @@ function actionSource(interaction: AuthoringInteraction): AuthoringAction["sourc
     interaction.kind === "steps" ||
     interaction.kind === "observe" ||
     interaction.kind === "screenshot" ||
-    interaction.kind === "wait"
+    interaction.kind === "wait" ||
+    interaction.kind === "clipboard" ||
+    interaction.kind === "app" ||
+    interaction.kind === "device" ||
+    interaction.kind === "rotate"
   )
     return "manual";
   return "captured";

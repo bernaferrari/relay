@@ -67,6 +67,8 @@ export function TakeActionEditor(props: {
         return target
           ? { ...current, target }
           : { kind: "type", text: current.text, mode: "append" };
+      if (current.kind === "clipboard")
+        return target ? { ...current, target } : { ...current, target: undefined };
       return current;
     });
   }
@@ -144,8 +146,10 @@ export function TakeActionEditor(props: {
         </select>
       </label>
 
-      <Show when={draft().kind === "tap" || draft().kind === "type"}>
-        <Show when={draft().kind !== "type" || targetFrom(draft())}>
+      <Show
+        when={draft().kind === "tap" || draft().kind === "type" || draft().kind === "clipboard"}
+      >
+        <Show when={shouldShowTarget(draft())}>
           <TargetFields
             target={() => targetFrom(draft())}
             strategy={strategy}
@@ -154,6 +158,188 @@ export function TakeActionEditor(props: {
             onTarget={updateTarget}
           />
         </Show>
+      </Show>
+
+      <Show when={draft().kind === "clipboard"}>
+        {(() => {
+          const interaction = draft();
+          if (interaction.kind !== "clipboard") return null;
+          const value =
+            interaction.action === "write" || interaction.action === "paste"
+              ? (interaction.text ?? "")
+              : (interaction.expect ?? "");
+          return (
+            <>
+              <label class={label}>
+                Clipboard action
+                <select
+                  class={field}
+                  value={interaction.action}
+                  disabled={props.pending}
+                  onChange={(event) =>
+                    setDraft({
+                      kind: "clipboard",
+                      action: event.currentTarget.value as "write" | "read" | "paste" | "copy",
+                      ...(value ? { text: value } : {}),
+                      ...(interaction.target ? { target: interaction.target } : {}),
+                      ...(interaction.match ? { match: interaction.match } : {}),
+                    })
+                  }
+                >
+                  <option value="write">Write clipboard</option>
+                  <option value="read">Read and check clipboard</option>
+                  <option value="paste">Paste into a field</option>
+                  <option value="copy">Copy from a field</option>
+                </select>
+              </label>
+              <label class={label}>
+                {interaction.action === "read" || interaction.action === "copy"
+                  ? "Expected value (optional)"
+                  : "Text"}
+                <textarea
+                  class={cn(field, "min-h-20 resize-y py-2")}
+                  value={value}
+                  disabled={props.pending}
+                  spellcheck={false}
+                  onInput={(event) =>
+                    setDraft(
+                      interaction.action === "read" || interaction.action === "copy"
+                        ? { ...interaction, expect: event.currentTarget.value || undefined }
+                        : { ...interaction, text: event.currentTarget.value },
+                    )
+                  }
+                />
+              </label>
+              <Show when={interaction.action === "read" || interaction.action === "copy"}>
+                <label class={label}>
+                  Match
+                  <select
+                    class={field}
+                    value={interaction.match ?? "exact"}
+                    disabled={props.pending}
+                    onChange={(event) =>
+                      setDraft({
+                        ...interaction,
+                        match: event.currentTarget.value as "exact" | "contains",
+                      })
+                    }
+                  >
+                    <option value="exact">Exact</option>
+                    <option value="contains">Contains</option>
+                  </select>
+                </label>
+              </Show>
+            </>
+          );
+        })()}
+      </Show>
+
+      <Show when={draft().kind === "app"}>
+        {(() => {
+          const interaction = draft();
+          if (interaction.kind !== "app") return null;
+          return (
+            <>
+              <label class={label}>
+                App action
+                <select
+                  class={field}
+                  value={interaction.action}
+                  disabled={props.pending}
+                  onChange={(event) =>
+                    setDraft({
+                      kind: "app",
+                      action: event.currentTarget.value as typeof interaction.action,
+                      ...(interaction.app ? { app: interaction.app } : {}),
+                    })
+                  }
+                >
+                  <option value="switcher">Open app switcher</option>
+                  <option value="open">Open app or deep link</option>
+                  <option value="close">Close app</option>
+                  <option value="inspect">Inspect installed version</option>
+                  <option value="assert-installed">Assert app installed</option>
+                  <option value="assert-not-installed">Assert app not installed</option>
+                </select>
+              </label>
+              <Show when={interaction.action !== "switcher"}>
+                <label class={label}>
+                  App or package
+                  <input
+                    class={field}
+                    value={interaction.app ?? interaction.url ?? ""}
+                    disabled={props.pending}
+                    spellcheck={false}
+                    onInput={(event) => {
+                      const value = event.currentTarget.value;
+                      setDraft(
+                        value.includes("://")
+                          ? { ...interaction, app: undefined, url: value }
+                          : { ...interaction, app: value, url: undefined },
+                      );
+                    }}
+                  />
+                </label>
+              </Show>
+            </>
+          );
+        })()}
+      </Show>
+
+      <Show when={draft().kind === "device"}>
+        {(() => {
+          const interaction = draft();
+          if (interaction.kind !== "device") return null;
+          return (
+            <label class={label}>
+              Device action
+              <select
+                class={field}
+                value={interaction.action}
+                disabled={props.pending}
+                onChange={(event) =>
+                  setDraft({
+                    ...interaction,
+                    action: event.currentTarget.value as typeof interaction.action,
+                  })
+                }
+              >
+                <option value="keyboard-dismiss">Dismiss keyboard</option>
+                <option value="keyboard-enter">Press keyboard Enter</option>
+                <option value="lock">Lock device</option>
+                <option value="unlock">Unlock device</option>
+              </select>
+            </label>
+          );
+        })()}
+      </Show>
+
+      <Show when={draft().kind === "rotate"}>
+        {(() => {
+          const interaction = draft();
+          if (interaction.kind !== "rotate") return null;
+          return (
+            <label class={label}>
+              Orientation
+              <select
+                class={field}
+                value={interaction.orientation}
+                disabled={props.pending}
+                onChange={(event) =>
+                  setDraft({
+                    ...interaction,
+                    orientation: event.currentTarget.value as typeof interaction.orientation,
+                  })
+                }
+              >
+                <option value="portrait">Portrait</option>
+                <option value="portrait-upside-down">Portrait upside down</option>
+                <option value="landscape-left">Landscape left</option>
+                <option value="landscape-right">Landscape right</option>
+              </select>
+            </label>
+          );
+        })()}
       </Show>
 
       <Show when={draft().kind === "type"}>
@@ -519,6 +705,13 @@ function TargetFields(props: {
 }
 
 function targetFrom(interaction: AuthoringInteraction): StepTarget | undefined {
-  if (interaction.kind === "tap" || interaction.kind === "type") return interaction.target;
+  if (interaction.kind === "tap" || interaction.kind === "type" || interaction.kind === "clipboard")
+    return interaction.target;
   return undefined;
+}
+
+function shouldShowTarget(interaction: AuthoringInteraction): boolean {
+  if (interaction.kind === "tap") return true;
+  if (interaction.kind === "type") return Boolean(interaction.target);
+  return interaction.kind === "clipboard" && ["copy", "paste"].includes(interaction.action);
 }

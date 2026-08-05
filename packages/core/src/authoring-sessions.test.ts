@@ -262,6 +262,12 @@ test("the session routes every supported control and evidence-only interaction",
     const interactions: AuthoringInteraction[] = [
       { kind: "tap", target: { label: "Continue" } },
       { kind: "type", text: "hello" },
+      { kind: "clipboard", action: "write", text: "hello\nworld" },
+      { kind: "clipboard", action: "paste", text: "hello\nworld", target: { label: "Message" } },
+      { kind: "clipboard", action: "copy", target: { label: "Message" } },
+      { kind: "app", action: "switcher" },
+      { kind: "device", action: "keyboard-dismiss" },
+      { kind: "rotate", orientation: "landscape-left" },
       { kind: "swipe", from: { x: 10, y: 20 }, to: { x: 30, y: 40 }, durationMs: 120 },
       { kind: "key", key: "home" },
       { kind: "wait", ms: 5 },
@@ -279,11 +285,23 @@ test("the session routes every supported control and evidence-only interaction",
     assert.equal(revision.actions.length, interactions.length);
     assert.deepEqual(
       runtime.executed.map((interaction) => interaction.kind),
-      ["tap", "type", "swipe", "key", "wait"],
+      [
+        "tap",
+        "type",
+        "clipboard",
+        "clipboard",
+        "clipboard",
+        "app",
+        "device",
+        "rotate",
+        "swipe",
+        "key",
+        "wait",
+      ],
     );
-    assert.equal(revision.actions[5]?.steps.length, 0);
-    assert.equal(revision.actions[6]?.steps.length, 0);
-    assert.equal(revision.actions[6]?.label, "Checkpoint");
+    assert.equal(revision.actions[12]?.steps.length, 0);
+    assert.equal(revision.actions[12]?.label, "Checkpoint");
+    assert.equal(revision.actions[13]?.steps.length, 0);
     assert.ok(revision.actions.every((action) => action.evidenceIds.length > 0));
   });
 });

@@ -73,6 +73,48 @@ export type AuthoringInteraction =
       mode?: "append" | "replace";
       applied?: boolean;
     }
+  /** Device-level actions stay first-class in a Take so humans and agents
+   * can author the same scenario without falling back to opaque custom steps. */
+  | {
+      kind: "clipboard";
+      action: "write" | "read" | "paste" | "copy";
+      text?: string;
+      target?: StepTarget;
+      expect?: string;
+      match?: "exact" | "contains";
+      applied?: boolean;
+    }
+  | {
+      kind: "app";
+      action:
+        | "open"
+        | "close"
+        | "switcher"
+        | "inspect"
+        | "assert-installed"
+        | "assert-not-installed"
+        | "install"
+        | "update"
+        | "uninstall";
+      app?: string;
+      url?: string;
+      relaunch?: boolean;
+      artifact?: string;
+      as?: string;
+      version?: string;
+      versionMatch?: "exact" | "contains";
+      applied?: boolean;
+    }
+  | {
+      kind: "device";
+      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
+      applied?: boolean;
+    }
+  | {
+      kind: "rotate";
+      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
+      applied?: boolean;
+    }
   | {
       kind: "swipe";
       from: { x: number; y: number };

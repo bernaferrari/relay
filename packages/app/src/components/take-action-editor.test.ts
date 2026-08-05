@@ -36,6 +36,28 @@ test("recorded actions convert to canonical replacement interactions without los
   });
   assert.deepEqual(
     interactionForAction(
+      action("paste", [
+        {
+          kind: "clipboard",
+          action: "paste",
+          text: "hello\nworld",
+          target: { identifier: "chat_text_input" },
+        },
+      ]),
+    ),
+    {
+      kind: "clipboard",
+      action: "paste",
+      text: "hello\nworld",
+      target: { identifier: "chat_text_input" },
+    },
+  );
+  assert.deepEqual(
+    interactionForAction(action("switcher", [{ kind: "app", action: "switcher" }])),
+    { kind: "app", action: "switcher" },
+  );
+  assert.deepEqual(
+    interactionForAction(
       action("routine", [{ kind: "module", recipeId: "login", bindings: { email: "me" } }]),
     ),
     { kind: "reusable", recipeId: "login", bindings: { email: "me" } },
@@ -75,6 +97,10 @@ test("changing action kind preserves compatible targets and gives usable default
   });
   assert.deepEqual(interactionWithKind(current, "key"), { kind: "key", key: "back" });
   assert.deepEqual(interactionWithKind(current, "wait"), { kind: "wait", ms: 1_000 });
+  assert.deepEqual(interactionWithKind(current, "device"), {
+    kind: "device",
+    action: "keyboard-dismiss",
+  });
 });
 
 test("retargeting keeps the coordinate fallback and removes conflicting semantic selectors", () => {
@@ -116,6 +142,18 @@ test("replacement validation blocks incomplete or unsafe action drafts", () => {
     "Swipe coordinates must be zero or greater.",
   );
   assert.equal(takeActionError({ kind: "wait", ms: -1 }), "Wait time must be zero or greater.");
+  assert.equal(
+    takeActionError({ kind: "clipboard", action: "copy" }),
+    "Choose the text field or element to copy from.",
+  );
+  assert.equal(
+    takeActionError({ kind: "clipboard", action: "paste", text: "hello" }),
+    "Choose the text field where Relay should paste.",
+  );
+  assert.equal(
+    takeActionError({ kind: "app", action: "open" }),
+    "Choose an app, link, or local artifact.",
+  );
   assert.equal(takeActionError({ kind: "reusable", recipeId: "" }), "Choose a routine to run.");
   assert.equal(
     takeActionError({ kind: "steps", steps: [] }),
