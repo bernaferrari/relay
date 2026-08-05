@@ -1219,7 +1219,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "recipe",
           type: "string",
-          description: "Executable recipe identifier, such as grok-send-hello",
+          description: "Executable recipe identifier, such as grok-full-smoke",
         },
       ],
       inputHelp: [
@@ -1233,6 +1233,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
       ],
       examples: [
+        'relay run start grok-full-smoke --input \'{"serial":"<phone-serial>","platform":"android"}\'',
         'relay run start grok-send-hello --input \'{"serial":"<phone-serial>","platform":"android"}\'',
         'relay run start grok-rich-response-judged --input \'{"variables":{"primary_model":"openai/gpt-4o-mini"}}\'',
       ],
