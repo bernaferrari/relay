@@ -1,0 +1,15 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-wait-think-harder
+name: Grok · wait for Think harder response
+description: Verify that an optional Think harder action produces a complete replacement response.
+steps:
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: screenshot
+    caption: Think harder response completed

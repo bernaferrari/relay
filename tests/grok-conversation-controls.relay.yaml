@@ -233,6 +233,12 @@ steps:
       identifier: response.done
     timeoutMs: 90000
     stableForMs: 1500
+  - kind: extract
+    as: think_harder_available
+    target:
+      label: "{{think_harder_label}}"
+    optional: true
+    note: Record whether Auto exposed Think harder before attempting the optional deeper pass.
   - kind: tap
     target:
       label: "{{think_harder_label}}"
@@ -241,14 +247,8 @@ steps:
       target:
         label: "{{think_harder_label}}"
     note: If Auto offers Think harder, use it; otherwise this step records that the suggestion was absent.
-  - kind: wait-response
-    target:
-      ref: '@answer'
-    idleTarget:
-      identifier: response.done
-    timeoutMs: 90000
-    stableForMs: 1500
-    when:
-      condition: present
-      target:
-        label: "{{think_harder_label}}"
+  - kind: branch
+    input: think_harder_available
+    operator: exists
+    thenRecipeId: grok-wait-think-harder
+    note: Only wait for a replacement answer when the suggestion was observed and tapped.
