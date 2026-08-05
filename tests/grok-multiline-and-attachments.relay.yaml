@@ -102,5 +102,12 @@ steps:
     timeoutMs: 5000
   - kind: screenshot
     caption: Attachment menu contains only Camera, Photo or Video, Files, Skills, and Connectors
-  - kind: key
-    key: back
+  - kind: tap
+    target:
+      identifier: ask.toolbar.textfield
+  - kind: expect
+    target:
+      identifier: ask.toolbar.add.menu.camera
+    condition: gone
+    timeoutMs: 5000
+    note: Tapping outside the attachment menu must dismiss it without requiring system Back.
