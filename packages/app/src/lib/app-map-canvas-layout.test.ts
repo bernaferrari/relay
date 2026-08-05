@@ -7,6 +7,7 @@ import {
   fitCanvasViewport,
   nextBranchPosition,
   openCanvasViewport,
+  pointInDisplayedFrame,
   screenCardGeometry,
   SCREEN_FRAME_HEIGHT,
   SCREEN_FRAME_MIN_WIDTH,
@@ -87,6 +88,25 @@ test("recorded connections can leave from the captured interaction point", () =>
     (node) => node,
   ).path;
   assert.match(path, /^M 60 151\.8 C/);
+});
+
+test("recorded connection origins follow rotated screenshot presentation", () => {
+  assert.deepEqual(pointInDisplayedFrame({ x: 0.25, y: 0.7 }, "left"), {
+    x: 0.7,
+    y: 0.75,
+  });
+  const path = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.25, y: 0.7 } },
+      sourceRotation: "left",
+    },
+    [start, settings],
+    (node) => node,
+  ).path;
+  assert.match(path, /^M 168 160\.5 C/);
 });
 
 test("fit keeps a graph visible with stable canvas padding", () => {

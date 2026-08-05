@@ -14,7 +14,11 @@ import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-pr
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
-import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
+import {
+  OrientedScreenshot,
+  type ScreenshotOrientationEvidence,
+  type ScreenshotRotation,
+} from "./oriented-screenshot";
 
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
@@ -78,6 +82,7 @@ export function ScreenCard(props: {
   orientationEvidence?: ScreenshotOrientationEvidence;
   /** The selected recorded connection's source target, if one exists. */
   sourceAnchor?: CanvasInteractionAnchor;
+  onRotationChange?: (rotation: ScreenshotRotation) => void;
   detailsOpen?: boolean;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
@@ -309,6 +314,7 @@ export function ScreenCard(props: {
                 loading="lazy"
                 class="size-full object-contain object-top"
                 evidence={props.orientationEvidence}
+                onRotationChange={props.onRotationChange}
                 overlay={
                   props.sourceAnchor
                     ? ({ rotation }) => {

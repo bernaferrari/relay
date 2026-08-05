@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js";
 import {
   companionFramePresentation,
   companionImageLayout,
@@ -12,6 +12,8 @@ export type ScreenshotOrientationEvidence = {
   edge?: "left" | "right";
 };
 
+export type ScreenshotRotation = CompanionFramePresentation["rotation"];
+
 export type OrientedScreenshotOverlay = (input: {
   rotation: CompanionFramePresentation["rotation"];
 }) => JSX.Element;
@@ -24,6 +26,7 @@ export function OrientedScreenshot(props: {
   class?: string;
   loading?: JSX.ImgHTMLAttributes<HTMLImageElement>["loading"];
   overlay?: OrientedScreenshotOverlay;
+  onRotationChange?: (rotation: ScreenshotRotation) => void;
 }) {
   const [natural, setNatural] = createSignal<CompanionDimensions>();
   const presentation = createMemo(() =>
@@ -37,6 +40,11 @@ export function OrientedScreenshot(props: {
   const layout = createMemo(() => {
     const value = presentation();
     return value ? companionImageLayout(value) : undefined;
+  });
+
+  createEffect(() => {
+    const rotation = presentation()?.rotation;
+    if (rotation) props.onRotationChange?.(rotation);
   });
 
   return (

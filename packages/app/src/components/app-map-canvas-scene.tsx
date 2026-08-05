@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import type { CollaborationAwareness, CanvasNote, MapGroup } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
@@ -7,6 +7,7 @@ import {
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   screenCardGeometry,
+  type CanvasScreenRotation,
   type CanvasPoint,
 } from "../lib/app-map-canvas-layout";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -16,7 +17,7 @@ import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasNoteCard, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapGroupsLayer } from "./app-map-groups-layer";
-import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
+import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
 
 type ConnectionPreview = Readonly<{
   fromScreenId: string;
@@ -124,12 +125,26 @@ const connectionStrokeClass = (
                   : "stroke-[color-mix(in_srgb,var(--text-weak)_78%,transparent)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
+  const [screenRotations, setScreenRotations] = createSignal<Record<string, CanvasScreenRotation>>(
+    {},
+  );
   const selectedNodeIds = createMemo(() => new Set(props.selectedNodeIds));
   const screenPositions = createMemo(() =>
     Object.fromEntries(props.nodes.map((node) => [node.id, props.positionFor(node)])),
   );
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
+  const rotationForNode = (node: MapTreeNode): CanvasScreenRotation =>
+    screenRotations()[node.id] ?? "none";
+  const rotationForNodeId = (nodeId: string): CanvasScreenRotation => {
+    const node = nodeFor(nodeId);
+    return node ? rotationForNode(node) : "none";
+  };
+  const rememberRotation = (nodeId: string, rotation: ScreenshotRotation) => {
+    setScreenRotations((current) =>
+      current[nodeId] === rotation ? current : { ...current, [nodeId]: rotation },
+    );
+  };
   const geometryForNode = (node: MapTreeNode) =>
     screenCardGeometry(props.orientationEvidenceFor(node));
   const geometries = createMemo(
@@ -143,6 +158,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               to: connection.toScreenId,
               kind: connection.kind,
               sourceAnchor: connection.sourceAnchor,
+              sourceRotation: rotationForNodeId(connection.fromScreenId),
             },
             props.nodes,
             props.positionFor,
@@ -397,6 +413,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               orientationEvidence={props.orientationEvidenceFor(node)}
               detailsOpen={props.detailsOpen && node.id === props.selectedNodeId}
               sourceAnchor={selectedConnectionAnchor()}
+              onRotationChange={(rotation) => rememberRotation(node.id, rotation)}
               onSelect={(event) => props.onSelectNode(node, event)}
               onContextMenu={(event) => props.onNodeContextMenu(event, node)}
               onRename={() => props.onRenameNode(node)}

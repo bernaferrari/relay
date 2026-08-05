@@ -13,6 +13,7 @@ export type CanvasViewport = CanvasPoint & { scale: number };
  * layout state.
  */
 export type CanvasInteractionAnchor = ProtocolCanvasInteractionAnchor;
+export type CanvasScreenRotation = "none" | "left" | "right";
 export type CanvasBounds = {
   left: number;
   top: number;
@@ -206,6 +207,7 @@ export function canvasEdgeGeometry(
     to: string;
     kind: "forward" | "return";
     sourceAnchor?: CanvasInteractionAnchor;
+    sourceRotation?: CanvasScreenRotation;
   },
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
@@ -235,17 +237,20 @@ export function canvasEdgeGeometry(
     };
   }
   const sourceAnchor = edge.sourceAnchor;
+  const sourcePoint = sourceAnchor
+    ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
+    : undefined;
   const startX =
     fromPosition.x +
     fromGeometry.frameLeft +
     (sourceAnchor
-      ? Math.max(0, Math.min(1, sourceAnchor.point.x)) * fromGeometry.frameWidth
+      ? Math.max(0, Math.min(1, sourcePoint!.x)) * fromGeometry.frameWidth
       : fromGeometry.frameWidth);
   const startY =
     fromPosition.y +
     fromGeometry.frameTop +
     (sourceAnchor
-      ? Math.max(0, Math.min(1, sourceAnchor.point.y)) * fromGeometry.frameHeight
+      ? Math.max(0, Math.min(1, sourcePoint!.y)) * fromGeometry.frameHeight
       : fromGeometry.frameHeight / 2);
   const endX = toPosition.x + toGeometry.frameLeft;
   const endY = toPosition.y + toGeometry.frameTop + toGeometry.frameHeight / 2;
@@ -256,6 +261,18 @@ export function canvasEdgeGeometry(
       y: (startY + endY) / 2,
     },
   };
+}
+
+/** Convert the logical recorded tap into the same displayed frame used by
+ * OrientedScreenshot. This keeps an iPad's rotated screenshot, target marker,
+ * and connection origin visually consistent. */
+export function pointInDisplayedFrame(
+  point: CanvasPoint,
+  rotation: CanvasScreenRotation,
+): CanvasPoint {
+  if (rotation === "left") return { x: point.y, y: 1 - point.x };
+  if (rotation === "right") return { x: 1 - point.y, y: point.x };
+  return point;
 }
 
 export function draftCanvasConnectionPath(
