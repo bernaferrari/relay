@@ -60,6 +60,26 @@ extension RunnerTests {
       mode: repairMode
     )
 
+    // Dispatching text through XCTest without a resolved target or evidence of a focused
+    // responder records a test failure. That tears down the long-lived runner and turns a
+    // single invalid request into a restart cascade, so fail before entering that channel.
+    guard initialTarget != nil || (activeTarget.prefersFocusedElement && isKeyboardVisible(app: app)) else {
+      logTextEntryPhase(
+        commandId: commandId,
+        phase: "total",
+        startedAt: totalStartedAt,
+        chars: text.count,
+        mode: repairMode
+      )
+      return TextEntryResult(
+        verified: nil,
+        repaired: false,
+        expectedText: expectedText,
+        observedText: nil,
+        failure: .notFocused
+      )
+    }
+
     if repairMode == .replacement {
       guard let replacementTarget = initialTarget else {
         logTextEntryPhase(commandId: commandId, phase: "total", startedAt: totalStartedAt, chars: text.count, mode: repairMode)
@@ -79,12 +99,12 @@ extension RunnerTests {
       }
     }
 
-    func typeIntoCurrentTarget(_ value: String) -> XCUIElement? {
+    func typeIntoCurrentTarget(_ value: String) -> (element: XCUIElement?, dispatched: Bool) {
       if let currentTarget = resolveTextEntryElement(app: app, target: activeTarget) {
         textEntryRoute = "xctest-element"
         currentTarget.typeText(value)
-        return currentTarget
-      } else {
+        return (currentTarget, true)
+      } else if activeTarget.prefersFocusedElement && isKeyboardVisible(app: app) {
 #if os(iOS)
         textEntryRoute = "synthesized-first-responder"
         NSLog("AGENT_DEVICE_RUNNER_TEXT_ENTRY_ROUTE route=synthesized-first-responder")
@@ -108,8 +128,20 @@ extension RunnerTests {
 #else
         app.typeText(value)
 #endif
-        return resolveTextEntryElement(app: app, target: activeTarget)
+        return (resolveTextEntryElement(app: app, target: activeTarget), true)
       }
+      return (nil, false)
+    }
+
+    func dispatchFailureResult() -> TextEntryResult {
+      TextEntryResult(
+        verified: nil,
+        repaired: false,
+        expectedText: expectedText,
+        observedText: nil,
+        textEntryRoute: textEntryRoute,
+        failure: .notFocused
+      )
     }
 
     func waitForWarmupValue(_ expectedValue: String?, target: TextEntryTarget) {
@@ -131,7 +163,11 @@ extension RunnerTests {
       var typedTarget: XCUIElement?
       let delayedTypeStartedAt = Date()
       for (index, character) in characters.enumerated() {
-        typedTarget = typeIntoCurrentTarget(String(character)) ?? typedTarget
+        let dispatch = typeIntoCurrentTarget(String(character))
+        guard dispatch.dispatched else {
+          return dispatchFailureResult()
+        }
+        typedTarget = dispatch.element ?? typedTarget
         if index + 1 < characters.count {
           sleepFor(delaySeconds)
         }
@@ -176,7 +212,11 @@ extension RunnerTests {
     if repairMode != .none && characters.count > 1 {
       let firstCharacter = String(characters[0])
       let firstStartedAt = Date()
-      var firstTypedTarget = typeIntoCurrentTarget(firstCharacter)
+      let firstDispatch = typeIntoCurrentTarget(firstCharacter)
+      guard firstDispatch.dispatched else {
+        return dispatchFailureResult()
+      }
+      var firstTypedTarget = firstDispatch.element
       logTextEntryPhase(
         commandId: commandId,
         phase: "type-first",
@@ -201,7 +241,11 @@ extension RunnerTests {
       )
       let remainingText = String(characters.dropFirst())
       let remainingStartedAt = Date()
-      firstTypedTarget = typeIntoCurrentTarget(remainingText) ?? firstTypedTarget
+      let remainingDispatch = typeIntoCurrentTarget(remainingText)
+      guard remainingDispatch.dispatched else {
+        return dispatchFailureResult()
+      }
+      firstTypedTarget = remainingDispatch.element ?? firstTypedTarget
       logTextEntryPhase(
         commandId: commandId,
         phase: "type-remaining",
@@ -212,7 +256,11 @@ extension RunnerTests {
       typedTarget = firstTypedTarget
     } else {
       let typeStartedAt = Date()
-      typedTarget = typeIntoCurrentTarget(text)
+      let dispatch = typeIntoCurrentTarget(text)
+      guard dispatch.dispatched else {
+        return dispatchFailureResult()
+      }
+      typedTarget = dispatch.element
       logTextEntryPhase(
         commandId: commandId,
         phase: "type-all",

@@ -4,6 +4,24 @@ import XCTest
 // pipeline, readiness polling, and field clearing. Behavior-preserving extraction from
 // RunnerTests+Interaction.swift (no logic changes) to keep that file navigable.
 extension RunnerTests {
+  enum TextEntryFailure: String {
+    case notFocused = "TEXT_INPUT_NOT_FOCUSED"
+
+    var message: String {
+      switch self {
+      case .notFocused:
+        return "No focused text input was available for typing."
+      }
+    }
+
+    var hint: String {
+      switch self {
+      case .notFocused:
+        return "Focus a visible text input, then retry type or fill. If the input is not exposed by accessibility, use a coordinate focus command before typing."
+      }
+    }
+  }
+
   enum TextTypingRepairMode {
     case none
     case append
@@ -25,6 +43,7 @@ extension RunnerTests {
     let expectedText: String?
     let observedText: String?
     var textEntryRoute: String? = nil
+    var failure: TextEntryFailure? = nil
   }
 
   struct TextEntryTarget {
@@ -49,6 +68,16 @@ extension RunnerTests {
   struct TextEntryStabilization {
     let element: XCUIElement?
     let focusConfirmed: Bool
+  }
+
+  struct TextEntryTapWitness {
+    let element: XCUIElement
+    let bundleId: String?
+    let processIdentifier: Int?
+
+    func matches(bundleId: String?, processIdentifier: Int?) -> Bool {
+      self.bundleId == bundleId && self.processIdentifier == processIdentifier
+    }
   }
 
   func clearTextInput(_ element: XCUIElement) {
@@ -96,6 +125,49 @@ extension RunnerTests {
 #endif
   }
 
+  func rememberTextEntryTap(_ element: XCUIElement?) {
+    guard let element, isTextEntryElement(element) else {
+      clearRememberedTextEntryTap()
+      return
+    }
+    textEntryTapWitness = TextEntryTapWitness(
+      element: element,
+      bundleId: currentBundleId,
+      processIdentifier: currentAppProcessIdentifier
+    )
+  }
+
+  func clearRememberedTextEntryTap() {
+    textEntryTapWitness = nil
+  }
+
+  private func rememberedTextEntryTarget() -> TextEntryTarget? {
+    guard let witness = textEntryTapWitness else {
+      return nil
+    }
+    // The tap is proof for one immediately-following bare type only. Consume it before checking
+    // the element so a failed or interrupted type cannot reuse stale focus evidence.
+    clearRememberedTextEntryTap()
+    guard witness.matches(
+      bundleId: currentBundleId,
+      processIdentifier: currentAppProcessIdentifier
+    ) else {
+      return nil
+    }
+    let element = witness.element
+    // XCUIElement is query-backed rather than a stable node identity. A same-identifier field
+    // introduced by app-side navigation between tap and this immediate type can therefore
+    // re-resolve here; keep the witness one-shot and fail closed on every observable identity
+    // boundary instead of using frame equality, which would reject legitimate layout changes.
+    guard safely("LAST_TAPPED_TEXT_INPUT_EXISTS", false, { element.exists }) else {
+      return nil
+    }
+    // Keep the target scoped to the element that the preceding tap actually selected. Do not
+    // attach a refresh point: if that element disappeared, bare type must fail closed rather
+    // than rediscovering a different field or dispatching unscoped app.typeText.
+    return TextEntryTarget(element: element, refreshPoint: nil, prefersFocusedElement: false)
+  }
+
   func stabilizeTextInputBeforeTyping(
     app: XCUIApplication,
     target: XCUIElement?,
@@ -124,11 +196,15 @@ extension RunnerTests {
 
   func focusTextInputForTextEntry(app: XCUIApplication, x: Double?, y: Double?) -> TextEntryTarget {
     guard let x, let y else {
+      let softwareKeyboardVisible = isKeyboardVisible(app: app)
+      if !softwareKeyboardVisible, let rememberedTarget = rememberedTextEntryTarget() {
+        return rememberedTarget
+      }
       // Bare `type` targets the current first responder. On iOS we intentionally do not trust
       // `hasKeyboardFocus`, but an already-visible software keyboard is sufficient evidence that
       // app.typeText has a receiver; waiting the full readiness timeout cannot prove a stronger
       // target because there is no selector/coordinate focus move to validate.
-      if isKeyboardVisible(app: app) {
+      if softwareKeyboardVisible {
         return TextEntryTarget(
           element: focusedTextInput(app: app),
           refreshPoint: nil,
