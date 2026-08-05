@@ -81,8 +81,9 @@ export function AppMapGroupsLayer(props: {
                 >
                   <header
                     class={cn(
-                      "absolute top-2.5 left-2.5 flex h-7 max-w-[calc(100%-20px)] items-center gap-1.5 rounded-[7px] bg-[var(--map-control-surface)] px-2 opacity-0 shadow-[var(--map-elevation-control)] transition-opacity duration-150 group-hover/map-group:opacity-100 group-focus-within/map-group:opacity-100",
-                      selected() && "opacity-100",
+                      "absolute top-2.5 left-1/2 flex h-7 max-w-[calc(100%-20px)] -translate-x-1/2 items-center justify-center gap-1.5 rounded-[7px] bg-[var(--map-control-surface)] px-2 opacity-95 shadow-[var(--map-elevation-control)] transition-[background-color,box-shadow,opacity] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] group-focus-within/map-group:opacity-100",
+                      selected() &&
+                        "bg-[var(--product-accent-soft)] opacity-100 shadow-[var(--map-elevation-panel)]",
                     )}
                   >
                     <Icon name="group" size={13} class="shrink-0 text-[var(--text-weak)]" />

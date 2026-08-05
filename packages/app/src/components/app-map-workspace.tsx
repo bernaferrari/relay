@@ -58,7 +58,7 @@ import { appMapRunReadiness } from "../lib/app-map-run-readiness";
 import { toast } from "../context/toast";
 import { evidenceForStep } from "./take-step-presentation";
 import { AppMapEmptyState } from "./app-map-capture-review";
-import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
+import { ConnectionInspector, GroupInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { appMapDeviceStatus } from "./device-status-label";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
@@ -2672,127 +2672,149 @@ export function AppMapWorkspace(props: {
               </Show>
               <Show when={!captureOpen()}>
                 <Show
-                  when={selectedConnection()}
+                  when={selectedGroup()}
                   fallback={
-                    <ScreenInspector
-                      node={screenInspectorOpen() ? selectedNode() : null}
-                      title={selectedNode() ? titleFor(selectedNode()!) : ""}
-                      image={
-                        selectedNode()
-                          ? screenshotUrl(
-                              server,
-                              draft.steps()[selectedNode()!.representativeStepIndex],
-                            ) ||
-                            capturedScreenUrls()[selectedNode()!.id] ||
-                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
-                            undefined
-                          : undefined
+                    <Show
+                      when={selectedConnection()}
+                      fallback={
+                        <ScreenInspector
+                          node={screenInspectorOpen() ? selectedNode() : null}
+                          title={selectedNode() ? titleFor(selectedNode()!) : ""}
+                          image={
+                            selectedNode()
+                              ? screenshotUrl(
+                                  server,
+                                  draft.steps()[selectedNode()!.representativeStepIndex],
+                                ) ||
+                                capturedScreenUrls()[selectedNode()!.id] ||
+                                variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
+                                undefined
+                              : undefined
+                          }
+                          orientationEvidence={
+                            selectedNode()
+                              ? screenshotOrientationEvidence(
+                                  server,
+                                  draft.steps()[selectedNode()!.representativeStepIndex],
+                                ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
+                              : undefined
+                          }
+                          runState={
+                            selectedNode()
+                              ? runProjection().screens[selectedNode()!.id]?.state
+                              : undefined
+                          }
+                          isFlowStart={
+                            selectedNode()
+                              ? !connections().some(
+                                  (connection) => connection.toScreenId === selectedNode()!.id,
+                                )
+                              : false
+                          }
+                          connections={connections().filter(
+                            (connection) => connection.fromScreenId === selectedNode()?.id,
+                          )}
+                          flowSetup={selectedFlowSetup()}
+                          onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
+                          onSelectConnection={(connection) => {
+                            setSelectedConnectionId(connection.id);
+                            setSelectedNodeId(null);
+                            setScreenInspectorOpen(false);
+                          }}
+                          onRemove={() => {
+                            const node = selectedNode();
+                            if (node) removeScreen(node);
+                          }}
+                          onClose={() => setScreenInspectorOpen(false)}
+                        />
                       }
-                      orientationEvidence={
-                        selectedNode()
-                          ? screenshotOrientationEvidence(
-                              server,
-                              draft.steps()[selectedNode()!.representativeStepIndex],
-                            ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
-                          : undefined
-                      }
-                      runState={
-                        selectedNode()
-                          ? runProjection().screens[selectedNode()!.id]?.state
-                          : undefined
-                      }
-                      isFlowStart={
-                        selectedNode()
-                          ? !connections().some(
-                              (connection) => connection.toScreenId === selectedNode()!.id,
-                            )
-                          : false
-                      }
-                      connections={connections().filter(
-                        (connection) => connection.fromScreenId === selectedNode()?.id,
+                    >
+                      {(connection) => (
+                        <ConnectionInspector
+                          connection={connection()}
+                          actionCount={canonicalConnectionFor(connection())?.actions.reduce(
+                            (count, action) =>
+                              count +
+                              (action.kind === "recorded" || action.kind === "steps"
+                                ? action.steps.length
+                                : 1),
+                            0,
+                          )}
+                          actions={connectionActionSummaries(
+                            canonicalConnectionFor(connection())?.actions ?? [],
+                            activeAppMap(),
+                          )}
+                          onChangeWait={(actionId, stepId, waitMs) =>
+                            void updateConnectionWait(connection(), actionId, stepId, waitMs)
+                          }
+                          sourceTitle={titleFor(
+                            tree().nodes.find((node) => node.id === connection().fromScreenId)!,
+                          )}
+                          targetTitle={titleFor(
+                            tree().nodes.find((node) => node.id === connection().toScreenId)!,
+                          )}
+                          setup={{
+                            behaviors: reusableBehaviors(),
+                            onRecord: () => recordConnection(connection()),
+                            onBack: () => attachBackBehavior(connection()),
+                            onAutomatic: () => attachAutomaticBehavior(connection()),
+                            onAttachBehavior: (recipeId) =>
+                              attachReusableBehavior(connection(), recipeId),
+                          }}
+                          replay={{
+                            state: replayStateFor(connection()),
+                            canEditActions: draft
+                              .steps()
+                              .some((step) => step.id === connection().stepId),
+                            ...(replayErrorFor(connection())
+                              ? { error: replayErrorFor(connection()) }
+                              : {}),
+                            onRun: () => void replayConnection(connection()),
+                            onRewrite: () => recordConnection(connection()),
+                            onSaveReusable: () => void saveReusableBehavior(connection()),
+                            onSelectStep: () => {
+                              const index = draft
+                                .steps()
+                                .findIndex((step) => step.id === connection().stepId);
+                              if (index < 0) return;
+                              selectStep(index);
+                              props.onOpenActions();
+                            },
+                          }}
+                          cases={{
+                            ...(caseStackFor(connection())
+                              ? { stack: caseStackFor(connection()) }
+                              : {}),
+                            stacks: Object.values(activeAppMap()?.caseStacks ?? {}),
+                            variables: server.projectVariables().value,
+                            busy: caseStackBusy(),
+                            onSave: (value) => void saveConnectionCaseStack(connection(), value),
+                            onAttach: (caseStackId) =>
+                              void attachConnectionCaseStack(connection(), caseStackId),
+                            onDetach: () => void detachConnectionCaseStack(connection()),
+                            onOpenVariables: props.onOpenVariables,
+                          }}
+                          onRemove={() => removeConnection(connection())}
+                          onClose={() => setSelectedConnectionId(null)}
+                        />
                       )}
-                      flowSetup={selectedFlowSetup()}
-                      onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
-                      onSelectConnection={(connection) => {
-                        setSelectedConnectionId(connection.id);
-                        setSelectedNodeId(null);
-                        setScreenInspectorOpen(false);
-                      }}
-                      onRemove={() => {
-                        const node = selectedNode();
-                        if (node) removeScreen(node);
-                      }}
-                      onClose={() => setScreenInspectorOpen(false)}
-                    />
+                    </Show>
                   }
                 >
-                  {(connection) => (
-                    <ConnectionInspector
-                      connection={connection()}
-                      actionCount={canonicalConnectionFor(connection())?.actions.reduce(
-                        (count, action) =>
-                          count +
-                          (action.kind === "recorded" || action.kind === "steps"
-                            ? action.steps.length
-                            : 1),
-                        0,
-                      )}
-                      actions={connectionActionSummaries(
-                        canonicalConnectionFor(connection())?.actions ?? [],
-                        activeAppMap(),
-                      )}
-                      onChangeWait={(actionId, stepId, waitMs) =>
-                        void updateConnectionWait(connection(), actionId, stepId, waitMs)
-                      }
-                      sourceTitle={titleFor(
-                        tree().nodes.find((node) => node.id === connection().fromScreenId)!,
-                      )}
-                      targetTitle={titleFor(
-                        tree().nodes.find((node) => node.id === connection().toScreenId)!,
-                      )}
-                      setup={{
-                        behaviors: reusableBehaviors(),
-                        onRecord: () => recordConnection(connection()),
-                        onBack: () => attachBackBehavior(connection()),
-                        onAutomatic: () => attachAutomaticBehavior(connection()),
-                        onAttachBehavior: (recipeId) =>
-                          attachReusableBehavior(connection(), recipeId),
+                  {(group) => (
+                    <GroupInspector
+                      group={group()}
+                      screens={group()
+                        .screenIds.map((id) => tree().nodes.find((node) => node.id === id))
+                        .flatMap((node) => (node ? [{ id: node.id, title: titleFor(node) }] : []))}
+                      onSelectScreen={(screenId) => {
+                        setSelectedGroupId(null);
+                        setSelectedNodeId(screenId);
+                        setScreenInspectorOpen(true);
                       }}
-                      replay={{
-                        state: replayStateFor(connection()),
-                        canEditActions: draft
-                          .steps()
-                          .some((step) => step.id === connection().stepId),
-                        ...(replayErrorFor(connection())
-                          ? { error: replayErrorFor(connection()) }
-                          : {}),
-                        onRun: () => void replayConnection(connection()),
-                        onRewrite: () => recordConnection(connection()),
-                        onSaveReusable: () => void saveReusableBehavior(connection()),
-                        onSelectStep: () => {
-                          const index = draft
-                            .steps()
-                            .findIndex((step) => step.id === connection().stepId);
-                          if (index < 0) return;
-                          selectStep(index);
-                          props.onOpenActions();
-                        },
-                      }}
-                      cases={{
-                        ...(caseStackFor(connection())
-                          ? { stack: caseStackFor(connection()) }
-                          : {}),
-                        stacks: Object.values(activeAppMap()?.caseStacks ?? {}),
-                        variables: server.projectVariables().value,
-                        busy: caseStackBusy(),
-                        onSave: (value) => void saveConnectionCaseStack(connection(), value),
-                        onAttach: (caseStackId) =>
-                          void attachConnectionCaseStack(connection(), caseStackId),
-                        onDetach: () => void detachConnectionCaseStack(connection()),
-                        onOpenVariables: props.onOpenVariables,
-                      }}
-                      onRemove={() => removeConnection(connection())}
-                      onClose={() => setSelectedConnectionId(null)}
+                      onRename={() => setRenamingGroupId(group().id)}
+                      onUngroup={() => ungroup(group())}
+                      onClose={() => setSelectedGroupId(null)}
                     />
                   )}
                 </Show>

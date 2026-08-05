@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import type { CanvasNote } from "@relay/protocol";
+import type { CanvasNote, MapGroup } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -660,6 +660,102 @@ export function ScreenInspector(props: {
                 )}
               </For>
             </Show>
+          </div>
+        </aside>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * Groups are visual organization only, but they still need a discoverable
+ * selection state. This keeps the canvas honest: selecting a section gives
+ * the user useful context without pretending the group is executable.
+ */
+export function GroupInspector(props: {
+  group: MapGroup | null;
+  screens: Array<{ id: string; title: string }>;
+  onSelectScreen: (screenId: string) => void;
+  onRename: () => void;
+  onUngroup: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Show when={props.group}>
+      {(group) => (
+        <aside
+          data-app-map-group-inspector
+          class="absolute top-16 right-3 z-30 w-[min(328px,calc(100%-24px))] overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          aria-label={`Details for group ${group().name}`}
+        >
+          <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
+            <div class="flex min-w-0 items-start gap-2">
+              <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                <Icon name="group" size={12} />
+              </span>
+              <div class="min-w-0">
+                <span class="block text-[10px] font-medium text-[var(--text-weak)]">Group</span>
+                <strong class="mt-1 block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
+                  {group().name}
+                </strong>
+              </div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                aria-label={`Rename ${group().name}`}
+                title="Rename group · F2"
+                onClick={props.onRename}
+              >
+                <Icon name="edit" size={12} />
+              </button>
+              <button
+                type="button"
+                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                aria-label="Close group details"
+                onClick={props.onClose}
+              >
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+          </div>
+          <p class="m-0 mt-2 px-1.5 text-[11px]/[1.45] text-[var(--text-weak)]">
+            {props.screens.length} {props.screens.length === 1 ? "screen" : "screens"} organized
+            together. Groups do not change how a flow runs.
+          </p>
+          <div class="mt-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-2">
+            <span class="block px-1.5 pb-0.5 text-[10px] font-medium text-[var(--text-weak)]">
+              Screens in this group
+            </span>
+            <div class="grid gap-0.5">
+              <For each={props.screens}>
+                {(screen) => (
+                  <button
+                    type="button"
+                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                    onClick={() => props.onSelectScreen(screen.id)}
+                  >
+                    <span class="grid size-5 shrink-0 place-items-center rounded-[5px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]">
+                      <Icon name="smartphone" size={10} />
+                    </span>
+                    <span class="min-w-0 flex-1 truncate">{screen.title}</span>
+                    <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+          <div class="mt-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-1.5 pb-1">
+            <button
+              type="button"
+              class="flex min-h-11 w-full items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              onClick={props.onUngroup}
+            >
+              <Icon name="group" size={12} class="text-[var(--text-weak)]" />
+              <span>Ungroup screens</span>
+              <kbd class="ml-auto text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
+            </button>
           </div>
         </aside>
       )}
