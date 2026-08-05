@@ -6,12 +6,16 @@ description: Exercise New, incognito, cancellation, retry, sharing, reactions, a
 variables:
   new_control_label: New
   new_control_fallback: New chat
+  new_probe_prompt: Send this short message so New has something to clear.
   incognito_control_label: Incognito
   incognito_exit_label: Normal
   cancel_control_label: Stop
   cancel_control_fallback: Cancel
   retry_control_label: Regenerate
   retry_control_fallback: Retry
+  edit_control_label: Edit
+  edit_control_fallback: Edit message
+  edited_suffix: ' !'
   share_control_label: Share
   copy_control_label: Copy
   like_control_label: Like
@@ -33,6 +37,38 @@ steps:
     target:
       identifier: ask.toolbar.textfield
     condition: visible
+  - kind: type
+    text: "{{new_probe_prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: tap
+    target:
+      label: "{{new_control_label}}"
+    fallbackTargets:
+      - label: "{{new_control_fallback}}"
+      - identifier: ask.toolbar.new.button
+  - kind: expect
+    target:
+      identifier: ask.toolbar.textfield
+    condition: visible
+  - kind: expect
+    target:
+      label: "{{new_probe_prompt}}"
+    condition: gone
+    timeoutMs: 5000
+    note: New must leave a clean composer rather than only changing the title.
   - kind: tap
     target:
       label: "{{incognito_control_label}}"
@@ -62,6 +98,18 @@ steps:
       - label: Incognito
     optional: true
     note: Some Grok builds keep the same label and expose the mode in the toolbar instead.
+  - kind: tap
+    target:
+      label: "{{new_control_label}}"
+    fallbackTargets:
+      - label: "{{new_control_fallback}}"
+      - identifier: ask.toolbar.new.button
+  - kind: expect
+    target:
+      label: "{{incognito_prompt}}"
+    condition: gone
+    timeoutMs: 5000
+    note: A new normal conversation must not show the incognito-only message in its visible history.
   - kind: type
     text: "{{cancel_prompt}}"
     target:
@@ -84,12 +132,41 @@ steps:
       identifier: response.done
     condition: visible
     timeoutMs: 10000
+  - kind: expect
+    target:
+      identifier: response.cancelled
+    condition: visible
+    timeoutMs: 5000
+    optional: true
+    note: Builds that expose a cancellation state should surface it explicitly.
   - kind: tap
     target:
       label: "{{retry_control_label}}"
     fallbackTargets:
       - label: "{{retry_control_fallback}}"
       - identifier: response.retry
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: tap
+    target:
+      label: "{{edit_control_label}}"
+    fallbackTargets:
+      - label: "{{edit_control_fallback}}"
+      - identifier: response.edit
+  - kind: type
+    text: "{{edited_suffix}}"
+    target:
+      identifier: response.editor
+    mode: append
+  - kind: tap
+    target:
+      identifier: response.editor.submit
+      label: Send
   - kind: wait-response
     target:
       ref: '@answer'
@@ -117,6 +194,29 @@ steps:
       label: "{{dislike_control_label}}"
     condition: visible
     timeoutMs: 5000
+  - kind: tap
+    target:
+      label: "{{share_control_label}}"
+    fallbackTargets:
+      - identifier: response.share
+  - kind: key
+    key: back
+    optional: true
+  - kind: tap
+    target:
+      label: "{{copy_control_label}}"
+    fallbackTargets:
+      - identifier: response.copy
+  - kind: tap
+    target:
+      label: "{{like_control_label}}"
+    fallbackTargets:
+      - identifier: response.like
+  - kind: tap
+    target:
+      label: "{{dislike_control_label}}"
+    fallbackTargets:
+      - identifier: response.dislike
   - kind: type
     text: "{{weather_prompt}}"
     target:
@@ -140,5 +240,15 @@ steps:
       condition: present
       target:
         label: "{{think_harder_label}}"
-    optional: true
     note: If Auto offers Think harder, use it; otherwise this step records that the suggestion was absent.
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+    when:
+      condition: present
+      target:
+        label: "{{think_harder_label}}"

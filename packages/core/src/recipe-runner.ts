@@ -1426,8 +1426,13 @@ async function runRequiredRecipeStep(
       if (step.action === "write") {
         await clipboardWrite(device, step.text ?? "");
       } else if (step.action === "paste") {
-        await clipboardPaste(device, step.text ?? "", step.target!);
-        log(`clipboard: pasted ${step.text?.length ?? 0} character(s) through the system menu`);
+        // Omitting text means "paste what the previous copy/read left in the
+        // system clipboard". This mirrors a human copy → paste gesture and
+        // keeps the YAML readable; explicit text remains the atomic,
+        // cross-platform path for generated values.
+        const text = step.text ?? (await clipboardRead(device));
+        await clipboardPaste(device, text, step.target!);
+        log(`clipboard: pasted ${text.length} character(s) through the system menu`);
       } else if (step.action === "copy") {
         const value = await clipboardCopy(device, step.target!, step.expect);
         log(`clipboard: copied ${value.length} character(s) through the system menu`);

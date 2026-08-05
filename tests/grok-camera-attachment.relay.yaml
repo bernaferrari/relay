@@ -1,0 +1,60 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-camera-attachment
+name: Grok · camera attachment
+description: Open the attachment menu, take a photo, and verify that the captured image returns to the composer.
+variables:
+  camera_label: Camera
+  shutter_label: Take photo
+  shutter_fallback: Capture
+  use_photo_label: Use photo
+  use_photo_fallback: Done
+  attachment_identifier: ask.toolbar.attachment.photo
+steps:
+  - kind: module
+    recipeId: grok-open-composer
+  - kind: tap
+    target:
+      identifier: ask.toolbar.add.button
+      label: Add
+      text: '+'
+    fallbackTargets:
+      - label: '+'
+      - label: Attach
+  - kind: expect-set
+    identifierPrefix: ask.toolbar.add.menu.
+    labels:
+      - Camera
+      - Photo or Video
+      - Files
+    timeoutMs: 5000
+  - kind: tap
+    target:
+      label: "{{camera_label}}"
+  - kind: expect
+    target:
+      label: "{{shutter_label}}"
+    condition: visible
+    timeoutMs: 10000
+    optional: true
+  - kind: tap
+    target:
+      label: "{{shutter_label}}"
+    fallbackTargets:
+      - label: "{{shutter_fallback}}"
+      - identifier: camera.shutter
+  - kind: tap
+    target:
+      label: "{{use_photo_label}}"
+    fallbackTargets:
+      - label: "{{use_photo_fallback}}"
+      - identifier: camera.use-photo
+  - kind: expect
+    target:
+      identifier: "{{attachment_identifier}}"
+    condition: visible
+    timeoutMs: 10000
+    optional: true
+    note: Some Grok builds expose the thumbnail only as an unlabeled image; keep the captured screenshot as evidence in that case.
+  - kind: screenshot
+    caption: Camera photo returned to the Grok composer

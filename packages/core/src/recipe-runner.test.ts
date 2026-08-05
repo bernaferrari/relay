@@ -470,6 +470,51 @@ describe("runRecipeStep clipboard", () => {
     ]);
   });
 
+  it("can paste the current clipboard after a copy without duplicating the value in YAML", async () => {
+    const calls: unknown[] = [];
+    let clipboard = "hello";
+    const device = stubDevice({
+      clipboard: (options) => {
+        const input = options as { action: string; text?: string };
+        calls.push(input);
+        if (input.action === "read") return Promise.resolve({ action: "read", text: clipboard });
+        if (input.action === "paste") {
+          clipboard = input.text ?? clipboard;
+          return Promise.resolve({
+            action: "paste",
+            text: clipboard,
+            textLength: clipboard.length,
+            message: "Clipboard pasted",
+          });
+        }
+        return Promise.resolve({
+          action: "copy",
+          text: clipboard,
+          textLength: clipboard.length,
+          message: "Clipboard copied",
+        });
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      { kind: "clipboard", action: "paste", target: { identifier: "message" } },
+      noLog,
+    );
+
+    assert.deepEqual(calls, [
+      { platform: "android", serial: "recipe-runner-test", action: "read" },
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        action: "paste",
+        text: "hello",
+        selectorKey: "id",
+        selectorValue: "message",
+      },
+    ]);
+  });
+
   it("reports safe mismatch diagnostics without disclosing clipboard contents", async () => {
     const observed = "private-observed-value";
     const expected = "private-expected-value";

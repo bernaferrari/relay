@@ -806,6 +806,11 @@ describe("validateRecipeSteps", () => {
       },
       {
         kind: "clipboard",
+        action: "paste",
+        target: { identifier: "message" },
+      },
+      {
+        kind: "clipboard",
         action: "copy",
         target: { identifier: "message" },
         expect: "hello",
@@ -822,7 +827,7 @@ describe("validateRecipeSteps", () => {
       { kind: "logs", action: "mark", message: "after sign in" },
       { kind: "module", recipeId: "custom-login" },
     ]);
-    assert.equal(out.length, 15);
+    assert.equal(out.length, 16);
     assert.equal(out.at(-1)?.kind, "module");
   });
 

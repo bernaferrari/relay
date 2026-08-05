@@ -4,6 +4,7 @@ id: grok-multiline-and-attachments
 name: Grok · multiline input and attachments
 description: Exercise multiline paste/copy, keyboard dismissal, scrolling, and the exact attachment menu.
 variables:
+  short_text: Relay copy and paste should preserve this sentence.
   multiline_text: |-
     First line: preserve this text.
     Second line: keep the line break.
@@ -25,6 +26,40 @@ steps:
     match: exact
   - kind: clipboard
     action: read
+    expect: "{{multiline_text}}"
+    match: exact
+  - kind: type
+    text: "{{short_text}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: clipboard
+    action: copy
+    target:
+      identifier: ask.toolbar.textfield
+    expect: "{{short_text}}"
+    match: exact
+  - kind: clipboard
+    action: paste
+    target:
+      identifier: ask.toolbar.textfield
+    note: Paste the value that the immediately preceding copy placed on the system clipboard.
+  - kind: clipboard
+    action: copy
+    target:
+      identifier: ask.toolbar.textfield
+    expect: "{{short_text}}"
+    match: exact
+  - kind: clipboard
+    action: paste
+    text: "{{multiline_text}}"
+    target:
+      identifier: ask.toolbar.textfield
+    note: Replace the short value with the multiline request through the native paste path.
+  - kind: clipboard
+    action: copy
+    target:
+      identifier: ask.toolbar.textfield
     expect: "{{multiline_text}}"
     match: exact
   - kind: device

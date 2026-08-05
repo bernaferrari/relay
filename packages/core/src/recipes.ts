@@ -1207,8 +1207,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       case "clipboard": {
         if (!["read", "write", "paste", "copy"].includes(String(raw.action)))
           throw stepErr(index, 'clipboard requires action: "read" | "write" | "paste" | "copy"');
-        if ((raw.action === "write" || raw.action === "paste") && !isString(raw.text))
-          throw stepErr(index, `clipboard ${raw.action} requires text: string`);
+        if (raw.action === "write" && !isString(raw.text))
+          throw stepErr(index, "clipboard write requires text: string");
         const target =
           raw.action === "paste" || raw.action === "copy"
             ? parseTarget(raw.target, index, "target")
