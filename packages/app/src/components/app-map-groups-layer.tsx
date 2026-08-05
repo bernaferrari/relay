@@ -49,6 +49,7 @@ export function AppMapGroupsLayer(props: {
                   aria-label={`Group named ${group.name}, ${group.screenIds.length} ${group.screenIds.length === 1 ? "screen" : "screens"}`}
                   tabIndex={0}
                   data-app-map-group-id={group.id}
+                  data-tip="Click to inspect group"
                   class={cn(
                     "group/map-group absolute z-0 rounded-[14px] bg-transparent outline outline-1 outline-transparent transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] hover:outline-[color-mix(in_srgb,var(--v2-border-border-strong)_58%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                     selected() &&

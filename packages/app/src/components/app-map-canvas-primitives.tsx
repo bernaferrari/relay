@@ -114,6 +114,7 @@ export function ScreenCard(props: {
       tabIndex={0}
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
+      data-tip="Click to inspect · Enter opens details"
       class={cn(
         "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
         props.selected && "z-20",
@@ -166,6 +167,7 @@ export function ScreenCard(props: {
             aria-expanded={props.detailsOpen === true}
             aria-controls={`app-map-screen-details-${props.node.id}`}
             data-app-map-details-trigger
+            data-tip="Open details · Enter"
             title="Open details · Enter"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
