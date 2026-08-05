@@ -219,9 +219,6 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.2.6
   '@xhmikosr/decompress': ^10.2.1
 
-patchedDependencies:
-  agent-device@0.18.3: ad7cd5aa59469158b77a88aaeef67d2c01bdd6bb8861e7f534d3645049d8a0fd
-
 importers:
 
   .:
@@ -329,8 +326,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       agent-device:
-        specifier: ^0.18.3
-        version: 0.18.3(patch_hash=ad7cd5aa59469158b77a88aaeef67d2c01bdd6bb8861e7f534d3645049d8a0fd)
+        specifier: link:../../vendor/agent-device
+        version: link:../../vendor/agent-device
       playwright-core:
         specifier: ^1.61.1
         version: 1.61.1
@@ -1969,11 +1966,6 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
-
-  agent-device@0.18.3:
-    resolution: {integrity: sha512-6n9jM3qt+pE/eo2ElUnL69wMPGLBrIjZsD5PlGLWo3iJY9WU2kfpaZsqBXNZDEhQvIpWhRtZjh4RMUwSlUZBCA==}
-    engines: {node: '>=22.19'}
-    hasBin: true
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
@@ -4988,10 +4980,6 @@ snapshots:
       event-target-shim: 5.0.1
 
   agent-base@7.1.4: {}
-
-  agent-device@0.18.3(patch_hash=ad7cd5aa59469158b77a88aaeef67d2c01bdd6bb8861e7f534d3645049d8a0fd):
-    dependencies:
-      yaml: 2.9.0
 
   ajv@8.20.0:
     dependencies:

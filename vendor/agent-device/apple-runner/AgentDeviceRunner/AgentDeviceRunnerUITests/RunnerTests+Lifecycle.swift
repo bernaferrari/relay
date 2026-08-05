@@ -22,6 +22,11 @@ func runnerCGImage(from image: RunnerImage) -> CGImage? {
 }
 
 extension RunnerTests {
+  private static let managedRecordingPrefix = "agent-device-recording-"
+  private static let managedRecordingSuffix = ".mp4"
+  private static let managedScreenshotPrefix = "screenshot-"
+  private static let managedScreenshotSuffix = ".png"
+
   // MARK: - Recording
 
   func captureRunnerFrame() -> RunnerImage? {
@@ -58,6 +63,67 @@ extension RunnerTests {
     activeRecording = nil
   }
 
+  /// Removes transport artifacts owned by this runner from its temporary container.
+  ///
+  /// Physical iOS screenshots and recordings are copied to the host after each command.
+  /// The files in the runner container are only transport artifacts, so keeping them after
+  /// a session ends causes iOS to report unbounded Documents & Data usage. Cleanup is
+  /// deliberately scoped to our timestamped PNG and MP4 names so unrelated XCTest
+  /// temporary files are never touched.
+  func cleanupStaleRunnerArtifacts(
+    keeping retainedFileName: String? = nil,
+    includeRecordings: Bool = false
+  ) {
+    let fileManager = FileManager.default
+    let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    let entries: [URL]
+
+    do {
+      entries = try fileManager.contentsOfDirectory(
+        at: temporaryDirectory,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      )
+    } catch {
+      NSLog(
+        "AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_LIST_FAILED path=%@ error=%@",
+        temporaryDirectory.path,
+        String(describing: error)
+      )
+      return
+    }
+
+    for entry in entries {
+      let fileName = entry.lastPathComponent
+      let isRegularFile =
+        (try? entry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+      let isManagedRecording =
+        fileName.hasPrefix(Self.managedRecordingPrefix)
+        && fileName.hasSuffix(Self.managedRecordingSuffix)
+      let isManagedScreenshot =
+        fileName.hasPrefix(Self.managedScreenshotPrefix)
+        && fileName.hasSuffix(Self.managedScreenshotSuffix)
+      guard
+        isRegularFile,
+        fileName != retainedFileName,
+        isManagedScreenshot || (includeRecordings && isManagedRecording)
+      else {
+        continue
+      }
+
+      do {
+        try fileManager.removeItem(at: entry)
+        NSLog("AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_REMOVED path=%@", entry.path)
+      } catch {
+        NSLog(
+          "AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_REMOVE_FAILED path=%@ error=%@",
+          entry.path,
+          String(describing: error)
+        )
+      }
+    }
+  }
+
   func resolveRecordingOutPath(_ requestedOutPath: String) -> String {
 #if os(macOS)
     if requestedOutPath.hasPrefix("/") {
@@ -67,6 +133,7 @@ extension RunnerTests {
     let fileName = URL(fileURLWithPath: requestedOutPath).lastPathComponent
     let fallbackName = "agent-device-recording-\(Int(Date().timeIntervalSince1970 * 1000)).mp4"
     let safeFileName = fileName.isEmpty ? fallbackName : fileName
+    cleanupStaleRunnerArtifacts(keeping: safeFileName, includeRecordings: true)
     return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
   }
 

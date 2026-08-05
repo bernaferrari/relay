@@ -201,9 +201,6 @@ extension RunnerTests {
     delaySeconds: Double,
     repairMode: TextTypingRepairMode = .none
   ) -> TextEntryResult {
-    guard !text.isEmpty else {
-      return TextEntryResult(verified: true, repaired: false, expectedText: "", observedText: "")
-    }
     var activeTarget = target
     let initialTarget = resolveTextEntryElement(app: app, target: activeTarget)
     activeTarget = activeTarget.withElement(initialTarget)
@@ -219,6 +216,15 @@ extension RunnerTests {
         clearTextInput(replacementTarget)
         activeTarget = activeTarget.withElement(replacementTarget)
       }
+    }
+
+    // An empty replacement means clear the field. Returning before replacement
+    // handling left the old value untouched while claiming verification passed.
+    guard !text.isEmpty else {
+      if repairMode == .replacement {
+        return verifyTextEntry(app: app, target: activeTarget, expectedText: "", repaired: false)
+      }
+      return TextEntryResult(verified: true, repaired: false, expectedText: "", observedText: "")
     }
 
     func typeIntoCurrentTarget(_ value: String) -> XCUIElement? {

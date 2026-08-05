@@ -58,6 +58,7 @@ int main(int argc, const char *argv[]) {
 #import <UIKit/UIKit.h>
 
 @interface AgentDeviceRunnerViewController : UIViewController
+@property(nonatomic, strong) UITextView *clipboardProbe;
 @end
 
 @implementation AgentDeviceRunnerViewController
@@ -73,11 +74,50 @@ int main(int argc, const char *argv[]) {
   label.textAlignment = NSTextAlignmentCenter;
   label.translatesAutoresizingMaskIntoConstraints = NO;
 
+  UITextView *clipboardProbe = [[UITextView alloc] init];
+  clipboardProbe.accessibilityIdentifier = @"agent-device.clipboard.probe";
+  clipboardProbe.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+  clipboardProbe.layer.borderColor = UIColor.separatorColor.CGColor;
+  clipboardProbe.layer.borderWidth = 1;
+  clipboardProbe.layer.cornerRadius = 8;
+  clipboardProbe.autocorrectionType = UITextAutocorrectionTypeNo;
+  clipboardProbe.spellCheckingType = UITextSpellCheckingTypeNo;
+  clipboardProbe.translatesAutoresizingMaskIntoConstraints = NO;
+
+  NSString *encodedText = NSProcessInfo.processInfo.environment[@"AGENT_DEVICE_CLIPBOARD_PROBE_TEXT_BASE64"];
+  if (encodedText.length > 0) {
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:encodedText options:0];
+    if (data != nil) {
+      clipboardProbe.text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+  }
+  self.clipboardProbe = clipboardProbe;
+
+  UIButton *copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
+  copyButton.accessibilityIdentifier = @"agent-device.clipboard.copy";
+  [copyButton setTitle:@"Copy probe" forState:UIControlStateNormal];
+  [copyButton addTarget:self action:@selector(copyProbeText) forControlEvents:UIControlEventTouchUpInside];
+  copyButton.translatesAutoresizingMaskIntoConstraints = NO;
+
   [self.view addSubview:label];
+  [self.view addSubview:clipboardProbe];
+  [self.view addSubview:copyButton];
   [NSLayoutConstraint activateConstraints:@[
     [label.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-    [label.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+    [label.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:-36],
+    [clipboardProbe.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:24],
+    [clipboardProbe.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+    [clipboardProbe.widthAnchor constraintEqualToConstant:280],
+    [clipboardProbe.heightAnchor constraintEqualToConstant:88],
+    [copyButton.topAnchor constraintEqualToAnchor:clipboardProbe.bottomAnchor constant:16],
+    [copyButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+    [copyButton.widthAnchor constraintGreaterThanOrEqualToConstant:120],
+    [copyButton.heightAnchor constraintEqualToConstant:44],
   ]];
+}
+
+- (void)copyProbeText {
+  UIPasteboard.generalPasteboard.string = self.clipboardProbe.text ?: @"";
 }
 
 @end

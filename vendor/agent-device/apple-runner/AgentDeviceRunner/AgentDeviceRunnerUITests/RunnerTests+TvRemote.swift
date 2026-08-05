@@ -84,14 +84,31 @@ extension RunnerTests {
 #if os(tvOS)
     return performElementTap(element)
 #else
-    let frame = element.frame
-    if !frame.isEmpty {
-      // XCUIElement.tap() can fail the whole XCTest after navigation because it
-      // re-resolves the tapped element even after the app removed it. Keep the
-      // selector target semantic, then activate its resolved stable screen point.
-      return tapAt(app: app, x: frame.midX, y: frame.midY)
-    }
+    // Keep selector activation in the element's own coordinate space. On a
+    // landscape physical iPad `element.frame` can be reported in native
+    // portrait coordinates while `app.coordinate` expects interface-oriented
+    // points; converting the frame through the app silently taps elsewhere.
+    // An element-relative coordinate lets XCTest own that conversion while
+    // avoiding XCUIElement.tap()'s post-navigation re-resolution failure.
+    return performElementCoordinateTap(element)
+#endif
+  }
+
+  private func performElementCoordinateTap(_ element: XCUIElement) -> RunnerInteractionOutcome {
+#if os(tvOS)
     return performElementTap(element)
+#else
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    })
+    if let exceptionMessage {
+      NSLog("AGENT_DEVICE_RUNNER_ELEMENT_COORDINATE_TAP_IGNORED_EXCEPTION=%@", exceptionMessage)
+      if isPostTapElementDisappearance(exceptionMessage) {
+        return .performed
+      }
+      return .unsupported(message: "element coordinate tap failed: \(exceptionMessage)", hint: nil)
+    }
+    return .performed
 #endif
   }
 

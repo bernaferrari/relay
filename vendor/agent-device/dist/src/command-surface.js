@@ -1,0 +1,1 @@
+import{listCommandFamilyDefinitions as n}from"./2948.js";let a=new Map(n().map(n=>[n.name,n]));async function e(n,e,r){var t;return await (t=e,a.get(t)).invoke(n,r)}export{e as runCommand};

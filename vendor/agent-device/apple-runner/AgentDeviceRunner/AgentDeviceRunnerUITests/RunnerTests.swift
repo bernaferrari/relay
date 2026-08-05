@@ -86,6 +86,7 @@ final class RunnerTests: XCTestCase {
 
   override func setUp() {
     continueAfterFailure = true
+    cleanupStaleRunnerArtifacts()
   }
 
   @MainActor

@@ -4,9 +4,11 @@ import { expect } from "vitest";
 
 async function packageJson(path = "package.json"): Promise<{
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
 }> {
   return JSON.parse(await readFile(path, "utf8")) as {
     scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
   };
 }
 
@@ -34,18 +36,22 @@ describe("Relay workspace verification", () => {
 
   it("keeps physical iOS runner recordings bounded", async () => {
     const workspace = await readFile("pnpm-workspace.yaml", "utf8");
-    const patch = await readFile("patches/agent-device@0.18.3.patch", "utf8");
+    const core = await packageJson("packages/core/package.json");
+    const lifecycle = await readFile(
+      "vendor/agent-device/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift",
+      "utf8",
+    );
 
-    expect(workspace).toContain("agent-device@0.18.3: patches/agent-device@0.18.3.patch");
-    expect(patch).toContain(
+    expect(workspace).not.toContain("patchedDependencies");
+    expect(core.dependencies?.["agent-device"]).toBe("link:../../vendor/agent-device");
+    expect(lifecycle).toContain(
       'private static let managedRecordingPrefix = "agent-device-recording-"',
     );
-    expect(patch).toContain('private static let managedScreenshotPrefix = "screenshot-"');
-    expect(patch).toContain("cleanupStaleRunnerArtifacts()");
-    expect(patch).toContain(
+    expect(lifecycle).toContain('private static let managedScreenshotPrefix = "screenshot-"');
+    expect(lifecycle).toContain("cleanupStaleRunnerArtifacts(");
+    expect(lifecycle).toContain(
       "cleanupStaleRunnerArtifacts(keeping: safeFileName, includeRecordings: true)",
     );
-    expect(patch).toContain("cleanupStaleRunnerArtifacts(keeping: fileName)");
-    expect(patch).toContain("try fileManager.removeItem(at: entry)");
+    expect(lifecycle).toContain("try fileManager.removeItem(at: entry)");
   });
 });

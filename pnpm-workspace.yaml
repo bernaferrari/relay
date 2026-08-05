@@ -17,9 +17,6 @@ overrides:
   vite: "catalog:"
   "@xhmikosr/decompress": "^10.2.1"
 
-patchedDependencies:
-  agent-device@0.18.3: patches/agent-device@0.18.3.patch
-
 peerDependencyRules:
   allowAny:
     - vite

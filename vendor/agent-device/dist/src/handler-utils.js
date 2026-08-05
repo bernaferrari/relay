@@ -1,0 +1,1 @@
+function o(o,s,i,n,t,l){s&&o.recordAction(s,{command:n,positionals:l?.positionals??i.positionals??[],flags:l?.flags??i.flags??{},result:t??{}})}export{o as recordSessionAction};

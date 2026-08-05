@@ -3,7 +3,10 @@ examples/test-app/.env.local
 scripts/perf/.results/
 .pnpm-store/
 .fallow/
-dist/
+dist/*
+!dist/
+!dist/src/
+!dist/src/**
 coverage/
 .tmp/
 .DS_Store

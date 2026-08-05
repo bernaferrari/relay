@@ -1,7 +1,112 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
 
 extension RunnerTests {
   // MARK: - Main Thread Dispatch
+
+  private enum ClipboardProbe {
+    static let identifier = "agent-device.clipboard.probe"
+    static let copyIdentifier = "agent-device.clipboard.copy"
+    static let environmentKey = "AGENT_DEVICE_CLIPBOARD_PROBE_TEXT_BASE64"
+  }
+
+  private func editMenuItem(
+    named name: String,
+    applications: [XCUIApplication],
+    timeout: TimeInterval
+  ) -> XCUIElement? {
+    let predicate = NSPredicate(
+      format: "label ==[c] %@ OR identifier ==[c] %@",
+      name,
+      name
+    )
+    let deadline = Date().addingTimeInterval(timeout)
+    repeat {
+      for application in applications {
+        let candidate = application.descendants(matching: .any).matching(predicate).firstMatch
+        if candidate.exists && candidate.isHittable {
+          return candidate
+        }
+      }
+      sleepFor(0.05)
+    } while Date() < deadline
+    return nil
+  }
+
+  private func revealEditMenu(on element: XCUIElement) {
+    element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.8)
+  }
+
+  private func runnerClipboardProbe(text: String) -> XCUIElement? {
+    app.launchEnvironment[ClipboardProbe.environmentKey] = Data(text.utf8).base64EncodedString()
+    app.launch()
+    let probe = app.textViews[ClipboardProbe.identifier]
+    guard probe.waitForExistence(timeout: 3), probe.isHittable else {
+      return nil
+    }
+    return probe
+  }
+
+  private func copyRunnerClipboardProbe(text: String) -> Bool {
+    guard runnerClipboardProbe(text: text) != nil else {
+      return false
+    }
+    let copy = app.buttons[ClipboardProbe.copyIdentifier]
+    guard copy.waitForExistence(timeout: 2), copy.isHittable else {
+      return false
+    }
+    _ = activateElement(app: app, element: copy, action: "copy Relay clipboard probe")
+    sleepFor(0.15)
+    return true
+  }
+
+  private func copyFromElement(_ element: XCUIElement, in application: XCUIApplication) -> Bool {
+    _ = activateElement(app: application, element: element, action: "focus clipboard copy source")
+    sleepFor(0.15)
+
+    // Hardware-keyboard commands are the most reliable way to select and copy
+    // multiline text on iPad. They avoid app-specific contextual menus and the
+    // separate TextInputUI process used by recent iOS releases.
+    element.typeKey("a", modifierFlags: .command)
+    sleepFor(0.1)
+    element.typeKey("c", modifierFlags: .command)
+    sleepFor(0.15)
+
+    // TextInputUI is a separate process on recent physical iPads, so XCTest
+    // often cannot inspect the Copy menu even when the hardware shortcut ran.
+    // The caller poisons the clipboard first and verifies the resulting value
+    // through Relay's host-app probe; that is stronger proof than menu presence.
+    return true
+  }
+
+  private func pasteIntoElement(_ element: XCUIElement, in application: XCUIApplication) -> Bool {
+    _ = activateElement(app: application, element: element, action: "focus clipboard paste target")
+    sleepFor(0.15)
+
+    // The iPad keyboard exposes an explicit Paste shortcut. Prefer it because
+    // the floating edit menu may be hosted by a separate TextInputUI process
+    // that XCTest cannot inspect even though a person can see it.
+    let pasteShortcut = application.descendants(matching: .any)
+      .matching(NSPredicate(format: "identifier == %@", "assistantPaste:forEvent:"))
+      .firstMatch
+    if pasteShortcut.waitForExistence(timeout: 1.5), pasteShortcut.isHittable {
+      _ = activateElement(app: application, element: pasteShortcut, action: "keyboard paste")
+      return true
+    }
+
+    revealEditMenu(on: element)
+    guard let paste = editMenuItem(
+      named: "Paste",
+      applications: [application, springboard],
+      timeout: 3
+    ) else {
+      return false
+    }
+    _ = activateElement(app: application, element: paste, action: "system paste")
+    return true
+  }
 
   private func currentUptimeMs() -> Double {
     ProcessInfo.processInfo.systemUptime * 1000
@@ -398,6 +503,252 @@ extension RunnerTests {
     }
 
     switch command.command {
+    case .clipboardRead:
+#if canImport(UIKit)
+      var text = ""
+      let read = { text = UIPasteboard.general.string ?? "" }
+      if Thread.isMainThread { read() } else { DispatchQueue.main.sync(execute: read) }
+      return Response(ok: true, data: DataPayload(text: text))
+#else
+      return Response(
+        ok: false,
+        error: ErrorPayload(
+          code: "UNSUPPORTED_OPERATION",
+          message: "clipboard is unavailable on this Apple platform"
+        )
+      )
+#endif
+    case .clipboardWrite:
+#if canImport(UIKit)
+      guard let text = command.text else {
+        return Response(ok: false, error: ErrorPayload(message: "clipboardWrite requires text"))
+      }
+      var observed = ""
+      let write = {
+        // UIKit's pasteboard is main-thread state. Assigning it from XCTest's
+        // command worker can report success while leaving the system clipboard
+        // empty on physical iOS hardware. Use an explicit public text item and
+        // verify the write before acknowledging it.
+        UIPasteboard.general.setItems(
+          [["public.utf8-plain-text": text]],
+          options: [
+            .localOnly: false,
+            .expirationDate: Date().addingTimeInterval(60 * 60),
+          ]
+        )
+        observed = UIPasteboard.general.string ?? ""
+      }
+      if Thread.isMainThread { write() } else { DispatchQueue.main.sync(execute: write) }
+      guard observed == text else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_WRITE_FAILED",
+            message: "clipboard write did not persist"
+          )
+        )
+      }
+      return Response(ok: true, data: DataPayload(message: "clipboard updated"))
+#else
+      return Response(
+        ok: false,
+        error: ErrorPayload(
+          code: "UNSUPPORTED_OPERATION",
+          message: "clipboard is unavailable on this Apple platform"
+        )
+      )
+#endif
+    case .clipboardPaste:
+#if canImport(UIKit)
+      guard let text = command.text else {
+        return Response(ok: false, error: ErrorPayload(message: "clipboardPaste requires text"))
+      }
+      guard let selectorKey = command.selectorKey, let selectorValue = command.selectorValue else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(message: "clipboardPaste requires selectorKey and selectorValue")
+        )
+      }
+      let match = findElement(
+        app: activeApp,
+        selectorKey: selectorKey,
+        selectorValue: selectorValue,
+        allowNonHittableFallback: false
+      )
+      if match.isAmbiguous {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "clipboard paste target is ambiguous")
+        )
+      }
+      guard let element = match.element else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "ELEMENT_NOT_FOUND", message: "clipboard paste target was not found")
+        )
+      }
+      guard isTextEntryElement(element) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "INVALID_TARGET", message: "clipboard paste target is not editable text")
+        )
+      }
+
+      guard copyRunnerClipboardProbe(text: text) else {
+        activeApp.activate()
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_PROBE_UNAVAILABLE",
+            message: "Relay could not open its clipboard probe"
+          )
+        )
+      }
+      activeApp.activate()
+      guard pasteIntoElement(element, in: activeApp) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "EDIT_MENU_UNAVAILABLE",
+            message: "the system Paste action did not appear",
+            hint: "Focus an editable field and retry after the keyboard is ready."
+          )
+        )
+      }
+
+      let deadline = Date().addingTimeInterval(2)
+      var observed = ""
+      repeat {
+        let refreshed = findElement(
+          app: activeApp,
+          selectorKey: selectorKey,
+          selectorValue: selectorValue,
+          allowNonHittableFallback: false
+        ).element
+        observed = (refreshed?.value as? String) ?? ""
+        if observed.contains(text) { break }
+        sleepFor(0.1)
+      } while Date() < deadline
+      guard observed.contains(text) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_PASTE_FAILED",
+            message: "Paste was activated but the target did not contain the clipboard text"
+          )
+        )
+      }
+      return Response(ok: true, data: DataPayload(message: "clipboard pasted", text: observed))
+#else
+      return Response(
+        ok: false,
+        error: ErrorPayload(code: "UNSUPPORTED_OPERATION", message: "clipboard paste is unavailable on this Apple platform")
+      )
+#endif
+    case .clipboardCopy:
+#if canImport(UIKit)
+      guard let selectorKey = command.selectorKey, let selectorValue = command.selectorValue else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(message: "clipboardCopy requires selectorKey and selectorValue")
+        )
+      }
+      let match = findElement(
+        app: activeApp,
+        selectorKey: selectorKey,
+        selectorValue: selectorValue,
+        allowNonHittableFallback: false
+      )
+      if match.isAmbiguous {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "clipboard copy target is ambiguous")
+        )
+      }
+      guard let element = match.element else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "ELEMENT_NOT_FOUND", message: "clipboard copy target was not found")
+        )
+      }
+      guard isTextEntryElement(element) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "INVALID_TARGET", message: "clipboard copy target is not editable text")
+        )
+      }
+
+      let clipboardSentinel = "relay-copy-probe-\(UUID().uuidString)"
+      guard copyRunnerClipboardProbe(text: clipboardSentinel) else {
+        activeApp.activate()
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_PROBE_UNAVAILABLE",
+            message: "Relay could not prepare its clipboard verification probe"
+          )
+        )
+      }
+      activeApp.activate()
+      sleepFor(0.2)
+      let refreshedMatch = findElement(
+        app: activeApp,
+        selectorKey: selectorKey,
+        selectorValue: selectorValue,
+        allowNonHittableFallback: false
+      )
+      guard let refreshedElement = refreshedMatch.element,
+        copyFromElement(refreshedElement, in: activeApp)
+      else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_COPY_FAILED",
+            message: "Relay could not reactivate the copy source"
+          )
+        )
+      }
+      guard let probe = runnerClipboardProbe(text: "") else {
+        activeApp.activate()
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "CLIPBOARD_PROBE_UNAVAILABLE",
+            message: "Relay could not open its clipboard probe"
+          )
+        )
+      }
+      guard pasteIntoElement(probe, in: app) else {
+        activeApp.activate()
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "EDIT_MENU_UNAVAILABLE",
+            message: "the system Paste action did not appear in Relay's clipboard probe"
+          )
+        )
+      }
+      let copied = (probe.value as? String) ?? ""
+      activeApp.activate()
+      guard !copied.isEmpty, copied != clipboardSentinel else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "CLIPBOARD_COPY_FAILED", message: "Copy did not replace Relay's verification value")
+        )
+      }
+      if let expected = command.text, copied != expected {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "CLIPBOARD_COPY_MISMATCH", message: "copied text did not match the expected value")
+        )
+      }
+      return Response(ok: true, data: DataPayload(message: "clipboard copied", text: copied))
+#else
+      return Response(
+        ok: false,
+        error: ErrorPayload(code: "UNSUPPORTED_OPERATION", message: "clipboard copy is unavailable on this Apple platform")
+      )
+#endif
     case .status:
       return executeStatus(command: command)
     case .shutdown:
@@ -832,6 +1183,7 @@ extension RunnerTests {
         return Response(ok: false, error: ErrorPayload(message: "Failed to encode screenshot as PNG"))
       }
       let fileName = "screenshot-\(Int(Date().timeIntervalSince1970 * 1000)).png"
+      cleanupStaleRunnerArtifacts(keeping: fileName)
       let filePath = (NSTemporaryDirectory() as NSString).appendingPathComponent(fileName)
       do {
         try pngData.write(to: URL(fileURLWithPath: filePath))

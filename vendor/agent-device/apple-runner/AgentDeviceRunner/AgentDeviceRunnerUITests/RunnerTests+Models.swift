@@ -23,6 +23,10 @@ enum CommandType: String, Codable {
   case appSwitcher
   case keyboardDismiss
   case keyboardReturn
+  case clipboardRead
+  case clipboardWrite
+  case clipboardPaste
+  case clipboardCopy
   case alert
   case pinch
   case sequence
@@ -74,12 +78,19 @@ extension CommandType {
     // .sequence is the fused multi-step gesture batch.
     case .tap, .longPress, .drag, .remotePress, .type, .swipe, .scroll, .desktopScroll,
          .back, .backInApp, .backSystem, .rotate, .appSwitcher,
-         .keyboardDismiss, .keyboardReturn, .pinch, .sequence, .rotateGesture, .transformGesture:
+         .keyboardDismiss, .keyboardReturn, .clipboardPaste, .clipboardCopy,
+         .pinch, .sequence, .rotateGesture, .transformGesture:
       return CommandTraits(isInteraction: true, readOnly: .never, isLifecycle: false)
 
     // Read-only reads: eligible for the session-invalidating retry.
     case .findText, .readText, .snapshot:
       return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: false)
+
+    case .clipboardRead:
+      return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: true)
+
+    case .clipboardWrite:
+      return CommandTraits(isInteraction: false, readOnly: .never, isLifecycle: true)
 
     // Screenshot is both a read and a runner-lifecycle command (skips app-activation preflight).
     case .screenshot:

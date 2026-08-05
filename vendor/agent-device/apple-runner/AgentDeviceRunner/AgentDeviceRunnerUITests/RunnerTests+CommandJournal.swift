@@ -146,6 +146,7 @@ final class RunnerCommandJournal {
     case .tap, .mouseClick, .longPress, .drag,
          .remotePress, .type, .swipe, .scroll, .desktopScroll, .findText, .querySelector, .readText, .back,
          .backInApp, .backSystem, .home, .rotate, .appSwitcher, .keyboardDismiss, .keyboardReturn,
+         .clipboardRead, .clipboardWrite, .clipboardPaste, .clipboardCopy,
          .alert, .pinch, .sequence, .rotateGesture, .transformGesture, .recordStart, .recordStop,
          .status, .uptime, .shutdown:
       return true

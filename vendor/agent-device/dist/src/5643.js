@@ -1,0 +1,1 @@
+import n from"node:path";function e(n){return"web"===n?".webm":".mp4"}function r(e,r){return n.extname(e)?e:`${e}${r}`}function o(n){return`./recording-${Date.now()}${e(n)}`}export{r as appendRecordingExtensionWhenMissing,o as defaultRecordingPath,e as recordingExtensionForPlatform};
