@@ -3,6 +3,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { listAdbDevices } from "./adb-devices.js";
 import { listDevices } from "./workspace.js";
 
 const execFileAsync = promisify(execFile);
@@ -61,16 +62,42 @@ async function checkAdb(): Promise<DoctorCheck> {
 
 async function checkDevices(): Promise<DoctorCheck> {
   try {
+    const adbDevices = await listAdbDevices();
+    const unauthorized = adbDevices.filter((device) => device.connectionState === "unauthorized");
+    if (unauthorized.length > 0) {
+      return {
+        id: "devices",
+        ok: false,
+        message:
+          `Android device detected but authorization is pending (${unauthorized.map((device) => device.name).join(", ")}). ` +
+          "Unlock the phone and approve the USB debugging dialog, then run relay device list.",
+      };
+    }
+
+    const offline = adbDevices.filter((device) => device.connectionState === "offline");
+    if (offline.length > 0) {
+      return {
+        id: "devices",
+        ok: false,
+        message:
+          `Android device is offline (${offline.map((device) => device.name).join(", ")}). ` +
+          "Reconnect the phone or restart wireless debugging, then run relay device list.",
+      };
+    }
+
     const devices = await listDevices();
-    const count = devices.length;
+    const androidDevices = devices.filter((device) => device.platform === "android");
+    const count = androidDevices.length;
     if (count === 0) {
       return {
         id: "devices",
         ok: false,
-        message: "No Android devices listed (connect a device or start an emulator)",
+        message:
+          "No Android device is visible to ADB. Connect and unlock the phone, enable USB debugging, " +
+          "approve the USB debugging dialog, then run relay device list.",
       };
     }
-    const summary = devices
+    const summary = androidDevices
       .slice(0, 5)
       .map((d) => `${d.name} (${d.serial})`)
       .join(", ");
