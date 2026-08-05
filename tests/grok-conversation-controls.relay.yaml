@@ -1,0 +1,144 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-conversation-controls
+name: Grok · conversation controls
+description: Exercise New, incognito, cancellation, retry, sharing, reactions, and conditional Think harder. Override selector variables when a Grok build labels controls differently.
+variables:
+  new_control_label: New
+  new_control_fallback: New chat
+  incognito_control_label: Incognito
+  incognito_exit_label: Normal
+  cancel_control_label: Stop
+  cancel_control_fallback: Cancel
+  retry_control_label: Regenerate
+  retry_control_fallback: Retry
+  share_control_label: Share
+  copy_control_label: Copy
+  like_control_label: Like
+  dislike_control_label: Dislike
+  think_harder_label: Think harder
+  incognito_prompt: This message must stay out of normal history.
+  cancel_prompt: Generate a long answer so I can cancel it immediately.
+  weather_prompt: What is the weather today? Use the best available answer.
+steps:
+  - kind: module
+    recipeId: grok-open-composer
+  - kind: tap
+    target:
+      label: "{{new_control_label}}"
+    fallbackTargets:
+      - label: "{{new_control_fallback}}"
+      - identifier: ask.toolbar.new.button
+  - kind: expect
+    target:
+      identifier: ask.toolbar.textfield
+    condition: visible
+  - kind: tap
+    target:
+      label: "{{incognito_control_label}}"
+    fallbackTargets:
+      - label: Private
+      - identifier: ask.toolbar.incognito.button
+  - kind: type
+    text: "{{incognito_prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: tap
+    target:
+      label: "{{incognito_exit_label}}"
+    fallbackTargets:
+      - label: Incognito
+    optional: true
+    note: Some Grok builds keep the same label and expose the mode in the toolbar instead.
+  - kind: type
+    text: "{{cancel_prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: sleep
+    ms: 1000
+  - kind: tap
+    target:
+      label: "{{cancel_control_label}}"
+    fallbackTargets:
+      - label: "{{cancel_control_fallback}}"
+      - identifier: response.cancel
+  - kind: expect
+    target:
+      identifier: response.done
+    condition: visible
+    timeoutMs: 10000
+  - kind: tap
+    target:
+      label: "{{retry_control_label}}"
+    fallbackTargets:
+      - label: "{{retry_control_fallback}}"
+      - identifier: response.retry
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: expect
+    target:
+      label: "{{share_control_label}}"
+    condition: visible
+    timeoutMs: 5000
+  - kind: expect
+    target:
+      label: "{{copy_control_label}}"
+    condition: visible
+    timeoutMs: 5000
+  - kind: expect
+    target:
+      label: "{{like_control_label}}"
+    condition: visible
+    timeoutMs: 5000
+  - kind: expect
+    target:
+      label: "{{dislike_control_label}}"
+    condition: visible
+    timeoutMs: 5000
+  - kind: type
+    text: "{{weather_prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: tap
+    target:
+      label: "{{think_harder_label}}"
+    when:
+      condition: present
+      target:
+        label: "{{think_harder_label}}"
+    optional: true
+    note: If Auto offers Think harder, use it; otherwise this step records that the suggestion was absent.

@@ -1153,36 +1153,50 @@ async function runRequiredRecipeStep(
 
     case "evaluate-semantic": {
       const input = readInput(ctx, step.input);
-      const result = await evaluateSemantic({
-        input,
-        criteria: step.criteria,
-        threshold: step.threshold,
-        provider: step.provider,
-        model: step.model,
-      });
-      (job?.artifacts ?? ctx.artifacts)?.push({
-        kind: "semantic-evaluation",
-        capturedAt: now(),
-        data: result,
-      });
-      log(`semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`);
+      const evaluate = (provider?: string, model?: string) =>
+        evaluateSemantic({
+          input,
+          criteria: step.criteria,
+          threshold: step.threshold,
+          provider,
+          model,
+        });
+
       if (step.requireAgreement) {
-        let second;
-        try {
-          second = await evaluateSemantic({
-            input,
-            criteria: step.criteria,
-            threshold: step.threshold,
-            provider: step.secondProvider,
-            model: step.secondModel,
-          });
+        // Independent judges are deliberately started together. This keeps
+        // multi-model verification from doubling latency while preserving a
+        // separate artifact and provenance record for every judge.
+        const [firstOutcome, secondOutcome] = await Promise.allSettled([
+          evaluate(step.provider, step.model),
+          evaluate(step.secondProvider, step.secondModel),
+        ]);
+        if (firstOutcome.status === "rejected") {
+          const summary = `Primary judge unavailable: ${firstOutcome.reason instanceof Error ? firstOutcome.reason.message : String(firstOutcome.reason)}`;
           job?.artifacts.push({
-            kind: "semantic-evaluation",
+            kind: "judge-consensus",
             capturedAt: now(),
-            data: { ...second, judge: "independent" },
+            data: {
+              status: "uncertain",
+              error: summary,
+              second:
+                secondOutcome.status === "fulfilled"
+                  ? { ...secondOutcome.value, judge: "independent" }
+                  : undefined,
+            },
           });
-        } catch (error) {
-          const summary = `Independent judge unavailable: ${error instanceof Error ? error.message : String(error)}`;
+          throw new Error(`judge uncertain: ${summary}`);
+        }
+        const result = firstOutcome.value;
+        (job?.artifacts ?? ctx.artifacts)?.push({
+          kind: "semantic-evaluation",
+          capturedAt: now(),
+          data: result,
+        });
+        log(
+          `semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`,
+        );
+        if (secondOutcome.status === "rejected") {
+          const summary = `Independent judge unavailable: ${secondOutcome.reason instanceof Error ? secondOutcome.reason.message : String(secondOutcome.reason)}`;
           job?.artifacts.push({
             kind: "judge-consensus",
             capturedAt: now(),
@@ -1190,6 +1204,15 @@ async function runRequiredRecipeStep(
           });
           throw new Error(`judge uncertain: ${summary}`);
         }
+        const second = secondOutcome.value;
+        job?.artifacts.push({
+          kind: "semantic-evaluation",
+          capturedAt: now(),
+          data: { ...second, judge: "independent" },
+        });
+        log(
+          `independent evaluation: ${second.status} · ${second.score.toFixed(2)} · ${second.summary}`,
+        );
         const agreed = result.status === second.status;
         job?.artifacts.push({
           kind: "judge-consensus",
@@ -1201,7 +1224,22 @@ async function runRequiredRecipeStep(
             `judge uncertain: judges disagree (${result.provider}: ${result.status}; ${second.provider}: ${second.status})`,
           );
         }
+        if (result.status === "uncertain") {
+          throw new Error(`judge uncertain: ${result.summary}`);
+        }
+        if (result.status === "fail") {
+          throw new Error(`semantic assertion: ${result.summary}`);
+        }
+        break;
       }
+
+      const result = await evaluate(step.provider, step.model);
+      (job?.artifacts ?? ctx.artifacts)?.push({
+        kind: "semantic-evaluation",
+        capturedAt: now(),
+        data: result,
+      });
+      log(`semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`);
       if (result.status === "uncertain") {
         throw new Error(`judge uncertain: ${result.summary}`);
       }

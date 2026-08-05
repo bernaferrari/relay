@@ -1,0 +1,18 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-open-composer
+name: Grok · open composer
+description: Open the installed Grok app and wait for a usable composer. Reusable setup for focused smoke flows.
+variables:
+  grok_package: ai.x.grok
+steps:
+  - kind: app
+    action: open
+    app: "{{grok_package}}"
+    relaunch: false
+    note: Keep the existing signed-in session and open the app without resetting it.
+  - kind: wait-for
+    target:
+      identifier: ask.toolbar.textfield
+    timeoutMs: 30000
+    note: The same stable composer identifier is used by humans, recordings, and agents.

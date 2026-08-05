@@ -1,0 +1,54 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-rich-response-judged
+name: Grok · rich response with independent judges
+description: Ask for Markdown, Python, and LaTeX, then run two OpenRouter models in parallel against the captured response.
+variables:
+  prompt: |-
+    Create a short answer with all of these, clearly separated:
+    # A Markdown heading
+    a fenced Python function named greet
+    simple LaTeX for x squared
+    one longer displayed LaTeX equation
+  primary_model: openai/gpt-4o-mini
+  secondary_model: google/gemini-2.5-flash
+steps:
+  - kind: module
+    recipeId: grok-open-composer
+  - kind: type
+    text: "{{prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 2000
+  - kind: extract
+    as: answer
+    target:
+      ref: '@answer'
+    role: assistant
+  - kind: evaluate-semantic
+    input: answer
+    criteria:
+      - The response contains a readable Markdown heading.
+      - The response contains a fenced Python function named greet.
+      - The response contains a correct simple LaTeX expression for x squared.
+      - The response contains one longer displayed LaTeX equation.
+    threshold: 0.9
+    provider: openrouter
+    model: "{{primary_model}}"
+    requireAgreement: true
+    secondProvider: openrouter
+    secondModel: "{{secondary_model}}"
+    note: Judges run concurrently and both decisions remain visible in the run evidence.
+  - kind: screenshot
+    caption: Rich response accepted by two independent judges

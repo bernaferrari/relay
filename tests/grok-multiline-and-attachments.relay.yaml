@@ -1,0 +1,69 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-multiline-and-attachments
+name: Grok · multiline input and attachments
+description: Exercise multiline paste/copy, keyboard dismissal, scrolling, and the exact attachment menu.
+variables:
+  multiline_text: |-
+    First line: preserve this text.
+    Second line: keep the line break.
+    Third line: do not jump the cursor.
+steps:
+  - kind: module
+    recipeId: grok-open-composer
+  - kind: clipboard
+    action: paste
+    text: "{{multiline_text}}"
+    target:
+      identifier: ask.toolbar.textfield
+    note: Paste is a single native transaction so Android and iOS keep multiline text intact.
+  - kind: clipboard
+    action: copy
+    target:
+      identifier: ask.toolbar.textfield
+    expect: "{{multiline_text}}"
+    match: exact
+  - kind: clipboard
+    action: read
+    expect: "{{multiline_text}}"
+    match: exact
+  - kind: device
+    action: keyboard-dismiss
+  - kind: scroll
+    direction: down
+    amount: 0.45
+  - kind: scroll
+    direction: up
+    amount: 0.45
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: screenshot
+    caption: Multiline response after scroll and paste
+  - kind: tap
+    target:
+      identifier: ask.toolbar.add.button
+      label: Add
+      text: '+'
+    fallbackTargets:
+      - label: '+'
+      - label: Attach
+  - kind: expect-set
+    identifierPrefix: ask.toolbar.add.menu.
+    labels:
+      - Camera
+      - Photo or Video
+      - Files
+    timeoutMs: 5000
+  - kind: screenshot
+    caption: Attachment menu contains only Camera, Photo or Video, and Files
+  - kind: key
+    key: back

@@ -129,6 +129,59 @@ function registerBuiltins(): void {
       },
     });
   }
+
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (openRouterKey) {
+    registerEvaluationProvider({
+      id: "openrouter",
+      async evaluate(input) {
+        const model = input.model ?? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini";
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openRouterKey}`,
+            "Content-Type": "application/json",
+            ...(process.env.OPENROUTER_HTTP_REFERER
+              ? { "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER }
+              : {}),
+            ...(process.env.OPENROUTER_APP_TITLE
+              ? { "X-Title": process.env.OPENROUTER_APP_TITLE }
+              : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: promptFor(input) }],
+            response_format: { type: "json_object" },
+          }),
+        });
+        const body = (await response.json().catch(() => ({}))) as {
+          choices?: { message?: { content?: unknown } }[];
+          error?: { message?: string; code?: string | number };
+        };
+        if (!response.ok) {
+          const detail = body.error?.message ?? `HTTP ${response.status}`;
+          throw new Error(`semantic judge unavailable: OpenRouter ${detail}`);
+        }
+        const content = body.choices?.[0]?.message?.content;
+        const text =
+          typeof content === "string"
+            ? content
+            : Array.isArray(content)
+              ? content
+                  .map((part) =>
+                    part && typeof part === "object" && "text" in part
+                      ? String((part as { text?: unknown }).text ?? "")
+                      : "",
+                  )
+                  .join("\n")
+              : "";
+        if (!text.trim()) {
+          throw new Error("semantic judge unavailable: OpenRouter returned no content");
+        }
+        return normalizeResult(parseJson(text), input, "openrouter", model);
+      },
+    });
+  }
 }
 
 registerBuiltins();

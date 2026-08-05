@@ -1,0 +1,38 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-send-hello
+name: Grok · hello response
+description: Send a constrained hello prompt and verify the assistant response contains hello.
+variables:
+  prompt: 'Hello. Do not answer anything else but "hello".'
+  expected_answer: hello
+steps:
+  - kind: module
+    recipeId: grok-open-composer
+  - kind: type
+    text: "{{prompt}}"
+    target:
+      identifier: ask.toolbar.textfield
+    mode: replace
+  - kind: tap
+    target:
+      identifier: ask.toolbar.send.button
+      label: Send
+  - kind: wait-response
+    target:
+      ref: '@answer'
+    idleTarget:
+      identifier: response.done
+    timeoutMs: 90000
+    stableForMs: 1500
+  - kind: extract
+    as: answer
+    target:
+      ref: '@answer'
+    role: assistant
+  - kind: assert-content
+    input: answer
+    expected: "{{expected_answer}}"
+    match: contains
+  - kind: screenshot
+    caption: Verified hello response

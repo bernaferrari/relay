@@ -981,6 +981,64 @@ describe("runRecipeStep conversational evidence", () => {
     });
   });
 
+  it("starts independent judges concurrently", async () => {
+    let started = 0;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const result = {
+      status: "pass" as const,
+      confidence: 0.98,
+      score: 1,
+      summary: "Both judges agree.",
+      criteria: [],
+      provider: "fixture",
+      model: "fixture-v1",
+      evaluatedAt: Date.now(),
+    };
+    const makeProvider = (id: string) =>
+      registerEvaluationProvider({
+        id,
+        evaluate: async () => {
+          started += 1;
+          if (started === 2) release();
+          await ready;
+          return { ...result, provider: id };
+        },
+      });
+    const unregisterFirst = makeProvider("judge-concurrent-a");
+    const unregisterSecond = makeProvider("judge-concurrent-b");
+    const owner = job();
+    owner.resolvedInputs.response = "A complete response.";
+    try {
+      const running = runRecipeStep(
+        stubDevice({}),
+        {
+          kind: "evaluate-semantic",
+          input: "response",
+          criteria: ["The response is complete"],
+          provider: "judge-concurrent-a",
+          requireAgreement: true,
+          secondProvider: "judge-concurrent-b",
+        },
+        { log: () => {}, job: owner },
+      );
+      await Promise.race([
+        ready,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("independent judges did not start together")), 500),
+        ),
+      ]);
+      assert.equal(started, 2);
+      release();
+      await running;
+    } finally {
+      unregisterFirst();
+      unregisterSecond();
+    }
+  });
+
   it("classifies independent judge disagreement as uncertain", async () => {
     const unregisterFirst = registerEvaluationProvider({
       id: "judge-pass",
