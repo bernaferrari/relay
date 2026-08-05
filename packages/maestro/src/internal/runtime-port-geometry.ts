@@ -3,7 +3,11 @@ import { buildInPageSwipeGesturePlan } from '@agent-device/contracts/interaction
 import { isPositiveFiniteRect } from '@agent-device/kernel/rect';
 import type { Rect, SnapshotState } from '@agent-device/kernel/snapshot';
 import { pointInsideRect } from './shared.ts';
-import { normalizeType } from '@agent-device/contracts/snapshot';
+import {
+  findNearestScrollableAncestor,
+  isScrollableNodeLike,
+  normalizeType,
+} from '@agent-device/contracts/snapshot';
 import { MAESTRO_COMPATIBILITY_PRESETS } from './compatibility-policy.ts';
 import { resolveNumeric } from './engine-flow.ts';
 import type { MaestroRuntimeRequest } from './engine-types.ts';
@@ -62,7 +66,7 @@ function selectMaestroScrollableViewport(
   const vertical = direction === 'up' || direction === 'down';
   const scrollable = filterVisibleMaestroMatches({
     nodes: snapshot.nodes,
-    matches: snapshot.nodes.filter((node) => isScrollableSnapshotType(node.type)),
+    matches: snapshot.nodes.filter((node) => isScrollableNodeLike(node)),
     platform,
   });
   const applicationViewport =
@@ -86,11 +90,19 @@ function selectMaestroScrollableViewport(
   for (const target of snapshot.nodes.filter((node) =>
     matchesMaestroTypedSelector(node, selector),
   )) {
-    const container = findNearestScrollableContainer(target, byIndex, { includeSelf: true });
+    const container = findScrollContainer(target, byIndex);
     const candidate = container ? candidateByIndex.get(container.index) : undefined;
     if (candidate) return candidate.viewport;
   }
   return candidates.sort(compareViewportAreaDescending)[0]?.viewport;
+}
+
+/** The nearest scroll container at or above `node`. */
+function findScrollContainer(
+  node: SnapshotState['nodes'][number],
+  byIndex: ReadonlyMap<number, SnapshotState['nodes'][number]>,
+): SnapshotState['nodes'][number] | null {
+  return isScrollableNodeLike(node) ? node : findNearestScrollableAncestor(node, byIndex);
 }
 
 function findLargestViewportRect(nodes: SnapshotState['nodes']): Rect | undefined {
@@ -103,39 +115,6 @@ function findLargestViewportRect(nodes: SnapshotState['nodes']): Rect | undefine
       (left, right) =>
         right.rect!.width * right.rect!.height - left.rect!.width * left.rect!.height,
     )[0]?.rect;
-}
-
-function isScrollableSnapshotType(type: string | undefined): boolean {
-  const normalized = normalizeType(type ?? '');
-  return (
-    normalized === 'collectionview' ||
-    normalized === 'table' ||
-    normalized === 'scrollview' ||
-    normalized === 'scrollarea'
-  );
-}
-
-// See the note on `snapshot-policy.ts`'s `findScrollableAncestorRect`: same
-// walk, third scrollable predicate, deliberately not merged.
-function findNearestScrollableContainer(
-  node: SnapshotState['nodes'][number],
-  byIndex: ReadonlyMap<number, SnapshotState['nodes'][number]>,
-  options: { includeSelf?: boolean } = {},
-): SnapshotState['nodes'][number] | null {
-  let current =
-    options.includeSelf === true && isScrollableSnapshotType(node.type)
-      ? node
-      : typeof node.parentIndex === 'number'
-        ? byIndex.get(node.parentIndex)
-        : undefined;
-  const visited = new Set<number>();
-  while (current && !visited.has(current.index)) {
-    visited.add(current.index);
-    if (isScrollableSnapshotType(current.type)) return current;
-    current =
-      typeof current.parentIndex === 'number' ? byIndex.get(current.parentIndex) : undefined;
-  }
-  return null;
 }
 
 function findLargestPositiveRect(
