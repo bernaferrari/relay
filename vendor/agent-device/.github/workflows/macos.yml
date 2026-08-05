@@ -1,0 +1,61 @@
+name: macOS
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+      - "README.md"
+      - ".github/actions/build-docs/action.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/pr-preview.yml"
+      - ".github/workflows/pr-preview-cleanup.yml"
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-macos:
+    name: Smoke Tests
+    runs-on: macos-26
+    timeout-minutes: 80
+    env:
+      AGENT_DEVICE_STATE_DIR: ${{ github.workspace }}/.tmp/agent-device-state
+      AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/macos-runner-derived
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Apple replay
+        id: apple-replay
+        uses: ./.github/actions/setup-apple-replay
+        with:
+          derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
+          cache-key-prefix: macos-runner-prebuilt
+          build-command: pnpm build:xcuitest:macos
+          xcuitest-platform: macos
+          xcuitest-destination: platform=macOS,arch=arm64
+
+      - name: Build macOS helper
+        run: pnpm build:macos-helper
+
+      - name: Run macOS integration test
+        run: node --experimental-strip-types src/bin.ts test test/integration/replays/macos --retries 2 --report-junit test/artifacts/replays-macos.junit.xml
+
+      - name: Upload macOS artifacts
+        if: always()
+        uses: ./.github/actions/upload-agent-device-artifacts
+        with:
+          artifact-name: macos-artifacts
+          agent-home-dir: ${{ env.AGENT_DEVICE_STATE_DIR }}
+          runner-derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}

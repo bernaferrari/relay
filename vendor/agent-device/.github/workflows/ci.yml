@@ -1,0 +1,220 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+      - "README.md"
+      - ".github/actions/build-docs/action.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/pr-preview.yml"
+      - ".github/workflows/pr-preview-cleanup.yml"
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-runner-swift-compat:
+    name: iOS Runner Swift Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Disallow trailing commas before closing parenthesis in Swift
+        run: |
+          if rg -nU --glob '*.swift' ',\s*\n\s*\)' apple-runner; then
+            echo "Found trailing commas before ')' in Swift files. This syntax requires Swift 6.1+ and breaks older Xcode toolchains."
+            exit 1
+          fi
+
+  swift-runner-unit-compile:
+    name: Swift Runner Unit Compile
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Compile Swift runner unit-test surface
+        uses: ./.github/actions/setup-apple-replay
+        with:
+          derived-path: ${{ github.workspace }}/.tmp/swift-runner-unit-derived
+          cache-key-prefix: swift-runner-unit
+          build-command: AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS=1 pnpm build:xcuitest:macos
+          xcuitest-platform: macos
+
+  no-test-di-seams:
+    name: No test-only DI seams
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Fail if test-only DI seams reappear in production code
+        run: |
+          if rg '\?\s*:\s*typeof\s+' src/ --glob '!**/__tests__/**' --glob '!*.test.ts'; then
+            echo "Found test-only DI seams (optional typeof params) in production code."
+            exit 1
+          fi
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run oxlint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+  layering-guard:
+    name: Layering Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          install-deps: false
+
+      - name: Check import-direction DAG (kernel-sink, commands-floor, platforms-seam)
+        # Generalizes the former inline commands/-import grep into a structured
+        # import-direction lint over the resolved graph. See scripts/layering/check.ts
+        # and CONTEXT.md (Architecture: folder DAG + layering lint). Invoked directly
+        # (no deps needed) so the job stays fast and does not require a pnpm install.
+        run: node --experimental-strip-types scripts/layering/check.ts
+
+  fallow:
+    name: Fallow Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run Fallow audit
+        env:
+          FALLOW_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: pnpm check:fallow --base "$FALLOW_BASE"
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run coverage
+        run: pnpm test:coverage
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run typecheck
+        run: pnpm typecheck
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run integration tests
+        run: |
+          pnpm clean:daemon
+          pnpm test:integration:node
+
+      - name: Run provider-backed integration tests
+        run: pnpm test:integration:provider
+
+      - name: Check Provider-backed integration architecture progress
+        run: pnpm test:integration:progress:check
+
+  web-smoke:
+    name: Web Platform Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AGENT_DEVICE_WEB_E2E: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: "24.13"
+
+      - name: Run live web smoke
+        run: |
+          pnpm clean:daemon
+          pnpm test:smoke:web
+
+      - name: Upload web smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-smoke-artifacts
+          if-no-files-found: ignore
+          path: |
+            test/artifacts/web/**
