@@ -34,6 +34,33 @@ steps:
   - kind: tap
     target:
       label: "{{camera_label}}"
+  - kind: tap
+    target:
+      label: While using the app
+    when:
+      condition: present
+      target:
+        label: While using the app
+    optional: true
+    note: Accept the Android camera permission when this is the first camera run.
+  - kind: tap
+    target:
+      label: Only this time
+    when:
+      condition: present
+      target:
+        label: Only this time
+    optional: true
+    note: Accept Android's one-time camera permission variant when offered.
+  - kind: tap
+    target:
+      label: Allow
+    when:
+      condition: present
+      target:
+        label: Allow
+    optional: true
+    note: Accept a generic camera permission prompt when the platform does not expose a duration choice.
   - kind: expect
     target:
       label: "{{shutter_label}}"
