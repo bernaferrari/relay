@@ -1,7 +1,11 @@
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
-import type { GestureIntent, GestureSemanticInput } from '@agent-device/contracts/interaction';
+import type { CommandContext } from '../../../runtime-contract.ts';
+import type {
+  GestureCommandInput,
+  GestureIntent,
+  GestureSemanticInput,
+} from '@agent-device/contracts/interaction';
 import { buildGesturePlan } from '@agent-device/contracts/interaction';
-import type { Point, Rect } from '@agent-device/kernel/snapshot';
+import type { Point } from '@agent-device/kernel/snapshot';
 import { AppError } from '@agent-device/kernel/errors';
 import { successText } from '../../../utils/success-text.ts';
 import { toBackendContext } from '../../runtime-common.ts';
@@ -10,14 +14,21 @@ import {
   type BackendResultEnvelope,
   type RuntimeCommand,
 } from '../../runtime-types.ts';
-import { assertSupportedInteractionSurface, captureInteractionSnapshot } from './resolution.ts';
-import { resolveVisibleSnapshotViewport } from './viewport.ts';
+import { assertSupportedInteractionSurface } from './resolution.ts';
+import {
+  dragCommand,
+  resolveGestureViewport,
+  type DragCommandOptions,
+  type DragCommandResult,
+} from './gestures.ts';
 
-export type GestureCommandOptions = CommandContext & {
+type CoordinateGestureCommandOptions = CommandContext & {
   gesture: GestureSemanticInput;
 };
 
-export type GestureCommandResult = {
+export type GestureCommandOptions = CoordinateGestureCommandOptions | DragCommandOptions;
+
+export type CoordinateGestureCommandResult = {
   kind: GestureIntent;
   durationMs: number;
   pointerCount: 1 | 2;
@@ -25,15 +36,17 @@ export type GestureCommandResult = {
   to: Point;
 } & BackendResultEnvelope;
 
-export const gestureCommand: RuntimeCommand<GestureCommandOptions, GestureCommandResult> = async (
-  runtime,
-  options,
-) => {
+export type GestureCommandResult = CoordinateGestureCommandResult | DragCommandResult;
+
+const coordinateGestureCommand: RuntimeCommand<
+  CoordinateGestureCommandOptions,
+  CoordinateGestureCommandResult
+> = async (runtime, options) => {
   if (!runtime.backend.performGesture) {
     throw new AppError('UNSUPPORTED_OPERATION', 'gesture is not supported by this backend');
   }
   await assertSupportedInteractionSurface(runtime, options, options.gesture.intent);
-  const viewport = await captureGestureViewport(runtime, options);
+  const viewport = await resolveGestureViewport(runtime, options);
   const plan = buildGesturePlan(options.gesture, viewport, runtime.backend.platform);
   const backendResult = await runtime.backend.performGesture(
     toBackendContext(runtime, options),
@@ -43,7 +56,7 @@ export const gestureCommand: RuntimeCommand<GestureCommandOptions, GestureComman
   const from = centroidAt(plan.pointers, 0);
   const to = centroidAt(plan.pointers, -1);
   return {
-    kind: plan.intent,
+    kind: options.gesture.intent,
     durationMs: plan.durationMs,
     pointerCount: plan.topology === 'single' ? 1 : 2,
     from,
@@ -53,17 +66,14 @@ export const gestureCommand: RuntimeCommand<GestureCommandOptions, GestureComman
   };
 };
 
-async function captureGestureViewport(
-  runtime: AgentDeviceRuntime,
-  options: GestureCommandOptions,
-): Promise<Rect> {
-  const backendViewport = await runtime.backend.resolveGestureViewport?.(
-    toBackendContext(runtime, options),
-  );
-  if (backendViewport) return backendViewport;
-  const capture = await captureInteractionSnapshot(runtime, options, false);
-  return resolveVisibleSnapshotViewport(capture.snapshot.nodes, 'gesture');
-}
+export const gestureCommand: RuntimeCommand<GestureCommandOptions, GestureCommandResult> = async (
+  runtime,
+  options,
+) => {
+  const gesture: GestureCommandInput = options.gesture;
+  if (gesture.intent === 'drag') return await dragCommand(runtime, { ...options, gesture });
+  return await coordinateGestureCommand(runtime, { ...options, gesture });
+};
 
 function centroidAt(
   pointers: readonly { samples: readonly { point: Point }[] }[],

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { publicPlatformString } from '@agent-device/kernel/device';
+import { dragGesturePayloadFromPositionals } from '@agent-device/contracts/interaction';
 import { inferFillText } from './action-utils.ts';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
 import { AppError } from '@agent-device/kernel/errors';
@@ -327,6 +328,14 @@ function buildOptimizedActions(
  * than swallowing it like an ordinary fs failure).
  */
 function assertNoUnresolvedRefFallback(action: SessionAction): void {
+  const drag =
+    action.command === 'gesture'
+      ? dragGesturePayloadFromPositionals(action.positionals ?? [])
+      : undefined;
+  if (drag) {
+    assertNoUnresolvedDragEndpoint(drag);
+    return;
+  }
   if (!isSelectorTargetingCommand(action.command)) return;
   const refPositional =
     action.command === 'get' ? action.positionals?.[1] : action.positionals?.[0];
@@ -334,6 +343,15 @@ function assertNoUnresolvedRefFallback(action: SessionAction): void {
   throw new AppError(
     'COMMAND_FAILED',
     `Cannot write recorded step "${action.command} ${refPositional}" to a script: it never resolved to a selector, so the ref would not resolve in a fresh replay session.`,
+  );
+}
+
+function assertNoUnresolvedDragEndpoint(drag: { source: string; destination: string }): void {
+  const refPositional = [drag.source, drag.destination].find((value) => value.startsWith('@'));
+  if (!refPositional) return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    `Cannot write recorded drag endpoint "${refPositional}" to a script: it never resolved to a selector, so the ref would not resolve in a fresh replay session.`,
   );
 }
 

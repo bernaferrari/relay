@@ -6,7 +6,13 @@ import {
   gestureDirectionDelta,
   type SwipePreset,
 } from './scroll-gesture.ts';
-import { GESTURE_DURATION_MAX_MS, GESTURE_DURATION_MIN_MS } from './gesture-plan-types.ts';
+import {
+  DEFAULT_DRAG_DESTINATION_HOLD_MS,
+  DEFAULT_DRAG_MOVE_MS,
+  DEFAULT_DRAG_SOURCE_HOLD_MS,
+  GESTURE_DURATION_MAX_MS,
+  GESTURE_DURATION_MIN_MS,
+} from './gesture-plan-types.ts';
 import type {
   GesturePlan,
   GestureExecutionProfile,
@@ -124,12 +130,74 @@ export function singlePointerPlanEndpoints(plan: SinglePointerGesturePlan): {
   start: Point;
   end: Point;
 } {
-  const [
-    {
-      samples: [start, end],
-    },
-  ] = plan.pointers;
+  const [{ samples }] = plan.pointers;
+  const start = samples[0];
+  const end = samples.at(-1)!;
   return { start: start.point, end: end.point };
+}
+
+/**
+ * Plans one uninterrupted pointer contact: activate at the source, move to the
+ * destination, optionally hold there, then release. Element targets are
+ * resolved by the interaction runtime before this portable planning seam.
+ */
+export function buildDragGesturePlan(
+  input: {
+    from: Point;
+    to: Point;
+    sourceHoldMs?: number;
+    moveMs?: number;
+    destinationHoldMs?: number;
+  },
+  viewport: Rect,
+): SinglePointerGesturePlan {
+  const frame = normalizeViewport(viewport);
+  const sourceHoldMs = normalizePositiveDuration(
+    input.sourceHoldMs,
+    DEFAULT_DRAG_SOURCE_HOLD_MS,
+    'gesture drag sourceHoldMs',
+  );
+  const moveMs = normalizeDuration(input.moveMs, DEFAULT_DRAG_MOVE_MS, 'gesture drag moveMs');
+  const destinationHoldMs = normalizeNonNegativeDuration(
+    input.destinationHoldMs,
+    DEFAULT_DRAG_DESTINATION_HOLD_MS,
+    'gesture drag destinationHoldMs',
+  );
+  const durationMs = sourceHoldMs + moveMs + destinationHoldMs;
+  if (durationMs > GESTURE_DURATION_MAX_MS) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `gesture drag total duration must be at most ${GESTURE_DURATION_MAX_MS}`,
+    );
+  }
+  const move = buildSinglePointerPlan('pan', input.from, input.to, moveMs, frame, 'timed-pan');
+  return withContactHolds(move, sourceHoldMs, destinationHoldMs);
+}
+
+function withContactHolds(
+  plan: SinglePointerGesturePlan,
+  sourceHoldMs: number,
+  destinationHoldMs: number,
+): SinglePointerGesturePlan {
+  const pointer = plan.pointers[0];
+  const [moveStart, moveEnd] = pointer.samples;
+  const durationMs = sourceHoldMs + plan.durationMs + destinationHoldMs;
+  const samples: SinglePointerTrajectory['samples'] = [
+    { offsetMs: 0, point: moveStart.point },
+    { ...moveStart, offsetMs: moveStart.offsetMs + sourceHoldMs },
+    { ...moveEnd, offsetMs: moveEnd.offsetMs + sourceHoldMs },
+    ...(destinationHoldMs > 0 ? [{ offsetMs: durationMs, point: moveEnd.point }] : []),
+  ];
+  return {
+    ...plan,
+    durationMs,
+    pointers: [
+      {
+        ...pointer,
+        samples,
+      },
+    ],
+  };
 }
 
 function buildFlingPlan(
@@ -404,6 +472,28 @@ function normalizeDuration(value: number | undefined, fallback: number, field: s
     throw new AppError(
       'INVALID_ARGS',
       `${field} must be an integer between ${GESTURE_DURATION_MIN_MS} and ${GESTURE_DURATION_MAX_MS}`,
+    );
+  }
+  return durationMs;
+}
+
+function normalizePositiveDuration(value: number | undefined, fallback: number, field: string) {
+  const durationMs = value ?? fallback;
+  if (!Number.isInteger(durationMs) || durationMs < 1 || durationMs > GESTURE_DURATION_MAX_MS) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `${field} must be an integer between 1 and ${GESTURE_DURATION_MAX_MS}`,
+    );
+  }
+  return durationMs;
+}
+
+function normalizeNonNegativeDuration(value: number | undefined, fallback: number, field: string) {
+  const durationMs = value ?? fallback;
+  if (!Number.isInteger(durationMs) || durationMs < 0 || durationMs > GESTURE_DURATION_MAX_MS) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `${field} must be an integer between 0 and ${GESTURE_DURATION_MAX_MS}`,
     );
   }
   return durationMs;
