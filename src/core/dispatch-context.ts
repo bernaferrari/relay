@@ -42,6 +42,8 @@ export type DispatchContext = ScreenshotDispatchFlags & {
   count?: number;
   intervalMs?: number;
   delayMs?: number;
+  /** Maestro replay compatibility for coordinate-resolved fill targets. */
+  allowNonHittableCoordinateFallback?: boolean;
   durationMs?: number;
   holdMs?: number;
   jitterPx?: number;

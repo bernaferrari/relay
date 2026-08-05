@@ -151,6 +151,8 @@ export type BackendRefTarget = {
 
 export type BackendFillOptions = {
   delayMs?: number;
+  /** Maestro replay compatibility: permit the runner's non-hittable coordinate path. */
+  allowNonHittableCoordinateFallback?: boolean;
 };
 
 export type BackendLongPressOptions = {

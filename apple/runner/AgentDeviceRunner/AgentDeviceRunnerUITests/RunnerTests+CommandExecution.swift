@@ -2464,9 +2464,63 @@ extension RunnerTests {
     let delaySeconds = Double(max(command.delayMs ?? 0, 0)) / 1000.0
     let textEntryMode = resolveTextEntryMode(command)
     let target: TextEntryTarget
+    var resolvedCoordinateContext: SynthesizedCoordinateContext?
     var maestroNonHittableCoordinateFallbackUsed: Bool?
+    if command.allowNonHittableCoordinateFallback == true,
+      command.x != nil,
+      command.y != nil
+    {
+      // The shared runtime has already resolved this node as non-hittable and
+      // deliberately selected Maestro's coordinate compatibility route.
+      maestroNonHittableCoordinateFallbackUsed = true
+    }
     let focusStartedAt = Date()
-    if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
+#if os(iOS)
+    let xCTestChannelPenalized = isSnapshotXCTestChannelPenalized(bundleId: currentBundleId)
+    var resolvedCoordinateTarget: TextEntryTarget?
+    if Self.shouldUseResolvedCoordinateTextEntryRoute(
+      repairMode: textEntryMode,
+      hasX: command.x != nil,
+      hasY: command.y != nil,
+      xCTestChannelPenalized: xCTestChannelPenalized
+    ), let x = command.x, let y = command.y {
+      let policyKind = SynthesizedGesturePolicyKind.coordinateTap
+      let context = synthesizedCoordinateContext(
+        app: activeApp,
+        policy: synthesizedGesturePolicy(policyKind)
+      )
+      let (_, outcome) = performGesture(activeApp, idleTimeout: false) {
+        synthesizedTapAt(app: activeApp, x: x, y: y, context: context)
+      }
+      if Self.shouldFallbackFromSynthesizedTextEntryFocus(outcome) {
+        logSynthesizedGesturePolicyDecision(
+          kind: policyKind,
+          context: context,
+          fallbackAttempted: true
+        )
+      } else {
+        logSynthesizedGesturePolicyDecision(
+          kind: policyKind,
+          context: context,
+          fallbackAttempted: false
+        )
+        resolvedCoordinateContext = context
+        resolvedCoordinateTarget = TextEntryTarget(
+          element: nil,
+          refreshPoint: CGPoint(x: x, y: y),
+          prefersFocusedElement: false
+        )
+      }
+    }
+#else
+    let xCTestChannelPenalized = false
+    let resolvedCoordinateTarget: TextEntryTarget? = nil
+#endif
+    if let resolvedCoordinateTarget {
+      target = resolvedCoordinateTarget
+    } else if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
+      // Released daemons may still send selector-keyed type commands even though current
+      // daemons resolve fill selectors through the runtime tree before reaching the runner.
       let match = findElement(
         app: activeApp,
         selectorKey: selectorKey,
@@ -2497,7 +2551,16 @@ extension RunnerTests {
       textEntryModeName(textEntryMode)
     )
     if textEntryMode == .replacement {
-      guard target.element != nil else {
+#if os(iOS)
+      let canReplaceResolvedFirstResponder = Self.shouldUseSynthesizedFirstResponderReplacement(
+        hasResolvedElement: target.element != nil,
+        hasRefreshPoint: target.refreshPoint != nil,
+        xCTestChannelPenalized: xCTestChannelPenalized
+      )
+#else
+      let canReplaceResolvedFirstResponder = false
+#endif
+      guard target.element != nil || canReplaceResolvedFirstResponder else {
         let message =
           (command.x != nil && command.y != nil)
           ? "no text input found at the provided coordinates to clear"
@@ -2511,6 +2574,8 @@ extension RunnerTests {
       text: text,
       delaySeconds: delaySeconds,
       repairMode: textEntryMode,
+      xCTestChannelPenalized: xCTestChannelPenalized,
+      synthesizer: PrivateXCTestTextEntrySynthesizer(),
       commandId: command.commandId
     )
     if textResult.verified == false {
@@ -2525,7 +2590,16 @@ extension RunnerTests {
       )
     }
     let point = target.refreshPoint
-    let frame = activeApp.frame
+    let frame: CGRect
+    if let resolvedCoordinateContext {
+      frame = resolvedCoordinateContext.referenceFrame
+    } else if point != nil {
+      frame = activeApp.frame
+    } else {
+      // Bare `type` has no coordinate response to normalize. Avoid serializing the
+      // application AX tree only to emit unused reference dimensions.
+      frame = .zero
+    }
     return Response(
       ok: true,
       data: DataPayload(
@@ -2534,7 +2608,8 @@ extension RunnerTests {
         y: point.map { Double($0.y) },
         referenceWidth: frame.isEmpty ? nil : Double(frame.width),
         referenceHeight: frame.isEmpty ? nil : Double(frame.height),
-        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed
+        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed,
+        textEntryRoute: textResult.textEntryRoute
       )
     )
   }

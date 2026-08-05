@@ -115,7 +115,7 @@ export function iosRunnerOverrides(
         return await runAppleRunnerCommand(device, iosTapCommand(device, ctx, x, y), runnerOpts);
       },
       type: async (text, delayMs) => {
-        await runAppleRunnerCommand(
+        return await runAppleRunnerCommand(
           device,
           {
             command: 'type',
@@ -143,7 +143,7 @@ export function iosRunnerOverrides(
           runnerOpts,
         );
       },
-      fill: async (x, y, text, delayMs) => {
+      fill: async (x, y, text, delayMs, options) => {
         return await runAppleRunnerCommand(
           device,
           {
@@ -153,6 +153,9 @@ export function iosRunnerOverrides(
             text,
             delayMs,
             textEntryMode: 'replace',
+            ...(options?.allowNonHittableCoordinateFallback
+              ? { allowNonHittableCoordinateFallback: true }
+              : {}),
             appBundleId: ctx.appBundleId,
           },
           runnerOpts,

@@ -452,7 +452,10 @@ async function dispatchDirectIosSelectorInteraction(params: {
       flags: handlerParams.req.flags,
       data,
     });
-    const fallbackDetails = directIosSelectorFallbackDetails(selector, data);
+    const fallbackDetails = maestroFallbackDetails(
+      selector.allowNonHittableCoordinateFallback === true,
+      data,
+    );
     const { result, responseData } = buildInteractionResponseData({
       source: {
         kind: 'runner-payload',
@@ -529,12 +532,12 @@ function readInteractionResponseDataTransformCommand(
   return dispatchCommand;
 }
 
-function directIosSelectorFallbackDetails(
-  selector: DirectIosSelectorTarget,
-  data: Record<string, unknown>,
+function maestroFallbackDetails(
+  allowed: boolean,
+  data: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  if (!selector.allowNonHittableCoordinateFallback) return {};
-  const used = data.maestroNonHittableCoordinateFallbackUsed === true;
+  if (!allowed) return {};
+  const used = data?.maestroNonHittableCoordinateFallbackUsed === true;
   return {
     maestroNonHittableCoordinateFallbackAllowed: true,
     maestroNonHittableCoordinateFallbackUsed: used,
@@ -595,18 +598,7 @@ async function dispatchFillViaRuntime(
   );
   if (refPreamble.response) return refPreamble.response;
   const { staleRefsWarning } = refPreamble;
-  // ADR 0012 step 4: guarded replay dispatches take the runtime tree path —
-  // see dispatchTargetedTouchViaRuntime.
   const replayTargetGuard = req.internal?.replayTargetGuard;
-  const directResponse = replayTargetGuard
-    ? null
-    : await maybeDispatchDirectIosSelectorFill(
-        params,
-        session,
-        parsedTarget.target,
-        parsedTarget.text,
-      );
-  if (directResponse) return directResponse;
 
   return await dispatchRuntimeInteraction(params, {
     refContext:
@@ -622,6 +614,7 @@ async function dispatchFillViaRuntime(
         session: sessionName,
         requestId: req.meta?.requestId,
         delayMs: req.flags?.delayMs,
+        allowNonHittableCoordinateFallback: req.flags?.maestro?.allowNonHittableCoordinateFallback,
         verify: req.flags?.verify,
         settle: readSettleRequest(req.flags),
         expectedResolvedTarget: replayTargetGuard,
@@ -676,21 +669,6 @@ async function prepareFillRefTarget(
   return { staleRefsWarning };
 }
 
-async function maybeDispatchDirectIosSelectorFill(
-  params: InteractionHandlerParams & { captureSnapshotForSession: CaptureSnapshotForSession },
-  session: SessionState,
-  target: InteractionTarget,
-  text: string,
-): Promise<DaemonResponse | null> {
-  const directSelector = readDirectIosSelectorFillTarget({
-    session,
-    target,
-    flags: params.req.flags,
-  });
-  if (!directSelector) return null;
-  return await dispatchDirectIosSelectorFill(params, session, directSelector, text);
-}
-
 function buildFillResponsePayloads(params: {
   session: SessionState;
   result: FillCommandResult;
@@ -699,6 +677,10 @@ function buildFillResponsePayloads(params: {
   staleRefsWarning: string | undefined;
 }): InteractionResponsePayloads {
   const { session, result } = params;
+  const fallbackDetails = maestroFallbackDetails(
+    params.flags?.maestro?.allowNonHittableCoordinateFallback === true,
+    result.backendResult,
+  );
   const referenceFrame =
     result.kind === 'point'
       ? undefined
@@ -713,41 +695,12 @@ function buildFillResponsePayloads(params: {
         flags: params.flags,
         data: result.backendResult,
       }),
+      maestroFallbackUsed: fallbackDetails.maestroNonHittableCoordinateFallbackUsed === true,
     },
     referenceFrame,
-    extra: { text: params.text },
+    extra: { text: params.text, ...fallbackDetails },
     staleRefsWarning: params.staleRefsWarning,
     settleRefsGeneration: settleRefsGenerationIssue(session, result),
-  });
-}
-
-function readDirectIosSelectorFillTarget(params: {
-  session: SessionState;
-  target: InteractionTarget;
-  flags: CommandFlags | undefined;
-}): DirectIosSelectorTarget | null {
-  const { session, target, flags } = params;
-  if (target.kind !== 'selector') return null;
-  if (session.recordSession) return null;
-  if (commandSupportsVerifyEvidence('fill') && flags?.verify === true) return null;
-  if (commandSupportsSettleObservation('fill') && flags?.settle === true) return null;
-  return readDirectSelectorWithMaestroFallback(session, target.selector, flags);
-}
-
-async function dispatchDirectIosSelectorFill(
-  params: InteractionHandlerParams,
-  session: SessionState,
-  selector: DirectIosSelectorTarget,
-  text: string,
-): Promise<DaemonResponse | null> {
-  return await dispatchDirectIosSelectorInteraction({
-    params,
-    session,
-    selector,
-    command: 'fill',
-    positionals: [text],
-    extra: { selector: selector.raw, text },
-    fallbackPhase: 'ios_direct_selector_fill_fallback',
   });
 }
 

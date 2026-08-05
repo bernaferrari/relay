@@ -541,14 +541,22 @@ test('runtime fill with verify reports evidence and detects a changed post-actio
   assert.equal(result.evidence?.nodeCount, 1);
 });
 
-test('runtime fill resolves refs and forwards text to the backend primitive', async () => {
-  const calls: Array<{ point: Point; text: string; delayMs?: number }> = [];
+test('runtime fill resolves refs and forwards delay to the backend primitive', async () => {
+  const calls: Array<{
+    point: Point;
+    text: string;
+    delayMs?: number;
+  }> = [];
   const device = createInteractionDevice(fillableSnapshot(), {
     captureSnapshot: async () => {
       throw new Error('ref fill should use the stored session snapshot');
     },
     fill: async (_context, point, text, options) => {
-      calls.push({ point, text, delayMs: options?.delayMs });
+      calls.push({
+        point,
+        text,
+        delayMs: options?.delayMs,
+      });
     },
   });
 
@@ -557,11 +565,29 @@ test('runtime fill resolves refs and forwards text to the backend primitive', as
     delayMs: 25,
   });
 
-  assert.deepEqual(calls, [{ point: { x: 50, y: 30 }, text: 'hello', delayMs: 25 }]);
+  assert.deepEqual(calls, [
+    {
+      point: { x: 50, y: 30 },
+      text: 'hello',
+      delayMs: 25,
+    },
+  ]);
   assert.equal(result.kind, 'ref');
   assert.deepEqual(result.target, { kind: 'ref', ref: '@e1' });
   assert.equal(result.text, 'hello');
   assert.equal(result.warning, undefined);
+});
+
+test('runtime fill warns when the resolved target is not a text input', async () => {
+  const device = createInteractionDevice(selectorSnapshot(), {
+    fill: async () => {},
+  });
+
+  const result = await device.interactions.fill(selector('label=Continue'), 'hello', {
+    session: 'default',
+  });
+
+  assert.match(result.warning ?? '', /attempting fill anyway/);
 });
 
 test('runtime typeText validates refs and forwards text to the backend primitive', async () => {
