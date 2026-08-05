@@ -1,13 +1,8 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
-import {
-  validateRecipeParameters,
-  validateRecipeSteps,
-  type Recipe,
-  type RecipeParameter,
-  type RecipeStep,
-} from "./recipes.js";
+import { validateRecipeParameters, validateRecipeSteps } from "./recipe-validation.js";
+import type { Recipe, RecipeParameter, RecipeStep } from "./recipes.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
 const SCHEMA_VERSION = 1;

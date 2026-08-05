@@ -8,13 +8,14 @@ export function evidenceForStep(step?: RecipeStep): RecordedStepEvidence | undef
 }
 
 export function accentForStep(step: RecipeStep): string {
-  if (step.kind === "expect" || step.kind === "assert-content") return "#35c89f";
-  if (step.kind === "type" || step.kind === "clipboard") return "#5ea7ff";
-  if (step.kind === "screenshot" || step.kind === "extract") return "#e985be";
+  if (step.kind === "expect" || step.kind === "assert-content") return "var(--step-accent-expect)";
+  if (step.kind === "type" || step.kind === "clipboard") return "var(--step-accent-type)";
+  if (step.kind === "screenshot" || step.kind === "extract") return "var(--step-accent-capture)";
   if (step.kind === "sleep" || step.kind === "wait-for" || step.kind === "wait-response")
-    return "#f2b65d";
-  if (step.kind === "app" || step.kind === "module" || step.kind === "flow") return "#a67cff";
-  return "#8068f2";
+    return "var(--step-accent-wait)";
+  if (step.kind === "app" || step.kind === "module" || step.kind === "flow")
+    return "var(--step-accent-flow)";
+  return "var(--step-accent-default)";
 }
 
 export function iconForStep(step: RecipeStep): IconName {

@@ -669,11 +669,11 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
         <Show when={!props.compact}>
           <Show when={capturedFrame()}>
             {(src) => (
-              <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgb(126_101_255/12%),transparent_48%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/5%)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
+              <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent),transparent_48%),radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
                 <img
                   src={src()}
                   alt={`Captured step ${index() + 1}`}
-                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--v2-background-bg-layer-02)] object-contain shadow-[0_24px_70px_rgb(0_0_0/38%),0_0_0_1px_rgb(255_255_255/5%)]"
+                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--v2-background-bg-layer-02)] object-contain shadow-[0_24px_70px_color-mix(in_srgb,var(--surface-float-base)_38%,transparent),0_0_0_1px_color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)]"
                 />
               </div>
             )}

@@ -388,7 +388,7 @@ function RunGraphNode(props: {
           </div>
         }
       >
-        <div class="relative min-h-0 overflow-hidden bg-[#080a0f]">
+        <div class="relative min-h-0 overflow-hidden bg-[var(--v2-background-bg-deep)]">
           <img
             src={props.src}
             alt={`Device evidence for step ${props.index + 1}`}

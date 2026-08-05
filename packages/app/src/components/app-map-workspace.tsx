@@ -1,18 +1,8 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type {
-  ActionSpec,
-  AppMap,
-  AppMapBatchChange,
-  CaseExpansionStrategy,
-  CaseStack,
-  CanvasNote,
-  AppMapCanvasState,
-  MapGroup,
-  ScreenVariant,
-} from "@relay/protocol";
+import type { CanvasNote, AppMapCanvasState, ScreenVariant } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
-import { useServer, type RecipeStep } from "../context/server";
+import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
@@ -20,24 +10,17 @@ import {
   addPlannedConnection,
   addPlannedScreenConnection,
   canvasConnections,
-  removeAuthoredConnection,
-  reviewTransition,
   type CanvasConnection,
 } from "../lib/app-map-connection-draft";
 import {
   buildCanvasGraphTree,
   ensureCanvasGraph,
-  removeCanvasScreen,
-  screenForObservation,
-  type TakeDestination,
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
 import {
   canvasBounds,
-  canvasEdgeGeometry,
   clampCanvasScale,
-  nextBranchPosition,
   fitCanvasViewport,
   openCanvasViewport,
   SCREEN_CARD_HEIGHT,
@@ -47,7 +30,6 @@ import {
 } from "../lib/app-map-canvas-layout";
 import {
   centerCanvasViewport,
-  minimapPoint,
   minimapViewportBounds,
   minimapWorldPoint,
 } from "../lib/app-map-minimap";
@@ -56,12 +38,11 @@ import { deviceReadiness } from "../lib/device-readiness";
 import { projectAppMapRun } from "../lib/app-map-run-projection";
 import { appMapRunReadiness } from "../lib/app-map-run-readiness";
 import { toast } from "../context/toast";
-import { evidenceForStep } from "./take-step-presentation";
 import { AppMapEmptyState } from "./app-map-capture-review";
 import { ConnectionInspector, GroupInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { appMapDeviceStatus } from "./device-status-label";
-import { AppMapDeviceCompanion } from "./app-map-device-companion";
+import { AppMapDeviceCompanionMount } from "./app-map-device-companion-mount";
 import { AppMapOverviewToolbar, AppMapToolbar, type AppMapWorkspaceView } from "./app-map-toolbar";
 import { AppMapMinimap } from "./app-map-minimap";
 import { AppMapBrowseView } from "./app-map-browse-view";
@@ -72,15 +53,56 @@ import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-proj
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
 import { AppMapCanvasScene } from "./app-map-canvas-scene";
-import { AppMapTakeReview } from "./app-map-take-review";
+import { AppMapTakeReviewMount } from "./app-map-take-review-mount";
 import { useAppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
-import {
-  companionLogicalViewport,
-  companionOrientationEdge,
-} from "./app-map-device-companion-geometry";
-import type { ScreenshotOrientationEvidence } from "./oriented-screenshot";
+import { useAppMapCapturePanel } from "../lib/use-app-map-capture-panel";
+import { useAppMapCaseStack } from "../lib/use-app-map-case-stack";
+import { useAppMapConnectionBehaviors } from "../lib/use-app-map-connection-behaviors";
+import { useAppMapFlowSetup } from "../lib/use-app-map-flow-setup";
+import { useAppMapGroupOps } from "../lib/use-app-map-group-ops";
+import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import { targetIsReady } from "../lib/target-presentation";
-import { groupForScreen, nextGroupName } from "../lib/app-map-groups";
+import {
+  appMapLoadFailure,
+  applyTargetSetToActiveFlow,
+  buildMinimapEdges,
+  buildMinimapNodes,
+  buildPresenceGeometry,
+  canvasPointFromClientRect,
+  canvasProjectionUnchanged,
+  clampGroupMenuPosition,
+  captureContextLabel as buildCaptureContextLabel,
+  canonicalNotesFor,
+  canvasRemovalChanges,
+  connectionPathTitle,
+  createCanvasNote,
+  recordedActionFromConnection,
+  entryFlowsForScreen,
+  findRunnableFlow,
+  gateGraphRunReadiness,
+  listReusableBehaviors,
+  orderCanvasChanges,
+  pushCanvasHistoryEntry,
+  recipeStepsForRunReadiness,
+  recordStateFromReadiness,
+  selectedFlowSetupSummary,
+  stepsForConnectionIds,
+  visibleCanvasBoundsFromViewport,
+} from "../lib/app-map-workspace-helpers";
+import { useAppMapTakeReview } from "../lib/use-app-map-take-review";
+import { useAppMapGraphEdits } from "../lib/use-app-map-graph-edits";
+import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay";
+import { useAppMapRunFlow } from "../lib/use-app-map-run-flow";
+import { useAppMapPresence } from "../lib/use-app-map-presence";
+import { groupForScreen } from "../lib/app-map-groups";
+import { bindAppMapWorkspaceShellEvents } from "../lib/app-map-workspace-shell-events";
+import {
+  screenshotOrientationEvidence,
+  screenshotUrl,
+  variantOrientationEvidence,
+  variantScreenshotUrl,
+} from "../lib/app-map-workspace-media";
+import { AppMapLoadFeedback } from "./app-map-load-feedback";
 import {
   APP_MAP_MARQUEE_THRESHOLD,
   canvasSelectionRect,
@@ -88,10 +110,7 @@ import {
   screenIdsInSelection,
   type CanvasSelectionRect,
 } from "../lib/app-map-selection";
-import {
-  connectionActionSummaries,
-  updateConnectionWait as updateConnectionWaitActions,
-} from "../lib/connection-action-presentation";
+import { connectionActionSummaries } from "../lib/connection-action-presentation";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -161,6 +180,7 @@ export function AppMapWorkspace(props: {
   // Exploration belongs to the workspace, not to its drawer. Closing the
   // drawer only hides progress; it never cancels a 20-minute agent run.
   const agentExploration = useAppMapAgentExploration(activeAppMap);
+  const { proposalBusyId, proposalError, decideProposal } = useAppMapProposalReview(activeAppMap);
   const pendingProposals = createMemo(() =>
     Object.values(activeAppMap()?.proposals ?? {})
       .filter((proposal) => proposal.status === "pending")
@@ -206,23 +226,16 @@ export function AppMapWorkspace(props: {
   const recordState = (): Parameters<typeof AppMapEmptyState>[0]["recordState"] => {
     const device = selectedDevice();
     const liveFrame = server.liveFrame();
-    const readiness = deviceReadiness(device, server.health() === "online", {
-      ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
-      liveCaptureIssue: server.liveCaptureIssue(),
-      recordingIssue: recorder.recordingIssue(),
-      requireLiveScreen: true,
-      liveScreenAvailable:
-        Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
-    });
-    if (readiness.kind === "choose-device") return "choose-device";
-    if (readiness.kind === "device-unavailable") return "device-unavailable";
-    if (readiness.kind === "ios-developer-mode-disabled") return "enable-developer-mode";
-    if (readiness.kind === "ios-preparing") return "preparing-ios";
-    if (readiness.kind === "screen-preparing") return "preparing-screen";
-    if (readiness.kind === "checking-ios") return "checking-ios";
-    if (readiness.kind === "setup-ios") return "setup-ios";
-    if (readiness.kind === "capture-error") return "capture-error";
-    return "ready";
+    return recordStateFromReadiness(
+      deviceReadiness(device, server.health() === "online", {
+        ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
+        liveCaptureIssue: server.liveCaptureIssue(),
+        recordingIssue: recorder.recordingIssue(),
+        requireLiveScreen: true,
+        liveScreenAvailable:
+          Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
+      }),
+    );
   };
   const canRecord = () =>
     recordState() === "ready" && Boolean(server.selectedLeaseId()) && !server.controlIssue();
@@ -281,31 +294,10 @@ export function AppMapWorkspace(props: {
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
   const [connectionPreview, setConnectionPreview] = createSignal<CanvasPoint | null>(null);
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
-  const [proposalBusyId, setProposalBusyId] = createSignal<string>();
-  const [proposalError, setProposalError] = createSignal<string>();
-  const [caseStackBusy, setCaseStackBusy] = createSignal(false);
-  const [captureOpen, setCaptureOpen] = createSignal(false);
-  const [captureClosing, setCaptureClosing] = createSignal(false);
   const [deviceCompanionOrientation, setDeviceCompanionOrientation] = createSignal<
     "portrait" | "landscape" | "square" | "unknown"
   >("unknown");
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
-  const [reviewStepIndex, setReviewStepIndex] = createSignal(0);
-  const [reviewDestination, setReviewDestination] = createSignal<TakeDestination>({
-    kind: "new-screen",
-  });
-  type ReplayState = "idle" | "running" | "passed" | "failed";
-  const [takeReplay, setTakeReplay] = createSignal<{
-    takeId: string | null;
-    state: ReplayState;
-    error?: string;
-  }>({ takeId: null, state: "idle" });
-  const [transitionReplay, setTransitionReplay] = createSignal<{
-    connectionId: string | null;
-    state: ReplayState;
-    error?: string;
-    jobId?: string;
-  }>({ connectionId: null, state: "idle" });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
   const [selectionMarquee, setSelectionMarquee] = createSignal<{
     pointerId: number;
@@ -357,9 +349,6 @@ export function AppMapWorkspace(props: {
   let recordRequestedAfterDeviceSelection = false;
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
-  let destinationResolvedForTake = "";
-  let replayHydratedForTakeRevision = "";
-  let captureCloseTimer: number | undefined;
   let pointerMoveFrame: number | undefined;
   let pendingPointerMove: { x: number; y: number } | undefined;
   type CanvasHistoryEntry = {
@@ -392,12 +381,7 @@ export function AppMapWorkspace(props: {
   };
   const canvasPointFromClient = (clientX: number, clientY: number): CanvasPoint => {
     if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const viewport = view();
-    return {
-      x: (clientX - rect.left - viewport.x) / viewport.scale,
-      y: (clientY - rect.top - viewport.y) / viewport.scale,
-    };
+    return canvasPointFromClientRect(clientX, clientY, canvas.getBoundingClientRect(), view());
   };
   const marqueeRect = createMemo<CanvasSelectionRect | null>(() => {
     const marquee = selectionMarquee();
@@ -513,83 +497,21 @@ export function AppMapWorkspace(props: {
     applyCanvasPointerMove(clientX, clientY);
   };
 
-  const closeCapturePanel = () => {
-    if (!captureOpen() || captureClosing()) return;
-    setCaptureClosing(true);
-    captureCloseTimer = window.setTimeout(() => {
-      setCaptureOpen(false);
-      setCaptureClosing(false);
-      captureCloseTimer = undefined;
-    }, 150);
-  };
-
-  const openCapturePanel = () => {
-    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
-    captureCloseTimer = undefined;
-    setCaptureClosing(false);
-    setContextSurface(null);
-    setCaptureOpen(true);
-  };
-
-  const openDevicePicker = () => {
-    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
-    captureCloseTimer = undefined;
-    setCaptureClosing(false);
-    setContextSurface(null);
-    setCaptureOpen(true);
-    // DevicePicker subscribes when the companion mounts. Wait one frame so a
-    // request made from the canvas can never race that subscription.
-    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
-  };
+  const {
+    captureOpen,
+    setCaptureOpen,
+    captureClosing,
+    closeCapturePanel,
+    openCapturePanel,
+    openDevicePicker,
+  } = useAppMapCapturePanel({
+    clearContextSurface: () => setContextSurface(null),
+  });
   onCleanup(() => {
-    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
     if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
   });
 
   const reviewingTake = () => recorder.take()?.state === "review";
-
-  createEffect(() => {
-    const take = recorder.take();
-    const lastIndex = Math.max(0, (take?.state === "review" ? take.steps.length : 1) - 1);
-    setReviewStepIndex((index) => Math.min(lastIndex, Math.max(0, index)));
-    const key = take
-      ? `${take.id}:${take.revision}:${take.latestReplay?.outcome ?? "none"}:${take.latestReplay?.error ?? ""}`
-      : "";
-    if (replayHydratedForTakeRevision === key) return;
-    replayHydratedForTakeRevision = key;
-    const replay = take?.state === "review" ? take.latestReplay : undefined;
-    setTakeReplay(
-      replay?.outcome === "passed"
-        ? { takeId: take?.id ?? null, state: "passed" }
-        : replay?.outcome === "failed"
-          ? {
-              takeId: take?.id ?? null,
-              state: "failed",
-              ...(replay.error ? { error: replay.error } : {}),
-            }
-          : { takeId: take?.id ?? null, state: "idle" },
-    );
-  });
-
-  createEffect(() => {
-    const take = recorder.take();
-    if (!take || take.state !== "review" || loadedAppMapId() !== take.appMapId) return;
-    const match = screenForObservation(graph(), take.destinationObservation);
-    const plannedConnectionId = take.pendingConnectionId ?? pendingConnectionId;
-    const planned = plannedConnectionId
-      ? connections().find((connection) => connection.id === plannedConnectionId)
-      : undefined;
-    const key = `${take.id}:${take.revision}:${planned?.id ?? "unplanned"}`;
-    if (destinationResolvedForTake === key) return;
-    destinationResolvedForTake = key;
-    setReviewDestination(
-      match
-        ? { kind: "screen", screenId: match.id }
-        : planned
-          ? { kind: "screen", screenId: planned.toScreenId }
-          : { kind: "new-screen" },
-    );
-  });
 
   createEffect(() => {
     const appMapId = server.selectedAppMapId();
@@ -641,13 +563,7 @@ export function AppMapWorkspace(props: {
     appliedCanonicalRevision = revisionKey;
     const current = canvasState();
     const value = mergeAppMapProjection(current, appMap);
-    if (
-      JSON.stringify(value.graph) === JSON.stringify(current.graph) &&
-      JSON.stringify(value.positions) === JSON.stringify(current.positions) &&
-      JSON.stringify(value.groups) === JSON.stringify(current.groups) &&
-      JSON.stringify(value.screenTitles) === JSON.stringify(current.screenTitles) &&
-      JSON.stringify(value.notes) === JSON.stringify(current.notes)
-    ) {
+    if (canvasProjectionUnchanged(value, current)) {
       return;
     }
     clearCanvasHistory();
@@ -720,355 +636,93 @@ export function AppMapWorkspace(props: {
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
-  const selectedEntryFlows = createMemo(() => {
-    const map = activeAppMap();
-    const screenId = selectedNodeId();
-    return map && screenId
-      ? Object.values(map.flows).filter((flow) => flow.startScreenId === screenId)
-      : [];
-  });
-  const selectedFlowSetup = createMemo(() => {
-    const flows = selectedEntryFlows();
-    if (!flows.length) return undefined;
-    const values = new Set(flows.map((flow) => flow.setup?.routineId ?? ""));
-    return {
-      flowCount: flows.length,
-      mixed: values.size > 1,
-      routineId: values.size === 1 ? [...values][0] || undefined : undefined,
-      routines: Object.values(activeAppMap()?.routines ?? {})
-        .filter((routine) =>
-          routine.parameters.every(
-            (parameter) => !parameter.required || parameter.default !== undefined,
-          ),
-        )
-        .sort((left, right) => left.name.localeCompare(right.name))
-        .map((routine) => ({ id: routine.id, name: routine.name })),
-    };
-  });
+  const selectedEntryFlows = createMemo(() =>
+    entryFlowsForScreen(activeAppMap(), selectedNodeId()),
+  );
+  const selectedFlowSetup = createMemo(() =>
+    selectedFlowSetupSummary(selectedEntryFlows(), activeAppMap()?.routines),
+  );
   const canonicalConnectionFor = (connection: CanvasConnection) =>
     activeAppMap()?.connections[connection.id];
-  const setSelectedFlowSetup = async (routineId?: string) => {
-    const map = activeAppMap();
-    const flows = selectedEntryFlows();
-    if (!map || !flows.length) return;
-    const at = Date.now();
-    const routine = routineId ? map.routines[routineId] : undefined;
-    const defaultBindings = routine
-      ? Object.fromEntries(
-          routine.parameters.flatMap((parameter) =>
-            parameter.default === undefined ? [] : [[parameter.name, parameter.default]],
-          ),
-        )
-      : undefined;
-    try {
-      await server.runAction("app-map.commit", {
-        appMapId: map.id,
-        expectedRevision: map.revision,
-        summary: routineId
-          ? `Prepare ${flows.length === 1 ? flows[0]!.name : `${flows.length} flows`} with ${routine!.name}`
-          : `Remove before-run setup from ${flows.length === 1 ? flows[0]!.name : `${flows.length} flows`}`,
-        changes: flows.map((flow) => {
-          const { setup: _setup, ...withoutSetup } = flow;
-          const existingSetup = flow.setup;
-          const bindings =
-            existingSetup && existingSetup.routineId === routineId
-              ? existingSetup.bindings
-              : defaultBindings;
-          return {
-            kind: "flow.save" as const,
-            flow: {
-              ...withoutSetup,
-              ...(routineId
-                ? {
-                    setup: {
-                      routineId,
-                      ...(Object.keys(bindings ?? {}).length ? { bindings } : {}),
-                    },
-                  }
-                : {}),
-              updatedAt: at,
-            },
-          };
-        }),
-      });
-      await server.refreshAppMaps();
-      toast(
-        routineId ? `Runs will start with ${routine!.name}` : "Before-run setup removed",
-        "success",
-      );
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    }
-  };
-  const caseStackFor = (connection: CanvasConnection) => {
-    const map = activeAppMap();
-    const id = canonicalConnectionFor(connection)?.caseStackId;
-    return id ? map?.caseStacks[id] : undefined;
-  };
-  const saveConnectionCaseStack = async (
-    connection: CanvasConnection,
-    value: { name: string; variableIds: string[]; strategy: CaseExpansionStrategy },
-  ) => {
-    const map = activeAppMap();
-    const canonicalConnection = canonicalConnectionFor(connection);
-    if (!map || !canonicalConnection) {
-      toast("This connection is still syncing. Try again in a moment.", "info");
-      return;
-    }
-    const existing = canonicalConnection.caseStackId
-      ? map.caseStacks[canonicalConnection.caseStackId]
-      : undefined;
-    const at = Date.now();
-    const caseStackId = existing?.id ?? `cases-${connection.id}`;
-    const stack: CaseStack = {
-      id: caseStackId,
-      organizationId: map.organizationId,
-      projectId: map.projectId,
-      appMapId: map.id,
-      name: value.name,
-      variableIds: value.variableIds,
-      strategy: value.strategy,
-      maxCases: existing?.maxCases ?? 20,
-      createdAt: existing?.createdAt ?? at,
-      updatedAt: at,
-    };
-    setCaseStackBusy(true);
-    try {
-      await server.runAction("app-map.case-stack.attach", {
-        appMapId: map.id,
-        connectionId: canonicalConnection.id,
-        caseStackId,
-        expectedRevision: map.revision,
-        caseStack: stack,
-      });
-      await server.refreshAppMaps();
-      toast(
-        `Added ${value.variableIds.length === 1 ? "a case stack" : "combined coverage"}`,
-        "success",
-      );
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    } finally {
-      setCaseStackBusy(false);
-    }
-  };
-  const attachConnectionCaseStack = async (connection: CanvasConnection, caseStackId: string) => {
-    const map = activeAppMap();
-    const canonicalConnection = canonicalConnectionFor(connection);
-    if (!map || !canonicalConnection || !map.caseStacks[caseStackId]) return;
-    setCaseStackBusy(true);
-    try {
-      await server.runAction("app-map.case-stack.attach", {
-        appMapId: map.id,
-        connectionId: canonicalConnection.id,
-        caseStackId,
-        expectedRevision: map.revision,
-      });
-      await server.refreshAppMaps();
-      toast(`Applied ${map.caseStacks[caseStackId]!.name}`, "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    } finally {
-      setCaseStackBusy(false);
-    }
-  };
-  const detachConnectionCaseStack = async (connection: CanvasConnection) => {
-    const map = activeAppMap();
-    const canonicalConnection = canonicalConnectionFor(connection);
-    if (!map || !canonicalConnection?.caseStackId) return;
-    setCaseStackBusy(true);
-    try {
-      await server.runAction("app-map.connection.update", {
-        appMapId: map.id,
-        connectionId: canonicalConnection.id,
-        expectedRevision: map.revision,
-        patch: { caseStackId: null },
-      });
-      await server.refreshAppMaps();
-      toast("Removed cases from this connection", "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    } finally {
-      setCaseStackBusy(false);
-    }
-  };
+  const {
+    caseStackBusy,
+    caseStackFor,
+    saveConnectionCaseStack,
+    attachConnectionCaseStack,
+    detachConnectionCaseStack,
+  } = useAppMapCaseStack({
+    activeAppMap,
+    canonicalConnectionFor,
+  });
+  const { setSelectedFlowSetup } = useAppMapFlowSetup({
+    activeAppMap,
+    selectedEntryFlows,
+  });
   const baseGraphRunReadiness = createMemo(() =>
     appMapRunReadiness({
       graph: graph(),
-      recipeSteps: [
-        ...draft.steps(),
-        ...Object.values(activeAppMap()?.connections ?? {}).flatMap((connection) =>
-          connection.actions.flatMap((action) =>
-            action.kind === "recorded" || action.kind === "steps" ? action.steps : [],
-          ),
-        ),
-      ],
+      recipeSteps: recipeStepsForRunReadiness(draft.steps(), activeAppMap()?.connections),
       selection: {
         screenId: selectedNodeId(),
         transitionId: selectedConnectionId(),
       },
     }),
   );
-  const runnableFlow = createMemo(() => {
-    const map = activeAppMap();
-    const path = baseGraphRunReadiness().transitionPath;
-    if (!map || !path?.length) return undefined;
-    return Object.values(map.flows).find(
-      (flow) =>
-        flow.connectionIds.length === path.length &&
-        flow.connectionIds.every((connectionId, index) => connectionId === path[index]),
-    );
-  });
-  const graphRunReadiness = createMemo(() => {
-    const readiness = baseGraphRunReadiness();
-    if (!readiness.ready || runnableFlow()) return readiness;
-    return {
-      ...readiness,
-      ready: false,
-      reason: "Select the last screen in a path to run that flow",
-      label: "Run flow" as const,
-    };
-  });
-  const runCanvasGraph = async () => {
-    const appMap = activeAppMap();
-    const flow = runnableFlow();
-    if (!appMap || !flow) {
-      toast("Add and verify a connection before running this flow", "info");
-      return;
-    }
-    const serial = server.selectedDevice();
-    if (!serial) {
-      toast("Choose a device before running this flow", "info");
-      return;
-    }
-    await server.setSelectedDevice(serial);
-    if (!server.selectedLeaseId()) {
-      toast(
-        server.controlIssue() ||
-          server.liveCaptureIssue() ||
-          "This device is not available for control yet",
-        "warning",
-      );
-      return;
-    }
-    await server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
-  };
-  const refreshMapScreenshots = () => {
-    if (!graphRunReadiness().ready) {
-      toast(graphRunReadiness().reason ?? "Finish the flow before refreshing screenshots", "info");
-      return;
-    }
-    toast("Replaying the flow to capture fresh screenshots", "info");
-    void runCanvasGraph();
-  };
-  const reusableBehaviors = createMemo(() =>
-    Object.values(activeAppMap()?.routines ?? {})
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .map((routine) => ({
-        id: routine.id,
-        label: routine.name,
-        actionCount: routine.actions.reduce(
-          (count, action) =>
-            count +
-            (action.kind === "recorded" || action.kind === "steps" ? action.steps.length : 1),
-          0,
-        ),
-      })),
+  const runnableFlow = createMemo(() =>
+    findRunnableFlow(activeAppMap(), baseGraphRunReadiness().transitionPath),
   );
+  const graphRunReadiness = createMemo(() =>
+    gateGraphRunReadiness(baseGraphRunReadiness(), Boolean(runnableFlow())),
+  );
+  const { runCanvasGraph, refreshMapScreenshots } = useAppMapRunFlow({
+    activeAppMap,
+    runnableFlow,
+    graphRunReadiness,
+  });
+  const reusableBehaviors = createMemo(() => listReusableBehaviors(activeAppMap()));
   const bounds = createMemo(() =>
     canvasBounds(tree().nodes, canvasState().notes ?? [], positionFor),
   );
-  const minimapNodes = createMemo(() => {
-    const content = bounds();
-    return [
-      ...tree().nodes.map((node) => {
-        const position = positionFor(node);
-        const point = minimapPoint(
-          {
-            x: position.x + SCREEN_CARD_WIDTH / 2,
-            y: position.y + SCREEN_CARD_HEIGHT / 2,
-          },
-          content,
-        );
-        return {
-          id: node.id,
-          kind: "screen" as const,
-          x: point.x,
-          y: point.y,
-          selected: selectedNodeId() === node.id,
-          state: runProjection().screens[node.id]?.state,
-        };
-      }),
-      ...(canvasState().notes ?? []).map((note) => {
-        const point = minimapPoint({ x: note.x + 110, y: note.y + 66 }, content);
-        return {
-          id: note.id,
-          kind: "note" as const,
-          x: point.x,
-          y: point.y,
-          selected: false,
-        };
-      }),
-    ];
-  });
-  const minimapEdges = createMemo(() => {
-    const content = bounds();
-    const nodes = new Map(tree().nodes.map((node) => [node.id, node]));
-    return connections().flatMap((connection) => {
-      const from = nodes.get(connection.fromScreenId);
-      const to = nodes.get(connection.toScreenId);
-      if (!from || !to) return [];
-      const fromPosition = positionFor(from);
-      const toPosition = positionFor(to);
-      const start = minimapPoint(
-        {
-          x: fromPosition.x + SCREEN_CARD_WIDTH / 2,
-          y: fromPosition.y + SCREEN_CARD_HEIGHT / 2,
-        },
-        content,
-      );
-      const end = minimapPoint(
-        {
-          x: toPosition.x + SCREEN_CARD_WIDTH / 2,
-          y: toPosition.y + SCREEN_CARD_HEIGHT / 2,
-        },
-        content,
-      );
-      return [
-        {
-          id: connection.id,
-          x1: start.x,
-          y1: start.y,
-          x2: end.x,
-          y2: end.y,
-          selected: selectedConnectionId() === connection.id,
-          state: runProjection().transitions[connection.id]?.state,
-        },
-      ];
-    });
-  });
+  const minimapNodes = createMemo(() =>
+    buildMinimapNodes({
+      nodes: tree().nodes,
+      notes: canvasState().notes ?? [],
+      bounds: bounds(),
+      positionFor,
+      selectedNodeId: selectedNodeId(),
+      screenStates: Object.fromEntries(
+        Object.entries(runProjection().screens).map(([id, screen]) => [id, screen.state]),
+      ),
+    }),
+  );
+  const minimapEdges = createMemo(() =>
+    buildMinimapEdges({
+      nodes: tree().nodes,
+      connections: connections(),
+      bounds: bounds(),
+      positionFor,
+      selectedConnectionId: selectedConnectionId(),
+      transitionStates: Object.fromEntries(
+        Object.entries(runProjection().transitions).map(([id, transition]) => [
+          id,
+          transition.state,
+        ]),
+      ),
+    }),
+  );
   const minimapViewport = createMemo(() =>
     minimapViewportBounds(view(), canvasClientSize(), bounds()),
   );
-  const presenceGeometry = createMemo(() => ({
-    screenPositions: Object.fromEntries(
-      tree().nodes.map((node) => [node.id, { ...positionFor(node) }]),
-    ),
-    connectionPaths: Object.fromEntries(
-      connections().map((connection) => [
-        connection.id,
-        canvasEdgeGeometry(
-          {
-            from: connection.fromScreenId,
-            to: connection.toScreenId,
-            kind: connection.kind,
-          },
-          tree().nodes,
-          positionFor,
-        ).path,
-      ]),
-    ),
-  }));
+  const presenceGeometry = createMemo(() =>
+    buildPresenceGeometry({
+      nodes: tree().nodes,
+      connections: connections(),
+      positionFor,
+    }),
+  );
+  const { remoteAwareness } = useAppMapPresence({
+    recording: () => recorder.recording(),
+  });
 
   const fit = () => {
     const element = canvas;
@@ -1150,17 +804,9 @@ export function AppMapWorkspace(props: {
       card?.focus({ preventScroll: true });
     });
   };
-  const visibleCanvasBounds = createMemo(() => {
-    const viewport = view();
-    const client = canvasClientSize();
-    const overscan = 480;
-    return {
-      left: -viewport.x / viewport.scale - overscan,
-      top: -viewport.y / viewport.scale - overscan,
-      right: (-viewport.x + client.width) / viewport.scale + overscan,
-      bottom: (-viewport.y + client.height) / viewport.scale + overscan,
-    };
-  });
+  const visibleCanvasBounds = createMemo(() =>
+    visibleCanvasBoundsFromViewport({ viewport: view(), client: canvasClientSize() }),
+  );
   function persistAppMapCanvas(
     value: AppMapCanvasState,
     previous?: AppMapCanvasState,
@@ -1226,8 +872,11 @@ export function AppMapWorkspace(props: {
     );
     if (!canvasChanged && !hasVariantEvidence) return;
     if (canvasChanged && options.recordHistory !== false) {
-      canvasUndoStack.push({ before, after: structuredClone(value), at: Date.now() });
-      if (canvasUndoStack.length > 100) canvasUndoStack = canvasUndoStack.slice(-100);
+      canvasUndoStack = pushCanvasHistoryEntry(canvasUndoStack, {
+        before,
+        after: structuredClone(value),
+        at: Date.now(),
+      });
       canvasRedoStack = [];
       setCanvasHistoryDepth({ undo: canvasUndoStack.length, redo: 0 });
     }
@@ -1240,19 +889,7 @@ export function AppMapWorkspace(props: {
   const chooseTargetSet = (targetSetId?: string) => {
     const flow = activeFlow();
     if (!flow) return;
-    const at = Date.now();
-    const next = {
-      ...graph(),
-      flows: graph().flows.map((candidate) => {
-        if (candidate.id !== flow.id) return candidate;
-        const { targetSetId: _previousTargetSetId, ...withoutTargetSet } = candidate;
-        return {
-          ...withoutTargetSet,
-          ...(targetSetId ? { targetSetId } : {}),
-          updatedAt: at,
-        };
-      }),
-    };
+    const next = applyTargetSetToActiveFlow(graph(), flow.id, targetSetId);
     persistMetadata(withCanvasGraph(canvasState(), next));
   };
   createEffect(() => {
@@ -1263,67 +900,27 @@ export function AppMapWorkspace(props: {
     );
   });
   onMount(() => {
-    const chooseFromShell = (event: Event) => {
-      const detail = (event as CustomEvent<{ targetSetId?: string }>).detail;
-      chooseTargetSet(detail?.targetSetId);
-    };
-    const toggleHistoryFromShell = () => {
-      const opening = !historyOpen();
-      if (opening) setCaptureOpen(false);
-      setHistoryOpen(opening);
-    };
-    const revealFromPalette = (
-      event: Event & { detail?: { appMapId?: string; screenId?: string } },
-    ) => {
-      const detail = event.detail;
-      if (!detail?.screenId || !detail.appMapId || detail.appMapId !== server.selectedAppMapId()) {
-        return;
-      }
-      setWorkspaceView("map");
-      setSelectedNodeId(detail.screenId);
-      queueMicrotask(() => revealScreen(detail.screenId!));
-    };
-    window.addEventListener("relay:choose-target-set", chooseFromShell);
-    window.addEventListener("relay:toggle-map-history", toggleHistoryFromShell);
-    window.addEventListener("relay:reveal-app-map-screen", revealFromPalette as EventListener);
+    const unbind = bindAppMapWorkspaceShellEvents({
+      onChooseTargetSet: chooseTargetSet,
+      onToggleHistory: () => {
+        const opening = !historyOpen();
+        if (opening) setCaptureOpen(false);
+        setHistoryOpen(opening);
+      },
+      onRevealScreen: (detail) => {
+        if (!detail.screenId || !detail.appMapId || detail.appMapId !== server.selectedAppMapId()) {
+          return;
+        }
+        setWorkspaceView("map");
+        setSelectedNodeId(detail.screenId);
+        queueMicrotask(() => revealScreen(detail.screenId!));
+      },
+    });
     onCleanup(() => {
-      window.removeEventListener("relay:choose-target-set", chooseFromShell);
-      window.removeEventListener("relay:toggle-map-history", toggleHistoryFromShell);
-      window.removeEventListener("relay:reveal-app-map-screen", revealFromPalette as EventListener);
+      unbind();
       canvasResizeObserver?.disconnect();
     });
   });
-  const decideProposal = async (
-    proposalId: string,
-    decision: "approve" | "reject",
-    reason?: string,
-  ) => {
-    const appMap = activeAppMap();
-    if (!appMap || proposalBusyId()) return;
-    setProposalBusyId(proposalId);
-    setProposalError();
-    try {
-      await server.runAction(`app-map.proposal.${decision}` as const, {
-        appMapId: appMap.id,
-        proposalId,
-        expectedRevision: appMap.revision,
-        ...(reason ? { reason } : {}),
-      });
-      await server.refreshAppMaps();
-      toast(
-        decision === "approve"
-          ? "Proposal added to the map"
-          : reason
-            ? "Changes sent back with feedback"
-            : "Proposal rejected",
-        "success",
-      );
-    } catch (error) {
-      setProposalError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setProposalBusyId();
-    }
-  };
   const useCurrentScreenAsStart = async (): Promise<boolean> => {
     if (startCaptureBusy() || hasMap()) return false;
     setStartCaptureBusy(true);
@@ -1382,15 +979,12 @@ export function AppMapWorkspace(props: {
   };
   const addNote = () => {
     const element = canvas;
-    const current = view();
-    const x = element ? (element.clientWidth * 0.52 - current.x) / current.scale : 320;
-    const y = element ? (element.clientHeight * 0.42 - current.y) / current.scale : 180;
-    const at = Date.now();
-    const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
-    persistNotes([
-      ...(canvasState().notes ?? []),
-      { id, text: "Add context for this part of the map", x, y, createdAt: at, updatedAt: at },
-    ]);
+    const note = createCanvasNote({
+      viewport: view(),
+      clientWidth: element?.clientWidth,
+      clientHeight: element?.clientHeight,
+    });
+    persistNotes([...(canvasState().notes ?? []), note]);
   };
   let automaticFirstNoteHandledFor = "";
   createEffect(() => {
@@ -1406,98 +1000,38 @@ export function AppMapWorkspace(props: {
     addNote();
     props.onAddNoteHandled?.();
   });
-  const canReplayOnDevice = async () => {
-    // Replay performs its own authoritative observation. Requiring a cached
-    // live PNG here traps physical-iPad reviews after Stop, precisely when the
-    // exclusive runner has released and the cached preview may be absent.
-    let device = selectedDevice();
-    if (!targetIsReady(device, server.health() === "online")) {
-      await server.refreshDevices();
-      device = selectedDevice();
-    }
-    if (targetIsReady(device, server.health() === "online") && device) {
-      // A long review or renderer refresh may outlive its short control lease.
-      // Re-selecting the same target is an idempotent lease refresh; the
-      // person should not have to leave review and choose the iPad again.
-      if (!server.selectedLeaseId()) await server.setSelectedDevice(device.serial);
-      if (server.selectedLeaseId() && !server.controlIssue()) return true;
-    }
-    toast("Choose a ready device before trying this connection", "info");
-    openDevicePicker();
-    return false;
-  };
-  const replayTake = async () => {
-    const take = recorder.take();
-    if (!take || !(await canReplayOnDevice())) return;
-    setTakeReplay({ takeId: take.id, state: "running" });
-    let passed = false;
-    let error: string | undefined;
-    try {
-      passed = await recorder.replayTake();
-    } catch (caught) {
-      error = caught instanceof Error ? caught.message : String(caught);
-    }
-    setTakeReplay(
-      passed
-        ? { takeId: take.id, state: "passed" }
-        : { takeId: take.id, state: "failed", error: error ?? "Replay did not pass" },
-    );
-    if (!passed) setCaptureOpen(true);
-  };
-  const keepTake = async () => {
-    const take = recorder.take();
-    if (!take || takeReplay().takeId !== take.id || takeReplay().state !== "passed") return;
-    const committed = await recorder.keepTake({
-      destination: reviewDestination(),
-    });
-    if (committed) {
-      const appMapId = server.selectedAppMapId();
-      const next = appMapId ? await server.loadAppMap(appMapId) : null;
-      const destination = committed.committedConnectionId
-        ? next?.connections[committed.committedConnectionId]?.destination
-        : undefined;
-      pendingConnectionId = null;
-      recordingSourceScreenId = null;
-      recorder.setRecordingTransition(undefined);
-      setReviewDestination({ kind: "new-screen" });
-      // Review is a temporary decision point. Once the person keeps it, return
-      // them to the graph and select the just-added screen so "Record from
-      // here" is the natural next action instead of leaving a stale device
-      // inspector open beside the canvas.
-      setCaptureOpen(false);
-      setTakeReplay({ takeId: null, state: "idle" });
-      requestAnimationFrame(() => {
-        const addedScreen =
-          destination?.kind === "screen"
-            ? tree().nodes.find((node) => node.id === destination.screenId)
-            : undefined;
-        if (addedScreen) selectNode(addedScreen);
-      });
-    }
-  };
-  const discardTake = async () => {
-    pendingConnectionId = null;
-    recordingSourceScreenId = null;
-    recorder.setRecordingTransition(undefined);
-    setReviewDestination({ kind: "new-screen" });
-    await recorder.discardTake();
-    setTakeReplay({ takeId: null, state: "idle" });
-  };
-  const rewriteTake = async () => {
-    const take = recorder.take();
-    if (!take) return;
-    const sourceScreenId = take.sourceScreenId ?? recordingSourceScreenId ?? selectedNodeId();
-    await recorder.discardTake();
-    recordingSourceScreenId = sourceScreenId;
-    recorder.setRecordingSourceScreen(sourceScreenId ?? undefined);
-    pendingConnectionId = take.pendingConnectionId ?? pendingConnectionId;
-    recorder.setRecordingTransition(pendingConnectionId ?? undefined);
-    const source = tree().nodes.find((node) => node.id === sourceScreenId);
-    if (source) recorder.setRecordingGroup(titleFor(source));
-    setTakeReplay({ takeId: null, state: "idle" });
-    setCaptureOpen(true);
-    void recorder.enterRecordMode();
-  };
+  const {
+    reviewStepIndex,
+    setReviewStepIndex,
+    reviewDestination,
+    setReviewDestination,
+    takeReplay,
+    setTakeReplay,
+    canReplayOnDevice,
+    replayTake,
+    keepTake,
+    discardTake,
+    rewriteTake,
+  } = useAppMapTakeReview({
+    loadedAppMapId,
+    graph,
+    connections,
+    treeNodes: () => tree().nodes,
+    titleFor,
+    selectedNodeId,
+    selectedDevice,
+    setCaptureOpen,
+    openDevicePicker,
+    selectNode,
+    getPendingConnectionId: () => pendingConnectionId,
+    setPendingConnectionId: (id) => {
+      pendingConnectionId = id;
+    },
+    getRecordingSourceScreenId: () => recordingSourceScreenId,
+    setRecordingSourceScreenId: (id) => {
+      recordingSourceScreenId = id;
+    },
+  });
   const recordFromNode = (screen: MapTreeNode | null) => {
     // Preserve intent before device setup. A target selection should resume
     // this same recording request, not leave the user at an unrelated empty
@@ -1546,413 +1080,112 @@ export function AppMapWorkspace(props: {
     // action will appear on the selected screen as soon as it is captured.
   };
   const recordFromHere = () => recordFromNode(selectedNode());
-  const captureContextLabel = () => {
-    const transition = pendingConnectionId
-      ? connections().find((connection) => connection.id === pendingConnectionId)
-      : null;
-    if (!transition) return undefined;
-    const source = tree().nodes.find((node) => node.id === transition.fromScreenId);
-    const target = tree().nodes.find((node) => node.id === transition.toScreenId);
-    return source && target ? `${titleFor(source)} → ${titleFor(target)}` : undefined;
-  };
+  const captureContextLabel = () =>
+    buildCaptureContextLabel({
+      pendingConnectionId,
+      connections: connections(),
+      nodes: tree().nodes,
+      titleFor,
+    });
   const recordConnection = (connection: CanvasConnection) => {
     const screen = tree().nodes.find((node) => node.id === connection.fromScreenId) ?? null;
     pendingConnectionId = connection.id;
     recorder.setRecordingTransition(connection.id);
     recordFromNode(screen);
   };
-  const appendConnectionAction = async (
-    connection: CanvasConnection,
-    action: ActionSpec,
-    confirmation: string,
-  ) => {
-    const map = activeAppMap();
-    const canonical = canonicalConnectionFor(connection);
-    if (!map || !canonical) {
-      toast("This connection is still syncing. Try again in a moment.", "info");
-      return;
-    }
-    try {
-      await server.runAction("app-map.connection.update", {
-        appMapId: map.id,
-        connectionId: canonical.id,
-        expectedRevision: map.revision,
-        patch: {
-          state: "ready",
-          actions: [...canonical.actions, action],
-        },
-      });
-      await server.refreshAppMaps();
-      setTransitionReplay({ connectionId: connection.id, state: "idle" });
-      toast(confirmation, "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    }
-  };
-  const updateConnectionWait = async (
-    connection: CanvasConnection,
-    actionId: string,
-    stepId: string | undefined,
-    waitMs: number,
-  ) => {
-    const map = activeAppMap();
-    const canonical = canonicalConnectionFor(connection);
-    if (!map || !canonical) return;
-    const ms = Math.max(0, Math.round(waitMs));
-    const actions = updateConnectionWaitActions(canonical.actions, actionId, stepId, ms);
-    try {
-      await server.runAction("app-map.connection.update", {
-        appMapId: map.id,
-        connectionId: canonical.id,
-        expectedRevision: map.revision,
-        patch: { actions },
-      });
-      await server.refreshAppMaps();
-      setTransitionReplay({ connectionId: connection.id, state: "idle" });
-      toast(ms === 0 ? "Pause removed" : "Pause updated", "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    }
-  };
-  const attachBackBehavior = (connection: CanvasConnection) =>
-    appendConnectionAction(
-      connection,
-      { id: `back-${crypto.randomUUID()}`, kind: "back" },
-      "Back added to this connection",
-    );
-  const attachAutomaticBehavior = (connection: CanvasConnection) =>
-    appendConnectionAction(
-      connection,
-      { id: `passive-${crypto.randomUUID()}`, kind: "passive", reason: "automatic" },
-      "Marked as an automatic transition",
-    );
-  const attachReusableBehavior = async (connection: CanvasConnection, routineId: string) => {
-    const map = activeAppMap();
-    const canonical = canonicalConnectionFor(connection);
-    if (!map || !canonical || !map.routines[routineId]) return;
-    if (
-      canonical.actions.some(
-        (action) => action.kind === "routine" && action.routineId === routineId,
-      )
-    ) {
-      toast(`${map.routines[routineId]!.name} is already used here`, "info");
-      return;
-    }
-    await appendConnectionAction(
-      connection,
-      { id: `routine-${crypto.randomUUID()}`, kind: "routine", routineId },
-      `Applied ${map.routines[routineId]!.name}`,
-    );
-  };
-  const stepsForConnection = (connection: CanvasConnection) => {
-    const byId = new Map(draft.steps().flatMap((step) => (step.id ? [[step.id, step]] : [])));
-    return connection.stepIds.flatMap((id) => {
-      const step = byId.get(id);
-      return step ? [step] : [];
+  const { setTransitionReplay, replayStateFor, replayErrorFor, replayConnection } =
+    useAppMapTransitionReplay({
+      activeAppMap,
+      canvasState,
+      treeNodes: () => tree().nodes,
+      titleFor,
+      selectedDevice,
+      canonicalConnectionFor,
+      persistMetadata,
+      canReplayOnDevice,
     });
-  };
-  const replayStateFor = (connection: CanvasConnection): ReplayState => {
-    const current = transitionReplay();
-    if (current.connectionId === connection.id && current.state !== "idle") return current.state;
-    if (connection.review?.status === "verified") return "passed";
-    if (connection.review?.status === "failed") return "failed";
-    return "idle";
-  };
-  const replayErrorFor = (connection: CanvasConnection) => {
-    const current = transitionReplay();
-    return current.connectionId === connection.id
-      ? current.error
-      : connection.review?.status === "failed"
-        ? connection.review.error
-        : undefined;
-  };
-  const replayConnection = async (connection: CanvasConnection) => {
-    if (!(await canReplayOnDevice())) return;
-    const appMap = activeAppMap();
-    const canonical = canonicalConnectionFor(connection);
-    if (!appMap || !canonical) {
-      toast("This connection is still syncing. Try again in a moment.", "info");
-      return;
-    }
-    setTransitionReplay({ connectionId: connection.id, state: "running" });
-    const title = `${titleFor(tree().nodes.find((node) => node.id === connection.fromScreenId)!)} → ${titleFor(tree().nodes.find((node) => node.id === connection.toScreenId)!)}`;
-    const jobId = await server.runAppMapConnectionRemote(appMap.id, canonical.id, title);
-    if (!jobId) {
-      setTransitionReplay({
-        connectionId: connection.id,
-        state: "failed",
-        error: "Relay could not start this replay",
-      });
-      return;
-    }
-    setTransitionReplay({ connectionId: connection.id, state: "running", jobId });
-  };
-  createEffect(() => {
-    const replay = transitionReplay();
-    if (!replay.jobId || !replay.connectionId) return;
-    const job = server.jobs().find((candidate) => candidate.id === replay.jobId);
-    if (!job || job.status === "queued" || job.status === "running" || job.status === "paused") {
-      return;
-    }
-    const passed = job.status === "ok" || job.status === "healed";
-    const error = passed ? undefined : job.error || "The connection did not reach its destination";
-    const device = selectedDevice();
-    const target = {
-      targetId: device?.serial ?? server.selectedDevice() ?? "current-device",
-      ...(device?.name ? { targetName: device.name } : {}),
-      ...(device?.platform ? { platform: device.platform } : {}),
-      status: passed ? ("passed" as const) : ("failed" as const),
-      checkedAt: job.finishedAt ?? Date.now(),
-      ...(error ? { error } : {}),
-    };
-    persistMetadata(
-      reviewTransition(
-        canvasState(),
-        replay.connectionId,
-        passed
-          ? { status: "verified", targets: [target] }
-          : { status: "failed", error: error!, targets: [target] },
-        job.finishedAt ?? Date.now(),
-      ),
-    );
-    setTransitionReplay({
-      connectionId: replay.connectionId,
-      state: passed ? "passed" : "failed",
-      ...(error ? { error } : {}),
-    });
-    toast(passed ? "Connection verified on the device" : error!, passed ? "success" : "warning");
+  const {
+    updateConnectionWait,
+    attachBackBehavior,
+    attachAutomaticBehavior,
+    attachReusableBehavior,
+    saveReusableBehavior: saveReusableBehaviorBase,
+  } = useAppMapConnectionBehaviors({
+    activeAppMap,
+    canonicalConnectionFor,
+    onConnectionActionsChanged: (connectionId) =>
+      setTransitionReplay({ connectionId, state: "idle" }),
   });
   const saveReusableBehavior = async (connection: CanvasConnection) => {
-    const map = activeAppMap();
-    if (!map) return;
-    const canonical = canonicalConnectionFor(connection);
-    const actions: ActionSpec[] = canonical?.actions.length
-      ? structuredClone(canonical.actions)
-      : [
-          {
-            id: `recorded-${crypto.randomUUID()}`,
-            kind: "recorded",
-            takeId: connection.takeId ?? connection.id,
-            takeRevision: 1,
-            steps: stepsForConnection(connection).map((step) => structuredClone(step)),
-            evidenceIds: [],
-          },
-        ];
-    if (
-      !actions.some(
-        (action) =>
-          (action.kind !== "recorded" && action.kind !== "steps") || action.steps.length > 0,
-      )
-    )
-      return;
-    const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
-    const target = tree().nodes.find((node) => node.id === connection.toScreenId);
-    const title = `${source ? titleFor(source) : "Screen"} → ${target ? titleFor(target) : "Next screen"}`;
-    try {
-      await server.runAction("app-map.routine.save", {
-        appMapId: map.id,
-        routineId: `routine-${crypto.randomUUID()}`,
-        expectedRevision: map.revision,
-        routine: {
-          name: title,
-          description: "Reusable behavior saved from the App Map",
-          actions,
-        },
-      });
-      await server.refreshAppMaps();
-      toast(`Saved “${title}” as a Routine`, "success");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), "error");
-    }
+    await saveReusableBehaviorBase(
+      connection,
+      [
+        recordedActionFromConnection(
+          connection,
+          stepsForConnectionIds(draft.steps(), connection.stepIds),
+        ),
+      ],
+      connectionPathTitle(connection, tree().nodes, titleFor),
+    );
   };
   const beginConnection = (event: PointerEvent, fromScreenId: string) => {
     const element = canvas;
     if (!element) return;
     event.preventDefault();
     event.stopPropagation();
-    const rect = element.getBoundingClientRect();
-    const point = {
-      x: (event.clientX - rect.left - view().x) / view().scale,
-      y: (event.clientY - rect.top - view().y) / view().scale,
-    };
+    const point = canvasPointFromClientRect(
+      event.clientX,
+      event.clientY,
+      element.getBoundingClientRect(),
+      view(),
+    );
     connectionDrag = { fromScreenId, pointerId: event.pointerId, origin: point, point };
     element.setPointerCapture(event.pointerId);
   };
-  const chooseKeyboardConnection = (fromScreenId: string, toScreenId: string) => {
-    const next = addPlannedConnection(
-      canvasState(),
-      { fromScreenId, toScreenId },
-      Date.now(),
-      draft.steps(),
-    );
-    const connection = next.graph?.transitions.at(-1);
-    persistMetadata(next);
-    setKeyboardConnectionSourceId(null);
-    setSelectedConnectionId(connection?.id ?? null);
-    setSelectedNodeId(null);
-  };
-  const createKeyboardDestination = (fromScreenId: string) => {
-    const source = tree().nodes.find((node) => node.id === fromScreenId);
-    if (!source) return;
-    const position = nextBranchPosition(
-      positionFor(source),
-      tree().nodes.map((node) => positionFor(node)),
-    );
-    const next = addPlannedScreenConnection(
-      canvasState(),
-      {
-        fromScreenId,
-        position,
-      },
-      Date.now(),
-      draft.steps(),
-    );
-    const connection = next.graph?.transitions.at(-1);
-    persistMetadata(next);
-    setKeyboardConnectionSourceId(null);
-    setSelectedConnectionId(connection?.id ?? null);
-    setSelectedNodeId(null);
-  };
-  const removeConnection = (connection: CanvasConnection) => {
-    if (connection.source !== "authored") return;
-    const next = removeAuthoredConnection(canvasState(), connection.id);
-    persistMetadata(next);
-    setSelectedConnectionId(null);
-  };
-  const removeScreen = (node: MapTreeNode) => {
-    const current = canvasState();
-    const nextGraph = removeCanvasScreen(graph(), node.id);
-    const nextPositions = { ...current.positions };
-    const nextTitles = { ...current.screenTitles };
-    delete nextPositions[node.id];
-    delete nextTitles[node.id];
-    const next = withCanvasGraph(
-      {
-        ...current,
-        positions: nextPositions,
-        screenTitles: nextTitles,
-        groups: (current.groups ?? []).flatMap((group) => {
-          const screenIds = group.screenIds.filter((id) => id !== node.id);
-          return screenIds.length ? [{ ...group, screenIds, updatedAt: Date.now() }] : [];
-        }),
-      },
-      nextGraph,
-    );
-    persistMetadata(next);
-    setSelectedNodeId(null);
-    setScreenInspectorOpen(false);
-  };
-  const renameScreen = (node: MapTreeNode, title: string) => {
-    const next = title.trim();
-    if (!next || next === titleFor(node)) {
-      setRenamingNodeId(null);
-      return;
-    }
-    const nextGraph = structuredClone(graph());
-    const screen = nextGraph.screens.find((entry) => entry.id === node.id);
-    if (screen) {
-      screen.title = next;
-      screen.updatedAt = Date.now();
-    }
-    persistMetadata(
-      withCanvasGraph(
-        {
-          ...canvasState(),
-          screenTitles: { ...canvasState().screenTitles, [node.id]: next },
-        },
-        nextGraph,
-      ),
-    );
-    setRenamingNodeId(null);
-  };
-  const groupSelection = () => {
-    const appMap = activeAppMap();
-    const screenIds = [...new Set(selectedNodeIds())].filter((id) => appMap?.screens[id]);
-    if (!appMap || screenIds.length < 2) {
-      toast("Select at least two screens to group", "info");
-      return;
-    }
-    const selected = new Set(screenIds);
-    const at = Date.now();
-    const remaining = groups().flatMap((group) => {
-      const memberIds = group.screenIds.filter((id) => !selected.has(id));
-      return memberIds.length ? [{ ...group, screenIds: memberIds, updatedAt: at }] : [];
-    });
-    const group: MapGroup = {
-      id: `group-${crypto.randomUUID()}`,
-      organizationId: appMap.organizationId,
-      projectId: appMap.projectId,
-      appMapId: appMap.id,
-      name: nextGroupName(groups()),
-      screenIds,
-      createdAt: at,
-      updatedAt: at,
-    };
-    persistMetadata({ ...canvasState(), groups: [...remaining, group] });
-    setSelectedNodeIdValue(null);
-    setSelectedNodeIds([]);
-    setSelectedConnectionId(null);
-    setSelectedGroupId(group.id);
-    setGroupMenu(null);
-    toast("Created Group", "success");
-  };
-  const ungroup = (group: MapGroup) => {
-    persistMetadata({
-      ...canvasState(),
-      groups: groups().filter((candidate) => candidate.id !== group.id),
-    });
-    setSelectedGroupId(null);
-    setRenamingGroupId(null);
-    setSelectedNodeIds([...group.screenIds]);
-    setSelectedNodeIdValue(group.screenIds.at(-1) ?? null);
-    setGroupMenu(null);
-    toast("Ungrouped screens", "success");
-  };
-  const ungroupSelection = () => {
-    const selected = new Set(selectedNodeIds());
-    const owners = groups().filter((group) => group.screenIds.some((id) => selected.has(id)));
-    if (!owners.length) return;
-    const ownerIds = new Set(owners.map((group) => group.id));
-    persistMetadata({
-      ...canvasState(),
-      groups: groups().filter((group) => !ownerIds.has(group.id)),
-    });
-    setGroupMenu(null);
-    toast(
-      owners.length === 1 ? "Ungrouped screens" : `Ungrouped ${owners.length} Groups`,
-      "success",
-    );
-  };
-  const renameGroup = (group: MapGroup, name: string) => {
-    const next = name.trim();
-    if (!next || next === group.name) {
-      setRenamingGroupId(null);
-      return;
-    }
-    persistMetadata({
-      ...canvasState(),
-      groups: groups().map((candidate) =>
-        candidate.id === group.id ? { ...candidate, name: next, updatedAt: Date.now() } : candidate,
-      ),
-    });
-    setRenamingGroupId(null);
-  };
-  const selectGroup = (group: MapGroup) => {
-    setSelectedGroupId(group.id);
-    setSelectedNodeIdValue(null);
-    setSelectedNodeIds([]);
-    setSelectedConnectionId(null);
-    setScreenInspectorOpen(false);
-    setRenamingNodeId(null);
-  };
+  const {
+    chooseKeyboardConnection,
+    createKeyboardDestination,
+    removeConnection,
+    removeScreen,
+    renameScreen,
+  } = useAppMapGraphEdits({
+    canvasState,
+    graph,
+    treeNodes: () => tree().nodes,
+    draftSteps: () => draft.steps(),
+    positionFor,
+    titleFor,
+    persistMetadata,
+    setKeyboardConnectionSourceId,
+    setSelectedConnectionId,
+    setSelectedNodeId,
+    setScreenInspectorOpen,
+    setRenamingNodeId,
+  });
+  const { groupSelection, ungroup, ungroupSelection, renameGroup, selectGroup } = useAppMapGroupOps(
+    {
+      activeAppMap,
+      canvasState,
+      groups,
+      selectedNodeIds,
+      persistMetadata,
+      setSelectedNodeIdValue,
+      setSelectedNodeIds,
+      setSelectedConnectionId,
+      setSelectedGroupId,
+      setRenamingGroupId,
+      setScreenInspectorOpen,
+      setRenamingNodeId,
+      setGroupMenu: () => setGroupMenu(null),
+    },
+  );
   const openGroupMenu = (event: MouseEvent, options: { groupId?: string; screenIds: string[] }) => {
     event.preventDefault();
     event.stopPropagation();
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
     setGroupMenu({
-      x: Math.min(rect.width - 196, Math.max(8, event.clientX - rect.left)),
-      y: Math.min(rect.height - 136, Math.max(8, event.clientY - rect.top)),
+      ...clampGroupMenuPosition({ clientX: event.clientX, clientY: event.clientY, rect }),
       ...options,
     });
   };
@@ -2428,7 +1661,7 @@ export function AppMapWorkspace(props: {
                         }
                       : undefined
                   }
-                  awareness={[]}
+                  awareness={remoteAwareness()}
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
                   titleFor={titleFor}
@@ -2869,8 +2102,7 @@ export function AppMapWorkspace(props: {
       </Show>
       <Show when={appMapLoadState().status === "ready" && reviewingTake() && recorder.take()}>
         {(take) => (
-          <AppMapTakeReview
-            take={take()}
+          <AppMapTakeReviewMount
             selectedIndex={reviewStepIndex()}
             sourceTitle={
               graph().screens.find(
@@ -2887,82 +2119,30 @@ export function AppMapWorkspace(props: {
             onDiscard={() => void discardTake()}
             onReplay={() => void replayTake()}
             onRewrite={() => void rewriteTake()}
-            onReorderActions={(actionIds) => recorder.reorderTakeActions(actionIds)}
-            onReplaceAction={(actionId, interaction) =>
-              recorder.replaceTakeAction(actionId, interaction)
-            }
-            onRemoveAction={(actionId) => recorder.removeTakeAction(actionId)}
-            onReviewInvalidated={() => setTakeReplay({ takeId: take().id, state: "idle" })}
-            replayState={takeReplay().takeId === take().id ? takeReplay().state : "idle"}
-            {...(takeReplay().takeId === take().id && takeReplay().error
-              ? { replayError: takeReplay().error }
-              : {})}
-            onRemove={(index) => {
-              void recorder.removeTakeStep(index);
-              setTakeReplay({ takeId: take().id, state: "idle" });
-              setReviewStepIndex((selected) => (selected > index ? selected - 1 : selected));
-            }}
-            onClip={(clip) => {
-              void recorder.setTakeVideoClip(clip);
-              setTakeReplay({ takeId: take().id, state: "idle" });
-            }}
+            takeReplay={takeReplay}
+            setTakeReplay={setTakeReplay}
+            setReviewStepIndex={setReviewStepIndex}
           />
         )}
       </Show>
       <Show when={appMapLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
-        <AppMapDeviceCompanion
+        <AppMapDeviceCompanionMount
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
           deviceLabel={selectedDevice()?.name ?? selectedDevice()?.serial}
           status={livePanelStatus()}
-          recording={recorder.recording()}
-          take={recorder.take()}
-          arming={recorder.arming()}
           captureBusy={startCaptureBusy()}
           canRecord={canRecord()}
-          recordLabel={
-            recorder.arming() || startCaptureBusy()
-              ? "Preparing…"
-              : !hasCanvasContent()
-                ? "Start recording"
-                : selectedConnection()
-                  ? selectedConnection()!.state === "needs-recording"
-                    ? "Record"
-                    : "Rewrite"
-                  : "Record"
-          }
-          recordContextLabel={
-            selectedConnection()
-              ? (() => {
-                  const connection = selectedConnection()!;
-                  const source = tree().nodes.find((node) => node.id === connection.fromScreenId);
-                  const target = tree().nodes.find((node) => node.id === connection.toScreenId);
-                  return source && target ? `${titleFor(source)} → ${titleFor(target)}` : undefined;
-                })()
-              : selectedNode()
-                ? `From ${titleFor(selectedNode()!)}`
-                : undefined
-          }
+          hasCanvasContent={hasCanvasContent()}
+          selectedConnection={selectedConnection}
+          selectedNode={selectedNode}
+          nodes={() => tree().nodes}
+          titleFor={titleFor}
           captureContextLabel={captureContextLabel()}
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}
-          onRecord={() => {
-            if (!hasCanvasContent()) {
-              // A first recording already observes both sides of the
-              // transition. Let that single action create the entry screen,
-              // destination, and connection; screenshot-only capture remains
-              // available from the camera tool.
-              recordFromHere();
-              return;
-            }
-            const connection = selectedConnection();
-            if (connection) {
-              recordConnection(connection);
-              return;
-            }
-            recordFromHere();
-          }}
-          onStop={() => void recorder.stopRecording()}
+          onRecordFromHere={recordFromHere}
+          onRecordConnection={recordConnection}
           onOrientation={setDeviceCompanionOrientation}
         />
       </Show>
@@ -2975,232 +2155,4 @@ export function AppMapWorkspace(props: {
       </Show>
     </section>
   );
-}
-
-function AppMapLoadFeedback(props: {
-  status: "loading" | "error";
-  failure?: { title: string; guidance: string; detail?: string };
-  onRetry: () => void;
-}) {
-  return (
-    <div class="app-map-canvas relative grid h-full min-h-0 w-full min-w-0 place-items-center overflow-hidden px-6 text-center">
-      <div
-        class="app-map-grid pointer-events-none absolute inset-0 opacity-60"
-        aria-hidden="true"
-      />
-      <section
-        class="relative z-[1] grid max-w-[380px] justify-items-center gap-3"
-        role={props.status === "error" ? "alert" : "status"}
-        aria-live={props.status === "error" ? "assertive" : "polite"}
-      >
-        <span class="grid size-11 place-items-center rounded-[13px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
-          <Icon
-            name={props.status === "error" ? "alert" : "refresh"}
-            size={17}
-            class={props.status === "loading" ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
-          />
-        </span>
-        <div class="grid gap-1.5">
-          <h2 class="m-0 text-[18px]/[1.25] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
-            {props.status === "error"
-              ? (props.failure?.title ?? "This map couldn’t be opened")
-              : "Opening map…"}
-          </h2>
-          <p class="m-0 text-[12.5px]/[1.55] text-[var(--text-weak)]">
-            {props.status === "error"
-              ? (props.failure?.guidance ??
-                "Your saved map has not been replaced. Check Relay’s connection and try again.")
-              : "Loading its screens, connections, and evidence."}
-          </p>
-        </div>
-        <Show when={props.status === "error" && props.failure?.detail}>
-          <details class="w-full rounded-[10px] bg-[var(--map-control-surface)] px-3 py-2 text-left text-[11px]/[1.5] text-[var(--text-base)] shadow-[var(--map-elevation-control)]">
-            <summary class="cursor-pointer font-medium text-[var(--text-strong)]">
-              Technical details
-            </summary>
-            <p class="m-0 mt-2 break-words font-mono text-[10px] text-[var(--text-weak)]">
-              {props.failure?.detail}
-            </p>
-          </details>
-        </Show>
-        <Show when={props.status === "error"}>
-          <button
-            type="button"
-            class="canvas-tool-control inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-[var(--product-accent-soft)] px-4 text-[12px] font-semibold text-[var(--text-interactive-base)] outline-none transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)]"
-            onClick={props.onRetry}
-          >
-            <Icon name="refresh" size={13} /> Try again
-          </button>
-        </Show>
-      </section>
-    </div>
-  );
-}
-
-function appMapLoadFailure(error: unknown): {
-  title: string;
-  guidance: string;
-  detail?: string;
-} {
-  const status =
-    typeof error === "object" && error !== null && "status" in error
-      ? Number((error as { status?: unknown }).status)
-      : undefined;
-  const message = error instanceof Error ? error.message.trim().slice(0, 280) : "";
-  if (status === 401 || status === 403) {
-    return {
-      title: "Relay can’t access this map",
-      guidance: "Check the project connection or permissions, then try again.",
-      ...(message ? { detail: message } : {}),
-    };
-  }
-  if (status === 404) {
-    return {
-      title: "This map is no longer available",
-      guidance: "Choose another App Map or return to the project and create a new one.",
-      ...(message ? { detail: message } : {}),
-    };
-  }
-  if (status !== undefined && status >= 400 && status < 500) {
-    return {
-      title: "Relay couldn’t read this map",
-      guidance: "The saved map was left unchanged. Review the details or choose another map.",
-      ...(message ? { detail: message } : {}),
-    };
-  }
-  return {
-    title: "Relay couldn’t reach this map",
-    guidance: "Your saved map has not been replaced. Check the connection and try again.",
-    ...(message ? { detail: message } : {}),
-  };
-}
-
-function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
-  const screenshot = evidenceForStep(step)?.screenshot;
-  return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
-}
-
-function latestScreenVariant(appMap: AppMap | null | undefined, screenId: string) {
-  const screen = appMap?.screens[screenId];
-  if (!appMap || !screen) return undefined;
-  return screen.variantIds
-    .flatMap((id) => (appMap.screenVariants[id] ? [appMap.screenVariants[id]!] : []))
-    .toSorted((left, right) => right.updatedAt - left.updatedAt)[0];
-}
-
-function variantScreenshotUrl(
-  server: ReturnType<typeof useServer>,
-  appMap: AppMap | null | undefined,
-  screenId: string,
-): string {
-  const variant = latestScreenVariant(appMap, screenId);
-  const uri = variant?.screenshotUri;
-  return uri ? server.authoringEvidenceUrl(uri, "image/png") : "";
-}
-
-function variantOrientationEvidence(
-  appMap: AppMap | null | undefined,
-  screenId: string,
-): ScreenshotOrientationEvidence | undefined {
-  const profile = latestScreenVariant(appMap, screenId)?.targetProfile;
-  return profile
-    ? {
-        ...(profile.viewport ? { logicalViewport: { ...profile.viewport } } : {}),
-        platform: profile.platform,
-      }
-    : undefined;
-}
-
-function canonicalNotesFor(notes: CanvasNote[], appMap: AppMap): AppMap["notes"] {
-  return Object.fromEntries(
-    notes.map((note) => [
-      note.id,
-      {
-        id: note.id,
-        organizationId: appMap.organizationId,
-        projectId: appMap.projectId,
-        appMapId: appMap.id,
-        text: note.text.trim() || "Note",
-        position: { x: note.x, y: note.y },
-        createdAt: note.createdAt,
-        updatedAt: note.updatedAt,
-      },
-    ]),
-  );
-}
-
-function canvasRemovalChanges(
-  previous: AppMapCanvasState,
-  next: AppMapCanvasState,
-  appMap: AppMap,
-): AppMapBatchChange[] {
-  const previousGraph = previous.graph;
-  if (!previousGraph) return [];
-  const nextGraph = next.graph;
-  const nextFlowIds = new Set(nextGraph?.flows.map((flow) => flow.id) ?? []);
-  const nextConnectionIds = new Set(
-    nextGraph?.transitions.map((connection) => connection.id) ?? [],
-  );
-  const nextScreenIds = new Set(nextGraph?.screens.map((screen) => screen.id) ?? []);
-  const nextGroupIds = new Set((next.groups ?? []).map((group) => group.id));
-  return [
-    ...(previous.groups ?? []).flatMap((group): AppMapBatchChange[] =>
-      !nextGroupIds.has(group.id) && appMap.groups[group.id]
-        ? [{ kind: "group.remove", groupId: group.id }]
-        : [],
-    ),
-    ...previousGraph.flows.flatMap((flow): AppMapBatchChange[] =>
-      !nextFlowIds.has(flow.id) && appMap.flows[flow.id]
-        ? [{ kind: "flow.remove", flowId: flow.id }]
-        : [],
-    ),
-    ...previousGraph.transitions.flatMap((connection): AppMapBatchChange[] =>
-      !nextConnectionIds.has(connection.id) && appMap.connections[connection.id]
-        ? [{ kind: "connection.remove", connectionId: connection.id }]
-        : [],
-    ),
-    ...previousGraph.screens.flatMap((screen): AppMapBatchChange[] =>
-      !nextScreenIds.has(screen.id) && appMap.screens[screen.id]
-        ? [{ kind: "screen.remove", screenId: screen.id }]
-        : [],
-    ),
-  ];
-}
-
-function orderCanvasChanges(changes: AppMapBatchChange[]): AppMapBatchChange[] {
-  const priority = (change: AppMapBatchChange): number => {
-    if (change.kind === "screen.add" || change.kind === "screen.update") return 0;
-    if (change.kind === "group.remove") return 1;
-    if (change.kind === "group.save") return 2;
-    if (change.kind === "connection.create" || change.kind === "connection.update") return 3;
-    if (change.kind === "flow.save" || change.kind === "flow.remove") return 4;
-    if (change.kind === "connection.remove") return 5;
-    return 6;
-  };
-  return changes
-    .map((change, index) => ({ change, index }))
-    .sort((left, right) => {
-      return priority(left.change) - priority(right.change) || left.index - right.index;
-    })
-    .map(({ change }) => change);
-}
-
-function screenshotOrientationEvidence(
-  server: ReturnType<typeof useServer>,
-  step: RecipeStep | undefined,
-): ScreenshotOrientationEvidence | undefined {
-  const evidence = evidenceForStep(step);
-  if (!evidence) return undefined;
-  const logicalViewport =
-    companionLogicalViewport(evidence.nodes) ??
-    (evidence.deviceBounds ? { ...evidence.deviceBounds } : undefined);
-  const platform = evidence.serial
-    ? server.devices().find((device) => device.serial === evidence.serial)?.platform
-    : undefined;
-  const edge = companionOrientationEdge(evidence.nodes, logicalViewport);
-  return {
-    ...(logicalViewport ? { logicalViewport } : {}),
-    ...(platform ? { platform } : {}),
-    ...(edge ? { edge } : {}),
-  };
 }

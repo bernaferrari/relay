@@ -113,6 +113,9 @@ function sessionPath(id: string): string {
 }
 
 function screenAssetPath(sessionId: string, screenId: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(sessionId)) {
+    throw new Error("invalid discovery session id");
+  }
   if (!/^screen-[A-Za-z0-9-]+$/.test(screenId)) throw new Error("invalid discovery screen id");
   return join(discoveryRoot(), sessionId, "screens", `${screenId}.png`);
 }
@@ -203,6 +206,21 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
     .slice(0, 40);
 }
 
+function discoveryBelongsToProject(
+  session: Pick<DiscoverySession, "projectId">,
+  projectId: string | undefined,
+): boolean {
+  if (!projectId) return true;
+  return (session.projectId?.trim() || "default") === projectId;
+}
+
+function assertDiscoveryAccess(session: DiscoverySession): void {
+  const operation = currentOperationContext();
+  if (!discoveryBelongsToProject(session, operation?.projectId)) {
+    throw new Error("discovery session not found");
+  }
+}
+
 export async function createDiscoverySession(input: {
   id?: string;
   name: string;
@@ -210,15 +228,22 @@ export async function createDiscoverySession(input: {
   targetProfile?: TargetProfile;
   scope?: Partial<DiscoveryScope>;
   agent?: Omit<DiscoveryAgentContext, "createdBy">;
+  projectId?: string;
+  organizationId?: string;
 }): Promise<DiscoverySession> {
   const name = requiredText(input.name, "discovery session name", 160);
   const targetId = requiredText(input.targetId, "discovery target", 240);
   const agent = input.agent ? normalizeAgentContext(input.agent) : undefined;
   const operation = currentOperationContext();
   const at = Date.now();
+  const projectId = input.projectId?.trim() || operation?.projectId?.trim() || "default";
+  const organizationId =
+    input.organizationId?.trim() || operation?.organizationId?.trim() || "local";
   const session: DiscoverySession = {
     id: input.id ?? `discovery-${randomUUID()}`,
     name,
+    projectId,
+    organizationId,
     targetId,
     ...(input.targetProfile ? { targetProfile: { ...input.targetProfile } } : {}),
     ...(agent
@@ -248,9 +273,14 @@ export async function createDiscoverySession(input: {
   return session;
 }
 
-export async function readDiscoverySession(id: string): Promise<DiscoverySession | null> {
+export async function readDiscoverySession(
+  id: string,
+  filter?: { projectId?: string },
+): Promise<DiscoverySession | null> {
   try {
-    return JSON.parse(await readFile(sessionPath(id), "utf8")) as DiscoverySession;
+    const session = JSON.parse(await readFile(sessionPath(id), "utf8")) as DiscoverySession;
+    if (!discoveryBelongsToProject(session, filter?.projectId)) return null;
+    return session;
   } catch {
     return null;
   }
@@ -260,6 +290,7 @@ export async function readDiscoverySession(id: string): Promise<DiscoverySession
 export async function renameDiscoverySession(id: string, name: string): Promise<DiscoverySession> {
   const session = await readDiscoverySession(id);
   if (!session) throw new Error("Discovery map not found");
+  assertDiscoveryAccess(session);
   const nextName = name.trim();
   if (!nextName) throw new Error("Map name is required");
   if (nextName.length > 120) throw new Error("Map name is too long");
@@ -269,7 +300,9 @@ export async function renameDiscoverySession(id: string, name: string): Promise<
   return renamed;
 }
 
-export async function listDiscoverySessions(): Promise<DiscoverySession[]> {
+export async function listDiscoverySessions(filter?: {
+  projectId?: string;
+}): Promise<DiscoverySession[]> {
   try {
     const files = (await readdir(discoveryRoot())).filter((file) => file.endsWith(".json"));
     const sessions = await Promise.all(
@@ -277,6 +310,7 @@ export async function listDiscoverySessions(): Promise<DiscoverySession[]> {
     );
     return sessions
       .filter((session): session is DiscoverySession => Boolean(session))
+      .filter((session) => discoveryBelongsToProject(session, filter?.projectId))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
@@ -289,6 +323,7 @@ export async function setDiscoveryStatus(
 ): Promise<DiscoverySession> {
   const session = await readDiscoverySession(id);
   if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
   const allowed: Record<DiscoveryStatus, DiscoveryStatus[]> = {
     draft: ["running", "stopped"],
     running: ["paused", "complete", "stopped"],
@@ -317,6 +352,7 @@ export async function recordObservedScreen(input: {
 }): Promise<{ session: DiscoverySession; screen: ObservedScreen; isNew: boolean }> {
   const session = await readDiscoverySession(input.sessionId);
   if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
   assertMutable(session);
   const fingerprint = fingerprintDiscoveryScreen(input.nodes, input.screenshotDigest);
   const existing = session.screens.find((screen) => screen.fingerprint === fingerprint);
@@ -388,6 +424,7 @@ export async function recordObservedTransition(
 ): Promise<ObservedTransition> {
   const session = await readDiscoverySession(input.sessionId);
   if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
   assertMutable(session);
   if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(input)) {
     throw new Error("discovery policy blocks sensitive controls");
@@ -479,6 +516,7 @@ export async function promoteDiscoveryPath(input: {
 }): Promise<{ recipe: Recipe; warnings: string[] }> {
   const session = await readDiscoverySession(input.sessionId);
   if (!session) throw new Error("discovery session not found");
+  assertDiscoveryAccess(session);
   if (!input.title.trim()) throw new Error("test title is required");
   if (await readRecipe(input.recipeId)) throw new Error("test id already exists; choose a new id");
   const selected = input.transitionIds.map((id) => {

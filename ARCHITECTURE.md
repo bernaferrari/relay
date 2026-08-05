@@ -20,15 +20,30 @@ desktop (Electron) · web app · CLI · TUI · MCP
 
 ## Canonical product model
 
-Each project has one **App Map**. Its normalized entities are Screens, Screen Variants, Connections,
-Actions, Routines, Flows, Runs, Target Results, Baselines, Proposals, Notes, and Activity Events.
-Screens are observed application states; Connections describe how one state reaches another; Flows
-are reusable paths through the map.
+A project holds one or more **App Maps**. Each App Map’s normalized entities are Screens, Screen
+Variants, Connections, Actions, Routines, Flows, Runs, Target Results, Baselines, Proposals, Notes,
+and Activity Events. Screens are observed application states; Connections describe how one state
+reaches another; Flows are reusable paths through the map.
 
-There is no second graph document and no compatibility authoring model. App Map schema v2 is the
-only persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
-inferred. Executable recipes are an internal deterministic YAML projection used by the runner; they
-are not an alternate public product model.
+**App Map is the primary visual authoring model.** The canvas is where people and agents capture
+screens, record connections, review Takes, and organize coverage. App Map schema v2 is the only
+persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
+inferred. There is no second graph document and no compatibility authoring surface.
+
+**Recipes remain a public executable IR**, not a private shadow of the canvas. A recipe is the
+target-neutral, step-oriented contract used for reusable tests and modules, YAML import/export,
+discovery promotion into runnable coverage, history/restore, stability signals, and runner
+execution. When an App Map Flow or Connection runs, Relay compiles verified graph steps into recipe
+IR for the runner. Recipes are therefore both:
+
+- an authoring/import surface of their own (`recipe.list`, `recipe.get`, `recipe.create`,
+  `recipe.update`, `recipe.delete`, `recipe.yaml.get`, `recipe.import`, and related evidence/history
+  ops), and
+- the deterministic execution projection produced from App Map Flows and Connections at run time.
+
+CLI and MCP expose both `app-map.*` and `recipe.*` operations through the same registry. Neither
+family is host-private. Selected canvas state (`selectedAppMapId` and peers) always refers to an App
+Map id — never a recipe id.
 
 ## Packages
 
@@ -57,8 +72,9 @@ domain behavior. `GET /meta` is generated from the registry, so machine interfac
 contracts instead of scraping route documentation. MCP operations accept the direct canonical input
 shape only.
 
-Internal recipe operations are deliberately excluded from CLI and MCP. Public automation authors and
-runs App Map Flows; the compiler owns the private recipe projection.
+Public automation authors App Maps and recipes through registered `app-map.*` and `recipe.*`
+operations. Flow and Connection runs compile into recipe IR inside the runner; that compile step is
+an implementation detail of execution, not a reason to hide the recipe model from CLI or MCP.
 
 ## State, concurrency, and collaboration
 
@@ -122,8 +138,8 @@ silently appearing successful.
 4. Electron uses context isolation, a sandboxed renderer, no Node integration, and a narrow CSP-bound
    preload API.
 5. Local HTTP uses scoped identity. Non-loopback serving requires authentication and redaction.
-6. YAML App Map import/export and run artifacts are deterministic, open projections—not hidden
-   alternate sources of truth.
+6. YAML App Map and recipe import/export, plus run artifacts, are deterministic open projections—not
+   hidden alternate sources of truth.
 7. A partial or failed operation remains inspectable and never silently rewrites approved behavior.
 
 ## Development verification

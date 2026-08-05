@@ -19,6 +19,15 @@
     text-rendering: optimizeLegibility;
   }
 
+  :root {
+    --step-accent-expect: #35c89f;
+    --step-accent-type: #5ea7ff;
+    --step-accent-capture: #e985be;
+    --step-accent-wait: #f2b65d;
+    --step-accent-flow: #a67cff;
+    --step-accent-default: #8068f2;
+  }
+
   button:focus:not(:focus-visible),
   [role="button"]:focus:not(:focus-visible) {
     outline: none;

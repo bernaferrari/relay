@@ -29,10 +29,6 @@ vendor/agent-device/.tmp/
 !vendor/agent-device/dist/
 !vendor/agent-device/dist/**
 vendor/agent-device/dist/**/*.map
-!vendor/agent-device-relay-overrides/
-!vendor/agent-device-relay-overrides/dist/
-!vendor/agent-device-relay-overrides/dist/src/
-!vendor/agent-device-relay-overrides/dist/src/*
 
 *.legacy.css.bak
 broken-ui.png

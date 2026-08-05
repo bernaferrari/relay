@@ -673,6 +673,9 @@ export type ObservedTransition = {
 export type DiscoverySession = {
   id: string;
   name: string;
+  /** Owning project. Older maps may omit this and are treated as "default". */
+  projectId?: string;
+  organizationId?: string;
   targetId: string;
   targetProfile?: TargetProfile;
   agent?: DiscoveryAgentContext;

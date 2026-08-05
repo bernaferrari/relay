@@ -22,7 +22,7 @@ export type PresenceVisual = Readonly<{
 }>;
 
 function actorColor(actor: CollaborationAwareness): string {
-  if (actor.actorKind === "agent") return "#a78bfa";
+  if (actor.actorKind === "agent") return "var(--text-info-base)";
   if (actor.actorKind === "system") return "var(--text-weak)";
   return "var(--text-interactive-base)";
 }

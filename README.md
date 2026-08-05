@@ -7,7 +7,7 @@ inside a Relay-owned browser profile.
 
 Architecture and theming follow [OpenCode](https://github.com/anomalyco/opencode) patterns
 (core · HTTP/SSE · thin hosts · full theme resolve/v2). Product craft aims at the bar set by
-teams like PostHog: clear empty states, CI exits, doctor checks, evidence on disk.
+teams like PostHog: clear empty states, project presence, golden CI smoke, doctor checks, evidence on disk.
 
 ```
 packages/
@@ -353,6 +353,7 @@ at startup and then every four hours. macOS artifacts must be code-signed before
 pnpm typecheck
 pnpm test                  # core unit tests (reports)
 pnpm --filter @relay/app typecheck
+pnpm test:golden           # device smoke; skips when server/device unavailable
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md).

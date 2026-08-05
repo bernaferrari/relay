@@ -10,6 +10,7 @@ import {
   type BrowseRunOutcome,
 } from "../lib/app-map-browse";
 import { Icon } from "./icon";
+import { EmptyState } from "./empty-state";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 
 export type AppMapBrowseMode = "screens" | "coverage";
@@ -579,21 +580,15 @@ function BrowseEmpty(props: {
   onAction?: () => void;
 }) {
   return (
-    <section class="grid min-h-56 place-items-center px-6 text-center">
-      <div class="grid max-w-[380px] justify-items-center gap-3">
-        <span class="grid size-10 place-items-center rounded-[11px] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-          <Icon name={props.icon} size={17} />
-        </span>
-        <div>
-          <h3 class="text-[16px] font-semibold text-[var(--text-strong)]">{props.title}</h3>
-          <p class="mt-1 text-[12px]/[1.5] text-[var(--text-weak)]">{props.body}</p>
-        </div>
-        <Show when={props.actionLabel && props.onAction}>
-          <Button variant="secondary" size="lg" onClick={props.onAction}>
-            {props.actionLabel}
-          </Button>
-        </Show>
-      </div>
+    <section class="grid min-h-56 place-items-center px-6">
+      <EmptyState
+        size="md"
+        icon={props.icon}
+        title={props.title}
+        description={props.body}
+        actionLabel={props.actionLabel}
+        onAction={props.onAction}
+      />
     </section>
   );
 }

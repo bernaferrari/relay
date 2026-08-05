@@ -1191,12 +1191,20 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("matrix.import", path("matrix import")),
   mapped("matrix.resolve", path("matrix resolve", ["matrixId"])),
 
+  mapped("presence.list", path("presence list")),
+  mapped("presence.upsert", path("presence upsert")),
+  mapped("presence.clear", path("presence clear", ["actorId"])),
+
   mapped("discovery.list", path("discovery list")),
   mapped("discovery.create", path("discovery create")),
+  mapped("discovery.get", path("discovery get", ["sessionId"])),
   mapped("discovery.rename", path("discovery rename", ["sessionId"])),
   mapped("discovery.status.update", path("discovery status update", ["sessionId"])),
   mapped("discovery.capture", path("discovery capture", ["sessionId", "serial"])),
   mapped("discovery.interact", path("discovery interact", ["sessionId", "serial"])),
+  mapped("discovery.suggestion", path("discovery suggestion", ["sessionId"])),
+  mapped("discovery.coverage", path("discovery coverage", ["sessionId"])),
+  mapped("discovery.export", path("discovery export", ["sessionId"])),
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
 
   mapped("job.list", path("job list")),

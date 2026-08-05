@@ -1,0 +1,66 @@
+name: Golden path (skips without device)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Optional nightly probe; skips cleanly when no hardware is attached.
+    - cron: "0 7 * * *"
+
+concurrency:
+  group: golden-device-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden:
+    name: Golden path (skips without device)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Never block CI for missing hardware on shared runners.
+      GOLDEN_REQUIRE_DEVICE: "0"
+      RELAY_URL: http://127.0.0.1:8787
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Start Relay server
+        run: |
+          pnpm dev:serve > /tmp/relay-server.log 2>&1 &
+          echo $! > /tmp/relay-server.pid
+
+      - name: Wait for /health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS "$RELAY_URL/health" >/dev/null 2>&1; then
+              echo "Relay is healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Relay server failed to become healthy" >&2
+          if [ -f /tmp/relay-server.log ]; then
+            tail -n 200 /tmp/relay-server.log >&2 || true
+          fi
+          exit 1
+
+      - name: Golden device path
+        run: pnpm test:golden
+
+      - name: Stop Relay server
+        if: always()
+        run: |
+          if [ -f /tmp/relay-server.pid ]; then
+            kill "$(cat /tmp/relay-server.pid)" 2>/dev/null || true
+          fi

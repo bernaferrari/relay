@@ -833,12 +833,19 @@ type GenericOperationId =
   | "matrix.delete"
   | "matrix.import"
   | "matrix.resolve"
+  | "presence.list"
+  | "presence.upsert"
+  | "presence.clear"
   | "discovery.list"
   | "discovery.create"
+  | "discovery.get"
   | "discovery.rename"
   | "discovery.status.update"
   | "discovery.capture"
   | "discovery.interact"
+  | "discovery.suggestion"
+  | "discovery.coverage"
+  | "discovery.export"
   | "discovery.promote"
   | "job.retry"
   | "job.active.cancel"
@@ -2020,6 +2027,15 @@ export const operationDefinitions = [
     category: "system",
     mode: "stream",
   }),
+  query("presence.list", "List project presence", "/presence", { category: "system" }),
+  command("presence.upsert", "Publish actor presence", "POST", "/presence", {
+    category: "system",
+    idempotency: "inherent",
+  }),
+  command("presence.clear", "Clear actor presence", "DELETE", "/presence/:actorId", {
+    category: "system",
+    idempotency: "inherent",
+  }),
   query("workspace.privacy.get", "Get privacy policy", "/settings/privacy", {
     input: emptyInputParser,
     output: redactionPolicyParser,
@@ -2810,6 +2826,7 @@ export const operationDefinitions = [
   command("discovery.create", "Create Discovery Map", "POST", "/discovery", {
     category: "discovery",
   }),
+  query("discovery.get", "Get Discovery Map", "/discovery/:sessionId", { category: "discovery" }),
   command("discovery.rename", "Rename Discovery Map", "POST", "/discovery/:sessionId/name", {
     category: "discovery",
   }),
@@ -2844,6 +2861,20 @@ export const operationDefinitions = [
       lease: "exclusive",
     },
   ),
+  query(
+    "discovery.suggestion",
+    "Suggest next Discovery control",
+    "/discovery/:sessionId/suggestion",
+    {
+      category: "discovery",
+    },
+  ),
+  query("discovery.coverage", "Discovery coverage report", "/discovery/:sessionId/coverage", {
+    category: "discovery",
+  }),
+  query("discovery.export", "Export Discovery Map", "/discovery/:sessionId/export", {
+    category: "discovery",
+  }),
   command("discovery.promote", "Promote Discovery path", "POST", "/discovery/:sessionId/promote", {
     category: "discovery",
   }),

@@ -42,7 +42,7 @@ function scheduleFile(): string {
   return join(findWorkspaceRoot(), ".relay", "schedules.json");
 }
 
-export async function listSchedules(): Promise<LocalSchedule[]> {
+async function readAllSchedules(): Promise<LocalSchedule[]> {
   try {
     const value = JSON.parse(await readFile(scheduleFile(), "utf8")) as unknown;
     if (!Array.isArray(value)) return [];
@@ -85,6 +85,12 @@ export async function listSchedules(): Promise<LocalSchedule[]> {
   }
 }
 
+export async function listSchedules(filter?: { projectId?: string }): Promise<LocalSchedule[]> {
+  const schedules = await readAllSchedules();
+  if (!filter?.projectId) return schedules;
+  return schedules.filter((item) => item.projectId === filter.projectId);
+}
+
 async function writeSchedules(schedules: LocalSchedule[]): Promise<void> {
   await mkdir(join(findWorkspaceRoot(), ".relay"), { recursive: true });
   await writeFile(scheduleFile(), JSON.stringify(schedules, null, 2), "utf8");
@@ -114,7 +120,7 @@ export async function saveSchedule(
     input.intervalMinutes > 43_200
   )
     throw new Error("intervalMinutes must be from 1 to 43200");
-  const schedules = await listSchedules();
+  const schedules = await readAllSchedules();
   const existing = input.id
     ? schedules.find((item) => item.id === input.id)
     : schedules.find(
@@ -143,12 +149,20 @@ export async function saveSchedule(
   return schedule;
 }
 
-export async function deleteSchedule(id: string): Promise<void> {
-  await writeSchedules((await listSchedules()).filter((item) => item.id !== id));
+export async function deleteSchedule(
+  id: string,
+  filter?: { projectId?: string },
+): Promise<boolean> {
+  const schedules = await readAllSchedules();
+  const current = schedules.find((item) => item.id === id);
+  if (!current) return false;
+  if (filter?.projectId && current.projectId !== filter.projectId) return false;
+  await writeSchedules(schedules.filter((item) => item.id !== id));
+  return true;
 }
 
 export async function markScheduleRun(id: string, at = Date.now()): Promise<void> {
-  const schedules = await listSchedules();
+  const schedules = await readAllSchedules();
   const current = schedules.find((item) => item.id === id);
   if (!current) return;
   await writeSchedules([

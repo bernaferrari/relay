@@ -1,0 +1,653 @@
+import type { AppMapRunPresentationState } from "./app-map-run-projection";
+import type {
+  AppMap,
+  AppMapBatchChange,
+  AppMapCanvasState,
+  CanvasNote,
+  Flow,
+  RecipeStep,
+} from "@relay/protocol";
+import type { DeviceReadiness } from "./device-readiness";
+import type { MapTreeNode } from "./app-map-tree";
+import type { CanvasConnection } from "./app-map-connection-draft";
+import {
+  canvasEdgeGeometry,
+  SCREEN_CARD_HEIGHT,
+  SCREEN_CARD_WIDTH,
+  type CanvasBounds,
+  type CanvasPoint,
+  type CanvasViewport,
+} from "./app-map-canvas-layout";
+import type { TakeDestination } from "./app-map-canvas-graph";
+import { minimapPoint } from "./app-map-minimap";
+
+export function appMapLoadFailure(error: unknown): {
+  title: string;
+  guidance: string;
+  detail?: string;
+} {
+  const status =
+    typeof error === "object" && error !== null && "status" in error
+      ? Number((error as { status?: unknown }).status)
+      : undefined;
+  const message = error instanceof Error ? error.message.trim().slice(0, 280) : "";
+  if (status === 401 || status === 403) {
+    return {
+      title: "Relay can’t access this map",
+      guidance: "Check the project connection or permissions, then try again.",
+      ...(message ? { detail: message } : {}),
+    };
+  }
+  if (status === 404) {
+    return {
+      title: "This map is no longer available",
+      guidance: "Choose another App Map or return to the project and create a new one.",
+      ...(message ? { detail: message } : {}),
+    };
+  }
+  if (status !== undefined && status >= 400 && status < 500) {
+    return {
+      title: "Relay couldn’t read this map",
+      guidance: "The saved map was left unchanged. Review the details or choose another map.",
+      ...(message ? { detail: message } : {}),
+    };
+  }
+  return {
+    title: "Relay couldn’t reach this map",
+    guidance: "Your saved map has not been replaced. Check the connection and try again.",
+    ...(message ? { detail: message } : {}),
+  };
+}
+
+export function latestScreenVariant(appMap: AppMap | null | undefined, screenId: string) {
+  const screen = appMap?.screens[screenId];
+  if (!appMap || !screen) return undefined;
+  return screen.variantIds
+    .flatMap((id) => (appMap.screenVariants[id] ? [appMap.screenVariants[id]!] : []))
+    .toSorted((left, right) => right.updatedAt - left.updatedAt)[0];
+}
+
+export function canonicalNotesFor(notes: CanvasNote[], appMap: AppMap): AppMap["notes"] {
+  return Object.fromEntries(
+    notes.map((note) => [
+      note.id,
+      {
+        id: note.id,
+        organizationId: appMap.organizationId,
+        projectId: appMap.projectId,
+        appMapId: appMap.id,
+        text: note.text.trim() || "Note",
+        position: { x: note.x, y: note.y },
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+      },
+    ]),
+  );
+}
+
+export function canvasRemovalChanges(
+  previous: AppMapCanvasState,
+  next: AppMapCanvasState,
+  appMap: AppMap,
+): AppMapBatchChange[] {
+  const previousGraph = previous.graph;
+  if (!previousGraph) return [];
+  const nextGraph = next.graph;
+  const nextFlowIds = new Set(nextGraph?.flows.map((flow) => flow.id) ?? []);
+  const nextConnectionIds = new Set(
+    nextGraph?.transitions.map((connection) => connection.id) ?? [],
+  );
+  const nextScreenIds = new Set(nextGraph?.screens.map((screen) => screen.id) ?? []);
+  const nextGroupIds = new Set((next.groups ?? []).map((group) => group.id));
+  return [
+    ...(previous.groups ?? []).flatMap((group): AppMapBatchChange[] =>
+      !nextGroupIds.has(group.id) && appMap.groups[group.id]
+        ? [{ kind: "group.remove", groupId: group.id }]
+        : [],
+    ),
+    ...previousGraph.flows.flatMap((flow): AppMapBatchChange[] =>
+      !nextFlowIds.has(flow.id) && appMap.flows[flow.id]
+        ? [{ kind: "flow.remove", flowId: flow.id }]
+        : [],
+    ),
+    ...previousGraph.transitions.flatMap((connection): AppMapBatchChange[] =>
+      !nextConnectionIds.has(connection.id) && appMap.connections[connection.id]
+        ? [{ kind: "connection.remove", connectionId: connection.id }]
+        : [],
+    ),
+    ...previousGraph.screens.flatMap((screen): AppMapBatchChange[] =>
+      !nextScreenIds.has(screen.id) && appMap.screens[screen.id]
+        ? [{ kind: "screen.remove", screenId: screen.id }]
+        : [],
+    ),
+  ];
+}
+
+export function orderCanvasChanges(changes: AppMapBatchChange[]): AppMapBatchChange[] {
+  const priority = (change: AppMapBatchChange): number => {
+    if (change.kind === "screen.add" || change.kind === "screen.update") return 0;
+    if (change.kind === "group.remove") return 1;
+    if (change.kind === "group.save") return 2;
+    if (change.kind === "connection.create" || change.kind === "connection.update") return 3;
+    if (change.kind === "flow.save" || change.kind === "flow.remove") return 4;
+    if (change.kind === "connection.remove") return 5;
+    return 6;
+  };
+  return changes
+    .map((change, index) => ({ change, index }))
+    .sort((left, right) => {
+      return priority(left.change) - priority(right.change) || left.index - right.index;
+    })
+    .map(({ change }) => change);
+}
+
+/** Map the shared device readiness model onto the capture empty-state contract. */
+export function recordStateFromReadiness(
+  readiness: DeviceReadiness,
+):
+  | "choose-device"
+  | "device-unavailable"
+  | "enable-developer-mode"
+  | "preparing-ios"
+  | "preparing-screen"
+  | "checking-ios"
+  | "setup-ios"
+  | "capture-error"
+  | "ready" {
+  if (readiness.kind === "choose-device") return "choose-device";
+  if (readiness.kind === "device-unavailable") return "device-unavailable";
+  if (readiness.kind === "ios-developer-mode-disabled") return "enable-developer-mode";
+  if (readiness.kind === "ios-preparing") return "preparing-ios";
+  if (readiness.kind === "screen-preparing") return "preparing-screen";
+  if (readiness.kind === "checking-ios") return "checking-ios";
+  if (readiness.kind === "setup-ios") return "setup-ios";
+  if (readiness.kind === "capture-error") return "capture-error";
+  return "ready";
+}
+
+export function buildMinimapNodes(input: {
+  nodes: MapTreeNode[];
+  notes: CanvasNote[];
+  bounds: CanvasBounds;
+  positionFor: (node: MapTreeNode) => CanvasPoint;
+  selectedNodeId: string | null;
+  screenStates: Record<string, AppMapRunPresentationState | undefined>;
+}) {
+  return [
+    ...input.nodes.map((node) => {
+      const position = input.positionFor(node);
+      const point = minimapPoint(
+        {
+          x: position.x + SCREEN_CARD_WIDTH / 2,
+          y: position.y + SCREEN_CARD_HEIGHT / 2,
+        },
+        input.bounds,
+      );
+      return {
+        id: node.id,
+        kind: "screen" as const,
+        x: point.x,
+        y: point.y,
+        selected: input.selectedNodeId === node.id,
+        state: input.screenStates[node.id],
+      };
+    }),
+    ...input.notes.map((note) => {
+      const point = minimapPoint({ x: note.x + 110, y: note.y + 66 }, input.bounds);
+      return {
+        id: note.id,
+        kind: "note" as const,
+        x: point.x,
+        y: point.y,
+        selected: false,
+      };
+    }),
+  ];
+}
+
+export function buildMinimapEdges(input: {
+  nodes: MapTreeNode[];
+  connections: CanvasConnection[];
+  bounds: CanvasBounds;
+  positionFor: (node: MapTreeNode) => CanvasPoint;
+  selectedConnectionId: string | null;
+  transitionStates: Record<string, AppMapRunPresentationState | undefined>;
+}) {
+  const nodes = new Map(input.nodes.map((node) => [node.id, node]));
+  return input.connections.flatMap((connection) => {
+    const from = nodes.get(connection.fromScreenId);
+    const to = nodes.get(connection.toScreenId);
+    if (!from || !to) return [];
+    const fromPosition = input.positionFor(from);
+    const toPosition = input.positionFor(to);
+    const start = minimapPoint(
+      {
+        x: fromPosition.x + SCREEN_CARD_WIDTH / 2,
+        y: fromPosition.y + SCREEN_CARD_HEIGHT / 2,
+      },
+      input.bounds,
+    );
+    const end = minimapPoint(
+      {
+        x: toPosition.x + SCREEN_CARD_WIDTH / 2,
+        y: toPosition.y + SCREEN_CARD_HEIGHT / 2,
+      },
+      input.bounds,
+    );
+    return [
+      {
+        id: connection.id,
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        selected: input.selectedConnectionId === connection.id,
+        state: input.transitionStates[connection.id],
+      },
+    ];
+  });
+}
+
+export function buildPresenceGeometry(input: {
+  nodes: MapTreeNode[];
+  connections: CanvasConnection[];
+  positionFor: (node: MapTreeNode) => CanvasPoint;
+}) {
+  return {
+    screenPositions: Object.fromEntries(
+      input.nodes.map((node) => [node.id, { ...input.positionFor(node) }]),
+    ),
+    connectionPaths: Object.fromEntries(
+      input.connections.map((connection) => [
+        connection.id,
+        canvasEdgeGeometry(
+          {
+            from: connection.fromScreenId,
+            to: connection.toScreenId,
+            kind: connection.kind,
+          },
+          input.nodes,
+          input.positionFor,
+        ).path,
+      ]),
+    ),
+  };
+}
+
+export function applyScreenRemovalToCanvas(
+  current: AppMapCanvasState,
+  screenId: string,
+): Omit<AppMapCanvasState, "graph"> & { graph?: AppMapCanvasState["graph"] } {
+  const nextPositions = { ...current.positions };
+  const nextTitles = { ...current.screenTitles };
+  delete nextPositions[screenId];
+  delete nextTitles[screenId];
+  return {
+    ...current,
+    positions: nextPositions,
+    screenTitles: nextTitles,
+    groups: (current.groups ?? []).flatMap((group) => {
+      const screenIds = group.screenIds.filter((id) => id !== screenId);
+      return screenIds.length ? [{ ...group, screenIds, updatedAt: Date.now() }] : [];
+    }),
+  };
+}
+
+export function applyScreenRenameToCanvas(
+  current: AppMapCanvasState,
+  graph: NonNullable<AppMapCanvasState["graph"]>,
+  screenId: string,
+  title: string,
+): AppMapCanvasState {
+  const nextGraph = structuredClone(graph);
+  const screen = nextGraph.screens.find((entry) => entry.id === screenId);
+  if (screen) {
+    screen.title = title;
+    screen.updatedAt = Date.now();
+  }
+  return {
+    ...current,
+    screenTitles: { ...current.screenTitles, [screenId]: title },
+    graph: nextGraph,
+  };
+}
+
+export type AppMapReplayState = "idle" | "running" | "passed" | "failed";
+
+export function entryFlowsForScreen(appMap: AppMap | undefined, screenId: string | null): Flow[] {
+  return appMap && screenId
+    ? Object.values(appMap.flows).filter((flow) => flow.startScreenId === screenId)
+    : [];
+}
+
+export function selectedFlowSetupSummary(
+  flows: Flow[],
+  routines: AppMap["routines"] | undefined,
+):
+  | {
+      flowCount: number;
+      mixed: boolean;
+      routineId: string | undefined;
+      routines: { id: string; name: string }[];
+    }
+  | undefined {
+  if (!flows.length) return undefined;
+  const values = new Set(flows.map((flow) => flow.setup?.routineId ?? ""));
+  return {
+    flowCount: flows.length,
+    mixed: values.size > 1,
+    routineId: values.size === 1 ? [...values][0] || undefined : undefined,
+    routines: Object.values(routines ?? {})
+      .filter((routine) =>
+        routine.parameters.every(
+          (parameter) => !parameter.required || parameter.default !== undefined,
+        ),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((routine) => ({ id: routine.id, name: routine.name })),
+  };
+}
+
+export function findRunnableFlow(
+  appMap: AppMap | undefined,
+  transitionPath: string[] | null | undefined,
+): Flow | undefined {
+  if (!appMap || !transitionPath?.length) return undefined;
+  return Object.values(appMap.flows).find(
+    (flow) =>
+      flow.connectionIds.length === transitionPath.length &&
+      flow.connectionIds.every((connectionId, index) => connectionId === transitionPath[index]),
+  );
+}
+
+export function gateGraphRunReadiness<
+  T extends { ready: boolean; reason?: string; label?: string },
+>(
+  readiness: T,
+  hasRunnableFlow: boolean,
+): T | (T & { ready: false; reason: string; label: "Run flow" }) {
+  if (!readiness.ready || hasRunnableFlow) return readiness;
+  return {
+    ...readiness,
+    ready: false,
+    reason: "Select the last screen in a path to run that flow",
+    label: "Run flow" as const,
+  };
+}
+
+export function listReusableBehaviors(appMap: AppMap | undefined): {
+  id: string;
+  label: string;
+  actionCount: number;
+}[] {
+  return Object.values(appMap?.routines ?? {})
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((routine) => ({
+      id: routine.id,
+      label: routine.name,
+      actionCount: routine.actions.reduce(
+        (count, action) =>
+          count + (action.kind === "recorded" || action.kind === "steps" ? action.steps.length : 1),
+        0,
+      ),
+    }));
+}
+
+export function stepsForConnectionIds(
+  steps: readonly RecipeStep[],
+  stepIds: readonly string[],
+): RecipeStep[] {
+  const byId = new Map(steps.flatMap((step) => (step.id ? [[step.id, step]] : [])));
+  return stepIds.flatMap((id) => {
+    const step = byId.get(id);
+    return step ? [step] : [];
+  });
+}
+
+export function connectionReplayState(
+  connection: CanvasConnection,
+  current: { connectionId: string | null; state: AppMapReplayState },
+): AppMapReplayState {
+  if (current.connectionId === connection.id && current.state !== "idle") return current.state;
+  if (connection.review?.status === "verified") return "passed";
+  if (connection.review?.status === "failed") return "failed";
+  return "idle";
+}
+
+export function connectionReplayError(
+  connection: CanvasConnection,
+  current: { connectionId: string | null; error?: string },
+): string | undefined {
+  return current.connectionId === connection.id
+    ? current.error
+    : connection.review?.status === "failed"
+      ? connection.review.error
+      : undefined;
+}
+
+export function resolveTakeReviewDestination(input: {
+  matchedScreenId?: string;
+  plannedToScreenId?: string;
+}): TakeDestination {
+  if (input.matchedScreenId) return { kind: "screen", screenId: input.matchedScreenId };
+  if (input.plannedToScreenId) return { kind: "screen", screenId: input.plannedToScreenId };
+  return { kind: "new-screen" };
+}
+
+export function takeReplayFromLatest(input: {
+  takeId: string | null | undefined;
+  outcome?: "passed" | "failed" | string;
+  error?: string;
+}): { takeId: string | null; state: AppMapReplayState; error?: string } {
+  if (input.outcome === "passed") {
+    return { takeId: input.takeId ?? null, state: "passed" };
+  }
+  if (input.outcome === "failed") {
+    return {
+      takeId: input.takeId ?? null,
+      state: "failed",
+      ...(input.error ? { error: input.error } : {}),
+    };
+  }
+  return { takeId: input.takeId ?? null, state: "idle" };
+}
+
+export function captureContextLabel(input: {
+  pendingConnectionId: string | null;
+  connections: CanvasConnection[];
+  nodes: MapTreeNode[];
+  titleFor: (node: MapTreeNode) => string;
+}): string | undefined {
+  const transition = input.pendingConnectionId
+    ? input.connections.find((connection) => connection.id === input.pendingConnectionId)
+    : null;
+  if (!transition) return undefined;
+  const source = input.nodes.find((node) => node.id === transition.fromScreenId);
+  const target = input.nodes.find((node) => node.id === transition.toScreenId);
+  return source && target ? `${input.titleFor(source)} → ${input.titleFor(target)}` : undefined;
+}
+
+export function visibleCanvasBoundsFromViewport(input: {
+  viewport: CanvasViewport;
+  client: { width: number; height: number };
+  overscan?: number;
+}): { left: number; top: number; right: number; bottom: number } {
+  const overscan = input.overscan ?? 480;
+  const { viewport, client } = input;
+  return {
+    left: -viewport.x / viewport.scale - overscan,
+    top: -viewport.y / viewport.scale - overscan,
+    right: (-viewport.x + client.width) / viewport.scale + overscan,
+    bottom: (-viewport.y + client.height) / viewport.scale + overscan,
+  };
+}
+
+export function applyTargetSetToActiveFlow(
+  graph: NonNullable<AppMapCanvasState["graph"]>,
+  flowId: string,
+  targetSetId: string | undefined,
+  at = Date.now(),
+): NonNullable<AppMapCanvasState["graph"]> {
+  return {
+    ...graph,
+    flows: graph.flows.map((candidate) => {
+      if (candidate.id !== flowId) return candidate;
+      const { targetSetId: _previousTargetSetId, ...withoutTargetSet } = candidate;
+      return {
+        ...withoutTargetSet,
+        ...(targetSetId ? { targetSetId } : {}),
+        updatedAt: at,
+      };
+    }),
+  };
+}
+
+export function connectionReviewTarget(input: {
+  serial?: string | null;
+  selectedDeviceSerial?: string | null;
+  deviceName?: string;
+  platform?: "android" | "browser" | "ios";
+  passed: boolean;
+  checkedAt: number;
+  error?: string;
+}): {
+  targetId: string;
+  targetName?: string;
+  platform?: "android" | "browser" | "ios";
+  status: "passed" | "failed";
+  checkedAt: number;
+  error?: string;
+} {
+  return {
+    targetId: input.serial ?? input.selectedDeviceSerial ?? "current-device",
+    ...(input.deviceName ? { targetName: input.deviceName } : {}),
+    ...(input.platform ? { platform: input.platform } : {}),
+    status: input.passed ? ("passed" as const) : ("failed" as const),
+    checkedAt: input.checkedAt,
+    ...(input.error ? { error: input.error } : {}),
+  };
+}
+
+export function pushCanvasHistoryEntry<T>(stack: T[], entry: T, limit = 100): T[] {
+  const next = [...stack, entry];
+  return next.length > limit ? next.slice(-limit) : next;
+}
+
+export type NotePlacement = {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export function createCanvasNote(input: {
+  viewport: CanvasViewport;
+  clientWidth?: number;
+  clientHeight?: number;
+  at?: number;
+}): NotePlacement {
+  const at = input.at ?? Date.now();
+  const x = input.clientWidth
+    ? (input.clientWidth * 0.52 - input.viewport.x) / input.viewport.scale
+    : 320;
+  const y = input.clientHeight
+    ? (input.clientHeight * 0.42 - input.viewport.y) / input.viewport.scale
+    : 180;
+  const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
+  return {
+    id,
+    text: "Add context for this part of the map",
+    x,
+    y,
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+export function recipeStepsForRunReadiness(
+  draftSteps: readonly RecipeStep[],
+  connections: AppMap["connections"] | undefined,
+): RecipeStep[] {
+  return [
+    ...draftSteps,
+    ...Object.values(connections ?? {}).flatMap((connection) =>
+      connection.actions.flatMap((action) =>
+        action.kind === "recorded" || action.kind === "steps" ? action.steps : [],
+      ),
+    ),
+  ];
+}
+
+export function canvasProjectionUnchanged(
+  value: AppMapCanvasState,
+  current: AppMapCanvasState,
+): boolean {
+  return (
+    JSON.stringify(value.graph) === JSON.stringify(current.graph) &&
+    JSON.stringify(value.positions) === JSON.stringify(current.positions) &&
+    JSON.stringify(value.groups) === JSON.stringify(current.groups) &&
+    JSON.stringify(value.screenTitles) === JSON.stringify(current.screenTitles) &&
+    JSON.stringify(value.notes) === JSON.stringify(current.notes)
+  );
+}
+
+export function clampGroupMenuPosition(input: {
+  clientX: number;
+  clientY: number;
+  rect: { left: number; top: number; width: number; height: number };
+  menuWidth?: number;
+  menuHeight?: number;
+}): { x: number; y: number } {
+  const menuWidth = input.menuWidth ?? 196;
+  const menuHeight = input.menuHeight ?? 136;
+  return {
+    x: Math.min(input.rect.width - menuWidth, Math.max(8, input.clientX - input.rect.left)),
+    y: Math.min(input.rect.height - menuHeight, Math.max(8, input.clientY - input.rect.top)),
+  };
+}
+
+export function connectionPathTitle(
+  connection: CanvasConnection,
+  nodes: MapTreeNode[],
+  titleFor: (node: MapTreeNode) => string,
+  fallback = { source: "Screen", target: "Next screen" },
+): string {
+  const source = nodes.find((node) => node.id === connection.fromScreenId);
+  const target = nodes.find((node) => node.id === connection.toScreenId);
+  return `${source ? titleFor(source) : fallback.source} → ${target ? titleFor(target) : fallback.target}`;
+}
+
+export function recordedActionFromConnection(
+  connection: CanvasConnection,
+  steps: RecipeStep[],
+): {
+  id: string;
+  kind: "recorded";
+  takeId: string;
+  takeRevision: number;
+  steps: RecipeStep[];
+  evidenceIds: [];
+} {
+  return {
+    id: `recorded-${crypto.randomUUID()}`,
+    kind: "recorded",
+    takeId: connection.takeId ?? connection.id,
+    takeRevision: 1,
+    steps: steps.map((step) => structuredClone(step)),
+    evidenceIds: [],
+  };
+}
+
+export function canvasPointFromClientRect(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number },
+  viewport: CanvasViewport,
+): CanvasPoint {
+  return {
+    x: (clientX - rect.left - viewport.x) / viewport.scale,
+    y: (clientY - rect.top - viewport.y) / viewport.scale,
+  };
+}

@@ -6,6 +6,7 @@ import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
+import { EmptyState } from "./empty-state";
 import { TakeActionEditor } from "./take-action-editor";
 import { TakeActionList } from "./take-action-list";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
@@ -17,7 +18,7 @@ const primaryButton =
 const secondaryButton =
   "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]";
 const reviewEvidenceShell =
-  "relative overflow-hidden rounded-[14px] bg-black shadow-[0_0_0_1px_var(--v2-border-border-muted),0_24px_54px_-32px_rgb(0_0_0/72%)]";
+  "relative overflow-hidden rounded-[14px] bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--v2-border-border-muted),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -476,18 +477,13 @@ export function RecordedTakePlayer(props: {
       <Show
         when={Boolean(props.videoSrc || imageSrc())}
         fallback={
-          <div class="grid w-full max-w-[340px] justify-items-center gap-3 rounded-[14px] bg-[var(--v2-background-bg-layer-01)] px-8 py-9 text-center shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_8px_30px_-24px_rgb(0_0_0/30%)]">
-            <span class="grid size-10 place-items-center rounded-[12px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]">
-              <Icon name="camera" size={18} />
-            </span>
-            <div>
-              <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">
-                No screen captured
-              </strong>
-              <p class="m-0 mt-1 max-w-[30ch] text-[11px]/[1.5] text-[var(--text-weak)]">
-                This passive connection has no frame or video to preview.
-              </p>
-            </div>
+          <div class="grid w-full max-w-[340px] place-items-center rounded-[14px] bg-[var(--v2-background-bg-layer-01)] px-4 py-6 text-center shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+            <EmptyState
+              size="sm"
+              icon="camera"
+              title="No screen captured"
+              description="This passive connection has no frame or video to preview."
+            />
           </div>
         }
       >
@@ -496,7 +492,7 @@ export function RecordedTakePlayer(props: {
           class={cn(reviewEvidenceShell, "relative z-[1] shrink-0")}
           style={evidenceShellStyle()}
         >
-          <div class="relative h-full w-full overflow-hidden bg-black">
+          <div class="relative h-full w-full overflow-hidden bg-[var(--phone-screen)]">
             <Show
               when={props.videoSrc}
               fallback={

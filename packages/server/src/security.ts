@@ -69,7 +69,7 @@ export function isLocalWorkspacePath(pathname: string): boolean {
     "/targets",
     "/target-profiles",
     "/recipes",
-    "/discoveries",
+    "/discovery",
     "/settings/privacy",
     "/settings/evidence",
   ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

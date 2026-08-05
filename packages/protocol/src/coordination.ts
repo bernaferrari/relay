@@ -45,7 +45,8 @@ export type ResourceKind =
   | "recipe"
   | "matrix"
   | "recording-session"
-  | "discovery-session";
+  | "discovery-session"
+  | "presence";
 
 export type ResourceEventPayload = {
   type: "resource.created" | "resource.updated" | "resource.deleted" | "lease.changed";

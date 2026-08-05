@@ -31,3 +31,10 @@ jobs:
 
       - name: Verify
         run: pnpm verify
+
+      - name: Golden device path (skips without hardware)
+        continue-on-error: true
+        env:
+          GOLDEN_REQUIRE_DEVICE: "0"
+          RELAY_URL: http://127.0.0.1:8787
+        run: pnpm test:golden

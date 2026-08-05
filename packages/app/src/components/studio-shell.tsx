@@ -588,13 +588,21 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     confirmDeleteMap(id);
   }
 
-  function openRecipe(id: string): void {
+  function openMap(id: string): void {
     server.setSelectedAppMapId(id);
     setArea("tests");
     setStudioView("map");
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.
+    setNavOpen(false);
+  }
+
+  function openTest(id: string): void {
+    server.setSelectedRecipeId(id);
+    setArea("tests");
+    setStudioView("workbench");
+    setSettingsOpen(false);
     setNavOpen(false);
   }
 
@@ -632,7 +640,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           onQuery={setQuery}
           items={mapItems()}
           selectedId={server.selectedAppMapId()}
-          onSelect={openRecipe}
+          onSelect={openMap}
           onDelete={deleteMap}
           onCreate={startNewMap}
           onOpenRun={(id) => server.setSelectedJobId(id)}
@@ -995,7 +1003,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
         <Show when={area() === "runs"}>
           <Suspense fallback={<WorkspaceLoading label="runs" />}>
-            <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
+            <RunsWorkspace
+              onOpenMap={openMap}
+              onOpenTest={openTest}
+              onOpenTests={() => setArea("tests")}
+            />
           </Suspense>
         </Show>
       </main>

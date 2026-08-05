@@ -167,3 +167,57 @@ test("authenticated network service cannot read unowned workspace assets", async
     else process.env.RELAY_REDACTION_MODE = previousRedaction;
   }
 });
+
+test("authenticated network service only sees schedules for its project", async () => {
+  const token = "test-service-token-with-24-characters";
+  const root = await mkdtemp(join(tmpdir(), "relay-schedules-scope-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousProjects = process.env.RELAY_AUTH_PROJECT_IDS;
+  const previousRedaction = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_AUTH_PROJECT_IDS = "project-a";
+  process.env.RELAY_REDACTION_MODE = "on";
+  const { saveSchedule } = await import("@relay/core");
+  await saveSchedule({
+    recipeId: "login",
+    targetKind: "device",
+    targetId: "pixel",
+    platform: "android",
+    intervalMinutes: 60,
+    projectId: "project-a",
+  });
+  await saveSchedule({
+    recipeId: "checkout",
+    targetKind: "device",
+    targetId: "pixel",
+    platform: "android",
+    intervalMinutes: 60,
+    projectId: "project-b",
+  });
+  const server = await startServer({ host: "0.0.0.0", port: 0, token });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/schedules`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-project-id": "project-a",
+        ...operationHeaders("schedule.list", "configured-service"),
+      },
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      schedules: Array<{ projectId: string; recipeId: string }>;
+    };
+    assert.equal(body.schedules.length, 1);
+    assert.equal(body.schedules[0]?.projectId, "project-a");
+    assert.equal(body.schedules[0]?.recipeId, "login");
+  } finally {
+    await server.close();
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousProjects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+    else process.env.RELAY_AUTH_PROJECT_IDS = previousProjects;
+    if (previousRedaction === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousRedaction;
+    await rm(root, { recursive: true, force: true });
+  }
+});

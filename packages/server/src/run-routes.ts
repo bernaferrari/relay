@@ -146,7 +146,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             pinned: false,
             retentionClass: "standard" as const,
           }));
-    json(response, 200, { runs, root: runsRoot() });
+    json(response, 200, scope.localTrusted ? { runs, root: runsRoot() } : { runs });
     return true;
   }
 

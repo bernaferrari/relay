@@ -34,7 +34,7 @@ const HISTORY_COALESCE_MS = 750;
  * Packaged defaults are editable in place. The server stores an override under
  * the same id, so the UI never exposes a protected-template exception.
  *
- * The draft reseeds only when `selectedAppMapId` changes (not on background
+ * The draft reseeds only when `selectedRecipeId` changes (not on background
  * polls), so mid-edit typing survives refreshes and our own auto-fork.
  */
 export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimpleContext({
@@ -254,7 +254,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       on(
         // Also re-run when actions load so planned[] is available to expand.
         () =>
-          [server.selectedAppMapId(), server.actions().length, server.recipes().length] as const,
+          [server.selectedRecipeId(), server.actions().length, server.recipes().length] as const,
         ([id]) => {
           if (id && skipReseedFor === id) {
             skipReseedFor = null;
@@ -521,7 +521,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         draftCache.delete(id);
         skipReseedFor = id;
         seedFrom(restored);
-        server.setSelectedAppMapId(id);
+        server.setSelectedRecipeId(id);
         toast("Restored a previous version", "success");
         await refreshSavedHistory(id);
       } catch {
@@ -541,7 +541,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       const saved = await server.saveRecipeRemote({ title: makeTitle(), steps: [] });
       if (!saved) return null;
       seedFrom(saved);
-      server.setSelectedAppMapId(saved.id);
+      server.setSelectedRecipeId(saved.id);
       return saved.id;
     }
 
@@ -554,7 +554,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       const origin = forkedFrom();
       if (!origin) return;
       setForkedFrom(null);
-      server.setSelectedAppMapId(origin.id);
+      server.setSelectedRecipeId(origin.id);
     }
 
     return {

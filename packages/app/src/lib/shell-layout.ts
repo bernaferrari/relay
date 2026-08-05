@@ -117,7 +117,7 @@ export const shellStageWrap = cn(
   "relative min-h-0 min-w-0 overflow-hidden",
   "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_94%,var(--v2-background-bg-accent))]",
   "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:content-['']",
-  "before:bg-[radial-gradient(circle_at_50%_34%,rgb(139_124_255/7%),transparent_48%)]",
+  "before:bg-[radial-gradient(circle_at_50%_34%,color-mix(in_srgb,var(--v2-background-bg-accent)_7%,transparent),transparent_48%)]",
   "[&>*]:relative [&>*]:z-[1]",
 );
 

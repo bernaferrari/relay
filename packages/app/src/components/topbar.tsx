@@ -246,7 +246,16 @@ export function Topbar(props: { onSettings: () => void }) {
               title="Jump to this run"
               onClick={() => {
                 const j = job();
-                server.setSelectedAppMapId(j.action);
+                // Recipe jobs use action = recipe id; map connection/flow jobs
+                // keep the App Map document selected separately.
+                if (server.recipes().some((recipe) => recipe.id === j.action)) {
+                  server.setSelectedRecipeId(j.action);
+                } else if (server.appMaps().some((map) => map.id === j.action)) {
+                  server.setSelectedAppMapId(j.action);
+                } else {
+                  // Unknown action kind — prefer recipe selection for "open test" UX.
+                  server.setSelectedRecipeId(j.action);
+                }
                 server.jumpToJob(j.id);
               }}
             >

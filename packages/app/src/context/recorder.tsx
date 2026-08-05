@@ -960,7 +960,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         steps: recipe.steps,
       });
       if (saved) {
-        server.setSelectedAppMapId(saved.id);
+        server.setSelectedRecipeId(saved.id);
         toast(`Created a copy of “${recipe.title}”`, "success");
       }
     }

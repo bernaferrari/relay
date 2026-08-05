@@ -80,45 +80,15 @@ import {
   saveSchedule,
   deleteSchedule,
   listTargets,
-  readTarget,
-  saveBrowserTarget,
-  deleteTarget,
   deleteCompatibilityMatrix,
-  preflightTarget,
-  openBrowserTarget,
   buildTargetProfiles,
-  createDiscoverySession,
-  renameDiscoverySession,
-  listDiscoverySessions,
-  readDiscoverySession,
-  readDiscoveryScreenAsset,
-  recordObservedScreen,
-  recordObservedTransition,
-  setDiscoveryStatus,
-  formatDiscoveryExport,
-  isSensitiveDiscoveryAction,
-  promoteDiscoveryPath,
-  suggestDiscoveryControl,
   resolveCompatibilityMatrix,
-  buildDiscoveryCoverage,
   type RecipeParameter,
-  getRedactionPolicy,
-  getEvidenceCollectionPolicy,
   loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
-  RedactionPolicyLockedError,
-  setRedactionEnabled,
-  setSensitiveEvidenceConsent,
-  inspectAppleDeviceSetup,
-  inspectAndroidDeviceSetup,
   loadDeviceSetup,
-  readDeviceSetup,
   runWithTargetContext,
-  saveAppleDeviceSetup,
   restartAgentDeviceDaemonForBuildDrift,
-  restartAgentDeviceDaemonForSetup,
-  resetDeviceClients,
-  resetIosRunnerState,
   authoringSessions,
   runWithOperationContext,
   readAuthoringEvidence,
@@ -171,7 +141,11 @@ import {
   recordOperationActivity,
 } from "./activity-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
+import { handleDiscoveryRoute } from "./discovery-routes.js";
+import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
+import { handleSettingsRoute } from "./settings-routes.js";
+import { handleTargetRoute } from "./target-routes.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
@@ -184,7 +158,6 @@ import type {
   Project,
   RevisionWrite,
   TestVariable,
-  SensitiveEvidenceChannel,
   ActorKind,
 } from "@relay/protocol";
 
@@ -206,61 +179,6 @@ export type StartedServer = {
   close: () => Promise<void>;
 };
 
-function discoveryInteraction(input: InteractInput): {
-  kind: "tap" | "type" | "scroll" | "back" | "manual";
-  label?: string;
-  target?: {
-    identifier?: string;
-    ref?: string;
-    label?: string;
-    text?: string;
-    point?: { x: number; y: number };
-  };
-  text?: string;
-  direction?: "up" | "down";
-} {
-  switch (input.kind) {
-    case "identifier":
-      return {
-        kind: "tap",
-        label: input.identifier,
-        target: { identifier: input.identifier },
-      };
-    case "label":
-      return { kind: "tap", label: input.label, target: { label: input.label } };
-    case "ref":
-      return { kind: "tap", label: input.ref, target: { ref: input.ref } };
-    case "text-match":
-      return { kind: "tap", label: input.match, target: { text: input.match } };
-    case "find":
-      return { kind: "tap", label: input.query, target: { text: input.query } };
-    case "point":
-      return {
-        kind: "tap",
-        label: "Coordinate tap",
-        target: { point: { x: input.x, y: input.y } },
-      };
-    case "swipe":
-      return {
-        kind: "scroll",
-        label: "Swipe",
-        direction: input.to.y < input.from.y ? "down" : "up",
-      };
-    case "type":
-      return { kind: "type", label: "Type text", text: input.text };
-    case "replace":
-      return {
-        kind: "type",
-        label: "Replace text",
-        target: input.target,
-        text: input.text,
-      };
-    case "key":
-      return { kind: "manual", label: `Press ${input.key}` };
-  }
-}
-
-/** In-memory job reports, newest first. Falls back empty when none. */
 function collectReports(limit: number, scope?: RequestContext): JobReport[] {
   return listJobs(Math.max(limit, 200))
     .filter(
@@ -379,6 +297,7 @@ async function handleRequest(
     return;
   }
 
+  let resolvedScope: RequestContext | undefined;
   try {
     let scope: RequestContext;
     try {
@@ -390,6 +309,7 @@ async function handleRequest(
       json(res, 403, { error: error instanceof Error ? error.message : String(error) });
       return;
     }
+    resolvedScope = scope;
     if (!scope.localTrusted && isLocalWorkspacePath(pathname)) {
       recordAudit(scope, { action: "workspace.access", resource: pathname, result: "deny" });
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
@@ -432,116 +352,28 @@ async function handleRequest(
       })
     )
       return;
-    if (method === "GET" && pathname === "/settings/privacy") {
-      json(res, 200, { policy: getRedactionPolicy() });
+    if (await handlePresenceRoute({ method, pathname, request: req, response: res, scope })) return;
+    if (
+      await handleDiscoveryRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
       return;
-    }
-    if (method === "PUT" && pathname === "/settings/privacy") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Privacy settings can only be changed from a local Relay host");
-      }
-      const body = (await parseJsonBody(req)) as { enabled?: unknown };
-      if (typeof body.enabled !== "boolean") {
-        throw new HttpError(400, "enabled must be a boolean");
-      }
-      try {
-        json(res, 200, { policy: await setRedactionEnabled(body.enabled) });
-      } catch (error) {
-        if (error instanceof RedactionPolicyLockedError) {
-          throw new HttpError(409, error.message);
-        }
-        throw error;
-      }
+    if (
+      await handleSettingsRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
       return;
-    }
-    if (method === "GET" && pathname === "/settings/evidence") {
-      json(res, 200, { policy: getEvidenceCollectionPolicy() });
-      return;
-    }
-    if (method === "GET" && pathname === "/settings/devices/apple") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Device setup can only be read from a local Relay host");
-      }
-      json(res, 200, await inspectAppleDeviceSetup());
-      return;
-    }
-    if (method === "GET" && pathname === "/settings/devices/apple/preflight") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Device setup can only be read from a local Relay host");
-      }
-      // Stage startup only needs to know whether the runner has been configured.
-      // Keep it filesystem-only: the fuller Settings check runs Xcode commands and
-      // can take seconds on first use.
-      const setup = await readDeviceSetup();
-      json(res, 200, { configured: Boolean(setup.ios) });
-      return;
-    }
-    if (method === "GET" && pathname === "/settings/devices/android") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Device setup can only be read from a local Relay host");
-      }
-      json(res, 200, await inspectAndroidDeviceSetup());
-      return;
-    }
-    if (method === "PUT" && pathname === "/settings/devices/apple") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Device setup can only be changed from a local Relay host");
-      }
-      const body = (await parseJsonBody(req)) as {
-        teamId?: unknown;
-        bundleId?: unknown;
-        signingIdentity?: unknown;
-        provisioningProfile?: unknown;
-      };
-      if (typeof body.teamId !== "string" || typeof body.bundleId !== "string") {
-        throw new HttpError(400, "teamId and bundleId are required");
-      }
-      const setup = await saveAppleDeviceSetup({
-        teamId: body.teamId,
-        bundleId: body.bundleId,
-        ...(typeof body.signingIdentity === "string"
-          ? { signingIdentity: body.signingIdentity }
-          : {}),
-        ...(typeof body.provisioningProfile === "string"
-          ? { provisioningProfile: body.provisioningProfile }
-          : {}),
-      });
-      resetDeviceClients();
-      resetIosRunnerState();
-      await restartAgentDeviceDaemonForSetup();
-      json(res, 200, { setup });
-      return;
-    }
-    if (method === "PUT" && pathname === "/settings/evidence") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Evidence consent can only be changed from a local Relay host");
-      }
-      const body = (await parseJsonBody(req)) as {
-        channel?: unknown;
-        enabled?: unknown;
-        reason?: unknown;
-      };
-      if (body.channel !== "audio" && body.channel !== "crash" && body.channel !== "network-body") {
-        throw new HttpError(400, "channel must be audio, crash, or network-body");
-      }
-      if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be a boolean");
-      if (body.reason !== undefined && typeof body.reason !== "string") {
-        throw new HttpError(400, "reason must be a string");
-      }
-      const policy = await setSensitiveEvidenceConsent({
-        channel: body.channel as SensitiveEvidenceChannel,
-        enabled: body.enabled,
-        grantedBy: scope.subject,
-        ...(typeof body.reason === "string" ? { reason: body.reason } : {}),
-      });
-      recordAudit(scope, {
-        action: body.enabled ? "evidence.consent.grant" : "evidence.consent.revoke",
-        resource: body.channel,
-        result: "allow",
-      });
-      json(res, 200, { policy });
-      return;
-    }
     if (method === "GET" && pathname === "/audit") {
       json(res, 200, { events: listAuditEvents(parseLimit(url.searchParams.get("limit"), 100)) });
       return;
@@ -594,7 +426,7 @@ async function handleRequest(
         // on /devices; report its last completed value without blocking here.
         deviceCount: lastKnownDeviceCount,
         sseClients: sse.count(),
-        runsDir: runsRoot(),
+        runsDir: scope.localTrusted ? runsRoot() : "runs",
       });
       return;
     }
@@ -635,53 +467,15 @@ async function handleRequest(
       return;
     }
 
-    if (method === "GET" && pathname === "/targets") {
-      json(res, 200, { targets: await listTargets() });
+    if (
+      await handleTargetRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+      })
+    )
       return;
-    }
-
-    if (method === "POST" && pathname === "/targets") {
-      const body = (await parseJsonBody(req)) as {
-        id?: string;
-        name?: string;
-        startUrl?: string;
-        headless?: boolean;
-      };
-      if (!body.name || !body.startUrl) throw new HttpError(400, "name and startUrl are required");
-      json(res, 201, {
-        target: await saveBrowserTarget({
-          id: body.id,
-          name: body.name,
-          startUrl: body.startUrl,
-          headless: body.headless,
-        }),
-      });
-      return;
-    }
-
-    const targetMatch = matchPath(pathname, "/targets/:id");
-    if (method === "DELETE" && targetMatch) {
-      await deleteTarget(targetMatch.id!);
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    const targetPreflightMatch = matchPath(pathname, "/targets/:id/preflight");
-    if (method === "POST" && targetPreflightMatch) {
-      const target = await readTarget(targetPreflightMatch.id!);
-      if (!target) throw new HttpError(404, "Target not found");
-      json(res, 200, { preflight: await preflightTarget(target) });
-      return;
-    }
-
-    const targetOpenMatch = matchPath(pathname, "/targets/:id/open");
-    if (method === "POST" && targetOpenMatch) {
-      const target = await readTarget(targetOpenMatch.id!);
-      if (!target) throw new HttpError(404, "Target not found");
-      if (target.kind !== "browser") throw new HttpError(400, "Target is not a browser");
-      json(res, 200, { session: await openBrowserTarget(target.id) });
-      return;
-    }
 
     // ---- Project-scoped control plane ----
     if (method === "GET" && pathname === "/projects") {
@@ -748,205 +542,6 @@ async function handleRequest(
     if (method === "GET" && pathname === "/target-profiles") {
       const devices = await listDevices().catch(() => []);
       json(res, 200, { profiles: buildTargetProfiles({ devices, targets: await listTargets() }) });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/discovery") {
-      json(res, 200, { sessions: await listDiscoverySessions() });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/discovery") {
-      const body = (await parseJsonBody(req)) as {
-        name?: string;
-        targetId?: string;
-        scope?: import("@relay/protocol").DiscoveryScope;
-        agent?: Omit<import("@relay/protocol").DiscoveryAgentContext, "createdBy">;
-      };
-      if (!body.name || !body.targetId) throw new HttpError(400, "name and targetId are required");
-      const profiles = buildTargetProfiles({
-        devices: await listDevices().catch(() => []),
-        targets: await listTargets(),
-      });
-      const session = await createDiscoverySession({
-        name: body.name,
-        targetId: body.targetId,
-        targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
-        scope: body.scope,
-        agent: body.agent,
-      });
-      json(res, 201, { session });
-      return;
-    }
-
-    const discoveryRenameMatch = matchPath(pathname, "/discovery/:id/name");
-    if (method === "POST" && discoveryRenameMatch) {
-      const body = (await parseJsonBody(req)) as { name?: string };
-      if (!body.name?.trim()) throw new HttpError(400, "name is required");
-      json(res, 200, {
-        session: await renameDiscoverySession(discoveryRenameMatch.id!, body.name),
-      });
-      return;
-    }
-
-    const discoveryMatch = matchPath(pathname, "/discovery/:id");
-    if (method === "GET" && discoveryMatch) {
-      const session = await readDiscoverySession(discoveryMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      json(res, 200, { session });
-      return;
-    }
-
-    const discoveryStatusMatch = matchPath(pathname, "/discovery/:id/status");
-    if (method === "POST" && discoveryStatusMatch) {
-      const body = (await parseJsonBody(req)) as {
-        status?: import("@relay/protocol").DiscoveryStatus;
-      };
-      if (!body.status) throw new HttpError(400, "status is required");
-      json(res, 200, { session: await setDiscoveryStatus(discoveryStatusMatch.id!, body.status) });
-      return;
-    }
-
-    const discoverySuggestionMatch = matchPath(pathname, "/discovery/:id/suggestion");
-    if (method === "GET" && discoverySuggestionMatch) {
-      const session = await readDiscoverySession(discoverySuggestionMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      json(res, 200, { suggestion: suggestDiscoveryControl(session) });
-      return;
-    }
-
-    const discoveryCoverageMatch = matchPath(pathname, "/discovery/:id/coverage");
-    if (method === "GET" && discoveryCoverageMatch) {
-      const session = await readDiscoverySession(discoveryCoverageMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      json(res, 200, { coverage: buildDiscoveryCoverage(session, await listDiscoverySessions()) });
-      return;
-    }
-
-    const discoveryCaptureMatch = matchPath(pathname, "/discovery/:id/capture");
-    if (method === "POST" && discoveryCaptureMatch) {
-      const session = await readDiscoverySession(discoveryCaptureMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      await assertTargetControl(scope, session.targetId);
-      const snap = await captureSnapshot({ serial: session.targetId });
-      const shot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-      const captured = await recordObservedScreen({
-        sessionId: session.id,
-        nodes: snap.nodes,
-        screenshotPath: shot.path,
-        makeCurrent: true,
-      }).finally(() => cleanupScreenshot(shot.path));
-      json(res, 201, { screen: captured.screen, isNew: captured.isNew, session: captured.session });
-      return;
-    }
-
-    const discoveryInteractMatch = matchPath(pathname, "/discovery/:id/interact");
-    if (method === "POST" && discoveryInteractMatch) {
-      const session = await readDiscoverySession(discoveryInteractMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      await assertTargetControl(scope, session.targetId);
-      if (session.status !== "running") {
-        throw new HttpError(409, "Start or resume this Discovery Map before interacting");
-      }
-      const body = (await parseJsonBody(req)) as InteractInput & {
-        serial?: string;
-        decision?: import("@relay/protocol").DiscoveryDecisionProvenance;
-      };
-      if (!body || typeof body !== "object" || !("kind" in body)) {
-        throw new HttpError(400, "body.kind required for Discovery Map interaction");
-      }
-      const { serial: _serial, decision, ...raw } = body;
-      const input = raw as InteractInput;
-      const observed = discoveryInteraction(input);
-      if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(observed)) {
-        throw new HttpError(403, "Discovery policy blocks this sensitive interaction");
-      }
-      const beforeSnapshot = await captureSnapshot({ serial: session.targetId });
-      const beforeShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-      const before = await recordObservedScreen({
-        sessionId: session.id,
-        nodes: beforeSnapshot.nodes,
-        screenshotPath: beforeShot.path,
-        makeCurrent: true,
-      }).finally(() => cleanupScreenshot(beforeShot.path));
-      await interact(input, { serial: session.targetId });
-      const afterSnapshot = await captureSnapshot({ serial: session.targetId });
-      const afterShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
-      const after = await recordObservedScreen({
-        sessionId: session.id,
-        nodes: afterSnapshot.nodes,
-        screenshotPath: afterShot.path,
-        makeCurrent: true,
-      }).finally(() => cleanupScreenshot(afterShot.path));
-      const transition = await recordObservedTransition({
-        sessionId: session.id,
-        fromScreenId: before.screen.id,
-        ...(before.screen.id !== after.screen.id ? { toScreenId: after.screen.id } : {}),
-        ...observed,
-        ...(decision ? { decision } : {}),
-        changedScreen: before.screen.id !== after.screen.id,
-      });
-      json(res, 201, { transition, before: before.screen, after: after.screen });
-      return;
-    }
-
-    const discoveryScreenMatch = matchPath(pathname, "/discovery/:id/screens/:screenId");
-    if (method === "GET" && discoveryScreenMatch) {
-      const asset = await readDiscoveryScreenAsset(
-        discoveryScreenMatch.id!,
-        discoveryScreenMatch.screenId!,
-      );
-      if (!asset) throw new HttpError(404, "Discovery screenshot not found");
-      res.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": asset.byteLength,
-        "Cache-Control": "private, max-age=31536000, immutable",
-        ...CORS_HEADERS,
-      });
-      res.end(asset);
-      return;
-    }
-
-    const discoveryPromoteMatch = matchPath(pathname, "/discovery/:id/promote");
-    if (method === "POST" && discoveryPromoteMatch) {
-      const body = (await parseJsonBody(req)) as {
-        transitionIds?: string[];
-        recipeId?: string;
-        title?: string;
-        description?: string;
-        transitionLabels?: Record<string, string>;
-      };
-      if (!Array.isArray(body.transitionIds) || !body.recipeId || !body.title) {
-        throw new HttpError(400, "transitionIds, recipeId, and title are required");
-      }
-      try {
-        const promoted = await promoteDiscoveryPath({
-          sessionId: discoveryPromoteMatch.id!,
-          transitionIds: body.transitionIds,
-          recipeId: body.recipeId,
-          title: body.title,
-          description: body.description,
-          transitionLabels: body.transitionLabels,
-        });
-        json(res, 201, promoted);
-      } catch (error) {
-        if (error instanceof HttpError) throw error;
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const discoveryExportMatch = matchPath(pathname, "/discovery/:id/export");
-    if (method === "GET" && discoveryExportMatch) {
-      const session = await readDiscoverySession(discoveryExportMatch.id!);
-      if (!session) throw new HttpError(404, "Discovery session not found");
-      const format = url.searchParams.get("format") === "markdown" ? "markdown" : "json";
-      text(
-        res,
-        200,
-        formatDiscoveryExport(session, format),
-        format === "markdown" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
-      );
       return;
     }
 
@@ -1208,7 +803,11 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/schedules") {
-      json(res, 200, { schedules: await listSchedules() });
+      json(res, 200, {
+        schedules: await listSchedules(
+          scope.localTrusted ? undefined : { projectId: scope.projectId },
+        ),
+      });
       return;
     }
     if (method === "POST" && pathname === "/schedules") {
@@ -1231,7 +830,10 @@ async function handleRequest(
       if (!scope.localTrusted) {
         throw new HttpError(403, "Schedules can only be changed from a local Relay host");
       }
-      await deleteSchedule(scheduleMatch.id!);
+      const removed = await deleteSchedule(scheduleMatch.id!, {
+        projectId: scope.projectId,
+      });
+      if (!removed) throw new HttpError(404, "Schedule not found");
       json(res, 200, { ok: true });
       return;
     }
@@ -1862,7 +1464,7 @@ async function handleRequest(
         name: "relay",
         description: "Relay app graph authoring and testing server",
         version: PRODUCT_VERSION,
-        runsDir: runsRoot(),
+        runsDir: scope.localTrusted ? runsRoot() : "runs",
         operations: serverOperationManifest(),
         resources: [
           { method: "GET", path: "/events", mediaType: "text/event-stream" },
@@ -1896,7 +1498,12 @@ async function handleRequest(
       return;
     }
     if (err instanceof OperationContractError) {
-      json(res, err.phase === "input" ? 400 : 500, { error: err.message });
+      const status = err.phase === "input" ? 400 : 500;
+      const message =
+        status === 500 && resolvedScope && !resolvedScope.localTrusted
+          ? "Internal server error"
+          : err.message;
+      json(res, status, { error: message });
       return;
     }
     if (err instanceof HttpError) {
@@ -1908,7 +1515,9 @@ async function handleRequest(
     }
     const message = err instanceof Error ? err.message : String(err);
     publish({ type: "error", at: now(), message, where: "server" });
-    json(res, 500, { error: message });
+    json(res, 500, {
+      error: resolvedScope && !resolvedScope.localTrusted ? "Internal server error" : message,
+    });
   }
 }
 

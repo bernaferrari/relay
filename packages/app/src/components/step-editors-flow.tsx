@@ -42,7 +42,7 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
         {(() => {
           const s = props.step();
           if (s.kind !== "module") return null;
-          const choices = server.recipes().filter((r) => r.id !== server.selectedAppMapId());
+          const choices = server.recipes().filter((r) => r.id !== server.selectedRecipeId());
           const attached = () => choices.find((recipe) => recipe.id === s.recipeId);
           const parameters = () => attached()?.parameters ?? [];
           const setBinding = (name: string, value: string) => {
@@ -128,7 +128,7 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
         {(() => {
           const s = props.step();
           if (s.kind !== "branch") return null;
-          const choices = server.recipes().filter((r) => r.id !== server.selectedAppMapId());
+          const choices = server.recipes().filter((r) => r.id !== server.selectedRecipeId());
           return (
             <>
               <div class={propRow}>
@@ -202,7 +202,7 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
         {(() => {
           const s = props.step();
           if (s.kind !== "repeat") return null;
-          const choices = server.recipes().filter((r) => r.id !== server.selectedAppMapId());
+          const choices = server.recipes().filter((r) => r.id !== server.selectedRecipeId());
           return (
             <>
               <div class={propRow}>

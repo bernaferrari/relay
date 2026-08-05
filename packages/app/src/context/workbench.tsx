@@ -260,8 +260,9 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
     let previewToken = 0;
 
     // New test selected → focus first step so the artboard always shows *something*.
+    // Map switches keep their own canvas focus; recipe draft drives workbench focus.
     createEffect(
-      on(server.selectedAppMapId, (id) => {
+      on(server.selectedRecipeId, (id) => {
         if (!id) {
           setFocusedIndex(null);
           return;

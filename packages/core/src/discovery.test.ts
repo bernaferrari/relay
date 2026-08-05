@@ -7,6 +7,7 @@ import {
   createDiscoverySession,
   discoveryControls,
   formatDiscoveryExport,
+  listDiscoverySessions,
   promoteDiscoveryPath,
   readDiscoverySession,
   readDiscoveryScreenAsset,
@@ -307,6 +308,53 @@ test("discovery tracks the screen currently visible on the target", async () => 
       makeCurrent: true,
     });
     assert.equal((await readDiscoverySession(session.id))?.currentScreenId, second.screen.id);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery screen assets reject traversal session ids", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-asset-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const outside = join(root, "outside.png");
+    await writeFile(outside, "not-a-discovery-asset");
+    assert.equal(await readDiscoveryScreenAsset("../etc", "screen-1"), null);
+    assert.equal(await readDiscoveryScreenAsset("foo/bar", "screen-1"), null);
+    assert.equal(await readDiscoveryScreenAsset("..", "screen-1"), null);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery sessions are isolated by project", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-scope-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const alpha = await createDiscoverySession({
+      id: "alpha-map",
+      name: "Alpha",
+      targetId: "device-a",
+      projectId: "alpha",
+    });
+    await createDiscoverySession({
+      id: "beta-map",
+      name: "Beta",
+      targetId: "device-b",
+      projectId: "beta",
+    });
+    assert.equal(alpha.projectId, "alpha");
+    const listed = await listDiscoverySessions({ projectId: "alpha" });
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0]?.id, "alpha-map");
+    assert.equal(await readDiscoverySession("beta-map", { projectId: "alpha" }), null);
+    assert.equal((await readDiscoverySession("beta-map", { projectId: "beta" }))?.name, "Beta");
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

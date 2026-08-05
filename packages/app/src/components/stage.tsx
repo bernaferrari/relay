@@ -12,10 +12,7 @@ import {
 import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { Icon } from "./icon";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
-import { Button } from "@relay/ui/button";
-import { IconButton } from "@relay/ui/icon-button";
 import { useCommand } from "../context/command";
 import { usePlatform } from "../context/platform";
 import { sentenceForStep } from "../lib/step-sentence";
@@ -35,7 +32,7 @@ import {
 import { cn } from "../lib/cn";
 import { evidenceForStep } from "./take-step-presentation";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
-import { deviceReadiness, presentDeviceIssue } from "../lib/device-readiness";
+import { deviceReadiness } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_FALLBACK_FRAME_INTERVAL_MS,
@@ -43,6 +40,18 @@ import {
   POST_INTERACTION_SNAPSHOT_DELAY_MS,
   liveInspectionPolicy,
 } from "../lib/live-inspection-policy";
+import {
+  emptyStageTitle as resolveEmptyStageTitle,
+  frameDataUrl,
+  hasIosSetupIssueText,
+  interactBodyForStrategy,
+  iosSetupGuidanceText,
+  liveImageStyleFromLayout,
+  pickerNodeLabel,
+  pickerNodeMetaLine,
+  PHONE_SHELL,
+  resolveDevicePanelState,
+} from "../lib/stage-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
 import {
   companionDisplayedPointToLogical,
@@ -52,17 +61,17 @@ import {
   companionLogicalViewport,
   companionOrientationEdge,
 } from "./app-map-device-companion-geometry";
-import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
 import { StepPlaybackPreview } from "./step-playback-preview";
-import { deviceCaption, deviceIconWell, deviceTitle, mono, phoneScreen, popover } from "../lib/ui";
+import { phoneScreen } from "../lib/ui";
 import {
   CoordinateTapPreview,
   DEFAULT_TOUCH_BOUNDS,
   DevicePanelStatus,
-  UncapturedStepPreview,
-  type DevicePanelState,
 } from "./device-stage-previews";
+import { StageViewToggle, StageRecordingControls } from "./stage-chrome";
+import { StageScreenFallback } from "./stage-screen-fallback";
+import { StageTargetPicker } from "./stage-target-picker";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: {
@@ -109,8 +118,6 @@ export function DeviceStage(_props: {
     const first = draft.steps()[0];
     return first ? { index: 0, title: sentenceForStep(first, server.recipes()) } : null;
   });
-  const frameDataUrl = (value: { mime: string; base64: string }) =>
-    `data:${value.mime};base64,${value.base64}`;
   const [liveFrameSrc, setLiveFrameSrc] = createSignal("");
   let liveFrameObjectUrl = "";
   createEffect(() => {
@@ -550,47 +557,6 @@ export function DeviceStage(_props: {
       height: `${rect.height * 100}%`,
     };
   });
-
-  const nodeLabel = () => {
-    const n = pickerNode();
-    const visible = (n?.label ?? n?.value ?? n?.identifier ?? "").trim();
-    if (visible) return visible;
-    const kind = n?.role ?? n?.type?.split(".").pop();
-    return kind ? `Unnamed ${kind}` : "Screen position";
-  };
-  /** Compact human metadata; implementation references live in strategy rows. */
-  const metaLine = () => {
-    const n = pickerNode();
-    if (!n) return "";
-    const parts: string[] = [];
-    const kind = n.role ?? n.type?.split(".").pop();
-    if (kind) parts.push(kind);
-    if (n.rect) parts.push(`${Math.round(n.rect.width)}×${Math.round(n.rect.height)}`);
-    return parts.join(" · ");
-  };
-
-  function strategyLabel(strategy: PickStrategy): string {
-    if (strategy.kind === "identifier") return "Stable identifier";
-    if (strategy.kind === "ref") return "Element reference";
-    if (strategy.kind === "label") return "Accessibility label";
-    if (strategy.kind === "text") return "Visible text";
-    return "Coordinates";
-  }
-
-  function strategyValue(strategy: PickStrategy): string {
-    if (strategy.kind === "identifier") return strategy.identifier;
-    if (strategy.kind === "ref") return strategy.ref;
-    if (strategy.kind === "label") return strategy.label;
-    if (strategy.kind === "text") return strategy.text;
-    return `${strategy.x}, ${strategy.y}`;
-  }
-
-  function strategyIcon(strategy: PickStrategy): "pointer" | "edit" | "scan" {
-    if (strategy.kind === "point") return "scan";
-    if (strategy.kind === "ref") return "pointer";
-    return "edit";
-  }
-
   function resetCoordinateAnchor(): void {
     setManualPoint(null);
     setHorizontalConstraint("left");
@@ -634,16 +600,7 @@ export function DeviceStage(_props: {
       });
       return;
     }
-    const body =
-      strategy.kind === "identifier"
-        ? ({ kind: "identifier", identifier: strategy.identifier } as const)
-        : strategy.kind === "ref"
-          ? ({ kind: "ref", ref: strategy.ref } as const)
-          : strategy.kind === "label"
-            ? ({ kind: "label", label: strategy.label } as const)
-            : strategy.kind === "text"
-              ? ({ kind: "text-match", match: strategy.text } as const)
-              : ({ kind: "point", x: strategy.x, y: strategy.y } as const);
+    const body = interactBodyForStrategy(strategy);
     let ok = await server.interactStep(body, `tap ${strategy.describe}`);
     // chosen strategy failed (likely no session) — fall back to a coordinate tap
     if (!ok && strategy.kind !== "point") {
@@ -1275,27 +1232,19 @@ export function DeviceStage(_props: {
     iosReadiness().kind === "ios-developer-mode-disabled" ||
     /developer mode.*(?:disabled|turn on)|turn on developer mode/i.test(liveCaptureIssue() ?? "");
   const iosDeviceSupportPending = () => iosReadiness().kind === "ios-preparing";
-  const hasIosSetupIssue = () => {
-    const issue = liveCaptureIssue() ?? "";
-    return (
-      developerModeDisabled() ||
-      needsIosSetup() ||
-      (currentDevice()?.platform === "ios" &&
-        /(signing|xcode|provision|team id|bundle id|set.?up|account)/i.test(issue))
-    );
-  };
-  const iosSetupGuidance = () => {
-    const readiness = iosReadiness();
-    if (readiness.kind === "ios-developer-mode-disabled") return readiness.detail;
-    if (readiness.kind === "ios-preparing") return readiness.detail;
-    const issue = liveCaptureIssue();
-    if (
-      issue &&
-      /(developer mode|signing|xcode|provision|team id|bundle id|set.?up|account)/i.test(issue)
-    )
-      return issue;
-    return `Keep ${currentDevice()?.name ?? "the iPad"} unlocked. If iOS asks to enable UI Automation, enter its passcode.`;
-  };
+  const hasIosSetupIssue = () =>
+    hasIosSetupIssueText({
+      developerModeDisabled: developerModeDisabled(),
+      needsIosSetup: needsIosSetup(),
+      platform: currentDevice()?.platform,
+      liveCaptureIssue: liveCaptureIssue(),
+    });
+  const iosSetupGuidance = () =>
+    iosSetupGuidanceText({
+      readiness: iosReadiness(),
+      liveCaptureIssue: liveCaptureIssue(),
+      deviceName: currentDevice()?.name,
+    });
   const preparingIosScreen = () =>
     targetReady() &&
     currentDevice()?.platform === "ios" &&
@@ -1306,117 +1255,35 @@ export function DeviceStage(_props: {
     targetReady() &&
     currentDevice()?.platform === "ios" &&
     ["idle", "checking"].includes(iosSetupState());
-  const emptyStageTitle = () => {
-    if (_props.preparing) return "Starting live view";
-    if (!targetReady()) return "Device unavailable";
-    if (developerModeDisabled()) return "Turn on Developer Mode";
-    if (iosDeviceSupportPending()) return "Preparing this iPad";
-    if (checkingIosSetup()) return "Checking iPad setup";
-    return preparingIosScreen() ? "Preparing this iPad" : "Waiting for screen";
-  };
-  const devicePanelState = createMemo<DevicePanelState | null>(() => {
-    const recordingIssue = rec.recordingIssue();
-    const issue = recordingIssue?.message ?? liveCaptureIssue() ?? "";
-    if (server.health() !== "online") {
-      return {
-        kind: "error",
-        title: "Relay is offline",
-        detail: "Reconnect Relay to resume this live device. Your App Map is still safe.",
-        primaryAction: "retry",
-        primaryLabel: "Reconnect",
-      };
-    }
-
-    if (rec.arming()) {
-      return {
-        kind: "progress",
-        title: "Preparing the device",
-        detail: "Relay is getting recording and device control ready.",
-      };
-    }
-
-    // A physical iPad uses one local XCTest runner for video and inspection.
-    // While recording, keep the last usable frame if one exists and never
-    // replace it with a stale screenshot/setup error caused by a competing
-    // read. With no cached frame, explain the direct-device workflow without
-    // drawing the message inside a fake phone silhouette.
-    if (physicalIosRecording()) {
-      if (displayImageSrc()) return null;
-      return {
-        kind: "recording",
-        title: "Recording on this iPad",
-        detail: "Use the iPad directly. Relay will refresh the screen when you stop.",
-      };
-    }
-
-    const accountIssue =
-      /xcode.*not signed in|apple team|accounts settings|valid credentials/i.test(issue);
-
-    if (developerModeDisabled()) {
-      return {
-        kind: "setup",
-        title: "Turn on Developer Mode",
-        detail: iosSetupGuidance(),
-        primaryAction: "retry",
-        primaryLabel: "Check again",
-      };
-    }
-
-    // CoreDevice can take a moment to mount its developer image after an iPad
-    // is paired or unlocked. During that interval an earlier screenshot poll
-    // may still have an error attached to it. Preparation is authoritative:
-    // never pair a spinner/header with a stale Retry action.
-    if (iosDeviceSupportPending() || checkingIosSetup() || preparingIosScreen()) {
-      return {
-        kind: "progress",
-        title: `Connecting to ${currentDevice()?.name ?? "iPad"}`,
-        detail: iosSetupGuidance(),
-      };
-    }
-
-    if (recordingIssue?.kind === "setup" || hasIosSetupIssue()) {
-      return {
-        kind: "setup",
-        title: accountIssue ? "Finish setup in Xcode" : "Finish Apple device setup",
-        detail:
-          (issue ? presentDeviceIssue(issue, currentDevice()?.name ?? "this iPad") : undefined) ||
-          "Relay needs a small, locally signed runner before it can read and control this iPad.",
-        primaryAction: accountIssue && platform.openXcode ? "open-xcode" : "open-settings",
-        primaryLabel: accountIssue && platform.openXcode ? "Open Xcode" : "Review setup",
-        secondaryRetry: true,
-      };
-    }
-
-    if (recordingIssue || issue) {
-      return {
-        kind: "error",
-        title:
-          currentDevice()?.platform === "ios"
-            ? `${currentDevice()?.name ?? "iPad"} isn’t ready`
-            : "Device isn’t ready",
-        detail: presentDeviceIssue(issue, currentDevice()?.name ?? "the device"),
-        primaryAction: "retry",
-        primaryLabel: "Reconnect",
-      };
-    }
-
-    // A valid frame is the only state that receives device chrome. Check it
-    // after all current failures so stale pixels never hide a newer setup or
-    // connection problem inside the old phone-shaped fallback.
-    if (displayImageSrc()) return null;
-
-    return {
-      kind: "progress",
-      title:
-        currentDevice()?.platform === "ios"
-          ? `Connecting to ${currentDevice()?.name ?? "iPad"}`
-          : emptyStageTitle(),
-      detail:
-        currentDevice()?.platform === "ios"
-          ? `Keep ${currentDevice()?.name ?? "the iPad"} unlocked. If iOS asks to enable UI Automation, enter its passcode.`
-          : "Relay is waiting for the first screen from this device.",
-    };
-  });
+  const emptyStageTitle = () =>
+    resolveEmptyStageTitle({
+      preparing: _props.preparing,
+      targetReady: targetReady(),
+      developerModeDisabled: developerModeDisabled(),
+      iosDeviceSupportPending: iosDeviceSupportPending(),
+      checkingIosSetup: checkingIosSetup(),
+      preparingIosScreen: preparingIosScreen(),
+    });
+  const devicePanelState = createMemo(() =>
+    resolveDevicePanelState({
+      serverOnline: server.health() === "online",
+      arming: rec.arming(),
+      physicalIosRecording: physicalIosRecording(),
+      hasDisplayImage: Boolean(displayImageSrc()),
+      recordingIssue: rec.recordingIssue(),
+      liveCaptureIssue: liveCaptureIssue(),
+      developerModeDisabled: developerModeDisabled(),
+      iosSetupGuidance: iosSetupGuidance(),
+      iosDeviceSupportPending: iosDeviceSupportPending(),
+      checkingIosSetup: checkingIosSetup(),
+      preparingIosScreen: preparingIosScreen(),
+      hasIosSetupIssue: hasIosSetupIssue(),
+      deviceName: currentDevice()?.name,
+      platform: currentDevice()?.platform,
+      openXcodeAvailable: Boolean(platform.openXcode),
+      emptyStageTitle: emptyStageTitle(),
+    }),
+  );
   const videoIdentity = createMemo(() => {
     const serial = currentDevice()?.serial;
     const base = server.serverUrl().replace(/\/+$/, "");
@@ -1479,26 +1346,6 @@ export function DeviceStage(_props: {
     if (!rec.recording()) rec.setInteracting(false);
   });
 
-  /**
-   * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
-   * Never stack workbench light-theme color recipes on the frame.
-   */
-  const phoneShell = "phone-bezel relative rounded-[21px] bg-[var(--phone-bezel)] p-px";
-  const liveImageStyle = () => {
-    const layout = liveImageLayout();
-    if (!layout || layout.rotationDegrees === 0) return undefined;
-    return {
-      position: "absolute",
-      left: "50%",
-      top: "50%",
-      width: `${layout.widthPercent}%`,
-      height: `${layout.heightPercent}%`,
-      "max-width": "none",
-      "transform-origin": "center",
-      transform: `translate(-50%, -50%) rotate(${layout.rotationDegrees}deg)`,
-    } as const;
-  };
-
   return (
     <section
       ref={(el) => {
@@ -1511,102 +1358,15 @@ export function DeviceStage(_props: {
       )}
     >
       <Show when={!embeddedRecordingControls() && (targetReady() || recordedEvidenceSrc())}>
-        <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
-          <Show
-            when={recordedEvidenceSrc() && targetReady()}
-            fallback={
-              <Show
-                when={recordedEvidenceSrc()}
-                fallback={
-                  <span
-                    class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
-                    role="status"
-                    aria-live="polite"
-                    data-tip={
-                      videoReady()
-                        ? "Live device preview"
-                        : videoFailed()
-                          ? "Using screenshot preview while video reconnects"
-                          : "Screen preview is starting"
-                    }
-                  >
-                    <i
-                      class={cn(
-                        "size-1.5 shrink-0 rounded-full",
-                        videoReady()
-                          ? "bg-[var(--icon-success-base)]"
-                          : videoFailed()
-                            ? "bg-[var(--icon-warning-base)]"
-                            : "animate-pulse bg-icon-base motion-reduce:animate-none",
-                      )}
-                      aria-hidden="true"
-                    />
-                    <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Preview"}</span>
-                  </span>
-                }
-              >
-                <span
-                  class="inline-flex h-8 min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium text-text-base"
-                  role="status"
-                  aria-label="Recorded device evidence"
-                >
-                  <Icon name="clock" size={12} /> Recorded
-                </span>
-              </Show>
-            }
-          >
-            <div
-              class="inline-flex h-8 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5 shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
-              role="group"
-              aria-label="Device view"
-            >
-              <button
-                type="button"
-                class={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
-                  stageView() === "recorded"
-                    ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                    : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
-                )}
-                aria-pressed={stageView() === "recorded"}
-                disabled={rec.recording()}
-                onClick={() => setStageView("recorded")}
-              >
-                <Icon name="clock" size={12} /> Recorded
-              </button>
-              <button
-                type="button"
-                class={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
-                  stageView() === "live"
-                    ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                    : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
-                )}
-                aria-pressed={stageView() === "live"}
-                disabled={!targetReady()}
-                data-tip={!targetReady() ? "Connect a device to use Live view" : undefined}
-                onClick={() => {
-                  setStageView("live");
-                }}
-              >
-                <i
-                  class={cn(
-                    "size-1.5 rounded-full",
-                    stageView() !== "live"
-                      ? "bg-[var(--text-weak)]"
-                      : videoReady()
-                        ? "bg-[var(--icon-success-base)]"
-                        : videoFailed()
-                          ? "bg-[var(--icon-warning-base)]"
-                          : "animate-pulse bg-icon-base motion-reduce:animate-none",
-                  )}
-                  aria-hidden="true"
-                />
-                Live
-              </button>
-            </div>
-          </Show>
-        </div>
+        <StageViewToggle
+          stageView={stageView()}
+          setStageView={setStageView}
+          hasRecordedEvidence={Boolean(recordedEvidenceSrc())}
+          targetReady={targetReady()}
+          recording={rec.recording()}
+          videoReady={videoReady()}
+          videoFailed={videoFailed()}
+        />
       </Show>
       <Show
         when={Boolean(currentDevice()) || Boolean(recordedEvidenceSrc())}
@@ -1636,7 +1396,7 @@ export function DeviceStage(_props: {
               data-device-chrome
               data-device-content={displayImageSrc() ? "frame" : "status"}
               class={cn(
-                phoneShell,
+                PHONE_SHELL,
                 "relative z-[2] shrink-0",
                 frameRatio() >= 0.65
                   ? "h-auto w-[min(440px,calc(100%-40px))]"
@@ -1650,219 +1410,30 @@ export function DeviceStage(_props: {
                 {/* The workbench can preview an uncaptured plan. Embedded Live
                 Device instead owns real target readiness, so it never masks a
                 setup or capture state with unrelated planned-step content. */}
-                <Show
-                  when={!rec.arming() && !rec.recordingIssue() && displayImageSrc()}
-                  fallback={
-                    <Show
-                      when={rec.arming()}
-                      fallback={
-                        <Show
-                          when={rec.recordingIssue()}
-                          fallback={
-                            <Show
-                              when={!embeddedRecordingControls() ? plannedFocus() : undefined}
-                              fallback={
-                                <div class="grid h-full w-full place-items-center px-6 text-center">
-                                  <Show
-                                    when={
-                                      embeddedRecordingControls() &&
-                                      targetReady() &&
-                                      (needsIosSetup() ||
-                                        developerModeDisabled() ||
-                                        Boolean(liveCaptureIssue()))
-                                    }
-                                    fallback={
-                                      <Show
-                                        when={embeddedRecordingControls() && targetReady()}
-                                        fallback={
-                                          <div class="grid justify-items-center gap-2.5">
-                                            <span
-                                              class={cn(deviceIconWell, "size-11 rounded-[13px]")}
-                                            >
-                                              <Icon name="smartphone" size={20} />
-                                            </span>
-                                            <strong
-                                              class={cn(
-                                                deviceTitle,
-                                                "text-[14px] font-semibold tracking-[-0.01em]",
-                                              )}
-                                            >
-                                              {emptyStageTitle()}
-                                            </strong>
-                                          </div>
-                                        }
-                                      >
-                                        <div class="grid justify-items-center gap-2.5 text-center">
-                                          <span
-                                            class="size-5 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
-                                            role="status"
-                                            aria-label={
-                                              checkingIosSetup()
-                                                ? "Checking iPad setup"
-                                                : preparingIosScreen()
-                                                  ? "Preparing the iPad"
-                                                  : "Waiting for the device screen"
-                                            }
-                                          />
-                                          <Show when={preparingIosScreen()}>
-                                            <strong
-                                              class={cn(
-                                                deviceTitle,
-                                                "text-[14px] font-semibold tracking-[-0.01em]",
-                                              )}
-                                            >
-                                              {emptyStageTitle()}
-                                            </strong>
-                                          </Show>
-                                          <Show when={checkingIosSetup()}>
-                                            <strong
-                                              class={cn(
-                                                deviceTitle,
-                                                "text-[14px] font-semibold tracking-[-0.01em]",
-                                              )}
-                                            >
-                                              Checking iPad setup
-                                            </strong>
-                                          </Show>
-                                        </div>
-                                      </Show>
-                                    }
-                                  >
-                                    <div class="grid justify-items-center gap-3 text-center">
-                                      <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
-                                        <Icon name="smartphone" size={18} />
-                                      </span>
-                                      <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
-                                        {developerModeDisabled()
-                                          ? "Turn on Developer Mode"
-                                          : hasIosSetupIssue()
-                                            ? "Set up this iPad"
-                                            : "Screen unavailable"}
-                                      </strong>
-                                      <Show when={hasIosSetupIssue()}>
-                                        <p class="m-0 max-w-[23ch] text-[10.5px] leading-4 text-[var(--text-weak)]">
-                                          {iosSetupGuidance()}
-                                        </p>
-                                      </Show>
-                                      <Show when={!developerModeDisabled()}>
-                                        <button
-                                          type="button"
-                                          class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-[10px] border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-[11px] font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
-                                          onClick={() => {
-                                            if (hasIosSetupIssue()) {
-                                              window.dispatchEvent(
-                                                new CustomEvent("relay:open-settings", {
-                                                  detail: { section: "devices" },
-                                                }),
-                                              );
-                                              return;
-                                            }
-                                            retryScreenPreview();
-                                          }}
-                                        >
-                                          {hasIosSetupIssue() ? "Open device setup" : "Try again"}
-                                        </button>
-                                      </Show>
-                                    </div>
-                                  </Show>
-                                </div>
-                              }
-                            >
-                              {(focused) => {
-                                const step = () => focusedPlanStep();
-                                return (
-                                  <div class="relative h-full w-full">
-                                    <Show when={step()}>
-                                      {(value) => (
-                                        <UncapturedStepPreview
-                                          step={value()}
-                                          onSwipePoint={updateFocusedSwipePoint}
-                                        />
-                                      )}
-                                    </Show>
-                                    <div class="pointer-events-none absolute inset-x-5 bottom-[15%] grid justify-items-center gap-1.5 text-center">
-                                      <span
-                                        class={cn(
-                                          mono,
-                                          deviceCaption,
-                                          "text-[9.5px] tracking-[0.09em] uppercase",
-                                        )}
-                                      >
-                                        Step {String(focused().index + 1).padStart(2, "0")}
-                                      </span>
-                                      <span
-                                        class={cn(
-                                          deviceCaption,
-                                          "max-w-[26ch] text-[11.5px]/[1.5]",
-                                        )}
-                                      >
-                                        {targetReady()
-                                          ? "No captured screen"
-                                          : server.isEmptyDevices()
-                                            ? "No device selected"
-                                            : "Device unavailable"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              }}
-                            </Show>
-                          }
-                        >
-                          {(issue) => (
-                            <div class="grid h-full w-full place-items-center px-6 text-center">
-                              <div class="grid max-w-[220px] justify-items-center gap-3">
-                                <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
-                                  <Icon name="smartphone" size={18} />
-                                </span>
-                                <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
-                                  {issue().kind === "setup"
-                                    ? "Set up this iPad"
-                                    : "Can’t read this screen"}
-                                </strong>
-                                <p class="m-0 text-[10.5px] leading-4 text-[var(--text-weak)]">
-                                  {issue().message}
-                                </p>
-                                <button
-                                  type="button"
-                                  class="min-h-11 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
-                                  onClick={() => {
-                                    if (issue().kind === "setup") {
-                                      window.dispatchEvent(
-                                        new CustomEvent("relay:open-settings", {
-                                          detail: { section: "devices" },
-                                        }),
-                                      );
-                                      return;
-                                    }
-                                    void rec.enterRecordMode();
-                                  }}
-                                >
-                                  {issue().kind === "setup" ? "Open iPad setup" : "Try again"}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </Show>
-                      }
-                    >
-                      <div class="grid h-full w-full place-items-center px-6 text-center">
-                        <div class="grid justify-items-center gap-3">
-                          <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
-                            <Icon name="smartphone" size={18} />
-                          </span>
-                          <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
-                            Preparing device
-                          </strong>
-                          <span
-                            class="size-4 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
-                            role="status"
-                            aria-label="Preparing device for recording"
-                          />
-                        </div>
-                      </div>
-                    </Show>
-                  }
+                <StageScreenFallback
+                  arming={rec.arming()}
+                  recordingIssue={rec.recordingIssue()}
+                  displayImageSrc={displayImageSrc()}
+                  embeddedRecordingControls={embeddedRecordingControls()}
+                  plannedFocus={plannedFocus()}
+                  focusedPlanStep={focusedPlanStep}
+                  targetReady={targetReady()}
+                  isEmptyDevices={server.isEmptyDevices()}
+                  needsIosSetup={needsIosSetup()}
+                  developerModeDisabled={developerModeDisabled()}
+                  liveCaptureIssue={liveCaptureIssue()}
+                  emptyStageTitle={emptyStageTitle()}
+                  checkingIosSetup={checkingIosSetup()}
+                  preparingIosScreen={preparingIosScreen()}
+                  hasIosSetupIssue={hasIosSetupIssue()}
+                  iosSetupGuidance={iosSetupGuidance()}
+                  onRetryScreenPreview={() => {
+                    void retryScreenPreview();
+                  }}
+                  onEnterRecordMode={() => {
+                    void rec.enterRecordMode();
+                  }}
+                  onSwipePoint={updateFocusedSwipePoint}
                 >
                   <Show keyed when={!videoFailed() && liveVideoSrc()}>
                     {(src) => (
@@ -1899,7 +1470,7 @@ export function DeviceStage(_props: {
                     aria-label="Interactive device screen"
                     data-live-frame={stageView() === "live" && liveFrameSrc() ? "true" : undefined}
                     src={displayImageSrc()}
-                    style={liveImageStyle()}
+                    style={liveImageStyleFromLayout(liveImageLayout())}
                     draggable={false}
                     tabindex={0}
                     onClick={(e) => {
@@ -2215,7 +1786,7 @@ export function DeviceStage(_props: {
                       />
                     )}
                   </Show>
-                </Show>
+                </StageScreenFallback>
               </div>
             </div>
           }
@@ -2242,291 +1813,57 @@ export function DeviceStage(_props: {
       </Show>
 
       <Show when={picker() && liveControlActive() && (pickerNode() || rec.recording())}>
-        <div
-          ref={(element) => {
+        <StageTargetPicker
+          picker={() => picker()!}
+          setPickerEl={(element) => {
             pickerEl = element;
           }}
-          class={cn(
-            "absolute z-50 w-[252px]",
-            picker()!.placement === "above"
-              ? "-translate-y-[calc(100%+10px)]"
-              : "translate-y-[10px]",
-          )}
-          style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}
-        >
-          <div
-            class={cn(
-              popover,
-              "!overflow-visible border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-0 shadow-[var(--v2-elevation-overlay)]",
-            )}
-            style={{
-              "--ui-pop-origin": picker()!.placement === "above" ? "bottom left" : "top left",
-            }}
-            role="dialog"
-            aria-label="Choose target"
-          >
-            <header class="flex items-start justify-between gap-3 px-3 pt-3 pb-2.5">
-              <span class="min-w-0">
-                <small class="block text-[9px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
-                  Target
-                </small>
-                <strong class="mt-0.5 block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
-                  {nodeLabel()}
-                </strong>
-                <Show when={metaLine()}>
-                  <span
-                    class={cn(mono, "mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]")}
-                  >
-                    {metaLine()}
-                  </span>
-                </Show>
-              </span>
-              <button
-                type="button"
-                class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
-                aria-label="Close target picker"
-                onClick={() => setPicker(null)}
-              >
-                <Icon name="x" size={13} />
-              </button>
-            </header>
-
-            <Show when={ancestry().length > 1}>
-              <div class="mx-2.5 flex h-8 items-center justify-between rounded-lg bg-[var(--v2-background-bg-layer-01)] px-1">
-                <button
-                  type="button"
-                  class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
-                  disabled={picker()!.index <= 0}
-                  onClick={() => retarget(picker()!.index - 1)}
-                >
-                  <Icon name="chevron-down" size={12} /> Child
-                </button>
-                <span class={cn(mono, "text-[9px] tabular-nums text-[var(--text-weak)]")}>
-                  {picker()!.index + 1} / {ancestry().length}
-                </span>
-                <button
-                  type="button"
-                  class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
-                  disabled={picker()!.index >= ancestry().length - 1}
-                  onClick={() => retarget(picker()!.index + 1)}
-                >
-                  Parent <Icon name="chevron-up" size={12} />
-                </button>
-              </div>
-            </Show>
-
-            <div class="grid gap-1 px-2.5 py-2.5" role="group" aria-label="Target method">
-              <For each={strategies().filter((strategy) => strategy.kind !== "point")}>
-                {(strategy) => {
-                  const selected = () => selectedStrategy()?.id === strategy.id;
-                  return (
-                    <button
-                      type="button"
-                      aria-pressed={selected()}
-                      class={cn(
-                        "grid min-h-10 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
-                        "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
-                        selected() &&
-                          "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
-                      )}
-                      onClick={() => {
-                        setStrategyId(strategy.id);
-                      }}
-                    >
-                      <span
-                        class={cn(
-                          "grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]",
-                          selected() && "text-[var(--text-interactive-base)]",
-                        )}
-                      >
-                        <Icon name={strategyIcon(strategy)} size={13} />
-                      </span>
-                      <span class="min-w-0">
-                        <strong class="block truncate text-[10.5px] font-medium text-[var(--text-base)]">
-                          {strategyLabel(strategy)}
-                        </strong>
-                        <code class="mt-0.5 block truncate font-mono text-[9px] text-[var(--text-weak)]">
-                          {strategyValue(strategy)}
-                        </code>
-                      </span>
-                      <span
-                        class={cn(
-                          "size-3.5 rounded-full border border-[var(--v2-border-border-strong)]",
-                          selected() &&
-                            "border-[4px] border-[var(--v2-background-bg-accent)] bg-white",
-                        )}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  );
-                }}
-              </For>
-
-              <Show
-                when={pickerNode()?.rect && constrainedPoint()}
-                fallback={
-                  <button
-                    type="button"
-                    class={cn(
-                      "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left",
-                      "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
-                      strategyId() === "point" &&
-                        "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
-                    )}
-                    aria-pressed={strategyId() === "point"}
-                    onClick={() => setStrategyId("point")}
-                  >
-                    <span class="grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-interactive-base)]">
-                      <Icon name="scan" size={13} />
-                    </span>
-                    <span class="min-w-0">
-                      <strong class="block text-[10.5px] font-medium text-[var(--text-base)]">
-                        Coordinates
-                      </strong>
-                      <span class="mt-1 flex gap-1.5">
-                        <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
-                          X {strategies().find((strategy) => strategy.kind === "point")?.x ?? 0}
-                        </code>
-                        <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
-                          Y {strategies().find((strategy) => strategy.kind === "point")?.y ?? 0}
-                        </code>
-                      </span>
-                    </span>
-                  </button>
-                }
-              >
-                <CoordinateConstraintPicker
-                  horizontal={horizontalConstraint()}
-                  vertical={verticalConstraint()}
-                  point={constrainedPoint()!}
-                  active={strategyId() === "point"}
-                  onConstraint={({ horizontal, vertical }) => {
-                    setHorizontalConstraint(horizontal);
-                    setVerticalConstraint(vertical);
-                  }}
-                  onPoint={setManualPoint}
-                  onActivate={() => setStrategyId("point")}
-                />
-              </Show>
-            </div>
-
-            <footer class="flex items-center justify-end gap-1.5 border-t border-[var(--v2-border-border-muted)] px-2.5 py-2.5">
-              <Button
-                variant="secondary"
-                size="sm"
-                class="text-[10.5px]"
-                disabled={!selectedStrategy()}
-                onClick={() => {
-                  const strategy = selectedStrategy();
-                  if (strategy) void pick(strategy, "select");
-                }}
-              >
-                Add step
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                class="text-[10.5px]"
-                disabled={!selectedStrategy()}
-                onClick={() => {
-                  const strategy = selectedStrategy();
-                  if (strategy) void pick(strategy, "tap");
-                }}
-              >
-                <Icon name="pointer" size={12} /> Tap device
-              </Button>
-            </footer>
-          </div>
-        </div>
+          nodeLabel={pickerNodeLabel(pickerNode())}
+          metaLine={pickerNodeMetaLine(pickerNode())}
+          ancestryLength={ancestry().length}
+          strategies={strategies()}
+          selectedStrategy={selectedStrategy()}
+          strategyId={strategyId()}
+          setStrategyId={setStrategyId}
+          horizontalConstraint={horizontalConstraint()}
+          verticalConstraint={verticalConstraint()}
+          setHorizontalConstraint={setHorizontalConstraint}
+          setVerticalConstraint={setVerticalConstraint}
+          constrainedPoint={constrainedPoint()}
+          setManualPoint={setManualPoint}
+          hasPickerNodeRect={Boolean(pickerNode()?.rect)}
+          onClose={() => setPicker(null)}
+          onRetarget={retarget}
+          onAddStep={(strategy) => {
+            void pick(strategy, "select");
+          }}
+          onTapDevice={(strategy) => {
+            void pick(strategy, "tap");
+          }}
+        />
       </Show>
 
       {/* Device-only utilities stay outside embedded capture, where the
           recording bar is the single source of control. */}
       <Show when={targetReady() && !embeddedRecordingControls()}>
-        <div class="z-[2] mt-3 flex min-h-10 items-center justify-center text-text-base">
-          <Show when={stageView() === "live"}>
-            <div class="flex items-center gap-1 rounded-[11px] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--map-elevation-control)]">
-              <Button
-                variant={rec.recording() ? "danger" : "primary"}
-                size="md"
-                class="min-w-[104px] gap-2 rounded-lg"
-                aria-label={rec.recording() ? "Stop recording interactions" : "Record interactions"}
-                disabled={!rec.recording() && !server.selectedLeaseId()}
-                onClick={toggleRecording}
-                data-tip={
-                  rec.recording()
-                    ? "Stop recording steps"
-                    : server.selectedLeaseId()
-                      ? "Record interactions as steps"
-                      : "Restoring device control…"
-                }
-              >
-                <Icon name={rec.recording() ? "square" : "circle"} size={10} />
-                {rec.recording() ? "Stop" : "Record"}
-              </Button>
-              <Show when={rec.recording()}>
-                <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                  <input
-                    class="h-full w-32 min-w-0 bg-transparent px-2.5 text-[12px] font-medium text-[var(--text-strong)] outline-none placeholder:text-text-weak"
-                    aria-label="Current recording task"
-                    value={rec.recordingGroup()}
-                    placeholder="Task name"
-                    onInput={(event) => rec.setRecordingGroup(event.currentTarget.value)}
-                  />
-                  <button
-                    type="button"
-                    class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-text-strong active:scale-[0.97]"
-                    aria-label="Start a new recording task"
-                    data-tip="Start a new task"
-                    onClick={() => rec.startNextRecordingGroup()}
-                  >
-                    <Icon name="plus" size={14} />
-                  </button>
-                </div>
-              </Show>
-              <span class="mx-0.5 h-5 w-px bg-border-weak-base" aria-hidden="true" />
-              <IconButton
-                variant="ghost"
-                size="normal"
-                class="!size-9 rounded-lg"
-                data-tip="Screenshot (⌘⇧S)"
-                aria-label="Capture screenshot"
-                disabled={server.busyCapture()}
-                onClick={() => void server.captureUiScreenshot()}
-              >
-                <Show when={server.busyCapture()} fallback={<Icon name="camera" size={14} />}>
-                  <span
-                    class="size-3.5 rounded-full border-[1.5px] border-current border-t-transparent opacity-70 motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                </Show>
-              </IconButton>
-              <IconButton
-                variant="ghost"
-                size="normal"
-                class="!size-9 rounded-lg"
-                data-tip="Copy screenshot"
-                aria-label="Copy screenshot to clipboard"
-                disabled={server.busyCapture()}
-                onClick={() => void server.copyUiScreenshot()}
-              >
-                <Icon name="copy" size={14} />
-              </IconButton>
-              <Show when={server.frames().length > 0}>
-                <IconButton
-                  variant="ghost"
-                  size="normal"
-                  class="!size-9 rounded-lg hover:text-icon-critical-base"
-                  data-tip="Clear frames"
-                  aria-label="Clear frames"
-                  onClick={() => server.clearFrames()}
-                >
-                  <Icon name="trash" size={14} />
-                </IconButton>
-              </Show>
-            </div>
-          </Show>
-        </div>
+        <StageRecordingControls
+          stageView={stageView()}
+          recording={rec.recording()}
+          recordingGroup={rec.recordingGroup()}
+          setRecordingGroup={rec.setRecordingGroup}
+          startNextRecordingGroup={rec.startNextRecordingGroup}
+          selectedLeaseId={server.selectedLeaseId()}
+          busyCapture={server.busyCapture()}
+          frameCount={server.frames().length}
+          onToggleRecording={toggleRecording}
+          onCaptureScreenshot={() => {
+            void server.captureUiScreenshot();
+          }}
+          onCopyScreenshot={() => {
+            void server.copyUiScreenshot();
+          }}
+          onClearFrames={() => server.clearFrames()}
+        />
       </Show>
     </section>
   );

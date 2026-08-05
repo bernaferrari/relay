@@ -1,0 +1,179 @@
+/**
+ * Pure target/snapshot matching helpers for recipe execution.
+ */
+import type { StepTarget } from "@relay/protocol";
+import type { SnapshotNode } from "./device.js";
+
+export function nodeText(node: SnapshotNode): string[] {
+  const type = (node.type ?? node.role ?? "").toLowerCase();
+  const value = typeof node.value === "string" ? node.value.trim() : "";
+  if (["textfield", "textview", "searchfield", "securetextfield"].includes(type)) {
+    // Editable controls expose their placeholder as `label`; it is metadata,
+    // never the current content. Preserve an empty value so tests can assert
+    // that starting a new conversation really cleared the composer.
+    return [value];
+  }
+  return [node.label, node.value]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+}
+
+export function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
+  if (target.identifier && node.identifier === target.identifier) return true;
+  if (target.ref && node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")) return true;
+  if (target.label && node.label === target.label) return true;
+  if (target.text) {
+    const query = target.text.toLowerCase();
+    return nodeText(node).some((value) => value.toLowerCase().includes(query));
+  }
+  return false;
+}
+
+/** XCTest element refs are snapshots of one moment, not durable selectors.
+ * Before replaying a recorded ref on physical iOS, confirm that the current
+ * node still carries the stable label or identifier captured with it. Ref
+ * reuse must fall through to semantic targeting instead of tapping whatever
+ * now happens to own the old token. */
+export function refMatchesRecordedTarget(nodes: SnapshotNode[], target: StepTarget): boolean {
+  if (!target.ref) return false;
+  const ref = target.ref.replace(/^@/, "");
+  const candidate = nodes.find((node) => node.ref?.replace(/^@/, "") === ref);
+  if (!candidate) return false;
+  if (target.identifier && candidate.identifier !== target.identifier) return false;
+  if (target.label && candidate.label !== target.label) return false;
+  return true;
+}
+
+export function screenIdentityMatches(
+  expected: ReadonlySet<string>,
+  semanticFingerprint: string,
+  visualFingerprint?: string,
+): boolean {
+  return (
+    expected.has(semanticFingerprint) ||
+    Boolean(visualFingerprint && expected.has(visualFingerprint))
+  );
+}
+
+export function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
+  return [
+    ...new Set(nodes.filter((node) => nodeMatchesTarget(node, target)).flatMap(nodeText)),
+  ].join("\n");
+}
+
+export function sameTarget(left: StepTarget, right: StepTarget): boolean {
+  return (
+    left.identifier === right.identifier &&
+    left.ref === right.ref &&
+    left.label === right.label &&
+    left.text === right.text
+  );
+}
+
+function localizedStringKeyLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return /^LocalizedStringKey\(key: "([^"]+)"/u.exec(value)?.[1];
+}
+
+export function labelsForIdentifierPrefix(nodes: SnapshotNode[], prefix: string): string[] {
+  const byParent = new Map<number, SnapshotNode[]>();
+  for (const node of nodes) {
+    if (node.parentIndex === undefined) continue;
+    const siblings = byParent.get(node.parentIndex) ?? [];
+    siblings.push(node);
+    byParent.set(node.parentIndex, siblings);
+  }
+
+  const readableDescendant = (root: SnapshotNode): string | undefined => {
+    if (root.index === undefined) return undefined;
+    const queue = [...(byParent.get(root.index) ?? [])];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
+      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+      if (label && (type === "statictext" || type === "text" || type === "textview")) {
+        return label;
+      }
+      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
+    }
+    return undefined;
+  };
+
+  return [
+    ...new Set(
+      nodes
+        .filter((node) => node.identifier?.startsWith(prefix))
+        .map(
+          (node) =>
+            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
+        )
+        .filter((label): label is string => Boolean(label)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+/** Collect the immediate options inside a semantic container. Structural
+ * parent links are preferred; rectangle containment keeps older snapshots
+ * useful when a provider does not expose parentIndex. */
+export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string[] {
+  const byParent = new Map<number, SnapshotNode[]>();
+  for (const node of nodes) {
+    if (node.parentIndex === undefined) continue;
+    const children = byParent.get(node.parentIndex) ?? [];
+    children.push(node);
+    byParent.set(node.parentIndex, children);
+  }
+
+  const readableDescendant = (root: SnapshotNode): string | undefined => {
+    if (root.index === undefined) return undefined;
+    const queue = [...(byParent.get(root.index) ?? [])];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
+      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+      if (label && (type === "statictext" || type === "text" || type === "textview")) {
+        return label;
+      }
+      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
+    }
+    return undefined;
+  };
+
+  const roots = nodes.filter((node) => nodeMatchesTarget(node, scope));
+  const options: SnapshotNode[] = [];
+  const seen = new Set<SnapshotNode>();
+  for (const root of roots) {
+    const directChildren =
+      root.index !== undefined
+        ? (byParent.get(root.index) ?? [])
+        : root.rect
+          ? nodes.filter((node) => {
+              const rect = node.rect;
+              return (
+                node !== root &&
+                rect !== undefined &&
+                rect.x >= root.rect!.x &&
+                rect.y >= root.rect!.y &&
+                rect.x + rect.width <= root.rect!.x + root.rect!.width &&
+                rect.y + rect.height <= root.rect!.y + root.rect!.height
+              );
+            })
+          : [];
+    for (const child of directChildren) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      options.push(child);
+    }
+  }
+
+  return [
+    ...new Set(
+      options
+        .map(
+          (node) =>
+            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
+        )
+        .filter((label): label is string => Boolean(label)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}

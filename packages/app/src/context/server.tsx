@@ -4,12 +4,7 @@ import { ApiError, RelayClient } from "@relay/client";
 import type {
   GenerationRequest,
   GenerationResult,
-  DiscoveryAgentContext,
   DiscoverySession,
-  DiscoveryCoverageReport,
-  DiscoveryDecisionProvenance,
-  DiscoveryScope,
-  DiscoveryControl,
   OperationId,
   OperationInput,
   OperationOutput,
@@ -30,19 +25,7 @@ import { toast } from "./toast";
 import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
 import { createServerTargetController } from "../lib/server-target-controller";
-import {
-  approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
-  backtrackDiscovery as backtrackDiscoveryRemote,
-  captureDiscoveryScreen,
-  createDiscoverySession,
-  discoveryScreenUrl as buildDiscoveryScreenUrl,
-  getDiscoveryCoverage,
-  getDiscoverySuggestion,
-  listDiscoverySessions,
-  renameDiscoverySession,
-  promoteDiscoveryPath,
-  setDiscoveryStatus,
-} from "../lib/server-discovery-remote";
+import { createServerDiscoveryController } from "../lib/server-discovery-controller";
 import {
   listActions,
   listDevices,
@@ -154,10 +137,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     // Reopen the last App Map like a document editor. Hardware selection and
     // the live-device panel remain separate state, so resuming the canvas does
     // not imply that a recording has started.
+    // App Maps and recipes are independent selections — never cross-assign ids.
     const [selectedAppMapId, setSelectedAppMapIdState] = createSignal<string | null>(null);
     function setSelectedAppMapId(id: string | null): void {
       setSelectedAppMapIdState(id);
       void Promise.resolve(platform.storage.set("selectedAppMap", id ?? "")).catch(() => undefined);
+    }
+    const [selectedRecipeId, setSelectedRecipeIdState] = createSignal<string | null>(null);
+    function setSelectedRecipeId(id: string | null): void {
+      setSelectedRecipeIdState(id);
+      void Promise.resolve(platform.storage.set("selectedRecipe", id ?? "")).catch(() => undefined);
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
@@ -499,99 +488,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function refreshDiscoverySessions() {
-      if (health() === "offline") return;
-      const data = await listDiscoverySessions(request);
-      setDiscoverySessions(data.sessions ?? []);
-      if (
-        activeDiscoverySessionId() &&
-        !data.sessions.some((session) => session.id === activeDiscoverySessionId())
-      ) {
-        setActiveDiscoverySessionId(null);
-      }
-    }
-
-    async function createDiscoverySessionRemote(input: {
-      name: string;
-      targetId: string;
-      scope?: Partial<DiscoveryScope>;
-      agent?: Omit<DiscoveryAgentContext, "createdBy">;
-    }): Promise<DiscoverySession> {
-      const session = await createDiscoverySession(request, input);
-      await refreshDiscoverySessions();
-      setActiveDiscoverySessionId(session.id);
-      return session;
-    }
-
-    async function setDiscoveryStatusRemote(
-      id: string,
-      status: DiscoverySession["status"],
-    ): Promise<DiscoverySession> {
-      const session = await setDiscoveryStatus(request, id, status);
-      await refreshDiscoverySessions();
-      if (status === "running") setActiveDiscoverySessionId(session.id);
-      else if (activeDiscoverySessionId() === session.id) setActiveDiscoverySessionId(null);
-      return session;
-    }
-
-    async function renameDiscoverySessionRemote(
-      id: string,
-      name: string,
-    ): Promise<DiscoverySession> {
-      const session = await renameDiscoverySession(request, id, name);
-      await refreshDiscoverySessions();
-      return session;
-    }
-
-    async function captureDiscoveryScreenRemote(id: string): Promise<DiscoverySession> {
-      const session = await captureDiscoveryScreen(request, id);
-      await refreshDiscoverySessions();
-      return session;
-    }
-
-    function discoveryScreenUrl(sessionId: string, screenId: string): string {
-      return buildDiscoveryScreenUrl(serverUrl(), sessionId, screenId);
-    }
-
-    async function promoteDiscoveryPathRemote(input: {
-      sessionId: string;
-      transitionIds: string[];
-      recipeId: string;
-      title: string;
-      transitionLabels?: Record<string, string>;
-    }): Promise<{ recipe: RecipeInfo; warnings: string[] }> {
-      const data = await promoteDiscoveryPath(request, input);
-      await refreshRecipes();
-      setSelectedAppMapId(data.recipe.id);
-      return data;
-    }
-
-    async function discoverySuggestion(id: string): Promise<{
-      screenId: string;
-      control: DiscoveryControl;
-    } | null> {
-      return getDiscoverySuggestion(request, id);
-    }
-
-    async function loadDiscoveryCoverage(id: string): Promise<DiscoveryCoverageReport> {
-      return getDiscoveryCoverage(request, id);
-    }
-
-    async function approveDiscoverySuggestion(input: {
-      sessionId: string;
-      control: DiscoveryControl;
-      decision?: DiscoveryDecisionProvenance;
-    }): Promise<void> {
-      await approveDiscoverySuggestionRemote(request, input);
-      await refreshDiscoverySessions();
-    }
-
-    async function backtrackDiscovery(id: string): Promise<boolean> {
-      const changed = await backtrackDiscoveryRemote(request, id);
-      await refreshDiscoverySessions();
-      return changed;
-    }
-
     async function refreshRecipes() {
       if (health() === "offline") return;
       try {
@@ -603,6 +499,29 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         /* ignore — recipes are non-critical for connectivity UX */
       }
     }
+
+    const {
+      refreshDiscoverySessions,
+      createDiscoverySessionRemote,
+      setDiscoveryStatusRemote,
+      renameDiscoverySessionRemote,
+      captureDiscoveryScreenRemote,
+      discoveryScreenUrl,
+      promoteDiscoveryPathRemote,
+      discoverySuggestion,
+      loadDiscoveryCoverage,
+      approveDiscoverySuggestion,
+      backtrackDiscovery,
+    } = createServerDiscoveryController({
+      request,
+      health,
+      serverUrl,
+      discoverySessions,
+      setDiscoverySessions,
+      activeDiscoverySessionId,
+      setActiveDiscoverySessionId,
+      refreshRecipes,
+    });
 
     async function refreshAppMaps(): Promise<AppMap[]> {
       if (health() === "offline") return appMaps();
@@ -1467,7 +1386,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const recipe = await importRecipeYamlRemote(request, yaml, conflict);
         await refreshRecipes();
-        setSelectedAppMapId(recipe.id);
         toast(`Imported “${recipe.title}”`, "success");
         return recipe;
       } catch (err) {
@@ -1495,9 +1413,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function deleteRecipeRemote(id: string): Promise<void> {
       try {
         await deleteRecipe(request, id);
-        if (selectedAppMapId() === id) setSelectedAppMapId(null);
+        if (selectedRecipeId() === id) setSelectedRecipeId(null);
         await refreshRecipes();
-        toast("Map deleted", "success");
+        toast("Test deleted", "success");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
@@ -1577,6 +1495,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } catch {
         /* ignore */
       }
+      try {
+        const savedRecipe = await platform.storage.get("selectedRecipe");
+        if (savedRecipe) setSelectedRecipeIdState(savedRecipe);
+      } catch {
+        /* ignore */
+      }
       await pollHealth();
       if (health() === "online") {
         await Promise.all([
@@ -1602,6 +1526,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             (left, right) => right.updatedAt - left.updatedAt,
           )[0];
           if (latestMap) setSelectedAppMapId(latestMap.id);
+        }
+        const selectedTestId = selectedRecipeId();
+        if (selectedTestId && !recipes().some((recipe) => recipe.id === selectedTestId)) {
+          setSelectedRecipeId(null);
         }
         connectSse();
       }
@@ -1742,7 +1670,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       () => appMaps().find((appMap) => appMap.id === selectedAppMapId()) ?? null,
     );
     const selectedRecipe = createMemo(
-      () => recipes().find((recipe) => recipe.id === selectedAppMapId()) ?? null,
+      () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
     );
 
     return {
@@ -1791,6 +1719,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedAppMapId,
       setSelectedAppMapId,
       selectedAppMap,
+      selectedRecipeId,
+      setSelectedRecipeId,
       selectedRecipe,
       jobs,
       persistedRuns,

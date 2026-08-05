@@ -755,7 +755,10 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.observations.propose">,
       "appMapId"
     >;
-    const session = await readDiscoverySession(body.sessionId);
+    const session = await readDiscoverySession(
+      body.sessionId,
+      scope.localTrusted ? undefined : { projectId: scope.projectId },
+    );
     if (!session) throw new HttpError(404, `Observation session ${body.sessionId} not found`);
     const operation = currentOperationContext();
     if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
