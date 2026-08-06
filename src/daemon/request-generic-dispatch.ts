@@ -19,7 +19,8 @@ import {
   augmentScrollVisualizationResult,
   recordTouchVisualizationEvent,
 } from './recording-gestures.ts';
-import { normalizeError } from '@agent-device/kernel/errors';
+import { AppError, normalizeError } from '@agent-device/kernel/errors';
+import { retiredScreenshotMaxSizeFlagError } from '@agent-device/contracts/capture';
 import { expireRefFrame } from './ref-frame.ts';
 import {
   resolveRefFrameEffect,
@@ -195,6 +196,8 @@ async function executeScreenshotPlatformCommand(params: {
   dispatchContext: DaemonCommandContext;
 }): Promise<Record<string, unknown>> {
   const { session, request, positionals, out, dispatchContext } = params;
+  const retiredMaxSize = retiredScreenshotMaxSizeFlagError('screenshot', request.flags);
+  if (retiredMaxSize) throw new AppError('INVALID_ARGS', retiredMaxSize);
   assertSupportedScreenshotPixelDensity(session.device, request.flags?.screenshotPixelDensity);
   const data = await dispatchScreenshotViaRuntime({
     session,
@@ -215,7 +218,7 @@ async function executeScreenshotPlatformCommand(params: {
       device: session.device,
       path: data.path,
       requestedPixelDensity: request.flags?.screenshotPixelDensity,
-      maxSize: request.flags?.screenshotMaxSize,
+      scale: request.flags?.screenshotScale,
     }),
   );
   return data;

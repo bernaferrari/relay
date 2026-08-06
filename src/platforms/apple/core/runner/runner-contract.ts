@@ -90,7 +90,6 @@ export type RunnerCommand = {
   gesturePlan?: GesturePlan;
   outPath?: string;
   fps?: number;
-  maxSize?: number;
   interactiveOnly?: boolean;
   /** Pin the snapshot capture backend (same-backend evidence probes). */
   preferredBackend?: 'private-ax';

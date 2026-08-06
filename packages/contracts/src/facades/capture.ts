@@ -1,12 +1,18 @@
 export type { DiffSnapshotCommandResult, SnapshotDiffLine, SnapshotDiffSummary } from '../diff.ts';
 export {
+  RETIRED_SCREENSHOT_MAX_SIZE,
   SCREENSHOT_ACTION_FLAG_KEYS,
   SCREENSHOT_COMMAND_FLAG_KEYS,
+  SCREENSHOT_SCALE_LIMITS,
   SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS,
   appendScreenshotScriptFlags,
   readScreenshotScriptFlag,
+  retiredScreenshotMaxSizeFlagError,
   screenshotFlagsFromOptions,
+  screenshotFlagsFromPublicOptions,
   screenshotOptionsFromFlags,
+  validateNoRetiredScreenshotMaxSize,
+  validateScreenshotScale,
 } from '../screenshot.ts';
 export type {
   ScreenshotDispatchFlags,
