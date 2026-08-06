@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import { pruneDeadDeviceClaims } from '../device-claims.ts';
 import { resolveDeviceClaimPath } from '../device-claim-paths.ts';
 import { acquireProcessLock } from '../../utils/process-lock.ts';
 import { readCurrentOwnerIdentity } from '../../utils/owner-identity.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+
+vi.mock('../../utils/host-process.ts', async (importOriginal) =>
+  (await import('../../__tests__/test-utils/host-process-mock.ts')).pinOwnProcessStartTime(
+    importOriginal,
+  ),
+);
 
 const previousClaimsDir = process.env.AGENT_DEVICE_CLAIMS_DIR;
 
