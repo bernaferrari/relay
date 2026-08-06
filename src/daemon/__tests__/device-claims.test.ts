@@ -12,6 +12,12 @@ import { inspectDeviceClaims } from '../device-claim-inspection.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
+vi.mock('../../utils/host-process.ts', async (importOriginal) =>
+  (await import('../../__tests__/test-utils/host-process-mock.ts')).pinOwnProcessStartTime(
+    importOriginal,
+  ),
+);
+
 const device: DeviceInfo = {
   platform: 'android',
   id: 'emulator-5554',
