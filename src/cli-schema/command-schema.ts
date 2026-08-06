@@ -7,14 +7,10 @@ import {
   COMMON_COMMAND_SUPPORTED_FLAG_KEYS,
   GLOBAL_FLAG_KEYS,
 } from '../commands/cli-grammar/flag-groups.ts';
-import {
-  type CliFlags,
-  type FlagDefinition,
-  type FlagKey,
-} from '../commands/cli-grammar/flag-types.ts';
+import { type FlagDefinition, type FlagKey } from '../commands/cli-grammar/flag-types.ts';
 import { AppError } from '@agent-device/kernel/errors';
 
-export type { CliFlags, FlagDefinition, FlagKey };
+export type { FlagDefinition, FlagKey };
 export type { CommandSchema };
 export { getFlagDefinition, getFlagDefinitions, GLOBAL_FLAG_KEYS };
 
