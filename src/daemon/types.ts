@@ -528,4 +528,3 @@ export type SessionState = {
 
 // The recorded-action SHAPE lives in contracts/ so replay/ and compat/ can read a script
 // without depending on the server; re-exported here for the daemon's own consumers.
-export type { SessionAction } from '@agent-device/contracts/session';
