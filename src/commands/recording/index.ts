@@ -1,5 +1,9 @@
 import type { RecordOptions } from '@agent-device/contracts/client';
 import {
+  RETIRED_SCREENSHOT_MAX_SIZE,
+  validateNoRetiredScreenshotMaxSize,
+} from '@agent-device/contracts/capture';
+import {
   RECORDING_EXPORT_QUALITIES,
   RECORDING_SCOPE_VALUES,
 } from '@agent-device/contracts/recording';
@@ -13,6 +17,7 @@ import {
   enumField,
   integerField,
   requiredField,
+  retiredField,
   stringField,
 } from '../command-input.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
@@ -35,7 +40,7 @@ export const recordCommandMetadata = defineFieldCommandMetadata(
     action: requiredField(enumField(RECORDING_ACTION_VALUES)),
     path: stringField(),
     fps: integerField(),
-    maxSize: integerField(),
+    maxSize: retiredField(RETIRED_SCREENSHOT_MAX_SIZE.migration.record),
     quality: enumField(RECORDING_EXPORT_QUALITIES),
     hideTouches: booleanField(),
     recordingScope: enumField(RECORDING_SCOPE_VALUES),
@@ -63,10 +68,10 @@ export const traceCommandDefinition = defineExecutableCommand(
 
 const recordCliSchema = {
   usageOverride:
-    'record start [path] [--scope <app|device|system>] [--fps <n>] [--max-size <px>] [--quality <medium|high>] [--hide-touches] | record stop',
+    'record start [path] [--scope <app|device|system>] [--fps <n>] [--quality <medium|high>] [--hide-touches] | record stop',
   listUsageOverride: 'record start [path] | record stop',
   positionalArgs: ['start|stop', 'path?'],
-  allowedFlags: ['recordingScope', 'fps', 'screenshotMaxSize', 'quality', 'hideTouches'],
+  allowedFlags: ['recordingScope', 'fps', 'quality', 'hideTouches'],
 } as const satisfies CommandSchemaOverride;
 
 const traceCliSchema = {
@@ -80,7 +85,6 @@ export const recordCliReader: CliReader = (positionals, flags) => ({
   action: readRecordingAction(positionals[0], RECORD_COMMAND_NAME),
   path: positionals[1],
   fps: flags.fps,
-  maxSize: flags.screenshotMaxSize,
   quality: flags.quality as RecordOptions['quality'],
   hideTouches: flags.hideTouches,
   recordingScope: flags.recordingScope,
@@ -92,9 +96,14 @@ export const traceCliReader: CliReader = (positionals, flags) => ({
   path: positionals[1],
 });
 
-export const recordDaemonWriter: DaemonWriter = direct(RECORD_COMMAND_NAME, (input) =>
+const recordDirectWriter = direct(RECORD_COMMAND_NAME, (input) =>
   recordingPositionals(input as RecordOptions),
 );
+
+export const recordDaemonWriter: DaemonWriter = (input) => {
+  validateNoRetiredScreenshotMaxSize('record', input);
+  return recordDirectWriter(input);
+};
 
 export const traceDaemonWriter: DaemonWriter = direct(TRACE_COMMAND_NAME, (input) =>
   recordingPositionals(input as RecordOptions),
@@ -105,7 +114,7 @@ const recordCommandFacet = defineCommandFacet({
   text: {
     summary: 'Start or stop screen recording',
     cliDetail:
-      'The default --scope app requires an active app session from open <app>; use --scope device/system to explicitly request whole-screen recording where the selected backend supports it. Android record start publishes a durable device manifest, recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks while the daemon stays alive, and daemon-restart recovery uses only manifest-owned chunks. Use --max-size to limit dimensions and --quality to choose medium or high export quality.',
+      'The default --scope app requires an active app session from open <app>; use --scope device/system to explicitly request whole-screen recording where the selected backend supports it. Android record start publishes a durable device manifest, recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks while the daemon stays alive, and daemon-restart recovery uses only manifest-owned chunks. Use --quality to choose medium or high export quality.',
   },
   metadata: recordCommandMetadata,
   definition: recordCommandDefinition,

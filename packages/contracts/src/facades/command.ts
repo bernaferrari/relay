@@ -10,7 +10,7 @@ export type { DaemonBatchStep } from '../batch-step.ts';
 export type { CliFlags, DaemonExcludedCliFlag } from '../cli-flags.ts';
 export type { CommandFlags, MaestroRuntimeFlags } from '../command-flags.ts';
 export type { DispatchedCommand } from '../dispatched-command.ts';
-export { readOptionalInteger } from '../input-validation.ts';
+export { readOptionalInteger, readOptionalNumber } from '../input-validation.ts';
 export {
   IOS_SAFARI_BUNDLE_ID,
   isDeepLinkTarget,

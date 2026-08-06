@@ -4,7 +4,10 @@ import type {
   ElementTarget,
   InteractionTarget,
 } from '@agent-device/contracts/client';
-import { readOptionalInteger as optionalInteger } from '@agent-device/contracts/command';
+import {
+  readOptionalInteger as optionalInteger,
+  readOptionalNumber as optionalNumberValue,
+} from '@agent-device/contracts/command';
 import {
   DEVICE_TARGETS,
   PLATFORM_SELECTORS,
@@ -91,8 +94,16 @@ export function stringSchema(description?: string): JsonSchema {
   return { type: 'string', ...(description ? { description } : {}) };
 }
 
-function numberSchema(description?: string): JsonSchema {
-  return { type: 'number', ...(description ? { description } : {}) };
+function numberSchema(
+  description?: string,
+  options: { min?: number; max?: number } = {},
+): JsonSchema {
+  return {
+    type: 'number',
+    ...(description ? { description } : {}),
+    ...(options.min === undefined ? {} : { minimum: options.min }),
+    ...(options.max === undefined ? {} : { maximum: options.max }),
+  };
 }
 
 function integerSchema(description?: string): JsonSchema {
@@ -125,6 +136,7 @@ export type CommandField<T> = {
   schema: JsonSchema;
   required: boolean;
   read: FieldReader<T>;
+  retired?: true;
 };
 
 export type CommandFieldMap = Record<string, CommandField<unknown>>;
@@ -156,8 +168,33 @@ export function stringField(description?: string): CommandField<string> {
   return optionalField(stringSchema(description), optionalString);
 }
 
-export function numberField(description?: string): CommandField<number> {
-  return optionalField(numberSchema(description), optionalNumberValue);
+/**
+ * A released input key that was removed. Declared in the field map so the
+ * projection seam (`readFieldInput`) refuses it with migration guidance
+ * instead of silently dropping it; excluded from the JSON schema so tools no
+ * longer advertise it.
+ */
+export function retiredField(message: string): CommandField<never> {
+  return {
+    schema: { type: 'null' },
+    required: false,
+    retired: true,
+    read: (record, key) => {
+      if (Object.hasOwn(record, key)) {
+        throw new AppError('INVALID_ARGS', message);
+      }
+      return undefined;
+    },
+  };
+}
+
+export function numberField(
+  description?: string,
+  options: { min?: number; max?: number } = {},
+): CommandField<number> {
+  return optionalField(numberSchema(description, options), (record, key) =>
+    optionalNumberValue(record, key, options),
+  );
 }
 
 export function integerField(
@@ -387,15 +424,6 @@ function requiredNumber(record: Record<string, unknown>, key: string): number {
   return value;
 }
 
-function optionalNumberValue(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a finite number.`);
-  }
-  return value;
-}
-
 function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key];
   if (value === undefined) return undefined;
@@ -531,7 +559,11 @@ function integerSchemaWithBounds(
 }
 
 function fieldProperties(fields: CommandFieldMap): Record<string, JsonSchema> {
-  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.schema]));
+  return Object.fromEntries(
+    Object.entries(fields)
+      .filter(([, field]) => !field.retired)
+      .map(([key, field]) => [key, field.schema]),
+  );
 }
 
 function requiredFieldNames(fields: CommandFieldMap): string[] {

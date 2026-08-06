@@ -2,11 +2,22 @@ import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import type { CaptureScreenshotOptions } from '@agent-device/contracts/client';
 import { SESSION_SURFACES } from '@agent-device/contracts/session';
 import {
+  RETIRED_SCREENSHOT_MAX_SIZE,
   SCREENSHOT_COMMAND_FLAG_KEYS,
-  screenshotFlagsFromOptions,
+  SCREENSHOT_SCALE_LIMITS,
+  screenshotFlagsFromPublicOptions,
   screenshotOptionsFromFlags,
+  validateNoRetiredScreenshotMaxSize,
+  validateScreenshotScale,
 } from '@agent-device/contracts/capture';
-import { booleanField, enumField, integerField, stringField } from '../command-input.ts';
+import {
+  booleanField,
+  enumField,
+  integerField,
+  numberField,
+  retiredField,
+  stringField,
+} from '../command-input.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
 import { commonInputFromFlags, optionalString, request } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
@@ -28,7 +39,8 @@ const screenshotCommandMetadata = defineFieldCommandMetadata(
       min: 1,
     }),
     fullscreen: booleanField(),
-    maxSize: integerField(),
+    scale: numberField('Screenshot scale factor.', SCREENSHOT_SCALE_LIMITS),
+    maxSize: retiredField(RETIRED_SCREENSHOT_MAX_SIZE.migration.screenshot),
     stabilize: booleanField(),
     normalizeStatusBar: booleanField(),
     surface: enumField(SESSION_SURFACES),
@@ -51,18 +63,21 @@ export const screenshotCliReader: CliReader = (positionals, flags) => ({
   ...screenshotOptionsFromFlags(flags),
 });
 
-export const screenshotDaemonWriter: DaemonWriter = (input) =>
-  request(PUBLIC_COMMANDS.screenshot, optionalString(input.path), {
+export const screenshotDaemonWriter: DaemonWriter = (input) => {
+  validateNoRetiredScreenshotMaxSize('screenshot', input);
+  validateScreenshotScale(input as CaptureScreenshotOptions);
+  return request(PUBLIC_COMMANDS.screenshot, optionalString(input.path), {
     ...input,
-    ...screenshotFlagsFromOptions(input as CaptureScreenshotOptions),
+    ...screenshotFlagsFromPublicOptions(input as CaptureScreenshotOptions),
   });
+};
 
 export const screenshotCommandFacet = defineCommandFacet({
   name: SCREENSHOT_COMMAND_NAME,
   text: {
     summary: 'Capture a screenshot',
     cliDetail:
-      'Web defaults to the viewport; use --fullscreen, --full, or -f for the entire page. iOS simulators default to 1x logical-point output; use --pixel-density to request a different screenshot density. macOS app sessions default to the app window; use --fullscreen for full desktop, --max-size to downscale, --overlay-refs to annotate current refs, --normalize-status-bar for deterministic iOS simulator chrome, or --no-stabilize for low-latency Android capture loops.',
+      'Web defaults to the viewport; use --fullscreen, --full, or -f for the entire page. iOS simulators default to 1x logical-point output; use --pixel-density to request a different screenshot density. macOS app sessions default to the app window; use --fullscreen for full desktop, --scale to downscale, --overlay-refs to annotate current refs, --normalize-status-bar for deterministic iOS simulator chrome, or --no-stabilize for low-latency Android capture loops.',
   },
   metadata: screenshotCommandMetadata,
   definition: screenshotCommandDefinition,

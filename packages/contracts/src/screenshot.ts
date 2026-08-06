@@ -1,11 +1,55 @@
 import { AppError } from '@agent-device/kernel/errors';
 
+export const SCREENSHOT_SCALE_LIMITS = { min: 0.01, max: 1 } as const;
+
+/**
+ * `--max-size` shipped in released CLIs, `.ad` scripts, Node options
+ * (`maxSize`), request flags (`screenshotMaxSize`), and the derived
+ * `AGENT_DEVICE_SCREENSHOT_MAX_SIZE` env var. Every surface that used to honor
+ * it must refuse with this migration guidance — sizing must never disappear
+ * silently.
+ */
+export const RETIRED_SCREENSHOT_MAX_SIZE = {
+  flagKey: 'screenshotMaxSize',
+  cliToken: '--max-size',
+  envVar: 'AGENT_DEVICE_SCREENSHOT_MAX_SIZE',
+  publicOptionKey: 'maxSize',
+  migration: {
+    screenshot:
+      'screenshot --max-size was removed; use --scale <0.01-1> (or AGENT_DEVICE_SCREENSHOT_SCALE) to downscale proportionally',
+    record: 'record --max-size was removed; recordings capture at native resolution',
+  },
+} as const;
+
+type RetiredMaxSizeCommand = keyof typeof RETIRED_SCREENSHOT_MAX_SIZE.migration;
+
+export function retiredScreenshotMaxSizeFlagError(
+  command: RetiredMaxSizeCommand,
+  flags: object | undefined,
+): string | undefined {
+  return flags && Object.hasOwn(flags, RETIRED_SCREENSHOT_MAX_SIZE.flagKey)
+    ? RETIRED_SCREENSHOT_MAX_SIZE.migration[command]
+    : undefined;
+}
+
+export function validateNoRetiredScreenshotMaxSize(
+  command: RetiredMaxSizeCommand,
+  input: object,
+): void {
+  if (
+    Object.hasOwn(input, RETIRED_SCREENSHOT_MAX_SIZE.publicOptionKey) ||
+    Object.hasOwn(input, RETIRED_SCREENSHOT_MAX_SIZE.flagKey)
+  ) {
+    throw new AppError('INVALID_ARGS', RETIRED_SCREENSHOT_MAX_SIZE.migration[command]);
+  }
+}
+
 export const SCREENSHOT_COMMAND_FLAG_KEYS = [
   'out',
   'overlayRefs',
   'screenshotPixelDensity',
   'screenshotFullscreen',
-  'screenshotMaxSize',
+  'screenshotScale',
   'screenshotNoStabilize',
   'screenshotNormalizeStatusBar',
 ] as const;
@@ -13,7 +57,7 @@ export const SCREENSHOT_COMMAND_FLAG_KEYS = [
 export const SCREENSHOT_ACTION_FLAG_KEYS = [
   'screenshotPixelDensity',
   'screenshotFullscreen',
-  'screenshotMaxSize',
+  'screenshotScale',
   'screenshotNoStabilize',
   'screenshotNormalizeStatusBar',
 ] as const;
@@ -23,8 +67,9 @@ type ScreenshotSpecificFlagKey = (typeof SCREENSHOT_ACTION_FLAG_KEYS)[number];
 type ScreenshotSpecificFlagDefinition = {
   key: ScreenshotSpecificFlagKey;
   names: readonly string[];
-  type: 'boolean' | 'int';
+  type: 'boolean' | 'int' | 'number';
   min?: number;
+  max?: number;
   usageLabel: string;
   usageDescription: string;
 };
@@ -48,12 +93,14 @@ export const SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS: readonly ScreenshotSpecificFl
       'Screenshot: on web capture the full page; on macOS app sessions capture the full desktop instead of the app window',
   },
   {
-    key: 'screenshotMaxSize',
-    names: ['--max-size'],
-    type: 'int',
-    min: 1,
-    usageLabel: '--max-size <px>',
-    usageDescription: 'Screenshot/record: downscale so the longest edge is at most <px>',
+    key: 'screenshotScale',
+    names: ['--scale'],
+    type: 'number',
+    min: SCREENSHOT_SCALE_LIMITS.min,
+    max: SCREENSHOT_SCALE_LIMITS.max,
+    usageLabel: '--scale <0.01-1>',
+    usageDescription:
+      'Screenshot: resize both dimensions by this factor (or use AGENT_DEVICE_SCREENSHOT_SCALE)',
   },
   {
     key: 'screenshotNoStabilize',
@@ -85,7 +132,16 @@ const SCREENSHOT_SCRIPT_INT_FLAGS = [
     key: 'screenshotPixelDensity',
     label: 'screenshot --pixel-density',
   },
-  { token: '--max-size', key: 'screenshotMaxSize', label: 'screenshot --max-size' },
+] as const;
+
+const SCREENSHOT_SCRIPT_NUMBER_FLAGS = [
+  {
+    token: '--scale',
+    key: 'screenshotScale',
+    label: 'screenshot --scale',
+    min: SCREENSHOT_SCALE_LIMITS.min,
+    max: SCREENSHOT_SCALE_LIMITS.max,
+  },
 ] as const;
 
 export type ScreenshotRequestFlags = {
@@ -93,7 +149,7 @@ export type ScreenshotRequestFlags = {
   overlayRefs?: boolean;
   screenshotPixelDensity?: number;
   screenshotFullscreen?: boolean;
-  screenshotMaxSize?: number;
+  screenshotScale?: number;
   screenshotNoStabilize?: boolean;
   screenshotNormalizeStatusBar?: boolean;
 };
@@ -110,7 +166,7 @@ export type ScreenshotRuntimeFlags = Pick<
   ScreenshotRequestFlags,
   | 'screenshotPixelDensity'
   | 'screenshotFullscreen'
-  | 'screenshotMaxSize'
+  | 'screenshotScale'
   | 'screenshotNoStabilize'
   | 'screenshotNormalizeStatusBar'
 >;
@@ -119,7 +175,7 @@ export type ScreenshotPublicOptions = {
   overlayRefs?: boolean;
   pixelDensity?: number;
   fullscreen?: boolean;
-  maxSize?: number;
+  scale?: number;
   stabilize?: boolean;
   normalizeStatusBar?: boolean;
 };
@@ -128,7 +184,7 @@ export type ScreenshotRuntimeOptions = {
   overlayRefs?: boolean;
   pixelDensity?: number;
   fullscreen?: boolean;
-  maxSize?: number;
+  scale?: number;
   stabilize?: boolean;
   normalizeStatusBar?: boolean;
 };
@@ -140,7 +196,7 @@ export function screenshotOptionsFromFlags(
     overlayRefs: flags?.overlayRefs,
     pixelDensity: flags?.screenshotPixelDensity,
     fullscreen: flags?.screenshotFullscreen,
-    maxSize: flags?.screenshotMaxSize,
+    scale: flags?.screenshotScale,
     stabilize: flags?.screenshotNoStabilize ? false : undefined,
     normalizeStatusBar: flags?.screenshotNormalizeStatusBar,
   });
@@ -153,12 +209,36 @@ export function screenshotFlagsFromOptions(
     overlayRefs: options.overlayRefs,
     screenshotPixelDensity: options.screenshotPixelDensity ?? options.pixelDensity,
     screenshotFullscreen: options.screenshotFullscreen ?? options.fullscreen,
-    screenshotMaxSize: options.screenshotMaxSize ?? options.maxSize,
+    screenshotScale: options.screenshotScale,
     screenshotNoStabilize:
       options.screenshotNoStabilize ?? (options.stabilize === false ? true : undefined),
     screenshotNormalizeStatusBar:
       options.screenshotNormalizeStatusBar ?? options.normalizeStatusBar,
   });
+}
+
+/**
+ * Also maps the public `scale` option. `screenshotFlagsFromOptions` is fed
+ * generic cross-command option bags where a bare `scale` key belongs to the
+ * pinch gesture, so only this screenshot-boundary projection may read it.
+ */
+export function screenshotFlagsFromPublicOptions(
+  options: ScreenshotPublicOptions & Partial<ScreenshotRequestFlags> = {},
+): Partial<ScreenshotRequestFlags> {
+  return screenshotFlagsFromOptions({
+    ...options,
+    screenshotScale: options.screenshotScale ?? options.scale,
+  });
+}
+
+export function validateScreenshotScale(options: Pick<ScreenshotPublicOptions, 'scale'>): void {
+  const { min, max } = SCREENSHOT_SCALE_LIMITS;
+  if (
+    options.scale !== undefined &&
+    (!Number.isFinite(options.scale) || options.scale < min || options.scale > max)
+  ) {
+    throw new AppError('INVALID_ARGS', `screenshot scale must be between ${min} and ${max}`);
+  }
 }
 
 export function appendScreenshotScriptFlags(
@@ -169,8 +249,8 @@ export function appendScreenshotScriptFlags(
     parts.push('--pixel-density', String(flags.screenshotPixelDensity));
   }
   if (flags?.screenshotFullscreen) parts.push('--fullscreen');
-  if (typeof flags?.screenshotMaxSize === 'number') {
-    parts.push('--max-size', String(flags.screenshotMaxSize));
+  if (typeof flags?.screenshotScale === 'number') {
+    parts.push('--scale', String(flags.screenshotScale));
   }
   if (flags?.screenshotNoStabilize) parts.push('--no-stabilize');
   if (flags?.screenshotNormalizeStatusBar) parts.push('--normalize-status-bar');
@@ -183,9 +263,13 @@ export function readScreenshotScriptFlag(params: {
 }): { handled: true; nextIndex: number } | { handled: false } {
   const { args, flags, index } = params;
   const token = args[index];
+  if (token === RETIRED_SCREENSHOT_MAX_SIZE.cliToken) {
+    throw new AppError('INVALID_ARGS', RETIRED_SCREENSHOT_MAX_SIZE.migration.screenshot);
+  }
   return (
     readScreenshotBooleanScriptFlag(token, flags, index) ??
-    readScreenshotIntScriptFlag({ args, index, flags, token }) ?? { handled: false }
+    readScreenshotIntScriptFlag({ args, index, flags, token }) ??
+    readScreenshotNumberScriptFlag({ args, index, flags, token }) ?? { handled: false }
   );
 }
 
@@ -214,10 +298,28 @@ function readScreenshotIntScriptFlag(params: {
 }): { handled: true; nextIndex: number } | undefined {
   const definition = SCREENSHOT_SCRIPT_INT_FLAGS.find((entry) => entry.token === params.token);
   if (!definition) return undefined;
-  const value = params.args[params.index + 1];
-  const parsed = value === undefined ? NaN : Number(value);
+  const parsed = Number(params.args[params.index + 1]);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new AppError('INVALID_ARGS', `${definition.label} requires a positive integer`);
+  }
+  params.flags[definition.key] = parsed;
+  return { handled: true, nextIndex: params.index + 1 };
+}
+
+function readScreenshotNumberScriptFlag(params: {
+  args: readonly string[];
+  index: number;
+  flags: Partial<ScreenshotRequestFlags>;
+  token: string | undefined;
+}): { handled: true; nextIndex: number } | undefined {
+  const definition = SCREENSHOT_SCRIPT_NUMBER_FLAGS.find((entry) => entry.token === params.token);
+  if (!definition) return undefined;
+  const parsed = Number(params.args[params.index + 1]);
+  if (!Number.isFinite(parsed) || parsed < definition.min || parsed > definition.max) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `${definition.label} requires a number from ${definition.min} to ${definition.max}`,
+    );
   }
   params.flags[definition.key] = parsed;
   return { handled: true, nextIndex: params.index + 1 };

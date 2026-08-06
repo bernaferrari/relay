@@ -1218,6 +1218,61 @@ test('capture.screenshot normalizes the default-level result (unchanged)', async
   assert.deepEqual(result.identifiers, { session: 'qa' });
 });
 
+test('capture.screenshot forwards public scale as the screenshot sizing flag', async () => {
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'screenshot');
+    assert.equal(req.flags?.screenshotScale, 0.3);
+    return { ok: true, data: { path: '/tmp/shot.png' } };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await client.capture.screenshot({ scale: 0.3 });
+});
+
+test('gesture scale does not leak into screenshot sizing flags', async () => {
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'gesture');
+    assert.deepEqual(req.input, { kind: 'pinch', scale: 0.8 });
+    assert.equal(req.flags?.screenshotScale, undefined);
+    return { ok: true, data: {} };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await client.interactions.pinch({ scale: 0.8 });
+});
+
+// Released Node callers passed `{ maxSize }`; it must be refused with migration
+// guidance instead of being silently dropped into a native-size capture.
+test('capture.screenshot rejects the removed maxSize option before transport', async () => {
+  const setup = createTransport(async () => {
+    throw new Error('transport should not be reached for a retired option');
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await assert.rejects(
+    () =>
+      client.capture.screenshot({ maxSize: 1024 } as Parameters<
+        typeof client.capture.screenshot
+      >[0]),
+    /screenshot --max-size was removed; use --scale/,
+  );
+});
+
+test('recording.record rejects the removed maxSize option before transport', async () => {
+  const setup = createTransport(async () => {
+    throw new Error('transport should not be reached for a retired option');
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await assert.rejects(
+    () =>
+      client.recording.record({ action: 'start', maxSize: 720 } as Parameters<
+        typeof client.recording.record
+      >[0]),
+    /record --max-size was removed/,
+  );
+});
+
 test('capture.snapshot passes a digest (non-default level) payload through unnormalized', async () => {
   const digest = {
     nodeCount: 3,
