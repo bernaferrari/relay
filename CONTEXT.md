@@ -61,6 +61,13 @@ task touches:
 - Daemon RPC protocol version: integer advertised by daemon/proxy `/health` and checked by remote
   clients before HTTP JSON-RPC; bump only for breaking transport/request/response compatibility
   across the remote daemon boundary.
+- Version-skew invariant: a client replaces any local daemon whose version or code signature
+  differs (`isReusableDaemonInfo`, both directions), so local client↔daemon skew cannot exist.
+  Version-skew compat code is legitimate on exactly four axes and its comment must name one:
+  the remote daemon boundary (the protocol version gates breaking changes only — older remote
+  daemons silently ignore additive optional fields), separately versioned runner/helper binaries,
+  persisted artifacts (`.ad`/config/env/session logs — handle or refuse with migration guidance,
+  forever), and released API consumers. "Older local daemon" tolerance is dead code.
 
 ### Interaction, refs, and guarantees
 
