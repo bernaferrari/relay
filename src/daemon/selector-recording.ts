@@ -1,5 +1,6 @@
 import type { DaemonRequest } from './types.ts';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import type { FindReadResult } from '@agent-device/contracts/interaction';
 import { stripAndroidSystemChromeProvenanceFromNode } from '@agent-device/contracts/platform';
 import { SessionStore } from './session-store.ts';
 import { isInteractiveObservation } from './session-action-recorder.ts';
@@ -11,11 +12,17 @@ import {
 
 export function buildFindRecordResult(
   result: Record<string, unknown>,
-  action: 'exists' | 'wait' | 'get_text' | 'get_attrs',
+  action: 'exists' | 'wait' | 'get_text' | 'get_attrs' | 'list',
 ): Record<string, unknown> {
   if (action === 'exists') return { found: true };
   if (action === 'wait') {
     return { found: true, waitedMs: result.waitedMs };
+  }
+  if (action === 'list') {
+    return {
+      action: 'list',
+      matches: Array.isArray(result.matches) ? result.matches.length : 0,
+    };
   }
   const ref = typeof result.ref === 'string' ? result.ref : undefined;
   if (action === 'get_attrs') return { ref, action: 'get attrs' };
@@ -26,16 +33,23 @@ export function buildFindRecordResult(
   };
 }
 
-type DaemonFindResult =
-  | { kind: 'found'; waitedMs?: number }
-  | { kind: 'text'; ref: string; text: string; node: SnapshotNode }
-  | { kind: 'attrs'; ref: string; node: SnapshotNode };
+// The daemon consumes the engine's find result verbatim; the shape lives in
+// contracts (below both zones) per R2.
+type DaemonFindResult = FindReadResult;
 
 export function toDaemonFindData(result: DaemonFindResult): Record<string, unknown> {
   if (result.kind === 'found') {
     return {
       found: true,
       ...(typeof result.waitedMs === 'number' ? { waitedMs: result.waitedMs } : {}),
+    };
+  }
+  if (result.kind === 'list') {
+    return {
+      matches: result.matches.map((match) => ({
+        ref: match.ref,
+        node: stripAndroidSystemChromeProvenanceFromNode(match.node),
+      })),
     };
   }
   return {
