@@ -22,6 +22,23 @@ struct SnapshotQuality: Codable {
   let effectiveDepth: Int?
   /// Leaves that merge many labels — a container marked accessible hides its descendants.
   let collapsedLeafIndexes: [Int]?
+  /// Coverage of the bounded custom-action pass, when the capture asked for one.
+  let customActions: SnapshotCustomActionCoverage?
+}
+
+/// How much of the merged-element set the custom-action pass actually read. An
+/// unread element renders exactly like one with no actions, so a partial pass
+/// has to say so — otherwise absence reads as proof of absence.
+struct SnapshotCustomActionCoverage: Codable {
+  let read: Int
+  let candidates: Int
+  /// Elements whose action list was clipped by the per-element output caps. A
+  /// clipped list looks complete, so it is disclosed on the same principle as
+  /// an unread element.
+  let truncated: Int
+  /// The pass stopped early because an earlier read is still hung. Distinct from
+  /// a budget stop: the remedy is waiting, not scrolling.
+  let blocked: Bool
 }
 
 enum SnapshotBackendKind: String, CaseIterable {
@@ -78,6 +95,8 @@ struct SnapshotBackendCapture {
   let payload: DataPayload
   /// Set by the private AX backend when the ladder accepted a shallower depth than requested.
   let effectiveDepth: Int?
+  /// Set by the private AX backend when the capture asked for custom actions.
+  var customActions: SnapshotCustomActionCoverage? = nil
 }
 
 extension RunnerTests {
@@ -149,13 +168,25 @@ extension RunnerTests {
   /// degraded on this capture, and the daemon keys warning suppression and the settle budget
   /// reset off exactly that distinction. The bounded probe keeps 'budget': its short XCTest
   /// slice genuinely constrains what this capture could read.
+  ///
+  /// `requestPinnedBackend` separates the two ways the plan can arrive at the same
+  /// deferred shape. A capture that ASKED for a private-AX-only reading (custom
+  /// actions) degraded nothing, so reporting slow accessibility work would name a
+  /// cause that does not exist.
   static func xcTestChannelStateFirstFailure(
-    _ state: SnapshotXCTestChannelPlanState
+    _ state: SnapshotXCTestChannelPlanState,
+    requestPinnedBackend: Bool = false
   ) -> (reason: String, code: String)? {
     switch state {
     case .normal:
       return nil
     case .deferredToIndependentBackend:
+      if requestPinnedBackend {
+        return (
+          "the private AX backend was selected because this capture asked for accessibility custom actions",
+          "requested-backend"
+        )
+      }
       return (
         "XCTest-backed snapshot tiers were deferred after recent slow accessibility work on this screen",
         "deferred"
@@ -237,9 +268,11 @@ extension RunnerTests {
     // penalized route: privateAX-first plan, 'deferred' verdict — the backend was pre-selected
     // deliberately, so no degradation warning should render for it.
     var xCTestChannelPenalized = false
+    var xCTestChannelPenalizedByBreaker = false
 #if os(iOS)
+    xCTestChannelPenalizedByBreaker = isSnapshotXCTestChannelPenalized(bundleId: currentBundleId)
     xCTestChannelPenalized = Self.snapshotXCTestChannelTreatedAsPenalized(
-      penalized: isSnapshotXCTestChannelPenalized(bundleId: currentBundleId),
+      penalized: xCTestChannelPenalizedByBreaker,
       preferredBackend: options.preferredBackend
     )
 #endif
@@ -249,7 +282,12 @@ extension RunnerTests {
       availableBackends: Set(SnapshotBackendKind.allCases.filter(\.isAvailableOnCurrentPlatform))
     )
     let effectivePlan = effective.plan
-    firstFailure = Self.xcTestChannelStateFirstFailure(effective.xCTestChannelState)
+    // Only a customActions-implied pin is request-pinned; the daemon's
+    // same-backend evidence probe pins for its own reasons and keeps 'deferred'.
+    firstFailure = Self.xcTestChannelStateFirstFailure(
+      effective.xCTestChannelState,
+      requestPinnedBackend: options.customActions && !xCTestChannelPenalizedByBreaker
+    )
     switch effective.xCTestChannelState {
     case .normal:
       break
@@ -536,7 +574,8 @@ extension RunnerTests {
       reason: reason?.reason,
       reasonCode: reason?.code,
       effectiveDepth: capture.effectiveDepth,
-      collapsedLeafIndexes: Self.collapsedLeafIndexes(payload.nodes ?? [])
+      collapsedLeafIndexes: Self.collapsedLeafIndexes(payload.nodes ?? []),
+      customActions: capture.customActions
     )
     return DataPayload(
       // Legacy human text for older daemons that read message instead of snapshotQuality.
@@ -549,8 +588,39 @@ extension RunnerTests {
     )
   }
 
+  /// Response level, one line per incompleteness. An unread merged element is
+  /// byte-identical to one with no actions, and a clipped list looks complete,
+  /// so both have to name themselves.
+  static func customActionCoverageWarnings(_ coverage: SnapshotCustomActionCoverage) -> [String] {
+    var lines: [String] = []
+    if coverage.blocked {
+      // Scrolling is the remedy for a budget stop, not for this one — saying it
+      // here would send the reader off doing something that cannot help.
+      lines.append(
+        "Custom actions were not read: an earlier accessibility read is still hung, so this "
+          + "capture skipped the read pass instead of queueing behind it. No element's actions "
+          + "list is authoritative here. Reads resume once that call returns.")
+    } else if coverage.read < coverage.candidates {
+      lines.append(
+        "Custom actions were read for \(coverage.read) of \(coverage.candidates) merged elements, "
+          + "on-screen ones first; the remaining \(coverage.candidates - coverage.read) were not read, "
+          + "so an absent actions list on those is not evidence that they have none. "
+          + "Scroll them into view and re-run to read them.")
+    }
+    if coverage.truncated > 0 {
+      lines.append(
+        "\(coverage.truncated) element(s) published more custom actions than are shown; those "
+          + "lists are clipped to the first 8 names, and long names are shortened.")
+    }
+    return lines
+  }
+
   static func legacyQualityMessage(_ quality: SnapshotQuality) -> String? {
-    guard quality.state != "healthy" || quality.collapsedLeafIndexes != nil else { return nil }
+    let customActionWarnings =
+      quality.customActions.map { Self.customActionCoverageWarnings($0) } ?? []
+    guard quality.state != "healthy" || quality.collapsedLeafIndexes != nil
+      || !customActionWarnings.isEmpty
+    else { return nil }
     var parts: [String] = []
     if quality.state == "recovered" {
       let meaning = quality.reasonCode == "budget" || quality.reasonCode == "deferred"
@@ -569,6 +639,7 @@ extension RunnerTests {
           + ". Use screenshot as visual truth and coordinate taps."
       )
     }
+    parts.append(contentsOf: customActionWarnings)
     if let depth = quality.effectiveDepth {
       // No --depth remedy here: an explicit --depth capture disables the
       // frontier extension, so following it would return strictly less than
@@ -651,7 +722,8 @@ extension RunnerTests {
       reason: "snapshot returned only structural application/window nodes",
       reasonCode: "sparse-tree",
       effectiveDepth: nil,
-      collapsedLeafIndexes: nil
+      collapsedLeafIndexes: nil,
+      customActions: nil
     )
     let message = Self.legacyQualityMessage(recovered)
     XCTAssertTrue(message?.contains("queries snapshot backend") == true)
@@ -661,7 +733,7 @@ extension RunnerTests {
       Self.legacyQualityMessage(
         SnapshotQuality(
           state: "healthy", backend: "tree", reason: nil, reasonCode: nil, effectiveDepth: nil,
-          collapsedLeafIndexes: nil)
+          collapsedLeafIndexes: nil, customActions: nil)
       )
     )
   }

@@ -21,15 +21,27 @@ export type SnapshotQualityVerdict = {
   reason?: string;
   // 'deferred' = the penalty circuit breaker pre-selected a non-XCTest backend; nothing new
   // degraded on THIS capture (no repeated warning, no settle budget reset).
+  // 'requested-backend' = the REQUEST pre-selected it (e.g. `snapshot --actions`,
+  // which only the private-AX backend can serve). Nothing degraded at all, so it
+  // must never surface as a degradation — not even through the one-shot latch
+  // that exists to catch internally-armed penalties.
   reasonCode?:
     | 'ax-rejected'
     | 'sparse-tree'
     | 'budget'
     | 'no-nodes'
     | 'capture-failed'
-    | 'deferred';
+    | 'deferred'
+    | 'requested-backend';
   effectiveDepth?: number;
   collapsedLeafIndexes?: number[];
+  /**
+   * Coverage of an opt-in custom-action pass (`snapshot --actions`): how many
+   * merged elements were eligible and how many the bounded pass reached. An
+   * unread element is indistinguishable from one with no actions, so a partial
+   * pass has to be disclosed rather than left to look complete.
+   */
+  customActions?: { read: number; candidates: number; truncated: number; blocked: boolean };
 };
 
 export type Rect = {
@@ -56,6 +68,12 @@ export type SnapshotOptions = {
    * captured the way its baseline was.
    */
   preferredBackend?: 'private-ax';
+  /**
+   * Read accessibility custom actions for elements that merge their children
+   * away. Opt-in because each such element costs its own accessibility round
+   * trip; see `RawSnapshotNode.actions`.
+   */
+  customActions?: boolean;
 };
 
 export type SnapshotPresentationFlagInput = {
@@ -63,6 +81,7 @@ export type SnapshotPresentationFlagInput = {
   snapshotDepth?: number;
   snapshotScope?: string;
   snapshotRaw?: boolean;
+  snapshotCustomActions?: boolean;
 };
 
 export type RawSnapshotNode = {
@@ -90,6 +109,14 @@ export type RawSnapshotNode = {
   hiddenContentBelow?: boolean;
   interactionBlocked?: 'covered';
   presentationHints?: string[];
+  /**
+   * Accessibility custom actions the element exposes (iOS
+   * `UIAccessibilityCustomAction`, React Native `accessibilityActions`). Merged
+   * cards publish their real affordances here instead of as child elements, so
+   * this is often the only evidence that a collapsed node has any. Populated by
+   * opt-in captures only — see `snapshot --actions`.
+   */
+  actions?: string[];
 };
 
 export type HiddenContentHint = {
@@ -226,6 +253,10 @@ export function buildSnapshotPresentationKey(flags: SnapshotOptions | undefined)
     depth: typeof flags?.depth === 'number' ? flags.depth : null,
     scope: flags?.scope?.trim() || null,
     raw: flags?.raw === true,
+    // A capture that asked for custom actions is not the same presentation as
+    // one that did not: without this, 'snapshot' then 'snapshot --actions' on a
+    // still screen reports 'unchanged' and never delivers what was asked for.
+    customActions: flags?.customActions === true,
   });
 }
 
@@ -238,6 +269,7 @@ export function snapshotPresentationOptionsFromFlags(
     interactiveOnly: flags.snapshotInteractiveOnly,
     raw: flags.snapshotRaw,
     scope: flags.snapshotScope,
+    customActions: flags.snapshotCustomActions,
   };
 }
 
