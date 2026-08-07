@@ -98,6 +98,49 @@ export type TypeTextBackendResult = {
   textEntryRoute?: TextEntryRoute;
 };
 
+/**
+ * What a cloud-WebDriver `fill` could establish about its target taking text
+ * entry focus before it sent the keys (#1658). The local Apple runner owns this
+ * discipline in Swift and reports it as a `textEntryRoute`; the cloud path has
+ * no runner, only what the driver will tell it, so it names what it observed
+ * instead of which channel it typed through. Listed strongest evidence first:
+ *
+ * - `focused-element`: the element holding text-entry focus after the tap
+ *   contains the tapped point — positive evidence that THIS field, not merely
+ *   some field, took focus.
+ * - `keyboard-shown`: no active-element route, but the software keyboard went
+ *   from hidden to shown after our tap. Witnesses that focus arrived somewhere,
+ *   which only means our field when the keyboard was down beforehand.
+ * Every value describes a fill that sent its keys AND witnessed focus first.
+ * There is deliberately no value for "typed without evidence": nothing renders
+ * this field, so such a value would reach a caller as an ordinary success and
+ * recreate the #1658 silent false success it exists to remove. Every
+ * unwitnessed case throws without typing instead —
+ *
+ * - `text_entry_focus_not_observed`: the tap focused nothing, or a keyboard
+ *   already up on a driver that cannot say which field owns it (keys would have
+ *   landed in the PREVIOUS field).
+ * - `text_entry_focus_unobservable`: the driver implements neither route, so no
+ *   wait could establish anything. `press` + `type` remains the deliberate way
+ *   to enter text unwitnessed.
+ *
+ * Closed set: the cloud interactor is its only producer and the boundary that
+ * narrows it (readFillBackendResult, src/core/dispatch-interactions.ts) drops a
+ * value it cannot name.
+ */
+export const CLOUD_TEXT_ENTRY_READINESS = ['focused-element', 'keyboard-shown'] as const;
+
+export type CloudTextEntryReadiness = (typeof CLOUD_TEXT_ENTRY_READINESS)[number];
+
+/**
+ * What `Interactor.fill` reports back about the entry it performed. Only the
+ * cloud-WebDriver interactor populates `textEntryReadiness`; the Apple runner
+ * carries its own equivalent in Swift and every other platform fills blind.
+ */
+export type FillBackendResult = {
+  textEntryReadiness?: CloudTextEntryReadiness;
+};
+
 export type SnapshotOptions = BaseSnapshotOptions & {
   appBundleId?: string;
   signal?: AbortSignal;
