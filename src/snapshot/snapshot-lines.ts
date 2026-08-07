@@ -105,10 +105,42 @@ export function formatSnapshotLine(
   }
   const metadataText = metadata.map((entry) => ` [${entry}]`).join('');
   const textPart = label ? ` "${label}"` : '';
+  const actionsText = formatCustomActions(node);
   if (hiddenGroup) {
-    return `${indent}${ref} [${type}]${metadataText}`.trimEnd();
+    return `${indent}${ref} [${type}]${metadataText}${actionsText}`.trimEnd();
   }
-  return `${indent}${ref} [${type}]${textPart}${metadataText}`.trimEnd();
+  return `${indent}${ref} [${type}]${textPart}${metadataText}${actionsText}`.trimEnd();
+}
+
+/**
+ * Accessibility custom actions render as a named list rather than bracketed
+ * metadata: they are the element's hidden affordances, and an agent reading the
+ * line needs the exact names it would have to match. Names only — activation
+ * points and identifiers are not actionable through any API we have.
+ */
+function formatCustomActions(node: SnapshotNode): string {
+  const actions = node.actions?.filter((action) => action.trim().length > 0);
+  if (!actions || actions.length === 0) {
+    return '';
+  }
+  // App-authored strings on a one-line-per-node surface: quotes and backslashes
+  // get the same escaping as text previews, and control characters collapse to
+  // spaces so a name containing a newline cannot split one node across lines.
+  return ` actions: [${actions
+    .map((action) => `"${escapePreviewText(collapseControlCharacters(action))}"`)
+    .join(', ')}]`;
+}
+
+function collapseControlCharacters(value: string): string {
+  return (
+    value
+      // Whitespace folds the way text previews already fold it (newlines, tabs).
+      .replace(/\s+/g, ' ')
+      // Remaining C0/C1 controls are zero-width but can still corrupt a terminal.
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+      .trim()
+  );
 }
 
 export function displayLabel(node: SnapshotNode, type: string): string {

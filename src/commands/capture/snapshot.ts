@@ -25,6 +25,9 @@ const snapshotCommandMetadata = defineFieldCommandMetadata(
     depth: integerField(),
     scope: stringField(),
     raw: booleanField(),
+    customActions: booleanField(
+      'Name the affordances an element merged away (iOS UIAccessibilityCustomAction, React Native accessibilityActions) — a card whose reply/options controls are not separate elements still lists them here. The names are for PLANNING, not invocation: there is no API to trigger them, so reach the affordance through the element detail screen, through the same control exposed as a labeled element elsewhere, or by coordinates from its rect. iOS simulator only; costs one accessibility round trip per merged element.',
+    ),
     forceFull: booleanField(),
     timeoutMs: integerField('Maximum wall-clock time for the snapshot command.'),
     // #1271 stage 2: `snapshot` is observation-only, so a repair-armed heal
@@ -45,8 +48,15 @@ const snapshotCommandDefinition = defineExecutableCommand(
 
 const snapshotCliSchema = {
   usageOverride:
-    'snapshot [--diff] [-i] [-d <depth>] [-s <scope>] [--raw] [--force-full] [--timeout <ms>]',
-  allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs', 'record'],
+    'snapshot [--diff] [-i] [-d <depth>] [-s <scope>] [--raw] [--actions] [--force-full] [--timeout <ms>]',
+  allowedFlags: [
+    'snapshotDiff',
+    ...SNAPSHOT_FLAGS,
+    'snapshotCustomActions',
+    'snapshotForceFull',
+    'timeoutMs',
+    'record',
+  ],
 } as const;
 
 export const snapshotCliReader: CliReader = (_positionals, flags) => ({
@@ -56,6 +66,7 @@ export const snapshotCliReader: CliReader = (_positionals, flags) => ({
   depth: flags.snapshotDepth,
   scope: flags.snapshotScope,
   raw: flags.snapshotRaw,
+  customActions: flags.snapshotCustomActions,
   forceFull: flags.snapshotForceFull,
   timeoutMs: flags.timeoutMs,
 });

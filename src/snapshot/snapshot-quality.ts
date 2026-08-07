@@ -20,6 +20,7 @@ const SNAPSHOT_QUALITY_REASON_CODES = new Set<NonNullable<SnapshotQualityVerdict
   'no-nodes',
   'capture-failed',
   'deferred',
+  'requested-backend',
 ]);
 
 export function readSnapshotQualityVerdict(value: unknown): SnapshotQualityVerdict | undefined {
@@ -53,10 +54,32 @@ export function readSnapshotQualityVerdict(value: unknown): SnapshotQualityVerdi
       )
         ? (raw.reasonCode as SnapshotQualityVerdict['reasonCode'])
         : undefined,
+    customActions: readCustomActionCoverage(raw.customActions),
     effectiveDepth: typeof raw.effectiveDepth === 'number' ? raw.effectiveDepth : undefined,
     collapsedLeafIndexes: Array.isArray(raw.collapsedLeafIndexes)
       ? raw.collapsedLeafIndexes.filter((entry): entry is number => typeof entry === 'number')
       : undefined,
+  };
+}
+
+/**
+ * A partial verdict is dropped rather than half-read: the whole point of the
+ * pair is the ratio, and a coverage object missing one side cannot express one.
+ */
+function readCustomActionCoverage(
+  value: unknown,
+): SnapshotQualityVerdict['customActions'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.read !== 'number' || typeof raw.candidates !== 'number') return undefined;
+  // read/candidates are the ratio and must both be present; the truncation
+  // count is additive, so an older runner that omits it reads as zero rather
+  // than voiding the whole coverage.
+  return {
+    read: raw.read,
+    candidates: raw.candidates,
+    truncated: typeof raw.truncated === 'number' ? raw.truncated : 0,
+    blocked: raw.blocked === true,
   };
 }
 
@@ -73,9 +96,46 @@ export function renderSnapshotQualityWarnings(
 ): string[] {
   return [
     ...stateWarning(verdict),
+    ...customActionCoverageWarning(verdict),
     ...depthWarning(verdict),
     ...collapsedLeafWarnings(verdict, nodes),
   ];
+}
+
+/**
+ * Disclosed at response level, once, and only when the pass was incomplete: a
+ * merged element the bounded pass never reached renders exactly like one with
+ * no custom actions, so staying silent would teach the reader that the rest of
+ * the list has no affordances — the mis-inference `--actions` exists to stop.
+ *
+ * The remedy is scrolling, not `--scope`: the runner reads on-screen elements
+ * first, and scope is applied after the read pass, so it cannot redirect the
+ * budget.
+ */
+function customActionCoverageWarning(verdict: SnapshotQualityVerdict): string[] {
+  const coverage = verdict.customActions;
+  if (!coverage) return [];
+  const lines: string[] = [];
+  if (coverage.blocked) {
+    // Not a budget stop, so it must not borrow the budget stop's remedy:
+    // scrolling cannot clear a hung read, and telling the reader to try would
+    // send them in circles.
+    lines.push(
+      'Custom actions were not read: an earlier accessibility read is still hung, so this capture skipped the read pass instead of queueing behind it. No element’s actions list is authoritative here. Reads resume once that call returns.',
+    );
+  } else if (coverage.read < coverage.candidates) {
+    lines.push(
+      `Custom actions were read for ${coverage.read} of ${coverage.candidates} merged elements, on-screen ones first; the remaining ${coverage.candidates - coverage.read} were not read, so an absent actions list on those is not evidence that they have none. Scroll them into view and re-run to read them.`,
+    );
+  }
+  if (coverage.truncated > 0) {
+    // A clipped list looks complete, which is the same failure mode as an
+    // unread element, so it gets its own line rather than a silent cap.
+    lines.push(
+      `${coverage.truncated} element(s) published more custom actions than are shown; those lists are clipped to the first 8 names, and long names are shortened.`,
+    );
+  }
+  return lines;
 }
 
 /**
@@ -95,7 +155,7 @@ function stateWarning(verdict: SnapshotQualityVerdict): string[] {
     // warning is suppressed here. When the capture that ARMED the penalty was internal
     // (selector resolution, settle observation, system-modal probe) and never rendered it,
     // the daemon's session latch re-renders the warning once at the response seam.
-    if (verdict.reasonCode === 'deferred') return [];
+    if (verdict.reasonCode === 'deferred' || verdict.reasonCode === 'requested-backend') return [];
     return [recoveredSnapshotQualityWarning(verdict.backend)];
   }
   if (verdict.state === 'sparse') {

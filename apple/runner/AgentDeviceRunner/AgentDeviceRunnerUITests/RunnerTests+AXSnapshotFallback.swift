@@ -9,6 +9,12 @@ extension RunnerTests {
   /// the capture-plan deadline, which is also enforced per call.
   private static let privateAXDeepExtensionCallLimit = 8
 
+  /// Upper bound on per-element custom-action reads per capture. Each is its own
+  /// AX round trip (~100ms on an idle simulator), so this caps the opt-in cost
+  /// at roughly a second on top of the capture; the capture-plan deadline stops
+  /// it earlier under load. A screenful of merged cards is well under this.
+  private static let privateAXCustomActionLimit = 12
+
   /// A capture is depth-limited unless its frontier extension resolved every
   /// capped node: frontiers left pending (budget/deadline) or missed (element
   /// vanished, re-rooted request failed) mean subtrees are still absent, and
@@ -40,6 +46,24 @@ extension RunnerTests {
     depths.append(contentsOf: privateAXSnapshotDepthLadder.filter { $0 < requestedDepth })
     guard let remembered = rememberedDepth, remembered < requestedDepth else { return depths }
     return depths.filter { $0 <= remembered }
+  }
+
+  /// The bridge omits the key entirely when the capture did not ask for custom
+  /// actions, which is the difference between "nothing to disclose" and "read
+  /// none of them" — so a missing key must stay nil, never (0, 0).
+  static func privateAXCustomActionCoverage(_ raw: Any?) -> SnapshotCustomActionCoverage? {
+    guard let coverage = raw as? [String: Any],
+      let read = (coverage[RunnerAXSnapshotCustomActionsReadKey] as? NSNumber)?.intValue,
+      let candidates = (coverage[RunnerAXSnapshotCustomActionsCandidatesKey] as? NSNumber)?.intValue
+    else { return nil }
+    // read/candidates are the ratio and must both be present; the truncation
+    // count is additive, so an older bridge that omits it reads as zero rather
+    // than voiding the whole coverage.
+    let truncated =
+      (coverage[RunnerAXSnapshotCustomActionsTruncatedKey] as? NSNumber)?.intValue ?? 0
+    let blocked = (coverage[RunnerAXSnapshotCustomActionsBlockedKey] as? NSNumber)?.boolValue ?? false
+    return SnapshotCustomActionCoverage(
+      read: read, candidates: candidates, truncated: truncated, blocked: blocked)
   }
 
   func rememberPrivateAXAcceptedDepth(bundleId: String?, processIdentifier: Int?, depth: Int) {
@@ -116,6 +140,7 @@ extension RunnerTests {
           maxDepth: depth,
           maxNodes: Self.privateAXSnapshotMaxNodes,
           deepExtensionCallLimit: exactDepthRequested ? 0 : Self.privateAXDeepExtensionCallLimit,
+          customActionLimit: options.customActions ? Self.privateAXCustomActionLimit : 0,
           deadline: deadline
         )
         if response["ok"] as? Bool == true {
@@ -184,7 +209,10 @@ extension RunnerTests {
       )
       return SnapshotBackendCapture(
         payload: DataPayload(nodes: nodes, truncated: (response["truncated"] as? Bool) == true),
-        effectiveDepth: depthLimited ? effectiveDepth : nil
+        effectiveDepth: depthLimited ? effectiveDepth : nil,
+        customActions: Self.privateAXCustomActionCoverage(
+          response[RunnerAXSnapshotCustomActionsKey]
+        )
       )
     #else
       return nil
@@ -274,7 +302,8 @@ extension RunnerTests {
           depth: depth,
           parentIndex: parentIndex,
           hiddenContentAbove: nil,
-          hiddenContentBelow: nil
+          hiddenContentBelow: nil,
+          actions: rawNode["actions"] as? [String]
         )
       )
     } else {
@@ -396,6 +425,7 @@ extension RunnerTests {
       nodeCount: &nodeCount,
       truncated: &truncated,
       callsAllowed: 8,
+      mergedLeaves: nil,
       deadline: nil
     )
 
@@ -483,6 +513,250 @@ extension RunnerTests {
 
     abandonedTreeCaptureCount = 1
     XCTAssertFalse(shouldReadPrivateAXViewportViaXCTest())
+  }
+
+  /// The wire field must reach both capture options AND the backend pin: custom
+  /// actions are only readable through the private AX client, so a capture that
+  /// asked for them but planned the XCTest tree backend would return a payload
+  /// that structurally cannot carry them.
+  func testCustomActionsRequestPinsPrivateAXBackend() throws {
+    let asked = try JSONDecoder().decode(
+      Command.self, from: Data(#"{"command":"snapshot","customActions":true}"#.utf8))
+    let options = Self.snapshotOptions(from: asked)
+    XCTAssertTrue(options.customActions)
+    XCTAssertEqual(options.preferredBackend, SnapshotBackendKind.privateAX.rawValue)
+    XCTAssertTrue(
+      Self.snapshotXCTestChannelTreatedAsPenalized(
+        penalized: false, preferredBackend: options.preferredBackend))
+
+    // An explicit pin is never overwritten by the implied one.
+    let pinned = try JSONDecoder().decode(
+      Command.self,
+      from: Data(#"{"command":"snapshot","customActions":true,"preferredBackend":"tree"}"#.utf8))
+    XCTAssertEqual(Self.snapshotOptions(from: pinned).preferredBackend, "tree")
+
+    // And the default capture neither asks nor pins.
+    let bare = try JSONDecoder().decode(Command.self, from: Data(#"{"command":"snapshot"}"#.utf8))
+    XCTAssertFalse(Self.snapshotOptions(from: bare).customActions)
+    XCTAssertNil(Self.snapshotOptions(from: bare).preferredBackend)
+  }
+
+  /// A request-pinned backend degraded nothing, so its verdict must not claim
+  /// slow accessibility work — that reason drives a user-facing warning.
+  func testRequestPinnedBackendReportsItsOwnReason() {
+    let requested = Self.xcTestChannelStateFirstFailure(
+      .deferredToIndependentBackend, requestPinnedBackend: true)
+    XCTAssertEqual(requested?.code, "requested-backend")
+    XCTAssertFalse(requested?.reason.contains("slow accessibility work") ?? true)
+
+    // The circuit breaker's own deferral keeps its established code and wording.
+    let breaker = Self.xcTestChannelStateFirstFailure(.deferredToIndependentBackend)
+    XCTAssertEqual(breaker?.code, "deferred")
+
+    // The bounded probe and the healthy plan are untouched by the new flag.
+    XCTAssertEqual(
+      Self.xcTestChannelStateFirstFailure(.boundedXCTestProbe, requestPinnedBackend: true)?.code,
+      "budget")
+    XCTAssertNil(Self.xcTestChannelStateFirstFailure(.normal, requestPinnedBackend: true))
+  }
+
+  /// The disclosure only exists if the counts survive the bridge boundary, and
+  /// "did not ask" must stay distinguishable from "read none".
+  func testCustomActionCoverageParsesOnlyCompletePairs() {
+    let coverage = Self.privateAXCustomActionCoverage([
+      RunnerAXSnapshotCustomActionsReadKey: 12,
+      RunnerAXSnapshotCustomActionsCandidatesKey: 19,
+    ])
+    XCTAssertEqual(coverage?.read, 12)
+    XCTAssertEqual(coverage?.candidates, 19)
+
+    // Absent key = the capture never asked; it must not read as (0, 0), which
+    // would warn "0 of 0" on every default capture.
+    XCTAssertNil(Self.privateAXCustomActionCoverage(nil))
+    // A half-present pair cannot express a ratio, so it is dropped whole.
+    XCTAssertNil(
+      Self.privateAXCustomActionCoverage([RunnerAXSnapshotCustomActionsReadKey: 12]))
+  }
+
+  /// The AX call cannot be cancelled once issued, so the read deadline frees
+  /// only the caller — the call keeps running. Without containment, repeating
+  /// `snapshot --actions` against a wedged element would stack orphaned reads,
+  /// all sharing one XCAXClient. This pins the containment: one serial queue and
+  /// a single-flight refusal that adds no work while a read is outstanding.
+  func testHungCustomActionReadIsContainedAndRecovers() {
+    let hung = HungAXClientForTesting()
+    let element = NSObject()
+    let dispatchesBefore = RunnerAXSnapshotBridge.customActionReadDispatchCount()
+    defer { hung.release() }
+
+    // 1. First read wedges. The caller is freed by the deadline, but the call is
+    //    still out there, so it stays counted in flight.
+    var completed = ObjCBool(true)
+    let firstStarted = Date()
+    let first = RunnerAXSnapshotBridge.customActionNames(
+      forElement: element, axClient: hung, completed: &completed)
+    XCTAssertNil(first)
+    XCTAssertFalse(completed.boolValue)
+    XCTAssertGreaterThanOrEqual(-firstStarted.timeIntervalSinceNow, 0.9)
+    XCTAssertEqual(RunnerAXSnapshotBridge.customActionReadsInFlight(), 1)
+    XCTAssertEqual(
+      RunnerAXSnapshotBridge.customActionReadDispatchCount(), dispatchesBefore + 1)
+
+    // 2. Repeats do NOT accumulate: no new dispatch, still exactly one in
+    //    flight, and they return immediately instead of paying the deadline.
+    for _ in 0..<5 {
+      let started = Date()
+      XCTAssertNil(
+        RunnerAXSnapshotBridge.customActionNames(
+          forElement: element, axClient: hung, completed: &completed))
+      XCTAssertFalse(completed.boolValue)
+      XCTAssertLessThan(-started.timeIntervalSinceNow, 0.2)
+    }
+    XCTAssertEqual(RunnerAXSnapshotBridge.customActionReadsInFlight(), 1)
+    XCTAssertEqual(
+      RunnerAXSnapshotBridge.customActionReadDispatchCount(), dispatchesBefore + 1)
+
+    // 3. A capture in that state discloses the skip rather than presenting the
+    //    unread elements as action-free — and spends no read budget doing it.
+    let leaf = RunnerAXSnapshotFrontier()
+    leaf.snapshot = FrontierSnapshotWithElementForTesting()
+    leaf.node = NSMutableDictionary(dictionary: ["label": "feedItem", "children": []])
+    let coverage = RunnerAXSnapshotBridge.annotateCustomActions(
+      onMergedLeaves: [leaf], axClient: hung, limit: 12, rootFrame: .zero, deadline: nil)
+    XCTAssertEqual(coverage[RunnerAXSnapshotCustomActionsBlockedKey] as? Bool, true)
+    XCTAssertEqual(coverage[RunnerAXSnapshotCustomActionsReadKey] as? Int, 0)
+    XCTAssertEqual(coverage[RunnerAXSnapshotCustomActionsCandidatesKey] as? Int, 1)
+    XCTAssertEqual(
+      RunnerAXSnapshotBridge.customActionReadDispatchCount(), dispatchesBefore + 1)
+
+    // And the rendered verdict names the hang, not the scroll remedy.
+    let blockedWarnings = Self.customActionCoverageWarnings(
+      Self.privateAXCustomActionCoverage(coverage)!)
+    XCTAssertEqual(blockedWarnings.count, 1)
+    XCTAssertTrue(blockedWarnings[0].contains("still hung"))
+    XCTAssertFalse(blockedWarnings[0].contains("Scroll"))
+
+    // 4. Recovery: once the wedged call returns, reads resume by themselves.
+    hung.release()
+    let recovered = expectation(description: "in-flight drains")
+    DispatchQueue.global().async {
+      while RunnerAXSnapshotBridge.customActionReadsInFlight() > 0 {
+        usleep(20_000)
+      }
+      recovered.fulfill()
+    }
+    wait(for: [recovered], timeout: 5)
+
+    completed = ObjCBool(false)
+    XCTAssertNil(
+      RunnerAXSnapshotBridge.customActionNames(
+        forElement: element, axClient: hung, completed: &completed))
+    // Completed (the fake answers nil actions), which is the point: the pass is
+    // live again rather than latched off.
+    XCTAssertTrue(completed.boolValue)
+    XCTAssertEqual(
+      RunnerAXSnapshotBridge.customActionReadDispatchCount(), dispatchesBefore + 2)
+  }
+
+  /// The element budget bounds how many elements we read; these caps bound what
+  /// any ONE element can put in the response. Clipping must be reported, since
+  /// a clipped list looks exactly like a complete one.
+  func testActionNamesAreCappedPerElementAndReported() {
+    var truncated = ObjCBool(true)
+
+    // Under both caps: untouched, nothing to report.
+    let small = ["Reply", "Repost"]
+    XCTAssertEqual(
+      RunnerAXSnapshotBridge.cappedActionNames(small, truncated: &truncated), small)
+    XCTAssertFalse(truncated.boolValue)
+
+    // More actions than the per-element cap: clipped to the first 8, reported.
+    let many = (1...20).map { "Action \($0)" }
+    let cappedMany = RunnerAXSnapshotBridge.cappedActionNames(many, truncated: &truncated)
+    XCTAssertEqual(cappedMany.count, 8)
+    XCTAssertEqual(cappedMany.first, "Action 1")
+    XCTAssertTrue(truncated.boolValue)
+
+    // A single very long name is shortened, reported, and stays one string.
+    let long = String(repeating: "a", count: 500)
+    let cappedLong = RunnerAXSnapshotBridge.cappedActionNames([long], truncated: &truncated)
+    XCTAssertEqual(cappedLong.count, 1)
+    XCTAssertTrue(truncated.boolValue)
+    XCTAssertLessThan(cappedLong[0].count, long.count)
+    XCTAssertTrue(cappedLong[0].hasSuffix("…"))
+
+    // Empty input is not "truncated".
+    XCTAssertEqual(RunnerAXSnapshotBridge.cappedActionNames([], truncated: &truncated), [])
+    XCTAssertFalse(truncated.boolValue)
+  }
+
+  /// A capped pass must say so; a complete one must stay silent.
+  func testPartialCustomActionPassIsDisclosedAndCompleteOneIsNot() {
+    let partial = SnapshotQuality(
+      state: "recovered", backend: "private-ax", reason: nil, reasonCode: "requested-backend",
+      effectiveDepth: nil, collapsedLeafIndexes: nil,
+      customActions: SnapshotCustomActionCoverage(read: 12, candidates: 19, truncated: 0, blocked: false))
+    let message = Self.legacyQualityMessage(partial)
+    XCTAssertTrue(message?.contains("12 of 19 merged elements") == true)
+    XCTAssertTrue(message?.contains("remaining 7") == true)
+    XCTAssertTrue(message?.contains("Scroll them into view") == true)
+
+    // Every candidate read: nothing to disclose, and a healthy capture stays silent.
+    let complete = SnapshotQuality(
+      state: "healthy", backend: "private-ax", reason: nil, reasonCode: nil,
+      effectiveDepth: nil, collapsedLeafIndexes: nil,
+      customActions: SnapshotCustomActionCoverage(read: 19, candidates: 19, truncated: 0, blocked: false))
+    XCTAssertNil(Self.legacyQualityMessage(complete))
+
+    // A healthy capture with an incomplete pass still discloses — the guard must
+    // not key the disclosure off degradation state.
+    let healthyButCapped = SnapshotQuality(
+      state: "healthy", backend: "private-ax", reason: nil, reasonCode: nil,
+      effectiveDepth: nil, collapsedLeafIndexes: nil,
+      customActions: SnapshotCustomActionCoverage(read: 12, candidates: 19, truncated: 0, blocked: false))
+    XCTAssertTrue(
+      Self.legacyQualityMessage(healthyButCapped)?.contains("12 of 19") == true)
+  }
+
+  /// Action names annotated by the bridge must survive into the emitted node —
+  /// the whole point of the capture is that the merged card names its hidden
+  /// affordances.
+  func testPrivateAXNodesCarryAnnotatedCustomActions() {
+    let tree: [String: Any] = [
+      "type": Int(XCUIElement.ElementType.application.rawValue),
+      "label": "Blue Sky",
+      "frame": ["x": 0, "y": 0, "width": 390, "height": 844],
+      "children": [
+        [
+          "type": Int(XCUIElement.ElementType.link.rawValue),
+          "label": "feedItem-by-whiskers.test",
+          "frame": ["x": 0, "y": 100, "width": 390, "height": 200],
+          "actions": ["Reply", "Repost", "Open post options menu"],
+          "children": [],
+        ],
+        [
+          "type": Int(XCUIElement.ElementType.button.rawValue),
+          "label": "Compose",
+          "frame": ["x": 300, "y": 700, "width": 60, "height": 60],
+          "children": [],
+        ],
+      ],
+    ]
+    var nodes: [SnapshotNode] = []
+    appendPrivateAXNode(
+      tree,
+      to: &nodes,
+      options: SnapshotOptions(interactiveOnly: false, depth: nil, scope: nil, raw: false),
+      viewport: CGRect(x: 0, y: 0, width: 390, height: 844),
+      depth: 0,
+      parentIndex: nil,
+      insideMatchedScope: false
+    )
+
+    let card = nodes.first { $0.label == "feedItem-by-whiskers.test" }
+    XCTAssertEqual(card?.actions, ["Reply", "Repost", "Open post options menu"])
+    // A node the bridge did not annotate stays absent, not empty.
+    XCTAssertNil(nodes.first { $0.label == "Compose" }?.actions)
   }
 
   func testPrivateAXScopeSelectsSubtreeNotMatchingLabels() {
@@ -597,6 +871,37 @@ extension RunnerTests {
       ["Blue Sky", "Callstack", "Welcome back", "Email", "Password", "Sign in", "Forgot password?"]
     )
     XCTAssertFalse(labels.contains("Admin settings"))
+  }
+}
+
+/// Stands in for an AX client whose `attributesForElement:` never returns —
+/// the wedged-server case the containment exists for. `release()` lets the
+/// hung call finish so recovery is observable.
+private final class HungAXClientForTesting: NSObject {
+  private let gate = DispatchSemaphore(value: 0)
+  private let releasedOnce = NSLock()
+  private var released = false
+
+  @objc(attributesForElement:attributes:error:)
+  func attributes(forElement element: Any, attributes: Any, error: NSErrorPointer) -> Any? {
+    releasedOnce.lock()
+    let alreadyReleased = released
+    releasedOnce.unlock()
+    // Once the wedge clears, the server answers normally again — that is what
+    // makes the recovery leg a recovery rather than a second hang.
+    if alreadyReleased {
+      return nil
+    }
+    gate.wait()
+    return nil
+  }
+
+  func release() {
+    releasedOnce.lock()
+    defer { releasedOnce.unlock() }
+    guard !released else { return }
+    released = true
+    gate.signal()
   }
 }
 

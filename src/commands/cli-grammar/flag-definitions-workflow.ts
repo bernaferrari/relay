@@ -200,6 +200,14 @@ export const WORKFLOW_FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     usageDescription: 'Snapshot: raw node output',
   },
   {
+    key: 'snapshotCustomActions',
+    names: ['--actions'],
+    type: 'boolean',
+    usageLabel: '--actions',
+    usageDescription:
+      'Snapshot: name the affordances merged inside an element (iOS sim); not directly invokable — reach them via the detail screen, labeled children, or coordinates',
+  },
+  {
     key: 'snapshotForceFull',
     names: ['--force-full'],
     type: 'boolean',
