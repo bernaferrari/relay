@@ -86,6 +86,38 @@ export type RecordingTargetOverride = {
   refLabel?: string;
 };
 
+/**
+ * #1654: a target its CALLER already resolved, against a tree the caller
+ * captured itself, handed to the interaction leaf so the leaf does not resolve
+ * the same `@ref` a second time.
+ *
+ * The sole producer is a mutating `find` (`src/daemon/handlers/find.ts`): it
+ * captures, matches by locator, promotes to a hittable ancestor, and mints
+ * `@eN` off the node it chose — then re-enters the interaction leaf. Without
+ * this channel the leaf repeated an in-memory `@eN` lookup after find had
+ * already selected the node. No reachable production path is currently known
+ * to advance the tree in that interval; this type removes the duplicate lookup
+ * structurally and keeps the selected ref/node/tree provenance together.
+ *
+ * What this does NOT skip: the shared guards. Occlusion, hittable-ancestor
+ * promotion, and the off-screen check still run, on this node, at the same
+ * symbols the ADR 0011 `runtime-ref` cells name — the pre-resolution replaces
+ * the LOOKUP, not the guarantees.
+ *
+ * In-process only, like `RecordingTargetOverride` above: it travels on the
+ * daemon-only `internal` request channel (`toDaemonRequest` never copies that
+ * off the wire), carries live node references, and is never serialized into a
+ * response.
+ */
+export type PreresolvedInteractionTarget = {
+  /** The ref minted for `node`; the consumer validates it against the positional target. */
+  ref: string;
+  /** The node the caller resolved, after the caller's own promotion. */
+  node: SnapshotNode;
+  /** The tree `node` came from — the guards read its siblings for occlusion/viewport. */
+  nodes: SnapshotNode[];
+};
+
 export type ResolvedInteractionTarget =
   | {
       kind: 'point';

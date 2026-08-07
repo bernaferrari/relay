@@ -2,6 +2,7 @@ import type { CommandFlags } from '@agent-device/contracts/command';
 import type {
   GestureExecutionProfile,
   GestureReferenceFrame,
+  PreresolvedInteractionTarget,
   ScrollDirection,
 } from '@agent-device/contracts/interaction';
 import type { LogBackend } from '@agent-device/contracts/observability';
@@ -107,13 +108,14 @@ type DaemonRequestInternal = {
    */
   replayLandmarkGuard?: TargetAnnotationV1;
   /**
-   * ADR 0014: set when a mutating `find` re-enters the interaction leaf with the
-   * ref it just resolved by locator against a fresh capture. That ref is find's
-   * own diagnostic identity, not a client-supplied ref subject to frame
-   * lifetime, so the leaf skips ref-frame admission (it still crosses the
-   * side-effect seam and expires the frame).
+   * ADR 0014 / #1654: the complete ref/node/tree target a mutating `find`
+   * resolved against its fresh capture. Its presence both marks the ref as
+   * find-owned (so admission/staleness policy is skipped) and supplies the node
+   * adopted by the interaction leaf. One payload keeps those decisions from
+   * becoming independently representable. The leaf still crosses the
+   * side-effect seam and expires the frame.
    */
-  findResolvedTarget?: boolean;
+  findResolvedTarget?: PreresolvedInteractionTarget;
   /**
    * #1271 stage 2 (ADR 0012 decision 6 amendment): PROVENANCE — set by the
    * replay runtime (`invokeResolvedReplayAction`,

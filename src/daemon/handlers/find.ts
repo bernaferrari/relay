@@ -1,5 +1,6 @@
 import { dispatchCommand } from '../../core/dispatch.ts';
 import { isViewportRootNode } from '@agent-device/contracts/snapshot';
+import type { PreresolvedInteractionTarget } from '@agent-device/contracts/interaction';
 import {
   findBestMatchesByLocator,
   isReadOnlyFindAction,
@@ -418,6 +419,21 @@ function rectsMatch(
   );
 }
 
+/**
+ * #1654: hand the interaction leaf the node this find already resolved, so the
+ * leaf stops resolving `match.ref` a second time.
+ *
+ * `match.resolvedNode` is the end of find's own pipeline — locator match under
+ * the `findAct` policy, then `resolveInteractiveMatchNode` promotion — and
+ * `match.ref` is minted off it. Re-entering by bare `@ref` made the leaf repeat
+ * that lookup. The handoff keeps ref, node, and source tree as one value so
+ * admission policy and lookup cannot drift independently. The leaf's guards
+ * (occlusion, promotion, off-screen) still run on this node.
+ */
+function preresolvedTarget(match: ResolvedMatch): PreresolvedInteractionTarget {
+  return { ref: match.ref, node: match.resolvedNode, nodes: match.nodes };
+}
+
 async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore, session, invoke, command, locator, query, publicFlags } =
     ctx;
@@ -427,7 +443,7 @@ async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<
     command: 'click',
     positionals: [match.ref],
     flags: match.actionFlags,
-    internal: { findResolvedTarget: true },
+    internal: { findResolvedTarget: preresolvedTarget(match) },
   });
   if (!response.ok) return response;
   const matchCoords = match.resolvedNode.rect
@@ -470,7 +486,7 @@ async function handleFindFill(
     command: 'fill',
     positionals: [match.ref, value],
     flags: match.actionFlags,
-    internal: { findResolvedTarget: true },
+    internal: { findResolvedTarget: preresolvedTarget(match) },
   });
   if (!response.ok) return response;
   recordSessionAction(
