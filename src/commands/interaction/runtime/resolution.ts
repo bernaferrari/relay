@@ -36,6 +36,7 @@ import { truncateUtf8 } from '../../../utils/truncate-utf8.ts';
 import type {
   InteractionTarget,
   PointTarget,
+  PreresolvedInteractionTarget,
   RecordingTargetOverride,
   ResolutionDiagnosticEntry,
   ResolutionDisclosure,
@@ -147,6 +148,12 @@ type ResolveInteractionTargetParams = {
   expectedResolvedTarget?: ExpectedResolvedTarget;
   /** Identifies one endpoint when a multi-target replay guard refuses. */
   replayTargetRole?: 'source' | 'destination';
+  /**
+   * #1654: the caller already resolved this `@ref` against its own capture, so
+   * the ref branch adopts that node instead of looking the ref up again. Ref
+   * targets only — a selector target has nothing pre-resolved to adopt.
+   */
+  preresolvedTarget?: PreresolvedInteractionTarget;
 };
 
 export async function resolveInteractionTarget(
@@ -225,17 +232,60 @@ async function tryCaptureEvidenceBaseline(
   }
 }
 
+/** The node a ref target acts on, plus the tree the shared guards read it against. */
+type RefResolution = { nodes: SnapshotState['nodes']; resolved: ResolvedRefNode };
+
+/**
+ * #1654: adopt the node the caller already resolved instead of resolving the
+ * same `@ref` a second time. This replaces the LOOKUP only — every guard below
+ * still runs, against the caller's tree, at the symbols the ADR 0011
+ * `runtime-ref` cells name.
+ *
+ * `exact` is truthful only when all three pieces of carried provenance agree:
+ * the positional ref, the payload ref, and the node's own ref. Fail closed if
+ * future internal plumbing lets them drift.
+ */
+function adoptPreresolvedRefTarget(
+  target: Extract<InteractionTarget, { kind: 'ref' }>,
+  preresolved: PreresolvedInteractionTarget,
+): RefResolution {
+  const ref = normalizeRef(target.ref);
+  if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${target.ref}`);
+  const carriedRef = normalizeRef(preresolved.ref);
+  const nodeRef = preresolved.node.ref ? normalizeRef(preresolved.node.ref) : null;
+  if (carriedRef !== ref || nodeRef !== ref || !preresolved.nodes.includes(preresolved.node)) {
+    throw new AppError(
+      'COMMAND_FAILED',
+      'Internal find target provenance does not match the interaction ref',
+    );
+  }
+  return {
+    nodes: preresolved.nodes,
+    resolved: buildRefResolution(ref, preresolved.node, 'exact'),
+  };
+}
+
+async function readRefResolution(
+  runtime: AgentDeviceRuntime,
+  options: CommandContext,
+  target: Extract<InteractionTarget, { kind: 'ref' }>,
+): Promise<RefResolution> {
+  const capture = await resolveSnapshotForRef(runtime, options, target);
+  return { nodes: capture.snapshot.nodes, resolved: capture.resolved };
+}
+
 async function resolveRefInteractionTarget(
   runtime: AgentDeviceRuntime,
   options: CommandContext,
   target: Extract<InteractionTarget, { kind: 'ref' }>,
   params: ResolveInteractionTargetParams,
 ): Promise<ResolvedInteractionTarget> {
-  const capture = await resolveSnapshotForRef(runtime, options, target);
-  const resolved = capture.resolved;
-  assertReplayTargetResolution(resolved.node, capture.snapshot.nodes, params);
+  const { nodes, resolved } = params.preresolvedTarget
+    ? adoptPreresolvedRefTarget(target, params.preresolvedTarget)
+    : await readRefResolution(runtime, options, target);
+  assertReplayTargetResolution(resolved.node, nodes, params);
   const node = params.promoteToHittableAncestor
-    ? resolveActionableNodeOrThrow(capture.snapshot.nodes, resolved.node, {
+    ? resolveActionableNodeOrThrow(nodes, resolved.node, {
         action: params.action,
         label: `Ref ${target.ref}`,
       })
@@ -246,7 +296,7 @@ async function resolveRefInteractionTarget(
     runtime,
     options,
     node,
-    capture.snapshot.nodes,
+    nodes,
     target.ref,
     params.action,
   );
@@ -258,7 +308,7 @@ async function resolveRefInteractionTarget(
     ...describeResolvedInteractionNode(
       runtime,
       visibleNode,
-      capture.snapshot.nodes,
+      nodes,
       params.action,
       resolved.resolution,
     ),
@@ -377,6 +427,19 @@ const LABEL_FALLBACK_REF_RESOLUTION: ResolutionDisclosure = {
   phase: 'pre-action',
   kind: 'label-fallback',
 };
+
+/** Shared construction site for every runtime-ref resolution disclosure. */
+export function buildRefResolution(
+  ref: string,
+  node: SnapshotNode,
+  kind: 'exact' | 'label-fallback',
+): ResolvedRefNode {
+  return {
+    ref,
+    node,
+    resolution: kind === 'exact' ? EXACT_REF_RESOLUTION : LABEL_FALLBACK_REF_RESOLUTION,
+  };
+}
 
 const UNIQUE_RUNTIME_RESOLUTION: ResolutionDisclosure = {
   source: 'runtime',
@@ -690,12 +753,12 @@ export function tryResolveRefNode(
   if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${refInput}`);
   const refNode = findNodeByRef(nodes, ref);
   if (isUsableResolvedNode(refNode)) {
-    return { ref, node: refNode, resolution: EXACT_REF_RESOLUTION };
+    return buildRefResolution(ref, refNode, 'exact');
   }
   const fallbackNode =
     options.fallbackLabel.length > 0 ? findNodeByLabel(nodes, options.fallbackLabel) : null;
   if (isUsableResolvedNode(fallbackNode)) {
-    return { ref, node: fallbackNode, resolution: LABEL_FALLBACK_REF_RESOLUTION };
+    return buildRefResolution(ref, fallbackNode, 'label-fallback');
   }
   return null;
 }
