@@ -159,6 +159,63 @@ extension RunnerTests {
     repairMode == .none && fromTapWitness && !softwareKeyboardVisible
   }
 
+  enum SynthesizedTextCommitProgress: Equatable {
+    case committed
+    case pending
+    case diverged
+  }
+
+  // The private synthesize call returns once the event record is posted, not once the target
+  // app has committed the characters, so intermediate reads walk prefix-by-prefix toward the
+  // expected value. Anything off that prefix path means the app transformed the input
+  // (formatter, mid-text caret, autocomplete) and the runner must not second-guess it. An
+  // unreadable value — secure field, or the element stopped resolving — ends the wait the
+  // same way.
+  static func synthesizedTextCommitProgress(
+    observedText: String?,
+    expectedText: String
+  ) -> SynthesizedTextCommitProgress {
+    guard let observedText else {
+      return .diverged
+    }
+    if observedText == expectedText {
+      return .committed
+    }
+    return expectedText.hasPrefix(observedText) ? .pending : .diverged
+  }
+
+  /// Blocks until the synthesized bare-type text is observable in the target field, so `type`
+  /// cannot report ok while trailing characters are still uncommitted on a slow simulator.
+  ///
+  /// Observation only. A stalled prefix cannot be told apart from a suffix still queued in the
+  /// event stream, so re-synthesizing the difference risks committing it twice after the command
+  /// already reported success. Text carrying a submit key is skipped outright: the app may clear
+  /// or rewrite the field on submit, so `textBefore + typedText` is not the value to wait for.
+  func awaitSynthesizedFirstResponderCommit(
+    app: XCUIApplication,
+    target: TextEntryTarget,
+    textBefore: String?,
+    typedText: String
+  ) {
+    guard let textBefore, !typedText.contains("\n"), !typedText.contains("\r") else {
+      return
+    }
+    let expectedText = textBefore + typedText
+    let deadline = Date().addingTimeInterval(TextEntryTiming.synthesizedCommitTimeout)
+    while Date() < deadline {
+      let observedText = editableTextValue(
+        for: resolveTextEntryElement(app: app, target: target),
+        treatingPlaceholderAsEmpty: true
+      )
+      switch Self.synthesizedTextCommitProgress(observedText: observedText, expectedText: expectedText) {
+      case .committed, .diverged:
+        return
+      case .pending:
+        sleepFor(TextEntryTiming.pollInterval)
+      }
+    }
+  }
+
   static func shouldUseResolvedCoordinateTextEntryRoute(
     repairMode: TextTypingRepairMode,
     hasX: Bool,

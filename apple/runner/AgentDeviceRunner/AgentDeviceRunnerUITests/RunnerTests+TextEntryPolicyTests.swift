@@ -61,6 +61,35 @@ extension RunnerTests {
     }
   }
 
+  func testSynthesizedTextCommitProgressWalksExpectedPrefixOnly() {
+    let expected = "hardware-keyboard"
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: "hardware-keyboard", expectedText: expected),
+      .committed
+    )
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: "", expectedText: expected),
+      .pending
+    )
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: "hardware-keyboa", expectedText: expected),
+      .pending
+    )
+    // Transformed input (formatter, mid-text caret, autocomplete) must stop the wait.
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: "hardwarX", expectedText: expected),
+      .diverged
+    )
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: "hardware-keyboards", expectedText: expected),
+      .diverged
+    )
+    XCTAssertEqual(
+      Self.synthesizedTextCommitProgress(observedText: nil, expectedText: expected),
+      .diverged
+    )
+  }
+
 #if os(iOS)
   func testSynthesizedTextEntryFallsBackOnlyWhenPrivateSynthesisIsUnavailable() {
     XCTAssertEqual(
