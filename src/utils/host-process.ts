@@ -55,7 +55,14 @@ export function readProcessCommand(pid: number): string | null {
   return readProcessField(pid, 'command=');
 }
 
-function readProcessField(pid: number, field: 'lstart=' | 'command='): string | null {
+// A zombie passes kill(pid, 0) and still reports its original lstart, so both
+// isProcessAlive and the start-time identity check read it as live; only the
+// process state exposes that it already terminated.
+export function isProcessZombie(pid: number): boolean {
+  return readProcessField(pid, 'state=')?.startsWith('Z') ?? false;
+}
+
+function readProcessField(pid: number, field: 'lstart=' | 'command=' | 'state='): string | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
     const result = runCmdSync('ps', ['-p', String(pid), '-o', field], {
