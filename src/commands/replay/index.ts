@@ -53,6 +53,7 @@ export const replayCommandMetadata = defineFieldCommandMetadata(
     keepSession: booleanField(
       'Leave the session active by suppressing exactly an authored terminal close in native .ad.',
     ),
+    timeoutMs: integerField('Maximum wall-clock duration for the replay request.'),
     // ADR 0012 decision 6, R1/R6: arms agent-supervised re-record repair
     // from the first replay attempt; optional string value is the healed
     // script's output path.
@@ -154,6 +155,7 @@ export const replayCliReader: CliReader = (positionals, flags) => ({
   resumeFrom: flags.replayFrom,
   resumePlanDigest: flags.replayPlanDigest,
   keepSession: flags.replayKeepSession,
+  timeoutMs: flags.timeoutMs,
   saveScript: flags.saveScript,
   force: flags.force,
 });
