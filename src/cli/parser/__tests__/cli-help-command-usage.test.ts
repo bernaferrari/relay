@@ -136,13 +136,17 @@ test('usageForCommand documents prepare ios-runner', async () => {
 test('workflow help keeps common copyable command forms', async () => {
   const help = await usageForCommand('workflow');
   if (help === null) throw new Error('Expected workflow help text');
-  assert.match(help, /network dump --include headers/);
-  assert.match(help, /settings animations off/);
-  assert.match(help, /connect --remote-config/);
   assert.match(help, /metro reload/);
   assert.match(help, /screenshot --overlay-refs/);
-  assert.match(help, /snapshot -s @e7/);
-  assert.match(help, /clipboard write "some text"/);
+  // Concrete ref shape, not the @ref placeholder the same card forbids using
+  // as a target (#1663 review).
+  assert.match(help, /snapshot -s @e12 \(the current concrete ref\)/);
+  assert.doesNotMatch(help, /snapshot -s @ref\b/);
+  // Moved out of the compact card (not deleted) into their owning sub-topics:
+  // network dump/settings animations -> help debugging; connect --remote-config
+  // -> help remote; clipboard write -> help debugging (text-entry quirks).
+  assert.match(help, /help debugging/);
+  assert.match(help, /help remote/);
 });
 
 test('debug command help stays scoped to symbolication', async () => {
@@ -198,7 +202,7 @@ test('session command help includes daemon state directory discovery', async () 
 test('web command help includes managed backend setup', async () => {
   const help = await usageForCommand('web');
   if (help === null) throw new Error('Expected command help text');
-  assert.match(help, /agent-device help web/);
+  assert.match(help, /^agent-device \S+ — web/);
   assert.match(help, /managed, pinned agent-browser backend/);
   assert.match(
     help,

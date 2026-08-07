@@ -9,7 +9,7 @@ const COMMAND_VALIDATOR = join(ROOT, 'scripts', 'help-conformance-command-valida
 const ALLOWED_PNPM_SCRIPTS = new Set(['build', 'build:android', 'build:xcuitest', 'clean:daemon']);
 
 export async function validatePlanCommands(commands, options = {}) {
-  const parsedCommands = commands.map((command) => parsePlanCommand(command));
+  const parsedCommands = commands.flatMap((command) => parseCommandLine(command));
   const agentCommands = parsedCommands.filter(
     ({ tokens, issues }) => issues.length === 0 && tokens[0] === 'agent-device',
   );
@@ -36,6 +36,75 @@ function applyCommandPolicy(parsed, agentResultState, allowedExternalCommands) {
         result?.kind ?? 'agent-device-grammar',
         result?.error ?? 'Command validation returned no result.',
       );
+}
+
+// The compact workflow card teaches chaining confident consecutive steps with
+// an unquoted `&&` (`press ... --settle && fill ... --settle`). Split on it
+// before tokenizing a line so each chained segment is validated as its own
+// full agent-device invocation, rather than the whole line failing as one
+// shell-projection violation. A `&&` inside a quoted selector value (for
+// example label="A && B") is not a chain boundary and must not split.
+//
+// A real shell rejects `&&` with an empty operand on either side (leading
+// `&& foo`, trailing `foo &&`, or doubled `foo && && bar`): each is a syntax
+// error, not two commands. The splitter below produces an empty segment for
+// exactly those shapes, so parseChainSegment turns an empty (post-trim)
+// segment into a validation issue instead of silently dropping it — a plan
+// with one of these shapes must not be blessed by validPlanCommands when it
+// would fail at execution.
+function parseCommandLine(command) {
+  return splitOnUnquotedAnd(command).map((segment) => parseChainSegment(segment));
+}
+
+function parseChainSegment(segment) {
+  if (segment.trim().length > 0) return parsePlanCommand(segment.trim());
+  return {
+    command: segment,
+    tokens: [],
+    issues: [
+      {
+        kind: 'empty-chain-operand',
+        error:
+          'A && chain must have a non-empty command on both sides (no leading, trailing, or doubled &&).',
+      },
+    ],
+  };
+}
+
+function splitOnUnquotedAnd(command) {
+  const state = { segments: [], current: '', quote: undefined };
+  for (let index = 0; index < command.length; index += 1) {
+    index = consumeSplitCharacter(command, index, state);
+  }
+  state.segments.push(state.current);
+  return state.segments;
+}
+
+function consumeSplitCharacter(command, index, state) {
+  const character = command[index];
+  if (state.quote) return consumeQuotedSplitCharacter(command, index, character, state);
+  if (character === "'" || character === '"') {
+    state.quote = character;
+    state.current += character;
+    return index;
+  }
+  if (character === '&' && command[index + 1] === '&') {
+    state.segments.push(state.current);
+    state.current = '';
+    return index + 1;
+  }
+  state.current += character;
+  return index;
+}
+
+function consumeQuotedSplitCharacter(command, index, character, state) {
+  if (character === '\\' && state.quote === '"' && index + 1 < command.length) {
+    state.current += character + command[index + 1];
+    return index + 1;
+  }
+  state.current += character;
+  if (character === state.quote) state.quote = undefined;
+  return index;
 }
 
 function parsePlanCommand(command) {
