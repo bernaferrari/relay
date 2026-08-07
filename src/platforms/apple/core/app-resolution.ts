@@ -100,6 +100,69 @@ export function resolveIosAppAlias(app: string): string {
   return ALIASES[trimmed.toLowerCase()] ?? app;
 }
 
+// Bounded so an error-path probe never turns into a long wait.
+const IOS_FOREGROUND_APP_PROBE_TIMEOUT_MS = 3_000;
+const UIKIT_APPLICATION_JOB_PATTERN = /UIKitApplication:([^[\s]+)\[/;
+
+/**
+ * Identifies the sole installed app currently running on a booted simulator,
+ * for enriching error hints — never for functional resolution (ambiguity
+ * must fail, not guess).
+ *
+ * `launchctl list` reports every running job, including simulator-internal
+ * services (Spotlight, widget renderers, parental controls) that are not
+ * real apps. Cross-referencing against `simctl listapps` (the installed-app
+ * registry) filters those out without hardcoding a system bundle-id
+ * denylist that would drift across iOS versions. Returns `undefined`
+ * whenever this isn't a single confident answer: no running app, more than
+ * one, or the probe itself failed.
+ */
+export async function detectSoleRunningIosSimulatorApp(
+  device: DeviceInfo,
+): Promise<IosAppInfo | undefined> {
+  if (!isIosFamily(device) || device.kind !== 'simulator' || device.booted !== true) {
+    return undefined;
+  }
+
+  // Both probes are bounded, but a timeout still REJECTS (exec.ts's
+  // `allowFailure` only suppresses non-zero exit codes, not a timeout or a
+  // spawn failure) — this is an error-path enrichment, so any throw here
+  // must fall back to "inconclusive", never propagate and replace the
+  // caller's deterministic error with a probe failure.
+  try {
+    const [runningBundleIds, installedApps] = await Promise.all([
+      listRunningIosSimulatorBundleIds(device),
+      listSimulatorApps(device, { timeoutMs: IOS_FOREGROUND_APP_PROBE_TIMEOUT_MS }),
+    ]);
+    if (runningBundleIds.length === 0) return undefined;
+
+    const installedById = new Map(installedApps.map((app) => [app.bundleId, app] as const));
+    const candidates = new Map<string, IosAppInfo>();
+    for (const bundleId of runningBundleIds) {
+      const app = installedById.get(bundleId);
+      if (app) candidates.set(app.bundleId, app);
+    }
+    return candidates.size === 1 ? [...candidates.values()][0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function listRunningIosSimulatorBundleIds(device: DeviceInfo): Promise<string[]> {
+  const result = await runSimctl(device, ['spawn', device.id, 'launchctl', 'list'], {
+    allowFailure: true,
+    timeoutMs: IOS_FOREGROUND_APP_PROBE_TIMEOUT_MS,
+  });
+  if (result.exitCode !== 0) return [];
+
+  const bundleIds: string[] = [];
+  for (const line of (result.stdout as string).split('\n')) {
+    const match = UIKIT_APPLICATION_JOB_PATTERN.exec(line);
+    if (match?.[1]) bundleIds.push(match[1]);
+  }
+  return bundleIds;
+}
+
 type SimulatorAppMetadata = {
   bundleId: string;
   name: string;
@@ -148,16 +211,30 @@ export async function listIosApps(device: DeviceInfo, filter: AppsFilter): Promi
   return await resolveIosPhysicalDeviceControl(device).listApps(device, filter);
 }
 
-async function listSimulatorApps(device: DeviceInfo): Promise<IosAppInfo[]> {
-  const apps = await listSimulatorAppMetadata(device);
+type SimulatorAppListOptions = {
+  /** Unset (default) preserves prior unbounded behavior for normal command flow. */
+  timeoutMs?: number;
+};
+
+async function listSimulatorApps(
+  device: DeviceInfo,
+  options?: SimulatorAppListOptions,
+): Promise<IosAppInfo[]> {
+  const apps = await listSimulatorAppMetadata(device, options);
   return apps.map((app) => ({
     bundleId: app.bundleId,
     name: app.name,
   }));
 }
 
-async function listSimulatorAppMetadata(device: DeviceInfo): Promise<SimulatorAppMetadata[]> {
-  const result = await runSimctl(device, ['listapps', device.id], { allowFailure: true });
+async function listSimulatorAppMetadata(
+  device: DeviceInfo,
+  options?: SimulatorAppListOptions,
+): Promise<SimulatorAppMetadata[]> {
+  const result = await runSimctl(device, ['listapps', device.id], {
+    allowFailure: true,
+    timeoutMs: options?.timeoutMs,
+  });
   const stdout = result.stdout as string;
   const trimmed = stdout.trim();
   if (!trimmed) return [];
@@ -194,6 +271,7 @@ async function listSimulatorAppMetadata(device: DeviceInfo): Promise<SimulatorAp
       const converted = await runAppleToolCommand('plutil', ['-convert', 'json', '-o', '-', '-'], {
         allowFailure: true,
         stdin: trimmed,
+        timeoutMs: options?.timeoutMs,
       });
       if (converted.exitCode === 0 && converted.stdout.trim().startsWith('{')) {
         parsed = JSON.parse(converted.stdout) as Record<
