@@ -1,9 +1,7 @@
 import type { RequestProgressSink } from '@agent-device/contracts/progress';
 import net from 'node:net';
-import http from 'node:http';
-import https from 'node:https';
 import { AppError } from '@agent-device/kernel/errors';
-import { readNodeHttpResponseBody } from '../../utils/node-http.ts';
+import { loadNodeHttpRequester, readNodeHttpResponseBody } from '../../utils/node-http.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import type { DaemonPaths, DaemonTransportPreference } from '../config.ts';
@@ -102,19 +100,19 @@ export async function readRemoteDaemonHealth(info: DaemonInfo): Promise<RemoteDa
   return health;
 }
 
-function readDaemonHttpHealth(info: DaemonInfo): Promise<RemoteDaemonHealth> {
+async function readDaemonHttpHealth(info: DaemonInfo): Promise<RemoteDaemonHealth> {
   const endpoint = info.baseUrl
     ? buildDaemonHttpUrl(info.baseUrl, 'health')
     : info.httpPort
       ? `http://127.0.0.1:${info.httpPort}/health`
       : null;
-  if (!endpoint) return Promise.resolve({ reachable: false });
+  if (!endpoint) return { reachable: false };
   const url = new URL(endpoint);
-  const transport = url.protocol === 'https:' ? https : http;
+  const transport = await loadNodeHttpRequester(url.protocol);
   const timeoutMs = info.baseUrl
     ? REMOTE_DAEMON_HEALTHCHECK_TIMEOUT_MS
     : LOCAL_DAEMON_HEALTHCHECK_TIMEOUT_MS;
-  return new Promise((resolve) => {
+  return await new Promise((resolve) => {
     const headers = info.baseUrl ? buildDaemonHttpAuthHeaders(info.token) : {};
     const req = transport.request(
       {
@@ -380,9 +378,9 @@ async function sendHttpRequest(
   if (info.baseUrl) {
     Object.assign(headers, buildDaemonHttpAuthHeaders(info.token));
   }
+  const transport = await loadNodeHttpRequester(rpcUrl.protocol);
 
   return await new Promise((resolve, reject) => {
-    const transport = rpcUrl.protocol === 'https:' ? https : http;
     const request = transport.request(
       {
         protocol: rpcUrl.protocol,
