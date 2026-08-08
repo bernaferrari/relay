@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import http, { type IncomingHttpHeaders } from 'node:http';
-import https from 'node:https';
+import type { IncomingHttpHeaders } from 'node:http';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { AppError } from '@agent-device/kernel/errors';
-import { readNodeHttpResponseBody } from '../utils/node-http.ts';
+import { loadNodeHttpRequester, readNodeHttpResponseBody } from '../utils/node-http.ts';
 import {
   createUploadProgressTransform,
   type UploadProgressSink,
@@ -65,7 +64,10 @@ async function streamFileToHttpRequestAttempt(options: {
   startOffset: number;
   progress?: UploadStreamProgressOptions;
 }): Promise<UploadStreamResponse> {
-  const transport = options.url.protocol === 'https:' ? https : http;
+  // This module sits in the CLI's eager import closure via the remote-artifact
+  // upload client, but only a remote daemon ever uploads, so the HTTP stack
+  // loads here rather than at import time.
+  const transport = await loadNodeHttpRequester(options.url.protocol);
   const payloadSize = fs.statSync(options.payloadPath).size;
   const headers = buildUploadRequestHeaders(options.headers, options.startOffset, payloadSize);
   emitUploadAttemptStarted(options.progress, options.startOffset, payloadSize);
