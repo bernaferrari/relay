@@ -42,6 +42,7 @@ import {
   buildMeta,
   normalizeDeployResult,
   normalizeDevice,
+  normalizeOpenForegroundComposition,
   normalizeInstallFromSourceResult,
   normalizeMaterializationReleaseResult,
   normalizeOpenDevice,
@@ -279,11 +280,7 @@ export function createAgentDeviceClient(
           startup: normalizeStartupSample(data.startup),
           runtime: normalizeRuntimeHints(data.runtime),
           device,
-          // RFC prototype (open --foreground): only present when the daemon's
-          // foreground-attach composition captured an initial snapshot.
-          ...(data.snapshot && typeof data.snapshot === 'object'
-            ? { snapshot: data.snapshot as Record<string, unknown> }
-            : {}),
+          ...normalizeOpenForegroundComposition(data),
           identifiers: {
             session,
             deviceId: device?.id,

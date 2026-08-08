@@ -1,3 +1,4 @@
+import { normalizeError, type NormalizedError } from '@agent-device/kernel/errors';
 import { resolveSoleForegroundIosApp } from '../ios-app-session-hint.ts';
 import { dispatchSnapshotViaRuntime } from '../snapshot-runtime.ts';
 import type { SessionStore } from '../session-store.ts';
@@ -53,6 +54,27 @@ export async function resolveForegroundOpenRequest(params: {
       ),
     };
   }
+  // #1670 P1: the resolved-device rewrite below pins --udid/--platform, so an
+  // explicit selector must fail fast instead of being silently overwritten
+  // (open --foreground --udid B with sim A sole-booted must NOT open A).
+  if (req.flags?.udid !== undefined || req.flags?.device !== undefined) {
+    return {
+      type: 'response',
+      response: errorResponse(
+        'INVALID_ARGS',
+        'open --foreground resolves the device itself; drop --udid/--device or open explicitly: agent-device open <app> --udid <udid>.',
+      ),
+    };
+  }
+  if (req.flags?.platform !== undefined && req.flags.platform !== 'ios') {
+    return {
+      type: 'response',
+      response: errorResponse(
+        'INVALID_ARGS',
+        'open --foreground only supports --platform ios; drop the flag or pass --platform ios.',
+      ),
+    };
+  }
 
   const resolved = await resolveSoleForegroundIosApp({
     simulatorSetPath: req.flags?.iosSimulatorDeviceSet,
@@ -92,6 +114,12 @@ export async function resolveForegroundOpenRequest(params: {
  *
  * A no-op when `--foreground` was not requested, or when open itself failed (nothing to
  * attach a snapshot to).
+ *
+ * #1670 P1: a capture failure must never mask the successful open — the session exists
+ * either way, and returning the capture error made a retry of `open --foreground` fail
+ * with "close the current session first". Open success + snapshot failure returns
+ * `ok: true` with an explicit `initialSnapshotError` detail and a rendered warning
+ * telling the caller the session IS open and how to capture manually.
  */
 export async function composeOpenWithInitialSnapshot(params: {
   req: DaemonRequest;
@@ -103,16 +131,59 @@ export async function composeOpenWithInitialSnapshot(params: {
   const { req, sessionName, logPath, sessionStore, openResponse } = params;
   if (!openResponse.ok || req.flags?.foreground !== true) return openResponse;
 
-  const snapshotResponse = await dispatchSnapshotViaRuntime({
-    req: { ...req, command: 'snapshot', positionals: [] },
-    sessionName,
-    logPath,
-    sessionStore,
-  });
-  if (!snapshotResponse.ok) return snapshotResponse;
+  try {
+    const snapshotResponse = await dispatchSnapshotViaRuntime({
+      req: {
+        ...req,
+        command: 'snapshot',
+        positionals: [],
+        // The promised composition IS `snapshot -i`: the CLI maps `-i` to
+        // `snapshotInteractiveOnly` (flag-definitions-workflow.ts), which is the
+        // key the snapshot runtime reads as `interactiveOnly`.
+        flags: { ...req.flags, snapshotInteractiveOnly: true },
+      },
+      sessionName,
+      logPath,
+      sessionStore,
+    });
+    if (!snapshotResponse.ok) {
+      return openWithInitialSnapshotFailure(openResponse.data, snapshotResponse.error);
+    }
+    return {
+      ok: true,
+      data: { ...openResponse.data, snapshot: snapshotResponse.data },
+    };
+  } catch (error) {
+    // The dispatch can also THROW (capture/runner exceptions are rethrown after
+    // the runtime's own handling). An escaped rejection would fail the whole
+    // open after the session was created — the exact masking this composition
+    // exists to prevent — so a thrown capture failure gets the same
+    // successful-open contract as a returned one.
+    return openWithInitialSnapshotFailure(openResponse.data, normalizeError(error));
+  }
+}
 
+function openWithInitialSnapshotFailure(
+  openData: Record<string, unknown> | undefined,
+  error: NormalizedError,
+): DaemonResponse {
   return {
     ok: true,
-    data: { ...openResponse.data, snapshot: snapshotResponse.data },
+    data: {
+      ...openData,
+      warnings: [
+        ...readStringWarnings(openData),
+        `The session is open, but the initial interactive snapshot failed (${error.code}: ${error.message}). Run: agent-device snapshot -i`,
+      ],
+      // The FULL error shape (hint/details/diagnosticId/logPath), not a
+      // code+message truncation — recovery guidance must survive to the
+      // public Node/CLI JSON surfaces.
+      initialSnapshotError: error,
+    },
   };
+}
+
+function readStringWarnings(data: Record<string, unknown> | undefined): string[] {
+  if (!data || !Array.isArray(data.warnings)) return [];
+  return data.warnings.filter((warning): warning is string => typeof warning === 'string');
 }
