@@ -253,6 +253,10 @@ test('usageForCommand resolves workflow help topic', async () => {
   );
   assert.match(help, /Known flow: batch \.\/steps\.json \(help scripting\)/);
   assert.match(help, /Shapes and platform quirks: help gestures/);
+  assert.match(
+    help,
+    /One iOS sim, app running, no session: open --foreground: attach \+ snapshot\. Capture fails; stays open: snapshot -i\. App\/device\/ambiguity fail/,
+  );
   assert.match(help, /Never open artifact paths or invent package ids/);
   assert.match(
     help,
@@ -302,6 +306,10 @@ test('usageForCommand resolves workflow help topic', async () => {
     /confirm the requested end state is actually visible on the current screen, scrolling it into view if needed/,
   );
   assert.match(help, /get text alone, or stopping one screen early, is not enough/);
+  assert.match(
+    help,
+    /iOS sim: snapshot -i --actions shows merged actions; use detail\/coords, not names/,
+  );
   assert.match(help, /Perf\/memory\/log\/network\/trace\/crash: help debugging/);
   assert.match(help, /Recording, save-script, batch, replay repair: help scripting/);
   assert.match(help, /help react-native for Metro\/Re\.Pack reload/);
