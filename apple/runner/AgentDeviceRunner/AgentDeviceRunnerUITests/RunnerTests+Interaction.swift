@@ -129,7 +129,8 @@ extension RunnerTests {
     selectorKey: String,
     selectorValue: String,
     allowNonHittableFallback: Bool = false,
-    expectedPoint: CGPoint? = nil
+    expectedPoint: CGPoint? = nil,
+    rawMatchPolicy: DirectSelectorRawMatchPolicy = .rejectDistinctMatches
   ) -> SelectorElementMatch {
     let value = selectorValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else {
@@ -149,35 +150,32 @@ extension RunnerTests {
       return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
     }
 
-    var matchedElement: XCUIElement?
-    var nonHittableElement: XCUIElement?
     let matches = app.descendants(matching: .any).matching(predicate).allElementsBoundByIndex
-    for element in matches where element.exists {
-      if let expectedPoint, !element.frame.contains(expectedPoint) {
-        continue
-      }
-      if !element.isHittable {
-        if allowNonHittableFallback && hasTappableFrame(app: app, element: element) {
-          guard nonHittableElement == nil else {
-            return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
-          }
-          nonHittableElement = element
-        }
-        continue
-      }
-      guard matchedElement == nil else {
-        return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
-      }
-      matchedElement = element
+      .filter(\.exists)
+    let facts = matches.map { element in
+      SelectorCandidateFacts(
+        isHittable: element.isHittable,
+        hasTappableFrame: hasTappableFrame(app: app, element: element),
+        containsExpectedPoint: expectedPoint.map(element.frame.contains) ?? true
+      )
     }
-    if let matchedElement {
-      return SelectorElementMatch(element: matchedElement, isAmbiguous: false, usedNonHittableFallback: false)
+    switch classifyDirectSelectorCandidates(
+      facts,
+      allowNonHittableFallback: allowNonHittableFallback,
+      filtersByExpectedPoint: expectedPoint != nil,
+      rawMatchPolicy: rawMatchPolicy
+    ) {
+    case .noMatch:
+      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
+    case .ambiguous:
+      return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
+    case let .selected(index, usedNonHittableFallback):
+      return SelectorElementMatch(
+        element: matches[index],
+        isAmbiguous: false,
+        usedNonHittableFallback: usedNonHittableFallback
+      )
     }
-    return SelectorElementMatch(
-      element: nonHittableElement,
-      isAmbiguous: false,
-      usedNonHittableFallback: nonHittableElement != nil
-    )
   }
 
   // Maestro-compat gate for the non-hittable coordinate fallback: an element
@@ -209,7 +207,17 @@ extension RunnerTests {
   }
 
   func queryElement(app: XCUIApplication, selectorKey: String, selectorValue: String) -> Response {
-    let match = findElement(app: app, selectorKey: selectorKey, selectorValue: selectorValue)
+    // querySelector is a read — it backs get/is/wait and the offscreen-refusal
+    // double-check, none of which mutate. The fail-closed raw-match rule exists
+    // to stop a mutation acting on an unseen duplicate; applying it here would
+    // instead turn a decorative non-hittable duplicate into an AMBIGUOUS_MATCH
+    // for readers that previously resolved the hittable element.
+    let match = findElement(
+      app: app,
+      selectorKey: selectorKey,
+      selectorValue: selectorValue,
+      rawMatchPolicy: .preferHittableMatch
+    )
     if match.isAmbiguous {
       return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
     }
