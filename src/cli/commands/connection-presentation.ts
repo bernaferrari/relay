@@ -1,6 +1,7 @@
 import { fingerprint, type RemoteConnectionState } from '../../remote/remote-connection-state.ts';
 import type { ConnectVerification } from '../connection/connect-provider-adapters.ts';
 import { connectionProviderLeaseKind } from '../connection/provider-policy.ts';
+import { shellQuoteIfNeeded } from '../../utils/shell-quote.ts';
 
 export type ConnectReadiness = ConnectVerification & {
   preparationMessage: string;
@@ -53,12 +54,12 @@ export function buildLeasePreparationNotice(
       : '';
   return {
     status: 'deferred',
-    nextSteps: [
+    nextSteps: scopeNextSteps(state, [
       'agent-device install-from-source <artifact-url> --platform ios|android',
       'agent-device open <app-id> --relaunch',
       'agent-device snapshot -i',
       'agent-device devices',
-    ],
+    ]),
     message:
       'No live device session has been created. Run a device command when ready to allocate or refresh the lease.' +
       needsPlatform,
@@ -212,6 +213,14 @@ function buildConnectWorkflow(
   state: RemoteConnectionState,
   verification?: ConnectVerification,
 ): Pick<ConnectReadiness, 'nextSteps' | 'notes'> {
+  const workflow = buildUnscopedConnectWorkflow(state, verification);
+  return { ...workflow, nextSteps: scopeNextSteps(state, workflow.nextSteps) };
+}
+
+function buildUnscopedConnectWorkflow(
+  state: RemoteConnectionState,
+  verification?: ConnectVerification,
+): Pick<ConnectReadiness, 'nextSteps' | 'notes'> {
   const leaseKind = connectionProviderLeaseKind(state.leaseProvider);
   if (leaseKind === 'proxy') {
     return {
@@ -230,7 +239,7 @@ function buildConnectWorkflow(
       ? installThenOpenWorkflow(state)
       : [...missingAttachedAppRecovery(verification), ...openWorkflow(state).nextSteps],
     ...(supportsProviderArtifacts(verification)
-      ? { notes: providerArtifactNotes(!appMissing) }
+      ? { notes: providerArtifactNotes(state, !appMissing) }
       : {}),
   };
 }
@@ -256,12 +265,15 @@ function missingAttachedAppRecovery(verification?: ConnectVerification): string[
   ];
 }
 
-function providerArtifactNotes(includeAppIdNote: boolean): string[] {
+function providerArtifactNotes(state: RemoteConnectionState, includeAppIdNote: boolean): string[] {
   return [
     ...(includeAppIdNote
       ? ['Use the installed package or bundle identifier in open, not the app artifact name.']
       : []),
-    'After close, run agent-device artifacts --json for provider video and logs.',
+    // Notes carry runnable commands too, so they need the same session scoping as
+    // nextSteps: an unscoped artifacts call adopts the host-global active connection
+    // and can hand back another concurrent job's provider video and logs.
+    `After close, run ${scopeCommand(state, 'agent-device artifacts --json')} for provider video and logs.`,
   ];
 }
 
@@ -292,6 +304,23 @@ function defaultDirectProviderLifecycle(): string[] {
     'agent-device close',
     'agent-device artifacts --json',
   ];
+}
+
+function scopeNextSteps(state: RemoteConnectionState, commands: readonly string[]): string[] {
+  return commands.map((command) => scopeCommand(state, command));
+}
+
+/**
+ * The single place a suggested command is bound to the connection it came from.
+ * Every command-bearing output — nextSteps, notes, deferred-runtime notices —
+ * goes through here so no emitted instruction can resolve against whichever
+ * connection happens to be host-global active when the operator runs it.
+ */
+export function scopeCommand(
+  state: Pick<RemoteConnectionState, 'session'>,
+  command: string,
+): string {
+  return `${command} --session ${shellQuoteIfNeeded(state.session)}`;
 }
 
 function appIdPlaceholder(platform: RemoteConnectionState['platform']): string {

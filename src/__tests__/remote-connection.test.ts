@@ -439,11 +439,75 @@ test('connect reports deferred Metro runtime preparation when remote config has 
   assert.match(stdout, /Run a device command when ready/);
   assert.match(stdout, /Metro runtime is not prepared yet/);
   assert.match(stdout, /metro prepare --remote-config/);
-  assert.equal(readActiveConnectionState({ stateDir })?.runtime, undefined);
+  const connected = readActiveConnectionState({ stateDir });
+  assert.equal(connected?.runtime, undefined);
+
+  // The deferred-runtime notice is a runnable command like any next step: an
+  // unscoped `metro prepare` would resolve against whichever connection is
+  // host-global active, which on a shared host is another process's.
+  const session = connected?.session ?? '';
+  assert.ok(session);
+  assert.match(stdout, new RegExp(`metro prepare --remote-config \\S+ --session ${session}\\b`));
+  assert.equal(
+    readRemoteConnectionState({ stateDir, session })?.remoteConfigPath,
+    remoteConfigPath,
+    'the emitted --session resolves back to the connection that printed the notice',
+  );
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('connect without a session reuses the active generated connection', async () => {
+test('connection status re-emits the deferred Metro command scoped to the named session', async () => {
+  const tempRoot = mkdtempForTestSync('agent-device-connection-status-metro-');
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(
+    remoteConfigPath,
+    JSON.stringify({
+      daemonBaseUrl: 'https://daemon.example.test',
+      metroPublicBaseUrl: 'https://sandbox.example.test',
+    }),
+  );
+
+  await connectCommand({
+    positionals: [],
+    flags: {
+      json: true,
+      help: false,
+      version: false,
+      stateDir,
+      remoteConfig: remoteConfigPath,
+      daemonBaseUrl: 'https://daemon.example.test',
+      tenant: 'acme',
+      runId: 'run-123',
+      platform: 'android',
+      session: 'adc-status-metro',
+    },
+    client: createTestClient(),
+  });
+
+  const stdout = await captureStdout(async () => {
+    await connectionCommand({
+      positionals: ['status'],
+      flags: {
+        json: true,
+        help: false,
+        version: false,
+        stateDir,
+        session: 'adc-status-metro',
+      },
+      client: createTestClient(),
+    });
+  });
+
+  const payload = JSON.parse(stdout) as { data: { runtimePreparation?: { nextStep?: string } } };
+  assert.equal(
+    payload.data.runtimePreparation?.nextStep,
+    `agent-device metro prepare --remote-config ${remoteConfigPath} --session adc-status-metro`,
+  );
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect without a session creates a fresh connection without replacing the active one', async () => {
   const tempRoot = mkdtempForTestSync('agent-device-connect-idempotent-');
   const stateDir = path.join(tempRoot, '.state');
   const remoteConfigPath = path.join(tempRoot, 'remote.json');
@@ -485,8 +549,12 @@ test('connect without a session reuses the active generated connection', async (
     .readdirSync(path.join(stateDir, 'remote-connections'))
     .filter((entry) => entry.endsWith('.json') && entry !== '.active-session.json');
 
-  assert.equal(secondState?.session, firstState?.session);
-  assert.equal(storedSessions.length, 1);
+  assert.notEqual(secondState?.session, firstState?.session);
+  assert.equal(storedSessions.length, 2);
+  assert.equal(
+    readRemoteConnectionState({ stateDir, session: firstState?.session ?? '' })?.remoteConfigPath,
+    remoteConfigPath,
+  );
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -1730,17 +1798,13 @@ test('deferred materialization stops the new Metro companion if state persistenc
     },
   });
 
-  const originalWriteFileSync = fs.writeFileSync.bind(fs);
+  const originalRenameSync = fs.renameSync.bind(fs);
   const writeFailure = new Error('state write failed');
-  vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
-    if (String(file).endsWith(path.join('remote-connections', 'adc-android.json'))) {
+  vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+    if (String(newPath).endsWith(path.join('remote-connections', 'adc-android.json'))) {
       throw writeFailure;
     }
-    return originalWriteFileSync(
-      file as Parameters<typeof fs.writeFileSync>[0],
-      data as Parameters<typeof fs.writeFileSync>[1],
-      options as Parameters<typeof fs.writeFileSync>[2],
-    );
+    return originalRenameSync(oldPath, newPath);
   });
 
   await assert.rejects(
@@ -1958,7 +2022,7 @@ test('connect --force stops replaced Metro companion after state is updated', as
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('connect --force without a session replaces the active generated connection', async () => {
+test('connect --force without a session does not replace the active generated connection', async () => {
   const tempRoot = mkdtempForTestSync('agent-device-connect-force-active-');
   const stateDir = path.join(tempRoot, '.state');
   const oldRemoteConfigPath = path.join(tempRoot, 'old-remote.json');
@@ -2027,17 +2091,16 @@ test('connect --force without a session replaces the active generated connection
     .readdirSync(path.join(stateDir, 'remote-connections'))
     .filter((entry) => entry.endsWith('.json') && entry !== '.active-session.json');
 
-  assert.equal(activeState?.session, 'adc-7f3a2c');
+  assert.notEqual(activeState?.session, 'adc-7f3a2c');
   assert.equal(activeState?.runId, 'run-new');
   assert.equal(activeState?.remoteConfigPath, newRemoteConfigPath);
-  assert.equal(releaseRequest?.leaseId, 'lease-old');
-  assert.equal(releaseRequest?.daemonAuthToken, 'test-old-not-a-real-token');
-  assert.deepEqual(vi.mocked(stopMetroCompanion).mock.calls[0]?.[0], {
-    projectRoot: '/tmp/old-project',
-    profileKey: oldRemoteConfigPath,
-    consumerKey: 'adc-7f3a2c',
-  });
-  assert.equal(storedSessions.length, 1);
+  assert.equal(releaseRequest, undefined);
+  assert.equal(vi.mocked(stopMetroCompanion).mock.calls.length, 0);
+  assert.equal(storedSessions.length, 2);
+  assert.equal(
+    readRemoteConnectionState({ stateDir, session: 'adc-7f3a2c' })?.remoteConfigPath,
+    oldRemoteConfigPath,
+  );
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
