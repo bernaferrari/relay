@@ -147,3 +147,27 @@ Next:
 Use the installed package or bundle identifier in open, not the app artifact name.
 After close, run agent-device artifacts --json --session adc-browserstack for provider video and logs.`,
 };
+
+// open --foreground succeeded, but its composed snapshot failed. The session
+// remains usable, so recovery is snapshot -i rather than a second open.
+export const FOREGROUND_SNAPSHOT_FAILURE_SAMPLE = {
+  command: 'agent-device open --foreground',
+  output: `Opened: default
+Warning: The session is open, but the initial interactive snapshot failed (COMMAND_FAILED: capture failed). Run: agent-device snapshot -i`,
+};
+
+// Merged feed-item card on iOS (#1665): the row itself is the only ref — its
+// Reply/Repost/menu controls have no separate child nodes in the tree, so
+// snapshot -i alone would show a plain link with no way to act on it.
+// snapshot -i --actions names the hidden affordances instead of hiding them
+// silently; the names are evidence only, never directly invokable (help
+// workflow: "reach via its detail screen, labeled children elsewhere, or
+// coordinates").
+export const MERGED_CARD_ACTIONS_SAMPLE = {
+  command: 'agent-device snapshot -i --actions',
+  output: `Snapshot: 4 nodes
+@e1 [application] "Bluesky"
+@e2 [window]
+@e3 [collection]
+@e72 [link] "feedItem-by-whiskers.test" actions: ["Reply", "Repost", "Open post options menu"]`,
+};

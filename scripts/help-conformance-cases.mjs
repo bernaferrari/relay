@@ -3,6 +3,8 @@ import {
   APP_NOT_INSTALLED_SAMPLE,
   BROWSERSTACK_CONNECT_SAMPLE,
   DEVICE_IN_USE_SAMPLE,
+  FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+  MERGED_CARD_ACTIONS_SAMPLE,
   NOT_SETTLED_SAMPLE,
   OFFSCREEN_TARGET_SNAPSHOT_SAMPLE,
   SETTLE_DIFF_SAMPLE,
@@ -640,6 +642,81 @@ Use the output already shown to determine whether the feed-search UI is present,
         pattern: /(?:^|\n)agent-device\s+open\s+(?:sample\.apk|bs:\/\/app-id)\b/i,
       },
       { id: 'noRedundantInstall', pattern: /(?:^|\n)agent-device\s+install\b/i },
+    ],
+  },
+  {
+    id: 'foreground-attach-single-sim',
+    docs: ['--help:first30', 'workflow'],
+    task: 'You are starting fresh with no active session. The environment guarantees exactly one booted iOS simulator with exactly one app running on it -- the app you want to keep testing. Plan the command to attach to it and get its initial interactive snapshot in a single call (this only resolves unambiguously because of that guarantee, and it rejects an explicit app or device selector), then press the visible Continue control and close the session.',
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSettleOnMutations',
+      'opensAndCloses',
+      'noExplicitForegroundTarget',
+    ],
+    matchers: [
+      {
+        id: 'startsWithForegroundOpen',
+        // Flag order is not semantically meaningful (`open --platform ios
+        // --foreground` is exactly as correct as `open --foreground
+        // --platform ios`); this only checks that --foreground is on the
+        // first command and there is no app positional before it. The
+        // no-positional guarantee comes from the forbidden checks below.
+        pattern: /^agent-device\s+open\b[^\n]*--foreground\b/i,
+      },
+      {
+        id: 'pressesContinueAfterAttach',
+        pattern: /agent-device\s+press\s+[^\n]*continue[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'noDeviceSelectorWithForeground',
+        pattern: /--foreground\b[^\n]*--(?:udid|device)\b|--(?:udid|device)\b[^\n]*--foreground\b/i,
+      },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    id: 'merged-card-actions-not-directly-invokable',
+    docs: ['--help:first30', 'workflow'],
+    task: quiz(
+      MERGED_CARD_ACTIONS_SAMPLE,
+      'The goal is to reply to this post. The actions list names "Reply" as a hidden affordance on @e72, but that name is not a pressable selector. What command should run next?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'opensCardToReachReply',
+        pattern: /(?:^|\n)agent-device\s+(?:press|click)\s+@e72\b[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'noPressingActionNameAsSelector',
+        pattern: /(?:^|\n)agent-device\s+(?:press|click|find)\b[^\n]*(?:label|text)="?reply"?/i,
+      },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    id: 'foreground-attach-snapshot-recovery',
+    docs: ['--help:first30', 'workflow'],
+    task: quiz(
+      FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+      'The foreground attach succeeded and the session is still open, but its initial snapshot failed. What command should run next to get interactive refs?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix', 'usesSnapshotI'],
+    matchers: [
+      {
+        id: 'retriesSnapshotInOpenSession',
+        pattern: /(?:^|\n)agent-device\s+snapshot\s+-i\b/i,
+      },
+    ],
+    forbidden: [
+      { id: 'noSecondOpen', pattern: /(?:^|\n)agent-device\s+open\b/i },
+      { id: 'noPrematureClose', pattern: /(?:^|\n)agent-device\s+close\b/i },
     ],
   },
 ];
