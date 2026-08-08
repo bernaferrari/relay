@@ -24,10 +24,17 @@ export { makeSnapshotState } from './snapshot-builders.ts';
 export {
   ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
   androidSnapshotHelperOutput,
+  androidSnapshotHelperScriptResponse,
   createAndroidSnapshotHelperExecutor,
 } from './android-snapshot-helper.ts';
 
 export { makeSessionStore } from './store-factory.ts';
+
+export { withFakeAdb, type FakeAdbResponse } from './fake-adb.ts';
+
+export { withFakeAppleTool, type FakeAppleToolResponse } from './fake-apple-tool.ts';
+
+export { assertRejectsAppError } from './app-error.ts';
 
 export {
   COMPACT_VIEWPORTS,
