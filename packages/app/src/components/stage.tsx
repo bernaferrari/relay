@@ -770,10 +770,12 @@ export function DeviceStage(_props: {
   const controlHint = createMemo(() => {
     const issue = server.controlIssue();
     if (stageView() !== "live" || !displayImageSrc() || !issue) return null;
+    const canTakeControl = /controlled in another Relay window/i.test(issue);
     return {
       title: "View only",
       detail: humanError(issue),
-      actionLabel: "Try again",
+      actionLabel: canTakeControl ? "Take control" : "Reconnect",
+      canTakeControl,
     };
   });
   const retryInspection = async () => {
@@ -788,6 +790,11 @@ export function DeviceStage(_props: {
     } finally {
       setInspectionRecovering(false);
     }
+  };
+  const takeControl = async () => {
+    const controlled = await server.takeControlOfSelectedDevice();
+    if (!controlled) return;
+    await Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
   };
   const devicePanelState = createMemo(() =>
     resolveDevicePanelState({
@@ -1300,7 +1307,7 @@ export function DeviceStage(_props: {
                             detail={hint().detail}
                             actionLabel={hint().actionLabel}
                             busy={inspectionRecovering()}
-                            onRetry={() => {
+                            onAction={() => {
                               void retryInspection();
                             }}
                           />
@@ -1313,8 +1320,8 @@ export function DeviceStage(_props: {
                         title={hint().title}
                         detail={hint().detail}
                         actionLabel={hint().actionLabel}
-                        onRetry={() => {
-                          void retryScreenPreview();
+                        onAction={() => {
+                          void (hint().canTakeControl ? takeControl() : retryScreenPreview());
                         }}
                       />
                     )}

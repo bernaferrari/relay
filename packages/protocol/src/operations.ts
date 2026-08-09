@@ -1120,6 +1120,15 @@ const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices respon
   }
 });
 
+const targetDevicesInputParser = objectParser<{ phase?: "android" }>(
+  "target devices input",
+  (input) => {
+    if (input.phase !== undefined && input.phase !== "android") {
+      fail("target devices phase", "must be android when provided");
+    }
+  },
+);
+
 const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions response", (input) => {
   if (!Array.isArray(input.actions)) fail("actions", "must be an array");
   for (const item of input.actions) {
@@ -2323,7 +2332,7 @@ export const operationDefinitions = [
   }),
   query("target.devices.list", "List connected targets", "/devices", {
     category: "target",
-    input: emptyInputParser,
+    input: targetDevicesInputParser,
     output: devicesParser,
   }),
   query("target.list", "List managed targets", "/targets", { category: "target" }),

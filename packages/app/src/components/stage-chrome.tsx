@@ -120,7 +120,7 @@ export function StageInspectionHint(props: {
   detail: string;
   actionLabel: string;
   busy?: boolean;
-  onRetry: () => void;
+  onAction: () => void;
 }) {
   return (
     <div class="pointer-events-auto absolute inset-x-3 bottom-3 z-[6] flex items-start gap-2 rounded-[12px] bg-[color-mix(in_srgb,var(--surface-raised-base)_92%,transparent)] px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/28%),inset_0_0_0_1px_var(--border-weak-base)]">
@@ -136,7 +136,7 @@ export function StageInspectionHint(props: {
         variant="secondary"
         disabled={props.busy}
         aria-busy={props.busy}
-        onClick={() => props.onRetry()}
+        onClick={() => props.onAction()}
       >
         {props.actionLabel}
       </Button>

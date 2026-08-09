@@ -86,7 +86,9 @@ test("run evidence records video and performance without affecting the run", asy
     });
     await stopRunEvidence(handle, job, device, () => undefined);
 
-    assert.deepEqual(calls, ["prime", "perf", "start", "perf", "stop"]);
+    // Release the encoder before collecting the final performance sample so
+    // slow recorder shutdown cannot consume the evidence-stop deadline.
+    assert.deepEqual(calls, ["prime", "perf", "start", "stop", "perf"]);
     assert.ok(job.artifacts.some((item) => item.kind === "performance-start"));
     const video = job.artifacts.find((item) => item.kind === "video");
     assert.ok(video);

@@ -3,7 +3,11 @@ import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
-import { DeviceStatusLabel, appMapDeviceStatus } from "./device-status-label";
+import {
+  DeviceStatusIndicator,
+  DeviceStatusLabel,
+  appMapDeviceStatus,
+} from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 import { Icon } from "./icon";
 
@@ -98,16 +102,20 @@ export function EmptyAppMap(props: {
             <DeviceStatusLabel
               status={status()}
               label={device()?.name || device()?.serial || "Device"}
+              identityOnly
             />
-            <button
-              type="button"
-              class="app-map-icon-button"
-              aria-label="Close device"
-              data-tip="Close device · D"
-              onClick={props.onToggleDevice}
-            >
-              <Icon name="x" size={13} />
-            </button>
+            <div class="flex items-center gap-1.5">
+              <DeviceStatusIndicator status={status()} />
+              <button
+                type="button"
+                class="app-map-icon-button"
+                aria-label="Close device"
+                data-tip="Close device · D"
+                onClick={props.onToggleDevice}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </div>
           </header>
           <DeviceCompanionStage
             onOpenTargets={props.onOpenTargets}
@@ -138,14 +146,14 @@ export function EmptyAppMap(props: {
               >
                 <div class="flex min-w-0 flex-col items-center gap-2 text-center text-[11px] text-[var(--text-weak)]">
                   <span class="max-w-[36ch] text-pretty">
-                    Another window is controlling this device. Reclaim it to capture screens.
+                    Another Relay window has control of this device.
                   </span>
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => void server.setSelectedDevice(device()?.serial ?? null)}
+                    onClick={() => void server.takeControlOfSelectedDevice()}
                   >
-                    Reclaim device
+                    Take control
                   </Button>
                 </div>
               </Show>

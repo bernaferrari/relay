@@ -53,8 +53,23 @@ export function appMapDeviceStatus(input: {
 
 /** One visual language for device state: neutral progress, semantic attention,
  * and a dot only when the live state is definitive. */
-export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: string }) {
+export function DeviceStatusLabel(props: {
+  status: AppMapDeviceStatus;
+  label?: string;
+  identityOnly?: boolean;
+}) {
   const showState = () => Boolean(props.label) && props.status.kind !== "ready";
+  if (props.identityOnly) {
+    return (
+      <span
+        class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
+        data-tip={props.status.detail ?? props.status.label}
+      >
+        <Icon name="smartphone" size={13} class="shrink-0 text-[var(--text-weak)]" />
+        <span class="min-w-0 truncate">{props.label ?? "Device"}</span>
+      </span>
+    );
+  }
   return (
     <span
       class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
@@ -116,5 +131,36 @@ export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: s
         </span>
       </Show>
     </span>
+  );
+}
+
+/** Keep transient readiness separate from the device's identity. The live
+ * stage already explains longer states; this compact indicator only answers
+ * whether the panel needs attention right now. */
+export function DeviceStatusIndicator(props: { status: AppMapDeviceStatus }) {
+  return (
+    <Show when={props.status.kind !== "ready" && props.status.kind !== "idle"}>
+      <span
+        class={cn(
+          "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
+          props.status.kind === "attention"
+            ? "text-[var(--icon-warning-base)]"
+            : "text-[var(--text-weak)]",
+        )}
+        role="status"
+        aria-live="polite"
+        aria-label={props.status.label}
+        data-tip={props.status.detail ?? props.status.label}
+      >
+        <Icon
+          name={props.status.kind === "attention" ? "alert" : "refresh"}
+          size={12}
+          class={cn(
+            props.status.kind === "progress" &&
+              "ui-refresh-spin motion-reduce:animate-none motion-reduce:opacity-70",
+          )}
+        />
+      </span>
+    </Show>
   );
 }

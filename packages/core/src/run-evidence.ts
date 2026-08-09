@@ -636,7 +636,6 @@ export async function stopRunEvidence(
         failed(handle, "audio", error, log);
       }
     }
-
   } else {
     for (const name of ["performance", "logs", "network", "video", "crash", "audio"] as const) {
       if (

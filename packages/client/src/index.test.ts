@@ -136,6 +136,33 @@ test("resource transport cannot bypass the registry for mutations", async () => 
   );
 });
 
+test("device discovery accepts the registered fast Android phase", async () => {
+  let request: Request | undefined;
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return new Response(JSON.stringify({ devices: [] }), { status: 200 });
+      },
+    },
+  );
+
+  await client.resource("/devices?phase=android");
+  assert.equal(request?.url, "https://relay.test/devices?phase=android");
+  await assert.rejects(
+    () => client.resource("/devices?phase=apple"),
+    /target devices phase must be android/,
+  );
+});
+
 test("configured request timeout still applies when a caller supplies a cancellation signal", async () => {
   const client = new RelayClient(
     {

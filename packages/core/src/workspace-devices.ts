@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { createDevice, type Device, type DevicePlatform } from "./device.js";
 import { now, publish } from "./events.js";
 import { getBrowserDevice } from "./browser-target.js";
+import { resolveGoIosBinary } from "./ios-app-launch.js";
 import { readTarget } from "./targets.js";
 import {
   listAdbDevices,
@@ -48,6 +49,8 @@ const DEVICE_PLATFORM_CACHE_TTL_MS = 30_000;
 // longer than two seconds, so an aggressively short cutoff made real iPads
 // disappear from Relay's picker even though the adapter had found them.
 const DEVICE_DISCOVERY_TIMEOUT_MS = 5_000;
+let lastAuthoritativeAppleHardware: AppleHardwareInventory | null = null;
+let lastGoIosSerials: Set<string> | null = null;
 
 type AppleDeviceControlRecord = {
   identifier?: unknown;
@@ -63,7 +66,73 @@ type AppleDeviceControlRecord = {
     reality?: unknown;
     udid?: unknown;
   };
+  connectionProperties?: {
+    /** CoreDevice keeps paired hardware in its inventory after unplugging it. */
+    tunnelState?: unknown;
+  };
 };
+
+type AppleHardwareInventory = {
+  devices: ListedDevice[];
+  knownDevices: ListedDevice[];
+  /** False means devicectl itself failed, so its empty result must not hide a usable adapter row. */
+  authoritative: boolean;
+};
+
+export function parseConnectedAppleHardwareDevices(
+  records: readonly AppleDeviceControlRecord[],
+): ListedDevice[] {
+  return records.flatMap((device) => {
+    const hardware = device.hardwareProperties;
+    const properties = device.deviceProperties;
+    const udid = typeof hardware?.udid === "string" ? hardware.udid.trim() : "";
+    const name = typeof properties?.name === "string" ? properties.name.trim() : "";
+    const platform = typeof hardware?.platform === "string" ? hardware.platform : "";
+    const reality = typeof hardware?.reality === "string" ? hardware.reality : "";
+    const tunnelState =
+      typeof device.connectionProperties?.tunnelState === "string"
+        ? device.connectionProperties.tunnelState.toLowerCase()
+        : "";
+    if (
+      !udid ||
+      !name ||
+      !/^ios$/i.test(platform) ||
+      !/^physical$/i.test(reality) ||
+      /^(?:unavailable|disconnected)$/i.test(tunnelState)
+    ) {
+      return [];
+    }
+    const bootState = typeof properties?.bootState === "string" ? properties.bootState : "";
+    const osVersion =
+      typeof properties?.osVersionNumber === "string"
+        ? properties.osVersionNumber.trim()
+        : undefined;
+    const developerModeStatus =
+      typeof properties?.developerModeStatus === "string"
+        ? properties.developerModeStatus.toLowerCase()
+        : "";
+    const developerServicesAvailable =
+      typeof properties?.ddiServicesAvailable === "boolean"
+        ? properties.ddiServicesAvailable
+        : undefined;
+    return [
+      {
+        id: udid,
+        serial: udid,
+        name,
+        kind: "Physical device",
+        // Connected physical hardware does not consistently expose bootState.
+        booted: !bootState || /^booted$/i.test(bootState),
+        platform: "ios" as const,
+        ...(osVersion ? { osVersion } : {}),
+        ...(developerModeStatus === "enabled" || developerModeStatus === "disabled"
+          ? { developerMode: developerModeStatus }
+          : {}),
+        ...(developerServicesAvailable !== undefined ? { developerServicesAvailable } : {}),
+      },
+    ];
+  });
+}
 
 /**
  * Xcode's CoreDevice command is the platform source of truth for attached
@@ -71,7 +140,7 @@ type AppleDeviceControlRecord = {
  * supplies simulators and device metadata, while CoreDevice makes physical
  * hardware visible even when the SDK is being bundled by Electron.
  */
-async function listAppleHardwareDevices(): Promise<ListedDevice[]> {
+async function listAppleHardwareDevices(): Promise<AppleHardwareInventory> {
   const directory = await mkdtemp(join(tmpdir(), "relay-devicectl-"));
   const output = join(directory, "devices.json");
   try {
@@ -82,47 +151,55 @@ async function listAppleHardwareDevices(): Promise<ListedDevice[]> {
     const parsed = JSON.parse(await readFile(output, "utf8")) as {
       result?: { devices?: AppleDeviceControlRecord[] };
     };
-    return (parsed.result?.devices ?? []).flatMap((device) => {
-      const hardware = device.hardwareProperties;
-      const properties = device.deviceProperties;
-      const udid = typeof hardware?.udid === "string" ? hardware.udid.trim() : "";
-      const name = typeof properties?.name === "string" ? properties.name.trim() : "";
-      const platform = typeof hardware?.platform === "string" ? hardware.platform : "";
-      const reality = typeof hardware?.reality === "string" ? hardware.reality : "";
-      if (!udid || !name || !/^ios$/i.test(platform) || !/^physical$/i.test(reality)) return [];
-      const bootState = typeof properties?.bootState === "string" ? properties.bootState : "";
-      const osVersion =
-        typeof properties?.osVersionNumber === "string"
-          ? properties.osVersionNumber.trim()
-          : undefined;
-      const developerModeStatus =
-        typeof properties?.developerModeStatus === "string"
-          ? properties.developerModeStatus.toLowerCase()
-          : "";
-      const developerServicesAvailable =
-        typeof properties?.ddiServicesAvailable === "boolean"
-          ? properties.ddiServicesAvailable
-          : undefined;
-      return [
-        {
-          id: udid,
-          serial: udid,
-          name,
-          kind: "Physical device",
-          booted: !bootState || /^booted$/i.test(bootState),
-          platform: "ios" as const,
-          ...(osVersion ? { osVersion } : {}),
-          ...(developerModeStatus === "enabled" || developerModeStatus === "disabled"
-            ? { developerMode: developerModeStatus }
-            : {}),
-          ...(developerServicesAvailable !== undefined ? { developerServicesAvailable } : {}),
-        },
-      ];
-    });
+    const records = parsed.result?.devices ?? [];
+    const inventory = {
+      devices: parseConnectedAppleHardwareDevices(records),
+      // CoreDevice retains trustworthy model/version metadata after its local
+      // tunnel closes. go-ios may still reach the same paired device over its
+      // own tunnel, so retain metadata separately from reachability.
+      knownDevices: parseConnectedAppleHardwareDevices(
+        records.map(({ connectionProperties: _connection, ...device }) => device),
+      ),
+      authoritative: true,
+    } satisfies AppleHardwareInventory;
+    lastAuthoritativeAppleHardware = inventory;
+    return inventory;
   } catch {
-    return [];
+    // A transient CoreDevice failure must not revive the adapter's remembered
+    // row for an unplugged iPad. Reuse the last authoritative Mac inventory;
+    // before the first successful sample, prefer no physical Apple rows to a
+    // convincing but stale “Preparing” target. Non-Mac hosts may still rely on
+    // a remote adapter, so only CoreDevice-capable hosts enforce this rule.
+    return {
+      devices: lastAuthoritativeAppleHardware?.devices ?? [],
+      knownDevices: lastAuthoritativeAppleHardware?.knownDevices ?? [],
+      authoritative: lastAuthoritativeAppleHardware !== null || process.platform === "darwin",
+    };
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function listGoIosDeviceSerials(): Promise<Set<string> | null> {
+  try {
+    const bin = await resolveGoIosBinary();
+    const result = await execFileAsync(bin, ["list"], {
+      timeout: 4_000,
+      maxBuffer: 16 * 1024,
+    });
+    const parsed = JSON.parse(result.stdout) as { deviceList?: unknown };
+    const serials = new Set(
+      Array.isArray(parsed.deviceList)
+        ? parsed.deviceList.filter(
+            (serial): serial is string => typeof serial === "string" && serial.length > 0,
+          )
+        : [],
+    );
+    lastGoIosSerials = serials;
+    return serials;
+  } catch {
+    // One failed probe must not make a reachable Wi-Fi iPad blink out.
+    return lastGoIosSerials;
   }
 }
 
@@ -202,17 +279,18 @@ export async function listDevices(): Promise<ListedDevice[]> {
       }, DEVICE_DISCOVERY_TIMEOUT_MS);
     }),
   ]);
-  const [adapterResult, adbDevices, appleHardware] = await Promise.all([
+  const [adapterResult, adbDevices, appleHardware, goIosSerials] = await Promise.all([
     adapterList,
     listAdbDevices(),
     listAppleHardwareDevices(),
+    listGoIosDeviceSerials(),
   ]);
-  if (adapterResult.error && adbDevices.length === 0 && appleHardware.length === 0) {
+  if (adapterResult.error && adbDevices.length === 0 && appleHardware.devices.length === 0) {
     throw adapterResult.error;
   }
 
   const devices = adapterResult.devices;
-  const listed: ListedDevice[] = await Promise.all(
+  let listed: ListedDevice[] = await Promise.all(
     devices
       .filter((device) => device.platform === "android" || device.platform === "ios")
       .map(async (d) => {
@@ -235,12 +313,59 @@ export async function listDevices(): Promise<ListedDevice[]> {
       }),
   );
 
+  const connectedAppleDevices = new Map(
+    appleHardware.devices.map((device) => [device.serial, device]),
+  );
+  if (goIosSerials) {
+    const knownBySerial = new Map(
+      appleHardware.knownDevices.map((device) => [device.serial, device]),
+    );
+    for (const serial of goIosSerials) {
+      if (connectedAppleDevices.has(serial)) continue;
+      const known = knownBySerial.get(serial);
+      if (known) {
+        const { developerServicesAvailable: _services, ...reachable } = known;
+        connectedAppleDevices.set(serial, { ...reachable, booted: true });
+      } else {
+        connectedAppleDevices.set(serial, {
+          id: serial,
+          serial,
+          name: "iOS device",
+          kind: "Physical device",
+          booted: true,
+          platform: "ios",
+        });
+      }
+    }
+  }
+
+  if (appleHardware.authoritative || goIosSerials) {
+    const connectedAppleSerials = new Set(connectedAppleDevices.keys());
+    listed = listed.filter(
+      (device) =>
+        device.platform !== "ios" ||
+        /simulator|emulator/i.test(String(device.kind ?? "")) ||
+        connectedAppleSerials.has(device.serial),
+    );
+  }
+
   const bySerial = new Map(listed.map((device) => [device.serial, device]));
+  const adbVersions = new Map(
+    await Promise.all(
+      adbDevices
+        .filter((device) => device.connectionState === "connected")
+        .map(
+          async (device) => [device.serial, await observedAndroidVersion(device.serial)] as const,
+        ),
+    ),
+  );
   for (const observed of adbDevices) {
     const existing = bySerial.get(observed.serial);
-    bySerial.set(observed.serial, mergeAdbObservation(existing, observed));
+    const merged = mergeAdbObservation(existing, observed);
+    const osVersion = merged.osVersion ?? adbVersions.get(observed.serial);
+    bySerial.set(observed.serial, osVersion ? { ...merged, osVersion } : merged);
   }
-  for (const observed of appleHardware) {
+  for (const observed of connectedAppleDevices.values()) {
     const existing = bySerial.get(observed.serial);
     bySerial.set(observed.serial, mergeAppleObservation(existing, observed));
   }

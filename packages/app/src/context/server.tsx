@@ -192,6 +192,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     // separate so a successful screenshot poll cannot turn a view-only target
     // back into a misleading green “Live” state.
     const [controlIssue, setControlIssue] = createSignal<string | null>(null);
+    const [conflictingLeaseId, setConflictingLeaseId] = createSignal<string | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
     const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
     const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
@@ -480,10 +481,28 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
         try {
           const fullScan = listDevices(request);
-          const android = (await listAndroidDevicesFast(request).catch(() => [])).map((d) => ({
-            ...d,
-            serial: String(d.serial ?? d.id ?? ""),
-          }));
+          let android: DeviceInfo[];
+          try {
+            const previousBySerial = new Map(
+              devices()
+                .filter((device) => device.platform === "android")
+                .map((device) => [device.serial, device]),
+            );
+            android = (await listAndroidDevicesFast(request)).map((d) => {
+              const serial = String(d.serial ?? d.id ?? "");
+              return {
+                // Keep stable metadata (notably the OS version) while ADB's
+                // fast phase refreshes only current reachability.
+                ...previousBySerial.get(serial),
+                ...d,
+                serial,
+              };
+            });
+          } catch {
+            // A failed request is not evidence that the phone disconnected.
+            // Keep the last Android rows and reconcile them on the next poll.
+            android = devices().filter((device) => device.platform === "android");
+          }
           // Keep non-Android rows from the last completed scan while replacing
           // Android with ADB's current result. A connected phone is usable now;
           // Apple discovery and simulator enumeration continue in parallel.
@@ -494,11 +513,38 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             ...d,
             serial: String(d.serial ?? d.id ?? ""),
           }));
+          // The cross-platform inventory is slower and can omit Android for a
+          // single sample while its adapter is reconnecting. Keep the fresh
+          // ADB phase authoritative for this refresh and replace only the
+          // slower platforms. A disconnect is observed by the next fast phase
+          // without making a connected phone blink between phases.
+          const fullAndroidBySerial = new Map(
+            list
+              .filter((device) => device.platform === "android")
+              .map((device) => [device.serial, device]),
+          );
+          const enrichedAndroid = android.map((device) => {
+            const details = fullAndroidBySerial.get(device.serial);
+            return details
+              ? {
+                  ...device,
+                  ...details,
+                  // ADB's current sample owns reachability; the full adapter
+                  // contributes stable metadata such as Android version.
+                  booted: device.booted,
+                  connectionState: device.connectionState,
+                }
+              : device;
+          });
+          const stableList = [
+            ...enrichedAndroid,
+            ...list.filter((device) => device.platform !== "android"),
+          ];
           // Device discovery runs from polling, manual refresh, and target
           // changes. Ignore an older reply so a transient stale list cannot
           // make the current device disappear or rebind the wrong target.
           if (sequence !== deviceRefreshSequence) return;
-          applyDeviceList(list);
+          applyDeviceList(stableList);
           // clear only network-ish noise; keep explicit action errors
           if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
         } catch (err) {
@@ -1374,6 +1420,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         }
         setSelectedLeaseId(null);
         setControlIssue(null);
+        setConflictingLeaseId(null);
 
         const claimableVirtualTarget = Boolean(
           serial && /simulator|emulator/i.test(selectedTarget?.kind ?? ""),
@@ -1394,6 +1441,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           );
           if (!active && occupied) {
             setControlIssue("This device is being controlled in another Relay window.");
+            setConflictingLeaseId(occupied.id);
             setSelectedLeaseId(null);
             return;
           }
@@ -1415,6 +1463,34 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const message = error instanceof Error ? error.message : String(error);
         setControlIssue(message);
         setError(message);
+      }
+    }
+
+    async function takeControlOfSelectedDevice(): Promise<boolean> {
+      if (!client || !connection) return false;
+      const serial = selectedDevice();
+      const leaseId = conflictingLeaseId();
+      if (!serial || !leaseId) {
+        await selectDeviceRemote(serial);
+        return Boolean(selectedLeaseId());
+      }
+      try {
+        const { lease } = await client.takeOverLease({
+          leaseId,
+          expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+          reason: "Take control from the live device panel",
+          confirm: true,
+        });
+        setSelectedLeaseId(lease.id);
+        setConflictingLeaseId(null);
+        setControlIssue(null);
+        setError(null);
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setControlIssue(message);
+        setError(message);
+        return false;
       }
     }
 
@@ -1840,6 +1916,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedLeaseId,
       controlIssue,
       setSelectedDevice: selectDeviceRemote,
+      takeControlOfSelectedDevice,
       bootDevice: bootDeviceRemote,
       bootingSerial,
       authorizeDevice: authorizeDeviceRemote,

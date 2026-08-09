@@ -3,12 +3,14 @@ import type { ActionInfo, DeviceInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 
 export async function listDevices(request: ServerRequest): Promise<DeviceInfo[]> {
-  const data = await request<{ devices: DeviceInfo[] }>("/devices");
+  const data = await request<{ devices: DeviceInfo[] }>("/devices", { cache: "no-store" });
   return data.devices ?? [];
 }
 
 export async function listAndroidDevicesFast(request: ServerRequest): Promise<DeviceInfo[]> {
-  const data = await request<{ devices: DeviceInfo[] }>("/devices?phase=android");
+  const data = await request<{ devices: DeviceInfo[] }>("/devices?phase=android", {
+    cache: "no-store",
+  });
   return data.devices ?? [];
 }
 
