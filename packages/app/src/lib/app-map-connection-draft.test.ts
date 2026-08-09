@@ -124,6 +124,38 @@ test("recorded connections derive a normalized source target from tap evidence",
   });
 });
 
+test("recorded swipe connections leave from the start of the gesture", () => {
+  const swipe: RecipeStep = {
+    id: "swipe-up",
+    kind: "swipe",
+    from: { x: 500, y: 1_600 },
+    to: { x: 500, y: 400 },
+    evidence: {
+      id: "swipe-evidence",
+      recordedAt: 1,
+      deviceBounds: { width: 1_000, height: 2_000 },
+      screenshot: { recipeId: "take", id: "before", capturedAt: 1, mime: "image/png", sha256: "s" },
+    },
+  };
+  const after: RecipeStep = {
+    id: "after-swipe",
+    kind: "sleep",
+    ms: 200,
+    evidence: {
+      id: "after-evidence",
+      recordedAt: 2,
+      screenshot: { recipeId: "take", id: "after", capturedAt: 2, mime: "image/png", sha256: "a" },
+    },
+  };
+  const swipeTree = buildMapTree([swipe, after]);
+  const connection = canvasConnections(swipeTree, [swipe, after], {
+    ...metadata,
+    graph: undefined,
+  } as AppMapCanvasState)[0];
+
+  assert.deepEqual(connection?.sourceAnchor, { point: { x: 0.5, y: 0.8 } });
+});
+
 test("planned connections are reversible and become recorded only after a stable step id exists", () => {
   const tree = buildMapTree(steps);
   const [from, to] = tree.nodes;

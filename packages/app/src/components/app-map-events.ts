@@ -7,6 +7,14 @@ export type CanvasWheelAction =
   | { kind: "zoom"; delta: number }
   | null;
 
+export function canvasOwnsWheel(input: {
+  workspaceView: string;
+  hasCanvasContent: boolean;
+  insideOverlay: boolean;
+}): boolean {
+  return input.workspaceView === "map" && input.hasCanvasContent && !input.insideOverlay;
+}
+
 const CANVAS_SHORTCUT_EXCLUSION =
   "input, textarea, select, button, a, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox'], [data-canvas-shortcuts='ignore']";
 
@@ -16,6 +24,14 @@ export function shouldIgnoreCanvasShortcut(
   if (event.defaultPrevented) return true;
   const target = event.target as { closest?: (selector: string) => Element | null } | null;
   return Boolean(target?.closest?.(CANVAS_SHORTCUT_EXCLUSION));
+}
+
+export function isCaptureScreenShortcut(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey">,
+): boolean {
+  return (
+    (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLocaleLowerCase() === "s"
+  );
 }
 
 /** Normalize mouse wheels and trackpads into the two canvas gestures people
@@ -100,6 +116,11 @@ export function createAppMapEventOrchestration(options: {
     };
     const onCanvasKey = (event: KeyboardEvent) => {
       if (shouldIgnoreCanvasShortcut(event)) return;
+      if (isCaptureScreenShortcut(event)) {
+        event.preventDefault();
+        options.onCaptureScreen();
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "g") {
         event.preventDefault();
         if (event.shiftKey) options.onUngroupSelection();
@@ -121,11 +142,6 @@ export function createAppMapEventOrchestration(options: {
       }
       if (event.key === "h" || event.key === "H") {
         options.onToolChange("hand");
-        return;
-      }
-      if (event.key === "s" || event.key === "S") {
-        event.preventDefault();
-        options.onCaptureScreen();
         return;
       }
       if (event.key === "n" || event.key === "N") {

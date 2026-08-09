@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  companionAccessibilityHighlight,
+  companionAccessibilityOutlineStyles,
   companionFooterMode,
   companionDisplayedPointToLogical,
   companionFramePresentation,
@@ -10,6 +12,28 @@ import {
   companionLogicalViewport,
   companionOrientationEdge,
 } from "./app-map-device-companion-geometry";
+
+test("projects accessibility outlines and labels through the companion geometry", () => {
+  const bounds = { width: 100, height: 200 };
+  const nodes = [
+    { rect: { x: 10, y: 20, width: 30, height: 40 }, label: "Continue", ref: "action" },
+    { rect: { x: 0, y: 0, width: 0, height: 20 } },
+  ];
+
+  assert.deepEqual(companionAccessibilityOutlineStyles(nodes, bounds, "none"), [
+    { left: "10%", top: "10%", width: "30%", height: "20%" },
+  ]);
+  assert.deepEqual(companionAccessibilityHighlight(nodes[0], bounds, "none"), {
+    rect: { left: "10%", top: "10%", width: "30%", height: "20%" },
+    chip: {
+      left: "10%",
+      top: "10%",
+      bottom: "30%",
+      below: false,
+      text: "Continue · @action",
+    },
+  });
+});
 
 test("corrects a native-portrait iPad capture into its logical landscape viewport", () => {
   const nodes = [

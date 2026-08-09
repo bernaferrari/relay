@@ -109,6 +109,22 @@ test("recorded connection origins follow rotated screenshot presentation", () =>
   assert.match(path, /^M 168 160\.5 C/);
 });
 
+test("return connections also leave from the recorded interaction point", () => {
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "settings",
+      to: "start",
+      kind: "return",
+      sourceAnchor: { point: { x: 0.25, y: 0.7 } },
+    },
+    [start, settings],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 380, y: 235.8 });
+  assert.match(geometry.path, /^M 380 235\.8 C/);
+});
+
 test("fit keeps a graph visible with stable canvas padding", () => {
   const view = fitCanvasViewport({ width: 800, height: 600 }, { width: 1200, height: 800 });
   assert.ok(view.scale > 0 && view.scale <= 1);

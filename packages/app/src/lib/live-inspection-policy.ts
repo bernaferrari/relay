@@ -30,9 +30,10 @@ export function liveInspectionPolicy(
   interacting: boolean,
   videoFailed: boolean,
   captureSuspended = false,
+  collectAccessibility = true,
 ) {
   return {
-    pollSnapshot: interacting && !captureSuspended,
+    pollSnapshot: interacting && collectAccessibility && !captureSuspended,
     pollFallbackFrame: interacting && videoFailed && !captureSuspended,
   };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CanvasGraph, CanvasTransition, RecipeStep } from "@relay/protocol";
-import { appMapRunReadiness } from "./app-map-run-readiness";
+import type { AppMap, CanvasGraph, CanvasTransition, Flow, RecipeStep } from "@relay/protocol";
+import { appMapRunReadiness, findRunnableFlow } from "./app-map-run-readiness";
 
 const at = 1;
 
@@ -29,6 +29,31 @@ const graph = (transitions: CanvasTransition[]): CanvasGraph => ({
   screens: [screen("start"), screen("a"), screen("b")],
   transitions,
   flows: [{ id: "main", name: "Main", screenId: "start", createdAt: at, updatedAt: at }],
+});
+
+test("findRunnableFlow accepts a verified prefix and prefers the shortest saved flow", () => {
+  const flow = (id: string, connectionIds: string[], createdAt: number): Flow => ({
+    id,
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "map",
+    name: id,
+    startScreenId: "start",
+    connectionIds,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const appMap = {
+    flows: {
+      long: flow("long", ["a", "b", "c"], 1),
+      short: flow("short", ["a", "b"], 2),
+      other: flow("other", ["x", "b"], 0),
+    },
+  } as unknown as AppMap;
+
+  assert.equal(findRunnableFlow(appMap, ["a"])?.id, "short");
+  assert.equal(findRunnableFlow(appMap, ["a", "b", "c"])?.id, "long");
+  assert.equal(findRunnableFlow(appMap, ["missing"]), undefined);
 });
 
 test("allows a verified automatic connection with no recipe actions", () => {

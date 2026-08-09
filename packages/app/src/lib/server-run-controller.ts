@@ -90,7 +90,12 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
   }
 
-  async function runAppMapFlow(appMapId: string, flowId: string, title: string): Promise<void> {
+  async function runAppMapFlow(
+    appMapId: string,
+    flowId: string,
+    title: string,
+    throughConnectionId?: string,
+  ): Promise<void> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
       return;
@@ -107,6 +112,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
       const { job, jobs } = await enqueueAppMapFlow(deps.request, {
         appMapId,
         flowId,
+        ...(throughConnectionId ? { throughConnectionId } : {}),
         serial,
         ...(targetPlatform === "browser"
           ? { targetKind: "browser" as const, browserTargetId: serial }

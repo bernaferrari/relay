@@ -43,6 +43,10 @@ import {
   liveInspectionPolicy,
 } from "../lib/live-inspection-policy";
 import {
+  accessibilityCollectionEnabled,
+  accessibilityHoverEnabled,
+} from "../lib/accessibility-overlay-mode";
+import {
   emptyStageTitle as resolveEmptyStageTitle,
   frameDataUrl,
   hasIosSetupIssueText,
@@ -57,6 +61,8 @@ import {
 } from "../lib/stage-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
 import {
+  companionAccessibilityHighlight,
+  companionAccessibilityOutlineStyles,
   companionDisplayedPointToLogical,
   companionFramePresentation,
   companionImageLayout,
@@ -893,6 +899,7 @@ export function DeviceStage(_props: {
       liveViewActive(),
       usesScreenshotPreview(),
       physicalIosRecording(),
+      accessibilityCollectionEnabled(server.accessibilityMode()),
     );
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
@@ -922,16 +929,23 @@ export function DeviceStage(_props: {
     onCleanup(stopLiveTimers);
   });
 
-  // ── Hover-inspect: exactly one highlighted element under the cursor
-  //    (devtools-style), not the old grid of 80 translucent rects. The
-  //    background-tint bug is fixed upstream by `overlayCandidates` (full-screen
-  //    containers and pure wrappers never become candidates).
+  // ── Accessibility inspection. Hover mode keeps the glass quiet until the
+  //    pointer asks for detail; Always deliberately exposes the same filtered
+  //    bounds Android developers know from “Show layout bounds”. Full-screen
+  //    containers and pure wrappers are removed upstream by overlayCandidates.
   const candidates = createMemo(() => {
     const snap = server.snapshot();
     if (!snap?.nodes?.length || !snap.bounds || snap.inspectable === false) {
       return [] as SnapshotNode[];
     }
     return overlayCandidates(snap.nodes, snap.bounds);
+  });
+
+  const accessibilityOutlines = createMemo(() => {
+    if (server.accessibilityMode() !== "always") return [];
+    const snap = server.snapshot();
+    if (!snap?.bounds) return [];
+    return companionAccessibilityOutlineStyles(snap.nodes, snap.bounds, liveImageRotation());
   });
 
   const [hoverPoint, setHoverPoint] = createSignal<{ fx: number; fy: number } | null>(null);
@@ -944,46 +958,19 @@ export function DeviceStage(_props: {
   let hoverRaf = 0;
 
   /** Bounds-relative geometry + chip text for the node under the cursor. */
-  const hoverHighlight = createMemo(() => {
-    const n = hoverNode();
-    const b = server.snapshot()?.bounds;
-    if (!n?.rect || !b) return null;
-    const rect = companionLogicalRectToDisplayed(
-      {
-        x: n.rect.x / b.width,
-        y: n.rect.y / b.height,
-        width: n.rect.width / b.width,
-        height: n.rect.height / b.height,
-      },
-      liveImageRotation(),
-    );
-    const leftPct = rect.x * 100;
-    const topPct = rect.y * 100;
-    const heightPct = rect.height * 100;
-    const label = (n.label ?? n.value ?? n.identifier ?? "").trim() || n.role || "element";
-    const ref = n.ref ? (n.ref.startsWith("@") ? n.ref : `@${n.ref}`) : "";
-    return {
-      rect: {
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${rect.width * 100}%`,
-        height: `${heightPct}%`,
-      },
-      chip: {
-        left: `${Math.max(0, Math.min(leftPct, 100))}%`,
-        top: `${topPct}%`,
-        bottom: `${topPct + heightPct}%`,
-        // flip the chip below the rect when there's no room above it
-        below: topPct < 8,
-        text: ref ? `${label} · ${ref}` : label,
-      },
-    };
-  });
+  const hoverHighlight = createMemo(() =>
+    companionAccessibilityHighlight(hoverNode(), server.snapshot()?.bounds, liveImageRotation()),
+  );
 
   /** rAF-throttled hit-test against the candidate list. Captures the image rect
    *  at event time so the deferred frame reads stable geometry. */
   function scheduleHover(img: HTMLElement, cx: number, cy: number): void {
-    if (!server.showOverlays() || server.snapshot()?.inspectable === false || hoverRaf) return;
+    if (
+      !accessibilityHoverEnabled(server.accessibilityMode()) ||
+      server.snapshot()?.inspectable === false ||
+      hoverRaf
+    )
+      return;
     const rect = img.getBoundingClientRect();
     hoverRaf = requestAnimationFrame(() => {
       hoverRaf = 0;
@@ -1006,6 +993,11 @@ export function DeviceStage(_props: {
     }
     setHoverPoint(null);
   }
+  createEffect(() => {
+    const mode = server.accessibilityMode();
+    if (!accessibilityHoverEnabled(mode)) clearHover();
+    if (accessibilityCollectionEnabled(mode) && liveViewActive()) scheduleLiveSnapshot(0);
+  });
   onCleanup(() => {
     if (hoverRaf) cancelAnimationFrame(hoverRaf);
     if (moveRaf) cancelAnimationFrame(moveRaf);
@@ -1888,25 +1880,37 @@ export function DeviceStage(_props: {
                       />
                     )}
                   </Show>
-                  <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
+                  <Show when={server.accessibilityMode() === "always" && !picker()}>
+                    <div
+                      class="pointer-events-none absolute inset-0 z-[3] overflow-hidden rounded-[20px]"
+                      aria-hidden="true"
+                    >
+                      <For each={accessibilityOutlines()}>
+                        {(outline) => (
+                          <i
+                            class="absolute rounded-[2px] border border-[color-mix(in_srgb,var(--border-interactive-base)_46%,transparent)] bg-[color-mix(in_srgb,var(--surface-brand-base)_4%,transparent)]"
+                            style={outline}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show
+                    when={
+                      accessibilityHoverEnabled(server.accessibilityMode()) &&
+                      !picker() &&
+                      hoverHighlight()
+                    }
+                  >
                     {(h) => (
-                      <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
+                      <div
+                        class="pointer-events-none absolute inset-0 z-[4] overflow-hidden rounded-[20px]"
+                        aria-hidden="true"
+                      >
                         <div
                           class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
                           style={h().rect}
                         />
-                        <div
-                          class={cn(
-                            "absolute z-[5] max-w-[62%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
-                            h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
-                          )}
-                          style={{
-                            left: h().chip.left,
-                            top: h().chip.below ? h().chip.bottom : h().chip.top,
-                          }}
-                        >
-                          {h().chip.text}
-                        </div>
                       </div>
                     )}
                   </Show>
@@ -1967,6 +1971,29 @@ export function DeviceStage(_props: {
                   </Show>
                 </StageScreenFallback>
               </div>
+              <Show
+                when={
+                  accessibilityHoverEnabled(server.accessibilityMode()) &&
+                  !picker() &&
+                  hoverHighlight()
+                }
+              >
+                {(h) => (
+                  <div
+                    class={cn(
+                      "pointer-events-none absolute z-[8] max-w-[72%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
+                      h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
+                    )}
+                    style={{
+                      left: h().chip.left,
+                      top: h().chip.below ? h().chip.bottom : h().chip.top,
+                    }}
+                    aria-hidden="true"
+                  >
+                    {h().chip.text}
+                  </div>
+                )}
+              </Show>
             </div>
           }
         >

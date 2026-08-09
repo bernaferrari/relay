@@ -1,16 +1,27 @@
 import type { RecipeStep, RecordedNodeEvidence } from "@relay/protocol";
 import type { CanvasInteractionAnchor } from "./app-map-canvas-layout";
 
-/**
- * Project the first recorded tap in a transition into normalized canvas
- * coordinates. Keeping this in one place is important: the live canvas,
- * persisted App Map projection, and any future grid view must agree about
- * which element was acted on.
- */
+/** Project a recorded pointer interaction into normalized canvas coordinates.
+ * Taps originate at the pressed control; swipes originate where the gesture
+ * began. Keeping this in one place makes the persisted map and live canvas
+ * agree about where a path actually left the device UI. */
 export function normalizedAnchorForStep(
   step: RecipeStep | undefined,
 ): CanvasInteractionAnchor | undefined {
-  if (step?.kind !== "tap") return undefined;
+  if (!step || (step.kind !== "tap" && step.kind !== "swipe")) return undefined;
+
+  if (step.kind === "swipe") {
+    const bounds =
+      step.evidence?.deviceBounds ?? step.from.referenceBounds ?? step.to.referenceBounds;
+    if (!bounds?.width || !bounds.height) return undefined;
+    const point = step.evidence?.pointer ?? step.from;
+    return {
+      point: {
+        x: Math.max(0, Math.min(bounds.width, point.x)) / bounds.width,
+        y: Math.max(0, Math.min(bounds.height, point.y)) / bounds.height,
+      },
+    };
+  }
 
   const evidence = step.evidence;
   const candidates = [evidence?.node, ...(evidence?.nodes ?? [])].filter(

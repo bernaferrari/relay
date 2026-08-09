@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canvasWheelAction, shouldIgnoreCanvasShortcut } from "./app-map-events";
+import {
+  canvasOwnsWheel,
+  canvasWheelAction,
+  isCaptureScreenShortcut,
+  shouldIgnoreCanvasShortcut,
+} from "./app-map-events";
+
+test("canvas wheel handling yields to scrollable overlays", () => {
+  assert.equal(
+    canvasOwnsWheel({ workspaceView: "map", hasCanvasContent: true, insideOverlay: false }),
+    true,
+  );
+  assert.equal(
+    canvasOwnsWheel({ workspaceView: "map", hasCanvasContent: true, insideOverlay: true }),
+    false,
+  );
+  assert.equal(
+    canvasOwnsWheel({ workspaceView: "screens", hasCanvasContent: true, insideOverlay: false }),
+    false,
+  );
+});
 
 const wheel = (
   overrides: Partial<Parameters<typeof canvasWheelAction>[0]> = {},
@@ -63,6 +83,25 @@ test("canvas shortcuts yield to focused controls, dialogs, and already handled e
   );
   assert.equal(
     shouldIgnoreCanvasShortcut({ defaultPrevented: false, target: target(false) as never }),
+    false,
+  );
+});
+
+test("screen capture uses the advertised modified shortcut, never plain S", () => {
+  assert.equal(
+    isCaptureScreenShortcut({ key: "s", metaKey: true, ctrlKey: false, shiftKey: true }),
+    true,
+  );
+  assert.equal(
+    isCaptureScreenShortcut({ key: "S", metaKey: false, ctrlKey: true, shiftKey: true }),
+    true,
+  );
+  assert.equal(
+    isCaptureScreenShortcut({ key: "s", metaKey: false, ctrlKey: false, shiftKey: false }),
+    false,
+  );
+  assert.equal(
+    isCaptureScreenShortcut({ key: "s", metaKey: true, ctrlKey: false, shiftKey: false }),
     false,
   );
 });

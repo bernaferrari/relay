@@ -30,6 +30,26 @@ test("map teach accepts a point tap without expectedRevision", () => {
   assert.equal(parsed.fromScreenId, "settings");
 });
 
+test("App Map flow runs accept an explicit replay boundary", () => {
+  const input = {
+    appMapId: "map-1",
+    flowId: "main",
+    throughConnectionId: "open-settings",
+    serial: "phone-1",
+    targetKind: "device" as const,
+    platform: "android" as const,
+  };
+  assert.deepEqual(operationDefinition("app-map.flow.run").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.flow.run").input.parse({
+        ...input,
+        throughConnectionId: 42,
+      }),
+    /throughConnectionId/u,
+  );
+});
+
 test("screenshot preview coordinates accept query-string numbers", () => {
   assert.deepEqual(
     operationDefinition("target.screenshot.capture").input.parse({

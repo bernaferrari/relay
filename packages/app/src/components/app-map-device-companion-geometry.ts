@@ -23,6 +23,32 @@ export type CompanionSnapshotNode = {
   rect?: SnapshotRect;
 };
 
+type CompanionAccessibilityNode = CompanionSnapshotNode & {
+  label?: string;
+  value?: string;
+  identifier?: string;
+  role?: string;
+  ref?: string;
+};
+
+export type CompanionOverlayRectStyle = {
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+};
+
+export type CompanionAccessibilityHighlight = {
+  rect: CompanionOverlayRectStyle;
+  chip: {
+    left: string;
+    top: string;
+    bottom: string;
+    below: boolean;
+    text: string;
+  };
+};
+
 const VALID_DIMENSION = (value: number) => Number.isFinite(value) && value > 0;
 
 function validDimensions(value: CompanionDimensions | undefined): value is CompanionDimensions {
@@ -147,6 +173,73 @@ export function companionLogicalRectToDisplayed(
     };
   }
   return rect;
+}
+
+function companionOverlayRect(
+  rect: SnapshotRect,
+  bounds: CompanionDimensions,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionRect {
+  return companionLogicalRectToDisplayed(
+    {
+      x: rect.x / bounds.width,
+      y: rect.y / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+    },
+    rotation,
+  );
+}
+
+function companionOverlayRectStyle(rect: CompanionRect): CompanionOverlayRectStyle {
+  return {
+    left: companionPercent(rect.x),
+    top: companionPercent(rect.y),
+    width: companionPercent(rect.width),
+    height: companionPercent(rect.height),
+  };
+}
+
+function companionPercent(value: number): string {
+  return `${Number((value * 100).toFixed(6))}%`;
+}
+
+/** Project valid accessibility bounds into the exact device pixels a person sees. */
+export function companionAccessibilityOutlineStyles(
+  nodes: readonly CompanionSnapshotNode[],
+  bounds: CompanionDimensions,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionOverlayRectStyle[] {
+  return nodes.flatMap((node) => {
+    if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0) return [];
+    return [companionOverlayRectStyle(companionOverlayRect(node.rect, bounds, rotation))];
+  });
+}
+
+/** Build the highlighted rect and unclipped label for one accessibility node. */
+export function companionAccessibilityHighlight(
+  node: CompanionAccessibilityNode | null | undefined,
+  bounds: CompanionDimensions | null | undefined,
+  rotation: CompanionFramePresentation["rotation"],
+): CompanionAccessibilityHighlight | null {
+  if (!node?.rect || !bounds || node.rect.width <= 0 || node.rect.height <= 0) return null;
+  const rect = companionOverlayRect(node.rect, bounds, rotation);
+  const left = rect.x * 100;
+  const top = rect.y * 100;
+  const bottom = top + rect.height * 100;
+  const label =
+    (node.label ?? node.value ?? node.identifier ?? "").trim() || node.role || "element";
+  const ref = node.ref ? (node.ref.startsWith("@") ? node.ref : `@${node.ref}`) : "";
+  return {
+    rect: companionOverlayRectStyle(rect),
+    chip: {
+      left: companionPercent(Math.max(0, Math.min(left, 100)) / 100),
+      top: companionPercent(top / 100),
+      bottom: companionPercent(bottom / 100),
+      below: top < 8,
+      text: ref ? `${label} · ${ref}` : label,
+    },
+  };
 }
 
 /** Find the logical application viewport rather than the snapshot union. */

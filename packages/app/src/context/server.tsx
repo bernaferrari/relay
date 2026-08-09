@@ -25,6 +25,11 @@ import { usePlatform } from "./platform";
 import { toast } from "./toast";
 import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
+import {
+  accessibilityCollectionEnabled,
+  parseAccessibilityOverlayMode,
+  type AccessibilityOverlayMode,
+} from "../lib/accessibility-overlay-mode";
 import { createServerTargetController } from "../lib/server-target-controller";
 import { createServerDiscoveryController } from "../lib/server-discovery-controller";
 import { createServerCorpusController } from "../lib/server-corpus-controller";
@@ -172,7 +177,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [playing, setPlaying] = createSignal(false);
     const [busyCapture, setBusyCapture] = createSignal(false);
     const [sseConnected, setSseConnected] = createSignal(false);
-    const [showOverlays, setShowOverlays] = createSignal(true);
+    const [accessibilityMode, setAccessibilityModeState] =
+      createSignal<AccessibilityOverlayMode>("hover");
+    function setAccessibilityMode(mode: AccessibilityOverlayMode): void {
+      setAccessibilityModeState(mode);
+      if (!accessibilityCollectionEnabled(mode)) setSnapshot(null);
+      void Promise.resolve(platform.storage.set("accessibilityOverlayMode", mode)).catch(
+        () => undefined,
+      );
+    }
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
     // Observation is shareable, control is exclusive. Keep those states
@@ -1518,9 +1531,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedDevice,
       selectedAction,
       activeDiscoverySessionId,
+      collectAccessibility: () => accessibilityCollectionEnabled(accessibilityMode()),
       setBusyCapture,
       setSnapshot,
-      setShowOverlays,
       setLiveFrame,
       setLiveCaptureIssue,
       pushFrame,
@@ -1571,6 +1584,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (savedRecipe) setSelectedRecipeIdState(savedRecipe);
       } catch {
         /* ignore */
+      }
+      try {
+        const savedMode = await platform.storage.get("accessibilityOverlayMode");
+        setAccessibilityModeState(parseAccessibilityOverlayMode(savedMode));
+      } catch {
+        /* keep the default */
       }
       await pollHealth();
       if (health() === "online") {
@@ -1944,8 +1963,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       persistRecordingEvidence,
       recordingEvidenceUrl,
       jumpToJob,
-      showOverlays,
-      setShowOverlays,
+      accessibilityMode,
+      setAccessibilityMode,
       liveFrame,
       liveCaptureIssue,
       clearLiveCaptureIssue,

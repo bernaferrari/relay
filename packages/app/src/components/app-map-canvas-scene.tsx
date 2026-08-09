@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 import type { CollaborationAwareness, CanvasNote, MapGroup } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
@@ -51,11 +51,14 @@ export type AppMapCanvasSceneProps = {
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
   connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
+  connectionLabelMode: (connection: CanvasConnection) => "always" | "contextual";
   onSelectNode: (node: MapTreeNode, event?: MouseEvent) => void;
   onNodeContextMenu: (event: MouseEvent, node: MapTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
   onRenameNode: (node: MapTreeNode) => void;
   onOpenNodeDetails: (node: MapTreeNode) => void;
+  canRunToScreen: (screenId: string) => boolean;
+  onRunToScreen: (node: MapTreeNode) => void;
   onCommitNodeRename: (node: MapTreeNode, title: string) => void;
   onConnectKeyboard: (node: MapTreeNode) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
@@ -129,6 +132,21 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const [screenRotations, setScreenRotations] = createSignal<Record<string, CanvasScreenRotation>>(
     {},
   );
+  const [hoveredConnectionId, setHoveredConnectionId] = createSignal<string | null>(null);
+  let clearHoveredConnectionTimer: ReturnType<typeof setTimeout> | undefined;
+  const keepConnectionHovered = (connectionId: string) => {
+    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
+    setHoveredConnectionId(connectionId);
+  };
+  const releaseConnectionHover = (connectionId: string) => {
+    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
+    clearHoveredConnectionTimer = setTimeout(() => {
+      if (hoveredConnectionId() === connectionId) setHoveredConnectionId(null);
+    }, 60);
+  };
+  onCleanup(() => {
+    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
+  });
   const selectedNodeIds = createMemo(() => new Set(props.selectedNodeIds));
   const screenPositions = createMemo(() =>
     Object.fromEntries(props.nodes.map((node) => [node.id, props.positionFor(node)])),
@@ -170,7 +188,11 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       ),
   );
   const geometryFor = (connection: CanvasConnection) =>
-    geometries().get(connection.id) ?? { path: "", labelPoint: { x: 0, y: 0 } };
+    geometries().get(connection.id) ?? {
+      path: "",
+      labelPoint: { x: 0, y: 0 },
+      startPoint: { x: 0, y: 0 },
+    };
   const visibleNodes = createMemo(() =>
     props.nodes.filter((node) => {
       if (selectedNodeIds().has(node.id) || node.id === props.renamingNodeId) return true;
@@ -313,12 +335,30 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                   class="pointer-events-auto cursor-pointer fill-none stroke-transparent"
                   stroke-width="16"
                   aria-hidden="true"
+                  onPointerEnter={() => keepConnectionHovered(connection.id)}
+                  onPointerLeave={() => releaseConnectionHover(connection.id)}
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
                     props.onSelectConnection(connection);
                   }}
                 />
+                <Show
+                  when={
+                    connection.sourceAnchor &&
+                    (props.selectedConnectionId === connection.id ||
+                      hoveredConnectionId() === connection.id)
+                  }
+                >
+                  <circle
+                    cx={geometry().startPoint.x}
+                    cy={geometry().startPoint.y}
+                    r="4"
+                    class="pointer-events-none fill-[var(--map-canvas)] stroke-[var(--text-interactive-base)]"
+                    stroke-width="1.5"
+                    aria-hidden="true"
+                  />
+                </Show>
               </g>
             );
           }}
@@ -331,11 +371,23 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           const count = () => props.caseCountFor(connection);
           const source = () => nodeFor(connection.fromScreenId);
           const target = () => nodeFor(connection.toScreenId);
+          const showLabel = () => {
+            const runState = props.connectionRunState(connection.id);
+            return (
+              props.connectionLabelMode(connection) === "always" ||
+              props.selectedConnectionId === connection.id ||
+              hoveredConnectionId() === connection.id ||
+              runState === "running" ||
+              runState === "failed" ||
+              runState === "healed"
+            );
+          };
           return (
             <button
               type="button"
               class={cn(
                 "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-[10.5px] font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-[8px] hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                !showLabel() && "pointer-events-none opacity-0",
                 props.selectedConnectionId === connection.id &&
                   "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
               )}
@@ -345,6 +397,10 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 transform: "translate(-50%, -50%)",
               }}
               aria-label={`Open path from ${source() ? props.titleFor(source()!) : "start screen"} to ${target() ? props.titleFor(target()!) : "next screen"}`}
+              onFocus={() => keepConnectionHovered(connection.id)}
+              onBlur={() => releaseConnectionHover(connection.id)}
+              onPointerEnter={() => keepConnectionHovered(connection.id)}
+              onPointerLeave={() => releaseConnectionHover(connection.id)}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -405,6 +461,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               onContextMenu={(event) => props.onNodeContextMenu(event, node)}
               onRename={() => props.onRenameNode(node)}
               onOpenDetails={() => props.onOpenNodeDetails(node)}
+              onRun={props.canRunToScreen(node.id) ? () => props.onRunToScreen(node) : undefined}
               onCommitRename={(title) => props.onCommitNodeRename(node, title)}
               onConnectKeyboard={() => props.onConnectKeyboard(node)}
               onPointerDown={(event) => props.onNodePointerDown(event, node)}

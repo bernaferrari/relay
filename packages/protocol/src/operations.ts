@@ -634,6 +634,7 @@ type SpecificOperationMap = {
     input: {
       appMapId: string;
       flowId: string;
+      throughConnectionId?: string;
       serial?: string;
       platform?: "android" | "ios";
       targetKind?: "device" | "browser";
@@ -1450,6 +1451,9 @@ const appMapFlowRunParser = objectParser<OperationInput<"app-map.flow.run">>(
   (input) => {
     string(input.appMapId, "App Map flow run appMapId");
     string(input.flowId, "App Map flow run flowId");
+    if (input.throughConnectionId !== undefined) {
+      string(input.throughConnectionId, "App Map flow run throughConnectionId");
+    }
     if (input.serial !== undefined) string(input.serial, "App Map flow run serial");
     if (input.browserTargetId !== undefined) {
       string(input.browserTargetId, "App Map flow run browserTargetId");

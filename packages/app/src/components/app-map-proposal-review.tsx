@@ -30,6 +30,8 @@ export function AppMapProposalReview(props: {
     <aside
       class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Suggested map changes"
+      data-app-map-native-scroll
+      onWheel={(event) => event.stopPropagation()}
     >
       <header class="flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] px-3">
         <span class="grid size-7 place-items-center rounded-[8px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">

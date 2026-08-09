@@ -23,6 +23,8 @@ export function AppMapAgentPanel(props: {
       class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Map with AI"
       tabindex={-1}
+      data-app-map-native-scroll
+      onWheel={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();

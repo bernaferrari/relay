@@ -39,7 +39,10 @@ export function Toaster(): JSX.Element {
     window.addEventListener(TOAST_EVENT, onToast);
     void loadSonner().then(({ toast }) => {
       publish = ({ text, tone, ttl }) => {
-        const options = ttl === undefined ? undefined : { duration: ttl };
+        const options = {
+          id: `${tone}:${text}`,
+          ...(ttl === undefined ? {} : { duration: ttl }),
+        };
         if (tone === "success") toast.success(text, options);
         else if (tone === "error") toast.error(text, options);
         else if (tone === "warning") toast.warning(text, options);
@@ -55,8 +58,8 @@ export function Toaster(): JSX.Element {
   return (
     <SonnerToaster
       theme={theme.mode()}
-      position="bottom-right"
-      visibleToasts={3}
+      position="bottom-left"
+      visibleToasts={1}
       containerAriaLabel="Notifications"
     />
   );

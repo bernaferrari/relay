@@ -85,6 +85,67 @@ export function canonicalNotesFor(notes: CanvasNote[], appMap: AppMap): AppMap["
   );
 }
 
+/** Describe the authoring gesture instead of recording every atomic canvas
+ * persistence operation as the meaningless "Updated map". */
+export function appMapCommitSummary(input: {
+  appMap: AppMap;
+  changes: readonly AppMapBatchChange[];
+  notesChanged: boolean;
+}): string {
+  const { appMap, changes, notesChanged } = input;
+  const screenTitle = (screenId: string) => appMap.screens[screenId]?.title ?? "screen";
+  const destinationTitle = (destination: { kind: "screen"; screenId: string } | { kind: "end" }) =>
+    destination.kind === "screen" ? screenTitle(destination.screenId) : "End";
+  const itemCount = changes.length + (notesChanged ? 1 : 0);
+
+  if (changes.length === 0 && notesChanged) return "Edited a note";
+  if (
+    changes.length > 1 &&
+    !notesChanged &&
+    changes.every(
+      (change) =>
+        change.kind === "screen.update" &&
+        change.input.patch.position !== undefined &&
+        Object.keys(change.input.patch).length === 1 &&
+        !change.input.upsertVariants?.length &&
+        !change.input.removeVariantIds?.length,
+    )
+  ) {
+    return `Moved ${changes.length} screens`;
+  }
+  if (itemCount !== 1) return `Updated ${itemCount} map items`;
+
+  const change = changes[0];
+  if (!change) return "Edited a note";
+  switch (change.kind) {
+    case "screen.add":
+      return `Added ${change.input.screen.title}`;
+    case "screen.update": {
+      const before = screenTitle(change.screenId);
+      if (change.input.patch.title) return `Renamed ${before} to ${change.input.patch.title}`;
+      if (change.input.upsertVariants?.length) return `Updated screenshot for ${before}`;
+      if (change.input.patch.position !== undefined) return `Moved ${before}`;
+      return `Updated ${before}`;
+    }
+    case "screen.remove":
+      return `Removed ${screenTitle(change.screenId)}`;
+    case "connection.create":
+      return `Connected ${screenTitle(change.connection.fromScreenId)} to ${destinationTitle(change.connection.destination)}`;
+    case "connection.update":
+      return `Updated path from ${screenTitle(appMap.connections[change.connectionId]?.fromScreenId ?? "")}`;
+    case "connection.remove":
+      return `Removed path from ${screenTitle(appMap.connections[change.connectionId]?.fromScreenId ?? "")}`;
+    case "group.save":
+      return `${appMap.groups[change.group.id] ? "Updated" : "Created"} group ${change.group.name}`;
+    case "group.remove":
+      return `Removed group ${appMap.groups[change.groupId]?.name ?? "Group"}`;
+    case "flow.save":
+      return `Updated flow ${change.flow.name}`;
+    case "flow.remove":
+      return `Removed flow ${appMap.flows[change.flowId]?.name ?? "Flow"}`;
+  }
+}
+
 export function canvasRemovalChanges(
   previous: AppMapCanvasState,
   next: AppMapCanvasState,
@@ -345,34 +406,6 @@ export function selectedFlowSetupSummary(
       )
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((routine) => ({ id: routine.id, name: routine.name })),
-  };
-}
-
-export function findRunnableFlow(
-  appMap: AppMap | undefined,
-  transitionPath: string[] | null | undefined,
-): Flow | undefined {
-  if (!appMap || !transitionPath?.length) return undefined;
-  return Object.values(appMap.flows).find(
-    (flow) =>
-      flow.connectionIds.length === transitionPath.length &&
-      flow.connectionIds.every((connectionId, index) => connectionId === transitionPath[index]),
-  );
-}
-
-export function gateGraphRunReadiness<
-  T extends { ready: boolean; reason?: string; label?: string; next?: string },
->(
-  readiness: T,
-  hasRunnableFlow: boolean,
-): T | (T & { ready: false; reason: string; label: "Choose a destination"; next: "pick" }) {
-  if (!readiness.ready || hasRunnableFlow) return readiness;
-  return {
-    ...readiness,
-    ready: false,
-    reason: "Select the last screen on a kept path to run it",
-    label: "Choose a destination" as const,
-    next: "pick" as const,
   };
 }
 

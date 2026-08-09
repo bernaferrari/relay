@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
-import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
+import {
+  checkedTargetsLabel,
+  connectionLabelMode,
+  connectionStatusLabel,
+} from "../lib/connection-presentation";
 
 test("connection evidence names the one target that was actually checked", () => {
   assert.equal(
@@ -44,4 +48,34 @@ test("connection status never calls executable or untested work verified", () =>
     ),
     "Works",
   );
+});
+
+test("ordinary taps stay quiet while meaningful gestures keep their labels", () => {
+  assert.equal(
+    connectionLabelMode(connection({ stepIds: ["tap"] }), [
+      { id: "tap", kind: "tap", target: { label: "Settings" } },
+      { id: "pause", kind: "sleep", ms: 1_200 },
+    ]),
+    "contextual",
+  );
+  assert.equal(
+    connectionLabelMode(connection({ stepIds: ["double"] }), [
+      { id: "double", kind: "tap", gesture: "multi", tapCount: 2, target: { label: "Photo" } },
+    ]),
+    "always",
+  );
+  assert.equal(
+    connectionLabelMode(connection({ stepIds: ["swipe"] }), [
+      { id: "swipe", kind: "swipe", from: { x: 10, y: 80 }, to: { x: 10, y: 20 } },
+    ]),
+    "always",
+  );
+  assert.equal(
+    connectionLabelMode(connection({ stepIds: ["tap", "type"] }), [
+      { id: "tap", kind: "tap", target: { label: "Name" } },
+      { id: "type", kind: "type", target: { label: "Name" }, text: "Relay" },
+    ]),
+    "always",
+  );
+  assert.equal(connectionLabelMode(connection({ state: "needs-recording" }), []), "always");
 });

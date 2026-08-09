@@ -1,12 +1,8 @@
 import { For, Show } from "solid-js";
-import type {
-  CompatibilityMatrix,
-  TargetCapability,
-  TargetProfile,
-  TargetSelector,
-} from "@relay/protocol";
+import type { CompatibilityMatrix, TargetCapability, TargetProfile } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
+import { toggleListValue, type MatrixSelectorDraft } from "../lib/compatibility-matrix-draft";
 import { platformLabel } from "../lib/target-presentation";
 
 const inputCls =
@@ -63,45 +59,90 @@ export function matrixSummary(matrix: CompatibilityMatrix): string {
   return `${parts.join(" · ") || "Custom matching rules"}${suffix}`;
 }
 
-export type MatrixSelectorDraft = {
-  mode: "targets" | "rules";
-  targetIds: string[];
-  platforms: TargetProfile["platform"][];
-  osVersionPrefixes: string;
-  nameIncludes: string;
-  capabilities: TargetCapability[];
-};
-
-export function selectorDraftFrom(selector: TargetSelector): MatrixSelectorDraft {
-  return {
-    mode: selector.targetIds?.length ? "targets" : "rules",
-    targetIds: [...(selector.targetIds ?? [])],
-    platforms: [...(selector.platforms ?? [])],
-    osVersionPrefixes: selector.osVersionPrefixes?.join(", ") ?? "",
-    nameIncludes: selector.nameIncludes?.join(", ") ?? "",
-    capabilities: [...(selector.requiredCapabilities ?? [])],
-  };
-}
-
-export function selectorFromDraft(draft: MatrixSelectorDraft): TargetSelector {
-  if (draft.mode === "targets") return { targetIds: [...draft.targetIds] };
-  const selector: TargetSelector = {};
-  const split = (value: string) =>
-    value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  const prefixes = split(draft.osVersionPrefixes);
-  const names = split(draft.nameIncludes);
-  if (draft.platforms.length) selector.platforms = [...draft.platforms];
-  if (prefixes.length) selector.osVersionPrefixes = prefixes;
-  if (names.length) selector.nameIncludes = names;
-  if (draft.capabilities.length) selector.requiredCapabilities = [...draft.capabilities];
-  return selector;
-}
-
-function toggleValue<T>(values: T[], value: T): T[] {
-  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+export function MatrixRuleFields(props: {
+  draft: MatrixSelectorDraft;
+  onChange: (draft: MatrixSelectorDraft) => void;
+}) {
+  const update = (patch: Partial<MatrixSelectorDraft>) =>
+    props.onChange({ ...props.draft, ...patch });
+  return (
+    <div class="grid gap-3">
+      <fieldset class="m-0 border-0 p-0">
+        <legend class={rowTitleCls}>Platform</legend>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <For each={matrixPlatforms}>
+            {(platformName) => (
+              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+                <input
+                  class="sr-only"
+                  type="checkbox"
+                  checked={props.draft.platforms.includes(platformName)}
+                  onChange={() =>
+                    update({
+                      platforms: toggleListValue(props.draft.platforms, platformName),
+                    })
+                  }
+                />
+                {platformLabel(platformName)}
+              </label>
+            )}
+          </For>
+        </div>
+      </fieldset>
+      <label class="flex flex-col gap-1.5">
+        <span class={rowTitleCls}>OS versions</span>
+        <input
+          data-focus-contained
+          class={inputCls}
+          value={props.draft.osVersionPrefixes}
+          placeholder="For example, 18, 19"
+          autocomplete="off"
+          spellcheck={false}
+          onInput={(event) => update({ osVersionPrefixes: event.currentTarget.value })}
+        />
+        <span class="text-10-regular text-text-weak">
+          Optional. Prefix matching includes minor releases such as 18.1.
+        </span>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class={rowTitleCls}>Device name or model</span>
+        <input
+          data-focus-contained
+          class={inputCls}
+          value={props.draft.nameIncludes}
+          placeholder="For example, iPhone, Pixel, Chrome"
+          autocomplete="off"
+          spellcheck={false}
+          onInput={(event) => update({ nameIncludes: event.currentTarget.value })}
+        />
+        <span class="text-10-regular text-text-weak">
+          Optional. Separate alternatives with commas.
+        </span>
+      </label>
+      <fieldset class="m-0 border-0 p-0">
+        <legend class={rowTitleCls}>Must support</legend>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <For each={matrixCapabilities}>
+            {(capability) => (
+              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+                <input
+                  class="sr-only"
+                  type="checkbox"
+                  checked={props.draft.capabilities.includes(capability)}
+                  onChange={() =>
+                    update({
+                      capabilities: toggleListValue(props.draft.capabilities, capability),
+                    })
+                  }
+                />
+                {readableCapability(capability)}
+              </label>
+            )}
+          </For>
+        </div>
+      </fieldset>
+    </div>
+  );
 }
 
 export function MatrixSelectorEditor(props: {
@@ -160,7 +201,9 @@ export function MatrixSelectorEditor(props: {
                     type="checkbox"
                     checked={props.draft.targetIds.includes(profile.targetId)}
                     onChange={() =>
-                      update({ targetIds: toggleValue(props.draft.targetIds, profile.targetId) })
+                      update({
+                        targetIds: toggleListValue(props.draft.targetIds, profile.targetId),
+                      })
                     }
                   />
                   <span class="min-w-0 flex-1 truncate">{profile.name}</span>
@@ -174,66 +217,7 @@ export function MatrixSelectorEditor(props: {
         </div>
       </Show>
       <Show when={props.draft.mode === "rules"}>
-        <div class="grid gap-2.5">
-          <div>
-            <span class={rowTitleCls}>Platform</span>
-            <div class="mt-1.5 flex flex-wrap gap-1">
-              <For each={matrixPlatforms}>
-                {(platformName) => (
-                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
-                    <input
-                      class="sr-only"
-                      type="checkbox"
-                      checked={props.draft.platforms.includes(platformName)}
-                      onChange={() =>
-                        update({ platforms: toggleValue(props.draft.platforms, platformName) })
-                      }
-                    />
-                    {platformLabel(platformName)}
-                  </label>
-                )}
-              </For>
-            </div>
-          </div>
-          <label class="flex flex-col gap-1">
-            <span class={rowTitleCls}>OS version starts with</span>
-            <input
-              class={inputCls}
-              value={props.draft.osVersionPrefixes}
-              placeholder="18, 19"
-              onInput={(event) => update({ osVersionPrefixes: event.currentTarget.value })}
-            />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class={rowTitleCls}>Name or model contains</span>
-            <input
-              class={inputCls}
-              value={props.draft.nameIncludes}
-              placeholder="iPhone, Pixel, Chrome"
-              onInput={(event) => update({ nameIncludes: event.currentTarget.value })}
-            />
-          </label>
-          <div>
-            <span class={rowTitleCls}>Required capabilities</span>
-            <div class="mt-1.5 flex flex-wrap gap-1">
-              <For each={matrixCapabilities}>
-                {(capability) => (
-                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
-                    <input
-                      class="sr-only"
-                      type="checkbox"
-                      checked={props.draft.capabilities.includes(capability)}
-                      onChange={() =>
-                        update({ capabilities: toggleValue(props.draft.capabilities, capability) })
-                      }
-                    />
-                    {readableCapability(capability)}
-                  </label>
-                )}
-              </For>
-            </div>
-          </div>
-        </div>
+        <MatrixRuleFields draft={props.draft} onChange={props.onChange} />
       </Show>
     </div>
   );

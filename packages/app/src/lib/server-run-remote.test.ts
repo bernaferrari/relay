@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildLocaleMatrixInput,
+  enqueueAppMapFlow,
   enqueueMatrix,
   enqueueRecipe,
   retryJob,
@@ -33,6 +34,30 @@ test("keeps execution endpoints typed and predictable", async () => {
     "POST /jobs/compatibility-matrix",
     "POST /jobs/job-1/retry",
   ]);
+});
+
+test("a run-to-screen request keeps its explicit flow boundary", async () => {
+  let requestBody: unknown;
+  const request = async <T>(_path: string, init?: RequestInit): Promise<T> => {
+    requestBody = JSON.parse(String(init?.body));
+    return { job: { id: "job-1" }, jobs: [{ id: "job-1" }] } as T;
+  };
+
+  await enqueueAppMapFlow(request, {
+    appMapId: "map-1",
+    flowId: "main",
+    throughConnectionId: "open-settings",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "android",
+  });
+
+  assert.deepEqual(requestBody, {
+    throughConnectionId: "open-settings",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "android",
+  });
 });
 
 test("taught locale scope is enqueued instead of the Grok language profile", () => {

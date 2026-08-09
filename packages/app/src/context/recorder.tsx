@@ -1025,7 +1025,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
       setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
       if (!ownsActiveSession()) {
-        toast("This recording belongs to another session. Cleared the local review.", "warning");
+        // This is stale local presentation state, not a user-facing failure.
+        // Clear it quietly instead of exposing internal session ownership.
         return;
       }
       try {

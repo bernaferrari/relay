@@ -45,8 +45,11 @@ function sourceAnchorForSteps(
   const ordered = stepIds
     .map((stepId) => steps.find((step) => step.id === stepId))
     .filter((step): step is RecipeStep => Boolean(step));
-  const firstTap = ordered.find((step) => step.kind === "tap") ?? fallback;
-  return normalizedAnchorForStep(firstTap);
+  for (const step of ordered) {
+    const anchor = normalizedAnchorForStep(step);
+    if (anchor) return anchor;
+  }
+  return normalizedAnchorForStep(fallback);
 }
 
 export function canvasConnections(

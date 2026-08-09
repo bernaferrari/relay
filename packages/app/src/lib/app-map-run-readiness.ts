@@ -1,4 +1,4 @@
-import type { CanvasGraph, RecipeStep } from "@relay/protocol";
+import type { AppMap, CanvasGraph, Flow, RecipeStep } from "@relay/protocol";
 
 export type AppMapRunNext = "run" | "record" | "keep" | "pick" | "capture" | "fix";
 
@@ -12,9 +12,15 @@ export type AppMapRunReadiness = {
   transitionPath: string[] | null;
 };
 
-type AppMapRunSelection = {
+export type AppMapRunSelection = {
   screenId?: string | null;
   transitionId?: string | null;
+};
+
+export type AppMapRunTarget = {
+  flow: Flow;
+  transitionPath: readonly string[];
+  title?: string;
 };
 
 function entryScreenId(graph: CanvasGraph): string | undefined {
@@ -243,4 +249,54 @@ export function appMapRunReadiness(input: {
     label: selected.label,
     transitionPath: selected.transitionPath,
   };
+}
+
+export function findRunnableFlow(
+  appMap: AppMap | undefined,
+  transitionPath: readonly string[] | null | undefined,
+): Flow | undefined {
+  if (!appMap || !transitionPath?.length) return undefined;
+  return Object.values(appMap.flows)
+    .filter(
+      (flow) =>
+        flow.connectionIds.length >= transitionPath.length &&
+        transitionPath.every((connectionId, index) => flow.connectionIds[index] === connectionId),
+    )
+    .sort(
+      (left, right) =>
+        left.connectionIds.length - right.connectionIds.length ||
+        left.createdAt - right.createdAt ||
+        left.id.localeCompare(right.id),
+    )[0];
+}
+
+export function gateGraphRunReadiness<
+  T extends { ready: boolean; reason?: string; label?: string; next?: string },
+>(
+  readiness: T,
+  hasRunnableFlow: boolean,
+): T | (T & { ready: false; reason: string; label: "Choose a destination"; next: "pick" }) {
+  if (!readiness.ready || hasRunnableFlow) return readiness;
+  return {
+    ...readiness,
+    ready: false,
+    reason: "Select the last screen on a kept path to run it",
+    label: "Choose a destination" as const,
+    next: "pick" as const,
+  };
+}
+
+/** Resolve a selected graph destination into the exact saved flow prefix to execute. */
+export function appMapRunTarget(input: {
+  appMap: AppMap | undefined;
+  graph: CanvasGraph;
+  recipeSteps: RecipeStep[];
+  selection: AppMapRunSelection;
+}): AppMapRunTarget | undefined {
+  const readiness = appMapRunReadiness(input);
+  const flow = findRunnableFlow(input.appMap, readiness.transitionPath);
+  const gated = gateGraphRunReadiness(readiness, Boolean(flow));
+  return gated.ready && flow && gated.transitionPath?.length
+    ? { flow, transitionPath: gated.transitionPath }
+    : undefined;
 }

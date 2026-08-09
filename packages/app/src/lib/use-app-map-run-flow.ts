@@ -3,17 +3,20 @@ import type { AppMap, Flow } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "./human-error";
+import type { AppMapRunTarget } from "./app-map-run-readiness";
 
 /** Starts a verified App Map flow on the selected device. */
 export function useAppMapRunFlow(options: {
   activeAppMap: Accessor<AppMap | undefined>;
   runnableFlow: Accessor<Flow | undefined>;
+  transitionPath: Accessor<readonly string[] | null | undefined>;
 }) {
   const server = useServer();
 
-  const runCanvasGraph = async () => {
+  const runCanvasGraph = async (target?: AppMapRunTarget) => {
     const appMap = options.activeAppMap();
-    const flow = options.runnableFlow();
+    const flow = target?.flow ?? options.runnableFlow();
+    const transitionPath = target?.transitionPath ?? options.transitionPath();
     if (!appMap || !flow) {
       toast("Record and keep at least one path on the map, then run it", "info");
       return;
@@ -35,7 +38,16 @@ export function useAppMapRunFlow(options: {
       );
       return;
     }
-    await server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
+    const throughConnectionId =
+      transitionPath?.length && transitionPath.length < flow.connectionIds.length
+        ? transitionPath.at(-1)
+        : undefined;
+    await server.runAppMapFlowRemote(
+      appMap.id,
+      flow.id,
+      target?.title ?? flow.name,
+      throughConnectionId,
+    );
   };
 
   return { runCanvasGraph };

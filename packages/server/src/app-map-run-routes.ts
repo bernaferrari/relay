@@ -131,8 +131,15 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
 
   let plan;
   try {
+    const throughConnectionId = flowMatch
+      ? (body as OperationInput<"app-map.flow.run">).throughConnectionId?.trim()
+      : undefined;
     plan = flowMatch
-      ? compileAppMapFlow(map, flowMatch.flowId!)
+      ? compileAppMapFlow(
+          map,
+          flowMatch.flowId!,
+          throughConnectionId ? { throughConnectionId } : {},
+        )
       : compileAppMapConnection(map, connectionMatch!.connectionId!);
   } catch (error) {
     if (error instanceof AppMapCompileError) {

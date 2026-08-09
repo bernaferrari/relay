@@ -29,7 +29,11 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 function sourceAnchorForSteps(steps: readonly RecipeStep[]): CanvasInteractionAnchor | undefined {
-  return normalizedAnchorForStep(steps.find((candidate) => candidate.kind === "tap"));
+  for (const step of steps) {
+    const anchor = normalizedAnchorForStep(step);
+    if (anchor) return anchor;
+  }
+  return undefined;
 }
 
 function flowPath(graph: CanvasGraph, startScreenId: string): string[] {

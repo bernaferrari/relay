@@ -51,7 +51,7 @@ export function AppMapMinimap(props: {
     <>
       <aside
         class={cn(
-          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] min-[901px]:block",
+          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] min-[901px]:block",
           props.shiftForSidePanel
             ? props.wideDevice
               ? "right-[652px]"
@@ -98,7 +98,7 @@ export function AppMapMinimap(props: {
           </div>
         </header>
         <div
-          class="relative m-2 h-24 cursor-crosshair touch-none overflow-hidden rounded-[7px] bg-[color-mix(in_srgb,var(--map-canvas)_72%,var(--surface-base))] shadow-[inset_0_0_0_1px_var(--map-divider)]"
+          class="relative m-2 h-24 cursor-crosshair touch-none overflow-hidden rounded-[4px] bg-[color-mix(in_srgb,var(--map-canvas)_72%,var(--surface-base))] shadow-[inset_0_0_0_1px_var(--map-divider)]"
           onPointerDown={(event) => {
             event.stopPropagation();
             dragging = true;

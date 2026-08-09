@@ -7,6 +7,7 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
+import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
   ensureCanvasGraph,
@@ -31,7 +32,12 @@ import {
 import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { deviceReadiness } from "../lib/device-readiness";
 import { projectAppMapRun } from "../lib/app-map-run-projection";
-import { appMapRunReadiness } from "../lib/app-map-run-readiness";
+import {
+  appMapRunReadiness,
+  appMapRunTarget,
+  findRunnableFlow,
+  gateGraphRunReadiness,
+} from "../lib/app-map-run-readiness";
 import { toast } from "../context/toast";
 import { AppMapEmptyState } from "./app-map-capture-review";
 import { ConnectionInspector, GroupInspector, ScreenInspector } from "./app-map-canvas-primitives";
@@ -42,7 +48,11 @@ import { AppMapOverviewToolbar, AppMapToolbar, type AppMapWorkspaceView } from "
 import { AppMapMinimap } from "./app-map-minimap";
 import { AppMapBrowseView } from "./app-map-browse-view";
 import { AppMapAgentPanel } from "./app-map-agent-panel";
-import { canvasWheelAction, createAppMapEventOrchestration } from "./app-map-events";
+import {
+  canvasOwnsWheel,
+  canvasWheelAction,
+  createAppMapEventOrchestration,
+} from "./app-map-events";
 import { Icon } from "./icon";
 import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
@@ -59,6 +69,7 @@ import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import { targetIsReady } from "../lib/target-presentation";
 import {
   appMapLoadFailure,
+  appMapCommitSummary,
   applyTargetSetToActiveFlow,
   buildMinimapEdges,
   buildMinimapNodes,
@@ -73,8 +84,6 @@ import {
   createCanvasNote,
   recordedActionFromConnection,
   entryFlowsForScreen,
-  findRunnableFlow,
-  gateGraphRunReadiness,
   listReusableBehaviors,
   orderCanvasChanges,
   pushCanvasHistoryEntry,
@@ -676,10 +685,13 @@ export function AppMapWorkspace(props: {
     activeAppMap,
     selectedEntryFlows,
   });
+  const runReadinessSteps = createMemo(() =>
+    recipeStepsForRunReadiness(draft.steps(), activeAppMap()?.connections),
+  );
   const baseGraphRunReadiness = createMemo(() =>
     appMapRunReadiness({
       graph: graph(),
-      recipeSteps: recipeStepsForRunReadiness(draft.steps(), activeAppMap()?.connections),
+      recipeSteps: runReadinessSteps(),
       selection: {
         screenId: selectedNodeId(),
         transitionId: selectedConnectionId(),
@@ -695,7 +707,16 @@ export function AppMapWorkspace(props: {
   const { runCanvasGraph } = useAppMapRunFlow({
     activeAppMap,
     runnableFlow,
+    transitionPath: () => graphRunReadiness().transitionPath,
   });
+  const runTargetForScreen = (screenId: string) => {
+    return appMapRunTarget({
+      appMap: activeAppMap(),
+      graph: graph(),
+      recipeSteps: runReadinessSteps(),
+      selection: { screenId },
+    });
+  };
   const reusableBehaviors = createMemo(() => listReusableBehaviors(activeAppMap()));
   const bounds = createMemo(() =>
     canvasBounds(tree().nodes, canvasState().notes ?? [], positionFor),
@@ -852,7 +873,7 @@ export function AppMapWorkspace(props: {
           await server.runAction("app-map.commit", {
             appMapId,
             expectedRevision: appMap.revision,
-            summary: "Updated map",
+            summary: appMapCommitSummary({ appMap, changes, notesChanged }),
             changes,
             ...(notesChanged ? { patch: { notes: canonicalNotes } } : {}),
           })
@@ -966,7 +987,6 @@ export function AppMapWorkspace(props: {
   const captureCurrentScreen = async () => {
     if (startCaptureBusy()) return;
     if (!targetIsReady(selectedDevice(), server.health() === "online")) {
-      toast("Choose a connected device before saving a screen", "info");
       openDevicePicker();
       return;
     }
@@ -1334,8 +1354,17 @@ export function AppMapWorkspace(props: {
           )}
           aria-label="Map"
           onWheel={(event) => {
-            if (workspaceView() !== "map") return;
-            if (!hasCanvasContent()) return;
+            const target = event.target as HTMLElement;
+            if (
+              !canvasOwnsWheel({
+                workspaceView: workspaceView(),
+                hasCanvasContent: hasCanvasContent(),
+                insideOverlay: Boolean(
+                  target.closest("aside, [role='dialog'], [data-app-map-native-scroll]"),
+                ),
+              })
+            )
+              return;
             const action = canvasWheelAction({
               deltaX: event.deltaX,
               deltaY: event.deltaY,
@@ -1633,6 +1662,14 @@ export function AppMapWorkspace(props: {
                       ? caseStackCount(stack, server.projectVariables().value)
                       : undefined;
                   }}
+                  connectionLabelMode={(connection) =>
+                    connectionLabelMode(
+                      connection,
+                      activeAppMap()?.connections[connection.id]?.actions.flatMap((action) =>
+                        action.kind === "recorded" || action.kind === "steps" ? action.steps : [],
+                      ) ?? draft.steps(),
+                    )
+                  }
                   onSelectNode={(node, event) => {
                     const draft = pathDraftClick({
                       sourceScreenId: keyboardConnectionSourceId(),
@@ -1665,6 +1702,17 @@ export function AppMapWorkspace(props: {
                   onOpenNodeDetails={(node) => {
                     selectNode(node);
                     setScreenInspectorOpen(true);
+                  }}
+                  canRunToScreen={(screenId) => Boolean(runTargetForScreen(screenId))}
+                  onRunToScreen={(node) => {
+                    const target = runTargetForScreen(node.id);
+                    if (!target) return;
+                    selectNode(node);
+                    setScreenInspectorOpen(false);
+                    void runCanvasGraph({
+                      ...target,
+                      title: `Run to ${titleFor(node)}`,
+                    });
                   }}
                   onCommitNodeRename={renameScreen}
                   onConnectKeyboard={(node) => {
@@ -1739,6 +1787,8 @@ export function AppMapWorkspace(props: {
                   onCreateKeyboardDestination={createKeyboardDestination}
                   onCancelKeyboardConnection={() => setKeyboardConnectionSourceId(null)}
                   onNotePointerDown={(event, note) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
                     event.stopPropagation();
                     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
                     noteDrag = {

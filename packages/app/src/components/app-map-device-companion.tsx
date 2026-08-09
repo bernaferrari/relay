@@ -1,6 +1,13 @@
-import { Show, createSignal } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import type { RecordingTake } from "../context/recorder";
+import { useServer } from "../context/server";
+import {
+  ACCESSIBILITY_OVERLAY_MODES,
+  ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS,
+  ACCESSIBILITY_OVERLAY_MODE_LABELS,
+  type AccessibilityOverlayMode,
+} from "../lib/accessibility-overlay-mode";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./app-map-capture-review";
@@ -27,6 +34,7 @@ export function AppMapDeviceCompanion(props: {
   onStop: () => void;
   onOrientation?: (orientation: DeviceCompanionOrientation) => void;
 }) {
+  const server = useServer();
   const [renderedOrientation, setRenderedOrientation] =
     createSignal<DeviceCompanionOrientation>("unknown");
   return (
@@ -46,17 +54,40 @@ export function AppMapDeviceCompanion(props: {
     >
       <header class="relative z-[100] flex min-h-10 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-3">
         <DeviceStatusLabel status={props.status} label={props.deviceLabel ?? "Device"} />
-        <Show when={!props.recording}>
-          <button
-            type="button"
-            class="app-map-icon-button"
-            aria-label="Close device"
-            data-tip="Close device · D"
-            onClick={props.onClose}
+        <div class="flex items-center gap-1.5">
+          <label
+            class="relative inline-flex h-7 items-center rounded-md text-[11px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
+            data-tip={ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}
           >
-            <Icon name="x" size={13} />
-          </button>
-        </Show>
+            <span class="sr-only">Accessibility overlay</span>
+            <select
+              class="h-full max-w-[142px] cursor-pointer appearance-none bg-transparent pr-5 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--border-strong-focus)]"
+              aria-label="Accessibility overlay"
+              value={server.accessibilityMode()}
+              onChange={(event) =>
+                server.setAccessibilityMode(event.currentTarget.value as AccessibilityOverlayMode)
+              }
+            >
+              <For each={ACCESSIBILITY_OVERLAY_MODES}>
+                {(mode) => (
+                  <option value={mode}>Elements: {ACCESSIBILITY_OVERLAY_MODE_LABELS[mode]}</option>
+                )}
+              </For>
+            </select>
+            <Icon name="chevron-down" size={10} class="pointer-events-none absolute right-1.5" />
+          </label>
+          <Show when={!props.recording}>
+            <button
+              type="button"
+              class="app-map-icon-button"
+              aria-label="Close device"
+              data-tip="Close device · D"
+              onClick={props.onClose}
+            >
+              <Icon name="x" size={13} />
+            </button>
+          </Show>
+        </div>
       </header>
       <DeviceCompanionStage
         onOpenTargets={props.onOpenTargets}

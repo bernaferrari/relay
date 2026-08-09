@@ -41,3 +41,10 @@ test("an exclusive physical-device recording suspends all inspection polling", (
     pollFallbackFrame: false,
   });
 });
+
+test("pixels keep recovering when accessibility collection is off", () => {
+  assert.deepEqual(liveInspectionPolicy(true, true, false, false), {
+    pollSnapshot: false,
+    pollFallbackFrame: true,
+  });
+});

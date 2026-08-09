@@ -213,18 +213,32 @@ export function canvasEdgeGeometry(
   positionFor: (node: MapTreeNode) => CanvasPoint,
   nodeIndex?: ReadonlyMap<string, MapTreeNode>,
   geometryFor?: (node: MapTreeNode) => ScreenCardGeometry,
-): { path: string; labelPoint: CanvasPoint } {
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
   const byId = nodeIndex ?? new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
   const to = byId.get(edge.to);
-  if (!from || !to) return { path: "", labelPoint: { x: 0, y: 0 } };
+  if (!from || !to) {
+    return { path: "", labelPoint: { x: 0, y: 0 }, startPoint: { x: 0, y: 0 } };
+  }
   const fromPosition = positionFor(from);
   const toPosition = positionFor(to);
   const fromGeometry = geometryFor?.(from) ?? screenCardGeometry();
   const toGeometry = geometryFor?.(to) ?? screenCardGeometry();
+  const sourceAnchor = edge.sourceAnchor;
+  const sourcePoint = sourceAnchor
+    ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
+    : undefined;
   if (edge.kind === "return") {
-    const startX = fromPosition.x + fromGeometry.frameLeft + fromGeometry.frameWidth / 2;
-    const startY = fromPosition.y + fromGeometry.frameTop;
+    const startX =
+      fromPosition.x +
+      fromGeometry.frameLeft +
+      (sourcePoint
+        ? Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth
+        : fromGeometry.frameWidth / 2);
+    const startY =
+      fromPosition.y +
+      fromGeometry.frameTop +
+      (sourcePoint ? Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight : 0);
     const endX = toPosition.x + toGeometry.frameLeft + toGeometry.frameWidth / 2;
     const endY = toPosition.y + toGeometry.frameTop;
     const railY = Math.min(startY, endY) - 34;
@@ -234,12 +248,9 @@ export function canvasEdgeGeometry(
         x: (startX + endX) / 2,
         y: (startY + 6 * railY + endY) / 8,
       },
+      startPoint: { x: startX, y: startY },
     };
   }
-  const sourceAnchor = edge.sourceAnchor;
-  const sourcePoint = sourceAnchor
-    ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
-    : undefined;
   const startX =
     fromPosition.x +
     fromGeometry.frameLeft +
@@ -260,6 +271,7 @@ export function canvasEdgeGeometry(
       x: (startX + 3 * (startX + 48) + 3 * (endX - 48) + endX) / 8,
       y: (startY + endY) / 2,
     },
+    startPoint: { x: startX, y: startY },
   };
 }
 

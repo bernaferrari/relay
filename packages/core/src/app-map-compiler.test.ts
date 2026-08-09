@@ -151,6 +151,43 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.equal(root.stepProvenance[3]!.origin, "destination");
 });
 
+test("compiles a saved flow only through the selected connection", () => {
+  const map = fixture();
+  map.screens.receipt = {
+    ...screen("receipt", "Receipt"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.connections["checkout-connection"] = {
+    ...entity("checkout-connection"),
+    id: "checkout-connection",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "receipt" },
+    state: "ready",
+    actions: [{ id: "pay", kind: "tap", target: { label: "Pay" } }],
+  };
+  map.flows.checkout!.connectionIds.push("checkout-connection");
+
+  const plan = compileAppMapFlow(map, "checkout", { throughConnectionId: "open-home" });
+
+  assert.deepEqual(
+    plan.connections.map((connection) => connection.connectionId),
+    ["open-home"],
+  );
+  assert.deepEqual(plan.terminal, { kind: "screen", screenId: "home" });
+  assert.ok(
+    plan.recipes[plan.rootRecipeId]!.steps.every(
+      (step) => step.kind !== "expect-screen" || step.screenId !== "receipt",
+    ),
+  );
+  assert.throws(
+    () =>
+      compileAppMapFlow(map, "checkout", {
+        throughConnectionId: "not-in-this-flow",
+      }),
+    (error: unknown) => error instanceof AppMapCompileError && error.code === "missing-connection",
+  );
+});
+
 test("compiles one connection from canonical actions with source and destination checks", () => {
   const plan = compileAppMapConnection(fixture(), "open-home");
   const root = plan.recipes[plan.rootRecipeId]!;

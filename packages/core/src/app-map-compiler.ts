@@ -247,10 +247,24 @@ function compileRecipe(input: {
 }
 
 /** Compile one saved flow into the exact recipes consumed by the runner. */
-export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompiledFlow {
+export function compileAppMapFlow(
+  mapInput: AppMap,
+  flowId: string,
+  options: { throughConnectionId?: string } = {},
+): AppMapCompiledFlow {
   const map = validateAppMap(mapInput);
   const flow = map.flows[flowId];
   if (!flow) fail("missing-flow", `Flow "${flowId}" does not exist`);
+  const throughConnectionIndex = options.throughConnectionId
+    ? flow.connectionIds.indexOf(options.throughConnectionId)
+    : flow.connectionIds.length - 1;
+  if (options.throughConnectionId && throughConnectionIndex < 0) {
+    fail(
+      "missing-connection",
+      `Connection "${options.throughConnectionId}" is not part of flow "${flowId}"`,
+    );
+  }
+  const connectionIds = flow.connectionIds.slice(0, throughConnectionIndex + 1);
 
   const recipes: Record<string, AppMapCompiledRecipe> = {};
   const ensureRoutine = routineCompiler(map, recipes);
@@ -300,8 +314,8 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     screenId: flow.startScreenId,
   };
 
-  for (let connectionIndex = 0; connectionIndex < flow.connectionIds.length; connectionIndex += 1) {
-    const connection = map.connections[flow.connectionIds[connectionIndex]!]!;
+  for (let connectionIndex = 0; connectionIndex < connectionIds.length; connectionIndex += 1) {
+    const connection = map.connections[connectionIds[connectionIndex]!]!;
     if (connection.state !== "ready") {
       fail(
         "draft-connection",

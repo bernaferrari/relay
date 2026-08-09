@@ -39,12 +39,13 @@ export function CanvasNoteCard(props: {
       <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-1">
         <button
           type="button"
-          class="flex h-full min-w-0 flex-1 cursor-grab items-center gap-1.5 px-1.5 text-left active:cursor-grabbing"
+          class="flex h-full min-w-0 flex-1 touch-none cursor-grab select-none items-center gap-1.5 px-1.5 text-left active:cursor-grabbing"
+          aria-label="Move note"
+          data-tip="Drag to move"
           onPointerDown={props.onPointerDown}
         >
-          <Icon name="edit" size={11} class="text-[var(--text-interactive-base)]" />
+          <Icon name="move" size={11} class="text-[var(--text-weak)]" />
           <span class="text-[10px] font-semibold text-[var(--text-strong)]">Note</span>
-          <span class="text-[9px] text-[var(--text-weak)]">drag</span>
         </button>
         <button
           type="button"
@@ -144,6 +145,7 @@ export function ScreenCard(props: {
   onContextMenu: (event: MouseEvent) => void;
   onRename: () => void;
   onOpenDetails: () => void;
+  onRun?: () => void;
   onCommitRename: (title: string) => void;
   onConnectKeyboard: () => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
@@ -216,12 +218,33 @@ export function ScreenCard(props: {
           role="toolbar"
           aria-label={`${props.title} screen actions`}
           data-app-map-screen-actions
-          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]"
+          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-1 shadow-[0_6px_18px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
+          <Show when={props.onRun}>
+            {(run) => (
+              <button
+                type="button"
+                class="app-map-context-button app-map-context-button--primary"
+                aria-label={`Run from Start to ${props.title}`}
+                title="Run from Start to here"
+                data-tip="Run from Start to here"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  run()();
+                }}
+              >
+                <Icon name="play" size={12} />
+              </button>
+            )}
+          </Show>
           <button
             type="button"
-            class="inline-flex min-h-11 min-w-[82px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2 text-[11px] font-medium text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--text-interactive-base))] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)]"
+            class={cn(
+              "app-map-context-button",
+              props.detailsOpen && "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
+            )}
             aria-label={
               props.detailsOpen
                 ? `Details open for ${props.title}`
@@ -239,11 +262,10 @@ export function ScreenCard(props: {
             }}
           >
             <Icon name="info" size={13} />
-            <span>Details</span>
           </button>
           <button
             type="button"
-            class="app-map-icon-button"
+            class="app-map-context-button"
             aria-label={`Rename ${props.title}`}
             title="Rename · F2"
             data-tip="Rename · F2"
@@ -257,7 +279,7 @@ export function ScreenCard(props: {
           </button>
           <button
             type="button"
-            class="app-map-icon-button"
+            class="app-map-context-button"
             aria-label={`Path from ${props.title}`}
             title="Add path"
             data-tip="Add a path to the next screen"
@@ -458,8 +480,8 @@ export function ScreenCard(props: {
           props.onConnectKeyboard();
         }}
       >
-        <span class="grid size-[24px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-colors duration-150 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
-          <Icon name="plus" size={11} />
+        <span class="grid size-3.5 place-items-center rounded-full border-2 border-[var(--text-interactive-base)] bg-[var(--background-base)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--text-interactive-base)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
+          <span class="size-1 rounded-full bg-[var(--text-interactive-base)] group-hover:bg-white" />
         </span>
       </button>
       <Show when={props.pathDraft}>
@@ -490,6 +512,8 @@ export function KeyboardConnectionChooser(props: {
       role="dialog"
       aria-modal="true"
       aria-label={`Path from ${props.sourceTitle}`}
+      data-app-map-native-scroll
+      onWheel={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
@@ -575,8 +599,10 @@ export function ScreenInspector(props: {
         <aside
           id={`app-map-screen-details-${_node().id}`}
           data-app-map-screen-inspector
-          class="absolute top-16 right-3 z-30 w-[min(304px,calc(100%-24px))] overflow-hidden rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
           aria-label={`Details for ${props.title}`}
+          data-app-map-native-scroll
+          onWheel={(event) => event.stopPropagation()}
         >
           <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
             <div class="flex min-w-0 items-center gap-2.5">
@@ -783,8 +809,9 @@ export function GroupInspector(props: {
       {(group) => (
         <aside
           data-app-map-group-inspector
-          class="absolute top-16 right-3 z-30 w-[min(304px,calc(100%-24px))] overflow-hidden rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] overscroll-contain max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
           aria-label={`Details for group ${group().name}`}
+          data-app-map-native-scroll
           onWheel={(event) => event.stopPropagation()}
         >
           <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
@@ -859,6 +886,23 @@ export function GroupInspector(props: {
         </aside>
       )}
     </Show>
+  );
+}
+
+function RemovePathButton(props: { onClick: () => void }) {
+  return (
+    <div class="mt-1 border-t border-[var(--border-weak-base)] pt-1">
+      <button
+        type="button"
+        class="flex min-h-10 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] font-medium text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] active:scale-[0.98] motion-reduce:active:scale-100"
+        onClick={props.onClick}
+      >
+        <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)]">
+          <Icon name="trash" size={12} />
+        </span>
+        <span>Remove path</span>
+      </button>
+    </div>
   );
 }
 
@@ -981,7 +1025,7 @@ export function ConnectionInspector(props: {
                     <span class="grid size-5 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] font-mono text-[8.5px] tabular-nums text-[var(--text-weak)]">
                       {index() + 1}
                     </span>
-                    <span class="min-w-0 leading-[1.35]">{action.label}</span>
+                    <span class="min-w-0 leading-[1.25]">{action.label}</span>
                     <Show when={action.waitMs !== undefined}>
                       <label class="flex h-8 items-center rounded-[7px] bg-[var(--surface-base-hover)] px-2 text-[var(--text-weak)] focus-within:outline-2 focus-within:outline-[var(--border-focus)]">
                         <input
@@ -1149,13 +1193,7 @@ export function ConnectionInspector(props: {
                   <Icon name="copy" size={11} /> Save for reuse
                 </button>
                 <Show when={props.connection.source === "authored"}>
-                  <button
-                    type="button"
-                    class="mt-1 flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] px-2 pt-1 text-left text-[10.5px] text-[var(--icon-critical-base)] hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)]"
-                    onClick={props.onRemove}
-                  >
-                    <Icon name="trash" size={11} /> Remove path
-                  </button>
+                  <RemovePathButton onClick={props.onRemove} />
                 </Show>
               </div>
             </Show>
@@ -1191,9 +1229,11 @@ export function ConnectionInspector(props: {
                 <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                   <Icon name="undo" size={11} />
                 </span>
-                <span>
-                  <strong class="block font-medium text-[var(--text-strong)]">Back button</strong>
-                  <span class="text-[9.5px] text-[var(--text-weak)]">
+                <span class="grid min-w-0 gap-px">
+                  <strong class="font-medium leading-[1.2] text-[var(--text-strong)]">
+                    Back button
+                  </strong>
+                  <span class="text-[9.5px]/[1.25] text-[var(--text-weak)]">
                     Press Android or iOS Back
                   </span>
                 </span>
@@ -1206,11 +1246,11 @@ export function ConnectionInspector(props: {
                 <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                   <Icon name="clock" size={11} />
                 </span>
-                <span>
-                  <strong class="block font-medium text-[var(--text-strong)]">
+                <span class="grid min-w-0 gap-px">
+                  <strong class="font-medium leading-[1.2] text-[var(--text-strong)]">
                     Wait for screen change
                   </strong>
-                  <span class="text-[9.5px] text-[var(--text-weak)]">
+                  <span class="text-[9.5px]/[1.25] text-[var(--text-weak)]">
                     For loading or automatic navigation
                   </span>
                 </span>
@@ -1229,11 +1269,11 @@ export function ConnectionInspector(props: {
                       <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                         <Icon name="copy" size={11} />
                       </span>
-                      <span class="min-w-0 flex-1">
-                        <strong class="block truncate font-medium text-[var(--text-strong)]">
+                      <span class="grid min-w-0 flex-1 gap-px">
+                        <strong class="truncate font-medium leading-[1.2] text-[var(--text-strong)]">
                           {behavior.label}
                         </strong>
-                        <span class="text-[9.5px] text-[var(--text-weak)]">
+                        <span class="text-[9.5px]/[1.25] text-[var(--text-weak)]">
                           {behavior.actionCount} action{behavior.actionCount === 1 ? "" : "s"}
                         </span>
                       </span>
@@ -1242,13 +1282,7 @@ export function ConnectionInspector(props: {
                 </For>
               </Show>
               <Show when={props.connection.source === "authored"}>
-                <button
-                  type="button"
-                  class="mt-1 flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] px-2 pt-1 text-left text-[10.5px] text-[var(--icon-critical-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)]"
-                  onClick={props.onRemove}
-                >
-                  <Icon name="trash" size={11} /> Remove path
-                </button>
+                <RemovePathButton onClick={props.onRemove} />
               </Show>
             </div>
           </Show>

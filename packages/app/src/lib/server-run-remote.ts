@@ -28,6 +28,7 @@ export async function enqueueAppMapFlow(
   input: {
     appMapId: string;
     flowId: string;
+    throughConnectionId?: string;
     serial?: string;
     targetKind: "browser" | "device";
     browserTargetId?: string;

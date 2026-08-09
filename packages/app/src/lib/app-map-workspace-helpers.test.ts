@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMapBatchChange } from "@relay/protocol";
-import { appMapLoadFailure, orderCanvasChanges } from "./app-map-workspace-helpers";
+import type { AppMap, AppMapBatchChange } from "@relay/protocol";
+import {
+  appMapLoadFailure,
+  appMapCommitSummary,
+  orderCanvasChanges,
+} from "./app-map-workspace-helpers";
 
 test("appMapLoadFailure maps auth, missing, client, and transport failures", () => {
   assert.equal(appMapLoadFailure({ status: 403 }).title, "Relay can’t access this map");
@@ -35,4 +39,49 @@ test("orderCanvasChanges keeps stable priority and original order within a tier"
       "connection.remove",
     ],
   );
+});
+
+test("appMapCommitSummary describes the actual canvas gesture", () => {
+  const appMap = {
+    screens: {
+      settings: { title: "Settings" },
+      wifi: { title: "Wi-Fi" },
+    },
+    connections: {},
+    groups: {},
+    flows: {},
+  } as unknown as AppMap;
+
+  assert.equal(
+    appMapCommitSummary({
+      appMap,
+      changes: [
+        {
+          kind: "screen.update",
+          screenId: "settings",
+          input: { patch: { position: { x: 40, y: 80 } } },
+        },
+      ],
+      notesChanged: false,
+    }),
+    "Moved Settings",
+  );
+  assert.equal(
+    appMapCommitSummary({
+      appMap,
+      changes: [
+        {
+          kind: "connection.create",
+          connection: {
+            id: "open-wifi",
+            fromScreenId: "settings",
+            destination: { kind: "screen", screenId: "wifi" },
+          },
+        } as AppMapBatchChange,
+      ],
+      notesChanged: false,
+    }),
+    "Connected Settings to Wi-Fi",
+  );
+  assert.equal(appMapCommitSummary({ appMap, changes: [], notesChanged: true }), "Edited a note");
 });

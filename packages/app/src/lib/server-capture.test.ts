@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServerCapture, type CaptureServerDeps } from "./server-capture";
 
-function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
+function createHarness(
+  options: { activeDiscoveryId?: string | null; collectAccessibility?: boolean } = {},
+) {
   const calls: string[] = [];
   const requestBodies: unknown[] = [];
   const frames: Array<Record<string, unknown>> = [];
@@ -50,13 +52,13 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
     selectedDevice: () => "device-1",
     selectedAction: () => "tap",
     activeDiscoverySessionId: () => options.activeDiscoveryId ?? null,
+    collectAccessibility: () => options.collectAccessibility ?? true,
     setBusyCapture: (value) => {
       busy = value;
     },
     setSnapshot: (value) => {
       snapshot = value;
     },
-    setShowOverlays: () => undefined,
     setLiveFrame: (value) => {
       liveFrame = value;
       liveFrameUpdates += 1;
@@ -112,6 +114,16 @@ test("capture boundary keeps screenshot and snapshot transport details out of th
   assert.ok(harness.logs.some((line) => line.startsWith("snapshot ")));
 });
 
+test("accessibility off prevents explicit and background snapshot collection", async () => {
+  const harness = createHarness({ collectAccessibility: false });
+
+  assert.equal(await harness.capture.captureUiSnapshot(), null);
+  await harness.capture.pollLiveSnapshot();
+
+  assert.deepEqual(harness.calls, []);
+  assert.equal(harness.getSnapshot(), null);
+});
+
 test("live capture leaves an identical device frame mounted", async () => {
   const harness = createHarness();
 
@@ -156,9 +168,9 @@ test("live capture exposes a setup failure without throwing from the polling loo
     selectedDevice: () => "ipad-1",
     selectedAction: () => null,
     activeDiscoverySessionId: () => null,
+    collectAccessibility: () => true,
     setBusyCapture: () => undefined,
     setSnapshot: () => undefined,
-    setShowOverlays: () => undefined,
     setLiveFrame: () => undefined,
     setLiveCaptureIssue: (value) => {
       issue = value;

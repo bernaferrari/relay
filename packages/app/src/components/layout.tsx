@@ -7,6 +7,7 @@ import { usePlatform } from "../context/platform";
 import { ErrorBanner } from "./error-banner";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../pages/settings";
+import { nextAccessibilityOverlayMode } from "../lib/accessibility-overlay-mode";
 
 export type AppView = "workspace" | "settings";
 
@@ -235,10 +236,11 @@ export function Layout(props: {
       },
       {
         id: "device.overlays",
-        title: "Toggle hover-inspect on the live device",
+        title: "Cycle accessibility overlay mode",
         group: "Device",
         keybind: "mod+o",
-        run: () => server.setShowOverlays(!server.showOverlays()),
+        run: () =>
+          server.setAccessibilityMode(nextAccessibilityOverlayMode(server.accessibilityMode())),
       },
       {
         id: "runs.refresh",

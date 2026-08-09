@@ -22,9 +22,9 @@ export type CaptureServerDeps = {
   selectedDevice: () => string | null;
   selectedAction: () => string | null;
   activeDiscoverySessionId: () => string | null;
+  collectAccessibility: () => boolean;
   setBusyCapture: (value: boolean) => void;
   setSnapshot: (value: SnapshotState) => void;
-  setShowOverlays: (value: boolean) => void;
   setLiveFrame: (value: Frame | null) => void;
   /** A live poll is deliberately non-throwing, but the stage still needs to
    * explain a setup failure instead of spinning forever. */
@@ -188,6 +188,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   async function captureUiSnapshot(): Promise<SnapshotState> {
+    if (!deps.collectAccessibility()) return null;
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
@@ -195,8 +196,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
       const data = await deps.request<NonNullable<SnapshotState> & { tree?: string }>(
         `/snapshot${query}`,
       );
+      if (!deps.collectAccessibility()) return null;
       deps.setSnapshot(data);
-      deps.setShowOverlays(true);
       deps.appendLog(
         `snapshot ${data.nodes.length} nodes · bounds ${data.bounds?.width ?? "?"}×${data.bounds?.height ?? "?"}`,
         "info",
@@ -352,6 +353,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   async function pollLiveSnapshot(): Promise<void> {
+    if (!deps.collectAccessibility()) return;
     try {
       const serial = serialFor(deps);
       const query = serial ? `?serial=${encodeURIComponent(serial)}` : "";
@@ -364,6 +366,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
         // unrelated network error.
         30_000,
       );
+      if (!deps.collectAccessibility()) return;
       deps.setSnapshot(data);
       deps.setLiveCaptureIssue?.(null);
     } catch (error) {
