@@ -22,6 +22,7 @@ registerBuiltinPlatformPlugins();
 function parsePlatformByHand(value: unknown): Platform | undefined {
   return value === 'apple' ||
     value === 'android' ||
+    value === 'harmonyos' ||
     value === 'vega' ||
     value === 'linux' ||
     value === 'web'
@@ -43,6 +44,7 @@ test('registry coverage is byte-for-byte equal to the parsePlatform hand allow-l
     'ios',
     'macos',
     'android',
+    'harmonyos',
     'vega',
     'linux',
     'web',
@@ -65,6 +67,7 @@ test('every plugin capability bucket matches the platform -> bucket table', () =
   const expectedBuckets: Record<Platform, string> = {
     apple: 'apple',
     android: 'android',
+    harmonyos: 'harmonyos',
     vega: 'vega',
     linux: 'linux',
     web: 'web',

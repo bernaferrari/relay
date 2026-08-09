@@ -28,12 +28,45 @@ type KindMatrix = {
 export type CommandCapability = {
   apple?: KindMatrix;
   android?: KindMatrix;
+  harmonyos?: KindMatrix;
   vega?: KindMatrix;
   linux?: KindMatrix;
   web?: KindMatrix;
 };
 
 const WEB_DEVICE: KindMatrix = { device: true };
+const HARMONYOS_ALL: KindMatrix = { emulator: true, device: true };
+const HARMONYOS_PHYSICAL_DEVICE: KindMatrix = { device: true };
+const HARMONYOS_SUPPORTED_COMMANDS = new Set<string>([
+  'open',
+  'perf',
+  'close',
+  'back',
+  'apps',
+  'appstate',
+  'app-switcher',
+  'click',
+  'fill',
+  'find',
+  'focus',
+  'get',
+  'home',
+  'gesture',
+  'install',
+  'keyboard',
+  'is',
+  'longpress',
+  'logs',
+  'press',
+  'reinstall',
+  'screenshot',
+  'scroll',
+  'settings',
+  'snapshot',
+  'swipe',
+  'type',
+  'wait',
+]);
 const WEB_RUNTIME_COMMANDS = ['open', 'close'] as const;
 const WEB_RECORDING_COMMANDS = ['record'] as const;
 const WEB_QUERY_COMMANDS = [
@@ -66,7 +99,23 @@ const WEB_SUPPORTED_COMMANDS = new Set<string>([
 export const BASE_COMMAND_CAPABILITY_MATRIX: Record<string, CommandCapability> =
   deriveCapabilityMatrix(commandDescriptors);
 
-const COMMAND_CAPABILITY_MATRIX = addWebCommandCapabilities(BASE_COMMAND_CAPABILITY_MATRIX);
+const COMMAND_CAPABILITY_MATRIX = addHarmonyAndWebCommandCapabilities(
+  BASE_COMMAND_CAPABILITY_MATRIX,
+);
+
+function addHarmonyAndWebCommandCapabilities(
+  matrix: Record<string, CommandCapability>,
+): Record<string, CommandCapability> {
+  const withHarmony: Record<string, CommandCapability> = {};
+  for (const [command, capability] of Object.entries(matrix)) {
+    withHarmony[command] = HARMONYOS_SUPPORTED_COMMANDS.has(command)
+      ? { ...capability, harmonyos: HARMONYOS_ALL }
+      : command === 'record'
+        ? { ...capability, harmonyos: HARMONYOS_PHYSICAL_DEVICE }
+        : capability;
+  }
+  return addWebCommandCapabilities(withHarmony);
+}
 
 function addWebCommandCapabilities(
   matrix: Record<string, CommandCapability>,
@@ -132,7 +181,14 @@ export function listCapabilityCommands(): string[] {
 export function supportedPlatformsForCommand(command: string): string[] {
   const capability = COMMAND_CAPABILITY_MATRIX[command];
   if (!capability) return [];
-  const families: Array<keyof CommandCapability> = ['apple', 'android', 'vega', 'linux', 'web'];
+  const families: Array<keyof CommandCapability> = [
+    'apple',
+    'android',
+    'harmonyos',
+    'vega',
+    'linux',
+    'web',
+  ];
   const supported: string[] = [];
   for (const family of families) {
     const kinds = capability[family] as KindMatrix | undefined;
@@ -167,18 +223,21 @@ function requireTargetAuthoredDragSupported(
   input: Extract<GestureCommandInput, { intent: 'drag' }>,
   device: DeviceInfo,
 ): void {
-  const supportedAndroidTouchDevice = device.platform === 'android' && device.target !== 'tv';
-  const supportedAppleTouchDevice =
-    device.platform === 'apple' &&
-    (device.appleOs === 'ios' ||
-      device.appleOs === 'ipados' ||
-      (device.appleOs === undefined && device.target !== 'desktop' && device.target !== 'tv'));
-  if (supportedAndroidTouchDevice || supportedAppleTouchDevice) return;
+  if (supportsTargetAuthoredDrag(device)) return;
   throw unsupportedGesture(
     input,
     gesturePlatformMessage(input, device),
     'Target-authored drag requires an adapter that preserves source hold, timed movement, and destination hold; it is supported on Android touch devices and iOS/iPadOS.',
   );
+}
+
+function supportsTargetAuthoredDrag(device: DeviceInfo): boolean {
+  if (device.platform === 'android') {
+    return device.target !== 'tv';
+  }
+  if (device.platform !== 'apple') return false;
+  if (device.appleOs === undefined) return device.target !== 'desktop' && device.target !== 'tv';
+  return device.appleOs === 'ios' || device.appleOs === 'ipados';
 }
 
 function isMultiTouchGesture(input: GestureSemanticInput): boolean {

@@ -12,11 +12,19 @@ const APPLE_OS_VALUES = ['ios', 'ipados', 'tvos', 'watchos', 'visionos', 'macos'
 export type AppleOS = (typeof APPLE_OS_VALUES)[number];
 // Internal device platforms. Apple OSes collapse to a single `apple` platform; the
 // `appleOs` field on DeviceInfo is the sole OS discriminant.
-export const PLATFORMS = ['apple', 'android', 'vega', 'linux', 'web'] as const;
+export const PLATFORMS = ['apple', 'android', 'harmonyos', 'vega', 'linux', 'web'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 // The PUBLIC leaf platform strings the daemon emits and clients parse (approach b:
 // output never changes). Equals the pre-collapse `Platform` set.
-export const PUBLIC_PLATFORMS = ['ios', 'macos', 'android', 'vega', 'linux', 'web'] as const;
+export const PUBLIC_PLATFORMS = [
+  'ios',
+  'macos',
+  'android',
+  'harmonyos',
+  'vega',
+  'linux',
+  'web',
+] as const;
 export type PublicPlatform = (typeof PUBLIC_PLATFORMS)[number];
 // Accepted `--platform` selectors: the internal platforms plus the legacy Apple leaf
 // aliases `ios`/`macos`, which still resolve to `apple` devices (read-path back-compat).
@@ -90,7 +98,11 @@ export function isMobilePlatform(device: Pick<DeviceInfo, 'platform' | 'appleOs'
   // Phone/tablet device family: Android plus every Apple OS except the macOS desktop
   // host. Preserves the pre-collapse `platform === 'ios' || platform === 'android'`
   // set exactly (the old `ios` platform covered iOS/iPadOS/tvOS/visionOS).
-  return device.platform === 'android' || (isApplePlatform(device.platform) && !isMacOs(device));
+  return (
+    device.platform === 'android' ||
+    device.platform === 'harmonyos' ||
+    (isApplePlatform(device.platform) && !isMacOs(device))
+  );
 }
 
 /**
@@ -244,40 +256,62 @@ export async function resolveDevice(
 ): Promise<DeviceInfo> {
   let candidates = devices.filter((device) => matchesDeviceSelector(device, selector));
 
-  if (selector.udid) {
-    const match = candidates.find(
-      (device) => device.id === selector.udid && isApplePlatform(device.platform),
-    );
-    if (!match)
-      throw new AppError('DEVICE_NOT_FOUND', `No Apple device with UDID ${selector.udid}`);
-    return match;
-  }
-
-  if (selector.serial) {
-    const match = candidates.find(
-      (device) => device.id === selector.serial && isSerialAddressablePlatform(device.platform),
-    );
-    if (!match) {
-      throw new AppError('DEVICE_NOT_FOUND', serialDeviceNotFoundMessage(selector));
-    }
-    return match;
-  }
+  const explicitlySelected = resolveExplicitDevice(candidates, selector);
+  if (explicitlySelected) return explicitlySelected;
 
   if (context.allowStoppedAndroidAvdPlaceholders !== true) {
     candidates = candidates.filter((device) => !isStoppedAndroidAvdPlaceholder(device));
   }
 
-  if (selector.deviceName) {
-    const normalizedName = normalizeDeviceName(selector.deviceName);
-    const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
-    if (!match) throw new AppError('DEVICE_NOT_FOUND', `No device named ${selector.deviceName}`);
-    return match;
-  }
+  const namedDevice = resolveDeviceByName(candidates, selector.deviceName);
+  if (namedDevice) return namedDevice;
 
   if (isAppleDeviceCandidateSet(candidates)) {
     candidates = sortAppleDevicesForSelection(candidates);
   }
 
+  return selectDefaultDevice(candidates, selector, context);
+}
+
+function resolveExplicitDevice(
+  candidates: DeviceInfo[],
+  selector: DeviceSelector,
+): DeviceInfo | undefined {
+  if (selector.udid) return resolveAppleDeviceByUdid(candidates, selector.udid);
+  if (selector.serial) return resolveDeviceBySerial(candidates, selector);
+  return undefined;
+}
+
+function resolveAppleDeviceByUdid(candidates: DeviceInfo[], udid: string): DeviceInfo {
+  const match = candidates.find((device) => device.id === udid && isApplePlatform(device.platform));
+  if (!match) throw new AppError('DEVICE_NOT_FOUND', `No Apple device with UDID ${udid}`);
+  return match;
+}
+
+function resolveDeviceBySerial(candidates: DeviceInfo[], selector: DeviceSelector): DeviceInfo {
+  const match = candidates.find(
+    (device) => device.id === selector.serial && isSerialAddressablePlatform(device.platform),
+  );
+  if (!match) throw new AppError('DEVICE_NOT_FOUND', serialDeviceNotFoundMessage(selector));
+  return match;
+}
+
+function resolveDeviceByName(
+  candidates: DeviceInfo[],
+  deviceName: string | undefined,
+): DeviceInfo | undefined {
+  if (!deviceName) return undefined;
+  const normalizedName = normalizeDeviceName(deviceName);
+  const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
+  if (!match) throw new AppError('DEVICE_NOT_FOUND', `No device named ${deviceName}`);
+  return match;
+}
+
+function selectDefaultDevice(
+  candidates: DeviceInfo[],
+  selector: DeviceSelector,
+  context: DeviceSelectionContext,
+): DeviceInfo {
   const onlyCandidate = candidates[0];
   if (onlyCandidate !== undefined && candidates.length === 1) return onlyCandidate;
 
@@ -285,18 +319,20 @@ export async function resolveDevice(
     throwNoDevicesFound(selector, context);
   }
 
-  const virtual = candidates.filter((device) => device.kind !== 'device');
-  const selectable = virtual.length > 0 ? virtual : candidates;
-  const booted = selectable.filter((device) => device.booted);
-  const onlyBooted = booted[0];
-  if (onlyBooted && booted.length === 1 && !isAppleDeviceCandidateSet(selectable)) {
-    return onlyBooted;
-  }
-  const selected = isAppleDeviceCandidateSet(selectable)
-    ? selectable[0]
-    : (booted[0] ?? selectable[0]);
+  const selected = selectPreferredDevice(candidates);
   if (!selected) throwNoDevicesFound(selector, context);
   return selected;
+}
+
+function selectPreferredDevice(candidates: DeviceInfo[]): DeviceInfo | undefined {
+  const virtual = candidates.filter((device) => device.kind !== 'device');
+  const selectable = virtual.length > 0 ? virtual : candidates;
+  if (isAppleDeviceCandidateSet(selectable)) return selectable[0];
+
+  const booted = selectable.filter((device) => device.booted);
+  const onlyBooted = booted[0];
+  if (onlyBooted && booted.length === 1) return onlyBooted;
+  return booted[0] ?? selectable[0];
 }
 
 function isStoppedAndroidAvdPlaceholder(device: DeviceInfo): boolean {
@@ -341,8 +377,8 @@ function matchesExplicitDeviceSelector(device: DeviceInfo, selector: DeviceSelec
 
 export function isSerialAddressablePlatform(
   platform: Platform | PublicPlatform,
-): platform is 'android' | 'vega' {
-  return platform === 'android' || platform === 'vega';
+): platform is 'android' | 'harmonyos' | 'vega' {
+  return platform === 'android' || platform === 'harmonyos' || platform === 'vega';
 }
 
 function serialDeviceNotFoundMessage(selector: DeviceSelector): string {
@@ -352,7 +388,10 @@ function serialDeviceNotFoundMessage(selector: DeviceSelector): string {
   if (selector.platform === 'vega') {
     return `No Vega VVD with serial ${selector.serial}`;
   }
-  return `No Android device or Vega VVD with serial ${selector.serial}`;
+  if (selector.platform === 'harmonyos') {
+    return `No HarmonyOS device with serial ${selector.serial}`;
+  }
+  return `No Android, HarmonyOS device, or Vega VVD with serial ${selector.serial}`;
 }
 
 function throwNoDevicesFound(selector: DeviceSelector, context: DeviceSelectionContext): never {
