@@ -194,99 +194,32 @@ export async function prepareOptionRunMatrix(
     }
   }
   const strategy = request.strategy ?? defaultOptionMatrixStrategy(request.sets.length);
-  if (strategy === "pairwise") {
-    throw new Error("pairwise option matrices are not runnable yet");
-  }
-  const matrices: PreparedRunMatrix[] = [];
-  for (const set of request.sets) {
-    const ids = selectedIds(set, request.selected);
-    const variables: TestData[] = [
-      { id: `${set.id}`, name: set.id, scope: "shared", source: "list", values: ids },
-      {
-        id: `${set.id}_identifier`,
-        name: `${set.id}_identifier`,
-        scope: "shared",
-        source: "list",
-        values: ids.map((id) => rowFor(set, id).identifier?.trim() || NONE),
-      },
-      {
-        id: `${set.id}_label`,
-        name: `${set.id}_label`,
-        scope: "shared",
-        source: "list",
-        values: ids.map((id) => rowFor(set, id).label?.trim() || NONE),
-      },
-      {
-        id: `${set.id}_text`,
-        name: `${set.id}_text`,
-        scope: "shared",
-        source: "list",
-        values: ids.map((id) => rowFor(set, id).text?.trim() || NONE),
-      },
-    ];
-    matrices.push(
-      await prepareRunMatrix({
-        strategy: "zip",
-        seed,
-        maxCases: MAX_WORLDS,
-        variables,
-      }),
-    );
-  }
-
-  if (matrices.length === 1) return matrices[0]!;
-
-  const maxCases = MAX_WORLDS;
-  let combined: Array<{ name: string; values: Record<string, string> }> = [
-    { name: "", values: {} },
-  ];
-  for (let index = 0; index < matrices.length; index += 1) {
-    const set = request.sets[index]!;
-    const next: typeof combined = [];
-    for (const left of combined) {
-      for (const right of matrices[index]!.cases) {
-        const optionId = right.values[set.id] ?? "";
-        next.push({
-          name: [left.name, `${set.name}: ${optionId}`].filter(Boolean).join(" · "),
-          values: { ...left.values, ...right.values },
-        });
-        if (next.length > maxCases) {
-          throw new Error(`option matrix exceeds ${maxCases} worlds`);
-        }
-      }
-    }
-    combined = next;
-  }
-
-  if (strategy === "zip") {
-    const length = Math.min(...matrices.map((matrix) => matrix.cases.length));
-    combined = [];
-    for (let index = 0; index < length; index += 1) {
-      let values: Record<string, string> = {};
-      const parts: string[] = [];
-      for (let setIndex = 0; setIndex < request.sets.length; setIndex += 1) {
-        const set = request.sets[setIndex]!;
-        const row = matrices[setIndex]!.cases[index]!;
-        values = { ...values, ...row.values };
-        parts.push(`${set.name}: ${row.values[set.id] ?? ""}`);
-      }
-      combined.push({ name: parts.join(" · "), values });
-    }
-  }
-
-  const matrixId = randomUUID();
-  return {
-    id: matrixId,
-    createdAt: Date.now(),
-    seed: seed ?? Date.now(),
+  const variables: TestData[] = request.sets.map((set) => ({
+    id: set.id,
+    name: set.id,
+    scope: "shared",
+    source: "list",
+    values: selectedIds(set, request.selected),
+  }));
+  const matrix = await prepareRunMatrix({
+    variables,
     strategy,
-    cases: combined.map((row, index) => ({
-      id: `${matrixId}:${index + 1}`,
-      name: row.name || `World ${index + 1}`,
-      index,
-      values: row.values,
-      provenance: [],
-    })),
+    seed,
+    maxCases: MAX_WORLDS,
+  });
+  return {
+    ...matrix,
+    cases: matrix.cases.map((world) => {
+      const values = { ...world.values };
+      for (const set of request.sets) {
+        const optionId = values[set.id] ?? "";
+        const row = rowFor(set, optionId);
+        values[`${set.id}_identifier`] = row.identifier?.trim() || NONE;
+        values[`${set.id}_label`] = row.label?.trim() || NONE;
+        values[`${set.id}_text`] = row.text?.trim() || NONE;
+      }
+      return { ...world, values };
+    }),
   };
 }
 

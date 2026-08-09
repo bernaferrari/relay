@@ -414,7 +414,8 @@ export function assertAppMapCombine(
   if (
     combine.strategy !== undefined &&
     combine.strategy !== "zip" &&
-    combine.strategy !== "cartesian"
+    combine.strategy !== "cartesian" &&
+    combine.strategy !== "pairwise"
   ) {
     appMapFail("invalid-map", `${label}.strategy is unsupported`);
   }

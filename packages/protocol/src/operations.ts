@@ -2901,23 +2901,25 @@ export const operationDefinitions = [
   ),
   command(
     "app-map.combine.save",
-    "Save a Combine (variables × tests)",
+    "Save a run matrix (state sets × tests)",
     "PUT",
     "/app-maps/:appMapId/combines/:combineId",
     {
       category: "authoring",
-      input: appMapMutationParser<"app-map.combine.save">("Combine save", "combine", ["combineId"]),
+      input: appMapMutationParser<"app-map.combine.save">("Run matrix save", "combine", [
+        "combineId",
+      ]),
       output: appMapOutputParser,
     },
   ),
   command(
     "app-map.combine.remove",
-    "Remove a Combine",
+    "Remove a run matrix",
     "POST",
     "/app-maps/:appMapId/combines/:combineId/remove",
     {
       category: "authoring",
-      input: appMapMutationParser<"app-map.combine.remove">("Combine removal", undefined, [
+      input: appMapMutationParser<"app-map.combine.remove">("Run matrix removal", undefined, [
         "combineId",
       ]),
       output: appMapOutputParser,
@@ -3372,16 +3374,21 @@ export const operationDefinitions = [
       category: "execution",
     },
   ),
-  command("job.combine.start", "Run Combine (variables × a test)", "POST", "/jobs/combine", {
+  command("job.combine.start", "Run state combinations × tests", "POST", "/jobs/combine", {
     category: "execution",
     progress: true,
     cancellable: true,
     lease: "exclusive",
     targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
   }),
-  query("job.combine.export", "Export Combine screenshot pack", "/jobs/combine/:batchId/export", {
-    category: "execution",
-  }),
+  query(
+    "job.combine.export",
+    "Export run-matrix screenshot pack",
+    "/jobs/combine/:batchId/export",
+    {
+      category: "execution",
+    },
+  ),
   command(
     "job.combine.infer",
     "Infer variable rows from taught live-screen rows",

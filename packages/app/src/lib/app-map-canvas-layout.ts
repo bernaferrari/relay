@@ -6,6 +6,18 @@ import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
 export type CanvasViewport = CanvasPoint & { scale: number };
+
+export function canvasPointFromClientRect(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number },
+  viewport: CanvasViewport,
+): CanvasPoint {
+  return {
+    x: (clientX - rect.left - viewport.x) / viewport.scale,
+    y: (clientY - rect.top - viewport.y) / viewport.scale,
+  };
+}
 /**
  * A recorded interaction projected into the visible screen preview.
  * Coordinates are normalized so the map remains correct across screenshot

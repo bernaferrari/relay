@@ -1,11 +1,7 @@
-import type { RecipeStep, RecordedStepEvidence } from "../context/server";
+import type { RecipeStep } from "../context/server";
 import type { IconName } from "./icon";
 
 /** Visual semantics shared by Take review and run presentation. */
-
-export function evidenceForStep(step?: RecipeStep): RecordedStepEvidence | undefined {
-  return step?.evidence;
-}
 
 export function accentForStep(step: RecipeStep): string {
   if (step.kind === "expect" || step.kind === "assert-content") return "var(--step-accent-expect)";

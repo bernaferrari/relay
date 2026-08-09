@@ -21,6 +21,12 @@ const CHANNELS: EvidenceChannel[] = [
   "audio",
 ];
 
+// Android screenrecord finalizes the container on-device before pulling and
+// validating it. That work legitimately outlives the SDK's ten-second signal
+// grace on some physical Samsung builds, so Relay must not abandon ownership
+// while the recorder is still cleaning up.
+const VIDEO_RECORDER_STOP_TIMEOUT_MS = 25_000;
+
 export type RunEvidenceHandle = {
   startedAt: number;
   monotonicStart: number;
@@ -413,7 +419,9 @@ export async function startRunEvidence(
           action: "start",
           path,
           fps: 30,
-          quality: "high",
+          // Screenshots carry pixel-level evidence. Medium H.264 keeps the
+          // continuous run review sharp without producing huge device files.
+          quality: "medium",
           hideTouches: true,
         }),
         10_000,
@@ -459,6 +467,46 @@ export async function startRunEvidence(
   return handle;
 }
 
+async function stopVideoEvidence(
+  handle: RunEvidenceHandle,
+  job: TestJob,
+  device: Device,
+  log: (line: string) => void,
+): Promise<void> {
+  if (!handle.recordingStarted) return;
+  try {
+    const result = await withTimeout(
+      device.recording.record({ ...base(), action: "stop" }),
+      VIDEO_RECORDER_STOP_TIMEOUT_MS,
+      "video recorder stop",
+    );
+    const files = await videoFiles(job);
+    const record = channel(handle, "video");
+    record.finishedAt = now();
+    record.entries = files.length;
+    record.bytes = files.reduce((sum, file) => sum + file.bytes, 0);
+    if (files.length === 0) {
+      record.status = "partial";
+      record.message = "recorder stopped without a video file";
+    }
+    addArtifact(job, {
+      kind: "video",
+      capturedAt: now(),
+      data: {
+        startedAt: handle.startedAt,
+        stoppedAt: now(),
+        durationMs: Math.max(0, now() - handle.startedAt),
+        files,
+        result: redactValue(result),
+      },
+    });
+    event(handle, "video", "capture.stopped", { files });
+    log(files.length > 0 ? "evidence: video saved" : "warn: recorder stopped without a video file");
+  } catch (error) {
+    failed(handle, "video", error, log);
+  }
+}
+
 export async function stopRunEvidence(
   handle: RunEvidenceHandle | undefined,
   job: TestJob,
@@ -469,6 +517,10 @@ export async function stopRunEvidence(
   handle.stopped = true;
 
   if (device) {
+    // End the visual proof at the test boundary. Logs and performance can
+    // finalize afterwards without adding seconds of an idle screen to video.
+    await stopVideoEvidence(handle, job, device, log);
+
     if (handle.performanceStarted)
       try {
         const performanceResult = await withTimeout(
@@ -585,43 +637,6 @@ export async function stopRunEvidence(
       }
     }
 
-    if (handle.recordingStarted) {
-      try {
-        const result = await withTimeout(
-          device.recording.record({ ...base(), action: "stop" }),
-          10_000,
-          "video recorder stop",
-        );
-        const files = await videoFiles(job);
-        const record = channel(handle, "video");
-        record.finishedAt = now();
-        record.entries = files.length;
-        record.bytes = files.reduce((sum, file) => sum + file.bytes, 0);
-        if (files.length === 0) {
-          record.status = "partial";
-          record.message = "recorder stopped without a video file";
-        }
-        addArtifact(job, {
-          kind: "video",
-          capturedAt: now(),
-          data: {
-            startedAt: handle.startedAt,
-            stoppedAt: now(),
-            durationMs: Math.max(0, now() - handle.startedAt),
-            files,
-            result: redactValue(result),
-          },
-        });
-        event(handle, "video", "capture.stopped", { files });
-        log(
-          files.length > 0
-            ? "evidence: video saved"
-            : "warn: recorder stopped without a video file",
-        );
-      } catch (error) {
-        failed(handle, "video", error, log);
-      }
-    }
   } else {
     for (const name of ["performance", "logs", "network", "video", "crash", "audio"] as const) {
       if (

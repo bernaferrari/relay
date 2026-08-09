@@ -86,7 +86,7 @@ export function CanvasCombineCard(props: {
       data-app-map-combine-id={props.id}
       class="absolute z-[8] w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] text-left shadow-[0_8px_26px_rgb(0_0_0/16%)] transition-[transform,box-shadow] duration-150 hover:shadow-[0_10px_28px_rgb(0_0_0/20%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
-      aria-label={`Open data run ${props.name}`}
+      aria-label={`Open run matrix ${props.name}`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
@@ -96,7 +96,7 @@ export function CanvasCombineCard(props: {
       <header class="flex h-8 items-center gap-1.5 border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-2.5">
         <Icon name="grid" size={11} class="text-[var(--text-interactive-base)]" />
         <span class="text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--text-interactive-base)]">
-          Run with data
+          Run matrix
         </span>
         <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">{props.name}</span>
       </header>
@@ -191,10 +191,6 @@ export function ScreenCard(props: {
       }}
       onClick={props.onSelect}
       onContextMenu={props.onContextMenu}
-      onDblClick={(event) => {
-        event.stopPropagation();
-        props.onRename();
-      }}
       onKeyDown={(event) => {
         if (event.key === "F2") {
           event.preventDefault();

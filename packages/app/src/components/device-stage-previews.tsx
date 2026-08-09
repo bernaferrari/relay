@@ -3,6 +3,7 @@ import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
 import { targetPointGuide } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
+import { DEFAULT_TOUCH_BOUNDS } from "../lib/stage-presentation";
 import { Icon } from "./icon";
 import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
 
@@ -17,8 +18,6 @@ export type DevicePanelState = {
   primaryLabel?: string;
   secondaryRetry?: boolean;
 };
-
-export const DEFAULT_TOUCH_BOUNDS: DeviceBounds = { width: 1080, height: 2340 };
 
 export function DevicePanelStatus(props: {
   state: DevicePanelState;

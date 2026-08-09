@@ -70,6 +70,28 @@ test("zip pairs option sets of equal length", async () => {
   assert.equal(matrix.cases.length, 2);
 });
 
+test("pairwise covers every pair without constructing the full product", async () => {
+  const themes: OptionRunSet = {
+    id: "themes",
+    name: "Theme",
+    kind: "theme",
+    apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Theme" } }] },
+    options: [{ id: "light" }, { id: "dark" }, { id: "system" }],
+  };
+  const matrix = await prepareOptionRunMatrix({
+    sets: [languages, locations, themes],
+    strategy: "pairwise",
+  });
+  assert.equal(matrix.strategy, "pairwise");
+  assert.ok(matrix.cases.length < 12);
+  for (const item of matrix.cases) {
+    assert.ok(item.values.languages);
+    assert.ok(item.values.locations);
+    assert.ok(item.values.themes);
+    assert.ok(`${item.values.languages_label}`.length > 0);
+  }
+});
+
 test("location opener is recorded, not Grok Settings", () => {
   const { root } = composeOptionRunRecipes({
     body,

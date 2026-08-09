@@ -1,6 +1,5 @@
 import type { AppMap } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
-import { evidenceForStep } from "../components/take-step-presentation";
 import {
   companionLogicalViewport,
   companionOrientationEdge,
@@ -15,7 +14,7 @@ export type EvidenceServer = {
 };
 
 export function screenshotUrl(server: EvidenceServer, step: RecipeStep | undefined): string {
-  const screenshot = evidenceForStep(step)?.screenshot;
+  const screenshot = step?.evidence?.screenshot;
   return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
 }
 
@@ -46,7 +45,7 @@ export function screenshotOrientationEvidence(
   server: EvidenceServer,
   step: RecipeStep | undefined,
 ): ScreenshotOrientationEvidence | undefined {
-  const evidence = evidenceForStep(step);
+  const evidence = step?.evidence;
   if (!evidence) return undefined;
   const logicalViewport =
     companionLogicalViewport(evidence.nodes) ??

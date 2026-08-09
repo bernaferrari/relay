@@ -9,7 +9,7 @@ import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
-  ["Author", ["variable", "test", "combine", "proposal", "routine", "case-stack"]],
+  ["Author", ["state-set", "test", "run-matrix", "proposal", "routine", "case-stack"]],
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
@@ -79,8 +79,8 @@ function renderRootHelp(): string {
     "device list",
     "device screenshot",
     "test run",
-    "variable save",
-    "combine run",
+    "state-set save",
+    "run-matrix run",
     "proposal create",
     "proposal record",
     "session replay",
@@ -102,8 +102,9 @@ ${groups}
 Start here:
 ${usages(workflowCommands).join("\n")}
 
-An App Map is screens and paths. A variable is a list (language, location). A test is what
-you run. Combine is the grid of every value × that test. Same words in the UI and CLI.
+An App Map is screens and paths. A state set is a list plus the recorded steps that apply
+one value (language, account, model). A test is what you run. A run matrix connects them:
+every selected device state × every selected test. Run one cell or the full matrix.
 
 ${globalOptions}
 

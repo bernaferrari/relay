@@ -1,40 +1,13 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-// createMemo used for focused step label
-import { useServer, type RecipeStep, type SnapshotNode } from "../context/server";
-import {
-  ancestryOf,
-  candidateAtPoint,
-  nodeAtPoint,
-  overlayCandidates,
-  strategiesFor,
-  type PickStrategy,
-} from "../lib/snapshot";
+import { useServer } from "../context/server";
 import { useRecorder } from "../context/recorder";
-import { useWorkbench } from "../context/workbench";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { useCommand } from "../context/command";
 import { usePlatform } from "../context/platform";
-import { sentenceForStep } from "../lib/step-sentence";
-import { defaultStrategy } from "../lib/step-target";
-import {
-  targetHierarchy,
-  targetHighlight,
-  targetNodeIndex,
-  targetPointGuide,
-  pointForAnchor,
-  recordedTargetNodes,
-  recordedNodeHierarchy,
-  recordedNodeMatches,
-  type HorizontalConstraint,
-  type VerticalConstraint,
-} from "../lib/target-inspector";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
-import { evidenceForStep } from "./take-step-presentation";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness } from "../lib/device-readiness";
-import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_FALLBACK_FRAME_INTERVAL_MS,
   LIVE_IOS_FALLBACK_FRAME_INTERVAL_MS,
@@ -48,9 +21,7 @@ import {
 } from "../lib/accessibility-overlay-mode";
 import {
   emptyStageTitle as resolveEmptyStageTitle,
-  frameDataUrl,
   hasIosSetupIssueText,
-  interactBodyForStrategy,
   iosSetupGuidanceText,
   liveImageStyleFromLayout,
   liveInspectionHint,
@@ -61,26 +32,25 @@ import {
 } from "../lib/stage-presentation";
 import { DeviceVideoStream } from "./device-video-stream";
 import {
-  companionAccessibilityHighlight,
-  companionAccessibilityOutlineStyles,
   companionDisplayedPointToLogical,
   companionFramePresentation,
   companionImageLayout,
-  companionLogicalRectToDisplayed,
   companionLogicalViewport,
   companionOrientationEdge,
 } from "./app-map-device-companion-geometry";
-import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
+import { SwipePathPreview } from "./swipe-path-preview";
 import { StepPlaybackPreview } from "./step-playback-preview";
 import { phoneScreen } from "../lib/ui";
-import {
-  CoordinateTapPreview,
-  DEFAULT_TOUCH_BOUNDS,
-  DevicePanelStatus,
-} from "./device-stage-previews";
+import { CoordinateTapPreview, DevicePanelStatus } from "./device-stage-previews";
 import { StageViewToggle, StageRecordingControls, StageInspectionHint } from "./stage-chrome";
 import { StageScreenFallback } from "./stage-screen-fallback";
 import { StageTargetPicker } from "./stage-target-picker";
+import {
+  useDeviceStageRecordedEvidence,
+  type DeviceStageView,
+} from "../lib/use-device-stage-recorded-evidence";
+import { useDeviceStageAccessibility } from "./use-device-stage-accessibility";
+import { useDeviceStagePicker } from "./use-device-stage-picker";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: {
@@ -102,31 +72,8 @@ export function DeviceStage(_props: {
   const rec = useRecorder();
   const cmd = useCommand();
   const platform = usePlatform();
-  const wb = useWorkbench();
-  const draft = useRecipeDraft();
   const embeddedRecordingControls = () => _props.recordingControls === "embedded";
 
-  /** What the artboard is “about” when a step is selected (Uber-style selection). */
-  const focusedStep = createMemo(() => {
-    const i = wb.focusedIndex();
-    if (i == null || i < 0) return null;
-    const step = draft.steps()[i];
-    if (step) return { index: i, title: sentenceForStep(step, server.recipes()) };
-    return { index: i, title: `Step ${i + 1}` };
-  });
-  /** The raw draft step behind the focus, for accent/icon on the planned view. */
-  const focusedPlanStep = () => {
-    const i = wb.focusedIndex() ?? 0;
-    return i < 0 ? undefined : draft.steps()[i];
-  };
-  /** Bezel fallback focus — mirrors the outline, which highlights step 1 even
-   * before any explicit selection, so the two panes never disagree. */
-  const plannedFocus = createMemo(() => {
-    const explicit = focusedStep();
-    if (explicit) return explicit;
-    const first = draft.steps()[0];
-    return first ? { index: 0, title: sentenceForStep(first, server.recipes()) } : null;
-  });
   const [liveFrameSrc, setLiveFrameSrc] = createSignal("");
   let liveFrameObjectUrl = "";
   createEffect(() => {
@@ -150,12 +97,7 @@ export function DeviceStage(_props: {
   onCleanup(() => {
     if (liveFrameObjectUrl) URL.revokeObjectURL(liveFrameObjectUrl);
   });
-  const [stageView, setStageView] = createSignal<"recorded" | "live">("live");
-  const [stepPlayback, setStepPlayback] = createSignal<{
-    index: number;
-    token: number;
-    step: RecipeStep;
-  } | null>(null);
+  const [stageView, setStageView] = createSignal<DeviceStageView>("live");
   const liveViewActive = () => rec.interacting() && stageView() === "live";
   const liveControlActive = () => liveViewActive() && Boolean(server.selectedLeaseId());
   // A live surface must never borrow an old recording frame. That made the
@@ -166,291 +108,38 @@ export function DeviceStage(_props: {
   // old screenshot flash while the current stream was still connecting.
   const liveSurfaceSrc = () => liveFrameSrc();
   const liveInteractionSurfaceAvailable = () => liveViewActive() && Boolean(liveSurfaceSrc());
-  const recordedEvidenceSrc = createMemo(() => {
-    // A playback request owns both the marker and its screenshot. Using the
-    // focused step alone can pair a preview marker with a frame from a run or
-    // a newly focused step, making a perfectly valid X/Y look misplaced.
-    const playback = stepPlayback();
-    const step = playback?.step ?? draft.steps()[wb.focusedIndex() ?? 0];
-    const shot = step ? evidenceForStep(step)?.screenshot : undefined;
-    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
+  const {
+    focusedPlanStep,
+    plannedFocus,
+    stepPlayback,
+    recordedEvidenceSrc,
+    displayImageSrc,
+    displayCaption,
+    focusedEvidenceHighlight,
+    focusedCoordinateGuide,
+    focusedSwipePreview,
+    playbackBounds,
+    swipePlayback,
+    updateFocusedSwipePoint,
+    recordedCoordinateEditable,
+    recordedScreenHovered,
+    setRecordedScreenHovered,
+    recordedInspectionActive,
+    recordedNodeOutlines,
+    recordedHoverHighlight,
+    updateRecordedNodeHover,
+    clearRecordedNodeHover,
+    chooseRecordedNode,
+    recordedCoordinateDragging,
+    beginRecordedCoordinateDrag,
+    endRecordedCoordinateDrag,
+    moveRecordedCoordinate,
+  } = useDeviceStageRecordedEvidence({
+    stageView,
+    setStageView,
+    liveSurfaceSrc,
+    liveCaption: () => frame()?.caption,
   });
-  const displayImageSrc = createMemo(() => {
-    // Preview is a replay of the step's captured state, never a run trace.
-    // Its coordinates and image must therefore come from the same evidence.
-    if (stepPlayback()) return recordedEvidenceSrc();
-
-    const traceFrame = wb.focusedTraceStep()?.frames.at(-1);
-    if (traceFrame) {
-      if (traceFrame.base64) {
-        return `data:${traceFrame.mime || "image/png"};base64,${traceFrame.base64}`;
-      }
-      const captured = server
-        .frames()
-        .find(
-          (candidate) =>
-            candidate.capturedAt === traceFrame.capturedAt ||
-            (candidate.path && candidate.path === traceFrame.path),
-        );
-      if (captured) return frameDataUrl(captured);
-      const reviewed = wb.reviewedRun();
-      if (reviewed?.kind === "disk") return server.frameUrlForPersisted(reviewed.run, traceFrame);
-    }
-
-    if (stageView() === "live") {
-      return liveSurfaceSrc();
-    }
-    const recorded = recordedEvidenceSrc();
-    if (recorded) return recorded;
-    if (wb.focusedIndex() != null) return "";
-    const current = server.currentFrame();
-    return current ? frameDataUrl(current) : "";
-  });
-  const displayCaption = createMemo(() => {
-    const traceCaption = wb.focusedTraceStep()?.frames.at(-1)?.caption;
-    if (traceCaption) return traceCaption;
-    if (stageView() === "live") return frame()?.caption ?? "Live device";
-    if (recordedEvidenceSrc()) return focusedStep()?.title ?? "Recorded device evidence";
-    return wb.focusedIndex() == null ? (server.currentFrame()?.caption ?? "") : "";
-  });
-  let previewKey = "";
-  createEffect(() => {
-    const index = wb.focusedIndex();
-    const recorded = recordedEvidenceSrc();
-    const nextKey = `${index ?? "none"}:${recorded}`;
-    if (nextKey !== previewKey) {
-      previewKey = nextKey;
-      setStageView(index != null && recorded ? "recorded" : "live");
-    }
-  });
-  createEffect(() => {
-    if (rec.recording()) setStageView("live");
-  });
-  const focusedEvidenceHighlight = createMemo(() => {
-    if (!recordedEvidenceSrc() || displayImageSrc() !== recordedEvidenceSrc()) return undefined;
-    const index = wb.focusedIndex() ?? 0;
-    const step = draft.steps()[index];
-    if (step?.kind !== "tap" || !step.evidence) return undefined;
-    if (defaultStrategy(step.target) === "point") return undefined;
-    const node = targetHierarchy(step.evidence)[targetNodeIndex(step.evidence, step.target)];
-    return targetHighlight(node, step.evidence.deviceBounds);
-  });
-  const focusedCoordinateGuide = createMemo(() => {
-    const step = focusedPlanStep();
-    if (step?.kind !== "tap" || defaultStrategy(step.target) !== "point") return undefined;
-    return targetPointGuide(
-      step.target.point,
-      step.evidence?.deviceBounds ??
-        step.target.point?.referenceBounds ??
-        server.snapshot()?.bounds,
-    );
-  });
-  const focusedSwipePreview = createMemo(() => {
-    const step = focusedPlanStep();
-    if (step?.kind !== "swipe") return undefined;
-    const bounds = step.evidence?.deviceBounds ?? server.snapshot()?.bounds;
-    if (!bounds?.width || !bounds.height) return undefined;
-    return { from: step.from, to: step.to, bounds };
-  });
-  const playbackBounds = createMemo(() => {
-    const playback = stepPlayback();
-    if (!playback) return undefined;
-    const step = playback.step;
-    if (step.evidence?.deviceBounds) return step.evidence.deviceBounds;
-    if (step.kind === "tap") {
-      return (
-        step.target.point?.referenceBounds ?? server.snapshot()?.bounds ?? DEFAULT_TOUCH_BOUNDS
-      );
-    }
-    if (step.kind === "swipe") {
-      return (
-        step.from.referenceBounds ??
-        step.to.referenceBounds ??
-        server.snapshot()?.bounds ??
-        DEFAULT_TOUCH_BOUNDS
-      );
-    }
-    return server.snapshot()?.bounds ?? DEFAULT_TOUCH_BOUNDS;
-  });
-  const swipePlayback = createMemo<
-    { index: number; token: number; step: Extract<RecipeStep, { kind: "swipe" }> } | undefined
-  >(() => {
-    const playback = stepPlayback();
-    if (!playback || playback.index !== wb.focusedIndex() || playback.step.kind !== "swipe") {
-      return undefined;
-    }
-    return { index: playback.index, token: playback.token, step: playback.step };
-  });
-  let playbackTimer: number | undefined;
-  createEffect(() => {
-    const request = wb.previewRequest();
-    if (!request) return;
-    const step = draft.steps()[request.index];
-    if (!step) return;
-    if (wb.focusedIndex() !== request.index) wb.focusStep(request.index);
-    if (step.evidence?.screenshot) setStageView("recorded");
-    setStepPlayback({ ...request, step });
-    wb.clearPreviewRequest(request.token);
-    if (playbackTimer) clearTimeout(playbackTimer);
-    const duration =
-      step.kind === "swipe" ? Math.max(180, Math.min(step.durationMs ?? 300, 900)) : 720;
-    playbackTimer = window.setTimeout(() => setStepPlayback(null), duration);
-  });
-  onCleanup(() => {
-    if (playbackTimer) clearTimeout(playbackTimer);
-  });
-  function updateFocusedSwipePoint(endpoint: SwipeEndpoint, point: { x: number; y: number }): void {
-    const index = wb.focusedIndex() ?? (draft.steps().length ? 0 : undefined);
-    const step = index == null ? undefined : draft.steps()[index];
-    if (index == null || step?.kind !== "swipe") return;
-    draft.updateStep(index, { ...step, [endpoint]: { ...step[endpoint], ...point } });
-  }
-  const recordedCoordinateEditable = createMemo(() => {
-    const step = focusedPlanStep();
-    return (
-      stageView() === "recorded" &&
-      Boolean(recordedEvidenceSrc()) &&
-      step?.kind === "tap" &&
-      defaultStrategy(step.target) === "point"
-    );
-  });
-  const [recordedScreenHovered, setRecordedScreenHovered] = createSignal(false);
-  const [recordedHoverNode, setRecordedHoverNode] = createSignal<
-    ReturnType<typeof recordedTargetNodes>[number] | null
-  >(null);
-  const recordedNodes = createMemo(() => {
-    const step = focusedPlanStep();
-    return step?.kind === "tap" ? recordedTargetNodes(step.evidence) : [];
-  });
-  /** Hovering recorded evidence is always safe. The explicit picker only gates
-   * changing a target; it must not hide the captured UI tree. */
-  const recordedInspectionActive = () =>
-    stageView() === "recorded" && !recordedCoordinateEditable() && recordedNodes().length > 0;
-  const recordedNodeOutlines = createMemo(() => {
-    if (!recordedInspectionActive()) return [];
-    const step = focusedPlanStep();
-    const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
-    return recordedNodes()
-      .map((node) => targetHighlight(node, bounds))
-      .filter((value): value is NonNullable<typeof value> => Boolean(value));
-  });
-  const recordedHoverHighlight = createMemo(() => {
-    if (!recordedInspectionActive()) return undefined;
-    const step = focusedPlanStep();
-    return step?.kind === "tap"
-      ? targetHighlight(recordedHoverNode() ?? undefined, step.evidence?.deviceBounds)
-      : undefined;
-  });
-  function updateRecordedNodeHover(
-    element: HTMLImageElement,
-    clientX: number,
-    clientY: number,
-  ): void {
-    if (stageView() !== "recorded" || recordedCoordinateEditable() || !recordedNodes().length)
-      return;
-    const step = focusedPlanStep();
-    const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
-    if (!bounds) return;
-    const rect = element.getBoundingClientRect();
-    const x = ((clientX - rect.left) / rect.width) * bounds.width;
-    const y = ((clientY - rect.top) / rect.height) * bounds.height;
-    setRecordedHoverNode(
-      recordedNodes().find((node) => {
-        const nodeRect = node.rect;
-        return (
-          nodeRect &&
-          x >= nodeRect.x &&
-          x <= nodeRect.x + nodeRect.width &&
-          y >= nodeRect.y &&
-          y <= nodeRect.y + nodeRect.height
-        );
-      }) ?? null,
-    );
-  }
-  function chooseRecordedNode(): void {
-    const index = wb.focusedIndex();
-    const step = index == null ? undefined : draft.steps()[index];
-    const node = recordedHoverNode();
-    if (index == null || step?.kind !== "tap" || !node) return;
-    if (!RECORDED_OTHER_ELEMENT_PICKING || !recordedInspectionActive()) return;
-    // A coordinate target makes the recorded screen a point picker. Pointer
-    // events above already move that point; the trailing click must not switch
-    // the step back to an element-based target.
-    if (defaultStrategy(step.target) === "point") return;
-    const point = step.target.point;
-    const nodePoint = pointForAnchor(node, "center");
-    const strategy = defaultStrategy(step.target);
-    const target =
-      strategy === "ref" && node.ref
-        ? { ref: node.ref, ...(point ? { point } : {}) }
-        : strategy === "label" && (node.label || node.value)
-          ? { label: node.label ?? node.value!, ...(point ? { point } : {}) }
-          : strategy === "text" && (node.value || node.label)
-            ? { text: node.value ?? node.label!, ...(point ? { point } : {}) }
-            : node.ref
-              ? { ref: node.ref, ...(point ? { point } : {}) }
-              : node.label || node.value
-                ? { label: node.label ?? node.value!, ...(point ? { point } : {}) }
-                : nodePoint
-                  ? { point: nodePoint }
-                  : undefined;
-    if (!target || !step.evidence) return;
-
-    const currentHierarchy = targetHierarchy(step.evidence);
-    const alreadyInScope = currentHierarchy.some((candidate) =>
-      recordedNodeMatches(candidate, node),
-    );
-    if (alreadyInScope) {
-      draft.updateStep(index, { ...step, target });
-      setRecordedHoverNode(null);
-      return;
-    }
-
-    const [selected, ...ancestors] = recordedNodeHierarchy(step.evidence, node);
-    draft.updateStep(index, {
-      ...step,
-      target,
-      evidence: {
-        ...step.evidence,
-        node: selected ?? node,
-        ancestors: ancestors.slice(0, 8),
-      },
-    });
-    setRecordedHoverNode(null);
-  }
-  let recordedCoordinateDrag: { pointerId: number } | null = null;
-  function moveRecordedCoordinate(element: HTMLImageElement, clientX: number, clientY: number) {
-    const index = wb.focusedIndex();
-    const step = index == null ? undefined : draft.steps()[index];
-    if (
-      index == null ||
-      !recordedCoordinateEditable() ||
-      step?.kind !== "tap" ||
-      !step.target.point
-    )
-      return;
-    const bounds = step.evidence?.deviceBounds;
-    if (!bounds?.width || !bounds.height) return;
-    const rect = element.getBoundingClientRect();
-    const x = Math.round(
-      Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * bounds.width,
-    );
-    const y = Math.round(
-      Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)) * bounds.height,
-    );
-    draft.updateStep(index, {
-      ...step,
-      target: {
-        ...step.target,
-        point: {
-          ...step.target.point,
-          x,
-          y,
-          referenceBounds: { ...bounds },
-        },
-      },
-    });
-  }
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const [frameRatio, setFrameRatio] = createSignal(9 / 19.5);
   const [liveImageRotation, setLiveImageRotation] = createSignal<"none" | "left" | "right">("none");
@@ -483,189 +172,43 @@ export function DeviceStage(_props: {
   // transient tap feedback (positioned in % of the glass)
   const [tapFeedback, setTapFeedback] = createSignal<{ x: number; y: number } | null>(null);
   let feedbackTimer: number | undefined;
+  const showTapFeedback = (displayX: number, displayY: number) => {
+    setTapFeedback({ x: displayX * 100, y: displayY * 100 });
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+  };
 
   let stageEl: HTMLElement | undefined;
   let deviceScreenEl: HTMLImageElement | undefined;
-  let pickerEl: HTMLDivElement | undefined;
-
-  /** Element picker: devtools-style — choose how to address the hit element,
-   *  walk up to its parent, and optionally record a step WITHOUT tapping. */
-  const [picker, setPicker] = createSignal<{
-    fx: number;
-    fy: number;
-    vx: number;
-    vy: number;
-    placement: "above" | "below";
-    /** ancestry[0] = hit node, up to root (geometric fallback when no parentIndex). */
-    ancestry: SnapshotNode[];
-    /** current target index into `ancestry` (ArrowUp/Down + breadcrumb walk it). */
-    index: number;
-  } | null>(null);
-  const [strategyId, setStrategyId] = createSignal<PickStrategy["id"]>("point");
-  const [horizontalConstraint, setHorizontalConstraint] =
-    createSignal<HorizontalConstraint>("left");
-  const [verticalConstraint, setVerticalConstraint] = createSignal<VerticalConstraint>("top");
-  const [manualPoint, setManualPoint] = createSignal<{ x: number; y: number } | null>(null);
-
-  const ancestry = () => picker()?.ancestry ?? [];
-  const pickerNode = () => {
-    const p = picker();
-    return p ? (p.ancestry[p.index] ?? null) : null;
-  };
-  const strategies = createMemo(() => {
-    const p = picker();
-    if (!p) return [] as PickStrategy[];
-    return strategiesFor(pickerNode(), server.snapshot(), p.fx, p.fy);
-  });
-  const constrainedPoint = createMemo(
-    () =>
-      manualPoint() ??
-      strategies().find(
-        (strategy): strategy is Extract<PickStrategy, { kind: "point" }> =>
-          strategy.kind === "point",
-      ),
-  );
-  const constrainedStrategy = createMemo<PickStrategy | undefined>(() => {
-    const point = constrainedPoint();
-    return point
-      ? {
-          id: "point",
-          kind: "point",
-          x: point.x,
-          y: point.y,
-          describe: `${point.x}, ${point.y}`,
-        }
-      : undefined;
-  });
-  const selectedStrategy = createMemo(() => {
-    if (strategyId() === "point") {
-      return constrainedStrategy() ?? strategies().find((strategy) => strategy.id === "point");
-    }
-    return strategies().find((strategy) => strategy.id === strategyId()) ?? strategies()[0];
-  });
-  /** Bounds-relative rect of the currently-targeted node, for the stage highlight. */
-  const pickedHighlight = createMemo(() => {
-    const n = pickerNode();
-    const b = server.snapshot()?.bounds;
-    if (!n?.rect || !b) return null;
-    const rect = companionLogicalRectToDisplayed(
-      {
-        x: n.rect.x / b.width,
-        y: n.rect.y / b.height,
-        width: n.rect.width / b.width,
-        height: n.rect.height / b.height,
-      },
-      liveImageRotation(),
-    );
-    return {
-      left: `${rect.x * 100}%`,
-      top: `${rect.y * 100}%`,
-      width: `${rect.width * 100}%`,
-      height: `${rect.height * 100}%`,
-    };
-  });
-  function resetCoordinateAnchor(): void {
-    setManualPoint(null);
-    setHorizontalConstraint("left");
-    setVerticalConstraint("top");
-  }
-
-  /** Re-target the picker to an ancestry index (breadcrumb click or arrows). */
-  function retarget(i: number) {
-    setManualPoint(null);
-    setPicker((p) => (p ? { ...p, index: Math.max(0, Math.min(i, p.ancestry.length - 1)) } : p));
-    const next = picker();
-    if (next) {
-      resetCoordinateAnchor();
-      setStrategyId(
-        strategiesFor(pickerNode(), server.snapshot(), next.fx, next.fy)[0]?.id ?? "point",
-      );
-    }
-  }
-
-  /** Execute (Tap mode) or just record (Select-only mode) the chosen strategy. */
-  async function pick(strategy: PickStrategy, mode: "tap" | "select"): Promise<void> {
-    const p = picker();
-    if (!p) return;
-    // Preserve the recorded order when a picker tap follows buffered typing.
-    await rec.flushType();
-    setPicker(null);
-    // feedback for deliberate picker taps too
-    const displayed = companionLogicalRectToDisplayed(
-      { x: p.fx, y: p.fy, width: 0, height: 0 },
-      liveImageRotation(),
-    );
-    setTapFeedback({ x: displayed.x * 100, y: displayed.y * 100 });
-    if (feedbackTimer) clearTimeout(feedbackTimer);
-    feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
-
-    if (mode === "select") {
-      // Select-only: record the chosen-strategy step WITHOUT tapping.
-      void rec.recordPick(strategy, p.fx, p.fy, {
-        horizontal: horizontalConstraint(),
-        vertical: verticalConstraint(),
-      });
-      return;
-    }
-    const bounds = server.snapshot()?.bounds;
-    const tapPoint = bounds
-      ? { x: Math.round(p.fx * bounds.width), y: Math.round(p.fy * bounds.height) }
-      : undefined;
-    const body = interactBodyForStrategy(strategy, tapPoint);
-    let ok = await server.interactStep(body, `tap ${strategy.describe}`);
-    // chosen strategy failed (likely no session) — fall back to a coordinate tap
-    if (!ok && strategy.kind !== "point" && tapPoint) {
-      ok = await server.interactStep(
-        { kind: "point", x: tapPoint.x, y: tapPoint.y },
-        `tap ${tapPoint.x},${tapPoint.y}`,
-      );
-    }
-    if (ok && rec.recording())
-      void rec.recordPick(strategy, p.fx, p.fy, {
-        horizontal: horizontalConstraint(),
-        vertical: verticalConstraint(),
-      });
-    // Refresh the fallback image only when needed; let the device UI settle
-    // briefly before refreshing accessibility targets.
-    if (ok && rec.interacting()) {
+  const {
+    picker,
+    close: closePicker,
+    openAt: openPickerAt,
+    pick,
+    retarget,
+    setPickerElement,
+    ancestry,
+    pickerNode,
+    strategies,
+    selectedStrategy,
+    strategyId,
+    setStrategyId,
+    horizontalConstraint,
+    setHorizontalConstraint,
+    verticalConstraint,
+    setVerticalConstraint,
+    constrainedPoint,
+    setManualPoint,
+    highlight: pickedHighlight,
+  } = useDeviceStagePicker({
+    imageRotation: liveImageRotation,
+    stageElement: () => stageEl,
+    showTapFeedback,
+    onInteractionSuccess: () => {
       if (videoFailed()) void tickLiveFrame();
       scheduleLiveSnapshot();
-    }
-  }
-
-  const onStageKey = (e: KeyboardEvent) => {
-    if (!picker()) return;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      setPicker(null);
-      return;
-    }
-    // Walk the ancestry chain; stop propagation so the command palette's
-    // window keydown can't also react while the picker is open.
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      e.stopPropagation();
-      retarget((picker()?.index ?? 0) + 1);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      e.stopPropagation();
-      retarget((picker()?.index ?? 0) - 1);
-    }
-  };
-  window.addEventListener("keydown", onStageKey);
-  onCleanup(() => window.removeEventListener("keydown", onStageKey));
-
-  const onPickerPointerDown = (event: PointerEvent) => {
-    if (!picker() || pickerEl?.contains(event.target as Node)) return;
-    // The first outside click dismisses the inspector without also tapping the
-    // mirrored phone or activating an unrelated control underneath it.
-    event.preventDefault();
-    event.stopPropagation();
-    setPicker(null);
-  };
-  window.addEventListener("pointerdown", onPickerPointerDown, true);
-  onCleanup(() => window.removeEventListener("pointerdown", onPickerPointerDown, true));
+    },
+  });
 
   // ── Typing capture (plan 010 step 3.3): route printable keys + Backspace +
   //    Enter to the phone while Record is active. The modal/focus/modifier
@@ -929,77 +472,17 @@ export function DeviceStage(_props: {
     onCleanup(stopLiveTimers);
   });
 
-  // ── Accessibility inspection. Hover mode keeps the glass quiet until the
-  //    pointer asks for detail; Always deliberately exposes the same filtered
-  //    bounds Android developers know from “Show layout bounds”. Full-screen
-  //    containers and pure wrappers are removed upstream by overlayCandidates.
-  const candidates = createMemo(() => {
-    const snap = server.snapshot();
-    if (!snap?.nodes?.length || !snap.bounds || snap.inspectable === false) {
-      return [] as SnapshotNode[];
-    }
-    return overlayCandidates(snap.nodes, snap.bounds);
-  });
-
-  const accessibilityOutlines = createMemo(() => {
-    if (server.accessibilityMode() !== "always") return [];
-    const snap = server.snapshot();
-    if (!snap?.bounds) return [];
-    return companionAccessibilityOutlineStyles(snap.nodes, snap.bounds, liveImageRotation());
-  });
-
-  const [hoverPoint, setHoverPoint] = createSignal<{ fx: number; fy: number } | null>(null);
-  const hoverNode = createMemo(() => {
-    const point = hoverPoint();
-    const snap = server.snapshot();
-    if (!point || !snap?.bounds) return null;
-    return candidateAtPoint(candidates(), snap.bounds, point.fx, point.fy);
-  });
-  let hoverRaf = 0;
-
-  /** Bounds-relative geometry + chip text for the node under the cursor. */
-  const hoverHighlight = createMemo(() =>
-    companionAccessibilityHighlight(hoverNode(), server.snapshot()?.bounds, liveImageRotation()),
-  );
-
-  /** rAF-throttled hit-test against the candidate list. Captures the image rect
-   *  at event time so the deferred frame reads stable geometry. */
-  function scheduleHover(img: HTMLElement, cx: number, cy: number): void {
-    if (
-      !accessibilityHoverEnabled(server.accessibilityMode()) ||
-      server.snapshot()?.inspectable === false ||
-      hoverRaf
-    )
-      return;
-    const rect = img.getBoundingClientRect();
-    hoverRaf = requestAnimationFrame(() => {
-      hoverRaf = 0;
-      const displayed = {
-        x: (cx - rect.left) / rect.width,
-        y: (cy - rect.top) / rect.height,
-      };
-      if (displayed.x < 0 || displayed.x > 1 || displayed.y < 0 || displayed.y > 1) {
-        setHoverPoint(null);
-        return;
-      }
-      const logical = companionDisplayedPointToLogical(displayed, liveImageRotation());
-      setHoverPoint({ fx: logical.x, fy: logical.y });
-    });
-  }
-  function clearHover(): void {
-    if (hoverRaf) {
-      cancelAnimationFrame(hoverRaf);
-      hoverRaf = 0;
-    }
-    setHoverPoint(null);
-  }
-  createEffect(() => {
-    const mode = server.accessibilityMode();
-    if (!accessibilityHoverEnabled(mode)) clearHover();
-    if (accessibilityCollectionEnabled(mode) && liveViewActive()) scheduleLiveSnapshot(0);
+  const {
+    outlines: accessibilityOutlines,
+    hoverHighlight,
+    scheduleHover,
+    clearHover,
+  } = useDeviceStageAccessibility({
+    liveViewActive,
+    imageRotation: liveImageRotation,
+    refreshSnapshot: scheduleLiveSnapshot,
   });
   onCleanup(() => {
-    if (hoverRaf) cancelAnimationFrame(hoverRaf);
     if (moveRaf) cancelAnimationFrame(moveRaf);
     if (wheelRaf) cancelAnimationFrame(wheelRaf);
     if (wheelEndTimer) clearTimeout(wheelEndTimer);
@@ -1009,7 +492,7 @@ export function DeviceStage(_props: {
   /** The mirrored device is always interactive. Recording is an explicit
    *  start/stop action that decides whether interactions are also saved. */
   function toggleRecording(): void {
-    setPicker(null);
+    closePicker();
     if (rec.recording()) void rec.stopRecording();
     else {
       setStageView("live");
@@ -1154,36 +637,6 @@ export function DeviceStage(_props: {
         if (rec.interacting()) scheduleLiveSnapshot();
       }),
     );
-  }
-
-  /** Open the element picker at a client point (right-click inspection path). */
-  function openPickerAt(img: HTMLImageElement, clientX: number, clientY: number): void {
-    const r = img.getBoundingClientRect();
-    const logical = companionDisplayedPointToLogical(
-      { x: (clientX - r.left) / r.width, y: (clientY - r.top) / r.height },
-      liveImageRotation(),
-    );
-    const fx = logical.x;
-    const fy = logical.y;
-    const node = nodeAtPoint(server.snapshot(), fx, fy);
-    const s = stageEl?.getBoundingClientRect();
-    const snap = server.snapshot();
-    const anc = node && snap ? ancestryOf(snap, node) : node ? [node] : [];
-    const rawX = s ? clientX - s.left : clientX - r.left;
-    const rawY = s ? clientY - s.top : clientY - r.top;
-    const vx = s ? Math.max(12, Math.min(rawX, Math.max(12, s.width - 264))) : rawX;
-    const availableStrategies = strategiesFor(node, snap, fx, fy);
-    resetCoordinateAnchor();
-    setStrategyId(availableStrategies[0]?.id ?? "point");
-    setPicker({
-      fx,
-      fy,
-      vx,
-      vy: rawY,
-      placement: rawY < 300 ? "below" : "above",
-      ancestry: anc,
-      index: 0,
-    });
   }
 
   /**
@@ -1576,9 +1029,7 @@ export function DeviceStage(_props: {
                       down = null;
                       pendingMove = null;
                       lastLivePointerActionAt = performance.now();
-                      setTapFeedback({ x: point.displayFx * 100, y: point.displayFy * 100 });
-                      if (feedbackTimer) clearTimeout(feedbackTimer);
-                      feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+                      showTapFeedback(point.displayFx, point.displayFy);
                       void rec
                         .driveTap(point.fx, point.fy, false, liveImageDimensions())
                         .then(() => {
@@ -1600,15 +1051,11 @@ export function DeviceStage(_props: {
                     }}
                     onPointerDown={(e) => {
                       if (recordedCoordinateEditable() && e.button === 0) {
-                        const index = wb.focusedIndex();
-                        const step = index == null ? undefined : draft.steps()[index];
-                        if (index != null && step?.kind === "tap" && step.target.point) {
-                          e.preventDefault();
-                          e.currentTarget.focus({ preventScroll: true });
-                          recordedCoordinateDrag = { pointerId: e.pointerId };
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                        }
+                        e.preventDefault();
+                        e.currentTarget.focus({ preventScroll: true });
+                        beginRecordedCoordinateDrag(e.pointerId);
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
                         return;
                       }
                       if (
@@ -1635,7 +1082,7 @@ export function DeviceStage(_props: {
                       void queueTouch("down", down.fx, down.fy);
                     }}
                     onPointerMove={(e) => {
-                      if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                      if (recordedCoordinateDragging(e.pointerId)) {
                         moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
                         return;
                       }
@@ -1667,9 +1114,9 @@ export function DeviceStage(_props: {
                       }
                     }}
                     onPointerUp={(e) => {
-                      if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                      if (recordedCoordinateDragging(e.pointerId)) {
                         moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                        recordedCoordinateDrag = null;
+                        endRecordedCoordinateDrag(e.pointerId);
                         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
                           e.currentTarget.releasePointerCapture(e.pointerId);
                         }
@@ -1697,10 +1144,8 @@ export function DeviceStage(_props: {
                       if (Math.hypot(dx, dy) < 6) {
                         // tap → direct action, no picker
                         // show brief physical feedback at tap location
-                        setTapFeedback({ x: start.displayFx * 100, y: start.displayFy * 100 });
+                        showTapFeedback(start.displayFx, start.displayFy);
                         lastLivePointerActionAt = performance.now();
-                        if (feedbackTimer) clearTimeout(feedbackTimer);
-                        feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
                         void appliedLive.then((live) =>
                           rec.driveTap(start.fx, start.fy, live, liveImageDimensions()).then(() => {
@@ -1728,18 +1173,12 @@ export function DeviceStage(_props: {
                       }
                     }}
                     onPointerCancel={(e) => {
-                      if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                        recordedCoordinateDrag = null;
-                        return;
-                      }
+                      if (endRecordedCoordinateDrag(e.pointerId)) return;
                       cancelGesture(e.pointerId);
                       settleGestureTrail();
                     }}
                     onLostPointerCapture={(e) => {
-                      if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                        recordedCoordinateDrag = null;
-                        return;
-                      }
+                      if (endRecordedCoordinateDrag(e.pointerId)) return;
                       cancelGesture(e.pointerId);
                       settleGestureTrail();
                     }}
@@ -1787,7 +1226,7 @@ export function DeviceStage(_props: {
                         if (recordedInspectionActive()) {
                           updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
                         } else {
-                          setRecordedHoverNode(null);
+                          clearRecordedNodeHover();
                         }
                         // Overlay inspection follows the accessibility snapshot, not
                         // the PNG fallback. Healthy H.264 deliberately stops PNG
@@ -1799,7 +1238,7 @@ export function DeviceStage(_props: {
                     }}
                     onMouseLeave={() => {
                       setRecordedScreenHovered(false);
-                      setRecordedHoverNode(null);
+                      clearRecordedNodeHover();
                       clearHover();
                     }}
                   />
@@ -2018,9 +1457,7 @@ export function DeviceStage(_props: {
       <Show when={picker() && liveControlActive() && (pickerNode() || rec.recording())}>
         <StageTargetPicker
           picker={() => picker()!}
-          setPickerEl={(element) => {
-            pickerEl = element;
-          }}
+          setPickerEl={setPickerElement}
           nodeLabel={pickerNodeLabel(pickerNode())}
           metaLine={pickerNodeMetaLine(pickerNode())}
           ancestryLength={ancestry().length}
@@ -2035,7 +1472,7 @@ export function DeviceStage(_props: {
           constrainedPoint={constrainedPoint()}
           setManualPoint={setManualPoint}
           hasPickerNodeRect={Boolean(pickerNode()?.rect)}
-          onClose={() => setPicker(null)}
+          onClose={closePicker}
           onRetarget={retarget}
           onAddStep={(strategy) => {
             void pick(strategy, "select");

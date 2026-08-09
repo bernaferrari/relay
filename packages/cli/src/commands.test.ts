@@ -189,10 +189,7 @@ test("locale-matrix help leads with map and flow, not a library recipe", () => {
     (descriptor) => descriptor.operationId === "job.combine.start",
   );
   assert.ok(optionStart && !("exclusion" in optionStart));
-  assert.match(
-    optionStart.paths[0]?.examples?.[0] ?? "",
-    /combine run|combine run|variableIds|combineId/,
-  );
+  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /run-matrix run|variableIds|combineId/);
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {
@@ -242,6 +239,11 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { appMapId: "grok-ios", testId: "settings-tour" },
     ],
     [
+      ["run-matrix", "run", "grok-ios", "language-x-settings"],
+      "job.combine.start",
+      { appMapId: "grok-ios", combineId: "language-x-settings" },
+    ],
+    [
       ["combine", "run", "grok-ios", "language-x-settings"],
       "job.combine.start",
       { appMapId: "grok-ios", combineId: "language-x-settings" },
@@ -267,6 +269,10 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
   );
   assert.equal(
     resolveCommand(["work", "run", "grok-ios", "settings-tour"]).behavior,
+    "job-start-watch",
+  );
+  assert.equal(
+    resolveCommand(["run-matrix", "run", "grok-ios", "language-x-settings"]).behavior,
     "job-start-watch",
   );
   assert.equal(

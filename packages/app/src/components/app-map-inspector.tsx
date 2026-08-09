@@ -35,7 +35,7 @@ import {
 } from "../lib/take-action-conversion";
 import { testRunBlocker } from "../lib/test-run-readiness";
 import { Icon } from "./icon";
-import { actionForStep, evidenceForStep } from "./take-step-presentation";
+import { actionForStep } from "./take-step-presentation";
 import { ActionPicker } from "./action-picker";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
@@ -332,7 +332,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
     return current ? sentenceForStep(current, server.recipes()) : "No state selected";
   });
   const capturedFrame = createMemo(() => {
-    const shot = evidenceForStep(draft.steps()[index()])?.screenshot;
+    const shot = draft.steps()[index()]?.evidence?.screenshot;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const canPreview = createMemo(() => Boolean(capturedFrame()));

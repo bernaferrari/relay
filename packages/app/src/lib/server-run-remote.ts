@@ -343,7 +343,7 @@ export async function saveCombineRemote(
       name: string;
       variableIds: string[];
       testIds: string[];
-      strategy?: "zip" | "cartesian";
+      strategy?: "zip" | "cartesian" | "pairwise";
       createdAt: number;
       updatedAt: number;
     };

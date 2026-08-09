@@ -499,6 +499,30 @@ test("job watch polls running jobs through the same invoker until ok", async () 
   );
 });
 
+test("job watch prints an unchanged heartbeat only once", async () => {
+  const io = capture();
+  const responses = [
+    { job: { id: "abc", status: "running", lastLogs: ["recipe: Wi-Fi"] } },
+    { job: { id: "abc", status: "running", lastLogs: ["recipe: Wi-Fi"] } },
+    { job: { id: "abc", status: "ok", lastLogs: ["recipe: Wi-Fi"] } },
+  ];
+  const code = await runCli(["job", "watch", "abc"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        return responses.shift();
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.equal(io.stderr().match(/recipe: Wi-Fi/g)?.length, 1);
+});
+
 test("job watch --no-wait gets the job exactly once", async () => {
   const io = capture();
   let calls = 0;

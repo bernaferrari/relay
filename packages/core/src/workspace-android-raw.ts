@@ -20,10 +20,19 @@ export function rawTap(x: number, y: number, serial?: string): void {
   execFileSync("adb", args, { timeout: 5000 });
 }
 
-/** Raw adb key input — keeps keyboard control available without a live stream. */
-export function rawKey(key: "enter" | "backspace", serial?: string): void {
+export function androidKeyCode(
+  key: "enter" | "backspace" | "back" | "home",
+): "KEYCODE_ENTER" | "KEYCODE_DEL" | "KEYCODE_BACK" | "KEYCODE_HOME" {
+  if (key === "enter") return "KEYCODE_ENTER";
+  if (key === "backspace") return "KEYCODE_DEL";
+  if (key === "back") return "KEYCODE_BACK";
+  return "KEYCODE_HOME";
+}
+
+/** Raw adb key input — keeps navigation and keyboard control available without a live stream. */
+export function rawKey(key: "enter" | "backspace" | "back" | "home", serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
-  const keyCode = key === "enter" ? "KEYCODE_ENTER" : "KEYCODE_DEL";
+  const keyCode = androidKeyCode(key);
   execFileSync("adb", ["-s", serial, "shell", "input", "keyevent", keyCode], {
     timeout: 5000,
   });

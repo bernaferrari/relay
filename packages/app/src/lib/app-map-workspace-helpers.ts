@@ -562,11 +562,6 @@ export function connectionReviewTarget(input: {
   };
 }
 
-export function pushCanvasHistoryEntry<T>(stack: T[], entry: T, limit = 100): T[] {
-  const next = [...stack, entry];
-  return next.length > limit ? next.slice(-limit) : next;
-}
-
 export type NotePlacement = {
   id: string;
   text: string;
@@ -671,17 +666,5 @@ export function recordedActionFromConnection(
     takeRevision: 1,
     steps: steps.map((step) => structuredClone(step)),
     evidenceIds: [],
-  };
-}
-
-export function canvasPointFromClientRect(
-  clientX: number,
-  clientY: number,
-  rect: { left: number; top: number },
-  viewport: CanvasViewport,
-): CanvasPoint {
-  return {
-    x: (clientX - rect.left - viewport.x) / viewport.scale,
-    y: (clientY - rect.top - viewport.y) / viewport.scale,
   };
 }

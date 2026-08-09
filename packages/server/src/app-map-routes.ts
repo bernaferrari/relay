@@ -13,6 +13,7 @@ import {
   currentOperationContext,
   deleteAppMap,
   duplicateAppMap,
+  findAppMapCaptureScreen,
   formatAppMapYaml,
   importAppMap,
   listAppMaps,
@@ -503,6 +504,20 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       session = await authoringSessions.capture(session.id, createAuthoringRuntime());
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      if (
+        body.interaction &&
+        findAppMapCaptureScreen(current, {
+          target: body.target,
+          observation: take.before,
+          ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+        })?.id === body.fromScreenId
+      ) {
+        throw new HttpError(409, "The interaction did not open another screen", {
+          code: "interaction-no-change",
+          recovery:
+            "Choose a visible control or point that opens another screen. Use a recorded path for gestures or changes that stay on this screen.",
+        });
+      }
       const profile = await profileForCapture(body.target, take.before.capturedAt);
       let capturedScreenId = "";
       let capturedVariantId = "";

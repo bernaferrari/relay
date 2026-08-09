@@ -1,5 +1,5 @@
 import type { AppMap } from "@relay/protocol";
-import { combineHeadline, combineValueLabel } from "./app-map-combine-presentation";
+import { combineHeadline, combineValueLabel, projectCombine } from "./app-map-combine-presentation";
 import { SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 
 export type CanvasCombineCardModel = {
@@ -38,13 +38,25 @@ export function canvasCombineCards(
       .filter(Boolean)
       .slice(0, PREVIEW_VALUES);
     const testNames = tests.map((test) => test.name).filter(Boolean);
-    const cellCount = Math.max(values.length, 1) * Math.max(testNames.length, 1);
+    const projection = projectCombine(
+      variables.map((variable) => ({
+        id: variable.id,
+        name: variable.name,
+        values: variable.options.map((option) => ({
+          id: option.id,
+          label: combineValueLabel(option),
+        })),
+      })),
+      tests.map((test) => ({ id: test.id, name: test.name, kind: test.kind })),
+      combine.strategy ?? (variables.length > 1 ? "cartesian" : "zip"),
+      1,
+    );
     return {
       id: combine.id,
       name: combineHeadline({
-        variableName: variables[0]?.name,
-        testName: testNames[0],
-        cellCount,
+        variableNames: variables.map((variable) => variable.name),
+        testNames,
+        cellCount: projection.cellCount,
       }),
       position: {
         x: (anchor?.x ?? 48) + SCREEN_CARD_WIDTH + CARD_GAP,
@@ -52,7 +64,7 @@ export function canvasCombineCards(
       },
       values,
       tests: testNames,
-      cellCount: values.length && testNames.length ? values.length * testNames.length : cellCount,
+      cellCount: projection.cellCount,
     };
   });
 }

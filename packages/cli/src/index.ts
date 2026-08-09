@@ -82,6 +82,7 @@ async function watchJob(
   pollIntervalMs: number,
 ): Promise<unknown> {
   output.progress(operationId, "watching");
+  let lastHeartbeat = "";
   while (true) {
     const result = await invokeOperation(client, operationId, input, signal);
     if (signal.aborted) throw abortError();
@@ -99,7 +100,10 @@ async function watchJob(
         : [];
     const logs = rawLogs.filter((item): item is string => typeof item === "string");
     const last = logs.at(-1);
-    if (last) output.heartbeat(last.length > 120 ? `${last.slice(0, 117)}…` : last);
+    if (last && last !== lastHeartbeat) {
+      lastHeartbeat = last;
+      output.heartbeat(last.length > 120 ? `${last.slice(0, 117)}…` : last);
+    }
     await waitForPoll(pollIntervalMs, signal);
   }
 }

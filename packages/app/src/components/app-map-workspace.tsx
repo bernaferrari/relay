@@ -53,7 +53,6 @@ import {
   canvasWheelAction,
   createAppMapEventOrchestration,
 } from "./app-map-events";
-import { Icon } from "./icon";
 import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
@@ -68,14 +67,11 @@ import { useAppMapGroupOps } from "../lib/use-app-map-group-ops";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import { targetIsReady } from "../lib/target-presentation";
 import {
-  appMapLoadFailure,
   appMapCommitSummary,
   applyTargetSetToActiveFlow,
   buildMinimapEdges,
   buildMinimapNodes,
   buildPresenceGeometry,
-  canvasPointFromClientRect,
-  canvasProjectionUnchanged,
   clampGroupMenuPosition,
   captureContextLabel as buildCaptureContextLabel,
   canonicalNotesFor,
@@ -86,19 +82,19 @@ import {
   entryFlowsForScreen,
   listReusableBehaviors,
   orderCanvasChanges,
-  pushCanvasHistoryEntry,
   recipeStepsForRunReadiness,
   recordStateFromReadiness,
   selectedFlowSetupSummary,
   stepsForConnectionIds,
   visibleCanvasBoundsFromViewport,
 } from "../lib/app-map-workspace-helpers";
+import { createAppMapCanvasHistory } from "../lib/app-map-canvas-history";
+import { useAppMapDocumentProjection } from "../lib/use-app-map-document-projection";
 import { useAppMapTakeReview } from "../lib/use-app-map-take-review";
 import { useAppMapGraphEdits } from "../lib/use-app-map-graph-edits";
 import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay";
 import { useAppMapRunFlow } from "../lib/use-app-map-run-flow";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
-import { groupForScreen } from "../lib/app-map-groups";
 import { bindAppMapWorkspaceShellEvents } from "../lib/app-map-workspace-shell-events";
 import { pathDraftClick } from "../lib/app-map-path-draft";
 import { canvasCombineCards } from "../lib/app-map-combine-canvas";
@@ -110,26 +106,9 @@ import {
   variantScreenshotUrl,
 } from "../lib/app-map-workspace-media";
 import { AppMapLoadFeedback } from "./app-map-load-feedback";
-import {
-  APP_MAP_MARQUEE_THRESHOLD,
-  canvasSelectionRect,
-  mergeSelectedScreenIds,
-  screenIdsInSelection,
-  type CanvasSelectionRect,
-} from "../lib/app-map-selection";
 import { connectionActionSummaries } from "../lib/connection-action-presentation";
-
-type AppMapLoadState =
-  | { status: "idle" }
-  | { status: "loading"; appMapId: string }
-  | { status: "ready"; appMapId: string }
-  | {
-      status: "error";
-      appMapId: string;
-      title: string;
-      guidance: string;
-      detail?: string;
-    };
+import { AppMapGroupMenu, type AppMapGroupMenuState } from "./app-map-group-menu";
+import { useAppMapCanvasGestures } from "./use-app-map-canvas-gestures";
 
 type AppMapContextSurface = "agent" | "history" | "proposals" | null;
 
@@ -157,15 +136,6 @@ export function AppMapWorkspace(props: {
   // projection is renderer state only; it is rebuilt from the App Map and is
   // never loaded from or saved to a parallel canvas document.
   const [canvasState, setCanvasState] = createSignal<AppMapCanvasState>(EMPTY_APP_MAP_CANVAS_STATE);
-  const [loadedAppMapId, setLoadedAppMapId] = createSignal<string | null>(null);
-  const [appMapLoadState, setAppMapLoadState] = createSignal<AppMapLoadState>({
-    status: "idle",
-  });
-  const currentLoadFailure = () => {
-    const state = appMapLoadState();
-    return state.status === "error" ? state : undefined;
-  };
-  const [appMapLoadAttempt, setAppMapLoadAttempt] = createSignal(0);
   const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
   const [contextSurface, setContextSurface] = createSignal<AppMapContextSurface>(null);
   const surfaceOpen = (surface: Exclude<AppMapContextSurface, null>) =>
@@ -212,7 +182,6 @@ export function AppMapWorkspace(props: {
   });
   let requestedAppleSetupFor = "";
   let appMapMutationQueue = Promise.resolve();
-  let appliedCanonicalRevision = "";
   createEffect(() => {
     const device = selectedDevice();
     const setup = server.appleDeviceSetup();
@@ -229,34 +198,26 @@ export function AppMapWorkspace(props: {
       // authoritative and continues preparing the device.
     });
   });
-  const recordState = (): Parameters<typeof AppMapEmptyState>[0]["recordState"] => {
+  const liveDeviceReadiness = createMemo(() => {
     const device = selectedDevice();
     const liveFrame = server.liveFrame();
-    return recordStateFromReadiness(
-      deviceReadiness(device, server.health() === "online", {
-        ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
-        liveCaptureIssue: server.liveCaptureIssue(),
-        recordingIssue: recorder.recordingIssue(),
-        requireLiveScreen: true,
-        liveScreenAvailable:
-          Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
-      }),
-    );
-  };
+    return deviceReadiness(device, server.health() === "online", {
+      ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
+      liveCaptureIssue: server.liveCaptureIssue(),
+      recordingIssue: recorder.recordingIssue(),
+      requireLiveScreen: true,
+      liveScreenAvailable:
+        Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
+    });
+  });
+  const recordState = (): Parameters<typeof AppMapEmptyState>[0]["recordState"] =>
+    recordStateFromReadiness(liveDeviceReadiness());
   const canRecord = () =>
     recordState() === "ready" && Boolean(server.selectedLeaseId()) && !server.controlIssue();
   const livePanelStatus = () => {
     const device = selectedDevice();
-    const liveFrame = server.liveFrame();
     return appMapDeviceStatus({
-      readiness: deviceReadiness(device, server.health() === "online", {
-        ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
-        liveCaptureIssue: server.liveCaptureIssue(),
-        recordingIssue: recorder.recordingIssue(),
-        requireLiveScreen: true,
-        liveScreenAvailable:
-          Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
-      }),
+      readiness: liveDeviceReadiness(),
       deviceSelected: Boolean(device),
       serverOnline: server.health() === "online",
       discovering: server.deviceDiscoveryStatus() === "scanning",
@@ -279,12 +240,7 @@ export function AppMapWorkspace(props: {
   const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]);
   const [selectedGroupId, setSelectedGroupId] = createSignal<string | null>(null);
   const [renamingGroupId, setRenamingGroupId] = createSignal<string | null>(null);
-  const [groupMenu, setGroupMenu] = createSignal<{
-    x: number;
-    y: number;
-    groupId?: string;
-    screenIds: string[];
-  } | null>(null);
+  const [groupMenu, setGroupMenu] = createSignal<AppMapGroupMenuState | null>(null);
   const [selectedNodeId, setSelectedNodeIdValue] = createSignal<string | null>(null);
   const setSelectedNodeId = (id: string | null) => {
     setSelectedNodeIdValue(id);
@@ -305,187 +261,36 @@ export function AppMapWorkspace(props: {
   >("unknown");
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
-  const [selectionMarquee, setSelectionMarquee] = createSignal<{
-    pointerId: number;
-    start: CanvasPoint;
-    current: CanvasPoint;
-    startClient: CanvasPoint;
-    baseIds: string[];
-    additive: boolean;
-    moved: boolean;
-  } | null>(null);
-  const [canvasClientSize, setCanvasClientSize] = createSignal({ width: 0, height: 0 });
-  const [, setLocalCursor] = createSignal<CanvasPoint | undefined>();
-  let canvas: HTMLElement | undefined;
-  let canvasResizeObserver: ResizeObserver | undefined;
-  let pan: { x: number; y: number; view: CanvasViewport } | undefined;
-  let nodeDrag:
-    | {
-        id: string;
-        ids: string[];
-        x: number;
-        y: number;
-        origins: Record<string, CanvasPoint>;
-        groupId?: string;
-        moved: boolean;
-        before: AppMapCanvasState;
-      }
-    | undefined;
-  let noteDrag:
-    | {
-        id: string;
-        x: number;
-        y: number;
-        origin: CanvasPoint;
-        moved: boolean;
-        before: AppMapCanvasState;
-      }
-    | undefined;
   let pendingConnectionId: string | null = null;
-  let suppressNodeSelectionClick = false;
   let recordingSourceScreenId: string | null = null;
   let recordRequestedAfterDeviceSelection = false;
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
-  let pointerMoveFrame: number | undefined;
-  let pendingPointerMove: { x: number; y: number } | undefined;
-  type CanvasHistoryEntry = {
-    before: AppMapCanvasState;
-    after: AppMapCanvasState;
-    at: number;
-  };
-  let canvasUndoStack: CanvasHistoryEntry[] = [];
-  let canvasRedoStack: CanvasHistoryEntry[] = [];
-  const [canvasHistoryDepth, setCanvasHistoryDepth] = createSignal({ undo: 0, redo: 0 });
-  const clearCanvasHistory = () => {
-    canvasUndoStack = [];
-    canvasRedoStack = [];
-    setCanvasHistoryDepth({ undo: 0, redo: 0 });
-  };
-
-  const observeCanvas = (element: HTMLElement) => {
-    canvas = element;
-    canvasResizeObserver?.disconnect();
-    setCanvasClientSize({ width: element.clientWidth, height: element.clientHeight });
-    if (typeof ResizeObserver === "undefined") return;
-    canvasResizeObserver = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      setCanvasClientSize({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      });
-    });
-    canvasResizeObserver.observe(element);
-  };
-  const canvasPointFromClient = (clientX: number, clientY: number): CanvasPoint => {
-    if (!canvas) return { x: 0, y: 0 };
-    return canvasPointFromClientRect(clientX, clientY, canvas.getBoundingClientRect(), view());
-  };
-  const marqueeRect = createMemo<CanvasSelectionRect | null>(() => {
-    const marquee = selectionMarquee();
-    return marquee?.moved ? canvasSelectionRect(marquee.start, marquee.current) : null;
-  });
-  const applyCanvasPointerMove = (clientX: number, clientY: number) => {
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const viewport = view();
-    setLocalCursor({
-      x: (clientX - rect.left - viewport.x) / viewport.scale,
-      y: (clientY - rect.top - viewport.y) / viewport.scale,
-    });
-    if (nodeDrag) {
-      const moved = Math.hypot(clientX - nodeDrag.x, clientY - nodeDrag.y) > 4;
-      if (!moved && !nodeDrag.moved) return;
-      if (!nodeDrag.moved && !nodeDrag.groupId && !selectedNodeIds().includes(nodeDrag.id)) {
-        setSelectedNodeIds([...nodeDrag.ids]);
-        setSelectedNodeIdValue(nodeDrag.id);
-        setSelectedGroupId(null);
-      }
-      nodeDrag.moved = true;
-      setCanvasState((current) => ({
-        ...current,
-        positions: {
-          ...current.positions,
-          ...Object.fromEntries(
-            nodeDrag!.ids.map((id) => {
-              const origin = nodeDrag!.origins[id]!;
-              return [
-                id,
-                {
-                  x: origin.x + (clientX - nodeDrag!.x) / viewport.scale,
-                  y: origin.y + (clientY - nodeDrag!.y) / viewport.scale,
-                },
-              ];
-            }),
-          ),
-        },
-      }));
-      return;
-    }
-    if (noteDrag) {
-      const moved = Math.hypot(clientX - noteDrag.x, clientY - noteDrag.y) > 4;
-      if (!moved && !noteDrag.moved) return;
-      noteDrag.moved = true;
-      setCanvasState((current) => ({
-        ...current,
-        notes: (current.notes ?? []).map((note) =>
-          note.id === noteDrag!.id
-            ? {
-                ...note,
-                x: noteDrag!.origin.x + (clientX - noteDrag!.x) / viewport.scale,
-                y: noteDrag!.origin.y + (clientY - noteDrag!.y) / viewport.scale,
-                updatedAt: Date.now(),
-              }
-            : note,
-        ),
-      }));
-      return;
-    }
-    const marquee = selectionMarquee();
-    if (marquee) {
-      const moved =
-        marquee.moved ||
-        Math.hypot(clientX - marquee.startClient.x, clientY - marquee.startClient.y) >
-          APP_MAP_MARQUEE_THRESHOLD;
-      const current = canvasPointFromClient(clientX, clientY);
-      setSelectionMarquee({ ...marquee, current, moved });
-      if (!moved) return;
-      const hits = screenIdsInSelection(
-        tree().nodes.map((node) => node.id),
-        positions(),
-        canvasSelectionRect(marquee.start, current),
-      );
-      const selected = mergeSelectedScreenIds(marquee.baseIds, hits, marquee.additive);
-      setSelectedNodeIds(selected);
-      setSelectedNodeIdValue(selected.at(-1) ?? null);
+  const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState>();
+  const canvasGestures = useAppMapCanvasGestures({
+    view,
+    setView,
+    canvasState,
+    setCanvasState,
+    screenIds: () => tree().nodes.map((node) => node.id),
+    positions: () => canvasState().positions,
+    selectedNodeIds,
+    setSelectedNodeIds,
+    setSelectedNodeId: setSelectedNodeIdValue,
+    clearSecondarySelection: () => {
       setSelectedGroupId(null);
       setSelectedConnectionId(null);
       setScreenInspectorOpen(false);
-      return;
-    }
-    if (!pan) return;
-    setView({
-      ...pan.view,
-      x: pan.view.x + clientX - pan.x,
-      y: pan.view.y + clientY - pan.y,
-    });
-  };
-  const scheduleCanvasPointerMove = (clientX: number, clientY: number) => {
-    pendingPointerMove = { x: clientX, y: clientY };
-    if (pointerMoveFrame !== undefined) return;
-    pointerMoveFrame = requestAnimationFrame(() => {
-      pointerMoveFrame = undefined;
-      const pending = pendingPointerMove;
-      pendingPointerMove = undefined;
-      if (pending) applyCanvasPointerMove(pending.x, pending.y);
-    });
-  };
-  const flushCanvasPointerMove = (clientX: number, clientY: number) => {
-    if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
-    pointerMoveFrame = undefined;
-    pendingPointerMove = undefined;
-    applyCanvasPointerMove(clientX, clientY);
-  };
+    },
+    clearKeyboardConnection: () => {
+      if (!keyboardConnectionSourceId()) return false;
+      setKeyboardConnectionSourceId(null);
+      return true;
+    },
+    onCommitNodeDrag: (before) =>
+      persistMetadata(withCanvasGraph(canvasState(), graph()), { before }),
+    onCommitNoteDrag: (before) => persistNotes(canvasState().notes ?? [], before),
+  });
 
   const {
     captureOpen,
@@ -503,67 +308,31 @@ export function AppMapWorkspace(props: {
     const serial = server.selectedDevice();
     if (serial) void server.setSelectedDevice(serial);
   };
-  onCleanup(() => {
-    if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
-  });
 
   const reviewingTake = () => recorder.take()?.state === "review";
-
-  createEffect(() => {
-    const appMapId = server.selectedAppMapId();
-    appMapLoadAttempt();
-    deviceAutoOpenedForMap = "";
-    setSelectedNodeId(null);
-    setSelectedGroupId(null);
-    setRenamingGroupId(null);
-    setScreenInspectorOpen(false);
-    setSelectedConnectionId(null);
-    setKeyboardConnectionSourceId(null);
-    setCapturedScreenUrls({});
-    setRenamingNodeId(null);
-    setContextSurface(null);
-    setCaptureOpen(false);
-    clearCanvasHistory();
-    appliedCanonicalRevision = "";
-    if (!appMapId) {
-      setLoadedAppMapId(null);
-      setAppMapLoadState({ status: "idle" });
-      setCanvasState(EMPTY_APP_MAP_CANVAS_STATE);
-      return;
-    }
-    setLoadedAppMapId(null);
-    setAppMapLoadState({ status: "loading", appMapId });
-    void server
-      .loadAppMap(appMapId)
-      .then((appMap) => {
-        if (server.selectedAppMapId() === appMapId) {
-          setCanvasState(mergeAppMapProjection(EMPTY_APP_MAP_CANVAS_STATE, appMap));
-          setLoadedAppMapId(appMapId);
-          setAppMapLoadState({ status: "ready", appMapId });
-          void server.refreshRuns(appMapId);
-        }
-      })
-      .catch((error: unknown) => {
-        if (server.selectedAppMapId() === appMapId) {
-          setAppMapLoadState({ status: "error", appMapId, ...appMapLoadFailure(error) });
-        }
-      });
-  });
-
-  createEffect(() => {
-    const appMapId = server.selectedAppMapId();
-    const appMap = server.appMaps().find((candidate) => candidate.id === appMapId);
-    if (!appMapId || !appMap || loadedAppMapId() !== appMapId) return;
-    const revisionKey = `${appMapId}:${appMap.revision}`;
-    if (appliedCanonicalRevision === revisionKey) return;
-    appliedCanonicalRevision = revisionKey;
-    const current = canvasState();
-    const value = mergeAppMapProjection(current, appMap);
-    if (canvasProjectionUnchanged(value, current)) {
-      return;
-    }
-    clearCanvasHistory();
-    setCanvasState(value);
+  const {
+    loadedAppMapId,
+    loadState: appMapLoadState,
+    loadFailure: currentLoadFailure,
+    retry: retryAppMapLoad,
+  } = useAppMapDocumentProjection({
+    canvasState,
+    setCanvasState,
+    onDocumentReset: () => {
+      deviceAutoOpenedForMap = "";
+      setSelectedNodeId(null);
+      setSelectedGroupId(null);
+      setRenamingGroupId(null);
+      setScreenInspectorOpen(false);
+      setSelectedConnectionId(null);
+      setKeyboardConnectionSourceId(null);
+      setCapturedScreenUrls({});
+      setRenamingNodeId(null);
+      setContextSurface(null);
+      setCaptureOpen(false);
+      canvasHistory.clear();
+    },
+    onCanonicalProjectionChange: canvasHistory.clear,
   });
 
   // A blank App Map starts with its device companion visible: the first screen
@@ -749,7 +518,7 @@ export function AppMapWorkspace(props: {
     }),
   );
   const minimapViewport = createMemo(() =>
-    minimapViewportBounds(view(), canvasClientSize(), bounds()),
+    minimapViewportBounds(view(), canvasGestures.canvasClientSize(), bounds()),
   );
   const presenceGeometry = createMemo(() =>
     buildPresenceGeometry({
@@ -763,7 +532,7 @@ export function AppMapWorkspace(props: {
   });
 
   const fit = () => {
-    const element = canvas;
+    const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
     setView(
       fitCanvasViewport({ width: element.clientWidth, height: element.clientHeight }, bounds()),
@@ -771,7 +540,7 @@ export function AppMapWorkspace(props: {
   };
 
   const openAtReadableScale = () => {
-    const element = canvas;
+    const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
     setView(
       openCanvasViewport({ width: element.clientWidth, height: element.clientHeight }, bounds()),
@@ -793,7 +562,7 @@ export function AppMapWorkspace(props: {
     draft.setExpandedStep(index);
   };
   const selectNode = (node: MapTreeNode, event?: MouseEvent) => {
-    if (suppressNodeSelectionClick) return;
+    if (canvasGestures.nodeSelectionSuppressed()) return;
     if (event?.shiftKey) {
       const current = selectedNodeIds();
       const next = current.includes(node.id)
@@ -814,7 +583,7 @@ export function AppMapWorkspace(props: {
     if (node.representativeStepIndex >= 0) selectStep(node.representativeStepIndex);
   };
   const zoom = (delta: number, clientPoint?: CanvasPoint) => {
-    const element = canvas;
+    const element = canvasGestures.canvasElement();
     if (!element) return;
     const rect = element.getBoundingClientRect();
     const anchor = clientPoint
@@ -825,7 +594,7 @@ export function AppMapWorkspace(props: {
     );
   };
   const revealScreen = (screenId: string) => {
-    const element = canvas;
+    const element = canvasGestures.canvasElement();
     const node = tree().nodes.find((candidate) => candidate.id === screenId);
     if (!element || !node) return;
     const position = positionFor(node);
@@ -843,7 +612,10 @@ export function AppMapWorkspace(props: {
     });
   };
   const visibleCanvasBounds = createMemo(() =>
-    visibleCanvasBoundsFromViewport({ viewport: view(), client: canvasClientSize() }),
+    visibleCanvasBoundsFromViewport({
+      viewport: view(),
+      client: canvasGestures.canvasClientSize(),
+    }),
   );
   function persistAppMapCanvas(
     value: AppMapCanvasState,
@@ -910,13 +682,11 @@ export function AppMapWorkspace(props: {
     );
     if (!canvasChanged && !hasVariantEvidence) return;
     if (canvasChanged && options.recordHistory !== false) {
-      canvasUndoStack = pushCanvasHistoryEntry(canvasUndoStack, {
+      canvasHistory.record({
         before,
         after: structuredClone(value),
         at: Date.now(),
       });
-      canvasRedoStack = [];
-      setCanvasHistoryDepth({ undo: canvasUndoStack.length, redo: 0 });
     }
     if (canvasChanged) setCanvasState(value);
     persistAppMapCanvas(value, before, options.variantsByScreen);
@@ -956,7 +726,6 @@ export function AppMapWorkspace(props: {
     });
     onCleanup(() => {
       unbind();
-      canvasResizeObserver?.disconnect();
     });
   });
   const useCurrentScreenAsStart = async (): Promise<boolean> => {
@@ -1015,7 +784,7 @@ export function AppMapWorkspace(props: {
     }
   };
   const addNote = () => {
-    const element = canvas;
+    const element = canvasGestures.canvasElement();
     const note = createCanvasNote({
       viewport: view(),
       clientWidth: element?.clientWidth,
@@ -1202,7 +971,7 @@ export function AppMapWorkspace(props: {
   const openGroupMenu = (event: MouseEvent, options: { groupId?: string; screenIds: string[] }) => {
     event.preventDefault();
     event.stopPropagation();
-    const rect = canvas?.getBoundingClientRect();
+    const rect = canvasGestures.canvasElement()?.getBoundingClientRect();
     if (!rect) return;
     setGroupMenu({
       ...clampGroupMenuPosition({ clientX: event.clientX, clientY: event.clientY, rect }),
@@ -1210,26 +979,22 @@ export function AppMapWorkspace(props: {
     });
   };
   const undo = () => {
-    const entry = canvasUndoStack.pop();
+    const entry = canvasHistory.undo();
     if (!entry) {
       draft.undo();
       return;
     }
-    canvasRedoStack.push(entry);
-    setCanvasHistoryDepth({ undo: canvasUndoStack.length, redo: canvasRedoStack.length });
     persistMetadata(structuredClone(entry.before), {
       before: canvasState(),
       recordHistory: false,
     });
   };
   const redo = () => {
-    const entry = canvasRedoStack.pop();
+    const entry = canvasHistory.redo();
     if (!entry) {
       draft.redo();
       return;
     }
-    canvasUndoStack.push(entry);
-    setCanvasHistoryDepth({ undo: canvasUndoStack.length, redo: canvasRedoStack.length });
     persistMetadata(structuredClone(entry.after), {
       before: canvasState(),
       recordHistory: false,
@@ -1254,8 +1019,8 @@ export function AppMapWorkspace(props: {
     onCloseDevicePanel: closeCapturePanel,
     onRunMap: runCanvasGraph,
     onUndoRequest: (event, shouldRedo) => {
-      const canUndo = canvasHistoryDepth().undo > 0 || draft.canUndo();
-      const canRedo = canvasHistoryDepth().redo > 0 || draft.canRedo();
+      const canUndo = canvasHistory.depth().undo > 0 || draft.canUndo();
+      const canRedo = canvasHistory.depth().redo > 0 || draft.canRedo();
       if (shouldRedo ? !canRedo : !canUndo) return;
       event.preventDefault();
       if (shouldRedo) redo();
@@ -1306,13 +1071,7 @@ export function AppMapWorkspace(props: {
       if (node) removeScreen(node);
     },
     onEscape: () => {
-      const marquee = selectionMarquee();
-      if (marquee) {
-        setSelectedNodeIds(marquee.baseIds);
-        setSelectedNodeIdValue(marquee.baseIds.at(-1) ?? null);
-        setSelectionMarquee(null);
-        return;
-      }
+      if (canvasGestures.cancelMarquee()) return;
       if (contextSurface()) {
         setContextSurface(null);
         return;
@@ -1346,7 +1105,7 @@ export function AppMapWorkspace(props: {
     >
       <Show when={appMapLoadState().status === "ready" && !reviewingTake()}>
         <section
-          ref={observeCanvas}
+          ref={canvasGestures.observeCanvas}
           class={cn(
             "relative isolate flex min-h-0 min-w-0 select-none overflow-hidden",
             workspaceView() === "map" && "touch-none",
@@ -1394,69 +1153,19 @@ export function AppMapWorkspace(props: {
             if (!target.closest("[data-app-map-group-menu]")) setGroupMenu(null);
             const wantsPan = canvasTool() === "hand" || event.button === 1;
             if (hasCanvasContent() && wantsPan && !target.closest("button")) {
-              pan = { x: event.clientX, y: event.clientY, view: view() };
+              canvasGestures.beginPan(event.clientX, event.clientY);
               event.currentTarget.setPointerCapture(event.pointerId);
               return;
             }
             if (!hasCanvasContent() || !isCanvasBackground || event.button !== 0) return;
-            const point = canvasPointFromClient(event.clientX, event.clientY);
-            setSelectedGroupId(null);
-            setSelectedConnectionId(null);
-            setScreenInspectorOpen(false);
-            setSelectionMarquee({
-              pointerId: event.pointerId,
-              start: point,
-              current: point,
-              startClient: { x: event.clientX, y: event.clientY },
-              baseIds: event.shiftKey ? [...selectedNodeIds()] : [],
-              additive: event.shiftKey,
-              moved: false,
-            });
+            canvasGestures.beginMarquee(event);
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
-          onPointerMove={(event) => {
-            scheduleCanvasPointerMove(event.clientX, event.clientY);
-          }}
-          onPointerUp={(event) => {
-            flushCanvasPointerMove(event.clientX, event.clientY);
-            const marquee = selectionMarquee();
-            if (marquee?.pointerId === event.pointerId) {
-              if (!marquee.moved && !marquee.additive) {
-                if (keyboardConnectionSourceId()) setKeyboardConnectionSourceId(null);
-                else setSelectedNodeId(null);
-              }
-              setSelectionMarquee(null);
-              return;
-            }
-            if (nodeDrag?.moved) {
-              // Membership changes only through Group/Ungroup. The Group's
-              // visual bounds derive from its members and resize while they move.
-              persistMetadata(withCanvasGraph(canvasState(), graph()), { before: nodeDrag.before });
-              suppressNodeSelectionClick = true;
-              queueMicrotask(() => {
-                suppressNodeSelectionClick = false;
-              });
-            }
-            if (noteDrag?.moved) persistNotes(canvasState().notes ?? [], noteDrag.before);
-            nodeDrag = undefined;
-            noteDrag = undefined;
-            pan = undefined;
-          }}
-          onPointerCancel={() => {
-            if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
-            pointerMoveFrame = undefined;
-            pendingPointerMove = undefined;
-            nodeDrag = undefined;
-            noteDrag = undefined;
-            pan = undefined;
-            const marquee = selectionMarquee();
-            if (marquee) {
-              setSelectedNodeIds(marquee.baseIds);
-              setSelectedNodeIdValue(marquee.baseIds.at(-1) ?? null);
-              setSelectionMarquee(null);
-            }
-          }}
-          onPointerLeave={() => setLocalCursor(undefined)}
+          onPointerMove={(event) =>
+            canvasGestures.schedulePointerMove(event.clientX, event.clientY)
+          }
+          onPointerUp={canvasGestures.finishPointer}
+          onPointerCancel={canvasGestures.cancelPointer}
         >
           <div class="app-map-grid pointer-events-none absolute inset-0" aria-hidden="true" />
           <AppMapOverviewToolbar
@@ -1603,7 +1312,7 @@ export function AppMapWorkspace(props: {
                   transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
                 }}
               >
-                <Show when={marqueeRect()}>
+                <Show when={canvasGestures.marqueeRect()}>
                   {(selection) => (
                     <div
                       class="pointer-events-none absolute z-50 rounded-[4px] border border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--product-accent-soft)_48%,transparent)]"
@@ -1728,14 +1437,14 @@ export function AppMapWorkspace(props: {
                     }
                     if (canvasTool() === "hand") {
                       event.stopPropagation();
-                      pan = { x: event.clientX, y: event.clientY, view: view() };
-                      canvas?.setPointerCapture(event.pointerId);
+                      canvasGestures.beginPan(event.clientX, event.clientY);
+                      canvasGestures.canvasElement()?.setPointerCapture(event.pointerId);
                       return;
                     }
                     event.stopPropagation();
                     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
                     const ids = selectedNodeIds().includes(node.id) ? selectedNodeIds() : [node.id];
-                    nodeDrag = {
+                    canvasGestures.beginNodeDrag({
                       id: node.id,
                       ids,
                       x: event.clientX,
@@ -1746,9 +1455,7 @@ export function AppMapWorkspace(props: {
                           return member ? [[id, { ...positionFor(member) }] as const] : [];
                         }),
                       ),
-                      moved: false,
-                      before: structuredClone(canvasState()),
-                    };
+                    });
                   }}
                   onSelectGroup={selectGroup}
                   onGroupPointerDown={(event, group) => {
@@ -1756,7 +1463,7 @@ export function AppMapWorkspace(props: {
                     event.stopPropagation();
                     selectGroup(group);
                     event.currentTarget.setPointerCapture(event.pointerId);
-                    nodeDrag = {
+                    canvasGestures.beginNodeDrag({
                       id: group.id,
                       ids: [...group.screenIds],
                       x: event.clientX,
@@ -1768,9 +1475,7 @@ export function AppMapWorkspace(props: {
                         }),
                       ),
                       groupId: group.id,
-                      moved: false,
-                      before: structuredClone(canvasState()),
-                    };
+                    });
                   }}
                   onGroupContextMenu={(event, group) => {
                     selectGroup(group);
@@ -1791,14 +1496,12 @@ export function AppMapWorkspace(props: {
                     event.preventDefault();
                     event.stopPropagation();
                     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-                    noteDrag = {
+                    canvasGestures.beginNoteDrag({
                       id: note.id,
                       x: event.clientX,
                       y: event.clientY,
                       origin: { x: note.x, y: note.y },
-                      moved: false,
-                      before: structuredClone(canvasState()),
-                    };
+                    });
                   }}
                   onNoteText={(note, text) =>
                     setCanvasState((current) => ({
@@ -1830,92 +1533,17 @@ export function AppMapWorkspace(props: {
                   onOpenCombine={(combineId) => props.onOpenCombine?.(combineId)}
                 />
               </div>
-              <Show when={groupMenu()}>
-                {(menu) => {
-                  const menuGroup = () =>
-                    menu().groupId
-                      ? groups().find((group) => group.id === menu().groupId)
-                      : undefined;
-                  const hasGroupedScreen = () =>
-                    menu().screenIds.some((screenId) =>
-                      Boolean(groupForScreen(groups(), screenId)),
-                    );
-                  return (
-                    <aside
-                      role="menu"
-                      aria-label="Group actions"
-                      data-app-map-group-menu
-                      data-canvas-shortcuts="ignore"
-                      class="absolute z-50 grid w-48 gap-0.5 rounded-[10px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]"
-                      style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
-                      onPointerDown={(event) => event.stopPropagation()}
-                    >
-                      <Show
-                        when={menuGroup()}
-                        fallback={
-                          <>
-                            <Show when={menu().screenIds.length > 1}>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                                onClick={groupSelection}
-                              >
-                                <span class="inline-flex items-center gap-2">
-                                  <Icon name="group" size={13} /> Group
-                                </span>
-                                <kbd class="text-[10px] text-[var(--text-weak)]">⌘G</kbd>
-                              </button>
-                            </Show>
-                            <Show when={hasGroupedScreen()}>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                                onClick={ungroupSelection}
-                              >
-                                <span>Ungroup</span>
-                                <kbd class="text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
-                              </button>
-                            </Show>
-                            <Show when={menu().screenIds.length < 2 && !hasGroupedScreen()}>
-                              <p class="px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-weak)]">
-                                Shift-click another screen to group them.
-                              </p>
-                            </Show>
-                          </>
-                        }
-                      >
-                        {(group) => (
-                          <>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                              onClick={() => {
-                                setGroupMenu(null);
-                                setRenamingGroupId(group().id);
-                              }}
-                            >
-                              <span>Rename Group</span>
-                              <kbd class="text-[10px] text-[var(--text-weak)]">F2</kbd>
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                              onClick={() => ungroup(group())}
-                            >
-                              <span>Ungroup</span>
-                              <kbd class="text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
-                            </button>
-                          </>
-                        )}
-                      </Show>
-                    </aside>
-                  );
+              <AppMapGroupMenu
+                menu={groupMenu()}
+                groups={groups()}
+                onGroup={groupSelection}
+                onUngroupSelection={ungroupSelection}
+                onRename={(group) => {
+                  setGroupMenu(null);
+                  setRenamingGroupId(group.id);
                 }}
-              </Show>
+                onUngroup={ungroup}
+              />
               <Show when={!captureOpen()}>
                 <Show
                   when={selectedGroup()}
@@ -2103,7 +1731,7 @@ export function AppMapWorkspace(props: {
                 onZoomIn={() => zoom(0.1)}
                 onFit={fit}
                 onNavigate={(ratio) => {
-                  const element = canvas;
+                  const element = canvasGestures.canvasElement();
                   if (!element) return;
                   setView((current) =>
                     centerCanvasViewport(
@@ -2174,7 +1802,7 @@ export function AppMapWorkspace(props: {
         <AppMapLoadFeedback
           status={currentLoadFailure() ? "error" : "loading"}
           failure={currentLoadFailure()}
-          onRetry={() => setAppMapLoadAttempt((attempt) => attempt + 1)}
+          onRetry={retryAppMapLoad}
         />
       </Show>
     </section>

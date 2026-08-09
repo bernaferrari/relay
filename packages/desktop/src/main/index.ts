@@ -137,7 +137,15 @@ async function ensureServer(): Promise<string> {
     });
   });
   const healthy = await Promise.race([
-    waitForCompatibleServer(preferred, serverProbeOptions()),
+    // A cold source checkout can spend more than ten seconds loading the
+    // TypeScript server graph. Keep the probe itself short, but give the
+    // owned process enough startup attempts before declaring the desktop app
+    // broken. Packaged builds normally become ready on the first few probes.
+    waitForCompatibleServer(preferred, {
+      ...serverProbeOptions(),
+      attempts: 150,
+      delayMs: 200,
+    }),
     failedToStart,
   ]);
   if (!healthy) {

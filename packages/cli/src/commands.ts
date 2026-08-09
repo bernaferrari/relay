@@ -770,8 +770,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.case-stack.remove", path("case-stack remove", ["appMapId", "caseStackId"])),
   mapped(
     "app-map.variable.save",
+    path("state-set save", ["appMapId", "variableId"], undefined, {
+      summary: "Save a reusable device state set (language, account, theme, …)",
+    }),
     path("variable save", ["appMapId", "variableId"], undefined, {
-      summary: "Save a variable (language, location, theme, …)",
+      summary: "Legacy alias of state-set save",
     }),
     path("option-set save", ["appMapId", "variableId"], undefined, {
       summary: "Alias of variable save",
@@ -779,6 +782,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "app-map.variable.remove",
+    path("state-set remove", ["appMapId", "variableId"]),
     path("variable remove", ["appMapId", "variableId"]),
     path("option-set remove", ["appMapId", "variableId"]),
   ),
@@ -796,13 +800,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "app-map.combine.save",
+    path("run-matrix save", ["appMapId", "combineId"], undefined, {
+      summary: "Save selected state sets × selected tests",
+    }),
     path("combine save", ["appMapId", "combineId"], undefined, {
-      summary: "Bind variables × tests",
+      summary: "Legacy alias of run-matrix save",
     }),
     path("combo save", ["appMapId", "combineId"]),
   ),
   mapped(
     "app-map.combine.remove",
+    path("run-matrix remove", ["appMapId", "combineId"]),
     path("combine remove", ["appMapId", "combineId"]),
     path("combo remove", ["appMapId", "combineId"]),
   ),
@@ -1446,33 +1454,50 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay job locale-matrix start --input \'{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}\'',
       ],
-      note: "Language-only alias of combine. Prefer `relay combine run` or `relay test run`.",
+      note: "Language-only alias of a run matrix. Prefer `relay run-matrix run` or `relay test run`.",
     }),
   ),
   mapped(
     "job.combine.start",
     path("job combine start", [], undefined, {
-      summary: "Run variables × a test (combine, test, or flow)",
+      summary: "Run state combinations × tests",
       examples: [
-        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
+        'relay run-matrix run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
       ],
-      note: "Combine is every selected variable value × the test. Prefer `relay test run` for one pass.",
+      note: "A run matrix applies one value from every selected state set, then runs every selected test. Prefer `relay test run` for one pass.",
       behavior: "job-start-watch",
     }),
     path("job option-matrix start", [], undefined, {
       summary: "Alias of job combine start",
       behavior: "job-start-watch",
     }),
-    path("combine run", ["appMapId", "combineId"], undefined, {
-      summary: "Run a saved variables × tests combination",
+    path("run-matrix run", ["appMapId", "combineId"], undefined, {
+      summary: "Run a saved state sets × tests matrix",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved combination" },
+        { name: "combineId", type: "string", description: "Saved run matrix" },
+      ],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Device serial" },
+        {
+          name: "selected",
+          type: "object",
+          description: "Optional value ids selected per state set",
+        },
+        {
+          name: "strategy",
+          type: "zip | cartesian | pairwise",
+          description: "State coverage strategy",
+        },
       ],
       behavior: "job-start-watch",
     }),
+    path("combine run", ["appMapId", "combineId"], undefined, {
+      summary: "Legacy alias of run-matrix run",
+      behavior: "job-start-watch",
+    }),
     path("combo run", ["appMapId", "combineId"], undefined, {
-      summary: "Alias of combine run",
+      summary: "Legacy alias of run-matrix run",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "combineId", type: "string", description: "Saved combination" },
@@ -1509,7 +1534,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "job.combine.export",
     path("job combine export", ["batchId"], undefined, {
-      summary: "Export Combine screenshot pack",
+      summary: "Export run-matrix screenshot pack",
     }),
     path("job option-matrix export", ["batchId"]),
   ),

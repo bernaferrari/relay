@@ -38,6 +38,7 @@ export { proposalFromDiscovery } from "./app-map/observation-proposal.js";
 export {
   commitAppMapRecording,
   commitAppMapScreenCapture,
+  findAppMapCaptureScreen,
 } from "./app-map/recording-operations.js";
 export type {
   AppMapRecordingInput,

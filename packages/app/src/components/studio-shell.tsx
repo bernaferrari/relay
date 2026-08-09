@@ -151,7 +151,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   const libraryArea = createMemo<MapLibraryArea>(() => area());
   let titleBeforeEdit = "";
-  let combineDialog: HTMLElement | undefined;
   let variablesDialog: HTMLElement | undefined;
   let importReviewDialog: HTMLElement | undefined;
   let libraryTrigger: HTMLButtonElement | undefined;
@@ -208,14 +207,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       if (event.key === "Escape") setCombineOpen(false);
     };
     window.addEventListener("keydown", close);
-    let releaseFocus: (() => void) | undefined;
-    const frame = requestAnimationFrame(() => {
-      if (combineDialog) releaseFocus = trapFocus(combineDialog);
-    });
     onCleanup(() => {
-      cancelAnimationFrame(frame);
       window.removeEventListener("keydown", close);
-      releaseFocus?.();
     });
   });
   createEffect(() => {
@@ -355,6 +348,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       return;
     }
     setDevicePanelOpen((open) => !open);
+  };
+  const openRunMatrix = (combineId?: string) => {
+    setSettingsOpen(false);
+    setVariablesOpen(false);
+    setNavOpen(false);
+    window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+    setCombineFocusId(combineId);
+    setCombineOpen(true);
   };
   const openDevicePicker = () => {
     if (area() === "tests" && !devicePanelOpen()) {
@@ -902,16 +903,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   variant="secondary"
                   size="lg"
                   class="text-[12px]"
-                  aria-label="Run a path with data"
-                  data-tip="Repeat a path for each language, account, model, or other list value."
+                  aria-label="Open run matrix"
+                  data-tip="Run every selected test in every selected device state."
                   disabled={!selectedMap() || Object.keys(selectedMap()!.screens).length === 0}
-                  onClick={() => {
-                    setCombineFocusId(undefined);
-                    setCombineOpen(true);
-                  }}
+                  onClick={() => openRunMatrix()}
                 >
                   <Icon name="grid" size={13} />
-                  <span class="max-[720px]:hidden">Run with data</span>
+                  <span class="max-[720px]:hidden">Run matrix</span>
                 </Button>
                 <Show when={graphBlockedReason()}>
                   {(reason) => (
@@ -955,10 +953,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       onOpenTargets={() => props.onOpenSettings("targets")}
                       onOpenActions={() => undefined}
                       onOpenVariables={() => setVariablesOpen(true)}
-                      onOpenCombine={(combineId) => {
-                        setCombineFocusId(combineId);
-                        setCombineOpen(true);
-                      }}
+                      onOpenCombine={openRunMatrix}
                       onOpenRun={(id) => {
                         server.setSelectedJobId(id);
                         setArea("runs");
@@ -974,6 +969,36 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   />
                 </Show>
               </Show>
+              <Show when={combineOpen()}>
+                <aside
+                  class="relative z-[6] flex min-h-0 w-[clamp(380px,38vw,520px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(520px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
+                  aria-label="Run matrix"
+                  onWheel={(event) => event.stopPropagation()}
+                >
+                  <Suspense
+                    fallback={
+                      <div class="grid h-40 flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
+                        Loading run matrix…
+                      </div>
+                    }
+                  >
+                    <AppMapCombine
+                      combineId={combineFocusId()}
+                      onOpenDevice={() => {
+                        setCombineOpen(false);
+                        setCombineFocusId(undefined);
+                        if (!devicePanelOpen()) {
+                          window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+                        }
+                      }}
+                      onClose={() => {
+                        setCombineOpen(false);
+                        setCombineFocusId(undefined);
+                      }}
+                    />
+                  </Suspense>
+                </aside>
+              </Show>
             </div>
           </section>
         </Show>
@@ -988,52 +1013,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </Suspense>
         </Show>
       </main>
-      <Show when={combineOpen()}>
-        <div
-          class={cn(modalScrim, "z-[130] flex items-center justify-center p-5")}
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setCombineOpen(false);
-          }}
-        >
-          <section
-            ref={(element) => {
-              combineDialog = element;
-            }}
-            class={cn(
-              modalPanel,
-              "max-h-[calc(100vh-40px)] w-[min(100%,720px)] overflow-y-auto overscroll-contain p-4 outline-none",
-            )}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Run paths with data"
-            tabindex={-1}
-            onWheel={(event) => event.stopPropagation()}
-          >
-            <Suspense
-              fallback={
-                <div class="grid h-40 place-items-center text-[12px] text-[var(--text-weak)]">
-                  Loading data runs…
-                </div>
-              }
-            >
-              <AppMapCombine
-                combineId={combineFocusId()}
-                onOpenDevice={() => {
-                  setCombineOpen(false);
-                  setCombineFocusId(undefined);
-                  if (!devicePanelOpen()) {
-                    window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-                  }
-                }}
-                onClose={() => {
-                  setCombineOpen(false);
-                  setCombineFocusId(undefined);
-                }}
-              />
-            </Suspense>
-          </section>
-        </div>
-      </Show>
       <Show when={variablesOpen()}>
         <div
           class={cn(modalScrim, "z-[130] flex items-center justify-center p-5")}

@@ -65,7 +65,7 @@ An App Map is the canonical product model. Same three words in the UI, CLI, and 
 - **Screen** — a unique app state. **Connection** — the recorded path between two screens.
 - **Variable** — a list the app can be in (language, theme, location). Teach 1–2 rows; infer the rest. Relay does not invent how to open that list.
 - **Test** — what you run once (a recorded path, or “open every Settings row”).
-- **Combine** — a visible grid: every selected variable value × the test. Run one cell, or run all.
+- **Run matrix** — a visible grid: every selected device state × every selected test. Run one cell or the full matrix.
 
 Layout and notes are document concerns. A selected path compiles to target-neutral recipe IR when it
 runs — people never author a second recipe library. The same map has **Screens** and **Results**

@@ -56,7 +56,7 @@ test("Combine sits next to the test's root screen", () => {
   );
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "language-x-tour");
-  assert.equal(cards[0]?.name, "Language × Open every Settings row");
+  assert.equal(cards[0]?.name, "Language → Open every Settings row");
   assert.deepEqual(cards[0]?.values, ["English", "Italiano"]);
   assert.deepEqual(cards[0]?.tests, ["Open every Settings row"]);
   assert.equal(cards[0]?.cellCount, 2);
@@ -68,4 +68,35 @@ test("an empty map has no Combine cards", () => {
     canvasCombineCards({ combines: {}, tests: {}, variables: {}, flows: {} }, () => undefined),
     [],
   );
+});
+
+test("multiple state sets count worlds × tests instead of flattening their values", () => {
+  const theme: AppMapVariable = {
+    ...language,
+    id: "theme",
+    name: "Theme",
+    kind: "theme",
+    options: [
+      { id: "light", label: "Light" },
+      { id: "dark", label: "Dark" },
+    ],
+  };
+  const secondTour: AppMapTest = { ...tour, id: "chat", name: "Send a message" };
+  const multi: AppMapCombine = {
+    ...combine,
+    variableIds: [language.id, theme.id],
+    testIds: [tour.id, secondTour.id],
+    strategy: "cartesian",
+  };
+  const cards = canvasCombineCards(
+    {
+      combines: { [multi.id]: multi },
+      tests: { [tour.id]: tour, [secondTour.id]: secondTour },
+      variables: { [language.id]: language, [theme.id]: theme },
+      flows: {},
+    },
+    () => ({ x: 0, y: 0 }),
+  );
+  assert.equal(cards[0]?.cellCount, 8);
+  assert.match(cards[0]?.name ?? "", /Language × Theme/);
 });

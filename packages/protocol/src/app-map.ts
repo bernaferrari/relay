@@ -259,7 +259,7 @@ export type AppMapCombine = AppMapEntity & {
   name: string;
   variableIds: string[];
   testIds: string[];
-  strategy?: "zip" | "cartesian";
+  strategy?: CaseExpansionStrategy;
 };
 
 export type Routine = AppMapEntity & {

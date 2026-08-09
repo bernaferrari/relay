@@ -83,7 +83,10 @@ function screenOwnsFingerprint(map: AppMap, fingerprint: string, screenId: strin
   return !owner || owner.id === screenId;
 }
 
-function findCaptureScreen(map: AppMap, input: AppMapScreenCaptureInput): Screen | undefined {
+export function findAppMapCaptureScreen(
+  map: AppMap,
+  input: AppMapScreenCaptureInput,
+): Screen | undefined {
   const title = input.title?.trim();
   if (title) {
     const named = Object.values(map.screens).find((screen) => screen.title === title);
@@ -203,7 +206,7 @@ export function commitAppMapScreenCapture(
   input: AppMapScreenCaptureInput,
   context: AppMapMutationContext,
 ): AppMapScreenCaptureResult {
-  const existing = findCaptureScreen(value, input);
+  const existing = findAppMapCaptureScreen(value, input);
   const screenId =
     existing?.id ?? stableId("screen", `${value.id}:${input.observation.screen.fingerprint}`);
   const created = !existing;

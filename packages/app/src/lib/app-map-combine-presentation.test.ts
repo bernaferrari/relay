@@ -5,64 +5,107 @@ import {
   combineHeadline,
   combineSubhead,
   combineValueLabel,
+  projectCombine,
+  type CombineTestColumn,
+  type CombineVariable,
 } from "./app-map-combine-presentation";
 
-test("Combine names a cell from the visible label", () => {
+const variables: CombineVariable[] = [
+  {
+    id: "language",
+    name: "Language",
+    values: [
+      { id: "en", label: "English" },
+      { id: "pt", label: "Português" },
+    ],
+  },
+  {
+    id: "theme",
+    name: "Theme",
+    values: [
+      { id: "light", label: "Light" },
+      { id: "dark", label: "Dark" },
+    ],
+  },
+];
+const tests: CombineTestColumn[] = [
+  { id: "settings", name: "Visit Settings", kind: "tour" },
+  { id: "chat", name: "Send a message", kind: "path" },
+];
+
+test("run matrix labels visible values and its group-to-group formula", () => {
   assert.equal(combineValueLabel({ id: "it", label: "Italiano" }), "Italiano");
   assert.equal(combineValueLabel({ id: "pt", text: "Português" }), "Português");
-  assert.equal(combineValueLabel({ id: "en" }), "en");
-});
-
-test("Combine headline is Variable × Test when the grid has more than one cell", () => {
   assert.equal(
     combineHeadline({
-      variableName: "Language",
-      testName: "Open every Settings row",
-      cellCount: 15,
+      variableNames: ["Language", "Theme"],
+      testNames: ["Visit Settings", "Send a message"],
+      cellCount: 8,
     }),
-    "Language × Open every Settings row",
-  );
-  assert.equal(
-    combineHeadline({
-      variableName: "Language",
-      testName: "Open every Settings row",
-      cellCount: 1,
-    }),
-    "Open every Settings row",
+    "Language × Theme → Visit Settings + Send a message",
   );
 });
 
-test("Combine subhead tells you what to do next", () => {
-  assert.match(
-    combineSubhead({ cellCount: 0, hasVariable: false, hasTest: false }),
-    /record a path/i,
-  );
-  assert.match(combineSubhead({ cellCount: 0, hasVariable: false, hasTest: true }), /list/i);
-  assert.match(combineSubhead({ cellCount: 15, hasVariable: true, hasTest: true }), /15 runs/);
-});
-
-test("Combine cells are a visible matrix, not a hidden job", () => {
+test("cartesian projection makes every state combination × every test visible", () => {
+  const projection = projectCombine(variables, tests, "cartesian");
+  assert.equal(projection.totalWorlds, 4);
+  assert.equal(projection.cellCount, 8);
   assert.deepEqual(
-    combineCells(
-      [
-        { id: "en", label: "English" },
-        { id: "it", label: "Italiano" },
-      ],
-      [{ id: "settings-tour", name: "Open every Settings row", kind: "tour" }],
-    ),
+    projection.worlds.map((world) => world.label),
     [
-      {
-        valueId: "en",
-        testId: "settings-tour",
-        valueLabel: "English",
-        testName: "Open every Settings row",
-      },
-      {
-        valueId: "it",
-        testId: "settings-tour",
-        valueLabel: "Italiano",
-        testName: "Open every Settings row",
-      },
+      "Language: English · Theme: Light",
+      "Language: English · Theme: Dark",
+      "Language: Português · Theme: Light",
+      "Language: Português · Theme: Dark",
     ],
   );
+  assert.equal(combineCells(projection.worlds, tests).length, 8);
+  assert.match(
+    combineSubhead({
+      cellCount: projection.cellCount,
+      worldCount: projection.totalWorlds,
+      testCount: tests.length,
+      hasVariable: true,
+      hasTest: true,
+    }),
+    /4 device runs · 8 checks/i,
+  );
+});
+
+test("matched rows explains mismatched set sizes instead of silently dropping values", () => {
+  const projection = projectCombine(
+    [
+      variables[0]!,
+      { ...variables[1]!, values: [...variables[1]!.values, { id: "system", label: "System" }] },
+    ],
+    tests,
+    "zip",
+  );
+  assert.equal(projection.totalWorlds, 0);
+  assert.match(projection.issue ?? "", /equally sized sets/i);
+});
+
+test("pairwise preview uses the same compact all-pairs plan as execution", () => {
+  const projection = projectCombine(
+    [
+      variables[0]!,
+      {
+        ...variables[1]!,
+        values: [...variables[1]!.values, { id: "system", label: "System" }],
+      },
+      {
+        id: "account",
+        name: "Account",
+        values: [
+          { id: "personal", label: "Personal" },
+          { id: "work", label: "Work" },
+        ],
+      },
+    ],
+    tests,
+    "pairwise",
+  );
+  assert.equal(projection.totalWorlds, 6);
+  assert.equal(projection.cellCount, 12);
+  assert.equal(projection.truncated, false);
 });
