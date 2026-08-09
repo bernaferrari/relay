@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { CanvasNote, MapGroup } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
+import { IconButton } from "@relay/ui/icon-button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
@@ -210,19 +211,21 @@ export function ScreenCard(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <Show when={props.selected && props.showActions !== false && !props.editing}>
+      <Show
+        when={props.selected && props.showActions !== false && !props.editing && !props.detailsOpen}
+      >
         <div
           role="toolbar"
           aria-label={`${props.title} screen actions`}
           data-app-map-screen-actions
-          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-1 shadow-[0_6px_18px_rgb(0_0_0/10%)]"
+          class="absolute top-[30px] z-30 flex items-center gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-1 shadow-[0_6px_18px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
           <Show when={props.onRun}>
             {(run) => (
-              <button
-                type="button"
-                class="app-map-context-button app-map-context-button--primary"
+              <IconButton
+                variant="primary"
+                size="md"
                 aria-label={`Run from Start to ${props.title}`}
                 title="Run from Start to here"
                 data-tip="Run from Start to here"
@@ -232,16 +235,14 @@ export function ScreenCard(props: {
                   run()();
                 }}
               >
-                <Icon name="play" size={12} />
-              </button>
+                <Icon name="play" size={12} class="ml-px" />
+              </IconButton>
             )}
           </Show>
-          <button
-            type="button"
-            class={cn(
-              "app-map-context-button",
-              props.detailsOpen && "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
-            )}
+          <IconButton
+            variant="ghost"
+            size="md"
+            selected={props.detailsOpen}
             aria-label={
               props.detailsOpen
                 ? `Details open for ${props.title}`
@@ -259,26 +260,12 @@ export function ScreenCard(props: {
             }}
           >
             <Icon name="info" size={13} />
-          </button>
-          <button
-            type="button"
-            class="app-map-context-button"
-            aria-label={`Rename ${props.title}`}
-            title="Rename · F2"
-            data-tip="Rename · F2"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onRename();
-            }}
-          >
-            <Icon name="edit" size={13} />
-          </button>
-          <button
-            type="button"
-            class="app-map-context-button"
+          </IconButton>
+          <Button
+            variant="secondary"
+            size="md"
+            class="px-2.5 text-[11px]"
             aria-label={`Path from ${props.title}`}
-            title="Add path"
             data-tip="Add a path to the next screen"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -286,8 +273,9 @@ export function ScreenCard(props: {
               props.onConnectKeyboard();
             }}
           >
-            <Icon name="arrow-right" size={13} />
-          </button>
+            <Icon name="plus" size={11} />
+            Add path
+          </Button>
         </div>
       </Show>
       <header
@@ -301,7 +289,20 @@ export function ScreenCard(props: {
         <Show
           when={props.editing}
           fallback={
-            <strong class="min-w-0 max-w-full truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]">
+            <strong
+              class="min-w-0 max-w-full truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]"
+              data-tip="Double-click to rename · F2"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onSelect(event);
+              }}
+              onDblClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onRename();
+              }}
+            >
               {props.title}
             </strong>
           }
@@ -452,35 +453,6 @@ export function ScreenCard(props: {
           </div>
         )}
       </Show>
-      <button
-        type="button"
-        class={cn(
-          "app-map-connect-handle group absolute z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
-          (props.selected || props.pathDraft) && "opacity-100",
-        )}
-        style={{
-          left: `${props.geometry.frameLeft + props.geometry.frameWidth - 22}px`,
-          top: `${props.geometry.frameTop + props.geometry.frameHeight / 2}px`,
-        }}
-        aria-label={`Add a path from ${props.title}`}
-        title="Add a path — click, then pick the next screen"
-        data-tip="Add a path — click, then pick the next screen"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          props.onConnectKeyboard();
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          event.stopPropagation();
-          props.onConnectKeyboard();
-        }}
-      >
-        <span class="grid size-3.5 place-items-center rounded-full border-2 border-[var(--text-interactive-base)] bg-[var(--background-base)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--text-interactive-base)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
-          <span class="size-1 rounded-full bg-[var(--text-interactive-base)] group-hover:bg-white" />
-        </span>
-      </button>
       <Show when={props.pathDraft}>
         <p class="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-[200px] -translate-x-1/2 text-center text-[10.5px] font-medium text-[var(--text-interactive-base)]">
           Click the next screen, or add a new one
@@ -606,34 +578,24 @@ export function ScreenInspector(props: {
               <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name="info" size={12} />
               </span>
-              <div class="min-w-0">
-                <span class="block text-[9.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
-                  Screen
-                </span>
-                <strong class="mt-0.5 block truncate text-[12px] font-semibold text-[var(--text-strong)]">
-                  {props.title}
-                </strong>
-              </div>
-            </div>
-            <div class="flex items-center">
               <button
                 type="button"
-                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                class="min-w-0 truncate rounded-[6px] px-1 py-0.5 text-left text-[13px]/[1.2] font-semibold text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-strong-focus)]"
                 aria-label={`Rename ${props.title}`}
                 data-tip="Rename screen · F2"
                 onClick={props.onRename}
               >
-                <Icon name="edit" size={12} />
-              </button>
-              <button
-                type="button"
-                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
-                aria-label="Close screen details"
-                onClick={props.onClose}
-              >
-                <Icon name="x" size={12} />
+                <strong class="block truncate font-semibold">{props.title}</strong>
               </button>
             </div>
+            <IconButton
+              variant="ghost"
+              size="md"
+              aria-label="Close screen details"
+              onClick={props.onClose}
+            >
+              <Icon name="x" size={12} />
+            </IconButton>
           </header>
 
           <section class="grid grid-cols-[72px_minmax(0,1fr)] gap-3 p-3">

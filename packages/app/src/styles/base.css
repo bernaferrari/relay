@@ -293,51 +293,6 @@
   transform: scale(0.96);
 }
 
-.app-map-context-button {
-  position: relative;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-weak);
-  transition:
-    background-color 120ms var(--ease-hover),
-    color 120ms var(--ease-hover);
-}
-
-.app-map-context-button::before {
-  position: absolute;
-  inset: -3px;
-  content: "";
-}
-
-.app-map-context-button:hover:enabled {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.app-map-context-button:active:enabled {
-  background: var(--surface-base-active);
-}
-
-.app-map-context-button:focus-visible {
-  outline: 1px solid var(--text-strong);
-  outline-offset: 2px;
-}
-
-.app-map-context-button--primary {
-  background: var(--text-interactive-base);
-  color: var(--text-on-interactive-base);
-}
-
-.app-map-context-button--primary:hover:enabled {
-  background: color-mix(in srgb, var(--text-interactive-base) 88%, var(--text-strong));
-  color: var(--text-on-interactive-base);
-}
-
 .app-map-panel-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-weak) 42%, transparent) transparent;
@@ -369,7 +324,6 @@
   }
 
   .app-map-icon-button,
-  .app-map-context-button,
   .canvas-tool-control,
   .app-map-canvas [role="toolbar"][aria-label="App Map tools"] > button {
     transition: none;

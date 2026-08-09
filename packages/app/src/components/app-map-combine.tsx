@@ -305,7 +305,7 @@ export function AppMapCombine(props: {
   }
 
   return (
-    <section class="flex min-h-0 flex-col" aria-label="Run matrix">
+    <section class="flex min-h-0 w-full flex-1 flex-col" aria-label="Run matrix">
       <header class="flex items-start gap-3 border-b border-[var(--border-weak-base)] px-4 py-3.5">
         <div class="min-w-0 flex-1">
           <p class="m-0 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-weaker)]">

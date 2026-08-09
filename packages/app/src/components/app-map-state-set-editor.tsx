@@ -181,7 +181,7 @@ export function AppMapStateSetEditor(props: {
   }
 
   return (
-    <section class="grid gap-3" aria-labelledby="new-state-set-title">
+    <section class="grid w-full gap-3" aria-labelledby="new-state-set-title">
       <div>
         <h3
           id="new-state-set-title"

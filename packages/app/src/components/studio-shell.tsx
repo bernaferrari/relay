@@ -971,7 +971,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               </Show>
               <Show when={combineOpen()}>
                 <aside
-                  class="relative z-[6] flex min-h-0 w-[clamp(380px,38vw,520px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(520px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
+                  class="relative z-[6] flex min-h-0 w-[clamp(380px,36vw,480px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(480px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
                   aria-label="Run matrix"
                   onWheel={(event) => event.stopPropagation()}
                 >
