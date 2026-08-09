@@ -425,10 +425,36 @@ async function handleKeyboardCommand(
   if (device.platform === 'android') {
     return await handleAndroidKeyboardCommand(device, action);
   }
+  if (device.platform === 'harmonyos') {
+    return await handleHarmonyKeyboardCommand(device, action);
+  }
   if (isIosFamily(device)) {
     return await handleIosKeyboardCommand(device, action, context, runnerCtx);
   }
-  throw new AppError('UNSUPPORTED_OPERATION', 'keyboard is supported only on Android and iOS');
+  throw new AppError(
+    'UNSUPPORTED_OPERATION',
+    'keyboard is supported only on Android, HarmonyOS, and iOS',
+  );
+}
+
+async function handleHarmonyKeyboardCommand(
+  device: DeviceInfo,
+  action: KeyboardAction,
+): Promise<Record<string, unknown>> {
+  if (action !== 'dismiss' && action !== 'enter' && action !== 'return') {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'keyboard status/get is not available through the public HarmonyOS HDC API; use keyboard dismiss or enter',
+    );
+  }
+  const { pressHarmonyKeyboardKey } = await import('../platforms/harmonyos/input-actions.ts');
+  const key = action === 'dismiss' ? 'Back' : 'Enter';
+  await pressHarmonyKeyboardKey(device, key);
+  return {
+    platform: 'harmonyos',
+    action: action === 'dismiss' ? 'dismiss' : 'enter',
+    ...successText(action === 'dismiss' ? 'Keyboard dismissed' : 'Keyboard enter pressed'),
+  };
 }
 
 async function handleAndroidKeyboardCommand(
@@ -549,68 +575,136 @@ async function handleSettingsCommand(
     throw new AppError('INVALID_ARGS', 'settings requires setting state');
   }
   if (setting === 'clear-app-state') {
-    const appBundleId = (state === 'clear' ? target : state) ?? context?.appBundleId;
-    if (!appBundleId) {
-      throw new AppError(
-        'INVALID_ARGS',
-        'settings clear-app-state requires an app id or an active app session.',
-      );
-    }
-    emitDiagnostic({
-      level: 'debug',
-      phase: 'settings_apply',
-      data: { setting, state: 'clear', appBundleId, platform: device.platform },
-    });
-    const result = await interactor.setSetting(setting, 'clear', appBundleId);
-    return result && typeof result === 'object'
-      ? withSuccessText(
-          { setting, state: 'clear', ...result },
-          readResultMessage(result) ?? `Cleared user data for ${appBundleId}`,
-        )
-      : { setting, state: 'clear', ...successText(`Cleared user data for ${appBundleId}`) };
+    return await handleClearAppStateSetting(device, interactor, state, target, context);
   }
   if (!state) {
     throw new AppError('INVALID_ARGS', 'settings requires setting state');
   }
+  return await handleStandardSetting(
+    device,
+    interactor,
+    setting,
+    state,
+    target,
+    mode,
+    positionals,
+    context,
+  );
+}
+
+async function handleClearAppStateSetting(
+  device: DeviceInfo,
+  interactor: Interactor,
+  state: string | undefined,
+  target: string | undefined,
+  context: DispatchContext | undefined,
+): Promise<Record<string, unknown>> {
+  const appBundleId = (state === 'clear' ? target : state) ?? context?.appBundleId;
+  if (!appBundleId) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'settings clear-app-state requires an app id or an active app session.',
+    );
+  }
+  emitDiagnostic({
+    level: 'debug',
+    phase: 'settings_apply',
+    data: { setting: 'clear-app-state', state: 'clear', appBundleId, platform: device.platform },
+  });
+  const result = await interactor.setSetting('clear-app-state', 'clear', appBundleId);
+  return result && typeof result === 'object'
+    ? withSuccessText(
+        { setting: 'clear-app-state', state: 'clear', ...result },
+        readResultMessage(result) ?? `Cleared user data for ${appBundleId}`,
+      )
+    : {
+        setting: 'clear-app-state',
+        state: 'clear',
+        ...successText(`Cleared user data for ${appBundleId}`),
+      };
+}
+
+async function handleStandardSetting(
+  device: DeviceInfo,
+  interactor: Interactor,
+  setting: string,
+  state: string,
+  target: string | undefined,
+  mode: string | undefined,
+  positionals: string[],
+  context: DispatchContext | undefined,
+): Promise<Record<string, unknown>> {
   const isLocationSet = setting === 'location' && state === 'set';
   const usesPayloadAppBundleSlot = setting === 'permission' || isLocationSet;
   const appBundleId =
     (usesPayloadAppBundleSlot ? positionals[4] : positionals[2]) ?? context?.appBundleId;
-  const settingOptions =
-    setting === 'permission'
-      ? {
-          permissionTarget: target,
-          permissionMode: mode,
-        }
-      : isLocationSet
-        ? {
-            latitude: readLocationCoordinate(target, 'latitude'),
-            longitude: readLocationCoordinate(mode, 'longitude'),
-          }
-        : undefined;
-  const diagnosticPayload = isLocationSet
-    ? { setting, state, latitude: target, longitude: mode, platform: device.platform }
-    : setting === 'permission'
-      ? {
-          setting,
-          state,
-          permissionTarget: target,
-          permissionMode: mode,
-          platform: device.platform,
-        }
-      : { setting, state, appBundleId, platform: device.platform };
   emitDiagnostic({
     level: 'debug',
     phase: 'settings_apply',
-    data: diagnosticPayload,
+    data: buildSettingsDiagnosticPayload(
+      device,
+      setting,
+      state,
+      target,
+      mode,
+      appBundleId,
+      isLocationSet,
+    ),
   });
-  const result = await interactor.setSetting(setting, state, appBundleId, settingOptions);
+  const result = await interactor.setSetting(
+    setting,
+    state,
+    appBundleId,
+    buildSettingOptions(setting, target, mode, isLocationSet),
+  );
   return result && typeof result === 'object'
     ? withSuccessText(
         { setting, state, ...result },
         readResultMessage(result) ?? `Updated setting: ${setting}`,
       )
     : { setting, state, ...successText(`Updated setting: ${setting}`) };
+}
+
+function buildSettingOptions(
+  setting: string,
+  target: string | undefined,
+  mode: string | undefined,
+  isLocationSet: boolean,
+) {
+  if (setting === 'permission') {
+    return { permissionTarget: target, permissionMode: mode };
+  }
+  if (isLocationSet) {
+    return {
+      latitude: readLocationCoordinate(target, 'latitude'),
+      longitude: readLocationCoordinate(mode, 'longitude'),
+    };
+  }
+  return undefined;
+}
+
+function buildSettingsDiagnosticPayload(
+  device: DeviceInfo,
+  setting: string,
+  state: string,
+  target: string | undefined,
+  mode: string | undefined,
+  appBundleId: string | undefined,
+  isLocationSet: boolean,
+): Record<string, unknown> {
+  if (isLocationSet) {
+    return { setting, state, latitude: target, longitude: mode, platform: device.platform };
+  }
+  if (setting === 'permission') {
+    return {
+      setting,
+      state,
+      permissionTarget: target,
+      permissionMode: mode,
+      platform: device.platform,
+    };
+  }
+  return { setting, state, appBundleId, platform: device.platform };
 }
 
 async function handlePushCommand(
