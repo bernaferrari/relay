@@ -14,6 +14,14 @@ import { summarizeResults } from '../help-conformance-summary.mjs';
 
 const execFileAsync = promisify(execFile);
 const SCRIPT = join(import.meta.dirname, '..', 'help-conformance-bench.mjs');
+const AGENT_DEVICE_SKILL = join(
+  import.meta.dirname,
+  '..',
+  '..',
+  'skills',
+  'agent-device',
+  'SKILL.md',
+);
 
 // These tests spawn the real script in --dry-run mode with every required doc
 // overridden, so no LLM call and no built CLI is needed: the raw-first-screen
@@ -496,33 +504,37 @@ test('case matchers score parsed tokens so shell quoting does not change results
   });
 });
 
-test('foreground attach scoring rejects an explicit app positional after flags', async () => {
-  const validCommand = 'agent-device open --foreground --platform ios';
+test('foreground attach grammar accepts both auto-discovery and an explicit known app', async () => {
+  const autoDiscoveryCommand = 'agent-device open --foreground --platform ios';
   const explicitTargetCommand = 'agent-device open --foreground --platform ios com.example.app';
-  const [validAttach, explicitTarget] = await validatePlanCommands([
-    validCommand,
+  const [autoDiscovery, explicitTarget] = await validatePlanCommands([
+    autoDiscoveryCommand,
     explicitTargetCommand,
   ]);
 
+  assert.deepEqual(autoDiscovery.agentCommand, { command: 'open', positionals: [] });
   assert.deepEqual(explicitTarget.agentCommand, {
     command: 'open',
     positionals: ['com.example.app'],
   });
-  assert.equal(
-    scoreExpectations({ expectations: ['noExplicitForegroundTarget'] }, [validCommand], '', [
-      validAttach,
-    ]).noExplicitForegroundTarget,
-    true,
-  );
-  assert.equal(
-    scoreExpectations(
-      { expectations: ['noExplicitForegroundTarget'] },
-      [explicitTargetCommand],
-      '',
-      [explicitTarget],
-    ).noExplicitForegroundTarget,
-    false,
-  );
+  assert.deepEqual(autoDiscovery.issues, []);
+  assert.deepEqual(explicitTarget.issues, []);
+});
+
+test('compact skill starts a known-app task with foreground open and an initial snapshot', async () => {
+  const skill = await readFile(AGENT_DEVICE_SKILL, 'utf8');
+  const startIndex = skill.indexOf('For an ordinary app-driving task');
+  const endIndex = skill.indexOf('Default loop:');
+  assert.notEqual(startIndex, -1);
+  assert.ok(endIndex > startIndex);
+  const ordinaryStart = skill.slice(startIndex, endIndex);
+  const openingCommands = ordinaryStart
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('agent-device open <app>'));
+
+  assert.deepEqual(openingCommands, ['agent-device open <app> --foreground']);
+  assert.match(ordinaryStart, /returns the initial interactive snapshot in the same call/);
 });
 
 test('plan validator applies narrow grammar to permitted external commands', async () => {
