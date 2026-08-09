@@ -119,6 +119,8 @@ export function StageInspectionHint(props: {
   title: string;
   detail: string;
   actionLabel: string;
+  busyLabel?: string;
+  actionVariant?: "primary" | "secondary";
   busy?: boolean;
   onAction: () => void;
 }) {
@@ -133,12 +135,15 @@ export function StageInspectionHint(props: {
       <Button
         type="button"
         size="sm"
-        variant="secondary"
+        variant={props.actionVariant ?? "secondary"}
         disabled={props.busy}
         aria-busy={props.busy}
         onClick={() => props.onAction()}
       >
-        {props.actionLabel}
+        <Show when={props.busy}>
+          <Icon name="refresh" size={12} class="ui-refresh-spin motion-reduce:opacity-70" />
+        </Show>
+        {props.busy ? (props.busyLabel ?? props.actionLabel) : props.actionLabel}
       </Button>
     </div>
   );

@@ -224,6 +224,7 @@ export function AppMapWorkspace(props: {
       recording: recorder.recording(),
       controlReady: Boolean(server.selectedLeaseId()),
       controlIssue: server.controlIssue(),
+      controlTakeoverAvailable: server.canTakeControlOfSelectedDevice(),
     });
   };
   const liveScreenSrc = createMemo(() => {

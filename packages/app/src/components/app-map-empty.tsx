@@ -49,6 +49,7 @@ export function EmptyAppMap(props: {
       discovering: server.deviceDiscoveryStatus() === "scanning",
       controlReady: Boolean(server.selectedLeaseId()),
       controlIssue: server.controlIssue(),
+      controlTakeoverAvailable: server.canTakeControlOfSelectedDevice(),
     });
 
   return (
@@ -149,11 +150,20 @@ export function EmptyAppMap(props: {
                     Another Relay window has control of this device.
                   </span>
                   <Button
-                    variant="secondary"
+                    variant="primary"
                     size="sm"
+                    disabled={server.takingControlOfSelectedDevice()}
+                    aria-busy={server.takingControlOfSelectedDevice()}
                     onClick={() => void server.takeControlOfSelectedDevice()}
                   >
-                    Take control
+                    <Show when={server.takingControlOfSelectedDevice()}>
+                      <Icon
+                        name="refresh"
+                        size={12}
+                        class="ui-refresh-spin motion-reduce:opacity-70"
+                      />
+                    </Show>
+                    {server.takingControlOfSelectedDevice() ? "Taking control…" : "Take control"}
                   </Button>
                 </div>
               </Show>

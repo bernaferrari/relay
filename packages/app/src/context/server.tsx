@@ -193,6 +193,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     // back into a misleading green “Live” state.
     const [controlIssue, setControlIssue] = createSignal<string | null>(null);
     const [conflictingLeaseId, setConflictingLeaseId] = createSignal<string | null>(null);
+    const [takingControlOfSelectedDevice, setTakingControlOfSelectedDevice] = createSignal(false);
+    const canTakeControlOfSelectedDevice = () => Boolean(conflictingLeaseId());
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
     const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
     const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
@@ -1467,14 +1469,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function takeControlOfSelectedDevice(): Promise<boolean> {
-      if (!client || !connection) return false;
+      if (!client || !connection || takingControlOfSelectedDevice()) return false;
+      setTakingControlOfSelectedDevice(true);
       const serial = selectedDevice();
       const leaseId = conflictingLeaseId();
-      if (!serial || !leaseId) {
-        await selectDeviceRemote(serial);
-        return Boolean(selectedLeaseId());
-      }
       try {
+        if (!serial || !leaseId) {
+          await selectDeviceRemote(serial);
+          return Boolean(selectedLeaseId());
+        }
         const { lease } = await client.takeOverLease({
           leaseId,
           expiresAt: Date.now() + 2 * 60 * 60 * 1000,
@@ -1491,6 +1494,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setControlIssue(message);
         setError(message);
         return false;
+      } finally {
+        setTakingControlOfSelectedDevice(false);
       }
     }
 
@@ -1915,6 +1920,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedDevice,
       selectedLeaseId,
       controlIssue,
+      canTakeControlOfSelectedDevice,
+      takingControlOfSelectedDevice,
       setSelectedDevice: selectDeviceRemote,
       takeControlOfSelectedDevice,
       bootDevice: bootDeviceRemote,

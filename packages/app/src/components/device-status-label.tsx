@@ -5,7 +5,7 @@ import { Icon } from "./icon";
 
 export type AppMapDeviceStatus = {
   label: string;
-  kind: "idle" | "progress" | "ready" | "recording" | "info" | "attention";
+  kind: "idle" | "progress" | "ready" | "recording" | "info" | "view-only" | "attention";
   detail?: string;
 };
 
@@ -20,6 +20,7 @@ export function appMapDeviceStatus(input: {
   recording?: boolean;
   controlReady?: boolean;
   controlIssue?: string | null;
+  controlTakeoverAvailable?: boolean;
 }): AppMapDeviceStatus {
   if (input.recording) return { label: "Recording", kind: "recording" };
   if (!input.deviceSelected && input.serverOnline && input.discovering) {
@@ -30,7 +31,11 @@ export function appMapDeviceStatus(input: {
   switch (input.readiness.kind) {
     case "ready":
       if (input.controlIssue)
-        return { label: "View only", kind: "attention", detail: input.controlIssue };
+        return {
+          label: "View only",
+          kind: input.controlTakeoverAvailable ? "view-only" : "attention",
+          detail: input.controlIssue,
+        };
       if (input.controlReady === false) return { label: "Connecting control", kind: "progress" };
       return { label: "Live", kind: "ready" };
     case "checking-ios":
@@ -85,6 +90,7 @@ export function DeviceStatusLabel(props: {
             when={
               props.status.kind === "idle" ||
               props.status.kind === "info" ||
+              props.status.kind === "view-only" ||
               props.status.kind === "attention"
             }
             fallback={
@@ -139,7 +145,13 @@ export function DeviceStatusLabel(props: {
  * whether the panel needs attention right now. */
 export function DeviceStatusIndicator(props: { status: AppMapDeviceStatus }) {
   return (
-    <Show when={props.status.kind !== "ready" && props.status.kind !== "idle"}>
+    <Show
+      when={
+        props.status.kind !== "ready" &&
+        props.status.kind !== "idle" &&
+        props.status.kind !== "view-only"
+      }
+    >
       <span
         class={cn(
           "inline-flex size-7 shrink-0 items-center justify-center rounded-md",

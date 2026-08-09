@@ -770,10 +770,13 @@ export function DeviceStage(_props: {
   const controlHint = createMemo(() => {
     const issue = server.controlIssue();
     if (stageView() !== "live" || !displayImageSrc() || !issue) return null;
-    const canTakeControl = /controlled in another Relay window/i.test(issue);
+    const canTakeControl = server.canTakeControlOfSelectedDevice();
     return {
-      title: "View only",
-      detail: humanError(issue),
+      title: canTakeControl ? "View only" : "Control unavailable",
+      detail:
+        canTakeControl && /controlled in another Relay window/i.test(issue)
+          ? "Another Relay window has control. Taking control here will make it view-only."
+          : humanError(issue),
       actionLabel: canTakeControl ? "Take control" : "Reconnect",
       canTakeControl,
     };
@@ -1320,6 +1323,13 @@ export function DeviceStage(_props: {
                         title={hint().title}
                         detail={hint().detail}
                         actionLabel={hint().actionLabel}
+                        busyLabel={hint().canTakeControl ? "Taking control…" : "Reconnecting…"}
+                        actionVariant={hint().canTakeControl ? "primary" : "secondary"}
+                        busy={
+                          hint().canTakeControl
+                            ? server.takingControlOfSelectedDevice()
+                            : panelRetrying()
+                        }
                         onAction={() => {
                           void (hint().canTakeControl ? takeControl() : retryScreenPreview());
                         }}
