@@ -274,7 +274,11 @@ export function AppMapWorkspace(props: {
     canvasState,
     setCanvasState,
     screenIds: () => tree().nodes.map((node) => node.id),
-    positions: () => canvasState().positions,
+    // Marquee hit-testing must use the same resolved positions as the scene.
+    // Newly authored and auto-laid-out screens are not necessarily persisted
+    // in canvasState.positions yet.
+    positions: () =>
+      Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
@@ -497,7 +501,7 @@ export function AppMapWorkspace(props: {
       notes: canvasState().notes ?? [],
       bounds: bounds(),
       positionFor,
-      selectedNodeId: selectedNodeId(),
+      selectedNodeIds: selectedNodeIds(),
       screenStates: Object.fromEntries(
         Object.entries(runProjection().screens).map(([id, screen]) => [id, screen.state]),
       ),

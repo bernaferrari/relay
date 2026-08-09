@@ -63,6 +63,17 @@ function resolveServerEntry(): string | null {
   return null;
 }
 
+function resolveTsxEntry(serverEntry: string): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs"),
+    resolve(process.cwd(), "../../node_modules/tsx/dist/cli.mjs"),
+    resolve(dirname(serverEntry), "../../../node_modules/tsx/dist/cli.mjs"),
+    resolve(here, "../../../../node_modules/tsx/dist/cli.mjs"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
 /**
  * Prefer an already-running server (user ran `relay serve`).
  * Otherwise spawn packages/server via tsx/node when possible.
@@ -86,20 +97,13 @@ async function ensureServer(): Promise<string> {
   const host = url.hostname || "127.0.0.1";
   const port = url.port || "8787";
 
+  const tsxEntry = resolveTsxEntry(entry);
   const runner =
     app.isPackaged && entry.endsWith(".cjs")
       ? { cmd: process.execPath, args: [entry] }
-      : existsSync(join(process.cwd(), "node_modules/tsx/dist/cli.mjs"))
-        ? {
-            cmd: process.execPath,
-            args: [join(process.cwd(), "node_modules/tsx/dist/cli.mjs"), entry],
-          }
-        : existsSync(join(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"))
-          ? {
-              cmd: process.execPath,
-              args: [resolve(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"), entry],
-            }
-          : { cmd: "npx", args: ["tsx", entry] };
+      : tsxEntry
+        ? { cmd: process.execPath, args: [tsxEntry, entry] }
+        : { cmd: "npx", args: ["tsx", entry] };
 
   console.log(`[desktop] spawning server: ${runner.cmd} ${runner.args.join(" ")} --port ${port}`);
 

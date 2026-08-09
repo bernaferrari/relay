@@ -2,7 +2,15 @@
  * Depth-0 tour: walk mapped or live child rows, screenshot, return to origin.
  */
 import type { Device, SnapshotNode } from "./device.js";
-import { pressKey, pressNamedControl, pressPoint, sleep, snapshot } from "./device.js";
+import {
+  openApp,
+  pressKey,
+  pressNamedControl,
+  pressPoint,
+  rememberedTargetApplication,
+  sleep,
+  snapshot,
+} from "./device.js";
 import { captureScreenshot } from "./workspace.js";
 import {
   extractTourStops,
@@ -131,6 +139,58 @@ async function runTourPrelude(
   }
 }
 
+function firstPreludeTargetVisible(
+  nodes: SnapshotNode[],
+  steps: NonNullable<Extract<RecipeStep, { kind: "tour" }>["preludeSteps"]>,
+): boolean {
+  const first = steps[0];
+  if (first?.kind !== "tap" || !first.target) return false;
+  const identifier = first.target.identifier?.trim().toLowerCase();
+  const label = (first.target.label ?? first.target.text)?.trim().toLowerCase();
+  return nodes.some((node) => {
+    if (identifier && node.identifier?.trim().toLowerCase() === identifier) return true;
+    const texts = [node.label, node.value]
+      .map((value) => value?.trim().toLowerCase())
+      .filter(Boolean);
+    return Boolean(label && texts.includes(label));
+  });
+}
+
+async function restoreRememberedApp(
+  device: Device,
+  nodes: SnapshotNode[],
+  log: (line: string) => void,
+): Promise<boolean> {
+  const remembered = await rememberedTargetApplication();
+  if (!remembered) return false;
+  const appNodes = nodes.filter(
+    (node) =>
+      node.bundleId && !/^(?:com\.android\.systemui|com\.samsung\.android\.)/.test(node.bundleId),
+  );
+  if (!appNodes.length || appNodes.some((node) => node.bundleId === remembered)) return false;
+  log(`tour: ${appNodes[0]!.bundleId} is foreground — reopening ${remembered}`);
+  await openApp(device, remembered, { relaunch: false });
+  return true;
+}
+
+async function tryTourPrelude(
+  device: Device,
+  surface: Awaited<ReturnType<typeof readTourSurface>>,
+  step: Extract<RecipeStep, { kind: "tour" }>,
+  log: (line: string) => void,
+): Promise<Awaited<ReturnType<typeof readTourSurface>> | null> {
+  if (!step.preludeSteps?.length || !firstPreludeTargetVisible(surface.nodes, step.preludeSteps)) {
+    return null;
+  }
+  log(
+    step.originTitle
+      ? `tour: opening “${step.originTitle}” from the current app screen`
+      : "tour: opening the mapped list from the current app screen",
+  );
+  await runTourPrelude(device, step.preludeSteps, log);
+  return await readTourSurface(device, step);
+}
+
 async function seekTourOrigin(
   device: Device,
   step: Extract<RecipeStep, { kind: "tour" }>,
@@ -138,7 +198,18 @@ async function seekTourOrigin(
 ): Promise<{ nodes: SnapshotNode[]; stops: ReturnType<typeof extractTourStops> }> {
   let surface = await readTourSurface(device, step);
   if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+  const directPrelude = await tryTourPrelude(device, surface, step, log);
+  if (directPrelude) {
+    surface = directPrelude;
+    if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+  }
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (await restoreRememberedApp(device, surface.nodes, log)) {
+      surface = await readTourSurface(device, step);
+      const restoredPrelude = await tryTourPrelude(device, surface, step, log);
+      if (restoredPrelude) surface = restoredPrelude;
+      if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+    }
     log(
       step.originTitle
         ? `tour: not on “${step.originTitle}” yet — back (${attempt + 1})`
@@ -158,6 +229,11 @@ async function seekTourOrigin(
     await sleep(350, device);
     surface = await readTourSurface(device, step);
     if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+    const reachedPrelude = await tryTourPrelude(device, surface, step, log);
+    if (reachedPrelude) {
+      surface = reachedPrelude;
+      if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+    }
   }
   if (step.preludeSteps?.length) {
     log(
@@ -165,6 +241,9 @@ async function seekTourOrigin(
         ? `tour: still not on “${step.originTitle}” — opening the mapped path`
         : "tour: still not on the mapped list — opening the mapped path",
     );
+    if (await restoreRememberedApp(device, surface.nodes, log)) {
+      surface = await readTourSurface(device, step);
+    }
     await runTourPrelude(device, step.preludeSteps, log);
     surface = await readTourSurface(device, step);
   }

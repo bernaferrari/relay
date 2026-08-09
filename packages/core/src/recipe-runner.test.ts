@@ -1741,6 +1741,7 @@ describe("runRecipeStep tour", () => {
       noLog,
     );
 
+    assert.match(presses[0] ?? "", /sidebar\.settings\.button/);
     assert.ok(presses.some((selector) => selector.includes("sidebar.settings.button")));
     assert.ok(presses.some((selector) => selector.includes("Appearance")));
   });

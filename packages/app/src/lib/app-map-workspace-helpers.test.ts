@@ -4,6 +4,7 @@ import type { AppMap, AppMapBatchChange } from "@relay/protocol";
 import {
   appMapLoadFailure,
   appMapCommitSummary,
+  buildMinimapNodes,
   orderCanvasChanges,
 } from "./app-map-workspace-helpers";
 
@@ -13,6 +14,32 @@ test("appMapLoadFailure maps auth, missing, client, and transport failures", () 
   assert.equal(appMapLoadFailure({ status: 422 }).title, "Relay couldn’t read this map");
   assert.equal(appMapLoadFailure(new Error("offline")).title, "Relay couldn’t reach this map");
   assert.equal(appMapLoadFailure(new Error("  boom  ")).detail, "boom");
+});
+
+test("buildMinimapNodes carries every marquee-selected screen into the overview", () => {
+  const nodes = ["ask", "sidebar", "settings"].map((id, index) => ({
+    id,
+    screenKey: id,
+    title: id,
+    representativeStepIndex: index,
+    stepIndexes: [index],
+    depth: 0,
+    x: index * 280,
+    y: 0,
+  }));
+  const overview = buildMinimapNodes({
+    nodes,
+    notes: [],
+    bounds: { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 },
+    positionFor: (node) => ({ x: node.x, y: node.y }),
+    selectedNodeIds: ["ask", "sidebar"],
+    screenStates: {},
+  });
+
+  assert.deepEqual(
+    overview.filter((node) => node.selected).map((node) => node.id),
+    ["ask", "sidebar"],
+  );
 });
 
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {

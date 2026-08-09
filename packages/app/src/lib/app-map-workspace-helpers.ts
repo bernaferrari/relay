@@ -231,7 +231,7 @@ export function buildMinimapNodes(input: {
   notes: CanvasNote[];
   bounds: CanvasBounds;
   positionFor: (node: MapTreeNode) => CanvasPoint;
-  selectedNodeId: string | null;
+  selectedNodeIds: readonly string[];
   screenStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
   return [
@@ -249,7 +249,7 @@ export function buildMinimapNodes(input: {
         kind: "screen" as const,
         x: point.x,
         y: point.y,
-        selected: input.selectedNodeId === node.id,
+        selected: input.selectedNodeIds.includes(node.id),
         state: input.screenStates[node.id],
       };
     }),
