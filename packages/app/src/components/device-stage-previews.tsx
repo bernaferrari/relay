@@ -22,11 +22,13 @@ export const DEFAULT_TOUCH_BOUNDS: DeviceBounds = { width: 1080, height: 2340 };
 
 export function DevicePanelStatus(props: {
   state: DevicePanelState;
+  busy?: boolean;
   onOpenXcode: () => void;
   onOpenSettings: () => void;
   onRetry: () => void;
 }) {
   const runPrimary = () => {
+    if (props.busy) return;
     switch (props.state.primaryAction) {
       case "open-xcode":
         props.onOpenXcode();
@@ -39,6 +41,8 @@ export function DevicePanelStatus(props: {
         break;
     }
   };
+  const busyLabel = () =>
+    props.state.primaryLabel?.toLowerCase().includes("reconnect") ? "Reconnecting…" : "Checking…";
 
   return (
     <div
@@ -50,7 +54,7 @@ export function DevicePanelStatus(props: {
       <span
         class={cn(
           "grid size-12 place-items-center rounded-[14px] text-[var(--text-base)]",
-          "bg-[var(--v2-background-bg-layer-02)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_64%,transparent),0_1px_2px_rgb(0_0_0/5%),0_8px_22px_-12px_rgb(0_0_0/18%)]",
+          "bg-[var(--surface-base-hover)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_64%,transparent),0_1px_2px_rgb(0_0_0/5%),0_8px_22px_-12px_rgb(0_0_0/18%)]",
         )}
         aria-hidden="true"
       >
@@ -84,16 +88,33 @@ export function DevicePanelStatus(props: {
 
       <Show when={props.state.primaryAction && props.state.primaryLabel}>
         <div class="flex min-h-11 flex-wrap items-center justify-center gap-1.5">
-          <Button variant="primary" size="lg" onClick={runPrimary}>
-            <Show when={props.state.primaryAction === "open-xcode"}>
-              <Icon name="external" size={13} />
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={props.busy}
+            aria-busy={props.busy}
+            onClick={runPrimary}
+          >
+            <Show
+              when={props.busy}
+              fallback={
+                <Show when={props.state.primaryAction === "open-xcode"}>
+                  <Icon name="external" size={13} />
+                </Show>
+              }
+            >
+              <span
+                class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
+                aria-hidden="true"
+              />
             </Show>
-            {props.state.primaryLabel}
+            {props.busy ? busyLabel() : props.state.primaryLabel}
           </Button>
           <Show when={props.state.secondaryRetry}>
             <button
               type="button"
-              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-[9px] px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-[9px] px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+              disabled={props.busy}
               onClick={props.onRetry}
             >
               <Icon name="refresh" size={13} /> Check again
@@ -111,15 +132,15 @@ export function CoordinateTapPreview(props: { guide: CoordinateGuide; empty?: bo
       class={cn(
         "pointer-events-none absolute inset-0 z-[3] overflow-hidden",
         props.empty &&
-          "bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--v2-background-bg-accent)_5%,transparent),transparent_58%)]",
+          "bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--text-interactive-base)_5%,transparent),transparent_58%)]",
       )}
       role={props.empty ? "img" : undefined}
-      aria-label={props.empty ? `Tap preview at ${props.guide.x}, ${props.guide.y}` : undefined}
+      aria-label={props.empty ? "Tap target preview" : undefined}
       aria-hidden={props.empty ? undefined : "true"}
       data-coordinate-preview={props.empty ? "empty" : "evidence"}
     >
       <i
-        class="absolute top-0 border-l border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] opacity-80"
+        class="absolute top-0 border-l border-dashed border-[color-mix(in_srgb,var(--text-interactive-base)_72%,white)] opacity-80"
         data-coordinate-guide="vertical"
         style={{
           left: props.guide.left,
@@ -128,7 +149,7 @@ export function CoordinateTapPreview(props: { guide: CoordinateGuide; empty?: bo
         }}
       />
       <i
-        class="absolute left-0 border-t border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] opacity-80"
+        class="absolute left-0 border-t border-dashed border-[color-mix(in_srgb,var(--text-interactive-base)_72%,white)] opacity-80"
         data-coordinate-guide="horizontal"
         style={{
           left: props.guide.horizontalGuide.left,
@@ -137,15 +158,15 @@ export function CoordinateTapPreview(props: { guide: CoordinateGuide; empty?: bo
         }}
       />
       <i
-        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--text-interactive-base)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
         style={{ left: props.guide.horizontalOrigin, top: props.guide.top }}
       />
       <i
-        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--text-interactive-base)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
         style={{ left: props.guide.left, top: props.guide.verticalOrigin }}
       />
       <i
-        class="absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_22%,transparent)] shadow-[0_2px_8px_rgb(0_0_0/52%)] after:absolute after:inset-[5px] after:rounded-full after:bg-[var(--v2-background-bg-accent)] after:shadow-[0_0_0_1.5px_white] after:content-['']"
+        class="absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-[color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)] shadow-[0_2px_8px_rgb(0_0_0/52%)] after:absolute after:inset-[5px] after:rounded-full after:bg-[var(--text-interactive-base)] after:shadow-[0_0_0_1.5px_white] after:content-['']"
         style={{ left: props.guide.left, top: props.guide.top }}
         data-coordinate-point
       />
@@ -201,7 +222,7 @@ export function UncapturedStepPreview(props: {
                   y1={down() ? "38" : "62"}
                   x2="50"
                   y2={down() ? "62" : "38"}
-                  stroke="var(--v2-background-bg-accent)"
+                  stroke="var(--text-interactive-base)"
                   stroke-width="0.8"
                   stroke-dasharray="1.8 2.6"
                   stroke-linecap="round"
@@ -210,7 +231,7 @@ export function UncapturedStepPreview(props: {
                 <path
                   d={down() ? "M46.5 57.5 50 62l3.5-4.5" : "M46.5 42.5 50 38l3.5 4.5"}
                   fill="none"
-                  stroke="var(--v2-background-bg-accent)"
+                  stroke="var(--text-interactive-base)"
                   stroke-width="1.15"
                   stroke-linecap="round"
                   stroke-linejoin="round"

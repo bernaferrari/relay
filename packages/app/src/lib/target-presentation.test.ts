@@ -127,7 +127,7 @@ test("does not call an Apple device ready before automation services are availab
     developerServicesAvailable: false,
   };
   assert.equal(targetIsReady(target, true), false);
-  assert.equal(presentTarget(target).statusLabel, "Preparing for control");
+  assert.equal(presentTarget(target).statusLabel, "Preparing…");
   assert.equal(deviceReadiness(target, true).kind, "ios-preparing");
   assert.equal(targetIsReady({ ...target, developerMode: "disabled" }, true), false);
   assert.equal(
@@ -231,7 +231,7 @@ test("device diagnostics are presented without SDK commands", () => {
   );
   assert.equal(
     detail,
-    "Relay lost the live app connection. Keep iPad Pro unlocked, then try again.",
+    "The app is open, but Relay’s tap session is not attached yet. Retry the tap — or preview first. Keep iPad Pro unlocked.",
   );
   assert.doesNotMatch(detail, /--session|open --/);
 });

@@ -1,4 +1,4 @@
-import type { TestVariable } from "@relay/protocol";
+import type { TestData } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 
 export const PRIVATE_INPUT = "[private]";
@@ -31,7 +31,7 @@ export function referencedRecipeInputNames(recipes: Record<string, Recipe> | Rec
 
 export function referencedVariableIds(
   recipes: Record<string, Recipe> | Recipe,
-  variables: TestVariable[],
+  variables: TestData[],
 ): string[] {
   const names = new Set(referencedRecipeInputNames(recipes));
   return variables
@@ -41,7 +41,7 @@ export function referencedVariableIds(
 
 export function referencedRuntimeInputs(
   recipes: Record<string, Recipe> | Recipe,
-  variables: TestVariable[],
+  variables: TestData[],
   runtime: Record<string, string | string[]> | undefined,
 ): Record<string, string> {
   if (!runtime) return {};
@@ -63,7 +63,7 @@ export function referencedRuntimeInputs(
 }
 
 export function sensitiveInputNames(
-  variables: TestVariable[],
+  variables: TestData[],
   values: Record<string, string>,
 ): string[] {
   return variables

@@ -19,19 +19,19 @@
   "dependencies": {
     "@relay/app": "workspace:*",
     "@relay/ui": "workspace:*",
-    "playwright-core": "^1.61.1",
+    "playwright-core": "^1.62.1",
     "solid-js": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.11",
-    "@types/node": "^26.1.1",
-    "electron": "^35.2.1",
-    "electron-builder": "^26.0.12",
-    "esbuild": "^0.25.0",
-    "tailwindcss": "4.1.11",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "^26.1.2",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "tailwindcss": "4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plugin-solid": "^2.11.6"
+    "vite-plugin-solid": "^2.11.14"
   },
   "build": {
     "appId": "dev.relay.desktop",

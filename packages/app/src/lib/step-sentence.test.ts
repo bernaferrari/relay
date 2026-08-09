@@ -35,14 +35,38 @@ describe("sentenceForStep", () => {
       'Tap "Ask anything"',
     );
   });
-  it("uses the recorded position when an element has no accessibility name", () => {
+  it("avoids raw coordinates when an element has no accessibility name", () => {
     assert.equal(
       sentenceForStep({
         kind: "tap",
         target: { ref: "@e53", point: { x: 489, y: 1053 } },
         evidence: { id: "evidence-2", recordedAt: 1, node: { ref: "@e53" } },
       }),
-      "Tap at 489, 1053",
+      "Tap the recorded control",
+    );
+  });
+  it("uses a nearby evidence label even when the target is only a point", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "tap",
+        target: { point: { x: 359, y: 586 } },
+        evidence: {
+          id: "evidence-point",
+          recordedAt: 1,
+          node: { label: "Storage" },
+        },
+      }),
+      'Tap "Storage"',
+    );
+  });
+  it("describes swipe direction instead of raw coordinates", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "swipe",
+        from: { x: 100, y: 800 },
+        to: { x: 100, y: 200 },
+      }),
+      "Swipe up",
     );
   });
   it("uses the selected parent accessibility name instead of the captured child", () => {
@@ -84,11 +108,45 @@ describe("sentenceForStep", () => {
       "Scroll Up · full screen",
     );
   });
+  it("formats a compiled tour", () => {
+    assert.equal(sentenceForStep({ kind: "tour" }), "Tour visible rows");
+    assert.equal(sentenceForStep({ kind: "tour", depth: 1 }), "Tour visible rows depth 1");
+    assert.equal(sentenceForStep({ kind: "tour", originTitle: "Settings" }), "Tour Settings rows");
+  });
   it("formats screenshot with caption", () => {
     assert.equal(sentenceForStep({ kind: "screenshot", caption: "home" }), "Screenshot · home");
   });
   it("formats flow with titleize fallback", () => {
     assert.equal(sentenceForStep({ kind: "flow", flow: "play-store-open" }), "Play store open");
+  });
+  it("never surfaces raw coordinates or element refs", () => {
+    assert.equal(
+      sentenceForStep({ kind: "wait-for", target: { point: { x: 359, y: 586 } } }),
+      "Wait until the screen appears",
+    );
+    assert.equal(
+      sentenceForStep({ kind: "expect", target: { ref: "@e12" }, condition: "visible" }),
+      "Check the recorded element is visible",
+    );
+    assert.equal(
+      sentenceForStep({
+        kind: "extract",
+        target: { ref: "@e1", point: { x: 10, y: 20 } },
+        as: "${pageTitle}",
+      }),
+      "Extract the recorded control as page title",
+    );
+  });
+  it("humanizes assert-content variable inputs", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "assert-content",
+        input: "${lastResponse.statusCode}",
+        match: "exact",
+        expected: "200",
+      }),
+      'Check last response status code exact "200"',
+    );
   });
 });
 

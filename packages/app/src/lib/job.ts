@@ -54,10 +54,10 @@ export function n(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Display fallback for a test title: blank/whitespace never renders empty. */
+/** Display fallback for a map/test title: blank/whitespace never renders empty. */
 export function displayTitle(title: string | undefined | null): string {
   const value = (title ?? "").trim();
-  return value || "Untitled";
+  return value || "My map";
 }
 
 /** A known recipe/action id → title, for resolving slugs at render sites. */

@@ -52,9 +52,9 @@ const defaults = {
   actor: "human:local-cli",
   credentialSource: "env:RELAY_AUTH_TOKEN",
   // A single authoring operation can include device recovery, several gestures,
-  // assertions, and evidence capture. Keep the CLI patient by default; callers
-  // that need a tighter bound can still pass --timeout explicitly.
-  timeout: "120000",
+  // assertions, and evidence capture. Physical iOS snapshots regularly exceed
+  // two minutes on a cold XCTest runner. Callers can still pass --timeout.
+  timeout: "180000",
   wait: true,
 } as const;
 
@@ -74,6 +74,7 @@ const valueFlags = new Set([
   "--input",
   "--input-file",
   "--file",
+  "--mark",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -85,6 +86,7 @@ const switchFlags = new Set([
   "--no-wait",
   "--binary",
   "--force",
+  "--preview",
 ]);
 
 function tokenize(argv: readonly string[]): ParsedTokens {
@@ -177,7 +179,9 @@ function screenshotOutput(
   const force = tokens.switches.has("--force");
   if (!file && !binary && !force) return { kind: "default" };
   if (!eligible) {
-    throw new UsageError("--file, --binary, and --force are only valid for screenshot commands");
+    throw new UsageError(
+      "--file, --binary, and --force are only valid on screenshot or --preview commands",
+    );
   }
   if (file && binary) throw new UsageError("Use only one of --file or --binary");
   if (force && !file) throw new UsageError("--force requires --file <path>");
@@ -313,7 +317,31 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
+  const mark = tokens.values.get("--mark");
+  if (mark) {
+    const matched = mark.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (!matched) throw new UsageError("--mark requires <x>,<y> in the same units as a tap");
+  }
   const resolved = resolveCommand(tokens.positionals, input);
+  const preview = tokens.switches.has("--preview");
+  if (mark) {
+    if (resolved.operationId !== "target.screenshot.capture") {
+      throw new UsageError("--mark is only valid on screenshot commands");
+    }
+    const matched = mark.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/)!;
+    Object.assign(resolved.input, {
+      previewX: Number(matched[1]),
+      previewY: Number(matched[2]),
+    });
+  }
+  if (preview) {
+    if (resolved.operationId !== "target.interact") {
+      throw new UsageError(
+        "--preview is only valid on device interact (use --mark on screenshots)",
+      );
+    }
+    Object.assign(resolved.input, { preview: true });
+  }
   if (resolved.behavior === "event-stream" && output === "json") {
     throw new UsageError(
       `${resolved.commandPath} is a stream; use --ndjson (or human output) instead of --json`,
@@ -336,8 +364,12 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     screenshotOutput: screenshotOutput(
       tokens,
       output,
-      resolved.operationId === "target.screenshot.capture",
+      resolved.operationId === "target.screenshot.capture" ||
+        (resolved.operationId === "target.interact" && preview),
     ),
+    ...(resolved.operationId === "target.interact" && preview
+      ? { behavior: "screenshot" as const }
+      : {}),
   };
 }
 

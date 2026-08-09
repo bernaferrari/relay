@@ -38,7 +38,7 @@ export function ServerSettingsPanel() {
       <div class={rowCls}>
         <div class={rowCopyCls}>
           <span class={rowTitleCls}>Connection</span>
-          <span class={rowDescCls}>HTTP API for devices, actions, and runs.</span>
+          <span class={rowDescCls}>Connects this app to devices, actions, and runs.</span>
         </div>
         <div class="shrink-0">
           <span
@@ -62,7 +62,7 @@ export function ServerSettingsPanel() {
       <div class={rowCls}>
         <div class={rowCopyCls}>
           <span class={rowTitleCls}>Server URL</span>
-          <span class={rowDescCls}>HTTP API this app connects to.</span>
+          <span class={rowDescCls}>Address of the Relay server this app uses.</span>
         </div>
         <div class="max-w-[240px] min-w-0 flex-1">
           <input

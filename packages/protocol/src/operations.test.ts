@@ -17,6 +17,45 @@ test("operation descriptors have unique IDs, transports, and complete safety met
   );
 });
 
+test("map teach accepts a point tap without expectedRevision", () => {
+  const parsed = operationDefinition("app-map.teach").input.parse({
+    appMapId: "android-settings-now",
+    leaseId: "lease-1",
+    target: { kind: "device", platform: "android", targetId: "RQCY104BG8X" },
+    fromScreenId: "settings",
+    title: "Connections",
+    interaction: { kind: "point", x: "540", y: "1275" },
+  });
+  assert.equal(parsed.appMapId, "android-settings-now");
+  assert.equal(parsed.fromScreenId, "settings");
+});
+
+test("screenshot preview coordinates accept query-string numbers", () => {
+  assert.deepEqual(
+    operationDefinition("target.screenshot.capture").input.parse({
+      serial: "RQCY104BG8X",
+      previewX: "540",
+      previewY: "1275",
+    }),
+    { serial: "RQCY104BG8X", previewX: "540", previewY: "1275" },
+  );
+  assert.doesNotThrow(() =>
+    operationDefinition("target.screenshot.capture").input.parse({
+      serial: "RQCY104BG8X",
+      previewX: 540,
+      previewY: 1275,
+    }),
+  );
+  assert.throws(
+    () =>
+      operationDefinition("target.screenshot.capture").input.parse({
+        serial: "RQCY104BG8X",
+        previewX: "left",
+      }),
+    /previewX/,
+  );
+});
+
 test("runtime parsers reject malformed input and output", () => {
   assert.throws(
     () => operationDefinition("job.start").input.parse({ serial: "device" }),

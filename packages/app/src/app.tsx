@@ -7,7 +7,7 @@ import { RecipeDraftProvider } from "./context/recipe-draft";
 import { WorkbenchProvider } from "./context/workbench";
 import { RecorderProvider } from "./context/recorder";
 import { Layout } from "./components/layout";
-import { HomePage } from "./pages/home";
+import { StudioShell } from "./components/studio-shell";
 import { SettingsPage, type SettingsSection } from "./pages/settings";
 import { DesktopUpdateDialog } from "./components/desktop-update";
 import { ConfirmDialogHost } from "./components/confirm-dialog";
@@ -44,7 +44,7 @@ export function AppBaseProviders(
   );
 }
 
-/** Main product UI — Stage testing workspace. */
+/** Main product UI — App Map workspace. */
 export function AppInterface() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [settingsSection, setSettingsSection] = createSignal<SettingsSection>("appearance");
@@ -55,7 +55,7 @@ export function AppInterface() {
 
   return (
     <Layout onOpenSettings={() => openSettings()}>
-      <HomePage onOpenSettings={openSettings} />
+      <StudioShell onOpenSettings={openSettings} />
       <Show when={settingsOpen()}>
         <SettingsPage initialSection={settingsSection()} onClose={() => setSettingsOpen(false)} />
       </Show>

@@ -260,6 +260,27 @@ export type RecipeStep = RecipeStepMetadata &
         reason: string;
       }
     | { kind: "screenshot"; caption?: string }
+    | {
+        /** Walk live child rows on the current screen (depth 0 today). */
+        kind: "tour";
+        depth?: number;
+        screenshot?: boolean;
+        maxStops?: number;
+        excludeLanguageRows?: boolean;
+        /** Mapped list this tour must reach before walking rows. */
+        originScreenId?: string;
+        originTitle?: string;
+        originFingerprint?: string;
+        originAliases?: string[];
+        /** Recorded In-path, run only when the device is not already on origin. */
+        preludeSteps?: Array<Extract<RecipeStep, { kind: "tap" | "key" }>>;
+        /** Used when the live tree is missing. Mapped exits + optional points. */
+        fallbackStops?: Array<{
+          label: string;
+          identifier?: string;
+          point?: { x: number; y: number };
+        }>;
+      }
     | { kind: "flow"; flow: string }
     | { kind: "module"; recipeId: string; bindings?: Record<string, string> }
     | {

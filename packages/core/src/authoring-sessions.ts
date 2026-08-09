@@ -15,7 +15,7 @@ import type {
   RecipeStep,
   ScreenIdentityObservation,
 } from "@relay/protocol";
-import { serializeAuthoringSession } from "@relay/protocol";
+import { describeSnapshotChrome, serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
 import { KeyedSerialQueue } from "./coordination-store.js";
@@ -151,7 +151,7 @@ function currentRevision(session: AuthoringSession): AuthoringTakeRevision {
 async function expectedReplayScreen(
   session: AuthoringSession,
   revision: AuthoringTakeRevision,
-): Promise<{ fingerprints: string[]; observations: ScreenIdentityObservation[] }> {
+): Promise<{ fingerprints: string[]; observations: ScreenIdentityObservation[]; title?: string }> {
   const appMap = await readAppMap(session.projectId, session.appMapId);
   if (!appMap) throw new AuthoringStateError("App Map no longer exists");
   const configured =
@@ -179,13 +179,14 @@ async function expectedReplayScreen(
       return observation ? [observation] : [];
     });
     if (fingerprints.length > 0 || observations.length > 0) {
-      return { fingerprints, observations };
+      return { fingerprints, observations, title: screen.title };
     }
     const fallback = revision.reason === "recording" ? revision.after : undefined;
     const semantic = semanticObservation(fallback);
     return {
       fingerprints: fallback?.screen.fingerprint ? [fallback.screen.fingerprint] : [],
       observations: semantic ? [semantic] : [],
+      title: screen.title,
     };
   }
   const semantic = semanticObservation(revision.after);
@@ -309,6 +310,123 @@ function replayDestinationMatches(
       (structuralSignal?.strength ?? 0) >= 0.6
     );
   });
+}
+
+function observationMatchesExpectedDestination(
+  observed: AuthoringObservation,
+  expected: { fingerprints: string[]; observations: ScreenIdentityObservation[] },
+): boolean {
+  const hasExpectedDestination =
+    expected.fingerprints.length > 0 || expected.observations.length > 0;
+  if (!hasExpectedDestination) return true;
+  return (
+    expected.fingerprints.includes(observed.screen.fingerprint) ||
+    replayDestinationMatches(observed, expected.observations)
+  );
+}
+
+function destinationMismatchError(
+  expected: { fingerprints: string[]; title?: string },
+  received: AuthoringObservation,
+  activity: "Recording" | "Replay",
+): string {
+  const chrome = received.nodes ? describeSnapshotChrome(received.nodes) : {};
+  const expectedName = expected.title ?? "the expected screen";
+  const receivedName = chrome.header ?? chrome.app ?? "a different screen";
+  return `${activity} landed on “${receivedName}”, not “${expectedName}”`;
+}
+
+/** The live demonstration is the first successful pass. A second device run is
+ * only required after the Take is edited, or when the recorded destination
+ * does not match the expected screen. */
+async function attachLiveDemonstrationAttempt(
+  session: AuthoringSession,
+): Promise<AuthoringSession> {
+  const take = session.take;
+  if (!take) return session;
+  const revision = currentRevision(session);
+  if (!revision.before || !revision.after) return session;
+  const latest = take.replayAttempts.at(-1);
+  if (latest?.takeRevision === revision.revision) return session;
+  const expected = await expectedReplayScreen(session, revision);
+  const destination = await destinationForSession(session);
+  const stayed = recordingStayedOnSourceError(session, revision, destination);
+  const matches = !stayed && observationMatchesExpectedDestination(revision.after, expected);
+  const attempt: AuthoringReplayAttempt = {
+    id: `replay-${randomUUID()}`,
+    takeId: take.id,
+    takeRevision: revision.revision,
+    startedAt: revision.before.capturedAt,
+    finishedAt: Math.max(revision.after.capturedAt, now()),
+    outcome: matches ? "passed" : "failed",
+    evidence: [],
+    ...(matches
+      ? {}
+      : {
+          error: stayed ?? destinationMismatchError(expected, revision.after, "Recording"),
+        }),
+  };
+  return {
+    ...session,
+    take: {
+      ...take,
+      replayAttempts: [...take.replayAttempts, attempt],
+    },
+  };
+}
+
+function recordingStayedOnSourceError(
+  session: AuthoringSession,
+  revision: AuthoringTakeRevision,
+  destination: AuthoringCommitDestination | undefined,
+): string | undefined {
+  if (!revision.before || !revision.after) return undefined;
+  if (!revision.actions.some((action) => action.steps.length > 0)) return undefined;
+  if (revision.after.screen.fingerprint !== revision.before.screen.fingerprint) return undefined;
+  const destScreenId = destination?.kind === "screen" ? destination.screenId : undefined;
+  const targetsAnotherScreen =
+    destination?.kind === "new-screen" ||
+    (Boolean(destScreenId) && destScreenId !== session.sourceScreenId);
+  if (!targetsAnotherScreen) return undefined;
+  return "Recording did not leave the source screen. If the picture changed, the app likely opened Settings or another process — XCTest is still attached here. Launch that app before trusting this tree.";
+}
+
+async function destinationForSession(
+  session: AuthoringSession,
+  override?: AuthoringCommitDestination,
+): Promise<AuthoringCommitDestination | undefined> {
+  if (override) return override;
+  if (session.destination) return session.destination;
+  if (!session.pendingConnectionId) return undefined;
+  const appMap = await readAppMap(session.projectId, session.appMapId);
+  return appMap?.connections[session.pendingConnectionId]?.destination;
+}
+
+async function approvedAfterObservation(
+  session: AuthoringSession,
+  revision: AuthoringTakeRevision,
+  destination?: AuthoringCommitDestination,
+): Promise<AuthoringObservation | undefined> {
+  const stayed = recordingStayedOnSourceError(session, revision, destination);
+  if (stayed) throw new AuthoringStateError(stayed);
+  const take = session.take!;
+  const latestAttempt = take.replayAttempts.at(-1);
+  if (latestAttempt?.takeRevision === revision.revision) {
+    if (latestAttempt.outcome === "passed") {
+      return latestAttempt.after ?? revision.after;
+    }
+    throw new AuthoringStateError(
+      latestAttempt.error ?? "Replay the current Take successfully before committing it",
+    );
+  }
+  if (revision.reason === "recording" && revision.before && revision.after) {
+    const expected = await expectedReplayScreen(session, revision);
+    if (observationMatchesExpectedDestination(revision.after, expected)) {
+      return revision.after;
+    }
+    throw new AuthoringStateError(destinationMismatchError(expected, revision.after, "Recording"));
+  }
+  throw new AuthoringStateError("Replay the current Take successfully before committing it");
 }
 
 async function assertExpectedSource(
@@ -885,7 +1003,7 @@ export class AuthoringSessionStore {
       };
       session = transition(session, "reviewing");
       session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
-      return session;
+      return attachLiveDemonstrationAttempt(session);
     });
   }
 
@@ -1000,9 +1118,14 @@ export class AuthoringSessionStore {
         assertOwner(session);
         requireState(session, "recording");
         session = await finishRecording(session, runtime);
+        if (currentRevision(session).actions.length === 0) {
+          session = transition(session, "cancelled");
+          session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
+          return session;
+        }
         session = transition(session, "reviewing");
         session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
-        return session;
+        return attachLiveDemonstrationAttempt(session);
       });
     } finally {
       this.#recordingReadyAt.delete(id);
@@ -1131,12 +1254,8 @@ export class AuthoringSessionStore {
         : await persistObservation(await runtime.observe(session));
       if (outcome === "passed") {
         const expected = await expectedReplayScreen(session, revision);
-        const hasExpectedDestination =
-          expected.fingerprints.length > 0 || expected.observations.length > 0;
         const destinationMatches = () =>
-          !hasExpectedDestination ||
-          expected.fingerprints.includes(captured.observation.screen.fingerprint) ||
-          replayDestinationMatches(captured.observation, expected.observations);
+          observationMatchesExpectedDestination(captured.observation, expected);
         // Native sheets, navigation animations, and streamed application
         // responses often appear just after the input command returns. Poll a
         // bounded 1.5 seconds rather than forcing every human or agent to
@@ -1150,7 +1269,7 @@ export class AuthoringSessionStore {
         }
         if (!destinationMatches()) {
           outcome = "failed";
-          error = `Replay reached a different screen (expected ${expected.fingerprints[0] ?? "the approved destination"}, received ${captured.observation.screen.fingerprint})`;
+          error = destinationMismatchError(expected, captured.observation, "Replay");
         }
       }
       const attempt: AuthoringReplayAttempt = {
@@ -1187,14 +1306,8 @@ export class AuthoringSessionStore {
       requireState(session, "reviewing");
       const take = session.take!;
       const revision = currentRevision(session);
-      const latestAttempt = take.replayAttempts.at(-1);
-      if (
-        !latestAttempt ||
-        latestAttempt.takeRevision !== revision.revision ||
-        latestAttempt.outcome !== "passed"
-      ) {
-        throw new AuthoringStateError("Replay the current Take successfully before committing it");
-      }
+      const destination = await destinationForSession(session, input.destination);
+      const approvedAfter = await approvedAfterObservation(session, revision, destination);
       session = transition(session, "committing");
       session.commitTransactionId = session.id;
       await atomicSessionWrite(session);
@@ -1238,7 +1351,7 @@ export class AuthoringSessionStore {
               // person trims or rewrites a planned connection: the original
               // recording may have ended on a different screen, while the
               // successful replay is the state they explicitly approved.
-              after: latestAttempt.after ?? revision.after,
+              after: approvedAfter ?? revision.after,
               evidenceIds: [...new Set(evidence.map((item) => item.id))],
               evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
               evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),

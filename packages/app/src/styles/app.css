@@ -13,7 +13,6 @@
 
 @import "@relay/ui/styles";
 @import "@relay/ui/styles/tailwind";
-@import "@relay/ui/v2/styles/tailwind.css";
 
 @import "./tokens.css";
 @import "./base.css";

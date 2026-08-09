@@ -93,19 +93,55 @@ export function liveImageStyleFromLayout(layout: CompanionImageLayout | undefine
 /** Map a picker strategy onto the interact-step body the server accepts. */
 export function interactBodyForStrategy(
   strategy: PickStrategy,
+  point?: { x: number; y: number },
 ):
-  | { kind: "identifier"; identifier: string }
+  | { kind: "identifier"; identifier: string; point?: { x: number; y: number } }
   | { kind: "ref"; ref: string }
-  | { kind: "label"; label: string }
-  | { kind: "text-match"; match: string }
+  | { kind: "label"; label: string; point?: { x: number; y: number } }
+  | { kind: "text-match"; match: string; point?: { x: number; y: number } }
   | { kind: "point"; x: number; y: number } {
+  const namedPoint = point && Number.isFinite(point.x) && Number.isFinite(point.y) ? { point } : {};
   if (strategy.kind === "identifier") {
-    return { kind: "identifier", identifier: strategy.identifier };
+    return { kind: "identifier", identifier: strategy.identifier, ...namedPoint };
   }
   if (strategy.kind === "ref") return { kind: "ref", ref: strategy.ref };
-  if (strategy.kind === "label") return { kind: "label", label: strategy.label };
-  if (strategy.kind === "text") return { kind: "text-match", match: strategy.text };
+  if (strategy.kind === "label") return { kind: "label", label: strategy.label, ...namedPoint };
+  if (strategy.kind === "text") return { kind: "text-match", match: strategy.text, ...namedPoint };
   return { kind: "point", x: strategy.x, y: strategy.y };
+}
+
+export type LiveInspectionHint = {
+  title: string;
+  detail: string;
+  actionLabel: string;
+};
+
+/** Non-blocking copy when pixels work but names do not. Null means stay quiet. */
+export function liveInspectionHint(input: {
+  inspectable?: boolean;
+  inspectionState?: string;
+  nodeCount?: number;
+}): LiveInspectionHint | null {
+  if (input.inspectable !== false) return null;
+  if (input.inspectionState === "asleep") {
+    return {
+      title: "Screen is off",
+      detail: "Relay will wake it and try to read names again.",
+      actionLabel: "Wake",
+    };
+  }
+  if (input.inspectionState === "keyguard") {
+    return {
+      title: "Unlock the phone",
+      detail: "Names appear after you unlock. The picture still works.",
+      actionLabel: "Try again",
+    };
+  }
+  return {
+    title: "Tap the picture for now",
+    detail: "Relay couldn’t read names on this screen. Reconnect retries.",
+    actionLabel: "Reconnect",
+  };
 }
 
 export type EmptyStageTitleInput = {
@@ -160,7 +196,7 @@ export function resolveDevicePanelState(input: DevicePanelStateInput): DevicePan
     return {
       kind: "error",
       title: "Relay is offline",
-      detail: "Reconnect Relay to resume this live device. Your App Map is still safe.",
+      detail: "Reconnect Relay to resume this live device. Your map is still safe.",
       primaryAction: "retry",
       primaryLabel: "Reconnect",
     };
@@ -270,8 +306,9 @@ export function iosSetupGuidanceText(input: {
   if (
     issue &&
     /(developer mode|signing|xcode|provision|team id|bundle id|set.?up|account)/i.test(issue)
-  )
-    return issue;
+  ) {
+    return presentDeviceIssue(issue, input.deviceName ?? "this iPad");
+  }
   return `Keep ${input.deviceName ?? "the iPad"} unlocked. If iOS asks to enable UI Automation, enter its passcode.`;
 }
 

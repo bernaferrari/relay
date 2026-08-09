@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
-import type { CaseExpansionStrategy, CaseStack, TestVariable } from "@relay/protocol";
+import type { CaseExpansionStrategy, CaseStack, TestData } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import { caseStackCount } from "../lib/case-stack-presentation";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
@@ -7,9 +8,11 @@ import { Icon } from "./icon";
 export type ConnectionCaseStackProps = {
   stack?: CaseStack;
   stacks: CaseStack[];
-  variables: TestVariable[];
+  variables: TestData[];
   busy?: boolean;
-  onSave: (input: { name: string; variableIds: string[]; strategy: CaseExpansionStrategy }) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onSave: (input: { name: string; dataIds: string[]; strategy: CaseExpansionStrategy }) => void;
   onAttach: (caseStackId: string) => void;
   onDetach: () => void;
   onOpenVariables: () => void;
@@ -21,67 +24,77 @@ function humanizeName(value: string): string {
 }
 
 export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
-  const [open, setOpen] = createSignal(false);
-  const [variableIds, setVariableIds] = createSignal<string[]>([]);
+  const [internalOpen, setInternalOpen] = createSignal(false);
+  const open = () => props.open ?? internalOpen();
+  const setOpen = (value: boolean) => {
+    if (props.open === undefined) setInternalOpen(value);
+    props.onOpenChange?.(value);
+  };
+  const [dataIds, setDataIds] = createSignal<string[]>([]);
   const [strategy, setStrategy] = createSignal<CaseExpansionStrategy>("zip");
   createEffect(() => {
-    setVariableIds(props.stack?.variableIds ?? []);
+    setDataIds(props.stack?.dataIds ?? []);
     setStrategy(props.stack?.strategy ?? "zip");
   });
   const selectedVariables = () =>
-    props.variables.filter((variable) => variableIds().includes(variable.id));
-  const countFor = (stack: Pick<CaseStack, "variableIds" | "strategy" | "maxCases">) =>
+    props.variables.filter((variable) => dataIds().includes(variable.id));
+  const countFor = (stack: Pick<CaseStack, "dataIds" | "strategy" | "maxCases">) =>
     caseStackCount(stack, props.variables);
   const draftCount = () =>
     countFor({
-      variableIds: variableIds(),
+      dataIds: dataIds(),
       strategy: strategy(),
       maxCases: props.stack?.maxCases ?? 20,
     });
   const reusableStacks = () => props.stacks.filter((stack) => stack.id !== props.stack?.id);
 
   return (
-    <section class="mt-3 border-t border-[var(--v2-border-border-muted)] pt-2">
+    <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
       <button
         type="button"
-        class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+        class="group flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
         aria-expanded={open()}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open())}
       >
-        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
+        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base-hover)] text-[var(--text-base)]">
           <Icon name="grid" size={11} />
         </span>
         <span class="min-w-0 flex-1">
           <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
             {props.stack
-              ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} test cases`
-              : "Test cases"}
+              ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} runs`
+              : "Test data"}
           </strong>
           <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
             {props.stack
               ? selectedVariables()
                   .map((variable) => humanizeName(variable.name))
                   .join(", ")
-              : "Repeat this connection with different inputs"}
+              : "Repeat this path with different input values"}
           </span>
         </span>
-        <span class="text-[9.5px] font-medium text-[var(--text-weak)]">
-          {props.stack ? "Edit" : "Add"}
+        <span
+          class="grid size-8 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] transition-colors group-hover:text-[var(--text-strong)]"
+          aria-hidden="true"
+        >
+          <Icon name={open() ? "chevron-up" : props.stack ? "edit" : "plus"} size={11} />
         </span>
       </button>
 
       <Show when={open()}>
-        <div class="mt-1 grid gap-2 rounded-[9px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_66%,transparent)] px-2 py-2">
+        <div class="mt-1 grid gap-2 rounded-[9px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-2">
           <Show when={reusableStacks().length > 0}>
             <div class="grid gap-1">
-              <span class="px-1 text-[9px] font-medium text-[var(--text-weak)]">Saved stacks</span>
+              <span class="px-1 text-[9px] font-medium text-[var(--text-weak)]">
+                Saved input sets
+              </span>
               <For each={reusableStacks()}>
                 {(stack) => {
                   const count = () => countFor(stack);
                   return (
                     <button
                       type="button"
-                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors hover:bg-[var(--v2-background-bg-layer-01)] disabled:opacity-45"
+                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors hover:bg-[var(--surface-base)] disabled:opacity-45"
                       disabled={props.busy}
                       onClick={() => {
                         props.onAttach(stack.id);
@@ -94,51 +107,53 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                       </span>
                       <span class="text-[9px] tabular-nums text-[var(--text-weak)]">
                         {count().exact ? "" : "~"}
-                        {count().count} cases
+                        {count().count} runs
                       </span>
                     </button>
                   );
                 }}
               </For>
             </div>
-            <div class="h-px bg-[var(--v2-border-border-muted)]" />
+            <div class="h-px bg-[var(--border-weak-base)]" />
           </Show>
 
           <Show
             when={props.variables.length > 0}
             fallback={
-              <div class="rounded-[7px] bg-[var(--v2-background-bg-layer-01)] p-2.5">
+              <div class="rounded-[7px] bg-[var(--surface-base)] p-2.5">
                 <strong class="block text-[10.5px] text-[var(--text-strong)]">
-                  Add a variable first
+                  Add test data first
                 </strong>
                 <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
-                  A list such as low, medium, high becomes a compact stack of test cases.
+                  Add a list such as low, medium, high, then repeat this path for each value.
                 </p>
                 <button
                   type="button"
                   class="mt-2 min-h-9 rounded-[7px] px-2 text-[10px] font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
                   onClick={props.onOpenVariables}
                 >
-                  Add variables
+                  Add test data
                 </button>
               </div>
             }
           >
-            <div class="grid gap-1">
-              <span class="px-1 text-[9px] font-medium text-[var(--text-weak)]">Inputs</span>
+            <div class="grid max-h-36 gap-0.5 overflow-y-auto overscroll-contain pr-0.5">
+              <span class="sticky top-0 z-[1] bg-[var(--surface-base)] px-1 pb-1 text-[9px] font-medium text-[var(--text-weak)]">
+                Inputs to vary
+              </span>
               <For each={props.variables}>
                 {(variable) => {
-                  const selected = () => variableIds().includes(variable.id);
+                  const selected = () => dataIds().includes(variable.id);
                   return (
                     <button
                       type="button"
                       class={cn(
-                        "flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)]",
+                        "flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors duration-150 hover:bg-[var(--surface-base-hover)]",
                         selected() && "bg-[var(--product-accent-soft)]",
                       )}
                       aria-pressed={selected()}
                       onClick={() =>
-                        setVariableIds((current) =>
+                        setDataIds((current) =>
                           selected()
                             ? current.filter((id) => id !== variable.id)
                             : [...current, variable.id],
@@ -147,9 +162,9 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                     >
                       <span
                         class={cn(
-                          "grid size-4 place-items-center rounded-[4px] border border-[var(--v2-border-border-strong)]",
+                          "grid size-4 place-items-center rounded-[4px] border border-[var(--border-strong-base)]",
                           selected() &&
-                            "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-white",
+                            "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]",
                         )}
                       >
                         <Show when={selected()}>
@@ -169,47 +184,53 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                 }}
               </For>
             </div>
-            <label class="grid gap-1">
-              <span class="text-[9px] font-medium text-[var(--text-weak)]">Combine values</span>
-              <select
-                class="min-h-9 rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-[10px] text-[var(--text-base)] outline-none focus:border-[var(--border-focus)]"
-                value={strategy()}
-                onChange={(event) =>
-                  setStrategy(event.currentTarget.value as CaseExpansionStrategy)
-                }
-              >
-                <option value="zip">By row · low + personal, medium + work</option>
-                <option value="pairwise">Every pair · fewer runs</option>
-                <option value="cartesian">Every combination · most runs</option>
-              </select>
-            </label>
-            <div class="flex items-center gap-1.5">
-              <button
-                type="button"
-                class="inline-flex min-h-10 flex-1 items-center justify-center rounded-[7px] bg-[var(--text-interactive-base)] px-3 text-[10px] font-semibold text-white shadow-[0_1px_2px_rgb(0_0_0/14%)] transition-[filter,transform] hover:brightness-105 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45"
-                disabled={variableIds().length === 0 || props.busy}
+            <Show when={dataIds().length > 1}>
+              <label class="grid gap-1">
+                <span class="text-[9px] font-medium text-[var(--text-weak)]">
+                  Combine selected inputs
+                </span>
+                <select
+                  class="min-h-9 rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 text-[10px] text-[var(--text-base)] outline-none focus:border-[var(--border-focus)]"
+                  value={strategy()}
+                  onChange={(event) =>
+                    setStrategy(event.currentTarget.value as CaseExpansionStrategy)
+                  }
+                >
+                  <option value="zip">Match values by row</option>
+                  <option value="pairwise">Cover every pair</option>
+                  <option value="cartesian">Run every combination</option>
+                </select>
+              </label>
+            </Show>
+            <div class="flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] pt-2">
+              <span class="min-w-0 flex-1 text-[9.5px] text-[var(--text-weak)]">
+                {dataIds().length
+                  ? `${draftCount().exact ? "" : "About "}${draftCount().count} run${draftCount().count === 1 ? "" : "s"}`
+                  : "Select at least one input"}
+              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                class="shrink-0"
+                disabled={dataIds().length === 0 || props.busy}
                 onClick={() => {
                   const variables = selectedVariables();
                   props.onSave({
                     name:
                       props.stack?.name ??
-                      (variables.length === 1 ? variables[0]!.name : "Test cases"),
-                    variableIds: variableIds(),
+                      (variables.length === 1 ? variables[0]!.name : "Test data"),
+                    dataIds: dataIds(),
                     strategy: strategy(),
                   });
                   setOpen(false);
                 }}
               >
-                {props.busy
-                  ? "Saving…"
-                  : variableIds().length
-                    ? `Use ${draftCount().exact ? "" : "~"}${draftCount().count} cases`
-                    : "Choose inputs"}
-              </button>
+                {props.busy ? "Saving…" : "Apply"}
+              </Button>
               <Show when={props.stack}>
                 <button
                   type="button"
-                  class="min-h-10 rounded-[7px] px-2.5 text-[10px] text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--icon-critical-base)]"
+                  class="min-h-10 rounded-[7px] px-2.5 text-[10px] text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
                   onClick={props.onDetach}
                 >
                   Detach

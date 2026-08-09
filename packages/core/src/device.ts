@@ -21,6 +21,7 @@ import {
   type TargetContext,
 } from "./target-context.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
+import { launchIosAppOutsideXctest, primeIosAgentSession } from "./ios-app-launch.js";
 
 export type DevicePlatform = "android" | "ios";
 export const PLATFORM = "android" as const;
@@ -255,6 +256,22 @@ export function base() {
     : ({ platform, ...(serial ? { serial } : {}) } as const);
 }
 
+/**
+ * agent-device's iOS runner can coordinate-activate controls XCTest marks
+ * non-hittable (SwiftUI rows). The SDK maps press options → daemon flags via
+ * a shallow merge: `maestro` must be a top-level press field, not nested under
+ * `flags`. Optional expectedTapPoint steers the coordinate fallback.
+ */
+function iosNonHittablePressFields(point?: { x: number; y: number }): Record<string, unknown> {
+  if (selectedPlatform() !== "ios") return {};
+  return {
+    maestro: {
+      allowNonHittableCoordinateFallback: true,
+      ...(point ? { expectedTapPoint: { x: point.x, y: point.y } } : {}),
+    },
+  };
+}
+
 /** Run a device promise under cancel race, pause checkpoints, and flake retries. */
 async function controlled<T>(op: () => Promise<T>): Promise<T> {
   return withRetry(
@@ -283,17 +300,44 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
   await cooperativeCheckpoint();
 }
 
+export const IOS_SNAPSHOT_TIMEOUT_MS = 8_000;
+
 export async function snapshot(
   device: Device,
   opts?: { interactiveOnly?: boolean; raw?: boolean },
 ): Promise<SnapshotNode[]> {
-  const result = await controlled(() =>
+  const run = () =>
     device.capture.snapshot({
       ...base(),
       interactiveOnly: opts?.interactiveOnly ?? false,
       raw: opts?.raw,
-    }),
-  );
+    });
+  let context: ReturnType<typeof currentTargetContext> | undefined;
+  try {
+    context = currentTargetContext();
+  } catch {
+    context = undefined;
+  }
+  // Physical iOS XCTest snapshots can sit on the daemon's 90s budget after the
+  // runner dies. Fail fast so expect-screen/tour can use pixels instead.
+  if (context?.kind === "device" && context.platform === "ios") {
+    try {
+      const result = await Promise.race([
+        run(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("iOS snapshot timed out")), IOS_SNAPSHOT_TIMEOUT_MS);
+        }),
+      ]);
+      return (result.nodes ?? []) as SnapshotNode[];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/session|open first|timed out/i.test(message)) {
+        throw new Error("iOS snapshot needs an active XCTest session");
+      }
+      throw error;
+    }
+  }
+  const result = await controlled(run);
   return (result.nodes ?? []) as SnapshotNode[];
 }
 
@@ -302,6 +346,22 @@ export async function openApp(
   app: string,
   opts?: { relaunch?: boolean },
 ): Promise<void> {
+  const context = currentTargetContext();
+  if (context.kind === "device" && context.platform === "ios") {
+    const launched = await launchIosAppOutsideXctest(context.serial, app, {
+      relaunch: opts?.relaunch ?? true,
+    });
+    await rememberTargetApplication(launched.bundleId);
+    await primeIosAgentSession(() =>
+      device.apps.open({
+        ...base(),
+        app: launched.bundleId,
+        relaunch: false,
+        noRecord: true,
+      } as never),
+    ).catch(() => undefined);
+    return;
+  }
   const opened = await controlled(() =>
     device.apps.open({
       ...base(),
@@ -329,13 +389,20 @@ export async function pressLabel(
   label: string,
   repeated?: RepeatedPress,
 ): Promise<void> {
-  await controlled(() =>
-    device.interactions.press({
-      ...base(),
-      selector: `label="${label}"`,
-      ...repeated,
-    }),
-  );
+  const point = resolveSnapshotTargetPoint(await snapshot(device), { label });
+  try {
+    await controlled(() =>
+      device.interactions.press({
+        ...base(),
+        selector: `label="${label.replaceAll('"', '\\"')}"`,
+        ...iosNonHittablePressFields(point),
+        ...repeated,
+      } as never),
+    );
+  } catch (error) {
+    const fallback = point ?? (await iosSnapshotFallbackPoint(device, { label }, error));
+    await pressPoint(device, fallback.x, fallback.y, repeated);
+  }
 }
 
 export async function pressIdentifier(
@@ -343,17 +410,19 @@ export async function pressIdentifier(
   identifier: string,
   repeated?: RepeatedPress,
 ): Promise<void> {
+  const point = resolveSnapshotTargetPoint(await snapshot(device), { identifier });
   try {
     await controlled(() =>
       device.interactions.press({
         ...base(),
         selector: `id="${identifier.replaceAll('"', '\\"')}"`,
+        ...iosNonHittablePressFields(point),
         ...repeated,
-      }),
+      } as never),
     );
   } catch (error) {
-    const point = await iosSnapshotFallbackPoint(device, { identifier }, error);
-    await pressPoint(device, point.x, point.y, repeated);
+    const fallback = point ?? (await iosSnapshotFallbackPoint(device, { identifier }, error));
+    await pressPoint(device, fallback.x, fallback.y, repeated);
   }
 }
 
@@ -363,7 +432,14 @@ export async function pressPoint(
   y: number,
   repeated?: RepeatedPress,
 ): Promise<void> {
-  await controlled(() => device.interactions.press({ ...base(), x, y, ...repeated }));
+  await controlled(() =>
+    device.interactions.press({
+      ...base(),
+      x,
+      y,
+      ...repeated,
+    } as never),
+  );
 }
 
 export async function longPressTarget(
@@ -1001,13 +1077,19 @@ export async function pressText(
   text: string,
   repeated?: RepeatedPress,
 ): Promise<void> {
-  await controlled(() =>
-    device.interactions.press({
-      ...base(),
-      selector: `label*="${text.replaceAll('"', '\\"')}"`,
-      ...repeated,
-    }),
-  );
+  try {
+    await controlled(() =>
+      device.interactions.press({
+        ...base(),
+        selector: `label*="${text.replaceAll('"', '\\"')}"`,
+        ...iosNonHittablePressFields(),
+        ...repeated,
+      } as never),
+    );
+  } catch (error) {
+    const point = await iosSnapshotFallbackPoint(device, { text }, error);
+    await pressPoint(device, point.x, point.y, repeated);
+  }
 }
 
 export async function replaceText(
@@ -1135,15 +1217,23 @@ export async function findClick(
   query: string,
   opts?: { first?: boolean; last?: boolean },
 ): Promise<void> {
-  await controlled(() =>
-    device.interactions.find({
-      ...base(),
-      query,
-      action: "click",
-      first: opts?.first ?? true,
-      last: opts?.last,
-    }),
-  );
+  try {
+    await controlled(() =>
+      device.interactions.find({
+        ...base(),
+        query,
+        action: "click",
+        first: opts?.first ?? true,
+        last: opts?.last,
+        ...iosNonHittablePressFields(),
+      } as never),
+    );
+  } catch (error) {
+    const point = await iosSnapshotFallbackPoint(device, { text: query }, error).catch(
+      async (err) => iosSnapshotFallbackPoint(device, { label: query }, err),
+    );
+    await pressPoint(device, point.x, point.y);
+  }
 }
 
 export async function exists(device: Device, query: string): Promise<boolean> {
@@ -1259,6 +1349,16 @@ const INTERACTIVE_SNAPSHOT_ROLES = new Set([
   "textview",
 ]);
 
+/** Status-bar crumbs and 20px captions are unique matches that still waste a tap.
+ * Prefer a real row; if nothing usable exists, treat the query as unmatched. */
+function isUsableTapTarget(node: SnapshotNode): boolean {
+  const rect = node.rect;
+  if (!rect) return false;
+  if (rect.width * rect.height < 40 * 24) return false;
+  if (rect.y + rect.height <= 36 && rect.x + rect.width <= 80) return false;
+  return true;
+}
+
 /**
  * Resolve one semantic target to a coordinate without pretending an ambiguous
  * accessibility result is safe. Physical iOS apps occasionally expose visible
@@ -1287,6 +1387,7 @@ export function resolveSnapshotTargetPoint(
       if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0 || node.enabled === false) {
         return false;
       }
+      if (!isUsableTapTarget(node)) return false;
       if (region && viewport) {
         const point = center(node.rect);
         const x = (point.x - viewport.x) / viewport.width;
@@ -1348,6 +1449,137 @@ export function resolveSnapshotTargetPoint(
     )[0]?.point;
 }
 
+export type NamedControlTarget = {
+  identifier?: string;
+  label?: string;
+  text?: string;
+  point?: { x: number; y: number };
+};
+
+export type NamedControlMethod = "identifier" | "label" | "text" | "point";
+
+export type NamedControlResolution = {
+  method: NamedControlMethod;
+  point: { x: number; y: number };
+  bounds: { x: number; y: number; width: number; height: number };
+};
+
+function explicitPointResolution(
+  point: { x: number; y: number } | undefined,
+): NamedControlResolution | undefined {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return undefined;
+  return {
+    method: "point",
+    point: { x: point.x, y: point.y },
+    bounds: { x: point.x, y: point.y, width: 1, height: 1 },
+  };
+}
+
+/**
+ * Shared mouse + recipe tap policy: identifier → label → text → explicit point.
+ * Ambiguous labels do not guess; callers must supply a point fallback.
+ * A unique non-hittable identifier plus an operator point uses the point —
+ * Grok (and similar SwiftUI trees) often expose ids on hittable:false ancestors.
+ */
+export function resolveNamedControl(
+  nodes: SnapshotNode[],
+  target: NamedControlTarget,
+): NamedControlResolution | undefined {
+  const resolve = (
+    method: Exclude<NamedControlMethod, "point">,
+    value: string | undefined,
+  ): NamedControlResolution | undefined => {
+    if (!value?.trim()) return undefined;
+    const hit = resolveSnapshotTargetPoint(nodes, { [method]: value });
+    if (!hit) return undefined;
+    const bounds = nodes.find((node) => {
+      if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0) return false;
+      const mid = center(node.rect);
+      return Math.abs(mid.x - hit.x) <= 4 && Math.abs(mid.y - hit.y) <= 4;
+    })?.rect ?? { x: hit.x, y: hit.y, width: 1, height: 1 };
+    return { method, point: hit, bounds };
+  };
+
+  const byIdentifier = resolve("identifier", target.identifier);
+  if (byIdentifier) {
+    const wanted = target.identifier?.trim().toLocaleLowerCase();
+    const matched = nodes.find((node) => {
+      if (!node.rect || node.identifier?.trim().toLocaleLowerCase() !== wanted) return false;
+      const mid = center(node.rect);
+      return (
+        Math.abs(mid.x - byIdentifier.point.x) <= 4 && Math.abs(mid.y - byIdentifier.point.y) <= 4
+      );
+    });
+    if (matched?.hittable === false) {
+      return explicitPointResolution(target.point) ?? byIdentifier;
+    }
+    return byIdentifier;
+  }
+
+  return (
+    resolve("label", target.label) ??
+    resolve("text", target.text) ??
+    explicitPointResolution(target.point)
+  );
+}
+
+export async function pressResolvedControl(
+  device: Device,
+  resolution: NamedControlResolution,
+  target: NamedControlTarget,
+  repeated?: RepeatedPress,
+): Promise<NamedControlResolution> {
+  if (resolution.method === "identifier" && target.identifier?.trim()) {
+    await pressIdentifier(device, target.identifier, repeated);
+    return resolution;
+  }
+  if (resolution.method === "label" && target.label?.trim()) {
+    await pressLabel(device, target.label, repeated);
+    return resolution;
+  }
+  if (resolution.method === "text" && target.text?.trim()) {
+    await pressMatchingText(device, target.text);
+    return resolution;
+  }
+  await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
+  return resolution;
+}
+
+/** Snapshot → resolveNamedControl → press. Used by recipe taps, mouse interact, and CLI. */
+export async function pressNamedControl(
+  device: Device,
+  target: NamedControlTarget,
+  repeated?: RepeatedPress,
+): Promise<NamedControlResolution> {
+  const pointOnly = explicitPointResolution(target.point);
+  const hasNamed = Boolean(
+    target.identifier?.trim() || target.label?.trim() || target.text?.trim(),
+  );
+  if (pointOnly && !hasNamed) {
+    await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
+    return pointOnly;
+  }
+  let nodes: SnapshotNode[];
+  try {
+    nodes = await snapshot(device);
+  } catch (error) {
+    if (pointOnly) {
+      await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
+      return pointOnly;
+    }
+    throw error;
+  }
+  if (!nodes.length && pointOnly) {
+    await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
+    return pointOnly;
+  }
+  const resolved = resolveNamedControl(nodes, target);
+  if (!resolved) {
+    throw new Error("no unique control matched identifier, label, text, or point");
+  }
+  return pressResolvedControl(device, resolved, target, repeated);
+}
+
 function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
   if (selectedPlatform() !== "ios") return false;
   if (error instanceof Error && error.name === "JobCancelledError") return false;
@@ -1367,6 +1599,26 @@ async function iosSnapshotFallbackPoint(
 }
 
 export async function pressMatchingText(device: Device, match: string): Promise<void> {
+  // Prefer selector + native non-hittable coordinate fallback (one round-trip).
+  // Snapshot-derived x/y are supplied so the runner taps the row center even when
+  // XCTest refuses element.activate() on SwiftUI list cells.
+  const nodes = await snapshot(device);
+  const point =
+    resolveSnapshotTargetPoint(nodes, { text: match }) ??
+    resolveSnapshotTargetPoint(nodes, { label: match });
+  try {
+    await controlled(() =>
+      device.interactions.press({
+        ...base(),
+        selector: `label*="${match.replaceAll('"', '\\"')}"`,
+        ...iosNonHittablePressFields(point),
+      } as never),
+    );
+    return;
+  } catch (error) {
+    if (error instanceof Error && error.name === "JobCancelledError") throw error;
+  }
+
   if (await exists(device, match)) {
     try {
       await findClick(device, match);
@@ -1376,17 +1628,24 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     }
   }
 
-  const nodes = await snapshot(device);
   const textNode = nodesMatch(nodes, match);
-  if (!textNode?.rect) {
+  if (!textNode?.rect && !point) {
     throw new Error(`No UI node matching "${match}"`);
   }
 
-  const { x: tx, y: ty, width: tw, height: th } = textNode.rect;
+  if (point) {
+    await pressPoint(device, point.x, point.y);
+    return;
+  }
+
+  const { x: tx, y: ty, width: tw, height: th } = textNode!.rect!;
   let best: { area: number; x: number; y: number; width: number; height: number } | undefined;
 
   for (const n of nodes) {
-    if (!n.hittable || !n.rect) continue;
+    const role = (n.role ?? n.type ?? "").toLocaleLowerCase();
+    const interactive =
+      n.hittable || (selectedPlatform() === "ios" && INTERACTIVE_SNAPSHOT_ROLES.has(role));
+    if (!interactive || !n.rect) continue;
     const { x, y, width, height } = n.rect;
     if (x <= tx && y <= ty && x + width >= tx + tw && y + height >= ty + th && width >= 400) {
       const area = width * height;
@@ -1396,7 +1655,7 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     }
   }
 
-  const rect = best ?? textNode.rect;
+  const rect = best ?? textNode!.rect!;
   const p = center(rect);
   await pressPoint(device, p.x, p.y);
 }

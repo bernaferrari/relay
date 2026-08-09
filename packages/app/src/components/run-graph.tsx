@@ -20,7 +20,7 @@ const RUN_GRAPH_NODE_GAP = 96;
 // (not imported) so this read-only run-report view stays decoupled from the
 // planning editor's state and interactions.
 const boardChrome =
-  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
+  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_92%,transparent)] shadow-[var(--shadow-lg)] backdrop-blur-[12px]";
 
 const controlBtn =
   "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--text-base)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]";
@@ -31,9 +31,9 @@ function formatStepDuration(durationMs: number): string {
 
 function runStateDot(state: ExecutionMomentState): string {
   if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
-  if (state === "planned") return "bg-[var(--v2-border-border-strong)]";
+  if (state === "planned") return "bg-[var(--border-strong-base)]";
   if (state === "running")
-    return "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]";
+    return "bg-[var(--text-interactive-base)] shadow-[0_0_8px_var(--text-interactive-base)]";
   return "bg-[var(--icon-success-base)]";
 }
 
@@ -171,10 +171,10 @@ export function RunGraph(props: {
     >
       <div class={cn(boardChrome, "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--text-base)]")}>
         <span class="inline-flex items-center gap-1.5 font-semibold">
-          <i class="size-1.5 rounded-full bg-[var(--v2-background-bg-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--v2-background-bg-accent)_65%,transparent)]" />
+          <i class="size-1.5 rounded-full bg-[var(--text-interactive-base)] shadow-[0_0_9px_color-mix(in_srgb,var(--text-interactive-base)_65%,transparent)]" />
           {nodes().length} {nodes().length === 1 ? "step" : "steps"}
         </span>
-        <b class="border-l border-[var(--v2-border-border-muted)] pl-2.5 font-mono text-[9px] font-normal text-[var(--text-weak)]">
+        <b class="border-l border-[var(--border-weak-base)] pl-2.5 font-mono text-[9px] font-normal text-[var(--text-weak)]">
           {resultCounts().running > 0
             ? `Running step ${resultCounts().passed + resultCounts().failed + 1}`
             : resultCounts().failed > 0
@@ -208,7 +208,7 @@ export function RunGraph(props: {
           class="pointer-events-auto absolute inset-0 overflow-visible"
           width={width()}
           height="620"
-          aria-label="Run step connections"
+          aria-label="Run step path"
         >
           <defs>
             <marker
@@ -222,7 +222,7 @@ export function RunGraph(props: {
             >
               <path
                 d="M 0 0 L 10 5 L 0 10 z"
-                class="fill-[var(--v2-background-bg-accent)] stroke-none"
+                class="fill-[var(--text-interactive-base)] stroke-none"
               />
             </marker>
           </defs>
@@ -240,7 +240,7 @@ export function RunGraph(props: {
                   "pointer-events-none fill-none stroke-2",
                   style() === "failure"
                     ? "stroke-[var(--icon-critical-base)] [stroke-dasharray:8_5]"
-                    : "stroke-[color-mix(in_srgb,var(--v2-background-bg-accent)_62%,var(--v2-border-border-muted))] [stroke-dasharray:6_7]",
+                    : "stroke-[color-mix(in_srgb,var(--text-interactive-base)_62%,var(--border-weak-base))] [stroke-dasharray:6_7]",
                 );
               // Real elapsed time between two captured/attempted steps — no
               // placeholder text when the run never reached one of them.
@@ -307,13 +307,13 @@ export function RunGraph(props: {
                 />
                 <Show when={item.index > 0}>
                   <div
-                    class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
+                    class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)]"
                     aria-hidden="true"
                   />
                 </Show>
                 <Show when={item.index < nodes().length - 1}>
                   <div
-                    class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
+                    class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)]"
                     aria-hidden="true"
                   />
                 </Show>
@@ -347,25 +347,25 @@ function RunGraphNode(props: {
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--run-graph-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
-          "shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
+          "shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
         // Exactly one border-color utility, chosen by priority — two classes
         // both setting border-color have equal specificity, so which one
         // "wins" depends on generated stylesheet order, not on which is
         // listed last here. Keeping this to a single ternary is the only
         // reliable way to guarantee failed beats active beats default.
         failed()
-          ? "border-[color-mix(in_srgb,var(--icon-critical-base)_65%,var(--v2-border-border-muted))]"
+          ? "border-[color-mix(in_srgb,var(--icon-critical-base)_65%,var(--border-weak-base))]"
           : props.active
             ? "border-[var(--text-interactive-base)]"
-            : "border-[var(--v2-border-border-strong)]",
+            : "border-[var(--border-strong-base)]",
       )}
       style={{
         "--run-graph-node-accent": failed()
           ? "var(--icon-critical-base)"
-          : "var(--v2-background-bg-accent)",
+          : "var(--text-interactive-base)",
       }}
     >
-      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
+      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--border-weak-base)_72%,transparent)] px-3 text-[var(--text-weak)]">
         <span class="font-mono text-[11px] leading-none text-[var(--text-base)]">
           {String(props.index + 1).padStart(2, "0")}
         </span>
@@ -376,8 +376,8 @@ function RunGraphNode(props: {
       <Show
         when={props.src}
         fallback={
-          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--run-graph-node-accent)_13%,transparent),transparent_42%),var(--v2-background-bg-deep)] p-5 text-center">
-            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--run-graph-node-accent)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--run-graph-node-accent)_11%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--run-graph-node-accent)_78%,white)]">
+          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--run-graph-node-accent)_13%,transparent),transparent_42%),var(--background-deep)] p-5 text-center">
+            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--run-graph-node-accent)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--run-graph-node-accent)_11%,var(--surface-base))] text-[color-mix(in_srgb,var(--run-graph-node-accent)_78%,white)]">
               <Icon name={failed() ? "alert" : (glyph()?.icon ?? "bolt")} size={22} />
             </span>
             <div class="mt-4 min-w-0">
@@ -388,7 +388,7 @@ function RunGraphNode(props: {
           </div>
         }
       >
-        <div class="relative min-h-0 overflow-hidden bg-[var(--v2-background-bg-deep)]">
+        <div class="relative min-h-0 overflow-hidden bg-[var(--background-deep)]">
           <img
             src={props.src}
             alt={`Device evidence for step ${props.index + 1}`}
@@ -409,7 +409,7 @@ function RunGraphNode(props: {
           </div>
         </div>
       </Show>
-      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
+      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--border-weak-base)_72%,transparent)] px-3 text-[var(--text-weak)]">
         <span class="inline-flex items-center gap-1.5 text-[10px]">
           <i class={cn("size-1.5 rounded-full", runStateDot(props.moment.state))} />
           {executionStateLabel(props.moment.state, "step")}

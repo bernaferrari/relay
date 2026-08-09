@@ -1,8 +1,8 @@
 import { For, Show, createSignal } from "solid-js";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
+import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
-import { cn } from "../lib/cn";
 
 const CHANNELS: Array<{
   id: SensitiveEvidenceChannel;
@@ -70,31 +70,15 @@ export function SensitiveEvidenceControls() {
                   {channel.description}
                 </span>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={enabled(channel.id)}
+              <Switch
+                checked={enabled(channel.id)}
                 aria-label={channel.label}
                 disabled={!server.evidenceCollectionPolicy() || busy() === channel.id}
-                class={cn(
-                  "relative h-5 w-9 shrink-0 rounded-full border border-border-weak-base transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus disabled:cursor-not-allowed disabled:opacity-50",
-                  enabled(channel.id)
-                    ? "bg-icon-success-base"
-                    : "bg-surface-raised-stronger-non-alpha",
-                )}
-                onClick={() => {
-                  if (enabled(channel.id)) void update(channel.id, false);
+                onCheckedChange={(next) => {
+                  if (!next) void update(channel.id, false);
                   else setPending(channel.id);
                 }}
-              >
-                <span
-                  aria-hidden="true"
-                  class={cn(
-                    "absolute top-0.5 left-0.5 size-3.5 rounded-full bg-text-on-brand-base shadow-sm transition-transform",
-                    enabled(channel.id) && "translate-x-4",
-                  )}
-                />
-              </button>
+              />
             </div>
 
             <Show when={pending() === channel.id}>

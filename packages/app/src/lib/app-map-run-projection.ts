@@ -428,7 +428,7 @@ export function projectAppMapRun(input: AppMapRunProjectionInput): AppMapRunProj
     traceByIndex.set(trace.index, trace);
   }
 
-  const works = new Map<string, TransitionWork>();
+  const tests = new Map<string, TransitionWork>();
   for (const transition of graph.transitions) {
     const transitionIssues: AppMapRunProjectionIssue[] = [];
     const indexedSteps: IndexedRecipeStep[] = [];
@@ -519,7 +519,7 @@ export function projectAppMapRun(input: AppMapRunProjectionInput): AppMapRunProj
         })
       : [];
 
-    works.set(transition.id, {
+    tests.set(transition.id, {
       transition,
       recipeSteps: indexedSteps,
       traces,
@@ -574,7 +574,7 @@ export function projectAppMapRun(input: AppMapRunProjectionInput): AppMapRunProj
     .map(([index]) => index)
     .sort((a, b) => a - b)[0];
 
-  const executableWorks = [...works.values()]
+  const executableWorks = [...tests.values()]
     .filter((work) => work.structurallyMapped && work.recipeSteps.length > 0)
     .sort((a, b) => a.recipeSteps[0]!.index - b.recipeSteps[0]!.index);
 
@@ -609,7 +609,7 @@ export function projectAppMapRun(input: AppMapRunProjectionInput): AppMapRunProj
 
   const orderByTransition = new Map(traversal.map((entry) => [entry.transitionId, entry.order]));
   const transitions: Record<string, AppMapRunTransitionProjection> = {};
-  for (const work of works.values()) {
+  for (const work of tests.values()) {
     const state = transitionState(work, job, failedRecipeIndex);
     const evidence = work.traces.flatMap((trace) => evidenceForTrace(job, trace));
     const failed = work.traces.find(({ trace }) => traceState(trace) === "failed");

@@ -40,13 +40,37 @@ test("allows a verified automatic connection with no recipe actions", () => {
   assert.deepEqual(result.transitionPath, ["automatic"]);
 });
 
-test("blocks a captured connection until it is approved", () => {
+test("blocks a captured path until it is kept", () => {
   const result = appMapRunReadiness({
     graph: graph([connection("tap", "start", "a", { review: { status: "draft", updatedAt: at } })]),
     recipeSteps: [],
   });
   assert.equal(result.ready, false);
-  assert.match(result.reason, /approve/);
+  assert.equal(result.next, "keep");
+  assert.match(result.reason, /keep/i);
+});
+
+test("a map without screens asks to save the first screen", () => {
+  const empty: CanvasGraph = {
+    schemaVersion: 1,
+    screens: [],
+    transitions: [],
+    flows: [],
+  };
+  const result = appMapRunReadiness({ graph: empty, recipeSteps: [] });
+  assert.equal(result.next, "capture");
+  assert.match(result.reason, /start your map/);
+});
+
+test("empty graph asks to record a path", () => {
+  const result = appMapRunReadiness({
+    graph: graph([]),
+    recipeSteps: [],
+  });
+  assert.equal(result.ready, false);
+  assert.equal(result.visible, true);
+  assert.equal(result.next, "record");
+  assert.equal(result.label, "Record path");
 });
 
 test("asks for a destination when the graph branches", () => {

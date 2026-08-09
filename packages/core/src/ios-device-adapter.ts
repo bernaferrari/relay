@@ -9,7 +9,7 @@
  */
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Device } from "./device.js";
@@ -93,7 +93,7 @@ async function assertIosDeviceReadyForAutomation(udid: string): Promise<void> {
 
 function iosRunnerSetupMessage(cause: string): string {
   if (/conflicting provisioning settings|automatically signed.*manually specified/i.test(cause)) {
-    return "Relay found a manual signing override that conflicts with Xcode automatic signing. Clear the advanced signing options in Settings, then try again.";
+    return "Xcode automatic signing is fighting AGENT_DEVICE_IOS_SIGNING_IDENTITY in the agent-device daemon environment (often inherited from your shell). Unset that variable, restart the agent-device daemon (or re-save Apple setup in Settings so Relay restarts it), and retry. Only set a signing identity together with a matching provisioning profile.";
   }
   if (/developer mode/i.test(cause)) {
     return "Turn on Developer Mode on this iPad, then reconnect it and try again.";
@@ -248,7 +248,7 @@ export async function prepareIosRunner(device: Device, selection: { udid: string
       platform: "ios",
       udid: selection.udid,
       action: "ios-runner",
-      timeoutMs: 240_000,
+      timeoutMs: 90_000,
     });
   } catch (error) {
     const diagnostic = await recentIosRunnerFailure(selection.udid);
@@ -299,4 +299,65 @@ export function iosRecordingOptions(input: {
     fps: 30,
     quality: "high",
   } as Parameters<Device["recording"]["record"]>[0];
+}
+
+/** Best-effort interface orientation from CoreDevice (for screenshot upright bake). */
+export async function readIosDisplayOrientation(udid: string): Promise<string | undefined> {
+  const out = join(
+    tmpdir(),
+    `relay-ios-display-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
+  );
+  try {
+    await execFileAsync(
+      "xcrun",
+      [
+        "devicectl",
+        "device",
+        "info",
+        "displays",
+        "--device",
+        udid,
+        "--timeout",
+        "8",
+        "--json-output",
+        out,
+      ],
+      { timeout: 12_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    const raw = await readFile(out, "utf8").catch(() => "");
+    try {
+      const data = JSON.parse(raw) as unknown;
+      const found = findDisplayOrientation(data);
+      if (found) return found;
+    } catch {
+      /* fall through to text */
+    }
+    const match = raw.match(/currentOrientation\s*[:=]\s*"?([A-Za-z0-9]+)"?/i);
+    return match?.[1];
+  } catch {
+    return undefined;
+  } finally {
+    await rm(out, { force: true }).catch(() => undefined);
+  }
+}
+
+function findDisplayOrientation(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findDisplayOrientation(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["currentOrientation", "orientation", "interfaceOrientation"]) {
+    const v = record[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  for (const child of Object.values(record)) {
+    const found = findDisplayOrientation(child);
+    if (found) return found;
+  }
+  return undefined;
 }

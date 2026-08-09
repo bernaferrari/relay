@@ -5,7 +5,7 @@ import { validateAppMap } from "./validation.js";
 
 function emptyMap(): AppMap {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: "map-1",
     organizationId: "org-1",
     projectId: "project-1",
@@ -17,6 +17,9 @@ function emptyMap(): AppMap {
     screenVariants: {},
     connections: {},
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: {},
     flows: {},
     runs: {},

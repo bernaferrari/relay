@@ -29,7 +29,7 @@ export function DeviceConnectState(props: {
     <div class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center text-12-medium">
       <button
         type="button"
-        class="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg bg-surface-base px-2.5 text-text-base shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-colors hover:bg-surface-base-hover hover:text-text-strong disabled:cursor-not-allowed disabled:text-text-weaker"
+        class="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg bg-surface-base px-2.5 text-text-base shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors hover:bg-surface-base-hover hover:text-text-strong disabled:cursor-not-allowed disabled:text-text-weaker"
         disabled={props.offline && refreshing()}
         aria-busy={props.offline && refreshing()}
         aria-label={props.offline ? "Relay offline. Retry connection" : "No device. Choose device"}

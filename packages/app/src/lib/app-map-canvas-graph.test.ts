@@ -183,7 +183,7 @@ test("attaching and replaying a planned transition keeps refinement state on the
   );
 });
 
-test("dropping a connector on blank canvas creates a planned destination", () => {
+test("adding a next screen creates a planned destination that still needs recording", () => {
   const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
   const added = addGraphScreenConnection(
     first.graph,

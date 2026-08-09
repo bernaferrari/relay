@@ -24,7 +24,6 @@ export function DevicePicker(props: {
   const [query, setQuery] = createSignal("");
   const [showVirtualDevices, setShowVirtualDevices] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
-  const [scanPhase, setScanPhase] = createSignal<"android" | "ios">("android");
   const device = () => server.devices().find((item) => item.serial === server.selectedDevice());
   const [rememberedDevice, setRememberedDevice] = createSignal<DeviceInfo>();
   const presentedDevice = () => device() ?? rememberedDevice();
@@ -37,7 +36,7 @@ export function DevicePicker(props: {
     if (activeTargetSet()) return activeTargetSet()!.name;
     if (presentedDevice()) return presentedDevice()!.name;
     if (!online()) return "Relay offline";
-    if (scanning()) return scanPhase() === "android" ? "Looking for Android…" : "Checking iOS…";
+    if (scanning()) return "Scanning devices…";
     return "Choose device";
   };
   const groupedDevices = createMemo<TargetGroup[]>(() => {
@@ -72,13 +71,25 @@ export function DevicePicker(props: {
         (group.item.connectionState === "unauthorized" || group.item.connectionState === "offline"),
     ),
   );
+  const setupGroups = createMemo(() =>
+    groupedDevices().filter(
+      (group) =>
+        matchesQuery(group) &&
+        !targetIsReady(group.item, true) &&
+        group.item.connectionState !== "unauthorized" &&
+        group.item.connectionState !== "offline" &&
+        group.item.platform !== "browser" &&
+        !/simulator|emulator/i.test(String(group.item.kind ?? "")),
+    ),
+  );
   const virtualGroups = createMemo(() =>
     groupedDevices().filter(
       (group) =>
         matchesQuery(group) &&
         !targetIsReady(group.item, true) &&
         group.item.connectionState !== "unauthorized" &&
-        group.item.connectionState !== "offline",
+        group.item.connectionState !== "offline" &&
+        /simulator|emulator/i.test(String(group.item.kind ?? "")),
     ),
   );
   const virtualExpanded = () =>
@@ -95,16 +106,6 @@ export function DevicePicker(props: {
     }
     if (current) setRememberedDevice(current);
     else if (!scanning()) setRememberedDevice();
-  });
-
-  createEffect(() => {
-    if (!scanning()) {
-      setScanPhase("android");
-      return;
-    }
-    setScanPhase("android");
-    const phaseTimer = window.setTimeout(() => setScanPhase("ios"), 900);
-    onCleanup(() => window.clearTimeout(phaseTimer));
   });
 
   async function refreshTargets(): Promise<void> {
@@ -192,8 +193,8 @@ export function DevicePicker(props: {
             type="button"
             class={cn(
               "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-[10px] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150",
-              "bg-[var(--map-control-surface)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100",
-              open() && "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
+              "bg-[var(--map-control-surface)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100",
+              open() && "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
             )}
             aria-haspopup="dialog"
             aria-controls="target-picker-dialog"
@@ -239,7 +240,7 @@ export function DevicePicker(props: {
         >
           <button
             type="button"
-            class="inline-flex min-w-0 items-center gap-2 px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            class="inline-flex min-w-0 items-center gap-2 px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-pressed={props.liveOpen}
             aria-label={
               activeTargetSet()
@@ -282,7 +283,7 @@ export function DevicePicker(props: {
           <button
             ref={(element) => (trigger = element)}
             type="button"
-            class="grid w-9 shrink-0 place-items-center border-l border-[var(--map-divider)] text-[var(--text-weak)] transition-[background-color,color] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            class="grid w-9 shrink-0 place-items-center border-l border-[var(--map-divider)] text-[var(--text-weak)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-label="Choose device"
             aria-haspopup="dialog"
             aria-controls="target-picker-dialog"
@@ -334,16 +335,10 @@ export function DevicePicker(props: {
               class="inline-flex min-w-0 items-center gap-4 text-[12px] leading-none font-semibold text-[var(--text-base)]"
             >
               <span class="inline-flex h-6 items-center">Devices</span>
-              <Show when={scanning()}>
-                <span class="inline-flex h-6 items-center gap-2 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2 text-[10px] leading-none font-normal text-[var(--text-weak)]">
-                  <i class="size-1 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
-                  Scanning…
-                </span>
-              </Show>
             </span>
             <button
               type="button"
-              class="relative grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors before:absolute before:-inset-2 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              class="relative grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors before:absolute before:-inset-2 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
               disabled={refreshing() || scanning()}
               aria-busy={refreshing() || scanning()}
               aria-label="Refresh devices"
@@ -360,12 +355,17 @@ export function DevicePicker(props: {
             </button>
           </header>
           <Show when={server.devices().length > 0}>
-            <label class="mx-2.5 mb-2 flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[var(--v2-background-bg-deep)] px-2.5 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
-              <Icon name="search" size={14} />
+            <label class="group/device-search mx-2.5 mb-2 flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[var(--background-deep)] px-2.5 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors focus-within:bg-[var(--surface-base)]">
+              <Icon
+                name="search"
+                size={14}
+                class="transition-colors group-focus-within/device-search:text-[var(--text-interactive-base)]"
+              />
               <span class="sr-only">Filter devices</span>
               <input
                 ref={(element) => (searchInput = element)}
                 class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                data-focus-contained
                 type="search"
                 value={query()}
                 placeholder="Search devices"
@@ -375,7 +375,7 @@ export function DevicePicker(props: {
           </Show>
           <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
             <Show when={(props.targetSets?.length ?? 0) > 0}>
-              <section class="mb-1 border-b border-[var(--v2-border-border-muted)] pb-1">
+              <section class="mb-1 border-b border-[var(--border-weak-base)] pb-1">
                 <span class="block px-2.5 pt-1 pb-1.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
                   Target sets
                 </span>
@@ -385,9 +385,9 @@ export function DevicePicker(props: {
                       type="button"
                       data-target-option
                       class={cn(
-                        "flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-[var(--v2-background-bg-layer-02)]",
+                        "flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-[var(--surface-base-hover)]",
                         props.activeTargetSetId === targetSet.id &&
-                          "bg-[var(--v2-background-bg-layer-02)]",
+                          "bg-[var(--surface-base-hover)]",
                       )}
                       aria-current={props.activeTargetSetId === targetSet.id ? "true" : undefined}
                       onClick={() => {
@@ -425,13 +425,10 @@ export function DevicePicker(props: {
                         />
                       </span>
                       <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
-                        {scanPhase() === "android"
-                          ? "Checking Android devices…"
-                          : "Checking iOS simulators…"}
+                        Looking for devices…
                       </strong>
                       <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                        Relay scans each platform separately. Connected devices appear as soon as
-                        they answer.
+                        Checking connected devices and simulators.
                       </p>
                     </div>
                   }
@@ -443,9 +440,38 @@ export function DevicePicker(props: {
                     <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
                       No devices found
                     </strong>
-                    <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                      Connect a phone or start a simulator.
+                    <p class="mt-1 mb-0 max-w-[240px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
+                      Plug in a phone over USB, start an iOS Simulator / Android emulator, or open
+                      device setup for signing help.
                     </p>
+                    <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        class="inline-flex min-h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
+                        onClick={() => {
+                          setOpen(false);
+                          window.dispatchEvent(
+                            new CustomEvent("relay:open-settings", {
+                              detail: { section: "devices" },
+                            }),
+                          );
+                        }}
+                      >
+                        Open device setup
+                      </button>
+                      <Show when={props.onManageTargets}>
+                        <button
+                          type="button"
+                          class="inline-flex min-h-10 items-center gap-1.5 rounded-[8px] px-3 text-[11.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                          onClick={() => {
+                            setOpen(false);
+                            props.onManageTargets?.();
+                          }}
+                        >
+                          Browser targets
+                        </button>
+                      </Show>
+                    </div>
                   </div>
                 </Show>
               }
@@ -457,7 +483,16 @@ export function DevicePicker(props: {
                     selected={group.item.serial === server.selectedDevice()}
                     authorizing={server.authorizingSerial() === group.item.serial}
                     onAuthorize={() => void authorizeDevice(group.item.serial)}
-                    onPick={() => undefined}
+                    onPick={() => selectTarget(group.item.serial)}
+                  />
+                )}
+              </For>
+              <For each={setupGroups()}>
+                {(group) => (
+                  <TargetRow
+                    group={group}
+                    selected={group.items.some((item) => item.serial === server.selectedDevice())}
+                    onPick={() => selectTarget(group.item.serial)}
                   />
                 )}
               </For>
@@ -473,7 +508,7 @@ export function DevicePicker(props: {
               <Show when={virtualGroups().length > 0}>
                 <button
                   type="button"
-                  class="mt-0.5 flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[11px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
+                  class="mt-0.5 flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[11px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
                   aria-expanded={virtualExpanded()}
                   onClick={() => setShowVirtualDevices((value) => !value)}
                 >
@@ -510,6 +545,7 @@ export function DevicePicker(props: {
                 when={
                   readyGroups().length === 0 &&
                   attentionGroups().length === 0 &&
+                  setupGroups().length === 0 &&
                   virtualGroups().length === 0
                 }
               >
@@ -520,10 +556,10 @@ export function DevicePicker(props: {
             </Show>
           </div>
           <Show when={props.onManageTargets}>
-            <footer class="shrink-0 border-t border-[var(--v2-border-border-muted)] p-1">
+            <footer class="shrink-0 border-t border-[var(--border-weak-base)] p-1">
               <button
                 type="button"
-                class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                 onClick={() => {
                   closePicker();
                   props.onManageTargets!();
@@ -551,10 +587,14 @@ function TargetRow(props: {
 }) {
   const target = () => presentTarget(props.group.item);
   const available = () => targetIsReady(props.group.item, true);
+  const physical = () =>
+    props.group.item.platform !== "browser" &&
+    !/simulator|emulator/i.test(String(props.group.item.kind ?? ""));
   const startable = () =>
     !available() && props.onStart && /simulator|emulator/i.test(target().kindLabel);
   const authorizable = () =>
     props.group.item.connectionState === "unauthorized" && Boolean(props.onAuthorize);
+  const pickable = () => available() || physical() || authorizable();
   const status = () => {
     if (props.starting) return "Starting…";
     if (props.authorizing) return "Check your phone…";
@@ -572,8 +612,8 @@ function TargetRow(props: {
     <div
       class={cn(
         "group/target relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 transition-colors",
-        "hover:bg-[var(--v2-background-bg-layer-02)] focus-within:bg-[var(--v2-background-bg-layer-02)]",
-        props.selected && "bg-[var(--v2-background-bg-layer-02)]",
+        "hover:bg-[var(--surface-base-hover)] focus-within:bg-[var(--surface-base-hover)]",
+        props.selected && "bg-[color-mix(in_srgb,var(--text-interactive-base)_7%,transparent)]",
       )}
     >
       <span
@@ -587,12 +627,12 @@ function TargetRow(props: {
       </span>
       <button
         type="button"
-        data-target-option={available() || authorizable() ? "" : undefined}
+        data-target-option={pickable() ? "" : undefined}
         aria-current={props.selected ? "true" : undefined}
         aria-label={`${target().displayName}, ${status()}`}
-        disabled={!available() && !authorizable()}
-        class="min-w-0 truncate rounded text-left text-[12px]/[1.3] font-medium text-[var(--text-base)] enabled:cursor-pointer enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] enabled:hover:text-[var(--text-strong)] enabled:active:scale-[0.99] disabled:cursor-default focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--v2-border-border-strong)] motion-reduce:enabled:active:scale-100"
-        onClick={() => (available() ? props.onPick() : props.onAuthorize?.())}
+        disabled={!pickable()}
+        class="min-w-0 truncate rounded text-left text-[12px]/[1.3] font-medium text-[var(--text-base)] enabled:cursor-pointer enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] enabled:hover:text-[var(--text-strong)] disabled:cursor-default focus-visible:outline-none"
+        onClick={() => (authorizable() ? props.onAuthorize?.() : props.onPick())}
       >
         {target().displayName}
       </button>
@@ -602,7 +642,7 @@ function TargetRow(props: {
             type="button"
             class={cn(
               "rounded-md px-2 py-1 text-[10.5px] font-semibold text-[var(--text-interactive-base)] active:scale-[0.96] motion-reduce:active:scale-100",
-              "shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-colors",
+              "shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors",
               "hover:bg-[var(--product-accent-soft)]",
               props.starting && "pointer-events-none",
             )}
@@ -625,11 +665,6 @@ function TargetRow(props: {
           >
             {status()}
           </small>
-        </Show>
-        <Show when={props.selected}>
-          <span class="grid size-5 place-items-center text-[var(--text-interactive-base)]">
-            <Icon name="check" size={13} strokeWidth={2.5} />
-          </span>
         </Show>
       </span>
     </div>

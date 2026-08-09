@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   confirmIosRuntimeSession,
+  isIosRunnerWatchdogError,
   isRecoverableIosRuntimeError,
   isIosSessionBindingError,
   recoverIosRuntime,
@@ -118,6 +119,7 @@ function dependencies(
 
 test("classifies infrastructure drift without hiding signing or trust failures", () => {
   assert.equal(isIosSessionBindingError(new Error("No active app session")), true);
+  assert.equal(isIosSessionBindingError(new Error("Daemon request timed out")), true);
   assert.equal(isRecoverableIosRuntimeError(new Error("No active app session")), false);
   assert.equal(
     isRecoverableIosRuntimeError(new Error("CoreDevice.ActionError: StreamingAction failed")),
@@ -244,6 +246,31 @@ test("restarts only the exact CoreDeviceService after its characteristic failure
   assert.equal(result.actions.at(-1)?.kind, "core-device");
 });
 
+test("force recovery does not restart CoreDevice just because the process probe timed out", async () => {
+  const terminated: number[] = [];
+  const result = await recoverIosRuntime(
+    { serial: "ipad", force: true },
+    dependencies({
+      restartAgentDevice: async () => true,
+      run: async (command) => {
+        if (command === "ps") {
+          return { exitCode: 0, stdout: `71 ${coreDevice}`, stderr: "" };
+        }
+        return { exitCode: 1, stdout: "", stderr: "xcrun timed out after 15000ms" };
+      },
+      terminate: async (pid) => {
+        terminated.push(pid);
+        return true;
+      },
+    }),
+  );
+  assert.deepEqual(terminated, []);
+  assert.equal(
+    result.actions.some((action) => action.kind === "core-device"),
+    false,
+  );
+});
+
 test("does not restart CoreDevice for an ordinary device or user-action failure", async () => {
   let psCalls = 0;
   const result = await recoverIosRuntime(
@@ -261,4 +288,17 @@ test("does not restart CoreDevice for an ordinary device or user-action failure"
     result.actions.some((action) => action.kind === "core-device"),
     false,
   );
+});
+
+test("classifies XCTest watchdog busy/wedged as recoverable runner failures", () => {
+  assert.equal(
+    isIosRunnerWatchdogError(
+      new Error(
+        "The iOS runner is still finishing a previous command that exceeded its execution watchdog",
+      ),
+    ),
+    true,
+  );
+  assert.equal(isRecoverableIosRuntimeError(new Error("RUNNER_WEDGED")), true);
+  assert.equal(isIosRunnerWatchdogError(new Error("code signing failed")), false);
 });

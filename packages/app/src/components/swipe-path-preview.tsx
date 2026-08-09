@@ -176,13 +176,13 @@ export function SwipePathPreview(props: {
       >
         <i
           class={cn(
-            "pointer-events-none grid size-4 place-items-center rounded-full bg-[var(--v2-background-bg-accent)] transition-shadow duration-100 ease-out",
+            "pointer-events-none grid size-4 place-items-center rounded-full bg-[var(--text-interactive-base)] transition-shadow duration-100 ease-out",
             isOrigin
               ? active()
-                ? "shadow-[inset_0_1px_2px_rgb(0_0_0/38%),inset_0_-1px_0_rgb(255_255_255/18%),0_1px_4px_rgb(0_0_0/60%),0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_45%,transparent)]"
+                ? "shadow-[inset_0_1px_2px_rgb(0_0_0/38%),inset_0_-1px_0_rgb(255_255_255/18%),0_1px_4px_rgb(0_0_0/60%),0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_45%,transparent)]"
                 : "shadow-[inset_0_1px_2px_rgb(0_0_0/38%),inset_0_-1px_0_rgb(255_255_255/18%),0_1px_3px_rgb(0_0_0/55%),0_0_0_1px_rgb(0_0_0/22%)]"
               : active()
-                ? "shadow-[0_1px_4px_rgb(0_0_0/60%),0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_45%,transparent)]"
+                ? "shadow-[0_1px_4px_rgb(0_0_0/60%),0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_45%,transparent)]"
                 : "shadow-[0_1px_3px_rgb(0_0_0/55%),0_0_0_1px_rgb(0_0_0/22%)]",
           )}
           aria-hidden="true"
@@ -242,9 +242,9 @@ export function SwipePathPreview(props: {
             x2={`${to().x}%`}
             y2={`${to().y}%`}
           >
-            <stop offset="0%" stop-color="var(--v2-background-bg-accent)" stop-opacity="0" />
-            <stop offset="20%" stop-color="var(--v2-background-bg-accent)" stop-opacity="0.9" />
-            <stop offset="100%" stop-color="var(--v2-background-bg-accent)" stop-opacity="0.9" />
+            <stop offset="0%" stop-color="var(--text-interactive-base)" stop-opacity="0" />
+            <stop offset="20%" stop-color="var(--text-interactive-base)" stop-opacity="0.9" />
+            <stop offset="100%" stop-color="var(--text-interactive-base)" stop-opacity="0.9" />
           </linearGradient>
         </defs>
         <line
@@ -267,7 +267,7 @@ export function SwipePathPreview(props: {
           data-swipe-playback
           aria-hidden="true"
         >
-          <i class="size-2 rounded-full bg-[var(--v2-background-bg-accent)]" />
+          <i class="size-2 rounded-full bg-[var(--text-interactive-base)]" />
         </i>
       )}
       {endpointHandle("from")}

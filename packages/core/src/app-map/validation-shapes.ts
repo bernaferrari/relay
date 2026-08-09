@@ -8,6 +8,13 @@ import type {
   AppMapScope,
   BaselineProvenance,
   CaseStack,
+  VariableApply,
+  VariableNavStep,
+  VariableRow,
+  AppMapVariable,
+  AppMapVariableKind,
+  AppMapTest,
+  AppMapCombine,
   Connection,
   ConnectionPatch,
   Flow,
@@ -262,12 +269,12 @@ export function assertCaseStack(stack: CaseStack, scope: AppMapScope, label: str
   assertEntity(stack, scope, label);
   requiredText(stack.name, `${label}.name`);
   optionalText(stack.description, `${label}.description`);
-  stringArray(stack.variableIds, `${label}.variableIds`);
-  if (stack.variableIds.length === 0) {
-    appMapFail("invalid-map", `${label}.variableIds must not be empty`);
+  stringArray(stack.dataIds, `${label}.dataIds`);
+  if (stack.dataIds.length === 0) {
+    appMapFail("invalid-map", `${label}.dataIds must not be empty`);
   }
-  if (new Set(stack.variableIds).size !== stack.variableIds.length) {
-    appMapFail("duplicate-id", `${label}.variableIds must not contain duplicates`);
+  if (new Set(stack.dataIds).size !== stack.dataIds.length) {
+    appMapFail("duplicate-id", `${label}.dataIds must not contain duplicates`);
   }
   if (
     !(stack.strategy === "zip" || stack.strategy === "cartesian" || stack.strategy === "pairwise")
@@ -277,6 +284,139 @@ export function assertCaseStack(stack: CaseStack, scope: AppMapScope, label: str
   safeInteger(stack.maxCases, `${label}.maxCases`);
   if (stack.maxCases < 1 || stack.maxCases > 250) {
     appMapFail("invalid-map", `${label}.maxCases must be between 1 and 250`);
+  }
+}
+
+const APP_MAP_VARIABLE_KINDS = new Set<AppMapVariableKind>([
+  "language",
+  "location",
+  "account",
+  "theme",
+  "workspace",
+  "build",
+  "toggle",
+  "custom",
+]);
+
+function assertVariableNavStep(step: VariableNavStep, label: string): void {
+  if (step.kind === "wait") {
+    safeInteger(step.ms, `${label}.ms`);
+    return;
+  }
+  if (step.kind === "scroll") {
+    if (step.direction !== "up" && step.direction !== "down") {
+      appMapFail("invalid-map", `${label}.direction is unsupported`);
+    }
+    return;
+  }
+  if (step.kind === "openApp") {
+    requiredText(step.app, `${label}.app`);
+    return;
+  }
+  if (step.kind === "tap") {
+    const target = step.target;
+    if (!target.identifier?.trim() && !target.label?.trim() && !target.text?.trim()) {
+      appMapFail("invalid-map", `${label}.target needs identifier, label, or text`);
+    }
+    return;
+  }
+  if (step.kind !== "back" && step.kind !== "relaunch") {
+    appMapFail("invalid-map", `${label}.kind is unsupported`);
+  }
+}
+
+function assertVariableApply(apply: VariableApply, label: string): void {
+  if (apply.kind === "list") {
+    if (apply.inConnectionId !== undefined)
+      identifier(apply.inConnectionId, `${label}.inConnectionId`);
+    if (apply.outConnectionId !== undefined)
+      identifier(apply.outConnectionId, `${label}.outConnectionId`);
+    if (apply.listScreenId !== undefined) identifier(apply.listScreenId, `${label}.listScreenId`);
+    if (apply.pickStepId !== undefined) identifier(apply.pickStepId, `${label}.pickStepId`);
+    if (apply.entryPath) {
+      if (!Array.isArray(apply.entryPath))
+        appMapFail("invalid-map", `${label}.entryPath must be an array`);
+      apply.entryPath.forEach((step, index) =>
+        assertVariableNavStep(step, `${label}.entryPath[${index}]`),
+      );
+    }
+    if (apply.pickerPath) {
+      if (!Array.isArray(apply.pickerPath))
+        appMapFail("invalid-map", `${label}.pickerPath must be an array`);
+      apply.pickerPath.forEach((step, index) =>
+        assertVariableNavStep(step, `${label}.pickerPath[${index}]`),
+      );
+    }
+    if (apply.exitPath) {
+      if (!Array.isArray(apply.exitPath))
+        appMapFail("invalid-map", `${label}.exitPath must be an array`);
+      apply.exitPath.forEach((step, index) =>
+        assertVariableNavStep(step, `${label}.exitPath[${index}]`),
+      );
+    }
+    return;
+  }
+  if (apply.kind === "toggle") {
+    objectValue(apply.target, `${label}.target`);
+    return;
+  }
+  appMapFail("invalid-map", `${label}.kind is unsupported`);
+}
+
+function assertVariableRow(row: VariableRow, label: string): void {
+  requiredText(row.id, `${label}.id`);
+  optionalText(row.identifier, `${label}.identifier`);
+  optionalText(row.label, `${label}.label`);
+  optionalText(row.text, `${label}.text`);
+}
+
+export function assertAppMapVariable(set: AppMapVariable, scope: AppMapScope, label: string): void {
+  assertEntity(set, scope, label);
+  requiredText(set.name, `${label}.name`);
+  if (!APP_MAP_VARIABLE_KINDS.has(set.kind)) {
+    appMapFail("invalid-map", `${label}.kind is unsupported`);
+  }
+  assertVariableApply(set.apply, `${label}.apply`);
+  if (!Array.isArray(set.options)) appMapFail("invalid-map", `${label}.options must be an array`);
+  const ids = new Set<string>();
+  for (const [index, row] of set.options.entries()) {
+    assertVariableRow(row, `${label}.options[${index}]`);
+    if (ids.has(row.id))
+      appMapFail("duplicate-id", `${label}.options contains duplicate id ${row.id}`);
+    ids.add(row.id);
+  }
+  optionalText(set.restoreId, `${label}.restoreId`);
+}
+
+export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: string): void {
+  assertEntity(work, scope, label);
+  requiredText(work.name, `${label}.name`);
+  if (!(work.kind === "path" || work.kind === "tour")) {
+    appMapFail("invalid-map", `${label}.kind is unsupported`);
+  }
+  if (work.kind === "path") identifier(work.flowId ?? "", `${label}.flowId`);
+  if (work.kind === "tour") identifier(work.rootScreenId ?? "", `${label}.rootScreenId`);
+  if (work.depth !== undefined) safeInteger(work.depth, `${label}.depth`);
+}
+
+export function assertAppMapCombine(
+  combine: AppMapCombine,
+  scope: AppMapScope,
+  label: string,
+): void {
+  assertEntity(combine, scope, label);
+  requiredText(combine.name, `${label}.name`);
+  stringArray(combine.variableIds, `${label}.variableIds`);
+  stringArray(combine.testIds, `${label}.testIds`);
+  if (!combine.variableIds.length)
+    appMapFail("invalid-map", `${label} needs at least one variable`);
+  if (!combine.testIds.length) appMapFail("invalid-map", `${label} needs at least one test`);
+  if (
+    combine.strategy !== undefined &&
+    combine.strategy !== "zip" &&
+    combine.strategy !== "cartesian"
+  ) {
+    appMapFail("invalid-map", `${label}.strategy is unsupported`);
   }
 }
 
@@ -541,6 +681,12 @@ export function assertActivity(
     "case-stack.saved",
     "case-stack.attached",
     "case-stack.removed",
+    "variable.saved",
+    "variable.removed",
+    "test.saved",
+    "test.removed",
+    "combine.saved",
+    "combine.removed",
     "recording.committed",
     "run.finished",
     "proposal.submitted",
@@ -559,6 +705,9 @@ export function assertActivity(
       event.subject.kind === "flow" ||
       event.subject.kind === "routine" ||
       event.subject.kind === "case-stack" ||
+      event.subject.kind === "variable" ||
+      event.subject.kind === "test" ||
+      event.subject.kind === "combine" ||
       event.subject.kind === "proposal" ||
       event.subject.kind === "run"
     )

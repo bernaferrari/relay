@@ -16,6 +16,7 @@ import {
   readAppMap,
   readProjectVariables,
   releaseDeviceLease,
+  renewDeviceLease,
   takeOverDeviceLease,
   saveCompatibilityMatrix,
   mutateStoredAppMap,
@@ -168,6 +169,15 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     );
     assert.equal((await releaseDeviceLease(lease.id)).status, "released");
     assert.equal((await listDeviceLeases("p"))[0]?.status, "released");
+    const again = await leaseDevice({
+      projectId: "p",
+      poolId: "android",
+      deviceSerial: "ABC",
+      ownerId: "worker-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    const later = Date.now() + 120_000;
+    assert.equal((await renewDeviceLease(again.id, later)).expiresAt, later);
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

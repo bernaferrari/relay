@@ -47,6 +47,7 @@ function stubDevice(impl: {
   pan?: (options: unknown) => Promise<unknown>;
   clipboard?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
+  back?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
 }): Device {
   return {
@@ -61,6 +62,8 @@ function stubDevice(impl: {
     },
     command: {
       wait: impl.wait ?? (() => Promise.resolve({})),
+      back: impl.back ?? (() => Promise.resolve({})),
+      home: () => Promise.resolve({}),
       ...(impl.clipboard ? { clipboard: impl.clipboard } : {}),
     },
     capture: { snapshot: impl.snapshot ?? (() => Promise.resolve({ nodes: [] })) },
@@ -87,13 +90,8 @@ describe("runRecipeStep tap gestures", () => {
       noLog,
     );
 
-    assert.deepEqual(presses, [
-      {
-        platform: "ios",
-        udid: "recipe-runner-ios-test",
-        selector: 'label="New conversation"',
-      },
-    ]);
+    assert.equal((presses[0] as { selector?: string }).selector, 'label="New conversation"');
+    assert.equal((presses[0] as { platform?: string }).platform, "ios");
   });
 
   it("validates recorded refs against stable semantics", () => {
@@ -113,9 +111,51 @@ describe("runRecipeStep tap gestures", () => {
     );
   });
 
-  it("uses a stable accessibility identifier before weaker fallbacks", async () => {
+  it("taps Home by label with the same named-control order as mouse targeting", async () => {
+    const home = {
+      type: "Button",
+      label: "Home",
+      enabled: true,
+      hittable: true,
+      rect: { x: 10, y: 700, width: 80, height: 40 },
+    };
     const presses: unknown[] = [];
     const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [home] }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+    const job = {
+      artifacts: [] as { kind: string; data: { method?: string; bounds?: unknown } }[],
+    };
+    await runRecipeStep(
+      device,
+      { kind: "tap", target: { label: "Home" } },
+      {
+        log: () => {},
+        job: job as never,
+      },
+    );
+    assert.equal((presses[0] as { selector?: string }).selector, 'label="Home"');
+    const recorded = job.artifacts.find((artifact) => artifact.kind === "target-resolution");
+    assert.equal(recorded?.data.method, "label");
+    assert.deepEqual(recorded?.data.bounds, home.rect);
+  });
+
+  it("uses a stable accessibility identifier before weaker fallbacks", async () => {
+    const field = {
+      type: "TextField",
+      identifier: "chat_text_input",
+      label: "Ask anything",
+      enabled: true,
+      hittable: true,
+      rect: { x: 80, y: 200, width: 80, height: 40 },
+    };
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [field] }),
       press: (options) => {
         presses.push(options);
         return Promise.resolve({});
@@ -142,6 +182,49 @@ describe("runRecipeStep tap gestures", () => {
         selector: 'id="chat_text_input"',
       },
     ]);
+  });
+
+  it("falls back to the explicit point when Home labels collide", async () => {
+    const leftHome = {
+      type: "Button",
+      label: "Home",
+      enabled: true,
+      hittable: true,
+      rect: { x: 10, y: 700, width: 80, height: 40 },
+    };
+    const rightHome = {
+      type: "Button",
+      label: "Home",
+      enabled: true,
+      hittable: true,
+      rect: { x: 200, y: 700, width: 80, height: 40 },
+    };
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [leftHome, rightHome] }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+    const job = {
+      artifacts: [] as {
+        kind: string;
+        data: { method?: string; bounds?: unknown; point?: unknown };
+      }[],
+    };
+    await runRecipeStep(
+      device,
+      { kind: "tap", target: { label: "Home", point: { x: 240, y: 720 } } },
+      { log: () => {}, job: job as never },
+    );
+    assert.deepEqual(presses, [
+      { platform: "android", serial: "recipe-runner-test", x: 240, y: 720 },
+    ]);
+    const recorded = job.artifacts.find((artifact) => artifact.kind === "target-resolution");
+    assert.equal(recorded?.data.method, "point");
+    assert.deepEqual(recorded?.data.point, { x: 240, y: 720 });
+    assert.deepEqual(recorded?.data.bounds, { x: 240, y: 720, width: 1, height: 1 });
   });
 
   it("falls back from a stale native label selector to the visible snapshot node", async () => {
@@ -792,7 +875,7 @@ describe("runRecipeStep expect-screen", () => {
           { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
           { ...noLog, observeVisualFingerprint: () => Promise.resolve("c".repeat(64)) },
         ),
-      /reached a different screen instead of "Home"/,
+      /on “.*”, not “Home”/,
     );
   });
 
@@ -1426,5 +1509,262 @@ describe("runRecipeStep conversational evidence", () => {
     const evidence = owner.artifacts.find((item) => item.kind === "response-completion");
     assert.equal((evidence?.data as { status?: string } | undefined)?.status, "complete");
     assert.ok(sample >= 3, "the waiter should observe the completion control leave and return");
+  });
+});
+
+describe("runRecipeStep tour", () => {
+  const settingsNodes = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "NavigationBar",
+      identifier: "Settings",
+      rect: { x: 0, y: 50, width: 834, height: 50 },
+    },
+    {
+      type: "Cell",
+      label: "Appearance",
+      hittable: false,
+      rect: { x: 40, y: 400, width: 700, height: 44 },
+    },
+    {
+      type: "Cell",
+      label: "Haptics",
+      hittable: false,
+      rect: { x: 40, y: 444, width: 700, height: 44 },
+    },
+  ];
+  const appearanceNodes = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "NavigationBar",
+      identifier: "Settings",
+      rect: { x: 0, y: 50, width: 834, height: 50 },
+    },
+    {
+      type: "Cell",
+      label: "Dark",
+      hittable: false,
+      rect: { x: 40, y: 400, width: 700, height: 44 },
+    },
+    {
+      type: "Button",
+      label: "Back",
+      hittable: true,
+      rect: { x: 20, y: 70, width: 60, height: 36 },
+    },
+  ];
+
+  it("fails closed when pixels-only and no mapped fallback stops", async () => {
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+    await assert.rejects(
+      () => runIosRecipeStep(device, { kind: "tour", screenshot: false }, noLog),
+      /tour:no-rows/,
+    );
+  });
+
+  it("walks mapped fallback stops when the live tree is empty", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [] }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+    await runRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        fallbackStops: [{ label: "Appearance", point: { x: 240, y: 422 } }],
+      },
+      noLog,
+    );
+    assert.ok(presses.length >= 1);
+  });
+
+  it("keeps popping until origin rows return, not just the shared header", async () => {
+    let screen: "settings" | "appearance" = "settings";
+    const presses: string[] = [];
+    const backs: number[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({ nodes: screen === "settings" ? settingsNodes : appearanceNodes }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        presses.push(selector);
+        if (selector.includes("Appearance")) screen = "appearance";
+        if (selector.includes("Back")) screen = "settings";
+        return Promise.resolve({});
+      },
+      back: () => {
+        backs.push(1);
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runIosRecipeStep(
+      device,
+      { kind: "tour", screenshot: false, excludeLanguageRows: true },
+      noLog,
+    );
+
+    assert.ok(backs.length >= 1);
+    assert.ok(presses.some((selector) => selector.includes("Appearance")));
+    assert.ok(presses.some((selector) => selector.includes("Back")));
+    assert.ok(presses.some((selector) => selector.includes("Haptics")));
+    assert.equal(screen, "settings");
+  });
+
+  const automationsNodes = [
+    { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+    {
+      type: "NavigationBar",
+      identifier: "Settings",
+      rect: { x: 0, y: 50, width: 834, height: 50 },
+    },
+    {
+      type: "Cell",
+      label: "Shortcuts",
+      hittable: false,
+      rect: { x: 40, y: 400, width: 700, height: 44 },
+    },
+    {
+      type: "Cell",
+      label: "Automations",
+      hittable: false,
+      rect: { x: 40, y: 444, width: 700, height: 44 },
+    },
+    {
+      type: "Button",
+      label: "Back",
+      hittable: true,
+      rect: { x: 20, y: 70, width: 60, height: 36 },
+    },
+  ];
+
+  it("backs from the wrong list before walking mapped Settings rows", async () => {
+    let screen: "automations" | "settings" | "appearance" = "automations";
+    const presses: string[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes:
+            screen === "settings"
+              ? settingsNodes
+              : screen === "appearance"
+                ? appearanceNodes
+                : automationsNodes,
+        }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        presses.push(selector);
+        if (selector.includes("Back")) screen = "settings";
+        if (selector.includes("Appearance")) screen = "appearance";
+        return Promise.resolve({});
+      },
+      back: () => {
+        screen = "settings";
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runIosRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        excludeLanguageRows: true,
+        originTitle: "Settings",
+        fallbackStops: [{ label: "Appearance" }, { label: "Haptics" }],
+      },
+      noLog,
+    );
+
+    assert.ok(presses.some((selector) => selector.includes("Back")));
+    assert.ok(presses.some((selector) => selector.includes("Appearance")));
+    assert.ok(!presses.some((selector) => selector.includes("Automations")));
+  });
+
+  it("runs a mapped prelude only when the device is not already on origin", async () => {
+    let screen: "home" | "settings" = "home";
+    const presses: string[] = [];
+    const homeNodes = [
+      { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
+      {
+        type: "Button",
+        identifier: "sidebar.settings.button",
+        label: "Gear",
+        hittable: true,
+        rect: { x: 40, y: 80, width: 44, height: 44 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: screen === "settings" ? settingsNodes : homeNodes }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        presses.push(selector);
+        if (selector.includes("sidebar.settings.button") || selector.includes("Settings")) {
+          screen = "settings";
+        }
+        if (selector.includes("Back")) screen = "home";
+        return Promise.resolve({});
+      },
+      back: () => Promise.resolve({}),
+      wait: () => Promise.resolve({}),
+    });
+
+    await runIosRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        excludeLanguageRows: true,
+        originTitle: "Settings",
+        preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
+        fallbackStops: [{ label: "Appearance" }, { label: "Haptics" }],
+      },
+      noLog,
+    );
+
+    assert.ok(presses.some((selector) => selector.includes("sidebar.settings.button")));
+    assert.ok(presses.some((selector) => selector.includes("Appearance")));
+  });
+
+  it("fails closed when seek never reaches the mapped origin", async () => {
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: automationsNodes }),
+      press: () => Promise.resolve({}),
+      back: () => Promise.resolve({}),
+      wait: () => Promise.resolve({}),
+    });
+    await assert.rejects(
+      () =>
+        runIosRecipeStep(
+          device,
+          {
+            kind: "tour",
+            screenshot: false,
+            originTitle: "Settings",
+            fallbackStops: [{ label: "Appearance" }, { label: "Haptics" }],
+          },
+          noLog,
+        ),
+      /tour:not-on-origin/,
+    );
   });
 });

@@ -50,7 +50,7 @@ test("global configuration uses CLI over environment over defaults", () => {
   assert.equal(fromEnvironment.config.connection.url, "https://env.example");
   assert.equal(fromEnvironment.config.connection.projectId, "env-project");
   assert.equal(fromEnvironment.config.connection.organizationId, "local");
-  assert.equal(fromEnvironment.config.timeoutMs, 120_000);
+  assert.equal(fromEnvironment.config.timeoutMs, 180_000);
 });
 
 test("credential source reads a named environment variable and redacts its value", () => {
@@ -346,4 +346,64 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     () => parseCli(["device", "screenshot", "pixel-9", "--force"], {}),
     /requires --file/,
   );
+  const marked = parseCli(
+    ["device", "screenshot", "pixel-9", "--mark", "78,88", "--file", "p.png"],
+    {},
+  );
+  assert.equal(marked.command, "invoke");
+  if (marked.command === "invoke") {
+    assert.deepEqual(marked.input, { serial: "pixel-9", previewX: 78, previewY: 88 });
+  }
+  const snapshot = parseCli(["device", "snapshot", "pixel-9"], {});
+  assert.equal(snapshot.command, "invoke");
+  if (snapshot.command === "invoke") {
+    assert.equal(snapshot.input.visual, true);
+  }
+  const teach = parseCli(
+    [
+      "map",
+      "teach",
+      "settings",
+      "--input",
+      JSON.stringify({
+        target: { kind: "device", platform: "android", targetId: "pixel-9" },
+        leaseId: "lease-1",
+        title: "Connections",
+        interaction: { kind: "point", x: 540, y: 1275 },
+      }),
+    ],
+    {},
+  );
+  assert.equal(teach.command, "invoke");
+  if (teach.command === "invoke") {
+    assert.equal(teach.operationId, "app-map.teach");
+    assert.equal(teach.input.appMapId, "settings");
+  }
+  assert.throws(
+    () => parseCli(["device", "launch", "pixel-9", "Grok", "--mark", "1,2"], {}),
+    /only valid/,
+  );
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--mark", "nope"], {}),
+    /<x>,<y>/,
+  );
+  const preview = parseCli(
+    [
+      "device",
+      "interact",
+      "pixel-9",
+      "--preview",
+      "--file",
+      "preview.png",
+      "--input",
+      '{"kind":"label","label":"Back"}',
+    ],
+    {},
+  );
+  assert.equal(preview.command, "invoke");
+  if (preview.command === "invoke") {
+    assert.equal(preview.behavior, "screenshot");
+    assert.equal(preview.input.preview, true);
+    assert.deepEqual(preview.screenshotOutput, { kind: "file", path: "preview.png", force: false });
+  }
 });

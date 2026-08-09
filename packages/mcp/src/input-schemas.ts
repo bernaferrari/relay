@@ -185,6 +185,20 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       kind: z.enum(["label", "point", "ref", "find", "text-match", "swipe", "type"]),
     })
     .catchall(z.unknown()),
+  "target.ui.describe": z.object(targetReference).strict(),
+  "target.ui.back": z
+    .object({
+      ...targetReference,
+      parentTitles: z.array(z.string()).optional(),
+    })
+    .strict(),
+  "target.ui.scrollCollect": z
+    .object({
+      ...targetReference,
+      maxScrolls: z.number().int().min(0).max(8).optional(),
+      allowSensitive: z.boolean().optional(),
+    })
+    .strict(),
   "target.touch": z
     .object({
       ...targetReference,
@@ -307,6 +321,37 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
           position: point.describe("Optional canvas position").optional(),
         })
         .strict(),
+    })
+    .strict(),
+  "app-map.teach": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      expectedRevision: natural("Optional App Map revision; stale values retry").optional(),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      target: authoringTarget,
+      leaseId: identifier("Exclusive control lease"),
+      fromScreenId: identifier("Source screen when tapping a destination").optional(),
+      title: text("Destination screen title").optional(),
+      label: text("Connection label").optional(),
+      interaction: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("point"), x: z.number(), y: z.number() }).strict(),
+          z
+            .object({
+              kind: z.literal("label"),
+              label: text("Visible label"),
+              point: point.optional(),
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal("identifier"),
+              identifier: identifier("Accessibility identifier"),
+              point: point.optional(),
+            })
+            .strict(),
+        ])
+        .optional(),
     })
     .strict(),
   "app-map.screen.update": z
@@ -552,6 +597,17 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "discovery.interact": z
     .object({ sessionId: identifier("Discovery session identifier"), kind: z.string() })
     .catchall(z.unknown()),
+  "corpus.rename": z
+    .object({ sessionId: identifier("Corpus session identifier"), name: text("Corpus name") })
+    .strict(),
+  "corpus.status.update": z
+    .object({
+      sessionId: identifier("Corpus session identifier"),
+      status: z.enum(["draft", "running", "paused", "complete", "stopped", "failed"]),
+    })
+    .strict(),
+  "corpus.start": z.object({ sessionId: identifier("Corpus session identifier") }).strict(),
+  "corpus.cancel": z.object({ sessionId: identifier("Corpus session identifier") }).strict(),
   "job.list": z
     .object({ full: z.boolean().optional(), limit: z.number().int().positive().optional() })
     .strict(),

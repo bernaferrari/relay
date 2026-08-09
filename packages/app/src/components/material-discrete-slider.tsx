@@ -14,14 +14,14 @@ export function MaterialDiscreteSlider(props: {
 
   return (
     <div class="group relative h-9 px-2.5">
-      <div class="pointer-events-none absolute top-3.5 right-2.5 left-2.5 h-1 rounded-full bg-[var(--v2-background-bg-layer-02)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_58%,transparent)]">
+      <div class="pointer-events-none absolute top-3.5 right-2.5 left-2.5 h-1 rounded-full bg-[var(--surface-base-hover)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_58%,transparent)]">
         <i
-          class="absolute inset-y-0 left-0 rounded-full bg-[var(--v2-background-bg-accent)]"
+          class="absolute inset-y-0 left-0 rounded-full bg-[var(--text-interactive-base)]"
           style={{ width: `${percent()}%` }}
         />
       </div>
       <span
-        class="pointer-events-none absolute top-3.5 z-[1] size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] bg-[var(--v2-background-bg-accent)] shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--v2-background-bg-base)] transition-[box-shadow,transform] duration-150 ease-out group-hover:shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--v2-background-bg-base),0_0_0_5px_color-mix(in_srgb,var(--v2-background-bg-accent)_16%,transparent)] group-has-[input:active]:scale-110 group-has-[input:focus-visible]:shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--v2-background-bg-base),0_0_0_5px_color-mix(in_srgb,var(--v2-background-bg-accent)_30%,transparent)]"
+        class="pointer-events-none absolute top-3.5 z-[1] size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color-mix(in_srgb,var(--text-interactive-base)_72%,white)] bg-[var(--text-interactive-base)] shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--background-base)] transition-[box-shadow,transform] duration-150 ease-out group-hover:shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--background-base),0_0_0_5px_color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] group-has-[input:active]:scale-110 group-has-[input:focus-visible]:shadow-[0_1px_2px_rgb(0_0_0/34%),0_0_0_3px_var(--background-base),0_0_0_5px_color-mix(in_srgb,var(--text-interactive-base)_30%,transparent)]"
         style={{ left: `calc(10px + (100% - 20px) * ${percent() / 100})` }}
         aria-hidden="true"
       ></span>
@@ -30,8 +30,8 @@ export function MaterialDiscreteSlider(props: {
           <i
             class={
               index() === value()
-                ? "pointer-events-none absolute top-[25px] size-1 -translate-x-1/2 rounded-full bg-[var(--v2-background-bg-accent)]"
-                : "pointer-events-none absolute top-[25px] size-1 -translate-x-1/2 rounded-full bg-[var(--v2-border-border-strong)] opacity-60"
+                ? "pointer-events-none absolute top-[25px] size-1 -translate-x-1/2 rounded-full bg-[var(--text-interactive-base)]"
+                : "pointer-events-none absolute top-[25px] size-1 -translate-x-1/2 rounded-full bg-[var(--border-strong-base)] opacity-60"
             }
             style={{
               left: `calc(10px + (100% - 20px) * ${max() === 0 ? 0 : index() / max()})`,

@@ -5,7 +5,7 @@ import { Icon } from "./icon";
 
 export type AppMapDeviceStatus = {
   label: string;
-  kind: "idle" | "progress" | "ready" | "recording" | "attention";
+  kind: "idle" | "progress" | "ready" | "recording" | "info" | "attention";
   detail?: string;
 };
 
@@ -54,6 +54,7 @@ export function appMapDeviceStatus(input: {
 /** One visual language for device state: neutral progress, semantic attention,
  * and a dot only when the live state is definitive. */
 export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: string }) {
+  const showState = () => Boolean(props.label) && props.status.kind !== "ready";
   return (
     <span
       class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
@@ -66,26 +67,38 @@ export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: s
         when={props.status.kind === "progress"}
         fallback={
           <Show
-            when={props.status.kind === "idle" || props.status.kind === "attention"}
+            when={
+              props.status.kind === "idle" ||
+              props.status.kind === "info" ||
+              props.status.kind === "attention"
+            }
             fallback={
               <i
                 class={cn(
                   "size-1.5 shrink-0 rounded-full",
                   props.status.kind === "ready"
                     ? "bg-[var(--icon-success-base)]"
-                    : "bg-[var(--icon-critical-base)]",
+                    : "bg-[var(--text-interactive-base)] motion-safe:animate-pulse",
                 )}
                 aria-hidden="true"
               />
             }
           >
             <Icon
-              name={props.status.kind === "attention" ? "alert" : "smartphone"}
+              name={
+                props.status.kind === "attention"
+                  ? "alert"
+                  : props.status.kind === "info"
+                    ? "map"
+                    : "smartphone"
+              }
               size={13}
               class={cn(
                 props.status.kind === "attention"
                   ? "text-[var(--icon-warning-base)]"
-                  : "text-[var(--text-weak)]",
+                  : props.status.kind === "info"
+                    ? "text-[var(--text-interactive-base)]"
+                    : "text-[var(--text-weak)]",
               )}
             />
           </Show>
@@ -96,7 +109,12 @@ export function DeviceStatusLabel(props: { status: AppMapDeviceStatus; label?: s
           aria-hidden="true"
         />
       </Show>
-      <span class="truncate">{props.label ?? props.status.label}</span>
+      <span class="min-w-0 truncate">{props.label ?? props.status.label}</span>
+      <Show when={showState()}>
+        <span class="shrink-0 text-[10px] font-medium text-[var(--text-weak)]">
+          {props.status.label}
+        </span>
+      </Show>
     </span>
   );
 }

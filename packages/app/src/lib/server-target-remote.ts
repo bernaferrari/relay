@@ -7,6 +7,11 @@ export async function listDevices(request: ServerRequest): Promise<DeviceInfo[]>
   return data.devices ?? [];
 }
 
+export async function listAndroidDevicesFast(request: ServerRequest): Promise<DeviceInfo[]> {
+  const data = await request<{ devices: DeviceInfo[] }>("/devices?phase=android");
+  return data.devices ?? [];
+}
+
 export async function listActions(request: ServerRequest): Promise<ActionInfo[]> {
   const data = await request<{ actions: ActionInfo[] }>("/actions");
   return data.actions ?? [];

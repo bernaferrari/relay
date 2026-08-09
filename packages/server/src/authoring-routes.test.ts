@@ -166,6 +166,21 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
     assert.equal(response.session.target.targetId, "device-a");
     assert.equal((await owner.authoringSessions()).sessions[0]?.id, response.session.id);
     assert.equal(
+      (
+        await owner.authoringSessions({
+          appMapId: created.appMap.id,
+          targetId: "device-a",
+          activeOnly: true,
+        })
+      ).sessions[0]?.id,
+      response.session.id,
+    );
+    assert.equal(
+      (await owner.authoringSessions({ appMapId: "another-map", activeOnly: true })).sessions
+        .length,
+      0,
+    );
+    assert.equal(
       (await observer.authoringSession(response.session.id)).session.id,
       response.session.id,
     );
@@ -176,6 +191,7 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
     );
     const cancelled = await owner.cancelAuthoringSession(response.session.id);
     assert.equal(cancelled.session.state, "cancelled");
+    assert.equal((await owner.authoringSessions({ activeOnly: true })).sessions.length, 0);
     await owner.cleanupAuthoringSession(response.session.id);
     assert.equal((await owner.authoringSessions()).sessions.length, 0);
   } finally {

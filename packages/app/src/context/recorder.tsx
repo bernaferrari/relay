@@ -22,6 +22,7 @@ import { ancestryOf, nodeAtPoint, targetFromStrategy, type PickStrategy } from "
 import { sentenceForStep } from "../lib/step-sentence";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { toast } from "./toast";
+import { humanError } from "../lib/human-error";
 
 export type RecLevel = "smart" | "element" | "point";
 
@@ -92,6 +93,23 @@ export function hasUsableDeviceBounds(
   );
 }
 
+/** Logical stage size: AX bounds, else retina screenshot mapped to points. */
+export function logicalBoundsFromCapture(input: {
+  snapshot?: SnapshotState;
+  imageWidth?: number;
+  imageHeight?: number;
+}): { width: number; height: number } | undefined {
+  const snapshot = input.snapshot ?? null;
+  if (hasUsableDeviceBounds(snapshot)) return snapshot.bounds;
+  const width = input.imageWidth ?? 0;
+  const height = input.imageHeight ?? 0;
+  if (width > 1 && height > 1) {
+    const scale = width >= 1000 && height >= 1000 ? 2 : 1;
+    return { width: Math.round(width / scale), height: Math.round(height / scale) };
+  }
+  return undefined;
+}
+
 export function buildTapTarget(
   bounds: { width: number; height: number } | undefined,
   node: SnapshotNode | null,
@@ -116,44 +134,119 @@ export function buildTapTarget(
   };
 }
 
+/**
+ * A live Android click may outlive the accessibility frame used to decorate
+ * it. Keep frame-scoped refs for evidence review, but execute with a stable
+ * selector (or the exact mirrored point) so a background snapshot cannot turn
+ * a responsive click into a delayed expired-ref failure.
+ */
+export function stableLiveTapStep(
+  target: StepTarget,
+):
+  | { kind: "identifier"; identifier: string; point?: { x: number; y: number } }
+  | { kind: "label"; label: string; point?: { x: number; y: number } }
+  | { kind: "point"; x: number; y: number }
+  | null {
+  const point = target.point ? { x: target.point.x, y: target.point.y } : undefined;
+  if (target.identifier)
+    return { kind: "identifier", identifier: target.identifier, ...(point ? { point } : {}) };
+  if (target.label) return { kind: "label", label: target.label, ...(point ? { point } : {}) };
+  return point ? { kind: "point", ...point } : null;
+}
+
 export function semanticTapNode(
   snapshot: SnapshotState,
   node: SnapshotNode | null,
 ): SnapshotNode | null {
   if (!snapshot || !node) return node;
+  const screenArea = snapshot.bounds ? snapshot.bounds.width * snapshot.bounds.height : Infinity;
+  const candidates = ancestryOf(snapshot, node).filter((candidate) => {
+    const rect = candidate.rect;
+    return !rect || rect.width * rect.height <= screenArea * 0.35;
+  });
+  // Full-screen overlays are implementation detail, not mouse targets. A stale
+  // overlay id is especially harmful because it delays the click and can apply
+  // its coordinate fallback after another app has foregrounded. Keep the
+  // nearest bounded label, then a genuinely actionable bounded node; otherwise
+  // execute the exact mirrored point.
   return (
-    ancestryOf(snapshot, node).find((candidate) =>
-      Boolean((candidate.label ?? candidate.value ?? "").trim()),
-    ) ?? node
+    candidates.find((candidate) => Boolean((candidate.label ?? candidate.value ?? "").trim())) ??
+    candidates.find((candidate) => Boolean(candidate.hittable && candidate.identifier)) ??
+    null
+  );
+}
+
+export function canRetryTapAtPoint(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /selector did not match|expired ref|ref frame|invalid ref|no longer valid|stale/i.test(
+    message,
+  );
+}
+
+function nodeCenter(
+  node: SnapshotNode | null,
+  fallback?: { x: number; y: number },
+): { x: number; y: number } | undefined {
+  const rect = node?.rect;
+  if (
+    rect &&
+    Number.isFinite(rect.x) &&
+    Number.isFinite(rect.y) &&
+    rect.width > 1 &&
+    rect.height > 1
+  ) {
+    return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+  }
+  if (fallback && Number.isFinite(fallback.x) && Number.isFinite(fallback.y)) return fallback;
+  return undefined;
+}
+
+function uniqueIdentifierCount(snapshot: SnapshotState, identifier: string): number {
+  return (
+    snapshot?.nodes.filter((candidate) => (candidate.identifier ?? "").trim() === identifier)
+      .length ?? 0
+  );
+}
+
+function uniqueLabelCount(snapshot: SnapshotState, label: string): number {
+  const normalized = label.trim().toLocaleLowerCase();
+  return (
+    snapshot?.nodes.filter(
+      (candidate) =>
+        (candidate.label ?? candidate.value ?? "").trim().toLocaleLowerCase() === normalized,
+    ).length ?? 0
   );
 }
 
 /**
- * XCTest can expose duplicate, non-hittable accessibility nodes for one
- * visible SpringBoard icon. Pressing either label still resolves as a
- * successful command, but it does not mutate the screen. Treat semantics as
- * an optimization only when the captured node proves it is actionable;
- * otherwise preserve the exact point the person selected.
+ * Live iOS still prefers a coordinate (refs expire), but a unique identifier
+ * or unique hittable label is how Grok chrome actually opens. Tap the control
+ * center, not the finger glyph. Duplicate non-hittable labels stay exact-point.
  */
 export function physicalIosTapStep(
   snapshot: SnapshotState,
   node: SnapshotNode | null,
   target: StepTarget,
+  options?: { preferRef?: boolean },
 ):
   | { kind: "ref"; ref: string }
-  | { kind: "label"; label: string }
+  | { kind: "identifier"; identifier: string; x: number; y: number }
+  | { kind: "label"; label: string; x: number; y: number }
   | { kind: "point"; x: number; y: number }
   | null {
-  if (node?.hittable === true && target.ref) return { kind: "ref", ref: target.ref };
+  if (options?.preferRef && node?.hittable === true && target.ref) {
+    return { kind: "ref", ref: target.ref };
+  }
 
-  if (target.label && node?.hittable !== false) {
-    const normalized = target.label.trim().toLocaleLowerCase();
-    const matches =
-      snapshot?.nodes.filter(
-        (candidate) =>
-          (candidate.label ?? candidate.value ?? "").trim().toLocaleLowerCase() === normalized,
-      ).length ?? 0;
-    if (matches === 1) return { kind: "label", label: target.label };
+  const identifier = target.identifier?.trim();
+  if (identifier && uniqueIdentifierCount(snapshot, identifier) === 1) {
+    const point = nodeCenter(node, target.point);
+    if (point) return { kind: "identifier", identifier, x: point.x, y: point.y };
+  }
+
+  if (target.label && node?.hittable !== false && uniqueLabelCount(snapshot, target.label) === 1) {
+    const point = nodeCenter(node, target.point);
+    if (point) return { kind: "label", label: target.label, x: point.x, y: point.y };
   }
 
   return target.point ? { kind: "point", x: target.point.x, y: target.point.y } : null;
@@ -304,6 +397,22 @@ export function selectProjectedAuthoringSession(
   );
 }
 
+export function supersededReviewSessionIds(
+  sessions: readonly AuthoringSession[],
+  current: AuthoringSession,
+): string[] {
+  return sessions
+    .filter(
+      (session) =>
+        session.state === "reviewing" &&
+        session.actorId === current.actorId &&
+        session.appMapId === current.appMapId &&
+        session.target.targetId === current.target.targetId &&
+        session.updatedAt <= current.updatedAt,
+    )
+    .map((session) => session.id);
+}
+
 export const { use: useRecorder, provider: RecorderProvider } = createSimpleContext({
   name: "Recorder",
   gate: false,
@@ -375,7 +484,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!serial) return false;
       if (await ensureControlLease(serial)) return true;
       toast(
-        server.controlIssue() || "Device control is not available yet. Try again in a moment.",
+        humanError(
+          server.controlIssue() || "Device control is not available yet. Try again in a moment.",
+        ),
         "warning",
       );
       return false;
@@ -398,7 +509,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
             setInteracting(session.state === "recording");
             return session.state === "recording";
           } catch (error) {
-            toast(error instanceof Error ? error.message : String(error), "warning");
+            toast(humanError(error), "warning");
             return false;
           }
         }
@@ -414,8 +525,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
         toast(
-          server.liveCaptureIssue() ||
-            "Device control is not available yet. Try again in a moment.",
+          humanError(
+            server.liveCaptureIssue() ||
+              "Device control is not available yet. Try again in a moment.",
+          ),
           "warning",
         );
         return false;
@@ -440,14 +553,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         });
         session = await server.observeAuthoringSession(session.id);
         if (session.state !== "ready") {
-          toast(session.error || "Relay could not prepare this device for recording", "warning");
+          toast(
+            humanError(session.error || "Relay could not prepare this device for recording"),
+            "warning",
+          );
           return false;
         }
         session = await server.startAuthoringSession(session.id);
         setInteracting(session.state === "recording");
         return session.state === "recording";
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
         return false;
       }
     }
@@ -482,8 +598,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
         toast(
-          server.liveCaptureIssue() ||
-            "Device control is not available yet. Try again in a moment.",
+          humanError(
+            server.liveCaptureIssue() ||
+              "Device control is not available yet. Try again in a moment.",
+          ),
           "warning",
         );
         return null;
@@ -553,7 +671,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
             : {}),
         };
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
         return null;
       } finally {
         if (session) {
@@ -587,8 +705,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const leaseId = device ? await ensureControlLease(device.serial) : null;
       if (!appMapId || !device || !leaseId) {
         toast(
-          server.liveCaptureIssue() ||
-            "Device control is not available yet. Try again in a moment.",
+          humanError(
+            server.liveCaptureIssue() ||
+              "Device control is not available yet. Try again in a moment.",
+          ),
           "warning",
         );
         return null;
@@ -610,10 +730,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ...(options.title?.trim() ? { title: options.title.trim() } : {}),
           ...(options.position ? { position: options.position } : {}),
         });
-        await server.refreshAppMaps();
+        // The capture operation uses a short-lived Authoring Session so CLI,
+        // MCP, and UI share one observation boundary. Its server-side cleanup
+        // is intentionally invisible; refresh both projections so the
+        // transient reviewing session cannot open the path-review editor for
+        // a screenshot-only action.
+        await Promise.all([server.refreshAppMaps(), server.refreshAuthoringSessions()]);
         return { ...result, appMap: await server.loadAppMap(appMapId) };
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
         return null;
       }
     }
@@ -623,11 +748,22 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const session = activeSession();
       if (!session || !ownsActiveSession() || session.state !== "recording") return;
       const stopped = await server.stopAuthoringSession(session.id);
-      if (stopped.error) toast(stopped.error, "warning");
+      if (stopped.state === "cancelled") {
+        setDismissedSessionIds((current) => new Set([...current, stopped.id]));
+        setInteracting(false);
+        toast("Nothing recorded · returned to the map", "info");
+        return;
+      }
+      if (stopped.error) toast(humanError(stopped.error), "warning");
       setInteracting(true);
     }
 
-    async function driveTap(fx: number, fy: number, alreadyApplied = false): Promise<boolean> {
+    async function driveTap(
+      fx: number,
+      fy: number,
+      alreadyApplied = false,
+      imageSize?: { width: number; height: number },
+    ): Promise<boolean> {
       if (server.health() !== "online") return false;
       try {
         const session = activeSession();
@@ -641,51 +777,107 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         const snapshot = recordingHere
           ? snapshotFromAuthoringSession(session)
           : (server.snapshot() ?? (await server.captureUiSnapshot()));
-        if (!hasUsableDeviceBounds(snapshot)) {
-          toast("Relay needs an inspectable device screen for this gesture", "warning");
+        const liveFrame = server.liveFrame();
+        const bounds = logicalBoundsFromCapture({
+          snapshot,
+          imageWidth: imageSize?.width ?? liveFrame?.width,
+          imageHeight: imageSize?.height ?? liveFrame?.height,
+        });
+        if (!bounds) {
+          toast("Relay needs a live screen to aim this gesture", "warning");
           return alreadyApplied;
         }
-        const node = nodeAtPoint(snapshot, fx, fy);
+        const node = snapshot ? nodeAtPoint(snapshot, fx, fy) : null;
         const semanticNode = semanticTapNode(snapshot, node);
-        const target = buildTapTarget(snapshot.bounds, semanticNode, fx, fy);
-        const physicalIos = targetIsPhysicalIos(
-          server.devices().find((device) => device.serial === server.selectedDevice()),
-        );
+        const target = buildTapTarget(bounds, semanticNode, fx, fy);
+        const selectedDevice = server
+          .devices()
+          .find((device) => device.serial === server.selectedDevice());
+        const physicalIos = targetIsPhysicalIos(selectedDevice);
         const physicalIosStep = physicalIosTapStep(snapshot, semanticNode, target);
         const physicalIosTarget = physicalIos
           ? physicalIosStep?.kind === "ref"
             ? { ref: physicalIosStep.ref, ...(target.point ? { point: target.point } : {}) }
-            : physicalIosStep?.kind === "label"
-              ? { label: physicalIosStep.label, ...(target.point ? { point: target.point } : {}) }
-              : target.point
-                ? { point: target.point }
-                : target
+            : physicalIosStep?.kind === "identifier"
+              ? {
+                  identifier: physicalIosStep.identifier,
+                  point: { x: physicalIosStep.x, y: physicalIosStep.y },
+                }
+              : physicalIosStep?.kind === "label"
+                ? {
+                    label: physicalIosStep.label,
+                    point: { x: physicalIosStep.x, y: physicalIosStep.y },
+                  }
+                : target.point
+                  ? { point: target.point }
+                  : target
           : target;
         if (recordingHere && session) {
-          await server.interactAuthoringSession(session.id, {
-            kind: "tap",
-            target: physicalIosTarget,
-            ...(alreadyApplied ? { applied: true } : {}),
-          });
+          try {
+            await server.interactAuthoringSession(session.id, {
+              kind: "tap",
+              target: physicalIosTarget,
+              ...(alreadyApplied ? { applied: true } : {}),
+            });
+          } catch (error) {
+            if (alreadyApplied || !target.point || !canRetryTapAtPoint(error)) throw error;
+            await server.interactAuthoringSession(session.id, {
+              kind: "tap",
+              target: { point: target.point },
+            });
+          }
           return true;
         }
         if (alreadyApplied) return true;
-        // Match Relay's resolver policy: deterministic semantic identity first,
-        // then human-readable intent, with coordinates only as the final escape
-        // hatch. Coordinate-first taps were visibly highlighted correctly yet
-        // missed on rotated physical iPads.
+        // Physical iOS live drive prefers the exact point touched — refs expire
+        // across runner generations. If a ref still fails, retry as a point.
         if (physicalIos) {
-          return physicalIosStep ? server.interactStep(physicalIosStep) : false;
+          if (!physicalIosStep) return false;
+          const step =
+            physicalIosStep.kind === "identifier"
+              ? {
+                  kind: "identifier" as const,
+                  identifier: physicalIosStep.identifier,
+                  point: { x: physicalIosStep.x, y: physicalIosStep.y },
+                }
+              : physicalIosStep.kind === "label"
+                ? {
+                    kind: "label" as const,
+                    label: physicalIosStep.label,
+                    point: { x: physicalIosStep.x, y: physicalIosStep.y },
+                  }
+                : physicalIosStep;
+          try {
+            return await server.interactStep(step);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (
+              /expired ref|ref frame|invalid ref|no longer valid|stale|did not change the screen/i.test(
+                message,
+              ) &&
+              target.point
+            ) {
+              return server.interactStep({
+                kind: "point",
+                x: target.point.x,
+                y: target.point.y,
+              });
+            }
+            throw error;
+          }
         }
-        if (target.identifier)
-          return server.interactStep({ kind: "identifier", identifier: target.identifier });
-        if (target.ref) return server.interactStep({ kind: "ref", ref: target.ref });
-        if (target.label) return server.interactStep({ kind: "label", label: target.label });
-        return target.point
-          ? server.interactStep({ kind: "point", x: target.point.x, y: target.point.y })
-          : false;
+        const stableStep = stableLiveTapStep(target);
+        if (!stableStep) return false;
+        try {
+          return await server.interactStep(stableStep);
+        } catch (error) {
+          if (stableStep.kind === "point" || !target.point || !canRetryTapAtPoint(error)) {
+            throw error;
+          }
+          return server.interactStep({ kind: "point", x: target.point.x, y: target.point.y });
+        }
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
         return false;
       }
     }
@@ -695,6 +887,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       to: { x: number; y: number },
       durationMs: number,
       alreadyApplied = false,
+      imageSize?: { width: number; height: number },
     ): Promise<boolean> {
       if (server.health() !== "online") return false;
       try {
@@ -705,21 +898,27 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         const snapshot = recordingHere
           ? snapshotFromAuthoringSession(session)
           : (server.snapshot() ?? (await server.captureUiSnapshot()));
-        if (!hasUsableDeviceBounds(snapshot)) return alreadyApplied;
+        const liveFrame = server.liveFrame();
+        const bounds = logicalBoundsFromCapture({
+          snapshot,
+          imageWidth: imageSize?.width ?? liveFrame?.width,
+          imageHeight: imageSize?.height ?? liveFrame?.height,
+        });
+        if (!bounds) return alreadyApplied;
         const pin = {
           anchor: { horizontal: "left" as const, vertical: "top" as const },
-          referenceBounds: { ...snapshot.bounds },
+          referenceBounds: { ...bounds },
         };
         const interaction: AuthoringInteraction = {
           kind: "swipe",
           from: {
-            x: Math.round(from.x * snapshot.bounds.width),
-            y: Math.round(from.y * snapshot.bounds.height),
+            x: Math.round(from.x * bounds.width),
+            y: Math.round(from.y * bounds.height),
             ...pin,
           },
           to: {
-            x: Math.round(to.x * snapshot.bounds.width),
-            y: Math.round(to.y * snapshot.bounds.height),
+            x: Math.round(to.x * bounds.width),
+            y: Math.round(to.y * bounds.height),
             ...pin,
           },
           durationMs,
@@ -737,7 +936,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           durationMs,
         });
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
         return false;
       }
     }
@@ -762,7 +961,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       try {
         await server.interactAuthoringSession(session.id, { kind: "tap", target });
       } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "warning");
+        toast(humanError(error), "warning");
       }
     }
 
@@ -789,18 +988,22 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       // immediately. App-map refreshes can take a few seconds on attached iOS
       // hardware and must not make a successful click look ignored. Restore
       // the session only when persistence actually fails.
-      setDismissedSessionIds((current) => new Set([...current, session.id]));
+      const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
+      setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
       try {
         const committed = await server.commitAuthoringSession(session.id, input);
         setPendingSourceScreenId(undefined);
         setPendingTransitionId(undefined);
         setPendingGroup("");
-        toast("Connection added to the map", "success");
+        toast(
+          "Path kept on the map · record another, capture a screenshot, or run the path",
+          "success",
+        );
         return committed;
       } catch (error) {
         setDismissedSessionIds((current) => {
           const next = new Set(current);
-          next.delete(session.id);
+          for (const id of dismissedIds) next.delete(id);
           return next;
         });
         throw error;
@@ -809,13 +1012,29 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     async function discardTake(): Promise<void> {
       const session = activeSession();
-      if (!session || !ownsActiveSession()) return;
-      if (session.state === "reviewing") await server.discardAuthoringSession(session.id);
-      else await server.cancelAuthoringSession(session.id);
-      setDismissedSessionIds((current) => new Set([...current, session.id]));
+      // Always clear local review chrome first so Discard never leaves the
+      // person stuck on a dead review panel if the server call fails or the
+      // session is no longer owned by this actor.
       setPendingSourceScreenId(undefined);
       setPendingTransitionId(undefined);
       setPendingGroup("");
+      if (!session) {
+        toast("Nothing left to discard", "info");
+        return;
+      }
+      const dismissedIds = supersededReviewSessionIds(server.authoringSessions(), session);
+      setDismissedSessionIds((current) => new Set([...current, ...dismissedIds]));
+      if (!ownsActiveSession()) {
+        toast("This recording belongs to another session. Cleared the local review.", "warning");
+        return;
+      }
+      try {
+        if (session.state === "reviewing") await server.discardAuthoringSession(session.id);
+        else await server.cancelAuthoringSession(session.id);
+      } catch (error) {
+        // Keep it dismissed locally so the map is usable; surface the failure.
+        toast(humanError(error), "warning");
+      }
     }
 
     async function removeTakeStep(index: number): Promise<void> {

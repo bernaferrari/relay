@@ -32,3 +32,11 @@ vendor/agent-device/dist/**/*.map
 
 *.legacy.css.bak
 broken-ui.png
+
+# Local device tooling and dogfood artifacts. These are installed or captured
+# per machine; committing them adds binaries, nested Git history, and secrets.
+vendor/go-ios/
+vendor/opencode-agentboard
+devimages/
+tmp/
+selfIdentity.plist

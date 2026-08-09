@@ -30,7 +30,7 @@ export function RecipesSettingsPanel() {
             <h3 class="m-0 text-13-medium text-text-strong">Agent planner</h3>
             <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
               Relay can use OpenRouter to choose among safe controls while exploring. Without a key
-              it keeps working with the deterministic semantic planner.
+              Relay can still turn plain language into steps.
             </p>
             <code class="mt-2.5 block overflow-x-auto rounded-md bg-surface-raised-stronger-non-alpha px-2.5 py-2 font-mono text-[10.5px] text-text-base">
               OPENROUTER_API_KEY=… pnpm dev:desktop

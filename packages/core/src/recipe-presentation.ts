@@ -71,6 +71,10 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Needs review · ${step.capability}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
+    case "tour":
+      return step.originTitle
+        ? `Tour ${step.originTitle} rows${step.depth ? ` depth ${step.depth}` : ""}`
+        : `Tour visible rows${step.depth ? ` depth ${step.depth}` : ""}`;
     case "flow":
       return `Flow: ${step.flow}`;
     case "module":
@@ -119,6 +123,10 @@ export function describeRecipeStep(step: RecipeStep): string {
         : "Mark network log";
     case "logs":
       return `${step.action} device logs`;
+    default: {
+      const kind = (step as { kind?: string }).kind ?? "unknown";
+      throw new Error(`unsupported recipe step: ${kind}`);
+    }
   }
 }
 
@@ -156,6 +164,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["wait"];
     case "screenshot":
       return ["shot"];
+    case "tour":
+      return ["tap", "shot"];
     case "flow":
       return ["store"];
     case "module":
@@ -180,5 +190,9 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "network":
     case "logs":
       return ["store"];
+    default: {
+      const kind = (step as { kind?: string }).kind ?? "unknown";
+      throw new Error(`unsupported recipe step: ${kind}`);
+    }
   }
 }

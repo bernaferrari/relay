@@ -33,7 +33,8 @@ test("explains automatic and manual signing conflicts directly", () => {
     ),
   );
   assert.ok(error instanceof IosRunnerSetupError);
-  assert.match(error.message, /manual signing override/);
+  assert.match(error.message, /AGENT_DEVICE_IOS_SIGNING_IDENTITY/);
+  assert.match(error.message, /daemon/);
 });
 
 test("explains when Xcode has no account for the configured Apple team", () => {

@@ -1,4 +1,13 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  lazy,
+  onMount,
+  Suspense,
+} from "solid-js";
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
@@ -46,12 +55,17 @@ import {
   type RunFilterId,
 } from "../lib/runs-workspace-helpers";
 
+const CorpusWorkspace = lazy(() =>
+  import("./corpus-workspace").then((module) => ({ default: module.CorpusWorkspace })),
+);
+
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
   onOpenTest: (id: string) => void;
   onOpenTests: () => void;
 }) {
   const server = useServer();
+  const [view, setView] = createSignal<"runs" | "corpus">("runs");
   const workbench = useWorkbench();
   const linkedRun = new URLSearchParams(window.location.search).get("run");
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
@@ -202,9 +216,9 @@ export function RunsWorkspace(props: {
           setDurableVisualComparison(durable);
         }
         const labels: Record<VisualReviewAction, string> = {
-          "approve-new-baseline": "New baseline approved",
-          "keep-baseline": "Approved baseline kept",
-          "fix-connection": "Connection marked for repair",
+          "approve-new-baseline": "Expected look saved",
+          "keep-baseline": "Expected look kept",
+          "fix-connection": "Path marked for repair",
           retry: "Retry requested",
           "mark-expected-variation": "Expected variation recorded",
         };
@@ -319,6 +333,30 @@ export function RunsWorkspace(props: {
     tabs[next]?.focus();
     tabs[next]?.click();
   };
+  if (view() === "corpus") {
+    return (
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div class="flex items-center justify-between gap-3 border-b border-border-weak-base px-[clamp(18px,3vw,36px)] py-3">
+          <p class="m-0 text-[12px] text-text-weak">Screenshot packs · crawl across languages</p>
+          <Button variant="secondary" size="md" onClick={() => setView("runs")}>
+            <Icon name="chevron-left" size={13} /> Back to runs
+          </Button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <Suspense
+            fallback={
+              <div class="grid min-h-0 flex-1 place-items-center text-[12px] text-text-weak">
+                Loading screenshot crawl…
+              </div>
+            }
+          >
+            <CorpusWorkspace />
+          </Suspense>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section class={cn(selected() ? "flex min-h-0 flex-1 flex-col overflow-hidden" : productPage)}>
       <Show when={!selected()}>
@@ -326,25 +364,37 @@ export function RunsWorkspace(props: {
           <h2 class="m-0 text-[18px] font-semibold tracking-[-0.02em] text-text-strong">
             Run history
           </h2>
-          <Show when={rows().length > 0}>
-            <Button
-              variant="secondary"
-              size="lg"
-              disabled={refreshing()}
-              aria-busy={refreshing()}
-              onClick={() => void refreshRuns()}
-            >
-              <Icon
-                name="refresh"
-                size={15}
-                class={cn(
-                  refreshing() &&
-                    "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
-                )}
-              />{" "}
-              Refresh
-            </Button>
-          </Show>
+          <div class="flex items-center gap-2">
+            <Show when={rows().length > 0}>
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => setView(view() === "corpus" ? "runs" : "corpus")}
+              >
+                <Icon name="scan" size={15} />{" "}
+                {view() === "corpus" ? "Run history" : "Screenshot crawl"}
+              </Button>
+            </Show>
+            <Show when={rows().length > 0}>
+              <Button
+                variant="secondary"
+                size="lg"
+                disabled={refreshing()}
+                aria-busy={refreshing()}
+                onClick={() => void refreshRuns()}
+              >
+                <Icon
+                  name="refresh"
+                  size={15}
+                  class={cn(
+                    refreshing() &&
+                      "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
+                  )}
+                />{" "}
+                Refresh
+              </Button>
+            </Show>
+          </div>
         </div>
       </Show>
       <div
@@ -395,7 +445,11 @@ export function RunsWorkspace(props: {
                   </Show>
                   <span class="font-mono text-[10.5px] text-text-weaker">
                     {visibleRows().length}{" "}
-                    {historyExpanded() ? "runs" : visibleRows().length === 1 ? "flow" : "flows"}
+                    {historyExpanded()
+                      ? "runs"
+                      : visibleRows().length === 1
+                        ? "path run"
+                        : "path runs"}
                   </span>
                 </div>
               </div>
@@ -420,8 +474,8 @@ export function RunsWorkspace(props: {
                     size="lg"
                     icon="wave"
                     title="No runs yet"
-                    description="Run a test to keep its result, replay, and diagnostics together."
-                    actionLabel="Run a test"
+                    description="Run a kept path from the map. Results, screenshots, and play-back show up here. Screenshot crawl unlocks after your first run."
+                    actionLabel="Go to map"
                     onAction={props.onOpenTests}
                     class="py-14"
                   />
@@ -465,7 +519,7 @@ export function RunsWorkspace(props: {
         </Show>
         <Show when={selected()}>
           {(job) => (
-            <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+            <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--border-weak-base)] bg-[var(--background-base)]">
               <header class="grid shrink-0 gap-2.5 px-5 pt-4 pb-3.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="grid min-w-0 gap-1">
@@ -568,7 +622,7 @@ export function RunsWorkspace(props: {
                 </div>
               </header>
               <Show when={job().review?.status === "pending"}>
-                <div class="mx-4 mb-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--icon-warning-base)_32%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-warning-base)_7%,transparent)] px-3 py-3">
+                <div class="mx-4 mb-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--icon-warning-base)_32%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--icon-warning-base)_7%,transparent)] px-3 py-3">
                   <div class="flex items-start gap-2.5">
                     <span
                       class="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-warning-weak text-[14px] font-semibold text-text-warning-base"
@@ -624,7 +678,7 @@ export function RunsWorkspace(props: {
                 </div>
               </Show>
               <Show when={job().status === "error" || job().status === "cancelled"}>
-                <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--icon-critical-base)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5">
+                <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--icon-critical-base)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5">
                   <span class="mt-0.5 grid size-6 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] text-[var(--icon-critical-base)]">
                     <Icon name="alert" size={13} />
                   </span>
@@ -872,7 +926,7 @@ export function RunsWorkspace(props: {
                         ].includes(item.kind),
                       ) ?? []
                     }
-                    empty="No checks were recorded for this run. Add an assertion to verify a screen, element, text, timing, or response."
+                    empty="No checks on this run. Add a screen or text check when you edit the path, then run again."
                   />
                 </Show>
                 <Show when={tab() === "logs"}>

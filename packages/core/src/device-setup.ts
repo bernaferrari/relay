@@ -5,6 +5,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
+import {
+  DEFAULT_IOS_LIVE_PREVIEW,
+  parseIosLivePreviewSettings,
+  type IosLivePreviewSettings,
+} from "./ios-live-preview.js";
 
 const execFileAsync = promisify(execFile);
 const DEVICE_SETUP_VERSION = 1 as const;
@@ -29,6 +34,8 @@ export type AppleDeviceSetup = {
 export type DeviceSetup = {
   version: typeof DEVICE_SETUP_VERSION;
   ios?: AppleDeviceSetup;
+  /** Live preview transport for physical Apple devices. Control stays on XCTest. */
+  iosLivePreview?: IosLivePreviewSettings;
 };
 
 export type AppleSetupCheck = {
@@ -81,7 +88,12 @@ function parseDeviceSetup(value: unknown): DeviceSetup {
   if (!value || typeof value !== "object") return { version: DEVICE_SETUP_VERSION };
   const record = value as Record<string, unknown>;
   const ios = parseAppleSetup(record.ios);
-  return { version: DEVICE_SETUP_VERSION, ...(ios ? { ios } : {}) };
+  const iosLivePreview = parseIosLivePreviewSettings(record.iosLivePreview);
+  return {
+    version: DEVICE_SETUP_VERSION,
+    ...(ios ? { ios } : {}),
+    iosLivePreview,
+  };
 }
 
 function validateAppleSetup(input: AppleDeviceSetup): AppleDeviceSetup {
@@ -108,21 +120,44 @@ function validateAppleSetup(input: AppleDeviceSetup): AppleDeviceSetup {
   };
 }
 
+/** Signing env keys agent-device's daemon freezes at spawn time. */
+const IOS_SIGNING_ENV_KEYS = [
+  "AGENT_DEVICE_IOS_TEAM_ID",
+  "AGENT_DEVICE_IOS_BUNDLE_ID",
+  "AGENT_DEVICE_IOS_SIGNING_IDENTITY",
+  "AGENT_DEVICE_IOS_PROVISIONING_PROFILE",
+] as const;
+
+/** Expected process.env projection for a saved Apple setup (empty = unset). */
+export function expectedIosSigningEnv(
+  setup: DeviceSetup,
+): Record<(typeof IOS_SIGNING_ENV_KEYS)[number], string> {
+  const ios = setup.ios;
+  if (!ios) {
+    return {
+      AGENT_DEVICE_IOS_TEAM_ID: "",
+      AGENT_DEVICE_IOS_BUNDLE_ID: "",
+      AGENT_DEVICE_IOS_SIGNING_IDENTITY: "",
+      AGENT_DEVICE_IOS_PROVISIONING_PROFILE: "",
+    };
+  }
+  const manual = Boolean(ios.signingIdentity && ios.provisioningProfile);
+  return {
+    AGENT_DEVICE_IOS_TEAM_ID: ios.teamId,
+    AGENT_DEVICE_IOS_BUNDLE_ID: ios.bundleId,
+    AGENT_DEVICE_IOS_SIGNING_IDENTITY: manual ? ios.signingIdentity! : "",
+    AGENT_DEVICE_IOS_PROVISIONING_PROFILE: ios.provisioningProfile ?? "",
+  };
+}
+
 /** Make an already-saved setup available to agent-device in this server process. */
 export function applyDeviceSetup(setup: DeviceSetup): void {
-  const ios = setup.ios;
-  if (!ios) return;
-  process.env.AGENT_DEVICE_IOS_TEAM_ID = ios.teamId;
-  process.env.AGENT_DEVICE_IOS_BUNDLE_ID = ios.bundleId;
-  // Do not leak a certificate selected for discovery into automatic signing.
-  // Xcode rejects CODE_SIGN_STYLE=Automatic combined with an explicit
-  // CODE_SIGN_IDENTITY. Manual overrides are only valid as a complete pair.
-  if (ios.signingIdentity && ios.provisioningProfile)
-    process.env.AGENT_DEVICE_IOS_SIGNING_IDENTITY = ios.signingIdentity;
-  else delete process.env.AGENT_DEVICE_IOS_SIGNING_IDENTITY;
-  if (ios.provisioningProfile)
-    process.env.AGENT_DEVICE_IOS_PROVISIONING_PROFILE = ios.provisioningProfile;
-  else delete process.env.AGENT_DEVICE_IOS_PROVISIONING_PROFILE;
+  const expected = expectedIosSigningEnv(setup);
+  for (const key of IOS_SIGNING_ENV_KEYS) {
+    const value = expected[key];
+    if (value) process.env[key] = value;
+    else delete process.env[key];
+  }
 }
 
 export async function readDeviceSetup(): Promise<DeviceSetup> {
@@ -136,10 +171,34 @@ export async function loadDeviceSetup(): Promise<DeviceSetup> {
 }
 
 export async function saveAppleDeviceSetup(input: AppleDeviceSetup): Promise<DeviceSetup> {
-  const setup: DeviceSetup = { version: DEVICE_SETUP_VERSION, ios: validateAppleSetup(input) };
+  const current = await readDeviceSetup();
+  const setup: DeviceSetup = {
+    version: DEVICE_SETUP_VERSION,
+    ios: validateAppleSetup(input),
+    iosLivePreview: current.iosLivePreview ?? { ...DEFAULT_IOS_LIVE_PREVIEW },
+  };
   await writeWorkspaceSetting(DEVICE_SETUP_FILE, setup);
   applyDeviceSetup(setup);
   return setup;
+}
+
+export async function saveIosLivePreviewSettings(
+  input: IosLivePreviewSettings,
+): Promise<DeviceSetup> {
+  const current = await readDeviceSetup();
+  const iosLivePreview = parseIosLivePreviewSettings(input);
+  const setup: DeviceSetup = {
+    version: DEVICE_SETUP_VERSION,
+    ...(current.ios ? { ios: current.ios } : {}),
+    iosLivePreview,
+  };
+  await writeWorkspaceSetting(DEVICE_SETUP_FILE, setup);
+  applyDeviceSetup(setup);
+  return setup;
+}
+
+export function resolveIosLivePreview(setup?: DeviceSetup): IosLivePreviewSettings {
+  return setup?.iosLivePreview ?? { ...DEFAULT_IOS_LIVE_PREVIEW };
 }
 
 async function commandAvailable(command: string, args: string[]): Promise<string | null> {
@@ -405,7 +464,7 @@ export function agentDeviceDaemonExecutable(command: string): string | undefined
 }
 
 function currentAgentDeviceDaemonExecutable(): string {
-  // createRequire works in the native ESM source and in Electron's CJS server
+  // createRequire tests in the native ESM source and in Electron's CJS server
   // bundle (whose build supplies import.meta.url). import.meta.resolve itself
   // is erased by a CommonJS bundle and made packaged recovery silently wrong.
   const entry = createRequire(import.meta.url).resolve("agent-device");
@@ -429,6 +488,50 @@ export async function restartAgentDeviceDaemonForBuildDrift(): Promise<boolean> 
     const running = command ? agentDeviceDaemonExecutable(command) : undefined;
     if (!running || running === currentAgentDeviceDaemonExecutable()) return false;
     return restartAgentDeviceDaemonForSetup();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * agent-device freezes AGENT_DEVICE_IOS_* at daemon spawn. If the live daemon
+ * still carries a shell signing identity (or an old team) that no longer
+ * matches saved setup, force a restart so the next prepare inherits clean env.
+ */
+export async function restartAgentDeviceDaemonForSigningEnvDrift(
+  setup?: DeviceSetup,
+): Promise<boolean> {
+  const resolved = setup ?? (await readDeviceSetup());
+  applyDeviceSetup(resolved);
+  const expected = expectedIosSigningEnv(resolved);
+  const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
+  try {
+    const value = JSON.parse(await readFile(join(stateDir, "daemon.json"), "utf8")) as {
+      pid?: unknown;
+      stateDir?: unknown;
+    };
+    if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 1) {
+      return false;
+    }
+    if (typeof value.stateDir === "string" && value.stateDir !== stateDir) return false;
+    // `ps eww` includes the process environment on macOS/Linux.
+    const command = await commandAvailable("ps", [
+      "eww",
+      "-p",
+      String(value.pid),
+      "-o",
+      "command=",
+    ]);
+    if (!command || !/agent-device\/.*internal\/daemon\.js/.test(command)) return false;
+    for (const key of IOS_SIGNING_ENV_KEYS) {
+      const match = command.match(new RegExp(`${key}=([^\\s]+)`));
+      const live = match?.[1] ?? "";
+      const want = expected[key];
+      if (live !== want) {
+        return restartAgentDeviceDaemonForSetup();
+      }
+    }
+    return false;
   } catch {
     return false;
   }

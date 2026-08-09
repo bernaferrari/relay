@@ -43,7 +43,7 @@ import { StepEditor } from "./step-editor";
 import { propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
 
 const chromePanel =
-  "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
+  "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--background-base)_96%,var(--background-deep))]";
 
 const statusDot = (status: string) =>
   cn(
@@ -53,7 +53,7 @@ const statusDot = (status: string) =>
       : status === "error" || status === "cancelled" || status === "fail"
         ? "bg-[var(--icon-critical-base)]"
         : status === "running"
-          ? "bg-[var(--v2-background-bg-accent)] shadow-[0_0_10px_var(--v2-background-bg-accent)]"
+          ? "bg-[var(--text-interactive-base)] shadow-[0_0_10px_var(--text-interactive-base)]"
           : "bg-[var(--text-weak)]",
   );
 
@@ -196,10 +196,10 @@ function Disclosure(props: {
   children: JSX.Element;
 }) {
   return (
-    <section class="border-t border-[var(--v2-border-border-muted)]">
+    <section class="border-t border-[var(--border-weak-base)]">
       <button
         type="button"
-        class="grid min-h-10 w-full grid-cols-[13px_minmax(0,1fr)_auto] items-center gap-2 px-[15px] text-left transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-01)]"
+        class="grid min-h-10 w-full grid-cols-[13px_minmax(0,1fr)_auto] items-center gap-2 px-[15px] text-left transition-colors duration-100 hover:bg-[var(--surface-base)]"
         aria-expanded={props.open}
         onClick={props.onToggle}
       >
@@ -525,7 +525,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
   }
 
   const navBtn =
-    "grid size-8 place-items-center rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] disabled:opacity-35";
+    "grid size-8 place-items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] text-[var(--text-base)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] disabled:opacity-35";
 
   // Disclosure state is per-panel, not per-step: someone who opened "Match by"
   // is working on matching and wants it open on the next step too.
@@ -542,7 +542,8 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
     if (strategy === "label") return "Accessibility label";
     if (strategy === "text") return "Visible text";
     if (strategy === "ref") return "UI element";
-    return fmtPoint(target.point);
+    if (strategy === "identifier") return "Stable identifier";
+    return "Fixed position";
   });
 
   /** One plain line saying how this step finds what it acts on. */
@@ -552,9 +553,10 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
     const target = editableTarget(current);
     if (!target) return actionForStep(current);
     const strategy = defaultStrategy(target);
-    if (strategy === "point") return `Found at a fixed position · ${fmtPoint(target.point)}`;
+    if (strategy === "point") return "Found at a fixed position on the screen";
     if (strategy === "text") return "Found by the text shown on screen";
-    if (strategy === "ref") return "Found by its element reference";
+    if (strategy === "ref") return "Found by its place in the screen layout";
+    if (strategy === "identifier") return "Found by its stable identifier";
     return "Found by its accessibility label";
   });
 
@@ -569,9 +571,9 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
     <aside
       class={cn(
         chromePanel,
-        "border-l border-[var(--v2-border-border-muted)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
+        "border-l border-[var(--border-weak-base)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
       )}
-      aria-label="Selected flow action"
+      aria-label="Selected path step"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const editingText = target.matches("input, textarea, select, [contenteditable='true']");
@@ -581,14 +583,14 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
         deleteSelectedStep();
       }}
     >
-      <header class="flex min-h-12 shrink-0 items-center justify-between gap-2.5 border-b border-[var(--v2-border-border-muted)] px-[15px]">
+      <header class="flex min-h-12 shrink-0 items-center justify-between gap-2.5 border-b border-[var(--border-weak-base)] px-[15px]">
         <span class="font-mono text-[10.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
           Step {String(index() + 1).padStart(2, "0")}
         </span>
         <div class="flex items-center gap-1">
           <button
             type="button"
-            class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35"
+            class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35"
             aria-label={`Preview step ${index() + 1} on its recorded screen`}
             data-tip={
               canPreview()
@@ -623,7 +625,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
           >
             <button
               type="button"
-              class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+              class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
               aria-label="Step options"
               aria-haspopup="menu"
               aria-expanded={stepMenuOpen()}
@@ -633,20 +635,20 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
             </button>
             <Show when={stepMenuOpen()}>
               <div
-                class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
                 role="menu"
                 aria-label="Step options"
               >
                 <button
                   type="button"
                   role="menuitem"
-                  class="grid h-8 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                  class="grid h-8 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                   onClick={duplicateSelectedStep}
                 >
                   <Icon name="copy" size={12} />
                   Duplicate step
                 </button>
-                <div class="mx-2 h-px bg-[var(--v2-border-border-muted)]" />
+                <div class="mx-2 h-px bg-[var(--border-weak-base)]" />
                 <button
                   type="button"
                   role="menuitem"
@@ -669,11 +671,11 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
         <Show when={!props.compact}>
           <Show when={capturedFrame()}>
             {(src) => (
-              <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent),transparent_48%),radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
+              <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--text-interactive-base)_12%,transparent),transparent_48%),radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
                 <img
                   src={src()}
                   alt={`Captured step ${index() + 1}`}
-                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--v2-background-bg-layer-02)] object-contain shadow-[0_24px_70px_color-mix(in_srgb,var(--surface-float-base)_38%,transparent),0_0_0_1px_color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)]"
+                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--surface-base-hover)] object-contain shadow-[0_24px_70px_color-mix(in_srgb,var(--surface-float-base)_38%,transparent),0_0_0_1px_color-mix(in_srgb,var(--text-invert-strong)_5%,transparent)]"
                 />
               </div>
             )}
@@ -682,11 +684,11 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
         <Show when={step()}>
           {(current) => (
             <>
-              {/* The sentence is the step. Everything below is how it works. */}
+              {/* The sentence is the step. Everything below is how it tests. */}
               <section
                 class={cn(
                   "px-[15px] pt-3.5 pb-3",
-                  !props.compact && "border-t border-[var(--v2-border-border-muted)]",
+                  !props.compact && "border-t border-[var(--border-weak-base)]",
                 )}
               >
                 <strong class="block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
@@ -702,9 +704,9 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
               {/* Action is one value, always present. A disclosure around a
                   single always-relevant control costs a click and saves no
                   space, so it stays open as a plain labelled row. */}
-              <section class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-[15px] py-2.5">
+              <section class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2 border-t border-[var(--border-weak-base)] px-[15px] py-2.5">
                 <span class="text-[11px] text-[var(--text-base)]">Action</span>
-                <div class="flex h-8 min-w-0 items-center rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]">
+                <div class="flex h-8 min-w-0 items-center rounded-md border border-[var(--border-weak-base)] bg-[var(--surface-base)]">
                   <ActionPicker
                     step={current()}
                     onSelect={changeAction}
@@ -713,7 +715,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                 </div>
               </section>
               <Show when={isTapAction(current())}>
-                <section class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-2.5">
+                <section class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-[15px] py-2.5">
                   <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
                     <span class="text-[11px] text-[var(--text-base)]">Gesture</span>
                     <div class={propertySeg} role="radiogroup" aria-label="Tap gesture">
@@ -751,7 +753,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                       <div>
                         <Show when={multiTapStep()}>
                           {(_) => (
-                            <div class="grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                            <div class="grid h-8 grid-cols-2 divide-x divide-[var(--border-weak-base)] rounded-lg ring-1 ring-inset ring-[var(--border-weak-base)]">
                               <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
                                 <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
                                 <input
@@ -788,7 +790,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                         </Show>
                         <Show when={holdStep()}>
                           {(held) => (
-                            <label class="flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                            <label class="flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--border-weak-base)]">
                               <span class="text-[10.5px] text-[var(--text-base)]">
                                 Hold duration
                               </span>
@@ -815,7 +817,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
               <Show
                 when={usesCompactInspector(current())}
                 fallback={
-                  <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
+                  <section class="border-t border-[var(--border-weak-base)] px-[15px] py-3">
                     <StepEditor
                       step={() => step()!}
                       index={index()}
@@ -831,12 +833,12 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                 <Show
                   when={editableTarget(current())}
                   fallback={
-                    <label class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
+                    <label class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-[15px] py-3">
                       <span class="text-[10.5px] text-[var(--text-weak)]">
                         {simpleField(current()).label}
                       </span>
                       <input
-                        class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                        class="h-9 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
                         type={simpleField(current()).number ? "number" : "text"}
                         min={simpleField(current()).number ? 0 : undefined}
                         step={simpleField(current()).number ? 0.5 : undefined}
@@ -851,10 +853,10 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                     <Show
                       when={richTarget()}
                       fallback={
-                        <label class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
+                        <label class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-[15px] py-3">
                           <span class="text-[10.5px] text-[var(--text-weak)]">Target</span>
                           <input
-                            class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                            class="h-9 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
                             value={targetText(target())}
                             placeholder="What should Relay find?"
                             onInput={(event) => updateTarget(event.currentTarget.value)}
@@ -872,7 +874,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                         onToggle={() => toggle("match")}
                       >
                         <Show when={defaultStrategy(target()) !== "point" && previewNode()}>
-                          <section class="grid gap-1 border-b border-[var(--v2-border-border-muted)] px-0.5 pb-2">
+                          <section class="grid gap-1 border-b border-[var(--border-weak-base)] px-0.5 pb-2">
                             <header class="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
                               <span class="text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
                                 Target scope
@@ -884,12 +886,9 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                                 >
                                   {elementName(previewNode())}
                                 </strong>
-                                <code class="shrink-0 font-mono text-[9px] text-[var(--text-weak)]">
-                                  {previewNode()?.ref ?? "No reference"}
-                                </code>
                               </span>
-                              <span class="font-mono text-[9px] tabular-nums text-[var(--text-base)]">
-                                {targetDepth() === 0 ? "This element" : `Parent ${targetDepth()}`}
+                              <span class="text-[9px] tabular-nums text-[var(--text-base)]">
+                                {targetDepth() === 0 ? "This element" : "Broader target"}
                               </span>
                             </header>
                             <Show when={hierarchy().length > 1}>
@@ -899,13 +898,13 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                                   count={hierarchy().length}
                                   label="Element scope"
                                   valueText={
-                                    targetDepth() === 0 ? "This element" : `Parent ${targetDepth()}`
+                                    targetDepth() === 0 ? "This element" : "Broader target"
                                   }
                                   onInput={selectElementDepth}
                                 />
                                 <div class="flex items-center justify-between text-[8.5px] text-[var(--text-weak)]">
                                   <span>Element</span>
-                                  <span>Parent</span>
+                                  <span>Broader</span>
                                 </div>
                               </div>
                             </Show>
@@ -924,8 +923,8 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                                   class={cn(
                                     "group grid min-h-10 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.985]",
                                     selected()
-                                      ? "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-layer-01))]"
-                                      : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)]",
+                                      ? "border-[color-mix(in_srgb,var(--text-interactive-base)_58%,transparent)] bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--surface-base))]"
+                                      : "border-[var(--border-weak-base)] bg-[var(--surface-base)] hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base-hover)]",
                                   )}
                                   onClick={() => chooseTarget(choice.target)}
                                 >
@@ -933,15 +932,15 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                                     class={cn(
                                       "grid size-3.5 place-items-center rounded-full border",
                                       selected()
-                                        ? "border-[var(--v2-background-bg-accent)]"
-                                        : "border-[var(--v2-border-border-strong)]",
+                                        ? "border-[var(--text-interactive-base)]"
+                                        : "border-[var(--border-strong-base)]",
                                     )}
                                     aria-hidden="true"
                                   >
                                     <i
                                       class={cn(
                                         "size-1.5 rounded-full",
-                                        selected() && "bg-[var(--v2-background-bg-accent)]",
+                                        selected() && "bg-[var(--text-interactive-base)]",
                                       )}
                                     />
                                   </span>
@@ -952,7 +951,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
                                     {choice.strategy === "ref"
                                       ? targetDepth() === 0
                                         ? "This element"
-                                        : `Parent ${targetDepth()}`
+                                        : "Broader target"
                                       : choice.value}
                                   </code>
                                 </button>
@@ -994,7 +993,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
             annotation().error || annotation().log || (!props.compact && recentRuns().length > 0)
           }
         >
-          <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] pt-3.5 pb-[18px]">
+          <section class="border-t border-[var(--border-weak-base)] px-[15px] pt-3.5 pb-[18px]">
             <header class="mb-2 flex items-center justify-between">
               <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--text-base)] uppercase">
                 Activity
@@ -1002,7 +1001,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
               <small class="text-[10.5px] text-[var(--text-weak)]">Latest runs</small>
             </header>
             <Show when={annotation().error || annotation().log}>
-              <div class="mb-2 grid gap-1 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2.5 py-2">
+              <div class="mb-2 grid gap-1 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-deep)] px-2.5 py-2">
                 <span class="text-[9.5px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
                   {annotation().error ? "Error" : "Step log"}
                 </span>
@@ -1019,7 +1018,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
             <Show when={!props.compact}>
               <For each={recentRuns()}>
                 {(job) => (
-                  <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_75%,transparent)]">
+                  <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--border-weak-base)_75%,transparent)]">
                     <i class={statusDot(job.status)} />
                     <span class="min-w-0">
                       <strong class="block text-[12px] font-medium text-[var(--text-base)] capitalize">
@@ -1039,7 +1038,7 @@ export function AppMapInspector(props: { onOpenTargets: () => void; compact?: bo
           </section>
         </Show>
       </div>
-      <footer class="flex min-h-14 shrink-0 items-center border-t border-[var(--v2-border-border-muted)] px-[15px]">
+      <footer class="flex min-h-14 shrink-0 items-center border-t border-[var(--border-weak-base)] px-[15px]">
         <div class="flex items-center gap-1">
           <button
             type="button"

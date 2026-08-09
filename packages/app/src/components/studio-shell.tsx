@@ -14,7 +14,7 @@ import { useServer } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DevicePicker } from "./device-picker";
-import { TestSettingsPanel } from "./test-details-panel";
+import { MapPropertiesPanel } from "./test-details-panel";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
@@ -33,28 +33,23 @@ import {
   shellTopbarActions,
   shellStudio,
   shellSaveState,
-  shellStudioBodyWorkbench,
-  shellStageWrap,
+  shellMapWrap,
   shellDragStrip,
 } from "../lib/shell-layout";
-import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import { appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
+import { matchLiveScreen } from "../lib/app-map-live-location";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs";
 type MapLibraryArea = ProductArea;
-type StudioView = "workbench" | "map";
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
 );
 const RunsWorkspace = lazy(() =>
   import("./runs-workspace").then((module) => ({ default: module.RunsWorkspace })),
-);
-const TestWorkbench = lazy(() =>
-  import("./test-workbench").then((module) => ({ default: module.TestWorkbench })),
 );
 const AppMapWorkspace = lazy(() =>
   import("./app-map-workspace").then((module) => ({ default: module.AppMapWorkspace })),
@@ -65,10 +60,13 @@ const EmptyAppMap = lazy(() =>
 const MapLibrary = lazy(() =>
   import("./map-library").then((module) => ({ default: module.MapLibrary })),
 );
+const AppMapCombine = lazy(() =>
+  import("./app-map-combine").then((module) => ({ default: module.AppMapCombine })),
+);
 
 function WorkspaceLoading(props: { label: string }) {
   return (
-    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--v2-background-bg-deep)] text-[12px] text-[var(--text-weak)]">
+    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-[12px] text-[var(--text-weak)]">
       Loading {props.label}…
     </div>
   );
@@ -81,23 +79,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
-  // The App Map is the source of truth. Device remains one click away
-  // for direct editing, while the graph keeps each captured screen and its
-  // outgoing actions visible as the map grows.
-  const [studioView, setStudioView] = createSignal<StudioView>("map");
+  // The App Map is the only authoring surface. Device remains one click away.
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
+  const [combineOpen, setCombineOpen] = createSignal(false);
+  const [combineFocusId, setCombineFocusId] = createSignal<string>();
   const [query, setQuery] = createSignal("");
   const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
   const [devicePanelOpen, setDevicePanelOpen] = createSignal(readRememberedDevicePanelPreference());
   const [creatingBlankMap, setCreatingBlankMap] = createSignal(false);
-  const [addNoteOnReady, setAddNoteOnReady] = createSignal(false);
   const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
-    visible: false,
+    visible: true,
     ready: false,
-    reason: "Record a connection before running this flow",
-    label: "Run flow",
+    reason: "Save the first screen to start your map",
+    next: "capture",
+    label: "Save first screen",
     transitionPath: null,
   });
   const [activeTargetSetId, setActiveTargetSetId] = createSignal<string>();
@@ -108,7 +105,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selectedMap = createMemo(() => server.selectedAppMap());
-  const selectedRecipe = createMemo(() => server.selectedRecipe());
   const [mapNameDraft, setMapNameDraft] = createSignal("");
   createEffect(() => setMapNameDraft(selectedMap()?.name ?? ""));
   createEffect(() => {
@@ -155,6 +151,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   const libraryArea = createMemo<MapLibraryArea>(() => area());
   let titleBeforeEdit = "";
+  let combineDialog: HTMLElement | undefined;
   let variablesDialog: HTMLElement | undefined;
   let importReviewDialog: HTMLElement | undefined;
   let libraryTrigger: HTMLButtonElement | undefined;
@@ -171,6 +168,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     };
     window.addEventListener("relay:open-settings", openSettings);
     onCleanup(() => window.removeEventListener("relay:open-settings", openSettings));
+  });
+  createEffect(() => {
+    const openRunHistory = (event: Event) => {
+      const detail = (event as CustomEvent<{ jobId?: string }>).detail;
+      if (detail?.jobId) server.setSelectedJobId(detail.jobId);
+      setArea("runs");
+    };
+    window.addEventListener("relay:open-run-history", openRunHistory);
+    onCleanup(() => window.removeEventListener("relay:open-run-history", openRunHistory));
   });
   createEffect(() => {
     const updateDevicePanel = (event: Event) => {
@@ -195,6 +201,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     onCleanup(() =>
       window.removeEventListener("relay:graph-run-readiness", updateGraphRunReadiness),
     );
+  });
+  createEffect(() => {
+    if (!combineOpen()) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCombineOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    let releaseFocus: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      if (combineDialog) releaseFocus = trapFocus(combineDialog);
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", close);
+      releaseFocus?.();
+    });
   });
   createEffect(() => {
     if (!variablesOpen()) return;
@@ -267,7 +289,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (area() !== "tests" || studioView() !== "map") return;
+      if (area() !== "tests") return;
       const key = event.key.toLowerCase();
       if (key === "d") {
         event.preventDefault();
@@ -298,17 +320,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const id = server.selectedAppMapId();
     if (openedAppMapId === id) return;
     openedAppMapId = id;
-    setStudioView("map");
     setSettingsOpen(false);
     setVariablesOpen(false);
     if (id) setNavOpen(false);
-  });
-  const readinessState = () => ({
-    health: server.health(),
-    selectedDevice: server.selectedDevice(),
-    devices: server.devices(),
-    stepCount: draft.steps().length,
-    invalidCount: draft.invalidCount(),
   });
   const selectedDeviceReadiness = createMemo(() => {
     const device = server
@@ -325,6 +339,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
   });
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
+  const selectedMapLiveLocation = createMemo(() => {
+    const map = selectedMap();
+    if (!map) return { kind: "none" as const };
+    return matchLiveScreen(Object.values(map.screens), [
+      server.snapshot()?.screenIdentity?.fingerprint,
+      server.liveFrame()?.visualFingerprint,
+      server.liveFrame()?.fingerprint,
+    ]);
+  });
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
     if (selectedMap()) {
@@ -334,18 +357,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setDevicePanelOpen((open) => !open);
   };
   const openDevicePicker = () => {
-    if (area() === "tests" && studioView() === "map" && !devicePanelOpen()) {
+    if (area() === "tests" && !devicePanelOpen()) {
       window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
     }
     requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
   };
-  const testBlockedReason = () => testRunBlocker(readinessState());
   const graphPrimaryAction = createMemo(() =>
     appMapPrimaryAction({
       saveState: draft.saveState(),
       run: graphRunReadiness(),
       serverOnline: server.health() === "online",
       device: selectedDeviceReadiness(),
+      liveLocation: selectedMapLiveLocation().kind,
       running: server.running(),
     }),
   );
@@ -354,49 +377,43 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     return action.kind === "run" ? "" : action.reason;
   };
   const runSelectedTest = () => {
-    if (studioView() === "map") {
-      const action = graphPrimaryAction();
-      if (action.kind === "choose-device") {
-        openDevicePicker();
-        return;
-      }
-      if (action.kind === "open-device") {
-        if (!devicePanelOpen()) toggleDevicePanel();
-        return;
-      }
-      if (action.kind === "cancel") {
-        const active = server.activeJob();
-        // The running summary can briefly arrive before the detailed jobs
-        // list. The server's active-cancel operation remains authoritative in
-        // that gap, so Stop must never turn into a no-op.
-        void server.cancelJob(active?.id);
-        return;
-      }
-      if (action.kind === "blocked") {
-        toast(action.reason, "warning");
-        return;
-      }
-      window.dispatchEvent(new CustomEvent("relay:run-app-map"));
+    const action = graphPrimaryAction();
+    if (action.kind === "choose-device") {
+      openDevicePicker();
       return;
     }
-    const blocker = studioView() === "map" ? graphBlockedReason() : testBlockedReason();
-    if (blocker) {
-      toast(blocker, "warning");
-      if (
-        server.isEmptyDevices() ||
-        blocker === "Choose a ready device" ||
-        blockerIsDeviceRelated(readinessState())
-      ) {
-        // Hardware selection is a direct, lightweight decision. Settings is
-        // reserved for managing target configuration, never a detour before a
-        // normal record or run.
-        openDevicePicker();
-      }
+    if (action.kind === "open-device") {
+      if (!devicePanelOpen()) toggleDevicePanel();
       return;
     }
-    const recipe = selectedRecipe();
-    if (!recipe) return;
-    void server.runRecipeRemote(recipe.id);
+    if (action.kind === "cancel") {
+      const active = server.activeJob();
+      // The running summary can briefly arrive before the detailed jobs
+      // list. The server's active-cancel operation remains authoritative in
+      // that gap, so Stop must never turn into a no-op.
+      void server.cancelJob(active?.id);
+      return;
+    }
+    if (action.kind === "record-path") {
+      if (!devicePanelOpen()) toggleDevicePanel();
+      window.dispatchEvent(new CustomEvent("relay:record-path"));
+      return;
+    }
+    if (action.kind === "capture-screen") {
+      if (!devicePanelOpen()) toggleDevicePanel();
+      window.dispatchEvent(new CustomEvent("relay:capture-screen"));
+      return;
+    }
+    if (action.kind === "keep-path") {
+      toast(action.reason || "Try the path on the device, then keep it", "info");
+      if (!devicePanelOpen()) toggleDevicePanel();
+      return;
+    }
+    if (action.kind === "blocked") {
+      toast(action.reason, "warning");
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("relay:run-app-map"));
   };
   const mapItems = createMemo(() => {
     const needle = query().trim().toLowerCase();
@@ -404,30 +421,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     rows.sort((a, b) => b.updatedAt - a.updatedAt);
     return needle ? rows.filter((appMap) => appMap.name.toLowerCase().includes(needle)) : rows;
   });
-  async function createCanonicalMap(record = false): Promise<AppMap | null> {
-    if (record && !selectedTargetIsReady()) {
-      openDevicePicker();
-      return null;
-    }
-    const title = nextUntitledMapTitle(server.appMaps());
-    try {
-      const appMap = await server.createAppMap(crypto.randomUUID(), title);
-      server.setSelectedAppMapId(appMap.id);
-      setArea("tests");
-      setStudioView("map");
-      setSettingsOpen(false);
-      setNavOpen(false);
-      if (record) recorder.enterRecordMode();
-      return appMap;
-    } catch (error) {
-      toast(
-        `The App Map could not be initialized: ${error instanceof Error ? error.message : String(error)}`,
-        "error",
-      );
-      return null;
-    }
-  }
-
   async function captureFirstScreenFromBlankMap(): Promise<void> {
     const canCapture =
       selectedTargetIsReady() && Boolean(server.selectedLeaseId()) && !server.controlIssue();
@@ -438,17 +431,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setCreatingBlankMap(true);
     let createdMap: AppMap | null = null;
     try {
-      const title = nextUntitledMapTitle(server.appMaps());
+      const title = nextMapTitle(server.appMaps());
       createdMap = await server.createAppMap(crypto.randomUUID(), title);
       const captured = await recorder.captureMapScreen(createdMap.id, { title: "Start" });
       if (!captured) throw new Error("Relay could not capture the current screen");
       await server.refreshAppMaps();
       server.setSelectedAppMapId(captured.appMap.id);
       setArea("tests");
-      setStudioView("map");
       setSettingsOpen(false);
       setNavOpen(false);
-      toast("Start screen added", "success");
+      toast("Start screen saved · record a path or capture more screenshots", "success");
     } catch (error) {
       if (createdMap) {
         await server
@@ -460,16 +452,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     } finally {
       setCreatingBlankMap(false);
     }
-  }
-
-  async function addFirstNoteToBlankMap(): Promise<void> {
-    if (creatingBlankMap()) return;
-    setCreatingBlankMap(true);
-    setAddNoteOnReady(true);
-    const saved = await createCanonicalMap(false);
-    if (saved) return;
-    setAddNoteOnReady(false);
-    setCreatingBlankMap(false);
   }
 
   async function importTestYaml(yaml: string): Promise<void> {
@@ -497,7 +479,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       server.setSelectedAppMapId(result.appMap.id);
       setImportReview(null);
       setArea("tests");
-      setStudioView("map");
       setNavOpen(false);
       toast(`Imported ${displayTitle(result.appMap.name)}`, "success");
     } catch (error) {
@@ -591,7 +572,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openMap(id: string): void {
     server.setSelectedAppMapId(id);
     setArea("tests");
-    setStudioView("map");
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.
@@ -599,11 +579,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   function openTest(id: string): void {
+    const map = server.appMaps().find((candidate) => candidate.id === id);
+    if (map) {
+      openMap(id);
+      return;
+    }
     server.setSelectedRecipeId(id);
-    setArea("tests");
-    setStudioView("workbench");
-    setSettingsOpen(false);
-    setNavOpen(false);
+    toast("Author this path on its map. Run reports stay in Runs.", "info");
   }
 
   /** New Map is a local blank canvas. It becomes durable only after its first
@@ -611,7 +593,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function startNewMap(): void {
     setArea("tests");
     server.setSelectedAppMapId(null);
-    setStudioView("map");
     setSettingsOpen(false);
     setNavOpen(false);
   }
@@ -631,9 +612,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           area={libraryArea()}
           onArea={(nextArea) => {
             setArea(nextArea);
-            // Run history already owns its own filters and result list. Keeping
-            // the navigator's second copy open makes the same runs compete in
-            // two columns, so the report surface takes focus immediately.
+            // Run history / tree crawl already own the main pane. Keeping the
+            // navigator's second copy open makes the same work compete in two
+            // columns, so the report surface takes focus immediately.
             if (nextArea === "runs") setNavOpen(false);
           }}
           query={query()}
@@ -665,7 +646,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               type="button"
               class={productIconButton}
               aria-label={navOpen() ? "Close library" : "Open library"}
-              data-tip={navOpen() ? "Close library" : "Maps and flows"}
+              data-tip={navOpen() ? "Close library" : "Maps and runs"}
               onClick={() => setNavOpen((value) => !value)}
             >
               <Icon name="panel-left" size={17} />
@@ -676,25 +657,25 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               when={area() === "tests" && selectedMap()}
               fallback={
                 <strong class="max-w-full truncate text-center text-[13px] font-medium text-[var(--text-base)]">
-                  {area() === "runs" ? "Run history" : "Untitled"}
+                  {area() === "runs" ? "Run history" : "My map"}
                 </strong>
               }
             >
               <input
                 type="text"
                 size={Math.max(12, Math.min(34, displayTitle(mapNameDraft()).length + 1))}
-                class="h-8 max-w-full min-w-[120px] rounded-md bg-transparent px-2 text-center font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:min-w-0"
+                class="h-8 max-w-full min-w-[120px] rounded-md bg-transparent px-2 text-center font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--border-strong-base)] max-[680px]:min-w-0"
                 aria-label="Map name"
                 data-tip="Rename map"
                 value={displayTitle(mapNameDraft())}
-                placeholder="Untitled"
+                placeholder="My map"
                 spellcheck={false}
                 onFocus={() => {
                   titleBeforeEdit = mapNameDraft();
                 }}
                 onInput={(event) => setMapNameDraft(event.currentTarget.value)}
                 onBlur={() => {
-                  const name = mapNameDraft().trim() || "Untitled";
+                  const name = mapNameDraft().trim() || "My map";
                   setMapNameDraft(name);
                   draft.setTitle(name);
                   void renameCanonicalMap(name);
@@ -710,7 +691,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </Show>
           </div>
           <div class={shellTopbarActions}>
-            <Show when={area() === "tests" && studioView() === "map"}>
+            <Show when={area() === "tests"}>
               <DevicePicker
                 liveOpen={devicePanelOpen()}
                 targetSets={server.matrices()}
@@ -726,27 +707,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onManageTargets={() => props.onOpenSettings("targets")}
               />
             </Show>
-            <Show when={area() === "tests" && selectedMap()}>
-              <Show when={draft.saveState() === "saving" || draft.saveState() === "invalid"}>
-                <span class={shellSaveState}>
-                  {draft.saveState() === "saving"
-                    ? "Saving…"
-                    : `${draft.invalidCount()} incomplete`}
-                </span>
-              </Show>
-              <Show when={studioView() === "workbench"}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  class="gap-1.5 text-[12px]"
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setStudioView("map");
-                  }}
-                >
-                  <Icon name="chevron-left" size={13} /> Back to map
-                </Button>
-              </Show>
+            <Show
+              when={
+                area() === "tests" &&
+                selectedMap() &&
+                (draft.saveState() === "saving" || draft.saveState() === "invalid")
+              }
+            >
+              <span class={shellSaveState}>
+                {draft.saveState() === "saving" ? "Saving…" : `${draft.invalidCount()} incomplete`}
+              </span>
             </Show>
             <Show when={area() === "tests" && selectedMap()}>
               <div class="relative flex items-center gap-1.5">
@@ -783,7 +753,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <Show when={studioActionsOpen()}>
                   <div
                     ref={(element) => (studioActionsMenu = element)}
-                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
                     role="menu"
                     aria-label="Map options"
                     onFocusOut={(event) => {
@@ -815,7 +785,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] max-[680px]:flex"
+                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[680px]:flex"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
@@ -827,7 +797,37 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        window.dispatchEvent(
+                          new CustomEvent("relay:undo-request", { detail: { redo: false } }),
+                        );
+                      }}
+                    >
+                      <Icon name="undo" size={14} />
+                      <span class="flex-1">Undo</span>
+                      <kbd class="text-[10px] font-normal text-[var(--text-weaker)]">⌘Z</kbd>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        window.dispatchEvent(
+                          new CustomEvent("relay:undo-request", { detail: { redo: true } }),
+                        );
+                      }}
+                    >
+                      <Icon name="redo" size={14} />
+                      <span class="flex-1">Redo</span>
+                      <kbd class="text-[10px] font-normal text-[var(--text-weaker)]">⇧⌘Z</kbd>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:toggle-map-history"));
@@ -838,7 +838,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void duplicateSelected();
@@ -849,7 +849,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void exportSelected();
@@ -860,7 +860,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--surface-base-hover)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void deleteSelected();
@@ -871,46 +871,49 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </div>
                 </Show>
               </div>
-              <Show
-                when={
-                  studioView() === "map" ? graphRunReadiness().visible : draft.steps().length > 0
-                }
-              >
+              <Show when={graphRunReadiness().visible}>
+                <Show
+                  when={
+                    graphPrimaryAction().kind === "run" || graphPrimaryAction().kind === "cancel"
+                  }
+                >
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    class="text-[12px]"
+                    aria-describedby={graphBlockedReason() ? "app-map-run-blocker" : undefined}
+                    disabled={graphPrimaryAction().kind === "blocked"}
+                    data-tip={graphBlockedReason() || graphRunReadiness().label}
+                    aria-label={graphPrimaryAction().label}
+                    onClick={runSelectedTest}
+                  >
+                    <Icon
+                      name={graphPrimaryAction().icon}
+                      size={13}
+                      class={cn(
+                        graphPrimaryAction().icon === "refresh" &&
+                          "ui-refresh-spin motion-reduce:opacity-70",
+                      )}
+                    />
+                    <span class="max-[620px]:hidden">{graphPrimaryAction().label}</span>
+                  </Button>
+                </Show>
                 <Button
-                  variant="primary"
+                  variant="secondary"
                   size="lg"
                   class="text-[12px]"
-                  aria-describedby={
-                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason())
-                      ? "app-map-run-blocker"
-                      : undefined
-                  }
-                  disabled={
-                    studioView() === "map"
-                      ? graphPrimaryAction().kind === "blocked"
-                      : Boolean(testBlockedReason())
-                  }
-                  data-tip={
-                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
-                    graphRunReadiness().label
-                  }
-                  aria-label={studioView() === "map" ? graphPrimaryAction().label : "Run flow"}
-                  onClick={runSelectedTest}
+                  aria-label="Run a path with data"
+                  data-tip="Repeat a path for each language, account, model, or other list value."
+                  disabled={!selectedMap() || Object.keys(selectedMap()!.screens).length === 0}
+                  onClick={() => {
+                    setCombineFocusId(undefined);
+                    setCombineOpen(true);
+                  }}
                 >
-                  <Icon
-                    name={studioView() === "map" ? graphPrimaryAction().icon : "play"}
-                    size={13}
-                    class={cn(
-                      studioView() === "map" &&
-                        graphPrimaryAction().icon === "refresh" &&
-                        "ui-refresh-spin motion-reduce:opacity-70",
-                    )}
-                  />
-                  <span class="max-[620px]:hidden">
-                    {studioView() === "map" ? graphPrimaryAction().label : "Run"}
-                  </span>
+                  <Icon name="grid" size={13} />
+                  <span class="max-[720px]:hidden">Run with data</span>
                 </Button>
-                <Show when={studioView() === "map" ? graphBlockedReason() : testBlockedReason()}>
+                <Show when={graphBlockedReason()}>
                   {(reason) => (
                     <span id="app-map-run-blocker" class="sr-only">
                       {reason()}
@@ -927,9 +930,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <div
               class={
                 selectedMap()
-                  ? studioView() === "map"
-                    ? "relative flex min-h-0 min-w-0 flex-1"
-                    : shellStudioBodyWorkbench
+                  ? "relative flex min-h-0 min-w-0 flex-1"
                   : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
               }
             >
@@ -943,58 +944,34 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       onToggleDevice={toggleDevicePanel}
                       onOpenTargets={() => props.onOpenSettings("targets")}
                       onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
-                      onAddFirstNote={() => void addFirstNoteToBlankMap()}
                     />
                   </Suspense>
                 }
               >
-                <Show when={studioView() === "workbench"}>
-                  <Suspense fallback={<WorkspaceLoading label="actions" />}>
-                    <TestWorkbench
-                      onOpenMap={() => setStudioView("map")}
+                <div class={cn(shellMapWrap, "flex flex-1")}>
+                  <Suspense fallback={<WorkspaceLoading label="map" />}>
+                    <AppMapWorkspace
+                      navigatorOpen={navOpen()}
                       onOpenTargets={() => props.onOpenSettings("targets")}
+                      onOpenActions={() => undefined}
+                      onOpenVariables={() => setVariablesOpen(true)}
+                      onOpenCombine={(combineId) => {
+                        setCombineFocusId(combineId);
+                        setCombineOpen(true);
+                      }}
                       onOpenRun={(id) => {
                         server.setSelectedJobId(id);
                         setArea("runs");
                       }}
-                      details={
-                        settingsOpen() ? (
-                          <TestSettingsPanel
-                            onClose={() => setSettingsOpen(false)}
-                            onOpenVariables={() => setVariablesOpen(true)}
-                          />
-                        ) : undefined
-                      }
                     />
                   </Suspense>
-                </Show>
-                <Show when={studioView() === "map"}>
-                  <div class={cn(shellStageWrap, "flex flex-1")}>
-                    <Suspense fallback={<WorkspaceLoading label="map" />}>
-                      <AppMapWorkspace
-                        navigatorOpen={navOpen()}
-                        addNoteOnReady={addNoteOnReady()}
-                        onAddNoteHandled={() => {
-                          setAddNoteOnReady(false);
-                          setCreatingBlankMap(false);
-                        }}
-                        onOpenTargets={() => props.onOpenSettings("targets")}
-                        onOpenActions={() => setStudioView("workbench")}
-                        onOpenVariables={() => setVariablesOpen(true)}
-                        onOpenRun={(id) => {
-                          server.setSelectedJobId(id);
-                          setArea("runs");
-                        }}
-                      />
-                    </Suspense>
-                  </div>
-                  <Show when={settingsOpen()}>
-                    <TestSettingsPanel
-                      presentation="floating"
-                      onClose={() => setSettingsOpen(false)}
-                      onOpenVariables={() => setVariablesOpen(true)}
-                    />
-                  </Show>
+                </div>
+                <Show when={settingsOpen()}>
+                  <MapPropertiesPanel
+                    presentation="floating"
+                    onClose={() => setSettingsOpen(false)}
+                    onOpenVariables={() => setVariablesOpen(true)}
+                  />
                 </Show>
               </Show>
             </div>
@@ -1011,6 +988,52 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </Suspense>
         </Show>
       </main>
+      <Show when={combineOpen()}>
+        <div
+          class={cn(modalScrim, "z-[130] flex items-center justify-center p-5")}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setCombineOpen(false);
+          }}
+        >
+          <section
+            ref={(element) => {
+              combineDialog = element;
+            }}
+            class={cn(
+              modalPanel,
+              "max-h-[calc(100vh-40px)] w-[min(100%,720px)] overflow-y-auto overscroll-contain p-4 outline-none",
+            )}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Run paths with data"
+            tabindex={-1}
+            onWheel={(event) => event.stopPropagation()}
+          >
+            <Suspense
+              fallback={
+                <div class="grid h-40 place-items-center text-[12px] text-[var(--text-weak)]">
+                  Loading data runs…
+                </div>
+              }
+            >
+              <AppMapCombine
+                combineId={combineFocusId()}
+                onOpenDevice={() => {
+                  setCombineOpen(false);
+                  setCombineFocusId(undefined);
+                  if (!devicePanelOpen()) {
+                    window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+                  }
+                }}
+                onClose={() => {
+                  setCombineOpen(false);
+                  setCombineFocusId(undefined);
+                }}
+              />
+            </Suspense>
+          </section>
+        </div>
+      </Show>
       <Show when={variablesOpen()}>
         <div
           class={cn(modalScrim, "z-[130] flex items-center justify-center p-5")}
@@ -1025,13 +1048,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             class={cn(modalPanel, "h-[min(82vh,760px)] w-[min(100%,980px)] outline-none")}
             role="dialog"
             aria-modal="true"
-            aria-label="Workspace variables"
+            aria-label="Test data"
             tabindex={-1}
           >
             <Suspense
               fallback={
                 <div class="grid h-full place-items-center text-[12px] text-[var(--text-weak)]">
-                  Loading variables…
+                  Loading test data…
                 </div>
               }
             >
@@ -1067,9 +1090,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 if (event.key === "Escape") setImportReview(null);
               }}
             >
-              <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
+              <header class="flex items-start justify-between gap-3 border-b border-[var(--border-weak-base)] px-4 py-3.5">
                 <div>
-                  <span class={eyebrow}>App Map YAML</span>
+                  <span class={eyebrow}>Map file</span>
                   <h3
                     id="import-review-title"
                     class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
@@ -1086,7 +1109,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Icon name="x" size={14} />
                 </button>
               </header>
-              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] p-3">
+              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-3">
                 <span class="grid size-9 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] text-[var(--icon-success-base)]">
                   <Icon name="check" size={16} />
                 </span>
@@ -1102,7 +1125,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </small>
                 </div>
               </div>
-              <details class="mx-4 my-3 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-3 py-2">
+              <details class="mx-4 my-3 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-deep)] px-3 py-2">
                 <summary class="cursor-pointer text-[11px] text-[var(--text-base)]">
                   Preview portable YAML
                 </summary>
@@ -1110,11 +1133,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   {review().yaml}
                 </pre>
               </details>
-              <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
+              <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
                 <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
                   {review().exists
-                    ? "Replace this map, or import a separate copy with the same screens and connections."
-                    : "Relay will add this portable App Map to the current project."}
+                    ? "Replace this map, or import a separate copy with the same screens and paths."
+                    : "Relay will add this portable map to the current project."}
                 </p>
                 <div class="flex shrink-0 flex-wrap justify-end gap-2">
                   <Button variant="secondary" size="lg" onClick={() => setImportReview(null)}>
@@ -1142,12 +1165,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   );
 }
 
-function nextUntitledMapTitle(maps: Array<{ name: string }>): string {
+function nextMapTitle(maps: Array<{ name: string }>): string {
   const used = new Set(maps.map((map) => map.name));
-  if (!used.has("Untitled")) return "Untitled";
+  if (!used.has("My map")) return "My map";
   let index = 2;
-  while (used.has(`Untitled ${index}`)) index++;
-  return `Untitled ${index}`;
+  while (used.has(`My map ${index}`)) index++;
+  return `My map ${index}`;
 }
 
 function readRememberedDevicePanelPreference(): boolean {

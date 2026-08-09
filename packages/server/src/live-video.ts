@@ -50,8 +50,42 @@ export type AndroidKeyboardInput =
   | { kind: "text"; text: string }
   | { kind: "key"; key: "enter" | "backspace" };
 
+type AndroidControlWriter = Pick<
+  ScrcpyControlMessageWriter,
+  "injectKeyCode" | "injectText" | "injectTouch" | "injectScroll"
+>;
+
+/** Serialize writes and retire control before its scrcpy socket is closed. */
+export class AndroidControlChannel {
+  #closed = false;
+  #pending: Promise<void> = Promise.resolve();
+
+  constructor(readonly controller: AndroidControlWriter) {}
+
+  write(operation: (controller: AndroidControlWriter) => Promise<void>): Promise<void> {
+    const result = this.#pending.then(async () => {
+      if (this.#closed) throw new HttpError(409, "Live device control is reconnecting");
+      try {
+        await operation(this.controller);
+      } catch {
+        this.#closed = true;
+        throw new HttpError(409, "Live device control is reconnecting");
+      }
+    });
+    // Keep an observed tail for close() even when the request-facing promise
+    // rejects. This prevents an EPIPE from becoming an unhandled rejection.
+    this.#pending = result.catch(() => undefined);
+    return result;
+  }
+
+  async close(): Promise<void> {
+    this.#closed = true;
+    await this.#pending;
+  }
+}
+
 type ActiveAndroidControl = {
-  controller: ScrcpyControlMessageWriter;
+  channel: AndroidControlChannel;
   width: number;
   height: number;
 };
@@ -72,7 +106,9 @@ export async function injectAndroidKey(serial: string, input: AndroidKeyboardInp
     throw new HttpError(409, "Live device control is not ready");
   }
   if (input.kind === "text") {
-    if (input.text) await active.controller.injectText(input.text);
+    if (input.text) {
+      await active.channel.write((controller) => controller.injectText(input.text));
+    }
     return;
   }
 
@@ -82,8 +118,10 @@ export async function injectAndroidKey(serial: string, input: AndroidKeyboardInp
     repeat: 0,
     metaState: AndroidKeyEventMeta.None,
   };
-  await active.controller.injectKeyCode({ ...message, action: AndroidKeyEventAction.Down });
-  await active.controller.injectKeyCode({ ...message, action: AndroidKeyEventAction.Up });
+  await active.channel.write(async (controller) => {
+    await controller.injectKeyCode({ ...message, action: AndroidKeyEventAction.Down });
+    await controller.injectKeyCode({ ...message, action: AndroidKeyEventAction.Up });
+  });
 }
 
 /** Inject one event into the control channel belonging to the live H.264 stream. */
@@ -98,17 +136,19 @@ export async function injectAndroidTouch(
     throw new HttpError(409, "Live device control is not ready");
   }
   const releasing = action === "up" || action === "cancel";
-  await active.controller.injectTouch({
-    action: TOUCH_ACTIONS[action],
-    pointerId: ScrcpyPointerId.Finger,
-    pointerX: Math.round(Math.max(0, Math.min(1, x)) * active.width),
-    pointerY: Math.round(Math.max(0, Math.min(1, y)) * active.height),
-    videoWidth: active.width,
-    videoHeight: active.height,
-    pressure: releasing ? 0 : 1,
-    actionButton: AndroidMotionEventButton.None,
-    buttons: AndroidMotionEventButton.None,
-  });
+  await active.channel.write((controller) =>
+    controller.injectTouch({
+      action: TOUCH_ACTIONS[action],
+      pointerId: ScrcpyPointerId.Finger,
+      pointerX: Math.round(Math.max(0, Math.min(1, x)) * active.width),
+      pointerY: Math.round(Math.max(0, Math.min(1, y)) * active.height),
+      videoWidth: active.width,
+      videoHeight: active.height,
+      pressure: releasing ? 0 : 1,
+      actionButton: AndroidMotionEventButton.None,
+      buttons: AndroidMotionEventButton.None,
+    }),
+  );
 }
 
 /** Forward a mouse-wheel/trackpad delta through scrcpy's native scroll event. */
@@ -123,15 +163,17 @@ export async function injectAndroidScroll(
   if (!active) {
     throw new HttpError(409, "Live device control is not ready");
   }
-  await active.controller.injectScroll({
-    pointerX: Math.round(Math.max(0, Math.min(1, x)) * active.width),
-    pointerY: Math.round(Math.max(0, Math.min(1, y)) * active.height),
-    videoWidth: active.width,
-    videoHeight: active.height,
-    scrollX: Math.max(-1, Math.min(1, scrollX)),
-    scrollY: Math.max(-1, Math.min(1, scrollY)),
-    buttons: AndroidMotionEventButton.None,
-  });
+  await active.channel.write((controller) =>
+    controller.injectScroll({
+      pointerX: Math.round(Math.max(0, Math.min(1, x)) * active.width),
+      pointerY: Math.round(Math.max(0, Math.min(1, y)) * active.height),
+      videoWidth: active.width,
+      videoHeight: active.height,
+      scrollX: Math.max(-1, Math.min(1, scrollX)),
+      scrollY: Math.max(-1, Math.min(1, scrollY)),
+      buttons: AndroidMotionEventButton.None,
+    }),
+  );
 }
 
 /** Relay framing: kind + keyframe + reserved + PTS(ns) + payload length. */
@@ -171,11 +213,23 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
   let streamStartedAt: number | undefined;
   let streamedFrames = 0;
   let streamedBytes = 0;
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => {
+    shutdownPromise ??= (async () => {
+      disconnected = true;
+      const active = activeControls.get(serial);
+      if (active && active.channel.controller === scrcpy?.controller) {
+        activeControls.delete(serial);
+        await active.channel.close();
+      }
+      await cancelReader?.().catch(() => undefined);
+      await scrcpy?.close().catch(() => undefined);
+      await adb.close().catch(() => undefined);
+    })();
+    return shutdownPromise;
+  };
   res.once("close", () => {
-    disconnected = true;
-    void cancelReader?.().catch(() => undefined);
-    void scrcpy?.close().catch(() => undefined);
-    void adb.close().catch(() => undefined);
+    void shutdown().catch(() => undefined);
   });
 
   try {
@@ -196,8 +250,11 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
         control: true,
         cleanup: false,
         logLevel: "error",
-        // Smooth for authoring while bounding decoder and GPU pressure.
-        maxFps: 30,
+        // Mouse-driven authoring exposes 30 fps immediately: the cursor races
+        // ahead of the phone. Modern physical Android devices can encode the
+        // bounded 1080px stream at display cadence, while scrcpy still emits
+        // fewer frames when the screen is idle.
+        maxFps: 60,
         // The preview is ~540 physical pixels wide in the companion panel.
         // 1080px preserves Retina detail while bounding decoded textures.
         maxSize: 1080,
@@ -205,7 +262,7 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
         // prevents a reconnect (or a second Relay window) from attaching to a
         // previous capture process and waiting forever for its video socket.
         scid: randomInt(0x80000000).toString(16),
-        videoBitRate: 4_000_000,
+        videoBitRate: 8_000_000,
         tunnelForward: false,
       },
       { version: VERSION },
@@ -222,7 +279,11 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
     const width = video.metadata.width ?? 0;
     const height = video.metadata.height ?? 0;
     if (controller && width > 0 && height > 0) {
-      activeControls.set(serial, { controller, width, height });
+      activeControls.set(serial, {
+        channel: new AndroidControlChannel(controller),
+        width,
+        height,
+      });
     }
 
     streamStartedAt = Date.now();
@@ -258,12 +319,7 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
     }
   } finally {
     releaseStream();
-    if (scrcpy?.controller && activeControls.get(serial)?.controller === scrcpy.controller) {
-      activeControls.delete(serial);
-    }
-    await cancelReader?.().catch(() => undefined);
-    await scrcpy?.close().catch(() => undefined);
-    await adb.close().catch(() => undefined);
+    await shutdown().catch(() => undefined);
     if (!res.destroyed && !res.writableEnded) res.end();
     if (streamStartedAt !== undefined) {
       console.log(

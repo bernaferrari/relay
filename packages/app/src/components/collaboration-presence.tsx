@@ -110,7 +110,7 @@ export function CollaborationPresence(props: {
                     <path
                       d="M1.2 1.1 14.3 10l-6.2 1.2-3.6 6.1z"
                       fill={visual.color}
-                      stroke="var(--v2-background-bg-deep)"
+                      stroke="var(--background-deep)"
                       stroke-width="1.2"
                       stroke-linejoin="round"
                     />

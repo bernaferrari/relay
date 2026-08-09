@@ -14,7 +14,7 @@ const afterFingerprint = "b".repeat(64);
 
 function mapFixture(): AppMap {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: "map-1",
     organizationId: "org-1",
     projectId: "project-1",
@@ -26,6 +26,9 @@ function mapFixture(): AppMap {
     screenVariants: {},
     connections: {},
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: {},
     flows: {},
     runs: {},
@@ -349,6 +352,151 @@ test("keeps a newly captured destination in its source screen Group", () => {
     connection?.destination.kind === "screen" ? connection.destination.screenId : "",
   ]);
   assert.equal(result.appMap.groups.settings?.updatedAt, 10);
+});
+
+test("new-screen does not merge a sheet into the still-visible source screen", () => {
+  const map = mapFixture();
+  map.screens.sidebar = {
+    ...mapScope(map),
+    id: "sidebar",
+    title: "Sidebar",
+    identity: { schemaVersion: 1, fingerprint: afterFingerprint },
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "session-settings-sheet",
+      sourceScreenId: "sidebar",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-settings-sheet",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("settings"),
+          steps: [
+            { id: "tap-settings", kind: "tap", target: { identifier: "sidebar.settings.button" } },
+          ],
+        },
+      ],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      destination: { kind: "new-screen", title: "Settings" },
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-settings-sheet"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  assert.equal(connection?.fromScreenId, "sidebar");
+  assert.equal(connection?.destination.kind, "screen");
+  const destinationId =
+    connection?.destination.kind === "screen" ? connection.destination.screenId : undefined;
+  assert.notEqual(destinationId, "sidebar");
+  assert.equal(result.appMap.screens[destinationId!]?.title, "Settings");
+  assert.equal(result.appMap.screens.sidebar?.identity?.fingerprint, afterFingerprint);
+  assert.equal(result.appMap.screens[destinationId!]?.identity, undefined);
+
+  const sidebarVariants = [...(result.appMap.screens.sidebar?.variantIds ?? [])];
+  const recapture = commitAppMapScreenCapture(
+    result.appMap,
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      observation: observation("after", afterFingerprint, "evidence-after"),
+      title: "Settings",
+    },
+    context("event-settings-recapture", 1, 11),
+  );
+  assert.equal(recapture.screenId, destinationId);
+  assert.equal(recapture.appMap.screens.sidebar?.title, "Sidebar");
+  assert.equal(recapture.appMap.screens.sidebar?.identity?.fingerprint, afterFingerprint);
+  assert.deepEqual(recapture.appMap.screens.sidebar?.variantIds, sidebarVariants);
+  assert.equal(recapture.appMap.screens[destinationId!]?.title, "Settings");
+  assert.ok(recapture.appMap.screens[destinationId!]?.variantIds.includes(recapture.variantId));
+});
+
+test("new-screen does not adopt a fingerprint another screen already aliases", () => {
+  const map = mapFixture();
+  map.screens.sidebar = {
+    ...mapScope(map),
+    id: "sidebar",
+    title: "Sidebar",
+    identity: {
+      schemaVersion: 1,
+      fingerprint: beforeFingerprint,
+      aliases: [afterFingerprint],
+    },
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "session-alias-collision",
+      sourceScreenId: "sidebar",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-alias-collision",
+      takeRevision: 1,
+      actions: [action("settings")],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      destination: { kind: "new-screen", title: "Settings" },
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-alias-collision"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  const destinationId =
+    connection?.destination.kind === "screen" ? connection.destination.screenId : undefined;
+  assert.notEqual(destinationId, "sidebar");
+  assert.equal(result.appMap.screens[destinationId!]?.identity, undefined);
+  assert.ok(result.appMap.screens.sidebar?.identity?.aliases?.includes(afterFingerprint));
+});
+
+test("omitted destination still merges a recording into the observed screen", () => {
+  const map = mapFixture();
+  map.screens.sidebar = {
+    ...mapScope(map),
+    id: "sidebar",
+    title: "Sidebar",
+    identity: { schemaVersion: 1, fingerprint: afterFingerprint },
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "session-identity-merge",
+      sourceScreenId: "sidebar",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-identity-merge",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("settings"),
+          steps: [
+            { id: "tap-settings", kind: "tap", target: { identifier: "sidebar.settings.button" } },
+          ],
+        },
+      ],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-identity-merge"),
+  );
+
+  const connection = result.appMap.connections[result.connectionId];
+  assert.deepEqual(connection?.destination, { kind: "screen", screenId: "sidebar" });
+  assert.equal(Object.keys(result.appMap.screens).length, 1);
 });
 
 test("fills an existing pending connection and preserves its flow position", () => {

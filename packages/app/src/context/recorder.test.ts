@@ -4,11 +4,37 @@ import type { SnapshotNode, SnapshotState } from "../lib/api-types";
 import type { AuthoringSession } from "@relay/protocol";
 import {
   buildTapTarget,
+  canRetryTapAtPoint,
+  logicalBoundsFromCapture,
   physicalIosTapStep,
   projectTake,
   selectProjectedAuthoringSession,
   semanticTapNode,
+  stableLiveTapStep,
+  supersededReviewSessionIds,
 } from "./recorder";
+
+test("pixels-only live drive uses screenshot size when AX bounds are missing", () => {
+  assert.deepEqual(logicalBoundsFromCapture({ imageWidth: 1668, imageHeight: 2224 }), {
+    width: 834,
+    height: 1112,
+  });
+  assert.deepEqual(
+    logicalBoundsFromCapture({
+      snapshot: {
+        capturedAt: 1,
+        nodes: [],
+        interactive: [],
+        inspectable: false,
+        source: "pixels-only",
+      },
+      imageWidth: 1080,
+      imageHeight: 2340,
+    }),
+    { width: 540, height: 1170 },
+  );
+  assert.equal(logicalBoundsFromCapture({ snapshot: null }), undefined);
+});
 
 test("physical iOS falls back to coordinates for duplicate non-hittable labels", () => {
   const settings: SnapshotNode = {
@@ -33,7 +59,48 @@ test("physical iOS falls back to coordinates for duplicate non-hittable labels",
   });
 });
 
-test("physical iOS prefers a uniquely hittable element reference", () => {
+test("physical iOS live drive uses a unique hittable label at the control center", () => {
+  const button: SnapshotNode = {
+    index: 1,
+    ref: "@e7",
+    label: "General",
+    hittable: true,
+    rect: { x: 390, y: 530, width: 54, height: 52 },
+  };
+  const snapshot: SnapshotState = {
+    capturedAt: 1,
+    nodes: [button],
+    interactive: [button],
+    bounds: { width: 834, height: 1112 },
+  };
+
+  assert.deepEqual(
+    physicalIosTapStep(snapshot, button, buildTapTarget(snapshot.bounds, button, 0.5, 0.5)),
+    { kind: "label", label: "General", x: 417, y: 556 },
+  );
+});
+
+test("physical iOS live drive uses a unique identifier at the control center", () => {
+  const gear: SnapshotNode = {
+    index: 1,
+    identifier: "sidebar.settings.button",
+    label: "grok-gear",
+    hittable: false,
+    rect: { x: 720, y: 1040, width: 44, height: 44 },
+  };
+  const snapshot: SnapshotState = {
+    capturedAt: 1,
+    nodes: [gear],
+    interactive: [],
+    bounds: { width: 834, height: 1112 },
+  };
+  assert.deepEqual(
+    physicalIosTapStep(snapshot, gear, buildTapTarget(snapshot.bounds, gear, 0.89, 0.95)),
+    { kind: "identifier", identifier: "sidebar.settings.button", x: 742, y: 1062 },
+  );
+});
+
+test("physical iOS can still prefer a uniquely hittable ref when recording", () => {
   const button: SnapshotNode = {
     index: 1,
     ref: "@e7",
@@ -48,7 +115,9 @@ test("physical iOS prefers a uniquely hittable element reference", () => {
   };
 
   assert.deepEqual(
-    physicalIosTapStep(snapshot, button, buildTapTarget(snapshot.bounds, button, 0.5, 0.5)),
+    physicalIosTapStep(snapshot, button, buildTapTarget(snapshot.bounds, button, 0.5, 0.5), {
+      preferRef: true,
+    }),
     { kind: "ref", ref: "@e7" },
   );
 });
@@ -107,6 +176,57 @@ test("an unlabeled tapped child inherits the closest accessibility label", () =>
       referenceBounds: { width: 100, height: 200 },
     },
   });
+});
+
+test("a full-screen accessibility overlay never replaces the exact mouse point", () => {
+  const overlay: SnapshotNode = {
+    index: 0,
+    identifier: "com.google.android.gm:id/conversation_topmost_overlay",
+    ref: "@e27",
+    rect: { x: 0, y: 0, width: 1080, height: 2340 },
+  };
+  const snapshot: SnapshotState = {
+    capturedAt: 1,
+    nodes: [overlay],
+    interactive: [],
+    bounds: { width: 1080, height: 2340 },
+  };
+
+  assert.equal(semanticTapNode(snapshot, overlay), null);
+  assert.equal(canRetryTapAtPoint(new Error("Selector did not match: id=overlay")), true);
+  assert.equal(
+    canRetryTapAtPoint(new Error("press coordinate tap left Gmail and foregrounded Niagara")),
+    false,
+  );
+});
+
+test("live Android fallback never executes an ephemeral ref", () => {
+  const target = buildTapTarget(
+    { width: 1080, height: 2340 },
+    {
+      ref: "@e27",
+      label: "Maps",
+      rect: { x: 220, y: 130, width: 680, height: 110 },
+    },
+    0.55,
+    0.08,
+  );
+
+  assert.deepEqual(stableLiveTapStep(target), {
+    kind: "label",
+    label: "Maps",
+    point: { x: 594, y: 187 },
+  });
+});
+
+test("live Android fallback uses the mirrored point when the frame has no stable name", () => {
+  assert.deepEqual(
+    stableLiveTapStep({
+      ref: "@e9",
+      point: { x: 320, y: 640 },
+    }),
+    { kind: "point", x: 320, y: 640 },
+  );
 });
 
 test("remote authoring activity is visible without replacing local App Map or Target focus", () => {
@@ -216,6 +336,33 @@ test("a locally completed session closes immediately while a stale refresh is in
       dismissedSessionIds: new Set([reviewing.id]),
     }),
     null,
+  );
+});
+
+test("leaving the newest review also dismisses superseded reviews for that map and device", () => {
+  const review = (id: string, targetId: string, updatedAt: number): AuthoringSession => ({
+    schemaVersion: 1,
+    id,
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:me",
+    actorKind: "human",
+    appMapId: "map-a",
+    state: "reviewing",
+    target: { kind: "device", platform: "android", targetId },
+    leaseId: `lease-${id}`,
+    expectedAppMapRevision: 1,
+    createdAt: 1,
+    updatedAt,
+  });
+  const newest = review("new", "android-a", 30);
+
+  assert.deepEqual(
+    supersededReviewSessionIds(
+      [review("old", "android-a", 20), review("other", "android-b", 10), newest],
+      newest,
+    ),
+    ["old", "new"],
   );
 });
 

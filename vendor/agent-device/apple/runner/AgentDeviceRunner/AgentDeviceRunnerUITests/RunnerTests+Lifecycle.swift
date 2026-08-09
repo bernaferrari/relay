@@ -5,7 +5,22 @@ import AppKit
 
 func runnerPngData(for image: RunnerImage) -> Data? {
 #if canImport(UIKit)
-  return image.pngData()
+  // UIImage.pngData() writes the raw CGImage and drops imageOrientation.
+  // Landscape physical iPads often report .left/.right/.down; encoding without
+  // applying that transform produces upright-looking dimensions with sideways
+  // or upside-down pixels — which also poisons coordinate taps derived from
+  // the screenshot. Draw into an upright bitmap first.
+  if image.imageOrientation == .up {
+    return image.pngData()
+  }
+  let format = UIGraphicsImageRendererFormat.default()
+  format.scale = image.scale
+  format.opaque = false
+  let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+  let upright = renderer.image { _ in
+    image.draw(in: CGRect(origin: .zero, size: image.size))
+  }
+  return upright.pngData()
 #elseif canImport(AppKit)
   guard let cgImage = runnerCGImage(from: image) else { return nil }
   let bitmap = NSBitmapImageRep(cgImage: cgImage)
@@ -15,7 +30,17 @@ func runnerPngData(for image: RunnerImage) -> Data? {
 
 func runnerCGImage(from image: RunnerImage) -> CGImage? {
 #if canImport(UIKit)
-  return image.cgImage
+  if image.imageOrientation == .up {
+    return image.cgImage
+  }
+  let format = UIGraphicsImageRendererFormat.default()
+  format.scale = image.scale
+  format.opaque = false
+  let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+  let upright = renderer.image { _ in
+    image.draw(in: CGRect(origin: .zero, size: image.size))
+  }
+  return upright.cgImage
 #elseif canImport(AppKit)
   return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
 #endif

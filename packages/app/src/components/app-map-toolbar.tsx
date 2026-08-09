@@ -18,7 +18,7 @@ export function AppMapOverviewToolbar(props: {
   const views = [
     ["map", "map", "Map"],
     ["screens", "grid", "Screens"],
-    ["coverage", "check", "Coverage"],
+    ["coverage", "check", "Results"],
   ] as const;
   const moveViewFocus = (event: KeyboardEvent, index: number) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -39,16 +39,16 @@ export function AppMapOverviewToolbar(props: {
   return (
     <header
       class={cn(
-        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] max-[900px]:left-1/2 max-[620px]:top-2",
+        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] max-[900px]:left-1/2 max-[620px]:top-2",
         props.shiftForDevice
           ? props.wideDevice
-            ? "left-[calc((100%-548px)/2)]"
-            : "left-[calc((100%-388px)/2)]"
+            ? "left-[calc((100%-620px)/2)]"
+            : "left-[calc((100%-480px)/2)]"
           : "left-1/2",
       )}
-      aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "connection" : "connections"}`}
+      aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "path" : "paths"}`}
     >
-      <div class="flex items-center gap-0.5" role="tablist" aria-label="App Map view">
+      <div class="flex items-center gap-0.5" role="tablist" aria-label="Map view">
         {views.map(([id, icon, label], index) => (
           <button
             type="button"
@@ -57,9 +57,9 @@ export function AppMapOverviewToolbar(props: {
             tabindex={props.view === id ? 0 : -1}
             data-app-map-view={id}
             class={cn(
-              "relative inline-flex min-h-9 items-center gap-1.5 rounded-[7px] px-2.5 text-[11px] font-medium text-[var(--text-weak)] outline-none before:absolute before:-inset-1 before:content-[''] transition-[background-color,color,box-shadow] duration-150 hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]",
+              "relative inline-flex min-h-9 items-center gap-1.5 rounded-[7px] px-2.5 text-[11px] font-medium text-[var(--text-weak)] outline-none before:absolute before:-inset-1 before:content-[''] transition-[background-color,color,box-shadow] duration-150 hover:bg-[var(--surface-base)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)]",
               props.view === id &&
-                "bg-[var(--v2-background-bg-base)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/12%),inset_0_0_0_1px_var(--v2-border-border-muted)]",
+                "bg-[var(--background-base)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/12%),inset_0_0_0_1px_var(--border-weak-base)]",
             )}
             onClick={() => props.onViewChange(id)}
             onKeyDown={(event) => moveViewFocus(event, index)}
@@ -70,7 +70,7 @@ export function AppMapOverviewToolbar(props: {
         ))}
       </div>
       <Show when={props.proposalCount > 0}>
-        <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+        <span class="h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
         <button
           type="button"
           class="relative inline-flex min-h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-medium text-[var(--text-interactive-base)] before:absolute before:-inset-0.5 before:content-[''] hover:brightness-105"
@@ -86,79 +86,81 @@ export function AppMapOverviewToolbar(props: {
 
 export function AppMapToolbar(props: {
   tool: AppMapCanvasTool;
+  /** Blank maps have no cards to select or pan — hide canvas tools. */
+  mode?: "canvas" | "blank";
   deviceOpen: boolean;
   shiftForDevice: boolean;
   wideDevice: boolean;
+  recordDisabled?: boolean;
+  recordDisabledReason?: string;
   explorationState: "idle" | "running" | "stopping" | "complete" | "error";
   explorationCount: number;
   onToolChange: (tool: AppMapCanvasTool) => void;
-  onCaptureScreen: () => void;
   onCreateConnection: () => void;
   onAddNote: () => void;
   onExplore: () => void;
   onToggleDevice: () => void;
 }) {
+  const blank = () => props.mode === "blank";
   return (
     <div
       class={cn(
-        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px]",
+        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px]",
         props.shiftForDevice
           ? props.wideDevice
-            ? "left-[calc((100%-548px)/2)] max-[900px]:left-1/2"
-            : "left-[calc((100%-388px)/2)] max-[900px]:left-1/2"
+            ? "left-[calc((100%-620px)/2)] max-[900px]:left-1/2"
+            : "left-[calc((100%-480px)/2)] max-[900px]:left-1/2"
           : "left-1/2",
       )}
       role="toolbar"
       aria-label="Map editing tools"
     >
-      <button
-        type="button"
-        class={cn(
-          mapControlButton,
-          props.tool === "select" &&
-            "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-        )}
-        aria-label="Select tool"
-        aria-pressed={props.tool === "select"}
-        data-tip="Select and move · V"
-        onClick={() => props.onToolChange("select")}
-      >
-        <Icon name="pointer" size={15} />
-      </button>
-      <button
-        type="button"
-        class={cn(
-          mapControlButton,
-          props.tool === "hand" &&
-            "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-        )}
-        aria-label="Hand tool"
-        aria-pressed={props.tool === "hand"}
-        data-tip="Pan canvas · H"
-        onClick={() => props.onToolChange("hand")}
-      >
-        <Icon name="hand" size={15} />
-      </button>
-      <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
-      <button
-        type="button"
-        class={mapControlButton}
-        aria-label="Capture screenshot"
-        data-tip="Capture screenshot · S"
-        onClick={props.onCaptureScreen}
-      >
-        <Icon name="camera" size={15} />
-      </button>
+      <Show when={!blank()}>
+        <button
+          type="button"
+          class={cn(
+            mapControlButton,
+            props.tool === "select" &&
+              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+          )}
+          aria-label="Select tool"
+          aria-pressed={props.tool === "select"}
+          data-tip="Select and move · V"
+          onClick={() => props.onToolChange("select")}
+        >
+          <Icon name="pointer" size={15} />
+        </button>
+        <button
+          type="button"
+          class={cn(
+            mapControlButton,
+            props.tool === "hand" &&
+              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+          )}
+          aria-label="Hand tool"
+          aria-pressed={props.tool === "hand"}
+          data-tip="Pan canvas · H"
+          onClick={() => props.onToolChange("hand")}
+        >
+          <Icon name="hand" size={15} />
+        </button>
+        <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
+      </Show>
       <button
         type="button"
         class={mapControlButton}
-        aria-label="Create connection"
-        data-tip="Connection · C"
+        aria-label="Add path"
+        data-tip={
+          props.recordDisabled
+            ? (props.recordDisabledReason ?? "Save a screen before adding a path")
+            : "Add a path from the selected screen · C"
+        }
+        disabled={props.recordDisabled}
         onClick={props.onCreateConnection}
       >
         <Icon name="arrow-right" size={15} />
       </button>
-      <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+      <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       <button
         type="button"
         class={mapControlButton}
@@ -168,30 +170,32 @@ export function AppMapToolbar(props: {
       >
         <Icon name="edit" size={15} />
       </button>
-      <button
-        type="button"
-        class={cn(
-          mapControlButton,
-          props.explorationState === "running" &&
-            "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-        )}
-        aria-label="Explore with Relay"
-        aria-pressed={props.explorationState === "running"}
-        data-tip={
-          props.explorationState === "running"
-            ? `${props.explorationCount} ${props.explorationCount === 1 ? "agent" : "agents"} exploring · Open progress`
-            : "Explore with Relay"
-        }
-        onClick={props.onExplore}
-      >
-        <span class="relative">
-          <Icon name="scan" size={15} />
-          <Show when={props.explorationState === "running"}>
-            <i class="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--icon-success-base)] motion-safe:animate-pulse" />
-          </Show>
-        </span>
-      </button>
-      <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+      <Show when={!blank()}>
+        <button
+          type="button"
+          class={cn(
+            mapControlButton,
+            props.explorationState === "running" &&
+              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+          )}
+          aria-label="Map with AI"
+          aria-pressed={props.explorationState === "running"}
+          data-tip={
+            props.explorationState === "running"
+              ? `${props.explorationCount} ${props.explorationCount === 1 ? "agent" : "agents"} exploring · Open progress`
+              : "Let Relay explore screens for you"
+          }
+          onClick={props.onExplore}
+        >
+          <span class="relative">
+            <Icon name="scan" size={15} />
+            <Show when={props.explorationState === "running"}>
+              <i class="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--icon-success-base)] motion-safe:animate-pulse" />
+            </Show>
+          </span>
+        </button>
+      </Show>
+      <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       <button
         type="button"
         class={cn(
@@ -210,4 +214,4 @@ export function AppMapToolbar(props: {
 }
 
 const mapControlButton =
-  "canvas-tool-control relative grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "canvas-tool-control relative grid h-10 min-w-10 place-items-center rounded-[8px] px-2 text-[10.5px] text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background-base)] disabled:cursor-not-allowed disabled:opacity-35";

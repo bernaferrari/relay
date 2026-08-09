@@ -141,13 +141,29 @@ function errorText(error: unknown): string {
  * must never be hidden behind a retry loop.
  */
 export function isRecoverableIosRuntimeError(error: unknown): boolean {
-  return /timed out waiting for (?:the )?lock|lock owner|stale lock|coredevice\.actionerror|streamingaction|couldn['’]t get the message from the device|connection.*(?:closed|reset)|daemon.*(?:unavailable|disconnected|signature)|runner.*(?:exited|unavailable)/i.test(
+  return /timed out waiting for (?:the )?lock|lock owner|stale lock|coredevice\.actionerror|streamingaction|couldn['’]t get the message from the device|connection.*(?:closed|reset)|daemon.*(?:unavailable|disconnected|signature)|runner.*(?:exited|unavailable)|runner_busy|runner_wedged|still finishing a previous command|execution watchdog|main thread has been stuck|xcrun timed out|RUNNER_BUSY|RUNNER_WEDGED/i.test(
     errorText(error),
   );
 }
 
 export function isIosSessionBindingError(error: unknown): boolean {
-  return /no active session|active app session|session[_ ]not[_ ]found/i.test(errorText(error));
+  return /no active session|active app session|session[_ ]not[_ ]found|already in use by session|daemon request timed out/i.test(
+    errorText(error),
+  );
+}
+
+/** Extract a foreign agent-device session name from a binding conflict error. */
+export function foreignSessionNameFromError(error: unknown): string | undefined {
+  const match = errorText(error).match(/already in use by session ["']([^"']+)["']/i);
+  const name = match?.[1]?.trim();
+  return name || undefined;
+}
+
+/** Runner is alive but its main thread is stuck on abandoned XCTest work. */
+export function isIosRunnerWatchdogError(error: unknown): boolean {
+  return /still finishing a previous command|execution watchdog|main thread has been stuck|runner_busy|runner_wedged|RUNNER_BUSY|RUNNER_WEDGED/i.test(
+    errorText(error),
+  );
 }
 
 function parseOwner(value: string): LockOwner | undefined {
@@ -336,7 +352,7 @@ export async function recoverIosRuntime(
   // never tears down a service that just proved healthy. This matters for
   // unattended physical devices: once their working runner is removed, a
   // locked screen can prevent developer services from reconnecting.
-  if (!probeHealthy(probe) && (input.force === true || coreDeviceFailure(probe))) {
+  if (!probeHealthy(probe) && coreDeviceFailure(probe)) {
     actions.push(await restartCoreDevice(deps));
     probe = await deps.run("xcrun", probeArgs(input.serial, output), 15_000);
   }

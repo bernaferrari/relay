@@ -97,7 +97,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           <Fact label="Attempts" value={String(job().attempts)} />
         </Show>
         <Show when={job().caseCount && job().caseCount! > 1}>
-          <Fact label="Data case" value={`${(job().caseIndex ?? 0) + 1} of ${job().caseCount}`} />
+          <Fact label="Data run" value={`${(job().caseIndex ?? 0) + 1} of ${job().caseCount}`} />
         </Show>
       </dl>
       <Show when={previous()}>

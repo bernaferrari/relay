@@ -9,6 +9,7 @@
     "dev:cli": "pnpm --filter @relay/cli exec tsx src/index.ts",
     "dev:tui": "pnpm --filter @relay/tui dev",
     "dev:serve": "pnpm --filter @relay/server dev",
+    "ensure:serve": "node scripts/ensure-server.mjs",
     "dev:mcp": "pnpm --filter @relay/mcp start",
     "dev:app": "pnpm --filter @relay/app dev",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
@@ -30,7 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.6",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",

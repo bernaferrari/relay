@@ -121,7 +121,7 @@ export function RecipeStepsEditor(): JSX.Element {
     },
     {
       label: "Check",
-      description: "Verify what appears on screen",
+      description: "Check what appears on screen",
       icon: "check",
       make: () => ({ kind: "expect", target: {}, condition: "visible" }),
     },
@@ -169,11 +169,11 @@ export function RecipeStepsEditor(): JSX.Element {
                   {(s) => (
                     <button
                       type="button"
-                      class="grid min-h-[68px] min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)_14px] items-center gap-2 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-2.5 text-left text-[var(--text-strong)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-[background-color,box-shadow,transform] duration-120 hover:bg-surface-raised-base-hover active:scale-[0.99]"
+                      class="grid min-h-[68px] min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)_14px] items-center gap-2 rounded-[10px] bg-[var(--surface-base)] p-2.5 text-left text-[var(--text-strong)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-[background-color,box-shadow,transform] duration-120 hover:bg-surface-raised-base-hover active:scale-[0.99]"
                       onClick={() => insertAt(0, s.make())}
                     >
                       <span
-                        class="grid size-[30px] place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--v2-background-bg-accent)]"
+                        class="grid size-[30px] place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
                         aria-hidden="true"
                       >
                         <Icon name={s.icon} size={16} strokeWidth={1.8} />
@@ -213,11 +213,11 @@ export function RecipeStepsEditor(): JSX.Element {
                     }
                   >
                     <div class="flex items-center gap-2 pt-2 pb-0.5" role="heading" aria-level="3">
-                      <span class="h-px min-w-3 flex-1 bg-[var(--v2-border-border-muted)]" />
+                      <span class="h-px min-w-3 flex-1 bg-[var(--border-weak-base)]" />
                       <span class="max-w-[78%] truncate text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         {step().group}
                       </span>
-                      <span class="h-px min-w-3 flex-1 bg-[var(--v2-border-border-muted)]" />
+                      <span class="h-px min-w-3 flex-1 bg-[var(--border-weak-base)]" />
                     </div>
                   </Show>
                   <StepRow

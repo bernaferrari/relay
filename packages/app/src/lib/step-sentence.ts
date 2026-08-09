@@ -13,24 +13,62 @@ function targetPhrase(t: StepTarget | undefined): string {
   if (t.label) return `"${t.label}"`;
   if (t.text) return `"${t.text}"`;
   if (t.identifier) return `the ${t.identifier} element`;
-  if (t.ref) return t.ref;
-  if (t.point) return `${t.point.x}, ${t.point.y}`;
+  // Refs and coordinates are runner internals — never surface them in copy.
+  if (t.ref && t.point) return "the recorded control";
+  if (t.ref) return "the recorded element";
+  if (t.point) return "the screen";
   return "an element";
 }
 
+/** Turn ${var.name} / camelCase tokens into plain words for body copy. */
+function humanInput(input: string): string {
+  const value = input.trim();
+  if (!value) return "value";
+  const bare = value.match(/^\$\{([^}]+)\}$/);
+  const token = bare?.[1] ?? value;
+  const words = token
+    .replace(/\$\{([^}]+)\}/g, "$1")
+    .replace(/[._/-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words || "value";
+}
+
 function recordedTargetPhrase(step: Extract<RecipeStep, { kind: "tap" }>): string {
-  const recordedNode = [step.evidence?.node, ...(step.evidence?.ancestors ?? [])].find(
-    (node) => node && step.target.ref && node.ref === step.target.ref,
+  const evidenceNodes = [step.evidence?.node, ...(step.evidence?.ancestors ?? [])].filter(
+    (node): node is NonNullable<typeof node> => Boolean(node),
   );
-  const visibleName = (recordedNode?.label ?? recordedNode?.value ?? "").trim();
+  const byRef = evidenceNodes.find(
+    (node) => step.target.ref && node.ref && node.ref === step.target.ref,
+  );
+  // Physical iOS often records a point with no durable ref. Prefer any named
+  // accessibility node captured with the gesture over raw coordinates.
+  const named =
+    byRef ?? evidenceNodes.find((node) => (node.label ?? node.value ?? "").trim()) ?? undefined;
+  const visibleName = (
+    named?.label ??
+    named?.value ??
+    step.target.label ??
+    step.target.text ??
+    ""
+  ).trim();
+  if (visibleName) return `"${visibleName}"`;
+  if (step.target.identifier) return `the ${step.target.identifier} element`;
   // Element references are useful to the runner but meaningless in the plan.
-  // Keep the ref as the selector and use its captured accessibility name only
-  // for the sentence people scan in the UI.
-  if (step.target.ref && visibleName) return `"${visibleName}"`;
-  if (step.target.ref && step.target.point)
-    return `at ${step.target.point.x}, ${step.target.point.y}`;
+  if (step.target.ref && step.target.point) return "the recorded control";
   if (step.target.ref) return "the recorded element";
+  if (step.target.point) return "the screen";
   return targetPhrase(step.target);
+}
+
+function swipeDirection(from: { x: number; y: number }, to: { x: number; y: number }): string {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return "slightly";
+  if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "down" : "up";
 }
 
 function fmtSeconds(ms: number): string {
@@ -76,12 +114,18 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return `Check options${step.scope ? ` within ${targetPhrase(step.scope)}` : ""} are exactly ${step.labels.map((label) => `“${label}”`).join(", ")}`;
     case "expect-screen":
       return `Reach ${step.screenTitle}`;
+    case "tour":
+      return step.originTitle
+        ? `Tour ${step.originTitle} rows${step.depth ? ` depth ${step.depth}` : ""}`
+        : step.depth
+          ? `Tour visible rows depth ${step.depth}`
+          : "Tour visible rows";
     case "extract":
-      return `Extract ${targetPhrase(step.target)} as ${step.as}`;
+      return `Extract ${targetPhrase(step.target)} as ${humanInput(step.as)}`;
     case "assert-content":
-      return `Check ${step.input} ${step.match.replace("-", " ")} "${step.expected}"`;
+      return `Check ${humanInput(step.input)} ${step.match.replace("-", " ")} "${step.expected}"`;
     case "evaluate-semantic":
-      return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
+      return `Evaluate ${humanInput(step.input)} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "sleep":
       return `Wait ${fmtDuration(step.ms)}`;
     case "pause":
@@ -94,7 +138,7 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "scroll":
       return `Scroll ${cap(step.direction)}${step.amount === 1 ? " · full screen" : ""}`;
     case "swipe":
-      return `Swipe ${Math.round(step.from.x)}, ${Math.round(step.from.y)} → ${Math.round(step.to.x)}, ${Math.round(step.to.y)}`;
+      return `Swipe ${swipeDirection(step.from, step.to)}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
@@ -103,7 +147,7 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "module":
       return `Run ${titleize(step.recipeId, recipes)}`;
     case "branch":
-      return `When ${step.input} ${step.operator.replace("-", " ")}${step.expected ? ` "${step.expected}"` : ""}, run ${titleize(step.thenRecipeId, recipes)}`;
+      return `When ${humanInput(step.input)} ${step.operator.replace("-", " ")}${step.expected ? ` "${step.expected}"` : ""}, run ${titleize(step.thenRecipeId, recipes)}`;
     case "repeat":
       return `Repeat ${titleize(step.recipeId, recipes)} ${step.count} times`;
     case "script":
@@ -168,6 +212,8 @@ export function stepValid(step: RecipeStep): boolean {
       );
     case "expect-screen":
       return Boolean(step.screenId.trim() && step.screenTitle.trim() && step.fingerprint.trim());
+    case "tour":
+      return true;
     case "extract":
       return targetValid(step.target) && step.as.trim().length > 0;
     case "assert-content":

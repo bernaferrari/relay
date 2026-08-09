@@ -3,7 +3,6 @@ import type { CollaborationAwareness, CanvasNote, MapGroup } from "@relay/protoc
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
-  draftCanvasConnectionPath,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   screenCardGeometry,
@@ -13,16 +12,17 @@ import {
 import type { MapTreeNode } from "../lib/app-map-tree";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
+import type { CanvasCombineCardModel } from "../lib/app-map-combine-canvas";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
-import { CanvasNoteCard, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
+import {
+  CanvasCombineCard,
+  CanvasNoteCard,
+  KeyboardConnectionChooser,
+  ScreenCard,
+} from "./app-map-canvas-primitives";
 import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
-
-type ConnectionPreview = Readonly<{
-  fromScreenId: string;
-  point: CanvasPoint;
-}>;
 
 export type AppMapCanvasSceneProps = {
   nodes: MapTreeNode[];
@@ -40,7 +40,6 @@ export type AppMapCanvasSceneProps = {
   renamingNodeId: string | null;
   renamingGroupId: string | null;
   keyboardConnectionSourceId: string | null;
-  connectionPreview?: ConnectionPreview;
   awareness: readonly CollaborationAwareness[];
   presenceGeometry: PresenceGeometry;
   positionFor: (node: MapTreeNode) => CanvasPoint;
@@ -58,7 +57,6 @@ export type AppMapCanvasSceneProps = {
   onRenameNode: (node: MapTreeNode) => void;
   onOpenNodeDetails: (node: MapTreeNode) => void;
   onCommitNodeRename: (node: MapTreeNode, title: string) => void;
-  onConnectStart: (event: PointerEvent, node: MapTreeNode) => void;
   onConnectKeyboard: (node: MapTreeNode) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
   onSelectGroup: (group: MapGroup) => void;
@@ -78,6 +76,9 @@ export type AppMapCanvasSceneProps = {
   onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: (note: CanvasNote, previousText: string) => void;
   onDeleteNote: (note: CanvasNote) => void;
+  hereScreenId?: string | null;
+  combines?: readonly CanvasCombineCardModel[];
+  onOpenCombine?: (combineId: string) => void;
 };
 
 const markerClass = (
@@ -240,7 +241,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         class="pointer-events-none absolute inset-0 overflow-visible"
         width={props.width}
         height={props.height}
-        aria-label="Map connections"
+        aria-label="Map paths"
       >
         <defs>
           <For
@@ -322,22 +323,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             );
           }}
         </For>
-        <Show when={props.connectionPreview}>
-          {(preview) => (
-            <path
-              d={draftCanvasConnectionPath(
-                preview().fromScreenId,
-                preview().point,
-                props.nodes,
-                props.positionFor,
-                geometryForNode,
-              )}
-              class="pointer-events-none fill-none stroke-[var(--text-interactive-base)] [stroke-dasharray:5_5]"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
-          )}
-        </Show>
       </svg>
 
       <For each={visibleConnections()}>
@@ -350,16 +335,16 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             <button
               type="button"
               class={cn(
-                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-[10.5px] font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-[8px] hover:bg-[var(--v2-background-bg-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-[10.5px] font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-[8px] hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
                 props.selectedConnectionId === connection.id &&
-                  "bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
+                  "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
               )}
               style={{
                 left: `${geometry().labelPoint.x}px`,
                 top: `${geometry().labelPoint.y - 19}px`,
                 transform: "translate(-50%, -50%)",
               }}
-              aria-label={`Open connection from ${source() ? props.titleFor(source()!) : "source screen"} to ${target() ? props.titleFor(target()!) : "destination screen"}`}
+              aria-label={`Open path from ${source() ? props.titleFor(source()!) : "start screen"} to ${target() ? props.titleFor(target()!) : "next screen"}`}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -368,14 +353,14 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             >
               <span class="truncate">
                 {connection.label ||
-                  (connection.state === "needs-recording" ? "Add action" : "Open")}
+                  (connection.state === "needs-recording" ? "Record path" : "Open path")}
               </span>
               <Show when={count()}>
                 {(value) => (
                   <span class="inline-flex items-center gap-1 text-[9.5px] font-normal tabular-nums text-[var(--text-weak)]">
                     <span aria-hidden="true">·</span>{" "}
                     {value().exact ? value().count : `~${value().count}`}{" "}
-                    {value().count === 1 ? "case" : "cases"}
+                    {value().count === 1 ? "run" : "runs"}
                   </span>
                 )}
               </Show>
@@ -407,19 +392,20 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               showActions={props.selectedNodeIds.length === 1 && props.selectedNodeId === node.id}
               editing={props.renamingNodeId === node.id}
               runState={props.screenRunState(node.id)}
+              here={props.hereScreenId === node.id}
               position={props.positionFor(node)}
               geometry={geometryForNode(node)}
               src={() => props.imageFor(node)}
               orientationEvidence={props.orientationEvidenceFor(node)}
               detailsOpen={props.detailsOpen && node.id === props.selectedNodeId}
               sourceAnchor={selectedConnectionAnchor()}
+              pathDraft={props.keyboardConnectionSourceId === node.id}
               onRotationChange={(rotation) => rememberRotation(node.id, rotation)}
               onSelect={(event) => props.onSelectNode(node, event)}
               onContextMenu={(event) => props.onNodeContextMenu(event, node)}
               onRename={() => props.onRenameNode(node)}
               onOpenDetails={() => props.onOpenNodeDetails(node)}
               onCommitRename={(title) => props.onCommitNodeRename(node, title)}
-              onConnectStart={(event) => props.onConnectStart(event, node)}
               onConnectKeyboard={() => props.onConnectKeyboard(node)}
               onPointerDown={(event) => props.onNodePointerDown(event, node)}
             />
@@ -452,6 +438,20 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             onText={(text) => props.onNoteText(note, text)}
             onCommit={(previousText) => props.onCommitNote(note, previousText)}
             onDelete={() => props.onDeleteNote(note)}
+          />
+        )}
+      </For>
+
+      <For each={props.combines ?? []}>
+        {(combine) => (
+          <CanvasCombineCard
+            id={combine.id}
+            name={combine.name}
+            position={combine.position}
+            values={combine.values}
+            tests={combine.tests}
+            cellCount={combine.cellCount}
+            onOpen={() => props.onOpenCombine?.(combine.id)}
           />
         )}
       </For>

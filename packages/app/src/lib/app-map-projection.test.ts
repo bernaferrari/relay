@@ -4,7 +4,7 @@ import type { AppMap, CanvasGraph, ScreenVariant } from "@relay/protocol";
 import { mergeAppMapProjection, planAppMapProjection } from "./app-map-projection.js";
 
 const map: AppMap = {
-  schemaVersion: 2,
+  schemaVersion: 1,
   id: "store",
   organizationId: "acme",
   projectId: "mobile",
@@ -16,6 +16,9 @@ const map: AppMap = {
   screenVariants: {},
   connections: {},
   caseStacks: {},
+  variables: {},
+  tests: {},
+  combines: {},
   routines: {},
   flows: {},
   runs: {},

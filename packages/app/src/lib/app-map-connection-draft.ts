@@ -76,7 +76,7 @@ export function canvasConnections(
           ...(transition.mode ? { mode: transition.mode } : {}),
           ...(transition.review ? { review: { ...transition.review } } : {}),
           ...(sourceAnchor ? { sourceAnchor } : {}),
-          label: transition.label || (step ? transitionLabel(step) : "Record action"),
+          label: transition.label || (step ? transitionLabel(step) : "Not recorded"),
           state: transition.state,
           createdAt: transition.createdAt,
           updatedAt: transition.updatedAt,

@@ -5,13 +5,14 @@ import type {
   GenerationRequest,
   GenerationResult,
   DiscoverySession,
+  CorpusSession,
   OperationId,
   OperationInput,
   OperationOutput,
   CompatibilityMatrix,
   Revisioned,
   ServerConnection,
-  TestVariable,
+  TestData,
   TargetProfile,
   TargetDefinition,
   EventEnvelope,
@@ -26,8 +27,11 @@ import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
 import { createServerTargetController } from "../lib/server-target-controller";
 import { createServerDiscoveryController } from "../lib/server-discovery-controller";
+import { createServerCorpusController } from "../lib/server-corpus-controller";
+import type { LanguageProfileInfo } from "../lib/server-corpus-remote";
 import {
   listActions,
+  listAndroidDevicesFast,
   listDevices,
   bootDevice as bootDeviceRequest,
   authorizeDevice as authorizeDeviceRequest,
@@ -50,6 +54,7 @@ import {
   loadAppleDeviceSetup,
   loadAppleSetupPreflight,
   saveAppleDeviceSetup as saveAppleDeviceSetupRequest,
+  saveIosLivePreview as saveIosLivePreviewRequest,
   type AppleDeviceSetup,
   type AppleSetupStatus,
   type AndroidSetupStatus,
@@ -126,6 +131,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [activeDiscoverySessionId, setActiveDiscoverySessionId] = createSignal<string | null>(
       null,
     );
+    const [corpusSessions, setCorpusSessions] = createSignal<CorpusSession[]>([]);
+    const [activeCorpusSessionId, setActiveCorpusSessionId] = createSignal<string | null>(null);
+    const [languageProfiles, setLanguageProfiles] = createSignal<LanguageProfileInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     const [appMaps, setAppMaps] = createSignal<AppMap[]>([]);
@@ -176,7 +184,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
       null,
     );
-    const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestVariable[]>>({
+    const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestData[]>>({
       revision: 0,
       value: [],
       updatedAt: 0,
@@ -379,6 +387,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setLiveCaptureIssue(null);
     }
 
+    async function saveIosLivePreview(
+      backend: "agent-device-png" | "go-ios-auto" | "go-ios-mjpeg",
+    ): Promise<void> {
+      await saveIosLivePreviewRequest(request, backend);
+      await refreshAppleDeviceSetup();
+    }
+
     function clearLiveCaptureIssue(): void {
       setLiveCaptureIssue(null);
     }
@@ -425,14 +440,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const sequence = ++deviceRefreshSequence;
       setDeviceDiscoveryStatus("scanning");
       const refresh = (async () => {
-        try {
-          const list = (await listDevices(request)).map((d) => ({
-            ...d,
-            serial: String(d.serial ?? d.id ?? ""),
-          }));
-          // Device discovery runs from polling, manual refresh, and target
-          // changes. Ignore an older reply so a transient stale list cannot
-          // make the current device disappear or rebind the wrong target.
+        const applyDeviceList = (list: DeviceInfo[]) => {
           if (sequence !== deviceRefreshSequence) return;
           setDevices(list);
           // Preserve an explicit selection across a transient USB/Wi-Fi drop.
@@ -452,11 +460,32 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             // A cached screen is evidence from a device that is no longer
             // present. Keep the intentional selection for auto-recovery, but
             // never present its pixels as the current live screen.
-            setLiveFrame(null);
-            setSnapshot(null);
-            setLiveCaptureIssue(null);
+            resetLivePreview();
           }
           selectedDeviceAvailable = selectedTargetReady;
+        };
+
+        try {
+          const fullScan = listDevices(request);
+          const android = (await listAndroidDevicesFast(request).catch(() => [])).map((d) => ({
+            ...d,
+            serial: String(d.serial ?? d.id ?? ""),
+          }));
+          // Keep non-Android rows from the last completed scan while replacing
+          // Android with ADB's current result. A connected phone is usable now;
+          // Apple discovery and simulator enumeration continue in parallel.
+          const previousNonAndroid = devices().filter((device) => device.platform !== "android");
+          applyDeviceList([...android, ...previousNonAndroid]);
+
+          const list = (await fullScan).map((d) => ({
+            ...d,
+            serial: String(d.serial ?? d.id ?? ""),
+          }));
+          // Device discovery runs from polling, manual refresh, and target
+          // changes. Ignore an older reply so a transient stale list cannot
+          // make the current device disappear or rebind the wrong target.
+          if (sequence !== deviceRefreshSequence) return;
+          applyDeviceList(list);
           // clear only network-ish noise; keep explicit action errors
           if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
         } catch (err) {
@@ -523,6 +552,29 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRecipes,
     });
 
+    const {
+      refreshCorpusSessions,
+      refreshLanguageProfiles,
+      scanLanguageProfile,
+      createCorpusSession,
+      startCorpusSession,
+      cancelCorpusSession,
+      exportCorpusPack,
+      getCorpusCoverage,
+      corpusScreenUrl,
+      activeCorpusSession,
+    } = createServerCorpusController({
+      request,
+      health,
+      serverUrl,
+      corpusSessions,
+      setCorpusSessions,
+      activeCorpusSessionId,
+      setActiveCorpusSessionId,
+      languageProfiles,
+      setLanguageProfiles,
+    });
+
     async function refreshAppMaps(): Promise<AppMap[]> {
       if (health() === "offline") return appMaps();
       const result = await runAction("app-map.list", {});
@@ -562,7 +614,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (!client) await resolveConnection();
       const refreshVersion = ++authoringRefreshVersion;
       const projectionVersion = authoringProjectionVersion;
-      const result = await client!.authoringSessions();
+      // The authoring archive contains immutable screenshots and accessibility
+      // trees. The live workspace only needs open sessions for its current
+      // document and target; downloading the complete archive made a single
+      // record click parse megabytes of unrelated evidence.
+      const result = await client!.authoringSessions({
+        activeOnly: true,
+        ...(selectedAppMapId() ? { appMapId: selectedAppMapId()! } : {}),
+        ...(selectedDevice() ? { targetId: selectedDevice()! } : {}),
+      });
       if (refreshVersion !== authoringRefreshVersion) return result.sessions;
       setAuthoringSessions((current) =>
         projectionVersion === authoringProjectionVersion
@@ -687,12 +747,22 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function discardAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.discardAuthoringSession(id)).session);
+      const session = projectAuthoringSession((await client!.discardAuthoringSession(id)).session);
+      setAuthoringSessions((current) => {
+        const without = current.filter((item) => item.id !== session.id);
+        return [...without, session].sort((left, right) => right.updatedAt - left.updatedAt);
+      });
+      return session;
     }
 
     async function cancelAuthoringSession(id: string): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.cancelAuthoringSession(id)).session);
+      const session = projectAuthoringSession((await client!.cancelAuthoringSession(id)).session);
+      setAuthoringSessions((current) => {
+        const without = current.filter((item) => item.id !== session.id);
+        return [...without, session].sort((left, right) => right.updatedAt - left.updatedAt);
+      });
+      return session;
     }
 
     function authoringEvidenceUrl(uri: string, mime?: string): string {
@@ -881,7 +951,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function saveProjectVariables(value: TestVariable[]): Promise<void> {
+    async function saveProjectVariables(value: TestData[]): Promise<void> {
       if (!client) await resolveConnection();
       const before = projectVariables();
       const optimistic = { ...before, revision: before.revision + 1, value, updatedAt: Date.now() };
@@ -896,7 +966,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         );
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
-          const current = (error.body as { current?: Revisioned<TestVariable[]> })?.current;
+          const current = (error.body as { current?: Revisioned<TestData[]> })?.current;
           if (current) {
             const localById = new Map(value.map((item) => [item.id, item]));
             const merged = [
@@ -1013,7 +1083,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (targetRecoveryInFlight) return targetRecoveryInFlight;
       const serial = selectedDevice();
       const device = devices().find((candidate) => candidate.serial === serial);
-      if (!serial || device?.platform !== "ios") return false;
+      if (!serial || (device?.platform !== "ios" && device?.platform !== "android")) return false;
       const recovery = (async () => {
         try {
           await selectDeviceRemote(serial);
@@ -1022,6 +1092,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           if (result.recovery.ready) {
             setLiveCaptureIssue(null);
             setControlIssue(null);
+            await Promise.all([pollLiveFrame(), pollLiveSnapshot()]);
             return true;
           }
           setLiveCaptureIssue(result.recovery.session.detail);
@@ -1051,6 +1122,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         variables: refreshProjectVariables,
         matrices: refreshMatrices,
         discoveries: refreshDiscoverySessions,
+        corpora: refreshCorpusSessions,
         authoring: refreshAuthoringSessions,
       };
       void refreshers[kind]();
@@ -1253,9 +1325,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         // Live pixels and the accessibility tree are target-specific. Clear
         // them before accepting a new target so the stage never renders a
         // convincing but stale screen while the new target is starting.
-        setLiveFrame(null);
-        setSnapshot(null);
-        setLiveCaptureIssue(null);
+        resetLivePreview();
       }
       setSelectedDevice(serial);
       const selectedTarget = devices().find((device) => device.serial === serial);
@@ -1323,7 +1393,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
                   // A crashed or closed renderer should never lock a device
                   // for an entire day. Interactions revalidate and reacquire
                   // this short lease transparently.
-                  expiresAt: Date.now() + 15 * 60_000,
+                  expiresAt: Date.now() + 2 * 60 * 60 * 1000,
                 })
               ).lease.id,
           );
@@ -1424,6 +1494,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     const {
+      resetLivePreview,
       captureUiSnapshot,
       captureUiScreenshot,
       copyUiScreenshot,
@@ -1516,6 +1587,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshAuthoringSessions(),
           refreshRedactionPolicy(),
           refreshEvidenceCollectionPolicy(),
+          refreshCorpusSessions(),
+          refreshLanguageProfiles(),
         ]);
         const selectedMapId = selectedAppMapId();
         if (selectedMapId && !appMaps().some((map) => map.id === selectedMapId)) {
@@ -1637,6 +1710,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         .reverse();
     const {
       runRecipe: runRecipeRemote,
+      inferLocaleOptionsFromDevice,
+      inferVariableFromDevice,
+      runPathAcrossVariables,
+      saveVariable,
+      saveTest,
+      saveCombine,
+      runRecipeAcrossLocales: runRecipeAcrossLocalesRemote,
       runAppMapConnection: runAppMapConnectionRemote,
       runAppMapFlow: runAppMapFlowRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
@@ -1686,6 +1766,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       preflightAppleDeviceSetup,
       refreshAndroidDeviceSetup,
       saveAppleDeviceSetup,
+      saveIosLivePreview,
       projectVariables,
       refreshProjectVariables,
       saveProjectVariables,
@@ -1707,6 +1788,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       discoverySessions,
       activeDiscoverySessionId,
       setActiveDiscoverySessionId,
+      corpusSessions,
+      activeCorpusSessionId,
+      setActiveCorpusSessionId,
+      activeCorpusSession,
       actions,
       recipes,
       recipesLoaded,
@@ -1786,6 +1871,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadDiscoveryCoverage,
       approveDiscoverySuggestion,
       backtrackDiscovery,
+      refreshCorpusSessions,
+      refreshLanguageProfiles,
+      scanLanguageProfile,
+      languageProfiles,
+      createCorpusSession,
+      startCorpusSession,
+      cancelCorpusSession,
+      exportCorpusPack,
+      getCorpusCoverage,
+      corpusScreenUrl,
       saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
       deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
       resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,
@@ -1807,6 +1902,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       retryConnection,
       recoverSelectedTarget,
       runRecipeRemote,
+      inferLocaleOptionsFromDevice,
+      inferVariableFromDevice,
+      runPathAcrossVariables,
+      saveVariable,
+      saveTest,
+      saveCombine,
+      runRecipeAcrossLocalesRemote,
       runAppMapConnectionRemote,
       runAppMapFlowRemote,
       runCompatibilityMatrixRemote,
@@ -1847,6 +1949,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       liveFrame,
       liveCaptureIssue,
       clearLiveCaptureIssue,
+      resetLivePreview,
       pollLiveFrame,
       pollLiveSnapshot,
       touchDevice,

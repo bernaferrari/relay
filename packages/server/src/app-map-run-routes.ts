@@ -15,6 +15,7 @@ import {
   readProjectVariables,
   referencedRuntimeInputs,
   redactRunMatrix,
+  resolveJobDevicePlatform,
   sensitiveInputNames,
   type Recipe,
 } from "@relay/core";
@@ -203,6 +204,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targets: await listTargets(),
     })
   ).find((profile) => profile.targetId === targetId);
+  const platform = body.platform ?? (await resolveJobDevicePlatform(body.serial));
   const jobs = cases.map((item) => {
     const variables = { ...constantVariables, ...item.values };
     return enqueueJob({
@@ -211,7 +213,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       recipeSnapshot,
       recipeGraph,
       serial: body.serial,
-      platform: body.platform,
+      platform,
       targetKind: body.targetKind,
       browserTargetId: body.browserTargetId,
       ...(targetProfile ? { targetProfile } : {}),

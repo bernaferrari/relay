@@ -124,3 +124,31 @@ test("rotates scaled physical-iPad pixels when their orientation opposes logical
 
   assert.deepEqual({ width: normalized.width, height: normalized.height }, { width: 6, height: 4 });
 });
+
+test("turns portrait transport into upright landscape for landscape-left", () => {
+  // Portrait buffer with a bright marker in the top-left.
+  const source = new PNG({ width: 2, height: 3 });
+  source.data[0] = 255;
+  source.data[1] = 0;
+  source.data[2] = 0;
+  source.data[3] = 255;
+  const out = PNG.sync.read(
+    normalizeScreenshotToBounds(PNG.sync.write(source), undefined, "landscape-left"),
+  );
+  assert.deepEqual({ width: out.width, height: out.height }, { width: 3, height: 2 });
+});
+
+test("does not rotate when orientation is unknown and aspects already match", () => {
+  const source = new PNG({ width: 4, height: 2 });
+  const before = PNG.sync.write(source);
+  const after = normalizeScreenshotToBounds(before, { width: 1112, height: 834 });
+  assert.ok(before.equals(after));
+});
+
+test("parseIosDisplayOrientation maps CoreDevice tokens", async () => {
+  const { parseIosDisplayOrientation } = await import("./ios-geometry.js");
+  assert.equal(parseIosDisplayOrientation("rot90"), "landscape-right");
+  assert.equal(parseIosDisplayOrientation("rot270"), "landscape-left");
+  assert.equal(parseIosDisplayOrientation("landscapeRight"), "landscape-right");
+  assert.equal(parseIosDisplayOrientation("portrait"), "portrait");
+});

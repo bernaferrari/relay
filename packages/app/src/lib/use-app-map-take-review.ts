@@ -105,7 +105,7 @@ export function useAppMapTakeReview(options: {
       if (!server.selectedLeaseId()) await server.setSelectedDevice(device.serial);
       if (server.selectedLeaseId() && !server.controlIssue()) return true;
     }
-    toast("Choose a ready device before trying this connection", "info");
+    toast("Choose a ready device before trying this path", "info");
     options.openDevicePicker();
     return false;
   };
@@ -151,6 +151,7 @@ export function useAppMapTakeReview(options: {
       // inspector open beside the canvas.
       options.setCaptureOpen(false);
       setTakeReplay({ takeId: null, state: "idle" });
+      toast("Path kept · Run it from the top bar, or record the next path", "success");
       requestAnimationFrame(() => {
         const addedScreen =
           destination?.kind === "screen"

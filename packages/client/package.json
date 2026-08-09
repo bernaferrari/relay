@@ -14,8 +14,8 @@
     "@relay/protocol": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "tsx": "^4.20.0",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.6",
     "typescript": "catalog:"
   }
 }

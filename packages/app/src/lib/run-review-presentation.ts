@@ -6,8 +6,8 @@ export function formatStepDuration(durationMs: number): string {
 
 export function runStateDot(state: ExecutionMomentState): string {
   if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
-  if (state === "planned") return "bg-[var(--v2-border-border-strong)]";
+  if (state === "planned") return "bg-[var(--border-strong-base)]";
   if (state === "running")
-    return "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]";
+    return "bg-[var(--text-interactive-base)] shadow-[0_0_8px_var(--text-interactive-base)]";
   return "bg-[var(--icon-success-base)]";
 }

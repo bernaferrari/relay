@@ -39,10 +39,14 @@ const APPLE_SETUP_ISSUE =
  * a person-facing canvas state. */
 export function presentDeviceIssue(message: string, deviceName = "the device"): string {
   if (/active app session|no active session|session[_ ]not[_ ]found/i.test(message)) {
-    return `Relay lost the live app connection. Keep ${deviceName} unlocked, then try again.`;
+    return `The app is open, but Relay’s tap session is not attached yet. Retry the tap — or preview first. Keep ${deviceName} unlocked.`;
   }
-  if (/already bound|another.*session|session.*in use/i.test(message)) {
-    return `Another session is using ${deviceName}. Close it or wait for it to finish, then try again.`;
+  if (
+    /already in use by session|already bound|another.*session|session.*in use|lease acquisition failed|bound by session/i.test(
+      message,
+    )
+  ) {
+    return `Someone else is using ${deviceName}. Press Reconnect — Relay will take it back.`;
   }
   if (
     /artifact restored but runner did not connect|runner did not accept connection|test runner hung before establishing connection/i.test(
@@ -54,12 +58,32 @@ export function presentDeviceIssue(message: string, deviceName = "the device"): 
   if (/xcode.*not signed in|apple team|accounts settings|valid credentials/i.test(message)) {
     return "Xcode needs access to the Apple account for this iPad. Check Xcode Settings → Accounts, then try again.";
   }
+  if (/signing certificate|provision|team id|code sign/i.test(message)) {
+    return "Apple signing is incomplete on this Mac. Open Device setup, finish signing, then try again.";
+  }
+  if (/developer mode/i.test(message)) {
+    return "On the iPad: Settings → Privacy & Security → Developer Mode. Restart when prompted, then turn it on.";
+  }
+  if (/scrcpy|decoder init|adb|emulator-/i.test(message)) {
+    return `Relay could not mirror ${deviceName}. Unplug and reconnect the cable, keep the screen on, then try again.`;
+  }
+  if (/devicectl|not paired|lockdownd|trust this computer/i.test(message)) {
+    return `Trust this computer on ${deviceName}, keep it unlocked, then reconnect.`;
+  }
   const firstLine = message.split("\n", 1)[0]?.trim() ?? "";
   const withoutCommand = firstLine
     .replace(/\s*Run\s+open\s+first.*$/i, "")
     .replace(/\s*\(for example:.*$/i, "")
+    .replace(/\s+owned by human:[0-9a-f-]+/gi, "")
+    .replace(/\b(session|lease)\s+[A-Za-z0-9._:-]+/gi, "")
+    .replace(/\bhuman:[0-9a-f-]+\b/gi, "")
+    .replace(/\bRQ[A-Z0-9]+\b/g, "")
+    .replace(/\s{2,}/g, " ")
     .trim();
-  return withoutCommand || `Relay could not read ${deviceName}. Keep it unlocked, then try again.`;
+  if (!withoutCommand || /^(session|lease|human:|@e\d+|RQ[A-Z0-9]+)/i.test(withoutCommand)) {
+    return `Relay could not read ${deviceName}. Keep it unlocked, then try again.`;
+  }
+  return withoutCommand;
 }
 
 export function deviceReadiness(

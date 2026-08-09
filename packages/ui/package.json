@@ -24,7 +24,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "solid-js": "catalog:",
+    "solid-js": "^1.9.14",
     "typescript": "catalog:",
     "vite": "catalog:"
   },

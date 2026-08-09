@@ -11,8 +11,8 @@ export function AppMapHistoryPanel(props: {
   onRestore: (updatedAt: number) => void;
 }) {
   return (
-    <aside class="absolute top-14 right-4 z-30 w-[min(320px,calc(100%-32px))] overflow-hidden rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] shadow-[0_16px_40px_rgb(0_0_0/28%)]">
-      <header class="flex min-h-14 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-3 py-2.5">
+    <aside class="absolute top-14 right-4 z-30 w-[min(320px,calc(100%-32px))] overflow-hidden rounded-[12px] border border-[var(--border-weak-base)] bg-[var(--background-base)] shadow-[0_16px_40px_rgb(0_0_0/28%)]">
+      <header class="flex min-h-14 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-3 py-2.5">
         <div>
           <strong class="block text-[12px] text-[var(--text-strong)]">Activity</strong>
           <span class="text-[10.5px]/[1.4] text-[var(--text-weak)]">
@@ -21,7 +21,7 @@ export function AppMapHistoryPanel(props: {
         </div>
         <button
           type="button"
-          class="grid size-10 shrink-0 place-items-center rounded-[8px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          class="grid size-10 shrink-0 place-items-center rounded-[8px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
           aria-label="Close history"
           onClick={props.onClose}
         >
@@ -43,7 +43,7 @@ export function AppMapHistoryPanel(props: {
                   <span
                     class="mt-1.5 size-2 shrink-0 rounded-full bg-[var(--text-weak)]"
                     classList={{
-                      "bg-[var(--v2-state-fg-info)]": event.actorKind === "agent",
+                      "bg-[var(--text-interactive-base)]": event.actorKind === "agent",
                       "bg-[var(--icon-success-base)]": event.actorKind === "human",
                     }}
                     aria-hidden="true"
@@ -69,7 +69,7 @@ export function AppMapHistoryPanel(props: {
               )}
             </For>
           </section>
-          <div class="mx-2 my-1 border-t border-[var(--v2-border-border-muted)]" />
+          <div class="mx-2 my-1 border-t border-[var(--border-weak-base)]" />
         </Show>
         <h3 class="m-0 px-2 pt-2 pb-1 text-[10px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
           Saved versions
@@ -84,7 +84,8 @@ export function AppMapHistoryPanel(props: {
             when={props.entries.length}
             fallback={
               <p class="m-0 px-2 py-3 text-[11px] text-[var(--text-weak)]">
-                A version is saved after your first meaningful test edit.
+                Versions appear after you keep a path or edit the map. Restore any earlier point
+                from here.
               </p>
             }
           >
@@ -92,7 +93,7 @@ export function AppMapHistoryPanel(props: {
               {(entry) => (
                 <button
                   type="button"
-                  class="flex min-h-11 w-full items-center justify-between gap-3 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
+                  class="flex min-h-11 w-full items-center justify-between gap-3 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-[var(--surface-base-hover)]"
                   onClick={() => props.onRestore(entry.updatedAt)}
                 >
                   <span class="min-w-0">

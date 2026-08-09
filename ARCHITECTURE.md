@@ -26,24 +26,24 @@ and Activity Events. Screens are observed application states; Connections descri
 reaches another; Flows are reusable paths through the map.
 
 **App Map is the primary visual authoring model.** The canvas is where people and agents capture
-screens, record connections, review Takes, and organize coverage. App Map schema v2 is the only
+screens, record connections, review Takes, and organize coverage. App Map schema v1 is the only
 persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
 inferred. There is no second graph document and no compatibility authoring surface.
 
-**Recipes remain a public executable IR**, not a private shadow of the canvas. A recipe is the
-target-neutral, step-oriented contract used for reusable tests and modules, YAML import/export,
-discovery promotion into runnable coverage, history/restore, stability signals, and runner
-execution. When an App Map Flow or Connection runs, Relay compiles verified graph steps into recipe
-IR for the runner. Recipes are therefore both:
+**Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
+optionally bind a recorded open/leave path. Inference never invents navigation. **Tests** are saved
+tours or paths. **Combine** is every selected variable value × those tests (one visible grid, one
+job). Case stacks remain typed **test data** expansion (emails, plans), not modes.
 
-- an authoring/import surface of their own (`recipe.list`, `recipe.get`, `recipe.create`,
-  `recipe.update`, `recipe.delete`, `recipe.yaml.get`, `recipe.import`, and related evidence/history
-  ops), and
-- the deterministic execution projection produced from App Map Flows and Connections at run time.
+**Recipes are compiled executable IR**, not a second authoring surface. A recipe is the
+target-neutral, step-oriented contract the runner executes: reusable modules, YAML import/export,
+discovery promotion, history/restore, stability signals, and frozen job snapshots. When an App Map
+Flow or Connection runs, Relay compiles verified graph steps into recipe IR. People and agents
+author App Maps; they do not browse a recipe library.
 
-CLI and MCP expose both `app-map.*` and `recipe.*` operations through the same registry. Neither
-family is host-private. Selected canvas state (`selectedAppMapId` and peers) always refers to an App
-Map id — never a recipe id.
+CLI and MCP hide `recipe.*` CRUD as internal compiled storage. Execution still accepts a recipe id
+on `job.start` when a compiled artifact already exists. Selected canvas state (`selectedAppMapId`
+and peers) always refers to an App Map id — never a recipe id.
 
 ## Packages
 
@@ -72,9 +72,9 @@ domain behavior. `GET /meta` is generated from the registry, so machine interfac
 contracts instead of scraping route documentation. MCP operations accept the direct canonical input
 shape only.
 
-Public automation authors App Maps and recipes through registered `app-map.*` and `recipe.*`
-operations. Flow and Connection runs compile into recipe IR inside the runner; that compile step is
-an implementation detail of execution, not a reason to hide the recipe model from CLI or MCP.
+Public automation authors App Maps through registered `app-map.*` operations. Flow and Connection
+runs compile into recipe IR inside the runner. That compile step is an implementation detail of
+execution. CLI and MCP do not expose recipe storage as a host-facing authoring API.
 
 ## State, concurrency, and collaboration
 

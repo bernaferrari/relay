@@ -7,7 +7,7 @@ import { Icon } from "./icon";
 
 type DetailsTab = "properties" | "source";
 
-export function TestSettingsPanel(props: {
+export function MapPropertiesPanel(props: {
   onClose: () => void;
   onOpenVariables: () => void;
   presentation?: "drawer" | "floating";
@@ -122,12 +122,12 @@ export function TestSettingsPanel(props: {
       class={cn(
         shellSteps,
         props.presentation === "floating"
-          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-[16px] border border-[var(--v2-border-border-strong)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
+          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-[16px] border border-[var(--border-strong-base)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
           : shellAsideDrawer,
       )}
       aria-label="Map details"
     >
-      <header class="flex h-12 shrink-0 items-end justify-between border-b border-[var(--v2-border-border-muted)] px-3">
+      <header class="flex h-12 shrink-0 items-end justify-between border-b border-[var(--border-weak-base)] px-3">
         <div class="flex h-full items-end" role="tablist" aria-label="Map detail panels">
           <For each={["properties", "source"] as const}>
             {(item) => (
@@ -138,7 +138,7 @@ export function TestSettingsPanel(props: {
                 class={cn(tabUnderline, "h-full", tab() === item && tabUnderlineActive)}
                 onClick={() => setTab(item)}
               >
-                {item === "properties" ? "Properties" : "Source"}
+                {item === "properties" ? "Properties" : "Export"}
               </button>
             )}
           </For>
@@ -157,7 +157,7 @@ export function TestSettingsPanel(props: {
 
       <div class={shellStepsBody} data-editor-tab={tab()}>
         <Show when={tab() === "properties"}>
-          <div class="h-full overflow-y-auto divide-y divide-[var(--v2-border-border-muted)]">
+          <div class="h-full overflow-y-auto divide-y divide-[var(--border-weak-base)]">
             <section class="p-4">
               <div class="grid gap-1.5">
                 <label
@@ -168,7 +168,7 @@ export function TestSettingsPanel(props: {
                 </label>
                 <textarea
                   id="app-map-description"
-                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--border-strong-base)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={descriptionDraft()}
                   placeholder="What does this map cover?"
                   onInput={(event) => {
@@ -186,27 +186,25 @@ export function TestSettingsPanel(props: {
                   )}
                   role="status"
                 >
-                  {descriptionSaving()
-                    ? "Saving…"
-                    : (descriptionMessage() ?? "Saved automatically")}
+                  {descriptionSaving() ? "Saving…" : (descriptionMessage() ?? "")}
                 </span>
               </div>
             </section>
             <section class="p-3">
               <button
                 type="button"
-                class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
+                class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base-hover)]"
                 onClick={props.onOpenVariables}
               >
-                <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_10%,var(--v2-background-bg-layer-01))] text-[var(--text-interactive-base)]">
+                <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--text-interactive-base)_10%,var(--surface-base))] text-[var(--text-interactive-base)]">
                   <Icon name="sparkle" size={14} />
                 </span>
                 <span class="min-w-0 flex-1">
                   <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
-                    Variables & test data
+                    Test data
                   </strong>
                   <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
-                    Shared lists and private values multiply coverage
+                    Shared lists and private values for a run
                   </small>
                 </span>
                 <Icon
@@ -221,15 +219,15 @@ export function TestSettingsPanel(props: {
 
         <Show when={tab() === "source"}>
           <div class="flex h-full min-h-0 flex-col overflow-hidden">
-            <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
+            <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-weak-base)] px-3">
               <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
-                Portable App Map YAML
+                Portable map file (YAML)
               </span>
               <div class="flex items-center gap-1">
                 <Show when={!yamlEditing()}>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
                   >
@@ -237,7 +235,7 @@ export function TestSettingsPanel(props: {
                   </button>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -251,7 +249,7 @@ export function TestSettingsPanel(props: {
                 <Show when={yamlEditing()}>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)]"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)]"
                     disabled={yamlSaving()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -263,7 +261,7 @@ export function TestSettingsPanel(props: {
                   </button>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={yamlSaving()}
                     onClick={() => void saveYaml()}
                   >
@@ -284,7 +282,7 @@ export function TestSettingsPanel(props: {
                       <span>{yamlMessage()?.text}</span>
                       <button
                         type="button"
-                        class="inline-flex h-8 items-center rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                        class="inline-flex h-8 items-center rounded-md border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 font-medium text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]"
                         onClick={() => setYamlReload((value) => value + 1)}
                       >
                         Try again
@@ -297,14 +295,14 @@ export function TestSettingsPanel(props: {
               <Show
                 when={yamlEditing()}
                 fallback={
-                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-base)]">
+                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--background-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-base)]">
                     {yamlSource()}
                   </pre>
                 }
               >
                 <textarea
-                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
-                  aria-label="App Map YAML"
+                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--background-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
+                  aria-label="Map YAML"
                   spellcheck={false}
                   value={yamlDraft()}
                   onInput={(event) => {
@@ -317,7 +315,7 @@ export function TestSettingsPanel(props: {
                 {(message) => (
                   <p
                     class={cn(
-                      "m-0 border-t border-[var(--v2-border-border-muted)] px-3 py-2 text-[11px]",
+                      "m-0 border-t border-[var(--border-weak-base)] px-3 py-2 text-[11px]",
                       message().tone === "success"
                         ? "text-[var(--icon-success-base)]"
                         : "text-[var(--icon-critical-base)]",

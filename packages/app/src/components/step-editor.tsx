@@ -95,7 +95,7 @@ export function StepEditor(props: {
         "flex w-full min-w-0 flex-col overflow-hidden",
         props.embedded
           ? "gap-1.5"
-          : "gap-2.5 border-t border-border-weak-base bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_64%,var(--v2-background-bg-base))] px-3.5 py-3 pl-3.5",
+          : "gap-2.5 border-t border-border-weak-base bg-[color-mix(in_srgb,var(--background-deep)_64%,var(--background-base))] px-3.5 py-3 pl-3.5",
       )}
     >
       <Show when={props.showEvidence !== false && evidence()}>

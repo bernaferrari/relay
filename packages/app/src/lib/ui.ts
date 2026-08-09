@@ -1,5 +1,5 @@
 /**
- * Stage UI recipes — AgentBoard token discipline.
+ * App chrome layout recipes — AgentBoard token discipline.
  *
  * RULES (do not break):
  * 1. Solid paper = bg-surface-raised-stronger-non-alpha | bg-background-stronger
@@ -46,7 +46,7 @@ export const textFaint = inkFaint;
 
 /* ─── Surfaces ─── */
 /** App chrome deep plate */
-export const surfaceDeep = "bg-v2-background-bg-deep text-text-strong";
+export const surfaceDeep = "bg-background-weak text-text-strong";
 /** Solid white/dark paper panel */
 export const paper = "bg-surface-raised-stronger-non-alpha text-text-strong";
 export const surfacePanel = paper;
@@ -116,8 +116,8 @@ export const segBtnRec = cn(
 
 /** Full-width segmented control for dense property inspectors. */
 export const propertySeg = cn(
-  "inline-flex h-8 w-full items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5",
-  "ring-1 ring-inset ring-[var(--v2-border-border-muted)]",
+  "inline-flex h-8 w-full items-center rounded-lg bg-[var(--surface-base)] p-0.5",
+  "ring-1 ring-inset ring-[var(--border-weak-base)]",
 );
 
 const propertySegBtnBase = cn(
@@ -129,13 +129,13 @@ const propertySegBtnBase = cn(
 
 export const propertySegBtn = cn(
   propertySegBtnBase,
-  "hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
+  "hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
 );
 
 export const propertySegBtnOn = cn(
   propertySegBtnBase,
-  "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)]",
-  "shadow-[0_1px_3px_rgb(0_0_0/24%)] hover:enabled:bg-[var(--v2-background-bg-layer-03)]",
+  "bg-[var(--surface-raised-base)] text-[var(--text-strong)]",
+  "shadow-[0_1px_3px_rgb(0_0_0/24%)] hover:enabled:bg-[var(--surface-raised-base)]",
 );
 
 export const mono = "font-mono tabular-nums";
@@ -232,7 +232,7 @@ export const productIconButtonDanger = cn(
 
 /** Scrollable product page (data / runs / settings-style surfaces) */
 export const productPage = cn(
-  "min-h-0 flex-1 overflow-y-auto bg-v2-background-bg-deep",
+  "min-h-0 flex-1 overflow-y-auto bg-background-weak",
   "pt-8 pb-14 px-[clamp(1.5rem,4vw,3.5rem)]",
 );
 

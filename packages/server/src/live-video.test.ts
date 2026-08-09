@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AndroidVideoStreamRegistry, encodeRelayVideoPacket } from "./live-video.js";
+import {
+  AndroidControlChannel,
+  AndroidVideoStreamRegistry,
+  encodeRelayVideoPacket,
+} from "./live-video.js";
 
 test("live video registry replaces stale producers without releasing the replacement", () => {
   const registry = new AndroidVideoStreamRegistry();
@@ -37,4 +41,30 @@ test("live video framing preserves packet kind, keyframe, timestamp, and size", 
   assert.equal(header.readUInt8(1), 1);
   assert.equal(header.readBigUInt64BE(4), 123_456_789n);
   assert.equal(header.readUInt32BE(12), 3);
+});
+
+test("control retirement waits for an in-flight write and rejects later writes", async () => {
+  let finishWrite: (() => void) | undefined;
+  const writer = {
+    injectKeyCode: async () => undefined,
+    injectText: async () => undefined,
+    injectScroll: async () => undefined,
+    injectTouch: () =>
+      new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      }),
+  };
+  const channel = new AndroidControlChannel(writer);
+  const write = channel.write((control) =>
+    control.injectTouch({} as Parameters<typeof control.injectTouch>[0]),
+  );
+  await Promise.resolve();
+  const close = channel.close();
+  assert.ok(finishWrite);
+  finishWrite?.();
+  await Promise.all([write, close]);
+  await assert.rejects(
+    channel.write((control) => control.injectText("late")),
+    /reconnecting/i,
+  );
 });

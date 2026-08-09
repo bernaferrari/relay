@@ -7,9 +7,10 @@ function describeChange(change: ProposalChange): string {
   if (change.kind === "screen.add") return `Add screen “${change.input.screen.title}”`;
   if (change.kind === "screen.update") return `Update screen ${change.screenId}`;
   if (change.kind === "screen.remove") return `Remove screen ${change.screenId}`;
-  if (change.kind === "connection.connect") return `Connect from ${change.connection.fromScreenId}`;
-  if (change.kind === "connection.update") return `Update connection ${change.connectionId}`;
-  if (change.kind === "connection.remove") return `Remove connection ${change.connectionId}`;
+  if (change.kind === "connection.connect")
+    return `Add path from ${change.connection.fromScreenId}`;
+  if (change.kind === "connection.update") return `Update path ${change.connectionId}`;
+  if (change.kind === "connection.remove") return `Remove path ${change.connectionId}`;
   if (change.kind === "group.save") return `Save Group “${change.group.name}”`;
   return `Remove Group ${change.groupId}`;
 }
@@ -27,10 +28,10 @@ export function AppMapProposalReview(props: {
   const [feedback, setFeedback] = createSignal("");
   return (
     <aside
-      class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[var(--map-elevation-panel)]"
-      aria-label="Agent proposals"
+      class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
+      aria-label="Suggested map changes"
     >
-      <header class="flex min-h-12 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
+      <header class="flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] px-3">
         <span class="grid size-7 place-items-center rounded-[8px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
           <Icon name="sparkle" size={13} />
         </span>
@@ -39,12 +40,12 @@ export function AppMapProposalReview(props: {
             Proposed map changes
           </strong>
           <span class="block text-[10px] text-[var(--text-weak)]">
-            Nothing changes until you approve it.
+            Nothing is added until you keep a suggestion.
           </span>
         </div>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          class="grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
           aria-label="Close proposal review"
           onClick={props.onClose}
         >
@@ -67,7 +68,7 @@ export function AppMapProposalReview(props: {
         >
           <For each={props.proposals}>
             {(proposal) => (
-              <article class="rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-3 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+              <article class="rounded-[10px] bg-[var(--surface-base)] p-3 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
                 <div class="flex items-start gap-2">
                   <div class="min-w-0 flex-1">
                     <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
@@ -108,7 +109,7 @@ export function AppMapProposalReview(props: {
                       What should the agent change?
                       <textarea
                         autofocus
-                        class="min-h-20 resize-y rounded-[8px] bg-[var(--v2-background-bg-base)] px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-strong)] outline-none shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus:shadow-[inset_0_0_0_2px_var(--border-focus)]"
+                        class="min-h-20 resize-y rounded-[8px] bg-[var(--background-base)] px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-strong)] outline-none shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:shadow-[inset_0_0_0_2px_var(--border-focus)]"
                         value={feedback()}
                         onInput={(event) => setFeedback(event.currentTarget.value.slice(0, 500))}
                       />
@@ -141,7 +142,7 @@ export function AppMapProposalReview(props: {
                       disabled={Boolean(props.busyId)}
                       onClick={() => props.onApprove(proposal.id)}
                     >
-                      {props.busyId === proposal.id ? "Applying…" : "Approve"}
+                      {props.busyId === proposal.id ? "Adding…" : "Keep suggestion"}
                     </Button>
                     <Button
                       variant="secondary"
@@ -155,7 +156,7 @@ export function AppMapProposalReview(props: {
                     </Button>
                     <button
                       type="button"
-                      class="min-h-10 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)] disabled:opacity-50"
+                      class="min-h-10 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)] disabled:opacity-50"
                       disabled={Boolean(props.busyId)}
                       onClick={() => props.onReject(proposal.id)}
                     >

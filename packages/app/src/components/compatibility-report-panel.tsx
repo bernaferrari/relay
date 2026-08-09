@@ -4,13 +4,13 @@ import { cn } from "../lib/cn";
 import { eyebrow, productStatus } from "../lib/ui";
 
 function formatPassDelta(value: number | null): string {
-  if (value == null) return "no pass-rate baseline";
+  if (value == null) return "no pass-rate comparison yet";
   const points = Math.round(value * 100);
   return `${points > 0 ? "+" : ""}${points} pts`;
 }
 
 function formatDurationDelta(value: number | null): string {
-  if (value == null) return "no duration baseline";
+  if (value == null) return "no duration comparison yet";
   const seconds = value / 1000;
   return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
 }
@@ -23,7 +23,7 @@ export function CompatibilityReportPanel(props: {
     <Show
       when={props.report}
       fallback={
-        <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
+        <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
           Preparing the comparison…
         </div>
       }
@@ -41,7 +41,7 @@ export function CompatibilityReportPanel(props: {
                 {report().total} evidence run{report().total === 1 ? "" : "s"}
               </small>
             </div>
-            <span class="shrink-0 rounded-full border border-[var(--v2-border-border-muted)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
+            <span class="shrink-0 rounded-full border border-[var(--border-weak-base)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
               Same test setup
             </span>
           </header>
@@ -50,7 +50,7 @@ export function CompatibilityReportPanel(props: {
               {(profile) => (
                 <article
                   class={cn(
-                    "grid gap-2.5 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_55%,transparent)] p-3",
+                    "grid gap-2.5 rounded-[10px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base)_55%,transparent)] p-3",
                     profile.profile.id === props.selectedProfileId &&
                       "border-border-interactive-base bg-surface-interactive-weak",
                   )}
@@ -72,7 +72,7 @@ export function CompatibilityReportPanel(props: {
                     </span>
                   </header>
                   <div class="grid grid-cols-2 gap-2">
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--background-base)] p-2">
                       <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Pass rate
                       </b>
@@ -82,7 +82,7 @@ export function CompatibilityReportPanel(props: {
                           : `${Math.round(profile.passRate * 100)}%`}
                       </strong>
                     </span>
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--background-base)] p-2">
                       <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Median duration
                       </b>
@@ -101,7 +101,7 @@ export function CompatibilityReportPanel(props: {
                   </p>
                   <Show when={profile.baseline}>
                     {(baseline) => (
-                      <footer class="border-t border-[var(--v2-border-border-muted)] pt-2 text-[10px]/[1.4] text-[var(--text-weak)]">
+                      <footer class="border-t border-[var(--border-weak-base)] pt-2 text-[10px]/[1.4] text-[var(--text-weak)]">
                         Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
                         {formatPassDelta(baseline().passRateDelta)} ·{" "}
                         {formatDurationDelta(baseline().durationDeltaMs)}

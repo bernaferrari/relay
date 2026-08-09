@@ -41,17 +41,34 @@ export function readableFailure(value: string, error?: string): string {
 
 export function friendlyError(value: string): string {
   const message = value.trim();
-  if (/already bound|already in use|session .* bound/i.test(message)) {
-    return "This target is already in use by another session. Stop that session or choose a different target.";
+  if (
+    /already bound|already in use|session .* bound|lease acquisition failed|bound by session/i.test(
+      message,
+    )
+  ) {
+    return "Someone else is using this device. Press Reconnect, or choose a different device.";
   }
   if (/server.*offline|connection refused|failed to fetch|network request failed/i.test(message)) {
-    return "Relay could not reach the target service. Start it, then try again.";
+    return "Relay could not reach the server. Start it, then try again.";
   }
   if (/device missing|unknown target|target.*not found|no such device/i.test(message)) {
-    return "This device is no longer connected. Reconnect it or choose another target, then retry.";
+    return "This device is no longer connected. Reconnect it or choose another, then try again.";
   }
   if (/timed out|timeout/i.test(message)) {
-    return "The target did not respond in time. Check the app state and try again.";
+    return "The device did not respond in time. Check the app is open, then try again.";
+  }
+  if (
+    /signing certificate|provision|team id|code sign|xcode|developer mode|scrcpy|devicectl/i.test(
+      message,
+    )
+  ) {
+    return "This device is not ready yet. Finish setup, then try again.";
+  }
+  if (/no active session|run open first/i.test(message)) {
+    return "The app is open, but the tap session is not attached. Retry the tap once.";
+  }
+  if (/session|lease|human:[0-9a-f-]+|@e\d+|bundle id/i.test(message)) {
+    return "Relay could not use this device right now. Try again in a moment.";
   }
   return message;
 }

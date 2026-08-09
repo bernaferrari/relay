@@ -217,6 +217,104 @@ test("launches an arbitrary app through the leased target session", async () => 
   }
 });
 
+test("launch tells agents to recover when Apple CoreDevice cannot list apps", async () => {
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial: "ipad-1",
+          name: "iPad",
+          platform: "ios",
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: "ipad-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      launchApp: async () => {
+        throw new Error(
+          "Failed to list iOS apps: The operation couldn’t be completed. (CoreDevice.ActionError error 3.)",
+        );
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "ai.x.GrokApp" }),
+    });
+    assert.equal(response.status, 503);
+    const body = (await response.json()) as {
+      error: string;
+      recovery?: string;
+      recoveryAction?: { operationId?: string; cli?: { argv?: string[] } };
+    };
+    assert.match(body.error, /Failed to list iOS apps/);
+    assert.match(String(body.recovery), /Recover the iPad/);
+    assert.equal(body.recoveryAction?.operationId, "target.recover");
+    assert.deepEqual(body.recoveryAction?.cli?.argv?.slice(0, 3), ["device", "recover", "ipad-1"]);
+    assert.match(body.recoveryAction?.cli?.argv?.join(" ") ?? "", /reason":"control/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("launch treats a wedged xcrun as recover, not a 20s mystery", async () => {
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "ipad",
+          serial: "ipad-1",
+          name: "iPad",
+          platform: "ios",
+          kind: "iPad Pro",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "tablets",
+        deviceSerial: "ipad-1",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      launchApp: async () => {
+        throw new Error("xcrun timed out after 20000ms");
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "ai.x.GrokApp" }),
+    });
+    assert.equal(response.status, 503);
+    const body = (await response.json()) as { recoveryAction?: { operationId?: string } };
+    assert.equal(body.recoveryAction?.operationId, "target.recover");
+  } finally {
+    await server.close();
+  }
+});
+
 test("repairs an Apple target through the same actor-aware operation used by agents", async () => {
   const calls: Array<{ serial: string; reason?: string }> = [];
   const server = await startServer({
@@ -280,6 +378,67 @@ test("repairs an Apple target through the same actor-aware operation used by age
     };
     assert.equal(body.recovery.ready, true);
     assert.equal(body.recovery.session.app, "com.apple.Preferences");
+  } finally {
+    await server.close();
+  }
+});
+
+test("repairs an Android target through the same recover operation", async () => {
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "phone",
+          serial: "RQCY104BG8X",
+          name: "Pixel",
+          platform: "android",
+          kind: "device",
+          booted: true,
+        },
+      ],
+      assertTargetControl: async () => ({
+        id: "lease",
+        projectId: "runtime-project",
+        poolId: "phones",
+        deviceSerial: "RQCY104BG8X",
+        ownerId: "human:runtime-test",
+        status: "leased",
+        leasedAt: 1,
+        expiresAt: Date.now() + 60_000,
+      }),
+      recoverTarget: async (serial) => ({
+        serial,
+        recovered: true,
+        ready: true,
+        summary: "Relay can read names on this screen.",
+        actions: [
+          {
+            kind: "agent-device",
+            status: "completed",
+            detail: "Woke the screen and refreshed labels.",
+          },
+        ],
+        session: {
+          status: "restored",
+          app: "ai.x.grok",
+          fallback: false,
+          detail: "Relay can read names on this screen.",
+        },
+      }),
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/recover`, {
+      method: "POST",
+      headers: headers("target.recover"),
+      body: JSON.stringify({ serial: "RQCY104BG8X", reason: "observe" }),
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { recovery: { ready: boolean; summary: string } };
+    assert.equal(body.recovery.ready, true);
+    assert.match(body.recovery.summary, /read names/i);
   } finally {
     await server.close();
   }

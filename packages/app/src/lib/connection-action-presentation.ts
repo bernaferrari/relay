@@ -1,4 +1,5 @@
 import type { ActionSpec, AppMap } from "@relay/protocol";
+import { softTruncate } from "./human-error";
 import { sentenceForStep } from "./step-sentence";
 
 export type ConnectionActionSummary = {
@@ -9,8 +10,34 @@ export type ConnectionActionSummary = {
   waitMs?: number;
 };
 
-function targetName(target: { label?: string; text?: string; identifier?: string }): string {
-  return target.label ?? target.text ?? target.identifier ?? "target";
+function targetName(target: {
+  label?: string;
+  text?: string;
+  identifier?: string;
+  ref?: string;
+  point?: { x: number; y: number };
+}): string {
+  if (target.label?.trim()) return `"${target.label.trim()}"`;
+  if (target.text?.trim()) return `"${target.text.trim()}"`;
+  if (target.identifier?.trim()) return `the ${target.identifier.trim()} element`;
+  if (target.ref) return "the recorded element";
+  if (target.point) return "the screen";
+  return "the target";
+}
+
+function humanInput(input: string): string {
+  const value = input.trim();
+  if (!value) return "value";
+  const bare = value.match(/^\$\{([^}]+)\}$/);
+  const token = bare?.[1] ?? value;
+  const words = token
+    .replace(/\$\{([^}]+)\}/g, "$1")
+    .replace(/[._/-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words || "value";
 }
 
 /** Human-readable, editable rows projected from canonical ActionSpecs. */
@@ -35,7 +62,7 @@ export function connectionActionSummaries(
       (action.kind === "tap"
         ? `Tap ${targetName(action.target)}`
         : action.kind === "text"
-          ? `Enter ${action.text.length > 32 ? `${action.text.slice(0, 29)}…` : action.text}`
+          ? `Enter ${softTruncate(action.text, 32)}`
           : action.kind === "gesture"
             ? action.gesture.kind === "scroll"
               ? `Scroll ${action.gesture.direction}`
@@ -55,7 +82,7 @@ export function connectionActionSummaries(
                         ? `Check ${appMap?.screens[action.assertion.screenId]?.title ?? "destination screen"}`
                         : action.assertion.kind === "target"
                           ? `Check ${targetName(action.assertion.target)} is ${action.assertion.condition === "visible" ? "visible" : "absent"}`
-                          : `Check ${action.assertion.input}`
+                          : `Check ${humanInput(action.assertion.input)}`
                       : action.kind === "routine"
                         ? `Run ${appMap?.routines[action.routineId]?.name ?? "routine"}`
                         : "Observe automatic transition");
@@ -68,6 +95,25 @@ export function connectionActionSummaries(
       },
     ];
   });
+}
+
+/** One plain sentence for a path card: From A, Tap "X" → B */
+export function describeConnectionPath(input: {
+  sourceTitle: string;
+  targetTitle: string;
+  actions?: Array<{ label: string }>;
+  mode?: "device" | "automatic" | "reusable" | string;
+}): string {
+  const from = input.sourceTitle.trim() || "Start";
+  const to = input.targetTitle.trim() || "next screen";
+  if (input.mode === "automatic") {
+    return `From ${from}, the app moves on its own → ${to}`;
+  }
+  const first = input.actions?.[0]?.label?.trim();
+  if (!first) return `From ${from} → ${to}`;
+  if ((input.actions?.length ?? 0) === 1) return `From ${from}, ${first} → ${to}`;
+  const rest = (input.actions?.length ?? 1) - 1;
+  return `From ${from}, ${first} (+${rest} more) → ${to}`;
 }
 
 /** Return a new canonical action list with one recorded or declarative pause

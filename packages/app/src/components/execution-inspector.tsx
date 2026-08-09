@@ -83,13 +83,13 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
   return (
     <aside
       class={cn(
-        "flex min-h-0 min-w-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
+        "flex min-h-0 min-w-0 flex-col border-l border-[var(--border-weak-base)] bg-[var(--background-base)]",
         shellAsideDrawer,
       )}
       aria-label="Execution progress"
       aria-live="polite"
     >
-      <header class="border-b border-[var(--v2-border-border-muted)] px-5 pt-5 pb-4">
+      <header class="border-b border-[var(--border-weak-base)] px-5 pt-5 pb-4">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <span class={eyebrow}>Execution</span>
@@ -111,7 +111,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
                   ? "bg-[var(--icon-critical-base)]"
                   : state() === "paused"
                     ? "bg-[var(--icon-warning-base)]"
-                    : "bg-[var(--v2-background-bg-accent)] shadow-[0_0_10px_var(--v2-background-bg-accent)]",
+                    : "bg-[var(--text-interactive-base)] shadow-[0_0_10px_var(--text-interactive-base)]",
             )}
             aria-hidden="true"
           />
@@ -137,7 +137,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
       </header>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
-        <section class="rounded-xl bg-[var(--v2-background-bg-layer-01)] p-4 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+        <section class="rounded-xl bg-[var(--surface-base)] p-4 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
           <div class="flex items-center justify-between gap-3">
             <span class={eyebrow}>Selected step</span>
             <span class="font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
@@ -160,7 +160,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
                   : focusedMoment()?.state === "failed"
                     ? "bg-[var(--icon-critical-base)]"
                     : focusedMoment()?.state === "running"
-                      ? "bg-[var(--v2-background-bg-accent)]"
+                      ? "bg-[var(--text-interactive-base)]"
                       : "bg-[var(--text-weak)]",
               )}
             />
@@ -175,7 +175,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
 
         <Show when={props.job.waitingFor}>
           {(checkpoint) => (
-            <section class="mt-3 rounded-xl bg-[color-mix(in_srgb,var(--icon-warning-base)_8%,var(--v2-background-bg-layer-01))] p-4 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-warning-base)_28%,var(--v2-border-border-muted))]">
+            <section class="mt-3 rounded-xl bg-[color-mix(in_srgb,var(--icon-warning-base)_8%,var(--surface-base))] p-4 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-warning-base)_28%,var(--border-weak-base))]">
               <span class={eyebrow}>Do this on the device</span>
               <strong class="mt-2 block text-[13px]/[1.4] text-[var(--text-strong)]">
                 {checkpoint().message}
@@ -185,7 +185,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
         </Show>
       </div>
 
-      <footer class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-2 border-t border-[var(--v2-border-border-muted)] p-3">
+      <footer class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-2 border-t border-[var(--border-weak-base)] p-3">
         <Button variant="secondary" size="lg" onClick={() => props.onOpenReport(props.job.id)}>
           View report
         </Button>
@@ -217,7 +217,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
         <Show when={state() === "running" || state() === "paused"}>
           <button
             type="button"
-            class="col-span-2 min-h-9 rounded-lg text-[11.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--icon-critical-base)]"
+            class="col-span-2 min-h-9 rounded-lg text-[11.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
             onClick={() => void server.cancelJob(props.job.id)}
           >
             Stop run

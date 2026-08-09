@@ -4,6 +4,9 @@ import {
   assertActivity,
   assertAppMapNote,
   assertCaseStack,
+  assertAppMapVariable,
+  assertAppMapTest,
+  assertAppMapCombine,
   assertConnection,
   assertFlow,
   assertMapGroup,
@@ -328,6 +331,9 @@ export function validateAppMap(value: unknown): AppMap {
   const input = {
     ...document,
     groups: document.groups ?? {},
+    variables: document.variables ?? {},
+    tests: document.tests ?? {},
+    combines: document.combines ?? {},
   } as unknown as AppMap;
   if (input.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
     appMapFail("invalid-map", `App Map schemaVersion must be ${APP_MAP_SCHEMA_VERSION}`);
@@ -367,6 +373,15 @@ export function validateAppMap(value: unknown): AppMap {
   assertEntityRecord(input.caseStacks, "App Map.caseStacks", (item, label) =>
     assertCaseStack(item, scope, label),
   );
+  assertEntityRecord(input.variables ?? {}, "App Map.variables", (item, label) =>
+    assertAppMapVariable(item, scope, label),
+  );
+  assertEntityRecord(input.tests ?? {}, "App Map.tests", (item, label) =>
+    assertAppMapTest(item, scope, label),
+  );
+  assertEntityRecord(input.combines ?? {}, "App Map.combines", (item, label) =>
+    assertAppMapCombine(item, scope, label),
+  );
   assertEntityRecord(input.routines, "App Map.routines", (item, label) =>
     assertRoutine(item, scope, label),
   );
@@ -389,6 +404,9 @@ export function validateAppMap(value: unknown): AppMap {
     screenVariants: input.screenVariants,
     connections: input.connections,
     caseStacks: input.caseStacks,
+    variables: input.variables ?? {},
+    tests: input.tests ?? {},
+    combines: input.combines ?? {},
     routines: input.routines,
     flows: input.flows,
     runs: input.runs,

@@ -86,9 +86,8 @@ export function Layout(props: {
     const onTipLeave = (e: Event) => {
       const t = e.target;
       if (!(t instanceof Element) || !t.closest("[data-tip]")) return;
-      const next = (e as MouseEvent).relatedTarget;
+      const next = "relatedTarget" in e ? (e as MouseEvent | FocusEvent).relatedTarget : null;
       if (next instanceof Element && next.closest("[data-tip]")) {
-        // Moving to another tip — place immediately if cluster is instant
         const el = next.closest("[data-tip]");
         if (el) {
           activeEl = el;
@@ -108,10 +107,14 @@ export function Layout(props: {
     };
     document.addEventListener("mouseover", onTipEnter, true);
     document.addEventListener("mouseout", onTipLeave, true);
+    document.addEventListener("focusin", onTipEnter, true);
+    document.addEventListener("focusout", onTipLeave, true);
     window.addEventListener("scroll", onScroll, true);
     onCleanup(() => {
       document.removeEventListener("mouseover", onTipEnter, true);
       document.removeEventListener("mouseout", onTipLeave, true);
+      document.removeEventListener("focusin", onTipEnter, true);
+      document.removeEventListener("focusout", onTipLeave, true);
       window.removeEventListener("scroll", onScroll, true);
       window.clearTimeout(tipShowTimer);
       window.clearTimeout(tipDelayTimer);
@@ -162,22 +165,19 @@ export function Layout(props: {
       },
       {
         id: "device.screenshot",
-        title: "Capture screenshot",
+        title: "Save this screen to the map",
         group: "Device",
         keybind: "mod+shift+s",
         run: () => void server.captureUiScreenshot(),
       },
       {
         id: "job.run",
-        title: "Run selected test",
+        title: "Run selected path",
         group: "Jobs",
         keybind: "mod+enter",
-        disabled: () =>
-          !server.selectedRecipe() || server.health() !== "online" || server.isEmptyDevices(),
+        disabled: () => !server.selectedAppMapId() || server.health() !== "online",
         run: () => {
-          if (server.isEmptyDevices() || server.health() !== "online") return;
-          const r = server.selectedRecipe();
-          if (r) void server.runRecipeRemote(r.id);
+          window.dispatchEvent(new CustomEvent("relay:run-app-map"));
         },
       },
       {
@@ -235,7 +235,7 @@ export function Layout(props: {
       },
       {
         id: "device.overlays",
-        title: "Toggle hover-inspect on stage",
+        title: "Toggle hover-inspect on the live device",
         group: "Device",
         keybind: "mod+o",
         run: () => server.setShowOverlays(!server.showOverlays()),
@@ -249,13 +249,13 @@ export function Layout(props: {
       {
         id: "frames.play",
         title: "Play / pause frame scrubber",
-        group: "Stage",
+        group: "Device",
         run: () => server.togglePlayback(),
       },
       {
         id: "frames.clear",
         title: "Clear captured frames",
-        group: "Stage",
+        group: "Device",
         run: () => server.clearFrames(),
       },
       {
@@ -268,28 +268,6 @@ export function Layout(props: {
     onCleanup(unsub);
   });
 
-  // Register recipe commands whenever the catalog changes (searchable in palette)
-  createEffect(() => {
-    const recipes = server.recipes();
-    const unsub = cmd.register(
-      recipes.map((r) => ({
-        id: `recipe.${r.id}`,
-        title: r.title,
-        subtitle: r.source === "custom" ? "Your test" : "Built-in test",
-        group:
-          r.source === "custom"
-            ? "Your tests"
-            : r.id.startsWith("login-") || r.id === "logout" || r.id.startsWith("grok")
-              ? "Grok"
-              : "Play Store",
-        run: () => {
-          server.setSelectedRecipeId(r.id);
-        },
-      })),
-    );
-    onCleanup(unsub);
-  });
-
   // App Maps and their screens are first-class palette entities. A person or
   // agent can jump to a known runtime state without first navigating panels.
   createEffect(() => {
@@ -299,8 +277,8 @@ export function Layout(props: {
         {
           id: `app-map.${appMap.id}`,
           title: appMap.name,
-          subtitle: `${Object.keys(appMap.screens).length} screens · App Map`,
-          group: "App Maps",
+          subtitle: `${Object.keys(appMap.screens).length} screens · Map`,
+          group: "Maps",
           run: () => server.setSelectedAppMapId(appMap.id),
         },
         ...Object.values(appMap.screens).map((screen) => ({
@@ -330,12 +308,12 @@ export function Layout(props: {
     <div
       class={cn(
         "qa relative flex h-full min-h-full min-h-dvh flex-col overflow-hidden",
-        "bg-v2-background-bg-deep text-text-strong",
+        "bg-background-weak text-text-strong",
         platform.platform === "desktop" && "qa--desktop",
       )}
     >
       <ErrorBanner />
-      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-v2-background-bg-deep text-text-strong text-12-regular">
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background-weak text-text-strong text-12-regular">
         {props.children}
       </div>
       <CommandPalette />

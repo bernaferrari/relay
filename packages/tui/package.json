@@ -9,15 +9,15 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@relay/client": "workspace:*",
-    "@relay/core": "workspace:*"
+    "@relay/client": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "tsx": "^4.20.0",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.6",
     "typescript": "catalog:"
   }
 }

@@ -25,10 +25,10 @@ export function RunBrowser(props: {
   });
   return (
     <aside
-      class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[1180px]:hidden"
+      class="flex min-h-0 flex-col border-r border-[var(--border-weak-base)] bg-[var(--background-base)] max-[1180px]:hidden"
       aria-label="Run browser"
     >
-      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3.5">
+      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--border-weak-base)] px-3.5">
         <div>
           <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">Runs</strong>
           <small class="text-[10px] text-[var(--text-weak)]">
@@ -38,7 +38,7 @@ export function RunBrowser(props: {
             {props.rows.length === 1 ? "run" : "runs"}
           </small>
         </div>
-        <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
+        <span class="grid size-7 place-items-center rounded-lg bg-[var(--surface-base)] text-[var(--text-weak)]">
           <Icon name="wave" size={14} />
         </span>
       </header>
@@ -48,7 +48,7 @@ export function RunBrowser(props: {
         </span>
         <span class="sr-only">Search runs</span>
         <input
-          class="h-8 w-full rounded-lg border border-transparent bg-[var(--v2-background-bg-layer-01)] pr-2.5 pl-8 text-[16px] text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-02)] focus:border-[var(--v2-border-border-strong)] focus:bg-[var(--v2-background-bg-base)] min-[681px]:text-[11.5px]"
+          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-[16px] text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)] min-[681px]:text-[11.5px]"
           value={query()}
           placeholder="Search runs"
           onInput={(event) => setQuery(event.currentTarget.value)}
@@ -65,8 +65,8 @@ export function RunBrowser(props: {
                 class={cn(
                   "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-border-strong-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background-base",
                   props.selectedId === job.id
-                    ? "bg-[var(--v2-background-bg-layer-02)]"
-                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
+                    ? "bg-[var(--surface-base-hover)]"
+                    : "hover:bg-[var(--surface-base)]",
                 )}
                 aria-current={props.selectedId === job.id ? "page" : undefined}
                 onClick={() => props.onSelect(job)}
@@ -78,7 +78,7 @@ export function RunBrowser(props: {
                       ? "bg-[var(--icon-success-base)]"
                       : status().tone === "fail"
                         ? "bg-[var(--icon-critical-base)]"
-                        : "bg-[var(--v2-background-bg-accent)]",
+                        : "bg-[var(--text-interactive-base)]",
                   )}
                   aria-hidden="true"
                 />
@@ -106,7 +106,7 @@ export function RunBrowser(props: {
             <p class="m-0 text-[11.5px] font-medium text-[var(--text-base)]">No matching runs</p>
             <button
               type="button"
-              class="mt-2 min-h-8 rounded-md px-2.5 text-[11px] font-medium text-[var(--text-accent-base)] outline-none hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:ring-2 focus-visible:ring-border-strong-focus"
+              class="mt-2 min-h-8 rounded-md px-2.5 text-[11px] font-medium text-[var(--text-accent-base)] outline-none hover:bg-[var(--surface-base)] focus-visible:ring-2 focus-visible:ring-border-strong-focus"
               onClick={() => setQuery("")}
             >
               Clear search

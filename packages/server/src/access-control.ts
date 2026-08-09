@@ -1,7 +1,11 @@
 import {
   currentOperationContext,
+  DEVICE_LEASE_RENEW_UNDER_MS,
+  DEVICE_LEASE_TTL_MS,
+  leaseDevice,
   listDeviceLeases,
   now,
+  renewDeviceLease,
   setOperationLease,
   type TestJob,
 } from "@relay/core";
@@ -18,7 +22,7 @@ export async function assertTargetControl(
   if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
   const at = now();
   const leases = await listDeviceLeases(scope.projectId);
-  const active = leases.find(
+  let active = leases.find(
     (lease) =>
       lease.deviceSerial === targetId &&
       lease.ownerId === operation.actorId &&
@@ -26,17 +30,17 @@ export async function assertTargetControl(
       lease.expiresAt > at,
   );
   if (!active) {
-    recordAudit(scope, {
-      action: "target.control",
-      resource: "lease",
-      target: targetId,
-      result: "deny",
-    });
     const conflicting = leases.find(
       (lease) =>
         lease.deviceSerial === targetId && lease.status === "leased" && lease.expiresAt > at,
     );
     if (conflicting) {
+      recordAudit(scope, {
+        action: "target.control",
+        resource: "lease",
+        target: targetId,
+        result: "deny",
+      });
       throw new HttpError(403, "This target is currently controlled by another actor", {
         code: "TARGET_CONTROL_LEASE_CONFLICT",
         targetId,
@@ -54,18 +58,37 @@ export async function assertTargetControl(
         },
       });
     }
-    throw new HttpError(403, "Take control of this target before sending device input", {
-      code: "TARGET_CONTROL_LEASE_REQUIRED",
-      targetId,
-      actorId: operation.actorId,
-      recovery:
-        "Create a 15-minute exclusive lease with this same actor, then retry the control command.",
-      recoveryAction: {
-        operationId: "lease.create",
-        input: { poolId: "local", deviceSerial: targetId },
-        cli: { argv: ["lease", "create", targetId, "--actor", operation.actorId] },
-      },
-    });
+    if (scope.localTrusted) {
+      active = await leaseDevice({
+        projectId: scope.projectId,
+        poolId: "local",
+        deviceSerial: targetId,
+        ownerId: operation.actorId,
+        expiresAt: at + DEVICE_LEASE_TTL_MS,
+      });
+    } else {
+      recordAudit(scope, {
+        action: "target.control",
+        resource: "lease",
+        target: targetId,
+        result: "deny",
+      });
+      throw new HttpError(403, "Take control of this target before sending device input", {
+        code: "TARGET_CONTROL_LEASE_REQUIRED",
+        targetId,
+        actorId: operation.actorId,
+        recovery:
+          "Create a 2-hour exclusive lease with this same actor, then retry the control command.",
+        recoveryAction: {
+          operationId: "lease.create",
+          input: { poolId: "local", deviceSerial: targetId },
+          cli: { argv: ["lease", "create", targetId, "--actor", operation.actorId] },
+        },
+      });
+    }
+  }
+  if (active.expiresAt - at < DEVICE_LEASE_RENEW_UNDER_MS) {
+    active = await renewDeviceLease(active.id, at + DEVICE_LEASE_TTL_MS);
   }
   setOperationLease(active.id);
   recordAudit(scope, {

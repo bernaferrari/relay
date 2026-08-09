@@ -8,6 +8,43 @@ export type OutputStreams = {
   stderr: Writable;
 };
 
+const SLOW_OPERATIONS = new Set([
+  "target.snapshot.capture",
+  "target.screenshot.capture",
+  "target.interact",
+  "target.app.launch",
+  "authoring.session.begin",
+  "authoring.session.start",
+  "authoring.session.stop",
+  "authoring.session.interact",
+  "authoring.take.replay",
+  "app-map.connection.run",
+  "app-map.flow.run",
+  "app-map.teach",
+  "job.combine.start",
+  "job.get",
+]);
+
+function isSlowOperation(operationId: string): boolean {
+  return SLOW_OPERATIONS.has(operationId);
+}
+
+function progressMessage(
+  operationId: string,
+  phase: "invoking" | "following" | "watching",
+): string {
+  if (phase === "following") return `Following ${operationId}…`;
+  if (phase === "watching") return `Waiting on ${operationId}…`;
+  if (operationId === "target.snapshot.capture") return "Waiting on accessibility tree…";
+  if (operationId === "target.screenshot.capture") return "Waiting on screenshot…";
+  if (operationId.startsWith("authoring.")) return "Waiting on device recording…";
+  if (operationId === "target.interact" || operationId === "target.app.launch") {
+    return "Waiting on device…";
+  }
+  if (operationId.includes("run") || operationId.includes("matrix")) return "Waiting on run…";
+  return `Invoking ${operationId}…`;
+}
+
 function line(stream: Writable, value: unknown): void {
   stream.write(`${JSON.stringify(value)}\n`);
 }
@@ -44,13 +81,25 @@ export class CliOutput {
   ) {}
 
   progress(operationId: string, phase: "invoking" | "following" | "watching"): void {
+    const message = progressMessage(operationId, phase);
     if (this.mode === "ndjson") {
       line(this.streams.stdout, { type: "progress", operationId, phase });
     } else if (!this.quiet && this.mode === "human") {
-      const verb =
-        phase === "following" ? "Following" : phase === "watching" ? "Watching" : "Invoking";
-      this.streams.stderr.write(`${verb} ${operationId}…\n`);
+      this.streams.stderr.write(`${message}\n`);
+    } else if (!this.quiet && this.mode === "json" && isSlowOperation(operationId)) {
+      this.streams.stderr.write(
+        `${JSON.stringify({ type: "progress", operationId, phase, message })}\n`,
+      );
     }
+  }
+
+  heartbeat(message: string): void {
+    if (this.quiet) return;
+    if (this.mode === "ndjson") {
+      line(this.streams.stdout, { type: "progress", phase: "watching", message });
+      return;
+    }
+    this.streams.stderr.write(`${message}\n`);
   }
 
   snapshot(operationId: string, snapshot: unknown): void {

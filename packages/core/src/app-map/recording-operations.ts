@@ -74,6 +74,24 @@ function findObservedScreen(map: AppMap, observation?: AuthoringObservation): Sc
   );
 }
 
+function screenOwnsFingerprint(map: AppMap, fingerprint: string, screenId: string): boolean {
+  const owner = Object.values(map.screens).find(
+    (screen) =>
+      screen.identity?.fingerprint === fingerprint ||
+      screen.identity?.aliases?.includes(fingerprint),
+  );
+  return !owner || owner.id === screenId;
+}
+
+function findCaptureScreen(map: AppMap, input: AppMapScreenCaptureInput): Screen | undefined {
+  const title = input.title?.trim();
+  if (title) {
+    const named = Object.values(map.screens).find((screen) => screen.title === title);
+    if (named) return named;
+  }
+  return findObservedScreen(map, input.observation);
+}
+
 function semanticObservation(
   observation?: AuthoringObservation,
 ): ScreenIdentityObservation | undefined {
@@ -120,10 +138,17 @@ function observeScreen(input: {
   const { map, screen, observation, at } = input;
   if (!observation) return;
   const fingerprint = observation.screen.fingerprint;
+  const semanticFingerprint = semanticObservation(observation)?.fingerprint;
   const aliases = new Set(screen.identity?.aliases ?? []);
-  if (screen.identity && screen.identity.fingerprint !== fingerprint) aliases.add(fingerprint);
-  screen.identity = screen.identity ?? { schemaVersion: 1, fingerprint };
-  if (aliases.size) screen.identity.aliases = [...aliases].sort();
+  for (const candidate of [fingerprint, semanticFingerprint]) {
+    if (!candidate || !screenOwnsFingerprint(map, candidate, screen.id)) continue;
+    if (!screen.identity) {
+      screen.identity = { schemaVersion: 1, fingerprint: candidate };
+      continue;
+    }
+    if (screen.identity.fingerprint !== candidate) aliases.add(candidate);
+  }
+  if (screen.identity && aliases.size) screen.identity.aliases = [...aliases].sort();
   screen.updatedAt = at;
 
   const profile = targetProfile(input.target, at, input.targetProfile, observation);
@@ -178,7 +203,7 @@ export function commitAppMapScreenCapture(
   input: AppMapScreenCaptureInput,
   context: AppMapMutationContext,
 ): AppMapScreenCaptureResult {
-  const existing = findObservedScreen(value, input.observation);
+  const existing = findCaptureScreen(value, input);
   const screenId =
     existing?.id ?? stableId("screen", `${value.id}:${input.observation.screen.fingerprint}`);
   const created = !existing;
@@ -439,15 +464,20 @@ export function commitAppMapRecording(
       if (requestedDestination?.kind === "end") {
         destination = { kind: "end" };
       } else {
+        const forceNewScreen = requestedDestination?.kind === "new-screen";
         const requestedDestinationId =
           requestedDestination?.kind === "screen"
             ? requestedDestination.screenId
-            : pending?.destination.kind === "screen"
+            : !forceNewScreen && pending?.destination.kind === "screen"
               ? pending.destination.screenId
               : undefined;
+        // new-screen is an explicit operator decision: do not merge into a
+        // parent that is still visible behind a sheet or overlay.
         let screen = requestedDestinationId
           ? map.screens[requestedDestinationId]
-          : findObservedScreen(map, input.after);
+          : forceNewScreen
+            ? undefined
+            : findObservedScreen(map, input.after);
         if (requestedDestinationId && !screen) {
           appMapFail("missing-reference", "Destination screen no longer exists");
         }

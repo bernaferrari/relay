@@ -103,10 +103,10 @@ function InspectorNumberField(props: {
   return (
     <div
       class={cn(
-        "flex h-8 min-w-0 items-center rounded-md bg-[var(--v2-background-bg-layer-01)]",
-        "shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus-within:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]",
+        "flex h-8 min-w-0 items-center rounded-md bg-[var(--surface-base)]",
+        "shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]",
         scrubbing() &&
-          "shadow-[inset_0_0_0_1px_var(--v2-background-bg-accent),0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)]",
+          "shadow-[inset_0_0_0_1px_var(--text-interactive-base),0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)]",
         props.class,
       )}
       data-tip={props.dataTip}

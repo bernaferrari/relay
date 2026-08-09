@@ -17,7 +17,7 @@ export function EvidenceList(props: {
       <For
         each={props.items}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
+          <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
             {props.empty}
           </div>
         }
@@ -25,7 +25,7 @@ export function EvidenceList(props: {
         {(item) => {
           const summary = () => evidenceSummary(item.data);
           return (
-            <article class="overflow-hidden rounded-xl border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]">
+            <article class="overflow-hidden rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)]">
               <header class="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-2.5">
                 <span class="grid size-[30px] place-items-center rounded-lg bg-surface-base-active text-text-weak">
                   <Icon name={evidenceIcon(item.kind)} size={14} />
@@ -48,7 +48,7 @@ export function EvidenceList(props: {
                   })}
                 </time>
               </header>
-              <details class="group border-t border-[var(--v2-border-border-muted)]">
+              <details class="group border-t border-[var(--border-weak-base)]">
                 <summary class="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-3 text-[10px] font-medium text-text-weaker hover:text-text-base [&::-webkit-details-marker]:hidden">
                   View payload
                   <Icon
@@ -57,7 +57,7 @@ export function EvidenceList(props: {
                     class="transition-transform duration-150 group-open:rotate-180"
                   />
                 </summary>
-                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[10px]/[1.5] text-[var(--text-base)]">
+                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--border-weak-base)] bg-[var(--background-deep)] p-3 font-mono text-[10px]/[1.5] text-[var(--text-base)]">
                   {JSON.stringify(item.data, null, 2)}
                 </pre>
               </details>
@@ -210,7 +210,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
                       {entry.durationMs === undefined ? "—" : `${Math.round(entry.durationMs)}ms`}
                     </span>
                   </summary>
-                  <div class="grid gap-2 border-t border-border-weak-base bg-v2-background-bg-deep px-3 py-2.5 text-[10px] text-text-weak">
+                  <div class="grid gap-2 border-t border-border-weak-base bg-background-weak px-3 py-2.5 text-[10px] text-text-weak">
                     <Show when={entry.source || entry.at}>
                       <span>
                         {entry.source ?? "Runtime"}
@@ -337,7 +337,7 @@ export function RunLogsEvidence(props: {
           </Show>
         }
       >
-        <div class="max-h-[480px] overflow-auto rounded-xl border border-border-weak-base bg-v2-background-bg-deep">
+        <div class="max-h-[480px] overflow-auto rounded-xl border border-border-weak-base bg-background-weak">
           <For each={rows()}>
             {(entry) => (
               <div class="grid grid-cols-[48px_62px_minmax(0,1fr)] gap-2 border-b border-border-weak-base px-3 py-2 last:border-0">

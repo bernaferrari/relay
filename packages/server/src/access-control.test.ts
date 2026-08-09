@@ -39,8 +39,9 @@ test("target control failures provide safe, machine-actionable lease recovery", 
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
   try {
+    const remoteScope = { ...scope, localTrusted: false, tokenKind: "service" as const };
     await assert.rejects(
-      asActor("agent:mapper", () => assertTargetControl(scope, "ipad-1")),
+      asActor("agent:mapper", () => assertTargetControl(remoteScope, "ipad-1")),
       (error) => {
         assert.ok(error instanceof HttpError);
         assert.equal(error.status, 403);
@@ -56,15 +57,19 @@ test("target control failures provide safe, machine-actionable lease recovery", 
       },
     );
 
+    const minted = await asActor("agent:local", () => assertTargetControl(scope, "ipad-1"));
+    assert.equal(minted.ownerId, "agent:local");
+    assert.equal(minted.deviceSerial, "ipad-1");
+
     const lease = await leaseDevice({
       projectId: scope.projectId,
       poolId: "local",
-      deviceSerial: "ipad-1",
+      deviceSerial: "ipad-2",
       ownerId: "human:owner",
       expiresAt: Date.now() + 60_000,
     });
     await assert.rejects(
-      asActor("agent:mapper", () => assertTargetControl(scope, "ipad-1")),
+      asActor("agent:mapper", () => assertTargetControl(scope, "ipad-2")),
       (error) => {
         assert.ok(error instanceof HttpError);
         assert.equal(error.body?.code, "TARGET_CONTROL_LEASE_CONFLICT");
@@ -82,7 +87,7 @@ test("target control failures provide safe, machine-actionable lease recovery", 
     );
 
     assert.equal(
-      (await asActor("human:owner", () => assertTargetControl(scope, "ipad-1"))).id,
+      (await asActor("human:owner", () => assertTargetControl(scope, "ipad-2"))).id,
       lease.id,
     );
   } finally {

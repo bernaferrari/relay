@@ -44,7 +44,7 @@ export function ActionPicker(props: {
     >
       <button
         type="button"
-        class="grid h-[30px] w-full min-w-0 grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-1.5 rounded-l-[5px] px-2 text-left text-[11px] font-normal text-[var(--text-base)] transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.99]"
+        class="grid h-[30px] w-full min-w-0 grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-1.5 rounded-l-[5px] px-2 text-left text-[11px] font-normal text-[var(--text-base)] transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.99]"
         aria-haspopup="menu"
         aria-expanded={open()}
         onClick={() => {
@@ -66,11 +66,11 @@ export function ActionPicker(props: {
             for words nobody reads twice, and the search field is a sibling of
             the scroller so rows cannot slide under it. */}
         <div
-          class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 flex max-h-[min(340px,calc(100vh-220px))] w-[224px] origin-top-right flex-col overflow-hidden rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha shadow-[var(--v2-elevation-overlay)]"
+          class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 flex max-h-[min(340px,calc(100vh-220px))] w-[224px] origin-top-right flex-col overflow-hidden rounded-lg border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg)]"
           role="menu"
           aria-label="Change action"
         >
-          <label class="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-2.5 text-[var(--text-weak)]">
+          <label class="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border-weak-base)] px-2.5 text-[var(--text-weak)]">
             <Icon name="search" size={12} />
             <input
               ref={(element) => {
@@ -102,7 +102,7 @@ export function ActionPicker(props: {
                           "grid min-h-8 grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-2 rounded-md px-2 text-left text-[11.5px] font-medium transition-colors duration-100",
                           selected(action.kind)
                             ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
-                            : "text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
+                            : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]",
                         )}
                         onClick={() => {
                           props.onSelect(action.kind);

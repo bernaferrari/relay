@@ -1,0 +1,53 @@
+schemaVersion: 1
+id: switch-language-grok-ios
+name: Switch language · Grok (iOS)
+description: >
+  Reusable language switch for Grok on iOS. Opens the app, walks Settings → App Language,
+  and selects a row by its native picker label. Bind locale_label per case.
+
+  Known locales captured on iPad Pro 10.5 (2026-08-04):
+  - en: English
+  - pt-BR: Português (Brasil)
+  - it: Italiano
+
+  Use as a module before any recipe body, or let Harvest/locale-matrix expand tags via
+  the grok-ios language profile.
+parameters:
+  - name: locale_label
+    label: Language row label
+    required: true
+  - name: locale_identifier
+    label: Language row identifier
+    required: false
+    default: ""
+steps:
+  - kind: app
+    action: open
+    app: "ai.x.GrokApp"
+    relaunch: true
+    note: Open Grok (iOS)
+  - kind: sleep
+    ms: 1200
+  - kind: tap
+    target:
+      identifier: "sidebar.open.button"
+  - kind: sleep
+    ms: 500
+  - kind: tap
+    target:
+      label: "Settings"
+  - kind: sleep
+    ms: 700
+  - kind: tap
+    target:
+      label: "App Language"
+  - kind: sleep
+    ms: 600
+  - kind: tap
+    target:
+      label: "{{locale_label}}"
+    note: Select the language row by its native picker label
+  - kind: sleep
+    ms: 900
+  - kind: screenshot
+    caption: "language-switched:{{locale_label}}"

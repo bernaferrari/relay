@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enqueueMatrix, enqueueRecipe, retryJob } from "./server-run-remote";
+import {
+  buildLocaleMatrixInput,
+  enqueueMatrix,
+  enqueueRecipe,
+  retryJob,
+  withLocalePickerNav,
+} from "./server-run-remote";
 
 test("keeps execution endpoints typed and predictable", async () => {
   const calls: string[] = [];
@@ -27,4 +33,134 @@ test("keeps execution endpoints typed and predictable", async () => {
     "POST /jobs/compatibility-matrix",
     "POST /jobs/job-1/retry",
   ]);
+});
+
+test("taught locale scope is enqueued instead of the Grok language profile", () => {
+  const scope = {
+    locales: ["en", "it"],
+    languageOptions: {
+      en: { identifier: "lang.en" },
+      it: { label: "Italiano" },
+    },
+    screenshotEachLocale: true,
+    restoreAtEnd: false,
+  };
+  const body = buildLocaleMatrixInput({
+    recipe: "settings-smoke",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "ios",
+    locales: ["en", "it"],
+    scope,
+    title: "Settings smoke",
+    projectId: "default",
+  });
+  assert.equal(body.preset, undefined);
+  assert.equal(body.profileId, undefined);
+  assert.equal(body.scope?.screenshotEachLocale, true);
+  assert.deepEqual(body.scope?.languageOptions?.en, { identifier: "lang.en" });
+  assert.equal(body.scope?.languagePath, undefined);
+  assert.equal(JSON.stringify(body.scope).includes("App Language"), false);
+});
+
+test("UI enqueue payload includes picker nav taps before locale select", () => {
+  const taught = withLocalePickerNav({
+    locales: ["en", "it"],
+    languageOptions: {
+      en: { identifier: "lang.en" },
+      it: { label: "Italiano" },
+    },
+    screenshotEachLocale: true,
+    restoreAtEnd: false,
+  });
+  const body = buildLocaleMatrixInput({
+    appMapId: "map-1",
+    flowId: "checkout",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "ios",
+    locales: taught.locales,
+    scope: taught,
+    title: "Checkout",
+    projectId: "default",
+  });
+  const languagePath = body.scope?.languagePath as Array<{
+    kind?: string;
+    target?: { text?: string };
+  }>;
+  const entryPath = body.scope?.entryPath as Array<{ target?: { identifier?: string } }>;
+  assert.ok(entryPath?.some((step) => step.target?.identifier === "sidebar.settings.button"));
+  assert.ok(languagePath?.some((step) => step.target?.text === "App Language"));
+  assert.deepEqual(body.scope?.languageOptions?.en, { identifier: "lang.en" });
+});
+
+test("recorded picker prelude is not replaced with Grok Settings nav", () => {
+  const scope = {
+    locales: ["en", "de"],
+    entryPath: [
+      { kind: "tap", target: { label: "Profile" } },
+      { kind: "wait", ms: 300 },
+      { kind: "tap", target: { text: "Language" } },
+    ],
+    languageOptions: {
+      en: { identifier: "lang.en" },
+      de: { label: "Deutsch" },
+    },
+    screenshotEachLocale: true,
+    restoreAtEnd: false,
+  };
+  const body = buildLocaleMatrixInput({
+    appMapId: "map-1",
+    flowId: "checkout",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "ios",
+    locales: ["en", "de"],
+    scope,
+    title: "Checkout",
+    projectId: "default",
+  });
+  assert.deepEqual(body.scope?.entryPath, scope.entryPath);
+  assert.equal(JSON.stringify(body.scope).includes("sidebar.settings.button"), false);
+  assert.equal(JSON.stringify(body.scope).includes("App Language"), false);
+});
+
+test("without a taught scope Relay does not assume a Grok profile", () => {
+  const body = buildLocaleMatrixInput({
+    recipe: "settings-smoke",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "ios",
+    locales: ["en"],
+    projectId: "default",
+  });
+  assert.equal(body.preset, undefined);
+  assert.equal(body.profileId, undefined);
+  assert.equal(body.scope, undefined);
+});
+
+test("a map flow locale run does not send a Grok preset or library recipe id", () => {
+  const scope = {
+    locales: ["en", "it"],
+    screenshotEachLocale: true,
+    restoreAtEnd: false,
+  };
+  const body = buildLocaleMatrixInput({
+    appMapId: "map-1",
+    flowId: "checkout",
+    serial: "phone-1",
+    targetKind: "device",
+    platform: "ios",
+    locales: ["en", "it"],
+    scope,
+    title: "Checkout",
+    projectId: "default",
+  });
+  assert.equal(body.recipe, undefined);
+  assert.equal(body.appMapId, "map-1");
+  assert.equal(body.flowId, "checkout");
+  assert.equal(body.preset, undefined);
+  assert.deepEqual(body.scope?.locales, ["en", "it"]);
+  assert.equal(body.preset, undefined);
+  assert.equal(JSON.stringify(body.scope ?? {}).includes("sidebar.settings"), false);
 });

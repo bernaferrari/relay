@@ -3,6 +3,7 @@ import { Button } from "@relay/ui/button";
 import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { humanError } from "../lib/human-error";
 
 const labelClass = "text-12-medium text-text-strong";
 const inputClass =
@@ -271,6 +272,46 @@ export function DeviceSettingsPanel() {
                   </div>
                 </div>
               </Show>
+
+              <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
+                <div class="flex flex-col gap-1.5">
+                  <span class={labelClass}>iOS live preview</span>
+                  <p class="m-0 text-11-regular text-text-weak">
+                    Live preview defaults to a go-ios video/MJPEG stream. Screenshots stay for
+                    evidence. Switch to PNG only if the stream is unavailable.
+                  </p>
+                  <select
+                    class={inputClass}
+                    value={
+                      server.appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto"
+                    }
+                    disabled={appleSetupBusy()}
+                    onChange={(event) => {
+                      const backend = event.currentTarget.value as
+                        | "agent-device-png"
+                        | "go-ios-auto"
+                        | "go-ios-mjpeg";
+                      setAppleSetupBusy(true);
+                      void server
+                        .saveIosLivePreview(backend)
+                        .then(() => {
+                          setAppleSetupSaved(true);
+                          setTimeout(() => setAppleSetupSaved(false), 1500);
+                        })
+                        .catch((error) => {
+                          setAppleSetupError(
+                            humanError(error, "Could not save live preview setting."),
+                          );
+                        })
+                        .finally(() => setAppleSetupBusy(false));
+                    }}
+                  >
+                    <option value="go-ios-auto">Live stream (default)</option>
+                    <option value="agent-device-png">PNG preview fallback</option>
+                    <option value="go-ios-mjpeg">go-ios Instruments MJPEG</option>
+                  </select>
+                </div>
+              </div>
 
               <Show when={appleAdvancedOpen()}>
                 <form class="flex flex-col gap-3" onSubmit={saveAppleSetup}>

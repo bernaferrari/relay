@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { SnapshotNode } from "./device.js";
 
@@ -32,6 +35,12 @@ export function androidInspectionState(policy: string): AndroidInspectionState {
 
 export function androidScreenIsInspectable(policy: string): boolean {
   return androidInspectionState(policy) === "active";
+}
+
+export async function wakeAndroidDisplay(serial: string): Promise<void> {
+  await execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"], {
+    timeout: 2_000,
+  });
 }
 
 export async function captureAndroidInspectionState(
@@ -95,6 +104,19 @@ export function androidSnapshotMatchesForeground(
 ): boolean {
   const treeApp = androidSnapshotApplication(nodes);
   return !foregroundApp || !treeApp || treeApp === foregroundApp;
+}
+
+/**
+ * Accessibility can briefly keep an old app window active after Android has
+ * foregrounded another activity. Never bind those stale controls to the new
+ * app's pixels: a pixels-only frame is safer and remains fully controllable by
+ * coordinate until the next semantic snapshot catches up.
+ */
+export function androidSnapshotNodesForForeground(
+  nodes: SnapshotNode[],
+  foregroundApp: string | undefined,
+): SnapshotNode[] {
+  return androidSnapshotMatchesForeground(nodes, foregroundApp) ? nodes : [];
 }
 
 function decodeXml(value: string): string {
@@ -189,6 +211,296 @@ export type AndroidUiSnapshot = {
   inspectionState: AndroidInspectionState;
 };
 
+const ANDROID_SNAPSHOT_HELPER_PACKAGE = "com.callstack.agentdevice.snapshothelper";
+const ANDROID_SNAPSHOT_HELPER_COMPONENT = `${ANDROID_SNAPSHOT_HELPER_PACKAGE}/.SnapshotInstrumentation`;
+
+/**
+ * Decode chunked `am instrument` output from the already-installed snapshot
+ * helper. Stock `uiautomator dump` uses getRootInActiveWindow() and returns a
+ * null root on Samsung (and others) whenever a third-party accessibility
+ * service is bound. The helper reads every interactive window instead.
+ */
+export function parseAndroidSnapshotHelperInstrumentation(output: string): string | undefined {
+  const chunks = new Map<number, string>();
+  let expected = 0;
+  let record: Record<string, string> = {};
+  let ok = false;
+
+  const flush = () => {
+    if (
+      record.agentDeviceProtocol === "android-snapshot-helper-v1" &&
+      record.outputFormat === "uiautomator-xml" &&
+      record.payloadBase64
+    ) {
+      const index = Number(record.chunkIndex);
+      const count = Number(record.chunkCount);
+      if (Number.isInteger(index) && index >= 0) chunks.set(index, record.payloadBase64);
+      if (Number.isInteger(count) && count > 0) expected = count;
+    }
+    if (record.ok === "true") ok = true;
+    record = {};
+  };
+
+  for (const line of output.split(/\r?\n/)) {
+    if (
+      line.startsWith("INSTRUMENTATION_STATUS: ") ||
+      line.startsWith("INSTRUMENTATION_RESULT: ")
+    ) {
+      const body = line.slice(line.indexOf(": ") + 2);
+      const eq = body.indexOf("=");
+      if (eq > 0) record[body.slice(0, eq)] = body.slice(eq + 1);
+      continue;
+    }
+    if (
+      line.startsWith("INSTRUMENTATION_STATUS_CODE:") ||
+      line.startsWith("INSTRUMENTATION_CODE:")
+    ) {
+      flush();
+    }
+  }
+  flush();
+  if (!ok || expected < 1 || chunks.size !== expected) return undefined;
+  const parts: Buffer[] = [];
+  for (let index = 0; index < expected; index += 1) {
+    const payload = chunks.get(index);
+    if (!payload) return undefined;
+    parts.push(Buffer.from(payload, "base64"));
+  }
+  const xml = Buffer.concat(parts).toString("utf8");
+  return xml.includes("<hierarchy") && xml.includes("</hierarchy>") ? xml : undefined;
+}
+
+function execFileOutput(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const body = error as { stdout?: unknown; stderr?: unknown };
+  return `${typeof body.stdout === "string" ? body.stdout : ""}\n${
+    typeof body.stderr === "string" ? body.stderr : ""
+  }`;
+}
+
+const ANDROID_DUMP_PATH = "/data/local/tmp/relay-uidump.xml";
+const dumpBlockedSerials = new Set<string>();
+
+export type AndroidSnapshotBackend = "helper" | "dump";
+
+export type AndroidSnapshotOwnership = {
+  /** Live helper / instrumentation process already registered UiAutomation. */
+  helperProcessRunning: boolean;
+  /** Helper package is installed or the bundled APK can be installed. */
+  helperAvailable: boolean;
+  /** Dump already died with 137 / already-registered on this serial. */
+  dumpBlocked: boolean;
+};
+
+/**
+ * Android allows one UiAutomation owner. The snapshot helper is that owner
+ * once it is alive; stock `uiautomator dump` then exits 137 with
+ * `UiAutomationService already registered`. Dump is last-resort only when the
+ * slot is free and the helper cannot run.
+ */
+export function androidSnapshotCapturePlan(
+  ownership: AndroidSnapshotOwnership,
+): AndroidSnapshotBackend[] {
+  if (ownership.helperProcessRunning) return [];
+  if (ownership.helperAvailable) {
+    return ownership.dumpBlocked ? ["helper"] : ["helper", "dump"];
+  }
+  // A previous 137 does not retire dump forever: the other owner may have exited.
+  return ["dump"];
+}
+
+/** Dump lost the only UiAutomation slot (helper or another instrumentation). */
+export function androidUiAutomatorDumpLooksKilled(notice: string): boolean {
+  return /UiAutomationService already registered|already registered!|^\s*Killed\b|\bKilled\s*$|signal 9|exit(?:ed)?(?: code)? 137|\bcode 137\b|SIGKILL/im.test(
+    notice,
+  );
+}
+
+export function androidUiAutomatorDumpLooksEmpty(notice: string): boolean {
+  return (
+    /null root|ERROR:/i.test(notice) && !/dumped to|hierchary dumped|hierarchy dumped/i.test(notice)
+  );
+}
+
+type DumpAttempt = { nodes: SnapshotNode[]; blocked: boolean; empty: boolean };
+
+function dumpNotice(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error ?? "");
+  const body = error as {
+    stdout?: unknown;
+    stderr?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  return [
+    typeof body.stdout === "string" ? body.stdout : "",
+    typeof body.stderr === "string" ? body.stderr : "",
+    body.code != null ? `exit ${body.code}` : "",
+    typeof body.message === "string" ? body.message : "",
+  ].join("\n");
+}
+
+function dumpAttemptFromNotice(notice: string): DumpAttempt {
+  const blocked = androidUiAutomatorDumpLooksKilled(notice);
+  const empty = androidUiAutomatorDumpLooksEmpty(notice);
+  return { nodes: [], blocked, empty };
+}
+
+async function dumpViaUiAutomatorFile(serial: string): Promise<DumpAttempt> {
+  await execFileAsync("adb", ["-s", serial, "shell", "rm", "-f", ANDROID_DUMP_PATH], {
+    timeout: 2_000,
+  }).catch(() => undefined);
+  const dumped = await execFileAsync(
+    "adb",
+    ["-s", serial, "shell", "uiautomator", "dump", ANDROID_DUMP_PATH],
+    { timeout: 6_000, maxBuffer: 64 * 1024, encoding: "utf8" },
+  ).catch((error: unknown) => ({ stdout: "", stderr: dumpNotice(error) }));
+  const notice = `${dumped.stdout}\n${dumped.stderr}`;
+  const classified = dumpAttemptFromNotice(notice);
+  if (classified.blocked || classified.empty) return classified;
+  try {
+    const { stdout } = await execFileAsync(
+      "adb",
+      ["-s", serial, "exec-out", "cat", ANDROID_DUMP_PATH],
+      { timeout: 4_000, maxBuffer: 4 * 1024 * 1024, encoding: "utf8" },
+    );
+    return { nodes: parseAndroidUiSnapshot(stdout), blocked: false, empty: false };
+  } catch {
+    return { nodes: [], blocked: false, empty: false };
+  }
+}
+
+async function dumpViaUiAutomatorExecOut(serial: string): Promise<DumpAttempt> {
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      "adb",
+      ["-s", serial, "exec-out", "uiautomator", "dump", "--compressed", "/dev/tty"],
+      { timeout: 4_500, maxBuffer: 4 * 1024 * 1024 },
+    );
+    const output = `${stdout}\n${stderr}`;
+    if (output.includes("<hierarchy")) {
+      return { nodes: parseAndroidUiSnapshot(output), blocked: false, empty: false };
+    }
+    return dumpAttemptFromNotice(output);
+  } catch (error) {
+    const notice = dumpNotice(error);
+    if (notice.includes("<hierarchy")) {
+      return { nodes: parseAndroidUiSnapshot(notice), blocked: false, empty: false };
+    }
+    return dumpAttemptFromNotice(notice);
+  }
+}
+
+async function dumpViaUiAutomator(serial: string): Promise<DumpAttempt> {
+  const fromFile = await dumpViaUiAutomatorFile(serial);
+  if (fromFile.blocked || fromFile.empty || fromFile.nodes.length > 0) return fromFile;
+  return dumpViaUiAutomatorExecOut(serial);
+}
+
+async function androidSnapshotHelperInstalled(serial: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync(
+      "adb",
+      ["-s", serial, "shell", "pm", "path", ANDROID_SNAPSHOT_HELPER_PACKAGE],
+      { timeout: 2_000, maxBuffer: 16 * 1024 },
+    );
+    return stdout.includes("package:");
+  } catch {
+    return false;
+  }
+}
+
+async function androidSnapshotHelperProcessRunning(serial: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync(
+      "adb",
+      ["-s", serial, "shell", "pidof", ANDROID_SNAPSHOT_HELPER_PACKAGE],
+      { timeout: 2_000, maxBuffer: 4 * 1024 },
+    );
+    return /\d/.test(stdout);
+  } catch {
+    return false;
+  }
+}
+
+async function androidSnapshotOwnership(serial: string): Promise<AndroidSnapshotOwnership> {
+  const [helperProcessRunning, installed, apk] = await Promise.all([
+    androidSnapshotHelperProcessRunning(serial),
+    androidSnapshotHelperInstalled(serial),
+    bundledHelperApkPath(),
+  ]);
+  return {
+    helperProcessRunning,
+    helperAvailable: installed || Boolean(apk),
+    dumpBlocked: dumpBlockedSerials.has(serial),
+  };
+}
+
+async function bundledHelperApkPath(): Promise<string | undefined> {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "android-helpers");
+  try {
+    const apk = (await readdir(dir)).find((name) => name.endsWith(".apk"));
+    return apk ? join(dir, apk) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function ensureAndroidSnapshotHelperInstalled(serial: string): Promise<boolean> {
+  if (await androidSnapshotHelperInstalled(serial)) return true;
+  const apk = await bundledHelperApkPath();
+  if (!apk) return false;
+  try {
+    await execFileAsync("adb", ["-s", serial, "install", "-r", "-t", apk], {
+      timeout: 30_000,
+      maxBuffer: 64 * 1024,
+    });
+    return await androidSnapshotHelperInstalled(serial);
+  } catch {
+    return false;
+  }
+}
+
+async function dumpViaInstalledHelper(serial: string): Promise<SnapshotNode[]> {
+  if (!(await ensureAndroidSnapshotHelperInstalled(serial))) return [];
+  const args = [
+    "-s",
+    serial,
+    "shell",
+    "am",
+    "instrument",
+    "-w",
+    "-e",
+    "waitForIdleTimeoutMs",
+    "500",
+    "-e",
+    "waitForIdleQuietMs",
+    "100",
+    "-e",
+    "timeoutMs",
+    "8000",
+    "-e",
+    "maxDepth",
+    "128",
+    "-e",
+    "maxNodes",
+    "5000",
+    ANDROID_SNAPSHOT_HELPER_COMPONENT,
+  ];
+  let output = "";
+  try {
+    const { stdout, stderr } = await execFileAsync("adb", args, {
+      timeout: 15_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    output = `${stdout}\n${stderr}`;
+  } catch (error) {
+    output = execFileOutput(error);
+  }
+  const xml = parseAndroidSnapshotHelperInstrumentation(output);
+  return xml ? parseAndroidUiSnapshot(xml) : [];
+}
+
 /**
  * Read the Android hierarchy without an app-bound SDK session. Keyguard and
  * sleeping displays deliberately return no nodes: Android can expose a stale
@@ -197,27 +509,45 @@ export type AndroidUiSnapshot = {
 export async function captureAndroidUiSnapshotWithState(
   serial: string,
 ): Promise<AndroidUiSnapshot> {
-  const inspectionState = await captureAndroidInspectionState(serial);
+  let inspectionState = await captureAndroidInspectionState(serial);
+  if (inspectionState === "asleep") {
+    await wakeAndroidDisplay(serial).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    inspectionState = await captureAndroidInspectionState(serial);
+  }
   if (inspectionState !== "active") return { nodes: [], inspectionState };
-  // Android can briefly report a null accessibility root while an activity is
-  // changing. Retrying here keeps that transport quirk out of the recorder and
-  // lets future snapshot sources be swapped without changing callers.
+  // One UiAutomation slot. Helper first (sees Niagara windows). Dump only when
+  // the slot is still free. Never start a second client if the helper is live.
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const { stdout } = await execFileAsync(
-        "adb",
-        ["-s", serial, "exec-out", "uiautomator", "dump", "--compressed", "/dev/tty"],
-        { timeout: 4_500, maxBuffer: 4 * 1024 * 1024 },
-      );
-      const nodes = parseAndroidUiSnapshot(stdout);
-      if (nodes.length > 0) return { nodes, inspectionState };
-      if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
-    } catch {
-      // A null root is common during activity and keyguard transitions. Give
-      // Android a short chance to settle, then return an empty tree so callers
-      // clear their overlay rather than retaining a stale one.
-      if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
+    const ownership = await androidSnapshotOwnership(serial);
+    const backends = androidSnapshotCapturePlan(ownership);
+    if (backends.length === 0) {
+      // Live helper session already owns UiAutomation. Leave the slot alone
+      // so the SDK path can read the tree.
+      return { nodes: [], inspectionState };
     }
+    for (const backend of backends) {
+      if (backend === "helper") {
+        const helped = await dumpViaInstalledHelper(serial);
+        if (helped.length > 0) return { nodes: helped, inspectionState };
+        if (await androidSnapshotHelperProcessRunning(serial)) {
+          dumpBlockedSerials.add(serial);
+          return { nodes: [], inspectionState };
+        }
+        continue;
+      }
+      if (await androidSnapshotHelperProcessRunning(serial)) {
+        dumpBlockedSerials.add(serial);
+        return { nodes: [], inspectionState };
+      }
+      const dumped = await dumpViaUiAutomator(serial);
+      if (dumped.blocked) {
+        dumpBlockedSerials.add(serial);
+        return { nodes: [], inspectionState };
+      }
+      if (dumped.nodes.length > 0) return { nodes: dumped.nodes, inspectionState };
+    }
+    if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
@@ -227,4 +557,65 @@ export async function captureAndroidUiSnapshotWithState(
 /** Compatibility convenience for callers that only need the semantic tree. */
 export async function captureAndroidUiSnapshot(serial: string): Promise<SnapshotNode[]> {
   return (await captureAndroidUiSnapshotWithState(serial)).nodes;
+}
+
+/** Wake the display and retry label capture. Unlock still needs a person. */
+export async function recoverAndroidInspection(serial: string): Promise<{
+  serial: string;
+  recovered: boolean;
+  ready: boolean;
+  summary: string;
+  actions: Array<{
+    kind: "stale-lock" | "agent-device" | "core-device";
+    status: "completed" | "skipped" | "failed";
+    detail: string;
+  }>;
+  session: {
+    status: "restored" | "unavailable";
+    app?: string;
+    fallback?: boolean;
+    detail: string;
+  };
+}> {
+  const before = await captureAndroidInspectionState(serial);
+  if (before === "asleep" || before === "keyguard" || before === "unknown") {
+    await wakeAndroidDisplay(serial).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  const snapshot = await captureAndroidUiSnapshotWithState(serial);
+  const app = androidSnapshotApplication(snapshot.nodes);
+  const ready = snapshot.inspectionState === "active" && snapshot.nodes.length > 0;
+  const detail = ready
+    ? "Relay can read names on this screen."
+    : snapshot.inspectionState === "keyguard"
+      ? "Unlock the phone, then press Reconnect."
+      : snapshot.inspectionState === "asleep"
+        ? "The screen is still off. Press power, then Reconnect."
+        : "Relay still cannot read names. Tapping the picture still works.";
+  return {
+    serial,
+    recovered: before !== snapshot.inspectionState || ready,
+    ready,
+    summary: detail,
+    actions: [
+      {
+        kind: "agent-device",
+        status: ready
+          ? "completed"
+          : snapshot.inspectionState === "keyguard"
+            ? "skipped"
+            : "failed",
+        detail:
+          before === "asleep"
+            ? "Woke the screen and refreshed labels."
+            : "Retried reading names on this screen.",
+      },
+    ],
+    session: {
+      status: ready ? "restored" : "unavailable",
+      ...(app ? { app } : {}),
+      fallback: !ready,
+      detail,
+    },
+  };
 }

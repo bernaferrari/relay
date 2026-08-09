@@ -1,4 +1,4 @@
-/* Fonts + product theme tokens (maps onto AgentBoard / v2). */
+/* Fonts + product theme tokens (classic @relay/ui semantics only). */
 
 @font-face {
   font-family: "Geist";
@@ -45,7 +45,8 @@
 /* Product-only layout and derived tokens. Theme colors come directly from @relay/ui. */
 :root {
   --shell-nav-width: 262px;
-  --product-accent-soft: color-mix(in srgb, var(--v2-background-bg-accent) 12%, transparent);
+  --background-deep: var(--background-weak);
+  --product-accent-soft: color-mix(in srgb, var(--text-interactive-base) 12%, transparent);
   --map-canvas: oklch(0.978 0.006 82);
   --map-grid-dot: oklch(0.46 0.018 270 / 0.17);
   --map-control-surface: oklch(0.996 0.003 82 / 0.94);

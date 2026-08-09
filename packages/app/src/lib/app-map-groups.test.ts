@@ -31,7 +31,7 @@ test("a Group follows a member moved far away without changing membership", () =
   assert.deepEqual(group.screenIds, ["root", "account"]);
 });
 
-test("new Groups use familiar Figma-style names without collisions", () => {
+test("new Groups use numbered names without collisions", () => {
   assert.equal(nextGroupName([]), "Group");
   assert.equal(nextGroupName([{ ...group, name: "Group" } as MapGroup]), "Group 2");
 });

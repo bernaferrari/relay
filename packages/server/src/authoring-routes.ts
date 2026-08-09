@@ -9,7 +9,6 @@ import {
   describeRecipeStep,
   getBrowserDevice,
   listDevices,
-  normalizeScreenshotToBounds,
   observeVisualScreenFingerprint,
   runRecipeStep,
   runWithTargetContext,
@@ -109,10 +108,9 @@ export async function captureAuthoringObservation(
             dependencies.captureSnapshot(device),
             dependencies.captureScreenshot(device),
           ]);
-    const screenshotBytes = normalizeScreenshotToBounds(
-      Buffer.from(screenshot.base64, "base64"),
-      snapshot.bounds,
-    );
+    // captureScreenshot already bakes iOS orientation; do not normalize again
+    // (a second 180° would flip upright frames back).
+    const screenshotBytes = Buffer.from(screenshot.base64, "base64");
     // Authoring always has a screenshot, while native semantics can disappear
     // between two captures on real devices (notably Samsung Settings and
     // custom-rendered apps). Keep one identity modality for the whole Take so
@@ -314,7 +312,18 @@ export async function handleAuthoringRoute(input: {
   const { method, pathname, request, response, scope } = input;
   try {
     if (method === "GET" && pathname === "/authoring-sessions") {
-      json(response, 200, { sessions: await authoringSessions.list(scope.projectId) });
+      const query = new URL(request.url ?? pathname, "http://relay.local").searchParams;
+      const appMapId = query.get("appMapId");
+      const targetId = query.get("targetId");
+      const activeOnly = query.get("activeOnly") === "true";
+      const activeStates = new Set(["preparing", "ready", "recording", "reviewing", "committing"]);
+      const sessions = (await authoringSessions.list(scope.projectId)).filter(
+        (session) =>
+          (!appMapId || session.appMapId === appMapId) &&
+          (!targetId || session.target.targetId === targetId) &&
+          (!activeOnly || activeStates.has(session.state)),
+      );
+      json(response, 200, { sessions });
       return true;
     }
     if (method === "POST" && pathname === "/authoring-sessions") {

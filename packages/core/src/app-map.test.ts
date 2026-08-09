@@ -176,7 +176,7 @@ function mapFixture(): AppMap {
   };
   const signIn = routine("sign-in", [{ id: "enter-email", kind: "text", text: "{{email}}" }]);
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: scope.appMapId,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
@@ -191,6 +191,9 @@ function mapFixture(): AppMap {
     screenVariants: { [startVariant.id]: startVariant, [homeVariant.id]: homeVariant },
     connections: { "open-home": connection() },
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: { [signIn.id]: signIn },
     flows: {
       main: {
@@ -376,7 +379,7 @@ test("rejects an invalid canvas batch without exposing a partial draft", () => {
 
 test("rejects invalid schema, record keys, scope, duplicate actions, and missing references", () => {
   const schema = mapFixture();
-  (schema as unknown as { schemaVersion: number }).schemaVersion = 1;
+  (schema as unknown as { schemaVersion: number }).schemaVersion = 2;
   expectError("invalid-map", () => validateAppMap(schema), /schemaVersion/u);
 
   const key = mapFixture();
@@ -916,7 +919,7 @@ test("saves reusable Case Stacks and protects referenced coverage", () => {
   const stack = {
     ...entity("thinking-levels"),
     name: "Thinking levels",
-    variableIds: ["thinking-level"],
+    dataIds: ["thinking-level"],
     strategy: "zip" as const,
     maxCases: 10,
   };
@@ -956,7 +959,7 @@ test("creates and attaches a Case Stack in one attributable revision", () => {
   const stack = {
     ...entity("thinking-levels"),
     name: "Thinking levels",
-    variableIds: ["thinking-level"],
+    dataIds: ["thinking-level"],
     strategy: "zip" as const,
     maxCases: 10,
   };

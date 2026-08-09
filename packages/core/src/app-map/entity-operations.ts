@@ -1,10 +1,13 @@
 import type {
   AppMap,
+  AppMapCombine,
   AppMapPatch,
   AppMapMutationContext,
+  AppMapTest,
   CaseStack,
   Flow,
   MapGroup,
+  AppMapVariable,
   Proposal,
   Routine,
 } from "./model.js";
@@ -45,7 +48,15 @@ export function applyAppMapPatch(draft: AppMap, patch: AppMapPatch): void {
 
 export function assertEntityScope(
   map: AppMap,
-  entity: Flow | Routine | Proposal | CaseStack | MapGroup,
+  entity:
+    | Flow
+    | Routine
+    | Proposal
+    | CaseStack
+    | MapGroup
+    | AppMapVariable
+    | AppMapTest
+    | AppMapCombine,
 ): void {
   if (
     entity.organizationId !== map.organizationId ||
@@ -131,6 +142,144 @@ export function removeAppMapCaseStack(
     },
     (draft) => {
       delete draft.caseStacks[caseStackId];
+    },
+  );
+}
+
+export function saveAppMapVariable(
+  map: AppMap,
+  set: AppMapVariable,
+  context: AppMapMutationContext,
+): AppMap {
+  assertEntityScope(map, set);
+  if (set.apply.kind === "toggle" && set.options.length === 0) {
+    appMapFail("invalid-map", "Toggle variables still need on/off rows");
+  }
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "variable.saved",
+      subject: { kind: "variable", id: set.id },
+      summary: `Saved ${set.name}`,
+    },
+    (draft) => {
+      draft.variables = { ...draft.variables, [set.id]: structuredClone(set) };
+    },
+  );
+}
+
+export function saveAppMapTest(
+  map: AppMap,
+  work: AppMapTest,
+  context: AppMapMutationContext,
+): AppMap {
+  assertEntityScope(map, work);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "test.saved",
+      subject: { kind: "test", id: work.id },
+      summary: `Saved ${work.name}`,
+    },
+    (draft) => {
+      draft.tests = { ...draft.tests, [work.id]: structuredClone(work) };
+    },
+  );
+}
+
+export function removeAppMapTest(
+  map: AppMap,
+  testId: string,
+  context: AppMapMutationContext,
+): AppMap {
+  const work = map.tests?.[testId];
+  if (!work) appMapFail("missing-reference", `Test ${testId} does not exist`);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "test.removed",
+      subject: { kind: "test", id: testId },
+      summary: `Removed ${work.name}`,
+    },
+    (draft) => {
+      const next = { ...draft.tests };
+      delete next[testId];
+      draft.tests = next;
+    },
+  );
+}
+
+export function saveAppMapCombine(
+  map: AppMap,
+  combine: AppMapCombine,
+  context: AppMapMutationContext,
+): AppMap {
+  assertEntityScope(map, combine);
+  for (const id of combine.variableIds) {
+    if (!map.variables?.[id]) appMapFail("missing-reference", `Variable ${id} does not exist`);
+  }
+  for (const id of combine.testIds) {
+    if (!map.tests?.[id]) appMapFail("missing-reference", `Test ${id} does not exist`);
+  }
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "combine.saved",
+      subject: { kind: "combine", id: combine.id },
+      summary: `Saved ${combine.name}`,
+    },
+    (draft) => {
+      draft.combines = { ...draft.combines, [combine.id]: structuredClone(combine) };
+    },
+  );
+}
+
+export function removeAppMapCombine(
+  map: AppMap,
+  combineId: string,
+  context: AppMapMutationContext,
+): AppMap {
+  const combine = map.combines?.[combineId];
+  if (!combine) appMapFail("missing-reference", `Combine ${combineId} does not exist`);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "combine.removed",
+      subject: { kind: "combine", id: combineId },
+      summary: `Removed ${combine.name}`,
+    },
+    (draft) => {
+      const next = { ...draft.combines };
+      delete next[combineId];
+      draft.combines = next;
+    },
+  );
+}
+
+export function removeAppMapVariable(
+  map: AppMap,
+  variableId: string,
+  context: AppMapMutationContext,
+): AppMap {
+  const set = map.variables?.[variableId];
+  if (!set) appMapFail("missing-reference", `Variable ${variableId} does not exist`);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "variable.removed",
+      subject: { kind: "variable", id: variableId },
+      summary: `Removed ${set.name}`,
+    },
+    (draft) => {
+      const next = { ...draft.variables };
+      delete next[variableId];
+      draft.variables = next;
     },
   );
 }

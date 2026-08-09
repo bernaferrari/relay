@@ -7,7 +7,7 @@ test("disconnected targets are presented as a device problem, not generic setup"
   assert.equal(readableFailure("environment", error), "Device unavailable");
   assert.equal(
     friendlyError(error),
-    "This device is no longer connected. Reconnect it or choose another target, then retry.",
+    "This device is no longer connected. Reconnect it or choose another, then try again.",
   );
 });
 

@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { confirmAction } from "./confirm-dialog";
 import type { AuthoringInteraction, CanvasScreen, RecordingClip } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
@@ -6,19 +7,26 @@ import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/app-map-canvas-graph";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
+import { AppMapToolbar } from "./app-map-toolbar";
 import { EmptyState } from "./empty-state";
 import { TakeActionEditor } from "./take-action-editor";
 import { TakeActionList } from "./take-action-list";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
+import { CoordinateTapPreview } from "./device-stage-previews";
+import { StepPlaybackPreview } from "./step-playback-preview";
+import { SwipePathPreview } from "./swipe-path-preview";
+import { recordedTargetNodes, targetHighlight, targetPointGuide } from "../lib/target-inspector";
+import type { RecordedNodeEvidence } from "@relay/protocol";
+import { softTruncate } from "../lib/human-error";
 
 const controlButton =
-  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
 const primaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]";
 const reviewEvidenceShell =
-  "relative overflow-hidden rounded-[14px] bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--v2-border-border-muted),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
+  "relative overflow-hidden rounded-[14px] bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--border-weak-base),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -31,12 +39,12 @@ export function TakeCaptureBar(props: {
   const actionLabel = () =>
     count() === 0 ? "No actions yet" : `${count()} action${count() === 1 ? "" : "s"}`;
   return (
-    <section class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3">
+    <section class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3">
       <div class="flex min-w-0 items-center gap-2.5">
-        <i class="size-2 shrink-0 rounded-full bg-[var(--icon-critical-base)] motion-safe:animate-pulse" />
+        <i class="size-2 shrink-0 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
         <div class="min-w-0 text-[10.5px]/[1.35]">
           <strong class="block font-semibold text-[var(--text-strong)]">
-            {props.contextLabel ? "Recording connection" : "Recording"}
+            {props.contextLabel ? "Recording path" : "Recording"}
           </strong>
           <span class="block truncate text-[var(--text-weak)]">
             {props.contextLabel ? `${props.contextLabel} · ${actionLabel()}` : actionLabel()}
@@ -164,19 +172,19 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
 
   return (
     <aside
-      class="flex min-h-0 min-w-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[760px]:border-r-0 max-[760px]:border-b"
+      class="flex min-h-0 min-w-0 flex-col border-r border-[var(--border-weak-base)] bg-[var(--background-base)] max-[760px]:border-r-0 max-[760px]:border-b"
       aria-label="Review captured actions"
     >
-      <header class="shrink-0 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
+      <header class="shrink-0 border-b border-[var(--border-weak-base)] px-4 py-3.5">
         <span class="text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-          Transition
+          Path
         </span>
         <strong class="mt-1 block text-[15px] font-semibold tracking-[-0.018em] text-[var(--text-strong)]">
           Review recording
         </strong>
         <p class="m-0 mt-1 text-[11px]/[1.45] text-[var(--text-weak)]">
-          {actionLabel()} from {props.sourceTitle}. Edit actions and timing, then replay exactly
-          what you want to keep.
+          {actionLabel()} from {props.sourceTitle}. Edit the steps, try them on the device, then
+          keep what worked.
         </p>
       </header>
 
@@ -184,8 +192,14 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
         <Show
           when={count() > 0}
           fallback={
-            <div class="rounded-[9px] bg-[var(--v2-background-bg-layer-01)] px-4 py-3 text-[11px]/[1.5] text-[var(--text-weak)]">
-              No device action. This connection observes a transition that happens on its own.
+            <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] px-4 py-3">
+              <p class="m-0 text-[11px] leading-relaxed font-medium text-[var(--text-strong)]">
+                Nothing was tapped
+              </p>
+              <p class="m-0 text-[11px] leading-relaxed text-[var(--text-weak)]">
+                Only the screen change was kept. Recapture steps if this path needs taps, swipes, or
+                typing.
+              </p>
             </div>
           }
         >
@@ -243,7 +257,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
               : {})}
           />
           <Show when={hasRecordedTiming()}>
-            <div class="mt-2 flex items-start gap-2 rounded-[8px] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--text-weak)]">
+            <div class="mt-2 flex items-start gap-2 rounded-[8px] bg-[var(--surface-base)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--text-weak)]">
               <Icon name="clock" size={12} class="mt-0.5 shrink-0" />
               <span>
                 Pauses are saved as Wait steps. Shorten or remove any pause that makes replay feel
@@ -272,17 +286,17 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             )}
           </Show>
         </Show>
-        <section class="mt-4 border-t border-[var(--v2-border-border-muted)] px-1 pt-3">
+        <section class="mt-4 border-t border-[var(--border-weak-base)] px-1 pt-3">
           <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
-            Connection
+            Where it goes
           </span>
           <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
-            From <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
+            Starts on <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
           </span>
           <label class="mt-2 grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]">
-            Goes to
+            Ends on
             <select
-              class="h-11 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-[11px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+              class="h-11 w-full rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2 text-[11px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
               value={
                 props.destination.kind === "new-screen"
                   ? "new"
@@ -303,11 +317,11 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                 invalidateReview();
               }}
             >
-              <option value="new">New screen from this capture</option>
+              <option value="new">Create a screen from this capture</option>
               <For each={props.screens}>
                 {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
               </For>
-              <option value="end">End flow</option>
+              <option value="end">Finish here · no next screen</option>
             </select>
           </label>
         </section>
@@ -329,7 +343,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
               ? "border-[color-mix(in_srgb,var(--icon-success-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-success-base)_8%,transparent)]"
               : props.replayState === "failed"
                 ? "border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)]"
-                : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]",
+                : "border-[var(--border-weak-base)] bg-[var(--surface-base)]",
           )}
         >
           <div class="flex items-center gap-2">
@@ -348,31 +362,32 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
               {pendingMutation()
                 ? "Saving change…"
                 : canApprove()
-                  ? "Replayed successfully"
+                  ? "Looks good on device"
                   : props.replayState === "failed"
-                    ? "Needs another pass"
+                    ? "Couldn’t finish the replay"
                     : reviewInvalidated()
-                      ? "Replay required"
+                      ? "Check your edits on device"
                       : props.replayState === "running"
-                        ? "Replaying on device…"
-                        : "Ready to test"}
+                        ? "Playing on the device…"
+                        : "Ready when you are"}
             </strong>
           </div>
           <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
             {pendingMutation()
-              ? "Relay is saving this action before it can be tested."
+              ? "Saving your edit before Relay can try it on the device."
               : canApprove()
-                ? "Approve it if the device reached the right screen."
+                ? "If the device reached the right place, keep this path."
                 : props.replayState === "failed"
-                  ? props.replayError || "The connection stopped before it finished."
+                  ? props.replayError ||
+                    `Put the device back on “${props.sourceTitle}”, then try the steps again.`
                   : reviewInvalidated()
-                    ? "You changed this recording. Replay the edited actions before approving the connection."
-                    : "Relay will try only this connection before you add it to the map."}
+                    ? "You changed the timeline. Try it once on the device so Relay can confirm the new steps before you keep them."
+                    : `These steps already ran while you recorded. Keep the path if the device is in the right place, or try them again from “${props.sourceTitle}”.`}
           </p>
         </section>
       </div>
 
-      <footer class="grid shrink-0 gap-2 border-t border-[var(--v2-border-border-muted)] p-3">
+      <footer class="grid shrink-0 gap-2 border-t border-[var(--border-weak-base)] p-3">
         <button
           type="button"
           class={cn(primaryButton, "justify-center")}
@@ -389,21 +404,47 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
             }
           />
           {canApprove()
-            ? "Approve connection"
+            ? "Keep path"
             : props.replayState === "running"
-              ? "Replaying…"
+              ? "Playing…"
               : props.replayState === "failed"
-                ? "Try again"
+                ? "Try steps again"
                 : reviewInvalidated()
-                  ? "Replay edits"
-                  : "Replay on device"}
+                  ? "Check edits on device"
+                  : "Try steps on device"}
         </button>
-        <div class="flex items-center justify-between">
-          <button type="button" class={secondaryButton} onClick={props.onDiscard}>
-            Discard
+        <div class="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            class={secondaryButton}
+            title="Leave review without saving this recording"
+            onClick={() =>
+              confirmAction({
+                title: "Leave this recording?",
+                body: "Your captured steps will be discarded. The rest of the map stays as it is.",
+                confirmLabel: "Leave without saving",
+                tone: "destructive",
+                onConfirm: props.onDiscard,
+              })
+            }
+          >
+            <Icon name="chevron-left" size={12} /> Back
           </button>
-          <button type="button" class={secondaryButton} onClick={props.onRewrite}>
-            <Icon name="refresh" size={11} /> Record again
+          <button
+            type="button"
+            class={secondaryButton}
+            title="Throw away these steps and capture the path again from the start screen"
+            onClick={() =>
+              confirmAction({
+                title: "Recapture from the start?",
+                body: `This throws away the current timeline and starts a fresh recording from “${props.sourceTitle}”. Nothing is added to the map until you approve a new take.`,
+                confirmLabel: "Recapture steps",
+                tone: "destructive",
+                onConfirm: props.onRewrite,
+              })
+            }
+          >
+            <Icon name="refresh" size={11} /> Recapture steps
           </button>
         </div>
       </footer>
@@ -424,7 +465,10 @@ export function RecordedTakePlayer(props: {
   onClip?: (clip: RecordingClip) => void;
 }) {
   const [durationMs, setDurationMs] = createSignal(0);
+  const [frameHovered, setFrameHovered] = createSignal(false);
+  const [hoverNode, setHoverNode] = createSignal<RecordedNodeEvidence | null>(null);
   let video: HTMLVideoElement | undefined;
+  let frameSurface: HTMLDivElement | undefined;
   const lastIndex = () => Math.max(0, props.take.steps.length - 1);
   const selectedIndex = () => Math.min(lastIndex(), Math.max(0, props.selectedIndex));
   const step = () => props.take.steps[selectedIndex()];
@@ -435,10 +479,97 @@ export function RecordedTakePlayer(props: {
     if (selected.kind === "type") {
       const verb = selected.mode === "replace" ? "Replace text" : "Type text";
       const lines = selected.text.split("\n").length;
-      return `${verb} · ${selected.text.length} characters${lines > 1 ? ` across ${lines} lines` : ""}`;
+      return softTruncate(
+        `${verb} · ${selected.text.length} characters${lines > 1 ? ` across ${lines} lines` : ""}`,
+        96,
+      );
     }
-    const description = describeStep(selected);
-    return description.length > 120 ? `${description.slice(0, 117)}…` : description;
+    return softTruncate(describeStep(selected), 96);
+  };
+  const playbackBounds = () => {
+    const selected = step();
+    const viewport = props.orientationEvidence?.logicalViewport;
+    if (viewport && viewport.width > 0 && viewport.height > 0) return viewport;
+    if (selected?.evidence?.deviceBounds) return selected.evidence.deviceBounds;
+    if (selected?.kind === "tap") {
+      return selected.target.point?.referenceBounds ?? { width: 834, height: 1112 };
+    }
+    if (selected?.kind === "swipe") {
+      return (
+        selected.from.referenceBounds ?? selected.to.referenceBounds ?? { width: 834, height: 1112 }
+      );
+    }
+    return { width: 834, height: 1112 };
+  };
+  const treeNodes = () => recordedTargetNodes(step()?.evidence);
+  const treeActive = () => !props.videoSrc && treeNodes().length > 0;
+  const nodeOutlines = () => {
+    if (!frameHovered() || !treeActive()) return [];
+    const bounds = step()?.evidence?.deviceBounds ?? playbackBounds();
+    return treeNodes()
+      .map((node) => targetHighlight(node, bounds))
+      .filter((value): value is NonNullable<typeof value> => Boolean(value));
+  };
+  const hoverHighlight = () => {
+    if (!frameHovered() || !treeActive()) return undefined;
+    const bounds = step()?.evidence?.deviceBounds ?? playbackBounds();
+    return targetHighlight(hoverNode() ?? undefined, bounds);
+  };
+  const hoverLabel = () => {
+    const node = hoverNode();
+    if (!node) return undefined;
+    const name = (
+      node.label ??
+      node.value ??
+      node.identifier ??
+      node.role ??
+      node.type ??
+      ""
+    ).trim();
+    return name || undefined;
+  };
+  function updateHover(clientX: number, clientY: number): void {
+    if (!treeActive() || !frameSurface) {
+      setHoverNode(null);
+      return;
+    }
+    const bounds = step()?.evidence?.deviceBounds ?? playbackBounds();
+    const rect = frameSurface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      setHoverNode(null);
+      return;
+    }
+    const x = ((clientX - rect.left) / rect.width) * bounds.width;
+    const y = ((clientY - rect.top) / rect.height) * bounds.height;
+    // Prefer the smallest node under the pointer — same as live inspection.
+    const hit = treeNodes().find((node) => {
+      const nodeRect = node.rect;
+      return (
+        nodeRect &&
+        x >= nodeRect.x &&
+        x <= nodeRect.x + nodeRect.width &&
+        y >= nodeRect.y &&
+        y <= nodeRect.y + nodeRect.height
+      );
+    });
+    setHoverNode(hit ?? null);
+  }
+  const coordinateGuide = () => {
+    const selected = step();
+    if (selected?.kind !== "tap") return undefined;
+    const point = selected.target.point ?? selected.evidence?.pointer;
+    if (!point) return undefined;
+    return targetPointGuide(point, playbackBounds());
+  };
+  const swipePreview = () => {
+    const selected = step();
+    if (selected?.kind !== "swipe") return undefined;
+    return {
+      from: selected.from,
+      to: selected.to,
+      bounds: playbackBounds(),
+      durationMs: selected.durationMs,
+    };
   };
   const previous = () => props.onSelect(Math.max(0, selectedIndex() - 1));
   const next = () => props.onSelect(Math.min(lastIndex(), selectedIndex() + 1));
@@ -461,28 +592,20 @@ export function RecordedTakePlayer(props: {
 
   return (
     <section
-      class="relative flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-hidden px-6 py-4"
+      class="relative flex h-full min-h-0 flex-col items-center justify-center gap-5 overflow-hidden px-6 py-4"
       aria-label="Recorded action preview"
     >
-      <Show when={hasMultipleFrames()}>
-        <div class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2.5 text-[10.5px] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-          <Icon name="camera" size={12} />
-          <span>Frame</span>
-          <span class="font-mono tabular-nums text-[var(--text-base)]">
-            {selectedIndex() + 1} of {props.take.steps.length}
-          </span>
-        </div>
-      </Show>
+      {/* Frame position lives only in the bottom pager — no duplicate badge. */}
 
       <Show
         when={Boolean(props.videoSrc || imageSrc())}
         fallback={
-          <div class="grid w-full max-w-[340px] place-items-center rounded-[14px] bg-[var(--v2-background-bg-layer-01)] px-4 py-6 text-center shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+          <div class="grid w-full max-w-[340px] place-items-center rounded-[14px] bg-[var(--surface-base)] px-4 py-6 text-center shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
             <EmptyState
               size="sm"
               icon="camera"
               title="No screen captured"
-              description="This passive connection has no frame or video to preview."
+              description="This automatic path has no frame or video to preview."
             />
           </div>
         }
@@ -492,12 +615,26 @@ export function RecordedTakePlayer(props: {
           class={cn(reviewEvidenceShell, "relative z-[1] shrink-0")}
           style={evidenceShellStyle()}
         >
-          <div class="relative h-full w-full overflow-hidden bg-[var(--phone-screen)]">
+          <div
+            ref={(element) => {
+              frameSurface = element;
+            }}
+            class="relative h-full w-full overflow-hidden bg-[var(--phone-screen)]"
+            onMouseEnter={() => setFrameHovered(true)}
+            onMouseMove={(event) => {
+              setFrameHovered(true);
+              updateHover(event.clientX, event.clientY);
+            }}
+            onMouseLeave={() => {
+              setFrameHovered(false);
+              setHoverNode(null);
+            }}
+          >
             <Show
               when={props.videoSrc}
               fallback={
                 <OrientedScreenshot
-                  class="size-full object-contain"
+                  class="pointer-events-none size-full object-contain"
                   src={imageSrc()}
                   alt={`Recorded screen for ${title()}`}
                   evidence={props.orientationEvidence}
@@ -544,6 +681,71 @@ export function RecordedTakePlayer(props: {
                 />
               )}
             </Show>
+            <Show when={!props.videoSrc && frameHovered()}>
+              <For each={nodeOutlines()}>
+                {(highlight) => (
+                  <i
+                    class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
+                    style={highlight}
+                    data-recorded-node-outline
+                    aria-hidden="true"
+                  />
+                )}
+              </For>
+            </Show>
+            <Show when={!props.videoSrc ? hoverHighlight() : undefined}>
+              {(highlight) => (
+                <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
+                  <i
+                    class="absolute rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                    style={highlight()}
+                  />
+                  <Show when={hoverLabel()}>
+                    {(label) => (
+                      <span
+                        class="absolute z-[5] max-w-[62%] -translate-y-[calc(100%+6px)] truncate rounded-md bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[10.5px] leading-snug font-medium text-[var(--text-on-brand-base,white)] shadow-sm"
+                        style={{ left: highlight().left, top: highlight().top }}
+                      >
+                        {label()}
+                      </span>
+                    )}
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={!props.videoSrc ? step() : undefined}>
+              {(selected) => (
+                <>
+                  <Show when={coordinateGuide()}>
+                    {(guide) => <CoordinateTapPreview guide={guide()} />}
+                  </Show>
+                  <Show when={swipePreview()}>
+                    {(swipe) => (
+                      <SwipePathPreview
+                        from={swipe().from}
+                        to={swipe().to}
+                        bounds={swipe().bounds}
+                        interactive={false}
+                        onPoint={() => undefined}
+                        previewToken={selectedIndex()}
+                        previewDurationMs={swipe().durationMs}
+                      />
+                    )}
+                  </Show>
+                  <Show
+                    when={
+                      selected().kind !== "tap" && selected().kind !== "swipe"
+                        ? selected()
+                        : undefined
+                    }
+                  >
+                    {(playbackStep) => (
+                      <StepPlaybackPreview step={playbackStep()} bounds={playbackBounds()} />
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
           </div>
         </div>
       </Show>
@@ -553,7 +755,7 @@ export function RecordedTakePlayer(props: {
           const minimumGap = 100;
           const formatTime = (milliseconds: number) => `${(milliseconds / 1000).toFixed(1)}s`;
           return (
-            <section class="mt-3 w-full max-w-[420px] rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5">
+            <section class="mt-3 w-full max-w-[420px] rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] font-semibold text-[var(--text-strong)]">Trim video</span>
                 <span class="text-[9px] text-[var(--text-weak)]">
@@ -604,36 +806,46 @@ export function RecordedTakePlayer(props: {
         }}
       </Show>
 
-      <Show when={hasMultipleFrames()}>
-        <div class="flex max-w-[min(640px,100%)] flex-col items-center gap-2">
-          <span class="max-h-9 max-w-full overflow-hidden text-center text-[11px]/[1.45] font-medium text-[var(--text-strong)]">
+      <Show when={hasMultipleFrames() || Boolean(step())}>
+        <div class="mt-1 flex max-w-[min(640px,100%)] flex-col items-center gap-2.5 pt-1">
+          <span class="line-clamp-2 max-w-full px-2 text-center text-[12px] leading-snug font-medium text-[var(--text-strong)]">
             {title()}
           </span>
-          <div class="inline-flex items-center gap-1 rounded-[9px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] p-1 shadow-[0_2px_8px_rgb(0_0_0/12%)]">
-            <button
-              type="button"
-              class={controlButton}
-              aria-label="Previous recorded action"
-              title="Previous action"
-              disabled={selectedIndex() === 0}
-              onClick={previous}
-            >
-              <Icon name="chevron-left" size={13} />
-            </button>
-            <span class="min-w-12 text-center font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
-              {selectedIndex() + 1} / {props.take.steps.length}
+          <Show when={!props.videoSrc && frameHovered() && !treeActive()}>
+            <span class="text-[10px] text-[var(--text-weak)]">
+              No accessibility labels on this frame
             </span>
-            <button
-              type="button"
-              class={controlButton}
-              aria-label="Next recorded action"
-              title="Next action"
-              disabled={selectedIndex() === lastIndex()}
-              onClick={next}
-            >
-              <Icon name="chevron-right" size={13} />
-            </button>
-          </div>
+          </Show>
+          <Show when={hasMultipleFrames()}>
+            <div class="inline-flex items-center gap-1 rounded-[9px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-1 shadow-[0_2px_8px_rgb(0_0_0/12%)]">
+              <button
+                type="button"
+                class={controlButton}
+                aria-label="Previous recorded action"
+                title="Previous action"
+                disabled={selectedIndex() === 0}
+                onClick={previous}
+              >
+                <Icon name="chevron-left" size={13} />
+              </button>
+              <span
+                class="min-w-16 px-1 text-center text-[10px] tabular-nums text-[var(--text-weak)]"
+                aria-live="polite"
+              >
+                Step {selectedIndex() + 1} of {props.take.steps.length}
+              </span>
+              <button
+                type="button"
+                class={controlButton}
+                aria-label="Next recorded action"
+                title="Next action"
+                disabled={selectedIndex() === lastIndex()}
+                onClick={next}
+              >
+                <Icon name="chevron-right" size={13} />
+              </button>
+            </div>
+          </Show>
         </div>
       </Show>
     </section>
@@ -658,7 +870,6 @@ export function AppMapEmptyState(props: {
   liveScreenSrc?: string;
   captureBusy: boolean;
   onStartRecording: () => void;
-  onCaptureScreen: () => void;
   onAddNote: () => void;
   onToggleDevice: () => void;
 }) {
@@ -667,52 +878,52 @@ export function AppMapEmptyState(props: {
   const guidance = () => {
     if (isRecording()) {
       return {
-        title: "Record one connection",
-        detail: `${count()} action${count() === 1 ? "" : "s"} captured. Stop when the destination screen is visible.`,
+        title: "Do the steps on the device",
+        detail: `${count()} step${count() === 1 ? "" : "s"} so far. Stop when you reach the screen you want to keep.`,
       };
     }
     if (props.take) {
       return {
-        title: "Review this connection",
-        detail: "Trim its actions, try it on the device, then approve it for the map.",
+        title: "Review what you captured",
+        detail: "Edit the timeline, try it once on the device, then keep it on the map.",
       };
     }
     if (!props.deviceOpen) {
       return {
-        title: "Start anywhere",
-        detail: "Open Device to navigate first, or record from the screen already on your device.",
+        title: "Open the device to continue",
+        detail:
+          "Show the live device, go to a starting screen, then record the path — or save a screenshot to the map.",
       };
     }
     switch (props.recordState) {
       case "choose-device":
         return {
-          title: "Start from any screen",
-          detail: "Choose a device in the panel, then navigate to where this flow begins.",
+          title: "Choose a device first",
+          detail: "Pick a phone or simulator, then open the screen where this path should start.",
         };
       case "setup-ios":
       case "enable-developer-mode":
       case "capture-error":
         return {
-          title: "Finish device setup",
-          detail:
-            "Follow the guidance in the device panel, then return here to record the first connection.",
+          title: "Finish setup in the device panel",
+          detail: "Once the iPad is ready, you can record steps or capture screenshots from here.",
         };
       case "checking-ios":
       case "preparing-ios":
       case "preparing-screen":
         return {
-          title: "Preparing the device",
-          detail: `Keep ${props.selectedDeviceName ?? "the device"} unlocked. Relay will enable recording when its screen is ready.`,
+          title: "Getting the device ready",
+          detail: `Keep ${props.selectedDeviceName ?? "the device"} unlocked. Recording unlocks when the screen is live.`,
         };
       case "device-unavailable":
         return {
           title: "Reconnect the device",
-          detail: "Relay will continue as soon as the selected device is available again.",
+          detail: "Plug it back in or wake it. Relay continues as soon as it is available.",
         };
       default:
         return {
-          title: "Start anywhere",
-          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this flow begins. Relay captures it when recording starts.`,
+          title: "Record the next path",
+          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to the start, then record taps — or save a screenshot to the map.`,
         };
     }
   };
@@ -734,7 +945,7 @@ export function AppMapEmptyState(props: {
               {guidance().detail}
             </p>
             <Show when={!props.take}>
-              <div class="mt-4 flex min-h-11 items-center justify-center gap-3">
+              <div class="mt-4 flex min-h-11 flex-wrap items-center justify-center gap-2">
                 <Show when={props.recordState !== "ready"}>
                   <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
                     <i class="size-1.5 rounded-full bg-[var(--icon-warning-base)] motion-safe:animate-pulse" />
@@ -764,7 +975,7 @@ export function AppMapEmptyState(props: {
                       size={13}
                       class={props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
                     />
-                    {props.captureBusy ? "Preparing…" : "Start recording"}
+                    {props.captureBusy ? "Preparing…" : "Record path"}
                   </Button>
                 </Show>
               </div>
@@ -772,64 +983,22 @@ export function AppMapEmptyState(props: {
           </section>
         </div>
       </Show>
-      <div
-        class={cn(
-          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-30 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]",
-          props.deviceOpen && props.deviceSelected
-            ? "left-[calc((100%-388px)/2)] max-[720px]:left-1/2"
-            : "left-1/2",
-        )}
-        role="toolbar"
-        aria-label="App Map tools"
-      >
-        <button type="button" class={emptyMapControl} aria-label="Select tool" aria-pressed="true">
-          <Icon name="pointer" size={14} />
-        </button>
-        <button type="button" class={emptyMapControl} aria-label="Hand tool">
-          <Icon name="move" size={14} />
-        </button>
-        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
-        <button
-          type="button"
-          class={emptyMapControl}
-          aria-label="Capture screenshot"
-          data-tip="Capture screenshot · S"
-          onClick={props.onCaptureScreen}
-        >
-          <Icon name="camera" size={14} />
-        </button>
-        <button type="button" class={emptyMapControl} aria-label="Create connection" disabled>
-          <Icon name="arrow-right" size={14} />
-        </button>
-        <button
-          type="button"
-          class={emptyMapControl}
-          aria-label="Add note"
-          onClick={props.onAddNote}
-        >
-          <Icon name="edit" size={14} />
-        </button>
-        <button type="button" class={emptyMapControl} aria-label="Create Routine" disabled>
-          <Icon name="sparkle" size={14} />
-        </button>
-        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
-        <button
-          type="button"
-          class={cn(
-            emptyMapControl,
-            props.deviceOpen &&
-              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-          )}
-          aria-label="Toggle live device"
-          aria-pressed={props.deviceOpen}
-          onClick={props.onToggleDevice}
-        >
-          <Icon name="smartphone" size={14} />
-        </button>
-      </div>
+      <AppMapToolbar
+        mode="blank"
+        tool="select"
+        deviceOpen={props.deviceOpen}
+        shiftForDevice={Boolean(props.deviceOpen && props.deviceSelected)}
+        wideDevice={false}
+        recordDisabled={!props.deviceOpen || props.recordState !== "ready"}
+        recordDisabledReason="Show a ready device before recording a path"
+        explorationState="idle"
+        explorationCount={0}
+        onToolChange={() => undefined}
+        onCreateConnection={props.onStartRecording}
+        onAddNote={props.onAddNote}
+        onExplore={() => undefined}
+        onToggleDevice={props.onToggleDevice}
+      />
     </>
   );
 }
-
-const emptyMapControl =
-  "grid size-10 place-items-center rounded-[9px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30";

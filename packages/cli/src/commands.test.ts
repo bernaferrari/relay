@@ -107,6 +107,30 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
+test("session replay is an alias of take replay", () => {
+  assert.deepEqual(resolveCommand(["session", "replay", "authoring-1"]), {
+    operationId: "authoring.take.replay",
+    commandPath: "session replay",
+    input: { sessionId: "authoring-1" },
+  });
+});
+
+test("unknown session verbs point at family help instead of four arbitrary commands", () => {
+  assert.throws(
+    () => resolveCommand(["session", "reploy", "authoring-1"]),
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return (
+        /relay session --help/.test(message) &&
+        /session begin/.test(message) &&
+        /session tap/.test(message) &&
+        /session replay/.test(message) &&
+        /session commit/.test(message)
+      );
+    },
+  );
+});
+
 test("authoring interaction aliases construct explicit session inputs", () => {
   assert.deepEqual(resolveCommand(["session", "back", "session-1"]), {
     operationId: "authoring.session.interact",
@@ -142,6 +166,32 @@ test("authoring interaction aliases construct explicit session inputs", () => {
         label: "Interrupt response",
       },
     },
+  );
+});
+
+test("locale-matrix help leads with map and flow, not a library recipe", () => {
+  const start = mappedCommandDescriptors.find(
+    (descriptor) => descriptor.operationId === "job.locale-matrix.start",
+  );
+  const infer = mappedCommandDescriptors.find(
+    (descriptor) => descriptor.operationId === "job.locale-matrix.infer",
+  );
+  assert.ok(start && !("exclusion" in start));
+  assert.ok(infer && !("exclusion" in infer));
+  const startHelp = start.paths[0];
+  const inferHelp = infer.paths[0];
+  assert.match(startHelp?.examples?.[0] ?? "", /appMapId/);
+  assert.match(startHelp?.examples?.[0] ?? "", /flowId/);
+  assert.equal(/recipe/.test(startHelp?.examples?.[0] ?? ""), false);
+  assert.match(startHelp?.summary ?? "", /map path|locale/i);
+  assert.match(inferHelp?.examples?.[0] ?? "", /appMapId/);
+  const optionStart = mappedCommandDescriptors.find(
+    (descriptor) => descriptor.operationId === "job.combine.start",
+  );
+  assert.ok(optionStart && !("exclusion" in optionStart));
+  assert.match(
+    optionStart.paths[0]?.examples?.[0] ?? "",
+    /combine run|combine run|variableIds|combineId/,
   );
 });
 
@@ -181,6 +231,26 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     [["proposal", "accept", "proposal-1"], "authoring.session.commit", { sessionId: "proposal-1" }],
     [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],
     [["activity", "follow"], "event.stream", {}],
+    [
+      ["test", "run", "grok-ios", "settings-tour"],
+      "job.combine.start",
+      { appMapId: "grok-ios", testId: "settings-tour" },
+    ],
+    [
+      ["work", "run", "grok-ios", "settings-tour"],
+      "job.combine.start",
+      { appMapId: "grok-ios", testId: "settings-tour" },
+    ],
+    [
+      ["combine", "run", "grok-ios", "language-x-settings"],
+      "job.combine.start",
+      { appMapId: "grok-ios", combineId: "language-x-settings" },
+    ],
+    [
+      ["combo", "run", "grok-ios", "language-x-settings"],
+      "job.combine.start",
+      { appMapId: "grok-ios", combineId: "language-x-settings" },
+    ],
   ] as const;
 
   for (const [argv, operationId, input] of cases) {
@@ -191,6 +261,22 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
   assert.equal(resolveCommand(["device", "screenshot", "pixel-9"]).behavior, "screenshot");
   assert.equal(resolveCommand(["run", "watch", "job-1"]).behavior, "job-watch");
   assert.equal(resolveCommand(["activity", "follow"]).behavior, "event-stream");
+  assert.equal(
+    resolveCommand(["test", "run", "grok-ios", "settings-tour"]).behavior,
+    "job-start-watch",
+  );
+  assert.equal(
+    resolveCommand(["work", "run", "grok-ios", "settings-tour"]).behavior,
+    "job-start-watch",
+  );
+  assert.equal(
+    resolveCommand(["combine", "run", "grok-ios", "language-x-settings"]).behavior,
+    "job-start-watch",
+  );
+  assert.equal(
+    resolveCommand(["combo", "run", "grok-ios", "language-x-settings"]).behavior,
+    "job-start-watch",
+  );
 });
 
 test("declared read-only resources build encoded paths", () => {

@@ -4,7 +4,7 @@ import { summarizeAppMapOperationResult, type AppMap } from "./app-map.js";
 
 test("App Map command summaries preserve topology without semantic evidence", () => {
   const appMap: AppMap = {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: "map-1",
     organizationId: "local",
     projectId: "project-1",
@@ -52,6 +52,9 @@ test("App Map command summaries preserve topology without semantic evidence", ()
     },
     connections: {},
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: {},
     flows: {},
     runs: {},
@@ -72,12 +75,18 @@ test("App Map command summaries preserve topology without semantic evidence", ()
       connections: [],
       groups: [],
       flows: [],
+      variables: [],
+      tests: [],
+      combines: [],
       counts: {
         screens: 1,
         variants: 1,
         connections: 0,
         groups: 0,
         caseStacks: 0,
+        variables: 0,
+        tests: 0,
+        combines: 0,
         routines: 0,
         flows: 0,
         runs: 0,

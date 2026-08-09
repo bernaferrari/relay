@@ -2,16 +2,21 @@
  * Test-run sessions with action traces, heal retries, and disk persistence.
  */
 import { randomUUID } from "node:crypto";
-import { readFile, unlink } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { now, publish } from "./events.js";
 import {
   base,
   createDevice,
+  openApp,
+  rememberedTargetApplication,
   resetDeviceClient,
+  snapshot,
   type Device,
   type DevicePlatform,
 } from "./device.js";
+import { captureIosPngViaGoIos } from "./ios-app-launch.js";
+import { inferDevicePlatformFromSerial } from "./target-context.js";
 import {
   glyphsFromLogLine,
   type Glyph,
@@ -226,6 +231,7 @@ export function listJobs(limit = 50): TestJob[] {
 }
 
 export function summarizeJob(job: TestJob): JobSummary {
+  const lastLogs = job.logs.slice(-12);
   return {
     id: job.id,
     action: job.action,
@@ -245,6 +251,7 @@ export function summarizeJob(job: TestJob): JobSummary {
     batchId: job.batchId,
     frameCount: job.frames.length,
     evidenceComplete: Boolean(job.evidence?.finishedAt),
+    ...(lastLogs.length ? { lastLogs } : {}),
   };
 }
 
@@ -327,7 +334,15 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
         })
       : Object.freeze({
           kind: "device" as const,
-          platform: input.platform ?? parent?.platform ?? ("android" as const),
+          platform:
+            input.platform ??
+            parent?.platform ??
+            inferDevicePlatformFromSerial(
+              input.serial?.trim() ||
+                (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
+                "",
+            ) ??
+            ("android" as const),
           serial:
             input.serial?.trim() ||
             (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
@@ -639,7 +654,7 @@ export function pauseJob(id: string): TestJob {
     type: "job.log",
     at: now(),
     jobId: job.id,
-    line: "==> paused (Esc/Cancel still works)",
+    line: "==> paused (Esc/Cancel still tests)",
     level: "info",
   });
   return job;
@@ -680,6 +695,7 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     // duplicate frames without improving diagnosis.
     case "sleep":
     case "screenshot":
+    case "tour":
     case "logs":
     case "network":
     case "script":
@@ -778,34 +794,54 @@ async function captureAutomaticState(
   if (!visualEvidenceAllowed()) return;
   let snapshotNodes: import("./device.js").SnapshotNode[] | undefined;
   try {
-    const snapshot = await device.capture.snapshot({ ...base(), interactiveOnly: false });
-    snapshotNodes = snapshot.nodes ?? [];
+    snapshotNodes = await snapshot(device);
     job.artifacts.push({
       kind: "ui-tree",
       capturedAt: now(),
-      data: { stepId: step.id, phase, nodes: snapshot.nodes ?? [] },
+      data: { stepId: step.id, phase, nodes: snapshotNodes },
     });
   } catch (error) {
-    log(
-      `warn: ${phase} UI-tree capture failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    if (job.platform === "ios" && /session|open first/i.test(message)) {
+      if (!job.logs.some((line) => line.includes("accessibility tree unavailable"))) {
+        log("warn: iOS accessibility tree unavailable — collecting screenshots from pixels");
+      }
+    } else {
+      log(`warn: ${phase} UI-tree capture failed: ${message}`);
+    }
   }
 
   const runDir = await ensureRunDir(job);
+  await mkdir(join(runDir, "frames"), { recursive: true });
   const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
   try {
-    const result = await device.capture.screenshot({ ...base(), path: temporary });
-    let bytes: Buffer = result.base64
-      ? Buffer.from(result.base64, "base64")
-      : await readFile(temporary);
-    if (job.platform === "ios" && snapshotNodes) {
-      const geometry = inferIosSnapshotGeometry(snapshotNodes);
-      if (geometry) {
-        bytes = normalizeScreenshotToBounds(bytes, {
-          width: geometry.logicalWidth,
-          height: geometry.logicalHeight,
-        });
+    let bytes: Buffer;
+    if (job.platform === "ios" && job.serial) {
+      try {
+        await captureIosPngViaGoIos(job.serial, temporary);
+        bytes = await readFile(temporary);
+      } catch {
+        const result = await device.capture.screenshot({ ...base(), path: temporary });
+        bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
       }
+    } else {
+      const result = await device.capture.screenshot({ ...base(), path: temporary });
+      bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
+    }
+    if (job.platform === "ios") {
+      const geometry = snapshotNodes ? inferIosSnapshotGeometry(snapshotNodes) : undefined;
+      const bounds = geometry
+        ? { width: geometry.logicalWidth, height: geometry.logicalHeight }
+        : undefined;
+      const orientation =
+        bounds && bounds.width > bounds.height
+          ? "landscape-right"
+          : bounds && bounds.height > bounds.width
+            ? "portrait"
+            : bytes.length > 24 && bytes.readUInt32BE(16) > bytes.readUInt32BE(20)
+              ? "landscape-right"
+              : "portrait";
+      bytes = normalizeScreenshotToBounds(bytes, bounds, orientation);
     }
     const encoded = bytes.toString("base64");
     const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`);
@@ -901,6 +937,17 @@ async function executeJob(id: string): Promise<void> {
         resetDeviceClient(job.targetContext);
       }
       device = createDevice();
+      if (job.platform === "ios" && job.serial) {
+        const app = await rememberedTargetApplication(job.targetContext);
+        if (app) {
+          pushLog(`session: prime ${app} without relaunch`);
+          await openApp(device, app, { relaunch: false }).catch((error) => {
+            pushLog(
+              `warn: iOS session still unbound (${error instanceof Error ? error.message : String(error)}) — continuing with pixels`,
+            );
+          });
+        }
+      }
     }
     evidence = await startRunEvidence(job, device, pushLog, evidence, {
       physicalIos: meta.physicalIos,

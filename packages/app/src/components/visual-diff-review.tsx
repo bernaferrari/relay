@@ -21,7 +21,13 @@ function targetLabel(run: PersistedRun): string {
 }
 
 function changeLabel(frame: VisualFrameDiff): string {
-  if (frame.changeRatio === undefined) return frame.code.replace("FRAME_", "").toLowerCase();
+  if (frame.changeRatio === undefined) {
+    if (frame.code === "FRAME_MATCH") return "Matched";
+    if (frame.code === "FRAME_CHANGED") return "Changed";
+    if (frame.code === "FRAME_ADDED") return "Added";
+    if (frame.code === "FRAME_REMOVED") return "Removed";
+    return "Compared";
+  }
   if (frame.changeRatio === 0) return "No change";
   return `${Math.max(0.1, frame.changeRatio * 100).toFixed(1)}% changed`;
 }
@@ -77,13 +83,13 @@ export function VisualDiffReview(props: {
                 <div class="min-w-0">
                   <strong class="block text-[13px] font-semibold text-text-strong">
                     {props.baselineApprovalAllowed
-                      ? "Set the first approved version"
-                      : "Finish the run before approving"}
+                      ? "Save the first expected look"
+                      : "Finish the run before saving"}
                   </strong>
                   <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
                     {props.baselineApprovalAllowed
-                      ? "Approve this completed run once. Relay will compare future runs only with this target and keep the approval author and evidence."
-                      : "A baseline must come from a completed run. Fix or retry this run, then approve its captured screens."}
+                      ? "Save these screens as the look we expect. Future runs on this device are compared against them."
+                      : "Finish a successful run first, then save its screens as the expected look."}
                   </p>
                 </div>
               </div>
@@ -95,7 +101,7 @@ export function VisualDiffReview(props: {
                   disabled={props.loading || props.approving}
                   onClick={() => props.onReview("approve-new-baseline")}
                 >
-                  <Icon name="check" size={13} /> Use this run as baseline
+                  <Icon name="check" size={13} /> Use this run as expected look
                 </Button>
               </Show>
             </div>
@@ -126,8 +132,9 @@ export function VisualDiffReview(props: {
                 </span>
               </div>
               <p class="-mt-2 m-0 text-[10px] text-text-weaker">
-                Approved {approvedAt(baseline().approvedAt)} on {targetLabel(props.current)} ·
-                policy revision {props.comparison?.policy.revision ?? 0}
+                Expected look saved {approvedAt(baseline().approvedAt)} on{" "}
+                {targetLabel(props.current)} · comparison rules v
+                {props.comparison?.policy.revision ?? 0}
               </p>
 
               <Show
@@ -235,25 +242,18 @@ function VisualReviewActions(props: {
   onReview: (action: VisualReviewAction) => void;
 }) {
   const actions: Array<{ action: VisualReviewAction; label: string; primary?: boolean }> = [
-    { action: "keep-baseline", label: "Keep baseline" },
-    { action: "fix-connection", label: "Fix connection" },
+    { action: "keep-baseline", label: "Keep expected look" },
+    { action: "fix-connection", label: "Fix path" },
     { action: "retry", label: "Retry" },
     { action: "mark-expected-variation", label: "Expected variation" },
-    { action: "approve-new-baseline", label: "Approve new baseline", primary: true },
+    { action: "approve-new-baseline", label: "Save as expected look", primary: true },
   ];
   return (
     <div class="grid gap-2 rounded-xl border border-border-weak-base bg-surface-base p-2.5">
       <div class="flex items-center justify-between gap-3 px-0.5">
         <span class="text-[10.5px]/[1.35] text-text-weak">
-          Choose what this change means. Relay records the decision and its author.
+          What should Relay do with this visual change?
         </span>
-        <Show when={props.comparison}>
-          {(comparison) => (
-            <code class="shrink-0 text-[9px] text-text-weaker">
-              {comparison().code.replace("VISUAL_", "").toLowerCase()}
-            </code>
-          )}
-        </Show>
       </div>
       <div
         class="flex flex-wrap justify-end gap-1.5"
@@ -445,7 +445,7 @@ function DiffCanvas(props: {
             <img
               class="h-full w-full object-fill"
               src={props.baselineSrc}
-              alt="Approved baseline screen"
+              alt="Expected look screen"
               draggable={false}
             />
           </div>
@@ -482,12 +482,12 @@ function DiffCanvas(props: {
               min="0"
               max="100"
               value={split()}
-              aria-label="Reveal approved baseline or current screen"
+              aria-label="Reveal expected look or current screen"
               onInput={(event) => setSplit(Number(event.currentTarget.value))}
             />
           </Show>
           <span class="pointer-events-none absolute left-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
-            Approved
+            Expected look
           </span>
           <span class="pointer-events-none absolute right-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
             Current

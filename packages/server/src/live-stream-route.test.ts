@@ -62,6 +62,29 @@ test("authenticates and attributes a live stream through its active lease", asyn
       { headers: { Authorization: `Bearer ${token}` } },
     );
     assert.equal(wrongTarget.status, 403);
+
+    const inferredLease = await fetch(
+      `http://127.0.0.1:${server.port}/device/stream?serial=${serial}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-relay-actor-id": "agent:stream-test",
+          "x-relay-actor-kind": "agent",
+        },
+      },
+    );
+    assert.equal(inferredLease.status, 200);
+    assert.equal(await inferredLease.text(), serial);
+
+    const noLease = await fetch(`http://127.0.0.1:${server.port}/device/stream?serial=unowned`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-relay-actor-id": "agent:stream-test",
+        "x-relay-actor-kind": "agent",
+      },
+    });
+    assert.equal(noLease.status, 403);
+    assert.match(await noLease.text(), /target lease is required/i);
   } finally {
     await server.close();
     if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

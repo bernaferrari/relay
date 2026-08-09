@@ -47,6 +47,15 @@ type ScreenshotResponse = {
   bytes: number;
   jobId?: string;
   framePath?: string;
+  width?: number;
+  height?: number;
+  screenMatch?: {
+    fingerprint?: string;
+    visualFingerprint?: string;
+    matchedScreenId?: string | null;
+    status?: string;
+  };
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
 };
 
 export type DeviceVideoTake = {
@@ -80,6 +89,18 @@ export function createServerCapture(deps: CaptureServerDeps) {
   let keyboardChain = Promise.resolve(true);
   let lastLiveFrameBase64 = "";
   let lastLiveFrameSerial: string | undefined;
+
+  function resetLivePreview(): void {
+    // Starting a live view is a new observation session, even when it targets
+    // the same serial. Do not paint yesterday's last frame while the current
+    // stream is negotiating, and reset deduplication so an unchanged but fresh
+    // first screenshot can mount again.
+    lastLiveFrameBase64 = "";
+    lastLiveFrameSerial = undefined;
+    deps.setLiveFrame(null);
+    deps.setSnapshot(null);
+    deps.setLiveCaptureIssue?.(null);
+  }
 
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
     const serial = serialFor(deps);
@@ -215,6 +236,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
         jobId: data.jobId ?? jobId,
         actionId: actionId ?? deps.selectedAction() ?? undefined,
         path: data.framePath,
+        ...(data.screenMatch?.fingerprint ? { fingerprint: data.screenMatch.fingerprint } : {}),
+        ...(data.screenMatch?.visualFingerprint
+          ? { visualFingerprint: data.screenMatch.visualFingerprint }
+          : {}),
       });
       deps.appendLog(`screenshot ${data.bytes} bytes`, "info", data.jobId ?? jobId);
       if (!quiet) toast("Screenshot captured", "success");
@@ -310,6 +335,13 @@ export function createServerCapture(deps: CaptureServerDeps) {
         bytes: data.bytes,
         serial: responseSerial,
         caption: `live · ${new Date(data.capturedAt).toLocaleTimeString(undefined, { hour12: false })}`,
+        ...(typeof data.width === "number" ? { width: data.width } : {}),
+        ...(typeof data.height === "number" ? { height: data.height } : {}),
+        ...(data.screenMatch?.fingerprint ? { fingerprint: data.screenMatch.fingerprint } : {}),
+        ...(data.screenMatch?.visualFingerprint
+          ? { visualFingerprint: data.screenMatch.visualFingerprint }
+          : {}),
+        ...(data.proposedRows?.length ? { proposedRows: data.proposedRows } : {}),
       });
       deps.setLiveCaptureIssue?.(null);
     } catch (error) {
@@ -432,6 +464,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   return {
+    resetLivePreview,
     recordIosVideo,
     iosVideoUrl,
     touchDevice,

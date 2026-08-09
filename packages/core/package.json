@@ -45,12 +45,12 @@
   "dependencies": {
     "@relay/protocol": "workspace:*",
     "agent-device": "link:../../vendor/agent-device",
-    "playwright-core": "^1.61.1",
+    "playwright-core": "^1.62.1",
     "pngjs": "^7.0.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/pngjs": "^6.0.5",
     "typescript": "catalog:"
   }

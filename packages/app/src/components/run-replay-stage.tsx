@@ -295,8 +295,8 @@ export function RunReplayStage(props: {
   });
   return (
     <section
-      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-deep)]"
-      aria-label="Run replay"
+      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--background-deep)]"
+      aria-label="Play run"
       tabindex={-1}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
@@ -333,7 +333,7 @@ export function RunReplayStage(props: {
               aria-pressed={stageMode() === "replay"}
               onClick={() => setStageMode("replay")}
             >
-              <Icon name="play" size={12} /> Replay
+              <Icon name="play" size={12} /> Play run
             </button>
             <button
               type="button"
@@ -369,8 +369,8 @@ export function RunReplayStage(props: {
         <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
           <EmptyState
             icon="camera"
-            title="Nothing to replay"
-            description="This run recorded no steps, so there is no evidence to walk through."
+            title="Nothing to play yet"
+            description="This run didn’t capture steps or screenshots. Run a path that includes device actions, then open it again."
           />
         </div>
       </Show>
@@ -390,7 +390,7 @@ export function RunReplayStage(props: {
             Its captured dimensions choose the surface ratio, so tablets,
             landscape devices, browsers, and phones all use the available stage. */}
           <div
-            class="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[12px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(0_0_0/10%),0_12px_28px_-8px_rgb(0_0_0/28%),0_28px_72px_-28px_rgb(0_0_0/45%)]"
+            class="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[12px] bg-[var(--background-base)] shadow-[0_0_0_1px_rgb(0_0_0/10%),0_12px_28px_-8px_rgb(0_0_0/28%),0_28px_72px_-28px_rgb(0_0_0/45%)]"
             style={{
               "aspect-ratio": String(mediaAspect() ?? 9 / 16),
               width: (mediaAspect() ?? 9 / 16) > 1 ? "100%" : "auto",
@@ -465,7 +465,7 @@ export function RunReplayStage(props: {
                   video stays intact.
                 </p>
               </div>
-              <div class={seg} role="group" aria-label="Replay timeline">
+              <div class={seg} role="group" aria-label="Run timeline">
                 <button
                   type="button"
                   class={cn(segBtn, !reviewCutEnabled() && segBtnOn)}
@@ -488,7 +488,7 @@ export function RunReplayStage(props: {
         </Show>
         <Show when={reviewCutSkipped()}>
           {(skipped) => (
-            <div class="pointer-events-none absolute right-4 bottom-[72px] z-[4] rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_94%,transparent)] px-2.5 py-1 text-[10px] font-medium text-text-base shadow-[0_8px_24px_rgb(0_0_0/28%)] backdrop-blur">
+            <div class="pointer-events-none absolute right-4 bottom-[72px] z-[4] rounded-full border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base-hover)_94%,transparent)] px-2.5 py-1 text-[10px] font-medium text-text-base shadow-[0_8px_24px_rgb(0_0_0/28%)] backdrop-blur">
               Skipped {formatStepDuration(skipped())} unchanged
             </div>
           )}

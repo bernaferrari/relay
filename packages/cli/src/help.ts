@@ -9,7 +9,7 @@ import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
-  ["Author", ["proposal", "routine", "case-stack"]],
+  ["Author", ["variable", "test", "combine", "proposal", "routine", "case-stack"]],
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
@@ -32,7 +32,9 @@ const globalOptions = `Global options:
 Screenshot output:
   --file <path>                    Save screenshot PNG to a file
   --binary                         Write raw PNG bytes to stdout
-  --force                          Overwrite an existing --file target`;
+  --force                          Overwrite an existing --file target
+  --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)
+  --preview                        On interact: show selection overlay, do not tap`;
 
 type FriendlyPath = {
   descriptor: CommandPathDescriptor;
@@ -71,14 +73,17 @@ function renderRootHelp(): string {
   const workflowCommands = [
     "map list",
     "map get",
+    "map teach",
     "screen list",
     "connect list",
-    "flow run",
     "device list",
     "device screenshot",
+    "test run",
+    "variable save",
+    "combine run",
     "proposal create",
     "proposal record",
-    "proposal replay",
+    "session replay",
     "proposal accept",
     "run watch",
     "activity follow",
@@ -97,8 +102,8 @@ ${groups}
 Start here:
 ${usages(workflowCommands).join("\n")}
 
-An App Map contains screens, connections, and named flows. Proposals turn live device
-interactions into reviewable map changes. Every interface invokes the same Relay operations.
+An App Map is screens and paths. A variable is a list (language, location). A test is what
+you run. Combine is the grid of every value × that test. Same words in the UI and CLI.
 
 ${globalOptions}
 

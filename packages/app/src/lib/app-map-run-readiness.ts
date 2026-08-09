@@ -1,10 +1,14 @@
 import type { CanvasGraph, RecipeStep } from "@relay/protocol";
 
+export type AppMapRunNext = "run" | "record" | "keep" | "pick" | "capture" | "fix";
+
 export type AppMapRunReadiness = {
   visible: boolean;
   ready: boolean;
   reason: string;
-  label: "Run flow" | "Run to here" | "Run";
+  /** What the top-right button should do next on this map. */
+  next: AppMapRunNext;
+  label: string;
   transitionPath: string[] | null;
 };
 
@@ -60,7 +64,7 @@ function pathToScreen(graph: CanvasGraph, screenId: string): string[] | null {
 
 function inferredPath(graph: CanvasGraph): { path: string[] | null; reason?: string } {
   const start = entryScreenId(graph);
-  if (!start) return { path: null, reason: "Capture the entry screen first" };
+  if (!start) return { path: null, reason: "Save the first screen, then record a path" };
 
   const path: string[] = [];
   const seen = new Set<string>();
@@ -71,7 +75,7 @@ function inferredPath(graph: CanvasGraph): { path: string[] | null; reason?: str
     if (outgoing.length > 1) {
       return {
         path: null,
-        reason: "Select a destination screen to choose which path to run",
+        reason: "Select the destination screen you want to run to",
       };
     }
     const transition = outgoing[0]!;
@@ -88,7 +92,7 @@ function inferredPath(graph: CanvasGraph): { path: string[] | null; reason?: str
 function selectedPath(
   graph: CanvasGraph,
   selection: AppMapRunSelection,
-): Pick<AppMapRunReadiness, "transitionPath" | "reason" | "label"> {
+): Pick<AppMapRunReadiness, "transitionPath" | "reason" | "label" | "next"> {
   if (selection.transitionId) {
     const transition = graph.transitions.find(({ id }) => id === selection.transitionId);
     const sourcePath = transition ? pathToScreen(graph, transition.fromScreenId) : null;
@@ -97,11 +101,13 @@ function selectedPath(
           transitionPath: [...sourcePath, transition.id],
           reason: "",
           label: "Run to here",
+          next: "run",
         }
       : {
           transitionPath: null,
-          reason: "This connection is not reachable from the entry screen",
+          reason: "This path isn’t reachable from the start screen",
           label: "Run",
+          next: "pick",
         };
   }
 
@@ -111,12 +117,14 @@ function selectedPath(
       ? {
           transitionPath: screenPath,
           reason: "",
-          label: screenPath.length ? "Run to here" : "Run flow",
+          label: screenPath.length ? "Run to here" : "Run path",
+          next: "run",
         }
       : {
           transitionPath: null,
-          reason: "This screen is not reachable from the entry screen",
+          reason: "This screen isn’t reachable from the start screen",
           label: "Run",
+          next: "pick",
         };
   }
 
@@ -124,14 +132,14 @@ function selectedPath(
   return {
     transitionPath: inferred.path,
     reason: inferred.reason ?? "",
-    label: "Run flow",
+    label: "Run path",
+    next: inferred.path ? "run" : "pick",
   };
 }
 
 /**
- * Resolves exactly what the graph Run button means. A connection can be a
- * verified no-op/automatic edge, so readiness is based on the selected graph
- * path—not on unrelated actions in the compiled recipe.
+ * Resolves exactly what the graph primary button means for this map.
+ * Prefer a concrete next step (record / keep / pick) over a disabled "Run".
  */
 export function appMapRunReadiness(input: {
   graph: CanvasGraph;
@@ -139,26 +147,45 @@ export function appMapRunReadiness(input: {
   selection?: AppMapRunSelection;
 }): AppMapRunReadiness {
   const { graph, recipeSteps, selection = {} } = input;
-  if (!graph.flows[0] || graph.transitions.length === 0) {
+  if (!graph.flows[0]) {
     return {
-      visible: false,
+      visible: true,
       ready: false,
-      reason: "Record a connection before running this flow",
-      label: "Run flow",
+      reason: "Save the first screen to start your map",
+      next: "capture",
+      label: "Save first screen",
+      transitionPath: null,
+    };
+  }
+  if (graph.transitions.length === 0) {
+    return {
+      visible: true,
+      ready: false,
+      reason: "Record taps between screens, or keep capturing screenshots for the map",
+      next: "record",
+      label: "Record path",
       transitionPath: null,
     };
   }
 
   const selected = selectedPath(graph, selection);
   if (!selected.transitionPath) {
-    return { visible: true, ready: false, ...selected };
+    return {
+      visible: true,
+      ready: false,
+      reason: selected.reason,
+      next: selected.next,
+      label: selected.next === "pick" ? "Choose a destination" : selected.label,
+      transitionPath: null,
+    };
   }
   if (!selected.transitionPath.length) {
     return {
       visible: true,
       ready: false,
-      reason: "Select a destination screen or connection",
-      label: selected.label,
+      reason: "Click a destination screen to replay the app up to it",
+      next: "pick",
+      label: "Choose a destination",
       transitionPath: selected.transitionPath,
     };
   }
@@ -170,8 +197,9 @@ export function appMapRunReadiness(input: {
       return {
         visible: true,
         ready: false,
-        reason: "This path has a missing connection",
-        label: selected.label,
+        reason: "This path has a missing step — remove it or record again",
+        next: "fix",
+        label: "Fix path",
         transitionPath: selected.transitionPath,
       };
     }
@@ -179,8 +207,9 @@ export function appMapRunReadiness(input: {
       return {
         visible: true,
         ready: false,
-        reason: "Record every connection on this path first",
-        label: selected.label,
+        reason: "Finish recording every step on this path first",
+        next: "record",
+        label: "Record path",
         transitionPath: selected.transitionPath,
       };
     }
@@ -188,8 +217,9 @@ export function appMapRunReadiness(input: {
       return {
         visible: true,
         ready: false,
-        reason: "Try and approve every connection on this path",
-        label: selected.label,
+        reason: "Try this path on the device, then keep it before running",
+        next: "keep",
+        label: "Keep path",
         transitionPath: selected.transitionPath,
       };
     }
@@ -197,8 +227,9 @@ export function appMapRunReadiness(input: {
       return {
         visible: true,
         ready: false,
-        reason: "A recorded action is missing from this path",
-        label: selected.label,
+        reason: "A recorded step is missing from this path — record it again",
+        next: "fix",
+        label: "Fix path",
         transitionPath: selected.transitionPath,
       };
     }
@@ -208,6 +239,7 @@ export function appMapRunReadiness(input: {
     visible: true,
     ready: true,
     reason: "",
+    next: "run",
     label: selected.label,
     transitionPath: selected.transitionPath,
   };

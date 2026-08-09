@@ -246,7 +246,7 @@ test("App Maps export and import through their canonical YAML contract", async (
     await client.invoke("app-map.create", { appMapId: "checkout", name: "Checkout" });
     const exported = await client.invoke("app-map.export", { appMapId: "checkout" });
     assert.equal(exported.filename, "checkout.relay.map.yaml");
-    assert.match(exported.yaml, /schemaVersion: 2/u);
+    assert.match(exported.yaml, /schemaVersion: 1/u);
 
     const dryRun = await client.invoke("app-map.import", {
       yaml: exported.yaml,
@@ -438,7 +438,7 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
       caseStack: {
         ...scoped("thinking-levels"),
         name: "Thinking levels",
-        variableIds: ["thinking-level", "login"],
+        dataIds: ["thinking-level", "login"],
         strategy: "zip",
         maxCases: 10,
       },

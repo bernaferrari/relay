@@ -156,6 +156,11 @@ export async function handleActivityRoute(input: {
 }): Promise<boolean> {
   if (input.method !== "GET" || input.pathname !== "/activity") return false;
   try {
+    // A completed command response is the public durability boundary. Its
+    // terminal activity write is scheduled from the response's `finish`
+    // event, so make reads wait for those already-finished commands instead
+    // of briefly returning a requested event without its outcome.
+    await flushOperationActivity();
     const page = await listActivity({
       organizationId: input.scope.organizationId,
       projectId: input.scope.projectId,

@@ -18,7 +18,7 @@ function fixture(): AppMap {
     updatedAt: at,
   };
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: "map",
     organizationId: "local",
     projectId: "default",
@@ -39,6 +39,9 @@ function fixture(): AppMap {
     screenVariants: {},
     connections: {},
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: {},
     flows: { main: flow },
     runs: {},

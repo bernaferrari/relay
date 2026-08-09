@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js";
 import type { AppMap, Screen } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { PersistedRun } from "../context/server";
@@ -32,8 +32,6 @@ export function AppMapBrowseView(props: {
   onToggleDevice: () => void;
   onCaptureScreen: () => void;
   onOpenAgent: () => void;
-  onRefreshScreenshots: () => void;
-  refreshScreenshotsHint?: string;
 }) {
   const [screenQuery, setScreenQuery] = createSignal("");
   const [coverageQuery, setCoverageQuery] = createSignal("");
@@ -45,7 +43,6 @@ export function AppMapBrowseView(props: {
   const [screenPlatform, setScreenPlatform] = createSignal<"all" | "android" | "ios" | "browser">(
     "all",
   );
-  const [baseline, setBaseline] = createSignal<"all" | "approved" | "missing">("all");
   const areas = createMemo(() => deriveAppMapAreas(props.appMap));
   const explicitGroupCount = () => Object.keys(props.appMap.groups).length;
   const filteredAreas = createMemo(() => {
@@ -63,25 +60,24 @@ export function AppMapBrowseView(props: {
           const matchesPlatform =
             screenPlatform() === "all" ||
             variants?.some((variant) => variant.targetProfile.platform === screenPlatform());
-          const matchesBaseline =
-            baseline() === "all" ||
-            (baseline() === "approved"
-              ? variants?.some((variant) => variant.baseline)
-              : !variants?.some((variant) => variant.baseline));
-          return matchesQuery && matchesPlatform && matchesBaseline;
+          return matchesQuery && matchesPlatform;
         }),
       }))
       .filter((area) => area.screenIds.length > 0);
   });
+  const visibleAreas = createMemo(() => {
+    const filtered = filteredAreas();
+    if (explicitGroupCount()) return filtered;
+    const screenIds = filtered.flatMap((area) => area.screenIds);
+    return screenIds.length ? [{ id: "all-screens", title: "", screenIds }] : [];
+  });
   const rows = createMemo(() =>
     coverageRows(props.appMap, props.runs, props.recipeId, props.targetNameForId),
   );
-  const screenFiltersActive = () =>
-    Boolean(query().trim()) || screenPlatform() !== "all" || baseline() !== "all";
+  const screenFiltersActive = () => Boolean(query().trim()) || screenPlatform() !== "all";
   const clearScreenFilters = () => {
     setScreenQuery("");
     setScreenPlatform("all");
-    setBaseline("all");
   };
   const coverageFiltersActive = () =>
     Boolean(coverageQuery().trim()) || platform() !== "all" || outcome() !== "all";
@@ -106,118 +102,99 @@ export function AppMapBrowseView(props: {
   return (
     <div
       class={cn(
-        "absolute inset-0 min-h-0 overflow-y-auto bg-[var(--map-canvas)] pt-[72px] pb-24 transition-[padding] duration-150",
-        // The live companion grows to 548px for landscape tablets. Reserve
-        // its largest desktop footprint so search, filters, and primary
-        // actions never render underneath a perfectly visible device.
-        props.deviceOpen && "pr-[564px] max-[900px]:pr-0",
+        "absolute inset-0 min-h-0 overflow-y-auto overscroll-contain bg-[var(--map-canvas)] pt-[64px] pb-20 transition-[padding] duration-150",
+        props.deviceOpen && "pr-[calc(var(--app-map-device-panel-width)+32px)] max-[900px]:pr-0",
       )}
     >
-      <div class="mx-auto w-full max-w-[1440px] px-[clamp(18px,3vw,44px)]">
-        <header class="mb-4 flex items-center justify-between gap-5 max-[720px]:items-start max-[720px]:flex-col">
+      <div
+        class={cn(
+          "w-full px-[clamp(18px,3vw,40px)]",
+          props.deviceOpen ? "mr-auto max-w-none" : "mx-auto max-w-[1440px]",
+        )}
+      >
+        <header class="mb-3 flex items-center justify-between gap-4 max-[720px]:items-start max-[720px]:flex-col">
           <div class="min-w-0">
-            <h2 class="text-[21px]/[1.15] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
-              {props.mode === "screens" ? "Screens" : "Coverage"}
+            <h2 class="text-[18px]/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
+              {props.mode === "screens" ? "Screens" : "Results"}
             </h2>
-            <p class="mt-1 max-w-[680px] text-[12px]/[1.5] text-[var(--text-weak)]">
+            <p class="mt-0.5 max-w-[680px] text-[11px]/[1.45] text-[var(--text-weak)]">
               {props.mode === "screens"
                 ? explicitGroupCount()
-                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "Group" : "Groups"}`
-                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"}, organized by path.`
-                : `${rows().length} ${rows().length === 1 ? "result" : "results"}. Every device and actor stays independently inspectable.`}
+                  ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "group" : "groups"}`
+                  : `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} on this map`
+                : `${rows().length} ${rows().length === 1 ? "run" : "runs"} on this map`}
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <Show when={props.mode === "screens"}>
               <Button
                 variant="secondary"
-                size="md"
-                data-tip={
-                  props.refreshScreenshotsHint ??
-                  "Replay the flow and compare fresh captures with approved baselines"
-                }
-                onClick={props.onRefreshScreenshots}
+                size="sm"
+                aria-label="Map with AI"
+                onClick={props.onOpenAgent}
               >
-                <Icon name="camera" size={13} /> Refresh screenshots
+                <Icon name="scan" size={12} /> Map with AI
               </Button>
             </Show>
-            <Button variant="secondary" size="md" onClick={props.onOpenAgent}>
-              <Icon name="scan" size={13} /> Explore with Relay
-            </Button>
           </div>
         </header>
 
-        <div
-          class={cn(
-            "sticky top-[64px] z-10 mb-5 flex min-h-12 items-center gap-2 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_6px_18px_rgb(0_0_0/6%)] backdrop-blur-[14px] max-[680px]:flex-wrap",
-            props.mode === "screens" && "max-w-[760px]",
-          )}
-        >
-          <label class="relative min-w-[180px] flex-1">
-            <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)]">
-              <Icon name="search" size={14} />
-            </span>
-            <span class="sr-only">Search {props.mode}</span>
-            <input
-              class="h-10 w-full rounded-[9px] border border-transparent bg-transparent pr-3 pl-9 text-[16px] text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:border-[var(--v2-border-border-strong)] focus:bg-[var(--v2-background-bg-base)] min-[681px]:text-[12.5px]"
-              value={query()}
-              placeholder={
-                props.mode === "screens" ? "Search screens" : "Search results, people, or devices"
-              }
-              onInput={(event) => setQuery(event.currentTarget.value)}
-            />
-          </label>
-          <Show when={props.mode === "screens"}>
-            <FilterSelect
-              label="Target platform"
-              value={screenPlatform()}
-              onChange={(value) => setScreenPlatform(value as ReturnType<typeof screenPlatform>)}
-              options={[
-                ["all", "All targets"],
-                ["android", "Android"],
-                ["ios", "iOS"],
-                ["browser", "Browser"],
-              ]}
-            />
-            <FilterSelect
-              label="Screenshot baseline"
-              value={baseline()}
-              onChange={(value) => setBaseline(value as ReturnType<typeof baseline>)}
-              options={[
-                ["all", "All baselines"],
-                ["approved", "Approved"],
-                ["missing", "Needs baseline"],
-              ]}
-            />
-          </Show>
-          <Show when={props.mode === "coverage"}>
-            <FilterSelect
-              label="Platform"
-              value={platform()}
-              onChange={(value) => setPlatform(value as ReturnType<typeof platform>)}
-              options={[
-                ["all", "All platforms"],
-                ["android", "Android"],
-                ["ios", "iOS"],
-                ["browser", "Browser"],
-              ]}
-            />
-            <FilterSelect
-              label="Result"
-              value={outcome()}
-              onChange={(value) => setOutcome(value as ReturnType<typeof outcome>)}
-              options={[
-                ["all", "All results"],
-                ["passed", "Passed"],
-                ["product-failure", "Product issue"],
-                ["harness-failure", "Setup issue"],
-                ["uncertain", "Needs review"],
-                ["running", "Running"],
-                ["cancelled", "Cancelled"],
-              ]}
-            />
-          </Show>
-        </div>
+        <Show when={props.mode === "screens" || rows().length > 0}>
+          <div class="mb-4 flex min-h-11 w-full items-center gap-1.5 rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--background-base)] p-1 max-[680px]:flex-wrap">
+            <label class="group/search relative min-w-[180px] flex-1 rounded-[8px] transition-colors focus-within:bg-[var(--surface-base)]">
+              <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)] transition-colors group-focus-within/search:text-[var(--text-interactive-base)]">
+                <Icon name="search" size={14} />
+              </span>
+              <span class="sr-only">Search {props.mode}</span>
+              <input
+                class="h-9 w-full rounded-[8px] border-0 bg-transparent pr-3 pl-9 text-[16px] text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] min-[681px]:text-[11.5px]"
+                value={query()}
+                placeholder={props.mode === "screens" ? "Search screens" : "Search runs"}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+              />
+            </label>
+            <Show when={props.mode === "screens"}>
+              <FilterSelect
+                label="Device type"
+                value={screenPlatform()}
+                onChange={(value) => setScreenPlatform(value as ReturnType<typeof screenPlatform>)}
+                options={[
+                  ["all", "All devices"],
+                  ["android", "Android"],
+                  ["ios", "iOS"],
+                  ["browser", "Browser"],
+                ]}
+              />
+            </Show>
+            <Show when={props.mode === "coverage"}>
+              <FilterSelect
+                label="Platform"
+                value={platform()}
+                onChange={(value) => setPlatform(value as ReturnType<typeof platform>)}
+                options={[
+                  ["all", "All platforms"],
+                  ["android", "Android"],
+                  ["ios", "iOS"],
+                  ["browser", "Browser"],
+                ]}
+              />
+              <FilterSelect
+                label="Result"
+                value={outcome()}
+                onChange={(value) => setOutcome(value as ReturnType<typeof outcome>)}
+                options={[
+                  ["all", "All results"],
+                  ["passed", "Passed"],
+                  ["product-failure", "Product issue"],
+                  ["harness-failure", "Setup issue"],
+                  ["uncertain", "Needs review"],
+                  ["running", "Running"],
+                  ["cancelled", "Cancelled"],
+                ]}
+              />
+            </Show>
+          </div>
+        </Show>
 
         <Show
           when={props.mode === "screens"}
@@ -233,7 +210,7 @@ export function AppMapBrowseView(props: {
         >
           <div class="grid items-start gap-y-9">
             <For
-              each={filteredAreas()}
+              each={visibleAreas()}
               fallback={
                 <BrowseEmpty
                   icon="search"
@@ -242,8 +219,8 @@ export function AppMapBrowseView(props: {
                     screenFiltersActive()
                       ? "Try broader filters."
                       : props.deviceOpen
-                        ? "Capture the screen already visible on the device, or let Relay explore the app."
-                        : "Open the device or let Relay explore the app."
+                        ? "Save the screen on the device to the map, or explore the app to find more."
+                        : "Show the live device, then save screens to the map."
                   }
                   actionLabel={
                     screenFiltersActive()
@@ -267,17 +244,19 @@ export function AppMapBrowseView(props: {
                   aria-labelledby={`area-${area.id}`}
                   class="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]"
                 >
-                  <header class="mb-3 flex items-baseline gap-2.5">
-                    <h3
-                      id={`area-${area.id}`}
-                      class="text-[15px] font-semibold tracking-[-0.015em] text-[var(--text-strong)]"
-                    >
-                      {area.title}
-                    </h3>
-                    <span class="text-[10.5px] tabular-nums text-[var(--text-weak)]">
-                      {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
-                    </span>
-                  </header>
+                  <Show when={area.title}>
+                    <header class="mb-3 flex items-baseline gap-2.5">
+                      <h3
+                        id={`area-${area.id}`}
+                        class="text-[15px] font-semibold tracking-[-0.015em] text-[var(--text-strong)]"
+                      >
+                        {area.title}
+                      </h3>
+                      <span class="text-[10.5px] tabular-nums text-[var(--text-weak)]">
+                        {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
+                      </span>
+                    </header>
+                  </Show>
                   <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,210px),1fr))] items-start gap-5">
                     <For each={area.screenIds}>
                       {(screenId) => {
@@ -290,8 +269,10 @@ export function AppMapBrowseView(props: {
                             state={props.stateForScreen(screenId)}
                             incoming={incomingCount(props.appMap, screenId)}
                             outgoing={outgoingCount(props.appMap, screenId)}
+                            isStart={Object.values(props.appMap.flows).some(
+                              (flow) => flow.startScreenId === screenId,
+                            )}
                             targets={screenTargetNames(props.appMap, screen())}
-                            approvedTargets={screenApprovedTargetCount(props.appMap, screen())}
                             onOpen={() => props.onOpenScreen(screenId)}
                           />
                         );
@@ -315,47 +296,50 @@ function ScreenTile(props: {
   state?: ScreenState;
   incoming: number;
   outgoing: number;
+  isStart: boolean;
   targets: string[];
-  approvedTargets: number;
   onOpen: () => void;
 }) {
+  const [imageFailed, setImageFailed] = createSignal(false);
+  createEffect(
+    on(
+      () => props.image,
+      () => setImageFailed(false),
+    ),
+  );
+  const image = () => (props.image && !imageFailed() ? props.image : "");
+
   return (
     <button
       type="button"
-      class="group min-w-0 rounded-[10px] bg-transparent p-0 text-left outline-none transition-transform duration-150 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)] motion-reduce:hover:translate-y-0"
+      class="group min-w-0 rounded-[10px] bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)]"
       onClick={props.onOpen}
     >
-      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong),0_8px_20px_rgb(0_0_0/7%)]">
+      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[9px] bg-[var(--background-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),0_8px_20px_rgb(0_0_0/7%)]">
         <Show
-          when={props.image}
+          when={image()}
           fallback={
             <div class="grid max-w-[170px] justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors duration-150 group-hover:text-[var(--text-base)]">
-              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-layer-02)]">
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--surface-base-hover)]">
                 <Icon name="camera" size={15} />
               </span>
-              <span class="text-[11px] font-medium text-[var(--text-base)]">
-                Preview not captured
-              </span>
-              <span class="text-[9.5px]/[1.35]">Open this screen to capture it</span>
+              <span class="text-[11px] font-medium text-[var(--text-base)]">No screenshot</span>
+              <span class="text-[9.5px]/[1.35]">Open on the map to save one</span>
             </div>
           }
         >
           <OrientedScreenshot
-            src={props.image}
+            src={image()}
             alt=""
             loading="lazy"
             class="block size-full object-contain"
             evidence={props.orientationEvidence}
+            onError={() => setImageFailed(true)}
           />
         </Show>
         <Show when={props.state && props.state !== "idle"}>
           <span class={cn("absolute top-2 right-2", statePill(props.state!))}>
             <i class="size-1.5 rounded-full bg-current" /> {stateLabel(props.state!)}
-          </span>
-        </Show>
-        <Show when={props.targets.length > 0}>
-          <span class="absolute bottom-2 left-2 inline-flex min-h-6 items-center rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] px-2 text-[9px] font-medium text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)] backdrop-blur">
-            {baselineCoverageLabel(props.approvedTargets, props.targets.length)}
           </span>
         </Show>
       </div>
@@ -372,20 +356,22 @@ function ScreenTile(props: {
         </div>
         <div class="flex min-w-0 items-center gap-2 text-[10px] text-[var(--text-weak)]">
           <span class="tabular-nums">
-            {props.incoming
-              ? `${props.incoming} ${props.incoming === 1 ? "path" : "paths"} in`
-              : "Entry screen"}
+            {props.isStart
+              ? "Start screen"
+              : props.incoming
+                ? `${props.incoming} ${props.incoming === 1 ? "path" : "paths"} in`
+                : "No paths in"}
           </span>
           <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
           <span class="tabular-nums">
             {props.outgoing
               ? `${props.outgoing} ${props.outgoing === 1 ? "path" : "paths"} out`
-              : "End"}
+              : "No paths out"}
           </span>
           <Show when={props.targets.length}>
             <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
             <span class="truncate">
-              {props.targets.length} {props.targets.length === 1 ? "target" : "targets"}
+              {props.targets.length} {props.targets.length === 1 ? "device" : "devices"}
             </span>
           </Show>
         </div>
@@ -418,7 +404,7 @@ function coverageRows(
     return {
       id: result.runId,
       label:
-        connection?.label ?? (connection ? connectionLabel(appMap, connection.id) : "App Map run"),
+        connection?.label ?? (connection ? connectionLabel(appMap, connection.id) : "Path run"),
       actor: persistedRun ? actorForRun(persistedRun) : "Relay",
       target: result.targetProfile.name,
       platform: result.targetProfile.platform,
@@ -439,7 +425,7 @@ function coverageRows(
         (run.platform === "ios" || run.platform === "browser" ? run.platform : "android");
       return {
         id: run.id,
-        label: run.title ?? run.recipeSnapshot?.title ?? "App Map run",
+        label: run.title ?? run.recipeSnapshot?.title ?? "Path run",
         actor: actorForRun(run),
         target:
           run.targetProfile?.name ??
@@ -485,15 +471,15 @@ function CoverageTable(props: {
           body={
             props.hasAnyRuns
               ? "Try broader filters or clear the search."
-              : "Run this map on one device or a target set. Each target will keep its own result."
+              : "Run a path from the map to see its screenshots and result here."
           }
           actionLabel={props.hasAnyRuns && props.filtersActive ? "Clear filters" : undefined}
           onAction={props.hasAnyRuns && props.filtersActive ? props.onClearFilters : undefined}
         />
       }
     >
-      <div class="overflow-hidden rounded-[13px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_var(--v2-border-border-muted),0_10px_28px_rgb(0_0_0/6%)]">
-        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--v2-border-border-muted)] px-4 py-2.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden">
+      <div class="overflow-hidden rounded-[13px] bg-[var(--background-base)] shadow-[0_0_0_1px_var(--border-weak-base),0_10px_28px_rgb(0_0_0/6%)]">
+        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--border-weak-base)] px-4 py-2.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden">
           <span>Run</span>
           <span>Target</span>
           <span>Actor</span>
@@ -504,7 +490,7 @@ function CoverageTable(props: {
           {(row) => (
             <button
               type="button"
-              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--v2-border-border-muted)] px-4 text-left text-[11.5px] outline-none transition-colors duration-150 last:border-b-0 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
+              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-[11.5px] outline-none transition-colors duration-150 last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
               onClick={() => props.onOpenRun(row.id)}
             >
               <span class="min-w-0">
@@ -557,7 +543,7 @@ function FilterSelect(props: {
     <label class="relative shrink-0">
       <span class="sr-only">{props.label}</span>
       <select
-        class="h-10 min-w-[132px] appearance-none rounded-[9px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] pr-8 pl-3 text-[16px] font-medium text-[var(--text-base)] outline-none transition-[border-color,background-color] duration-150 hover:border-[var(--v2-border-border-strong)] focus:border-[var(--text-interactive-base)] min-[681px]:text-[11.5px]"
+        class="h-9 min-w-[124px] appearance-none rounded-[8px] border-0 bg-transparent pr-8 pl-3 text-[16px] font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] min-[681px]:text-[10.5px]"
         value={props.value}
         onChange={(event) => props.onChange(event.currentTarget.value)}
       >
@@ -613,19 +599,9 @@ function screenTargetNames(appMap: AppMap, screen: Screen): string[] {
   });
 }
 
-function screenApprovedTargetCount(appMap: AppMap, screen: Screen): number {
-  return screen.variantIds.filter((id) => Boolean(appMap.screenVariants[id]?.baseline)).length;
-}
-
-function baselineCoverageLabel(approved: number, total: number): string {
-  if (approved <= 0) return "Needs baseline";
-  if (approved >= total) return "Approved";
-  return `${approved}/${total} approved`;
-}
-
 function connectionLabel(appMap: AppMap, connectionId: string): string {
   const connection = appMap.connections[connectionId];
-  if (!connection) return "App Map run";
+  if (!connection) return "Path run";
   const from = appMap.screens[connection.fromScreenId]?.title ?? "Screen";
   const to =
     connection.destination.kind === "screen"
@@ -660,7 +636,7 @@ function outcomePill(outcome: BrowseRunOutcome): string {
 
 function statePill(state: ScreenState): string {
   return cn(
-    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--v2-background-bg-base)] px-1.5 text-[8.5px] font-semibold shadow-[0_1px_5px_rgb(0_0_0/16%)]",
+    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--background-base)] px-1.5 text-[8.5px] font-semibold shadow-[0_1px_5px_rgb(0_0_0/16%)]",
     state === "passed"
       ? "text-[var(--icon-success-base)]"
       : state === "failed"

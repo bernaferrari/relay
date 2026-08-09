@@ -88,6 +88,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       behavior: "event-stream",
     }),
   ),
+  {
+    operationId: "target.stream.open",
+    exclusion: "internal",
+    reason: "Live target video is a media stream, not a CLI command.",
+  },
 
   mapped("workspace.privacy.get", path("policy privacy get")),
   mapped("workspace.privacy.update", path("policy privacy update")),
@@ -131,14 +136,24 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "target.snapshot.capture",
     path("target observe", ["serial"]),
     path("target snapshot", ["serial"]),
-    path("device observe", ["serial"], undefined, {
-      summary: "Read the current accessibility structure",
-      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-    }),
-    path("device snapshot", ["serial"], undefined, {
-      summary: "Read the current accessibility structure",
-      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-    }),
+    path(
+      "device observe",
+      ["serial"],
+      { visual: true },
+      {
+        summary: "Read the current accessibility structure",
+        argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      },
+    ),
+    path(
+      "device snapshot",
+      ["serial"],
+      { visual: true },
+      {
+        summary: "Read the current accessibility structure",
+        argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      },
+    ),
   ),
   mapped(
     "target.screenshot.capture",
@@ -149,8 +164,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         "relay device screenshot emulator-5554 --file current.png",
         "relay device screenshot emulator-5554 --binary > current.png",
+        "relay device screenshot 00008110 --mark 78,88 --file preview.png",
       ],
-      note: "Use --file <path> for a PNG file or --binary for raw PNG bytes on stdout.",
+      note: "Use --file <path> for a PNG file or --binary for raw PNG bytes on stdout. --mark x,y paints a tap preview and does not tap.",
       behavior: "screenshot",
     }),
   ),
@@ -180,7 +196,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "target.recover",
     path("target recover", ["serial"]),
     path("device recover", ["serial"], undefined, {
-      summary: "Repair an Apple device connection and restore its active app",
+      summary: "Repair the live device: wake Android or restore the iPad runner",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
       inputHelp: [
         {
@@ -189,8 +205,43 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           description: "Recovery phase for Activity attribution",
         },
       ],
-      examples: ['relay device recover 00008110 --input \'{"reason":"control"}\''],
+      examples: [
+        'relay device recover 00008110 --input \'{"reason":"control"}\'',
+        "relay device recover RQCY104BG8X",
+      ],
+      note: "iPad: restart the XCTest runner. Android: wake the screen and retry labels. Unlock still needs a person.",
     }),
+  ),
+  mapped(
+    "target.ui.describe",
+    path("target ui", ["serial"], undefined, {
+      summary: "Describe app/sheet/keyboard/bounds for the current target",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: ["relay target ui 00008110"],
+    }),
+    path("device ui", ["serial"], undefined, {
+      summary: "Describe app/sheet/keyboard/bounds for the current target",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
+  ),
+  mapped(
+    "target.ui.back",
+    path("target back", ["serial"], undefined, {
+      summary: "Sheet-aware back (Back/parent title before Close)",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: ['relay target back 00008110 --input \'{"parentTitles":["Settings"]}\''],
+      note: "Requires an exclusive lease owned by the same --actor.",
+    }),
+    path("device back", ["serial"]),
+  ),
+  mapped(
+    "target.ui.scrollCollect",
+    path("target scroll-collect", ["serial"], undefined, {
+      summary: "Scroll a list and collect interactive controls without overscroll-dismiss",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      note: "Requires an exclusive lease owned by the same --actor.",
+    }),
+    path("device scroll-collect", ["serial"]),
   ),
   mapped(
     "target.interact",
@@ -209,8 +260,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         "relay lease create 00008110 --actor agent:mapper",
         'relay device interact 00008110 --actor agent:mapper --input \'{"kind":"label","label":"Continue"}\'',
+        'relay device interact 00008110 --preview --file preview.png --input \'{"kind":"label","label":"Back"}\'',
       ],
-      note: "Device input requires an active exclusive lease owned by the same --actor. Observation and screenshots remain shareable.",
+      note: "Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap.",
     }),
   ),
   mapped(
@@ -320,13 +372,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ["deviceSerial"],
       { poolId: "local" },
       {
-        summary: "Take exclusive control of a local device for 15 minutes",
+        summary: "Take exclusive control of a local device for 2 hours",
         argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
         inputHelp: [
           {
             name: "expiresAt",
             type: "number",
-            description: "Optional Unix time in milliseconds; defaults to 15 minutes from now",
+            description: "Optional Unix time in milliseconds; defaults to 2 hours from now",
           },
         ],
         examples: [
@@ -337,7 +389,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       },
     ),
     path("lease create-in-pool", ["poolId", "deviceSerial"], undefined, {
-      summary: "Take exclusive control of a device from a named pool for 15 minutes",
+      summary: "Take exclusive control of a device from a named pool for 2 hours",
       argumentHelp: [
         { name: "pool", type: "string", description: "Device-pool identifier" },
         { name: "serial", type: "string", description: "Connected device serial" },
@@ -346,7 +398,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "expiresAt",
           type: "number",
-          description: "Optional Unix time in milliseconds; defaults to 15 minutes from now",
+          description: "Optional Unix time in milliseconds; defaults to 2 hours from now",
         },
       ],
       examples: ["relay lease create-in-pool cloud-ios iphone-16 --actor agent:mapper"],
@@ -363,7 +415,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "expiresAt",
           type: "number",
-          description: "Optional new lease expiry; defaults to 15 minutes from now",
+          description: "Optional new lease expiry; defaults to 2 hours from now",
         },
         { name: "reason", type: "string", required: true, description: "Auditable handoff reason" },
         { name: "confirm", type: "true", required: true, description: "Explicit user approval" },
@@ -556,6 +608,47 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
+  mapped(
+    "app-map.teach",
+    path("map teach", ["appMapId"], undefined, {
+      summary: "Tap a control, capture the destination, and connect it",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: "Device or browser target",
+        },
+        {
+          name: "leaseId",
+          type: "string",
+          required: true,
+          description: "Exclusive control lease",
+        },
+        {
+          name: "fromScreenId",
+          type: "string",
+          description: "Source screen when tapping into a destination",
+        },
+        { name: "title", type: "string", description: "Destination screen title" },
+        {
+          name: "interaction",
+          type: "object",
+          description: "point, label, or identifier tap. Omit to capture the current screen only.",
+        },
+        {
+          name: "expectedRevision",
+          type: "number",
+          description: "Optional. Stale revisions retry against the latest map.",
+        },
+      ],
+      examples: [
+        'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"settings","title":"Connections","interaction":{"kind":"point","x":540,"y":1275}}\'',
+      ],
+      note: "One gesture: tap → capture destination → connect. expectedRevision is optional.",
+    }),
+  ),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
   mapped(
@@ -675,6 +768,44 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("case-stack apply", ["appMapId", "connectionId", "caseStackId"]),
   ),
   mapped("app-map.case-stack.remove", path("case-stack remove", ["appMapId", "caseStackId"])),
+  mapped(
+    "app-map.variable.save",
+    path("variable save", ["appMapId", "variableId"], undefined, {
+      summary: "Save a variable (language, location, theme, …)",
+    }),
+    path("option-set save", ["appMapId", "variableId"], undefined, {
+      summary: "Alias of variable save",
+    }),
+  ),
+  mapped(
+    "app-map.variable.remove",
+    path("variable remove", ["appMapId", "variableId"]),
+    path("option-set remove", ["appMapId", "variableId"]),
+  ),
+  mapped(
+    "app-map.test.save",
+    path("test save", ["appMapId", "testId"], undefined, {
+      summary: "Save a test: recorded path or open-every-row tour",
+    }),
+    path("work save", ["appMapId", "testId"]),
+  ),
+  mapped(
+    "app-map.test.remove",
+    path("test remove", ["appMapId", "testId"]),
+    path("work remove", ["appMapId", "testId"]),
+  ),
+  mapped(
+    "app-map.combine.save",
+    path("combine save", ["appMapId", "combineId"], undefined, {
+      summary: "Bind variables × tests",
+    }),
+    path("combo save", ["appMapId", "combineId"]),
+  ),
+  mapped(
+    "app-map.combine.remove",
+    path("combine remove", ["appMapId", "combineId"]),
+    path("combo remove", ["appMapId", "combineId"]),
+  ),
   mapped(
     "app-map.flow.run",
     path("flow run", ["appMapId", "flowId"], undefined, {
@@ -1107,6 +1238,14 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "authoring.take.replay",
     path("take replay", ["sessionId"]),
+    path("session replay", ["sessionId"], undefined, {
+      summary: "Replay the current Take on its device before committing",
+      argumentHelp: [
+        { name: "sessionId", type: "string", description: "Authoring session identifier" },
+      ],
+      examples: ["relay session replay authoring-123"],
+      note: "Return the device to the recorded source screen first. An unedited live recording that landed on the expected screen can be committed without a second pass. Editing the Take still requires a passing replay.",
+    }),
     path("proposal replay", ["sessionId"], undefined, {
       summary: "Replay a proposal on its device",
       argumentHelp: [
@@ -1117,7 +1256,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "authoring.session.commit",
     path("session commit", ["sessionId"], undefined, {
-      summary: "Commit a successfully replayed recording to the App Map",
+      summary: "Commit a demonstrated Take to the App Map",
       inputHelp: [
         {
           name: "destination",
@@ -1207,6 +1346,24 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.export", path("discovery export", ["sessionId"])),
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
 
+  mapped("corpus.list", path("corpus list")),
+  mapped("corpus.create", path("corpus create")),
+  mapped("corpus.get", path("corpus get", ["sessionId"])),
+  mapped("corpus.rename", path("corpus rename", ["sessionId"])),
+  mapped("corpus.status.update", path("corpus status update", ["sessionId"])),
+  mapped("corpus.start", path("corpus start", ["sessionId"])),
+  mapped("corpus.cancel", path("corpus cancel", ["sessionId"])),
+  mapped("corpus.coverage", path("corpus coverage", ["sessionId"])),
+  mapped("corpus.export", path("corpus export", ["sessionId"])),
+  mapped("corpus.screen.get", path("corpus screen", ["sessionId", "screenId"])),
+
+  mapped("language-profile.list", path("language-profile list")),
+  mapped("language-profile.scan", path("language-profile scan")),
+  mapped("language-profile.save", path("language-profile save")),
+  mapped("switcher-profile.list", path("switcher-profile list")),
+  mapped("switcher-profile.scan", path("switcher-profile scan")),
+  mapped("switcher-profile.save", path("switcher-profile save")),
+
   mapped("job.list", path("job list")),
   mapped(
     "job.get",
@@ -1222,12 +1379,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "job.start",
     path("job start"),
     path("run start", ["recipe"], undefined, {
-      summary: "Run an executable test or App Map recipe",
+      summary: "Run a compiled job (prefer relay flow run for map paths)",
       argumentHelp: [
         {
           name: "recipe",
           type: "string",
-          description: "Executable recipe identifier, such as grok-full-smoke",
+          description: "Compiled job identifier when not starting from a map flow",
         },
       ],
       inputHelp: [
@@ -1237,13 +1394,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "variables",
           type: "object",
-          description: "Per-run variable overrides; private values stay out of the recipe file",
+          description: "Per-run variable overrides; private values stay out of tracked files",
         },
       ],
       examples: [
-        'relay run start grok-full-smoke --input \'{"serial":"<phone-serial>","platform":"android"}\'',
-        'relay run start grok-send-hello --input \'{"serial":"<phone-serial>","platform":"android"}\'',
-        'relay run start grok-rich-response-judged --input \'{"variables":{"primary_model":"openai/gpt-4o-mini"}}\'',
+        'relay flow run checkout main --input \'{"serial":"<phone-serial>","platform":"ios"}\'',
+        'relay run start <compiled-job-id> --input \'{"serial":"<phone-serial>","platform":"android"}\'',
       ],
     }),
   ),
@@ -1283,6 +1439,96 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("job.matrix.start", path("job matrix start")),
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
+  mapped(
+    "job.locale-matrix.start",
+    path("job locale-matrix start", [], undefined, {
+      summary: "Run a map path once per locale with screenshots",
+      examples: [
+        'relay job locale-matrix start --input \'{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}\'',
+      ],
+      note: "Language-only alias of combine. Prefer `relay combine run` or `relay test run`.",
+    }),
+  ),
+  mapped(
+    "job.combine.start",
+    path("job combine start", [], undefined, {
+      summary: "Run variables × a test (combine, test, or flow)",
+      examples: [
+        'relay combine run grok-ios language-x-settings --input \'{"serial":"<device>"}\'',
+      ],
+      note: "Combine is every selected variable value × the test. Prefer `relay test run` for one pass.",
+      behavior: "job-start-watch",
+    }),
+    path("job option-matrix start", [], undefined, {
+      summary: "Alias of job combine start",
+      behavior: "job-start-watch",
+    }),
+    path("combine run", ["appMapId", "combineId"], undefined, {
+      summary: "Run a saved variables × tests combination",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "combineId", type: "string", description: "Saved combination" },
+      ],
+      behavior: "job-start-watch",
+    }),
+    path("combo run", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of combine run",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "combineId", type: "string", description: "Saved combination" },
+      ],
+      behavior: "job-start-watch",
+    }),
+    path("test run", ["appMapId", "testId"], undefined, {
+      summary: "Run one test once (no variable matrix)",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "testId", type: "string", description: "Saved test (tour or path)" },
+      ],
+      behavior: "job-start-watch",
+    }),
+    path("work run", ["appMapId", "testId"], undefined, {
+      summary: "Alias of test run",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "testId", type: "string", description: "Saved test (tour or path)" },
+      ],
+      behavior: "job-start-watch",
+    }),
+  ),
+  mapped(
+    "job.combine.infer",
+    path("job combine infer", [], undefined, {
+      summary: "Infer variable rows from taught live-screen rows",
+      examples: [
+        'relay job combine infer --input \'{"appMapId":"<map>","kind":"location","examples":[{"id":"nyc","label":"New York"}],"nodes":[]}\'',
+      ],
+    }),
+    path("job option-matrix infer"),
+  ),
+  mapped(
+    "job.combine.export",
+    path("job combine export", ["batchId"], undefined, {
+      summary: "Export Combine screenshot pack",
+    }),
+    path("job option-matrix export", ["batchId"]),
+  ),
+  mapped(
+    "job.locale-matrix.infer",
+    path("job locale-matrix infer", [], undefined, {
+      summary: "Infer locale options from taught live-screen rows",
+      examples: [
+        'relay job locale-matrix infer --input \'{"appMapId":"<map>","flowId":"<flow>","examples":[{"locale":"en","identifier":"lang.en"}],"nodes":[]}\'',
+      ],
+      note: "Click or pass 1–2 taught rows. Pass appMapId so a recorded path to the language list is reused.",
+    }),
+  ),
+  mapped(
+    "job.locale-matrix.export",
+    path("job locale-matrix export", ["batchId"], undefined, {
+      summary: "Export locale-run screenshot pack",
+    }),
+  ),
 
   ...(
     [
@@ -1590,11 +1836,27 @@ export function resolveCommand(
     descriptor.paths.filter((candidate) => candidate.command.split(" ")[0] === family),
   );
   if (familyPaths.length) {
-    const usages = familyPaths
-      .slice(0, 4)
+    const sessionLoop = new Set([
+      "session begin",
+      "session tap",
+      "session stop",
+      "session replay",
+      "session commit",
+    ]);
+    const ordered =
+      family === "session"
+        ? [
+            ...familyPaths.filter((candidate) => sessionLoop.has(candidate.command)),
+            ...familyPaths.filter((candidate) => !sessionLoop.has(candidate.command)),
+          ]
+        : familyPaths;
+    const usages = ordered
+      .slice(0, 5)
       .map((candidate) => formatCommandUsage(candidate))
       .join(", ");
-    throw new UsageError(`Invalid ${family} command. Expected one of: ${usages}`);
+    throw new UsageError(
+      `Invalid ${family} command. Expected one of: ${usages}. Run 'relay ${family} --help' for the full list.`,
+    );
   }
   throw new UsageError(`Unknown command: ${positionals.join(" ")}. Run 'relay help'.`);
 }

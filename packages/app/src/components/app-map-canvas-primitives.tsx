@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { CanvasNote, MapGroup } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
@@ -11,6 +11,7 @@ import {
   companionLogicalRectToDisplayed,
 } from "./app-map-device-companion-geometry";
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
+import { describeConnectionPath } from "../lib/connection-action-presentation";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
@@ -32,10 +33,10 @@ export function CanvasNoteCard(props: {
   let textAtFocus = props.note.text;
   return (
     <article
-      class="absolute w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--v2-border-border-strong)_74%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
+      class="absolute w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_74%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
       style={{ transform: `translate3d(${props.note.x}px, ${props.note.y}px, 0)` }}
     >
-      <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_82%,transparent)] px-1">
+      <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-1">
         <button
           type="button"
           class="flex h-full min-w-0 flex-1 cursor-grab items-center gap-1.5 px-1.5 text-left active:cursor-grabbing"
@@ -47,7 +48,7 @@ export function CanvasNoteCard(props: {
         </button>
         <button
           type="button"
-          class="relative grid size-8 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+          class="relative grid size-8 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)]"
           aria-label="Delete note"
           onClick={props.onDelete}
         >
@@ -66,6 +67,60 @@ export function CanvasNoteCard(props: {
         onBlur={() => props.onCommit(textAtFocus)}
       />
     </article>
+  );
+}
+
+export function CanvasCombineCard(props: {
+  id: string;
+  name: string;
+  position: { x: number; y: number };
+  values: string[];
+  tests: string[];
+  cellCount: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-app-map-combine-id={props.id}
+      class="absolute z-[8] w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] text-left shadow-[0_8px_26px_rgb(0_0_0/16%)] transition-[transform,box-shadow] duration-150 hover:shadow-[0_10px_28px_rgb(0_0_0/20%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+      style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
+      aria-label={`Open data run ${props.name}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        props.onOpen();
+      }}
+    >
+      <header class="flex h-8 items-center gap-1.5 border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-2.5">
+        <Icon name="grid" size={11} class="text-[var(--text-interactive-base)]" />
+        <span class="text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--text-interactive-base)]">
+          Run with data
+        </span>
+        <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">{props.name}</span>
+      </header>
+      <div class="grid gap-1.5 px-2.5 py-2">
+        <Show when={props.values.length}>
+          <div class="flex flex-wrap gap-1">
+            <For each={props.values}>
+              {(value) => (
+                <span class="rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-interactive-base)]">
+                  {value}
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={props.tests.length}>
+          <p class="m-0 truncate text-[11px] font-medium text-[var(--text-strong)]">
+            {props.tests.join(" · ")}
+          </p>
+        </Show>
+        <p class="m-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+          {props.cellCount} {props.cellCount === 1 ? "run" : "runs"}
+        </p>
+      </div>
+    </button>
   );
 }
 
@@ -90,11 +145,16 @@ export function ScreenCard(props: {
   onRename: () => void;
   onOpenDetails: () => void;
   onCommitRename: (title: string) => void;
-  onConnectStart: (event: PointerEvent) => void;
   onConnectKeyboard: () => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
+  /** This screen is the start of a click-to-connect path draft. */
+  pathDraft?: boolean;
+  /** Live device is on this mapped screen. Distinct from selected. */
+  here?: boolean;
 }) {
-  let connectorPointerStart: { x: number; y: number } | undefined;
+  const [imageFailed, setImageFailed] = createSignal(false);
+  createEffect(on(props.src, () => setImageFailed(false)));
+  const visibleSrc = () => (props.src() && !imageFailed() ? props.src() : "");
   const frameStateClass = () =>
     props.runState === "failed"
       ? "ring-2 ring-[var(--icon-critical-base)]"
@@ -106,18 +166,21 @@ export function ScreenCard(props: {
             ? "ring-2 ring-[var(--icon-success-base)]"
             : props.selected
               ? "ring-2 ring-[var(--text-interactive-base)] shadow-[0_8px_20px_rgb(0_0_0/8%)]"
-              : "ring-1 ring-[color-mix(in_srgb,var(--v2-border-border-strong)_55%,transparent)] group-hover/screen:ring-[var(--v2-border-border-strong)] group-hover/screen:shadow-[0_8px_20px_rgb(0_0_0/7%)]";
+              : props.here
+                ? "ring-2 ring-[var(--icon-success-base)] shadow-[0_8px_20px_rgb(0_0_0/8%)]"
+                : "ring-1 ring-[color-mix(in_srgb,var(--border-strong-base)_55%,transparent)] group-hover/screen:ring-[var(--border-strong-base)] group-hover/screen:shadow-[0_8px_20px_rgb(0_0_0/7%)]";
   return (
     <article
       role="group"
       aria-roledescription="screen"
       tabIndex={0}
-      aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
+      aria-label={`${props.title} screen${props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
+      data-app-map-here={props.here ? "true" : undefined}
       data-tip="Click to inspect · Enter opens details"
       class={cn(
-        "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
-        props.selected && "z-20",
+        "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
+        (props.selected || props.here) && "z-20",
       )}
       style={{
         transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)`,
@@ -195,9 +258,9 @@ export function ScreenCard(props: {
           <button
             type="button"
             class="app-map-icon-button"
-            aria-label={`Connect from ${props.title}`}
-            title="Add connection"
-            data-tip="Add connection"
+            aria-label={`Path from ${props.title}`}
+            title="Add path"
+            data-tip="Add a path to the next screen"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -242,7 +305,13 @@ export function ScreenCard(props: {
             }}
           />
         </Show>
-        <Show when={!props.editing && props.isFlowStart}>
+        <Show when={!props.editing && props.here}>
+          <span class="absolute left-0 inline-flex shrink-0 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--icon-success-base)]">
+            <i class="size-1.5 rounded-full bg-current motion-safe:animate-pulse" />
+            Here
+          </span>
+        </Show>
+        <Show when={!props.editing && !props.here && props.isFlowStart}>
           <span class="absolute left-0 shrink-0 rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
             Start
           </span>
@@ -266,12 +335,12 @@ export function ScreenCard(props: {
         </Show>
       </header>
       <Show
-        when={props.src()}
+        when={visibleSrc()}
         fallback={
           <div
             data-screen-frame
             class={cn(
-              "grid min-h-0 place-items-center overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-base)] text-center transition-[box-shadow,transform] duration-150",
+              "grid min-h-0 place-items-center overflow-hidden rounded-[9px] bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-150",
               frameStateClass(),
             )}
             style={{
@@ -279,14 +348,16 @@ export function ScreenCard(props: {
               "justify-self": "center",
             }}
           >
-            <div class="grid max-w-[156px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-150 group-hover/screen:text-[var(--text-base)]">
-              <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--v2-background-bg-layer-02)]">
+            <div class="grid max-w-[168px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-150 group-hover/screen:text-[var(--text-base)]">
+              <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--surface-base-hover)]">
                 <Icon name="camera" size={14} />
               </span>
               <span class="text-[10.5px] font-medium text-[var(--text-base)]">
-                Preview not captured
+                Screen not saved
               </span>
-              <span class="text-[9px]/[1.35]">Select this screen, then press S</span>
+              <span class="text-[9px]/[1.4]">
+                Open this screen on the device, then choose Save screen.
+              </span>
             </div>
           </div>
         }
@@ -316,6 +387,7 @@ export function ScreenCard(props: {
                 loading="lazy"
                 class="size-full object-contain object-top"
                 evidence={props.orientationEvidence}
+                onError={() => setImageFailed(true)}
                 onRotationChange={props.onRotationChange}
                 overlay={
                   props.sourceAnchor
@@ -328,7 +400,7 @@ export function ScreenCard(props: {
                         return (
                           <div
                             class="pointer-events-none absolute inset-0 z-[2]"
-                            aria-label="Recorded interaction target"
+                            aria-label="Recorded step target"
                             data-recorded-map-target
                           >
                             <Show when={rect}>
@@ -345,7 +417,7 @@ export function ScreenCard(props: {
                               )}
                             </Show>
                             <span
-                              class="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
+                              class="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
                               style={{
                                 left: `${point.x * 100}%`,
                                 top: `${point.y * 100}%`,
@@ -364,26 +436,20 @@ export function ScreenCard(props: {
       <button
         type="button"
         class={cn(
-          "app-map-connect-handle group absolute z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
-          props.selected && "opacity-100",
+          "app-map-connect-handle group absolute z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
+          (props.selected || props.pathDraft) && "opacity-100",
         )}
         style={{
           left: `${props.geometry.frameLeft + props.geometry.frameWidth - 22}px`,
           top: `${props.geometry.frameTop + props.geometry.frameHeight / 2}px`,
         }}
-        aria-label={`Connect ${props.title} to another screen`}
-        title="Drag to connect, or press Enter"
-        onPointerDown={(event) => {
-          connectorPointerStart = { x: event.clientX, y: event.clientY };
-          props.onConnectStart(event);
-        }}
+        aria-label={`Add a path from ${props.title}`}
+        title="Add a path — click, then pick the next screen"
+        data-tip="Add a path — click, then pick the next screen"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
-          const start = connectorPointerStart;
-          connectorPointerStart = undefined;
-          if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 6) {
-            props.onConnectKeyboard();
-          }
+          props.onConnectKeyboard();
         }}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
@@ -392,10 +458,15 @@ export function ScreenCard(props: {
           props.onConnectKeyboard();
         }}
       >
-        <span class="grid size-[24px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
+        <span class="grid size-[24px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-colors duration-150 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
           <Icon name="plus" size={11} />
         </span>
       </button>
+      <Show when={props.pathDraft}>
+        <p class="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-[200px] -translate-x-1/2 text-center text-[10.5px] font-medium text-[var(--text-interactive-base)]">
+          Click the next screen, or add a new one
+        </p>
+      </Show>
     </article>
   );
 }
@@ -415,10 +486,10 @@ export function KeyboardConnectionChooser(props: {
   return (
     <aside
       ref={(element) => (panel = element)}
-      class="absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_18px_48px_rgb(0_0_0/34%)] backdrop-blur-[14px]"
+      class="absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] bg-[color-mix(in_srgb,var(--background-base)_96%,transparent)] p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_76%,transparent),0_18px_48px_rgb(0_0_0/34%)] backdrop-blur-[14px]"
       role="dialog"
       aria-modal="true"
-      aria-label={`Connect ${props.sourceTitle}`}
+      aria-label={`Path from ${props.sourceTitle}`}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
@@ -428,7 +499,7 @@ export function KeyboardConnectionChooser(props: {
       <div class="flex items-start justify-between gap-3 px-1">
         <div>
           <span class="block text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-            Connect from
+            Path from
           </span>
           <strong class="mt-1 block text-[12px] font-semibold text-[var(--text-strong)]">
             {props.sourceTitle}
@@ -436,32 +507,18 @@ export function KeyboardConnectionChooser(props: {
         </div>
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-          aria-label="Cancel connection"
+          class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+          aria-label="Cancel path"
           onClick={props.onCancel}
         >
           <Icon name="x" size={12} />
         </button>
       </div>
       <p class="m-0 mt-2 px-1 text-[10.5px]/[1.45] text-[var(--text-weak)]">
-        Choose an existing destination or add a new screen to the right.
+        Click a screen on the map, pick one below, or add a new screen. Esc cancels — nothing is
+        saved until you choose.
       </p>
       <div class="mt-2 grid max-h-48 gap-1 overflow-y-auto">
-        <For each={props.destinations}>
-          {(destination) => (
-            <button
-              type="button"
-              class="flex min-h-11 items-center gap-2 rounded-[9px] px-2.5 text-left text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-              onClick={() => props.onChoose(destination.id)}
-            >
-              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-                <Icon name="smartphone" size={12} />
-              </span>
-              <span class="min-w-0 flex-1 truncate">{destination.title}</span>
-              <Icon name="arrow-right" size={11} />
-            </button>
-          )}
-        </For>
         <button
           type="button"
           class="flex min-h-11 items-center gap-2 rounded-[9px] px-2.5 text-left text-[11px] font-medium text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
@@ -470,8 +527,23 @@ export function KeyboardConnectionChooser(props: {
           <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)]">
             <Icon name="plus" size={12} />
           </span>
-          New screen
+          Add a new screen
         </button>
+        <For each={props.destinations}>
+          {(destination) => (
+            <button
+              type="button"
+              class="flex min-h-11 items-center gap-2 rounded-[9px] px-2.5 text-left text-[11px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+              onClick={() => props.onChoose(destination.id)}
+            >
+              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                <Icon name="smartphone" size={12} />
+              </span>
+              <span class="min-w-0 flex-1 truncate">Connect to {destination.title}</span>
+              <Icon name="arrow-right" size={11} />
+            </button>
+          )}
+        </For>
       </div>
     </aside>
   );
@@ -493,6 +565,7 @@ export function ScreenInspector(props: {
   };
   onFlowSetup: (routineId?: string) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
+  onRename: () => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
@@ -502,98 +575,111 @@ export function ScreenInspector(props: {
         <aside
           id={`app-map-screen-details-${_node().id}`}
           data-app-map-screen-inspector
-          class="absolute top-16 right-3 z-30 w-[min(328px,calc(100%-24px))] overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          class="absolute top-16 right-3 z-30 w-[min(304px,calc(100%-24px))] overflow-hidden rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
           aria-label={`Details for ${props.title}`}
         >
-          <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
-            <div class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+          <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name="info" size={12} />
               </span>
               <div class="min-w-0">
-                <span class="block text-[10px] font-medium text-[var(--text-weak)]">Details</span>
-                <strong class="mt-1 block text-[12.5px] font-semibold text-[var(--text-strong)]">
+                <span class="block text-[9.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
+                  Screen
+                </span>
+                <strong class="mt-0.5 block truncate text-[12px] font-semibold text-[var(--text-strong)]">
                   {props.title}
                 </strong>
               </div>
             </div>
-            <div class="flex items-center gap-1">
+            <div class="flex items-center">
               <button
                 type="button"
-                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
-                aria-label="Remove screen"
-                title="Remove screen (Delete)"
-                onClick={props.onRemove}
+                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                aria-label={`Rename ${props.title}`}
+                data-tip="Rename screen · F2"
+                onClick={props.onRename}
               >
-                <Icon name="trash" size={12} />
+                <Icon name="edit" size={12} />
               </button>
               <button
                 type="button"
-                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label="Close screen details"
                 onClick={props.onClose}
               >
                 <Icon name="x" size={12} />
               </button>
             </div>
-          </div>
-          <Show when={props.image}>
-            {(image) => (
-              <div class="mx-1.5 mt-2 overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-deep)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                <div class="flex h-[132px] items-center justify-center p-2">
+          </header>
+
+          <section class="grid grid-cols-[72px_minmax(0,1fr)] gap-3 p-3">
+            <div class="flex h-[88px] items-center justify-center overflow-hidden rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--background-deep)] p-1.5">
+              <Show
+                when={props.image}
+                fallback={<Icon name="smartphone" size={18} class="text-[var(--text-weaker)]" />}
+              >
+                {(image) => (
                   <OrientedScreenshot
                     src={image()}
                     alt={`Preview of ${props.title}`}
-                    class="block max-h-full max-w-full object-contain"
+                    class="block h-full w-full object-contain"
                     evidence={props.orientationEvidence}
                   />
-                </div>
-                <div class="flex min-h-8 items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-2.5 text-[10px] text-[var(--text-weak)]">
-                  <span>{props.isFlowStart ? "Entry screen" : "Observed screen"}</span>
-                  <Show when={props.runState && props.runState !== "idle"}>
-                    <span
-                      class={cn(
-                        "font-medium capitalize",
-                        props.runState === "failed"
-                          ? "text-[var(--icon-critical-base)]"
-                          : props.runState === "healed"
-                            ? "text-[var(--icon-warning-base)]"
-                            : props.runState === "passed"
-                              ? "text-[var(--icon-success-base)]"
-                              : "text-[var(--text-interactive-base)]",
-                      )}
-                    >
-                      {props.runState}
-                    </span>
-                  </Show>
-                </div>
+                )}
+              </Show>
+            </div>
+            <div class="grid content-center gap-2 text-[10.5px] text-[var(--text-weak)]">
+              <div class="flex items-center gap-2">
+                <i
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    props.image ? "bg-[var(--text-interactive-base)]" : "bg-[var(--text-weaker)]",
+                  )}
+                  aria-hidden="true"
+                />
+                <span>{props.image ? "Screenshot saved" : "No screenshot"}</span>
               </div>
-            )}
-          </Show>
-          <div class="mt-2 flex items-center gap-1.5 px-1.5 text-[10px] text-[var(--text-weak)]">
-            <span>
-              {props.connections.length} {props.connections.length === 1 ? "path" : "paths"} out
-            </span>
-            <i class="size-0.5 rounded-full bg-current opacity-60" />
-            <span>Enter opens details · F2 renames</span>
-          </div>
+              <Show when={props.isFlowStart}>
+                <div class="flex items-center gap-2">
+                  <Icon name="play" size={10} />
+                  <span>Start screen</span>
+                </div>
+              </Show>
+              <Show when={props.runState && props.runState !== "idle"}>
+                <div
+                  class={cn(
+                    "flex items-center gap-2 font-medium capitalize",
+                    props.runState === "failed"
+                      ? "text-[var(--icon-critical-base)]"
+                      : props.runState === "healed"
+                        ? "text-[var(--icon-warning-base)]"
+                        : props.runState === "passed"
+                          ? "text-[var(--icon-success-base)]"
+                          : "text-[var(--text-interactive-base)]",
+                  )}
+                >
+                  <i class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+                  <span>{props.runState}</span>
+                </div>
+              </Show>
+            </div>
+          </section>
+
           <Show when={props.flowSetup}>
             {(flowSetup) => (
-              <div class="mt-2 grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-2">
+              <section class="grid gap-1.5 border-t border-[var(--border-weak-base)] px-3 py-2.5">
                 <div class="flex items-baseline justify-between gap-3">
                   <label
                     for="screen-flow-setup"
-                    class="text-[10px] font-medium text-[var(--text-weak)]"
+                    class="text-[10.5px] font-medium text-[var(--text-base)]"
                   >
-                    Before run
+                    When a run starts
                   </label>
-                  <span class="text-[9.5px] text-[var(--text-weak)]">
-                    {flowSetup().flowCount} {flowSetup().flowCount === 1 ? "flow" : "flows"}
-                  </span>
                 </div>
                 <select
                   id="screen-flow-setup"
-                  class="h-10 w-full rounded-[8px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[11px] text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--v2-border-border-strong)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
+                  class="h-9 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-[11px] text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--border-strong-base)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
                   value={flowSetup().mixed ? "__mixed__" : (flowSetup().routineId ?? "")}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
@@ -605,29 +691,27 @@ export function ScreenInspector(props: {
                       Mixed setup
                     </option>
                   </Show>
-                  <option value="">Verify current screen</option>
+                  <option value="">Check this screen is open</option>
                   <For each={flowSetup().routines}>
                     {(routine) => <option value={routine.id}>{routine.name}</option>}
                   </For>
                 </select>
-                <p class="m-0 text-[10px]/[1.4] text-[var(--text-weak)]">
-                  {flowSetup().routineId && !flowSetup().mixed
-                    ? "Relay runs this Routine, then verifies the entry screen."
-                    : "Runs begin by verifying that this screen is already open."}
-                </p>
-              </div>
+              </section>
             )}
           </Show>
-          <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
-            <span class="px-1.5 pb-0.5 text-[10px] font-medium text-[var(--text-weak)]">
-              Paths from this screen
-            </span>
+
+          <section class="grid gap-1 border-t border-[var(--border-weak-base)] px-2 py-2">
+            <div class="flex min-h-6 items-center justify-between gap-3 px-1">
+              <span class="text-[10.5px] font-medium text-[var(--text-base)]">Paths</span>
+              <span class="font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+                {props.connections.length}
+              </span>
+            </div>
             <Show
               when={props.connections.length}
               fallback={
-                <p class="m-0 px-1.5 py-2 text-[11px]/[1.45] text-[var(--text-weak)]">
-                  No connections yet. Record an interaction, or drag the arrow on the screen card to
-                  sketch one.
+                <p class="m-0 rounded-[8px] bg-[var(--surface-base)] px-2.5 py-2 text-[10.5px]/[1.45] text-[var(--text-weak)]">
+                  No paths from this screen.
                 </p>
               }
             >
@@ -635,7 +719,7 @@ export function ScreenInspector(props: {
                 {(connection) => (
                   <button
                     type="button"
-                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                    class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[11px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
                     onClick={() => props.onSelectConnection(connection)}
                   >
                     <span
@@ -652,17 +736,29 @@ export function ScreenInspector(props: {
                       />
                     </span>
                     <span class="min-w-0 flex-1 truncate">
-                      {connection.label ||
-                        (connection.state === "needs-recording"
-                          ? "Record interaction"
-                          : "Recorded interaction")}
+                      {connection.state === "needs-recording"
+                        ? "Not recorded yet"
+                        : connection.label || "Open path"}
                     </span>
                     <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
                   </button>
                 )}
               </For>
             </Show>
-          </div>
+          </section>
+
+          <footer class="border-t border-[var(--border-weak-base)] p-2">
+            <button
+              type="button"
+              class="flex min-h-10 w-full items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_9%,transparent)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--icon-critical-base)]"
+              aria-label="Remove screen"
+              data-tip="Remove screen · Delete"
+              onClick={props.onRemove}
+            >
+              <Icon name="trash" size={12} />
+              <span>Delete screen</span>
+            </button>
+          </footer>
         </aside>
       )}
     </Show>
@@ -687,25 +783,26 @@ export function GroupInspector(props: {
       {(group) => (
         <aside
           data-app-map-group-inspector
-          class="absolute top-16 right-3 z-30 w-[min(328px,calc(100%-24px))] overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
+          class="absolute top-16 right-3 z-30 w-[min(304px,calc(100%-24px))] overflow-hidden rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] overscroll-contain max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:w-auto"
           aria-label={`Details for group ${group().name}`}
+          onWheel={(event) => event.stopPropagation()}
         >
-          <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
-            <div class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+          <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name="group" size={12} />
               </span>
               <div class="min-w-0">
                 <span class="block text-[10px] font-medium text-[var(--text-weak)]">Group</span>
-                <strong class="mt-1 block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
+                <strong class="mt-0.5 block truncate text-[12px] font-semibold text-[var(--text-strong)]">
                   {group().name}
                 </strong>
               </div>
             </div>
-            <div class="flex items-center gap-1">
+            <div class="flex items-center">
               <button
                 type="button"
-                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label={`Rename ${group().name}`}
                 title="Rename group · F2"
                 onClick={props.onRename}
@@ -714,31 +811,31 @@ export function GroupInspector(props: {
               </button>
               <button
                 type="button"
-                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label="Close group details"
                 onClick={props.onClose}
               >
                 <Icon name="x" size={12} />
               </button>
             </div>
-          </div>
-          <p class="m-0 mt-2 px-1.5 text-[11px]/[1.45] text-[var(--text-weak)]">
-            {props.screens.length} {props.screens.length === 1 ? "screen" : "screens"} organized
-            together. Groups do not change how a flow runs.
+          </header>
+          <p class="m-0 px-3 py-2.5 text-[10.5px]/[1.45] text-[var(--text-weak)]">
+            {props.screens.length} {props.screens.length === 1 ? "screen" : "screens"}. Groups only
+            organize the canvas; they do not affect runs.
           </p>
-          <div class="mt-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-2">
-            <span class="block px-1.5 pb-0.5 text-[10px] font-medium text-[var(--text-weak)]">
-              Screens in this group
+          <div class="border-t border-[var(--border-weak-base)] px-2 py-2">
+            <span class="block px-1 pb-1 text-[9.5px] font-medium text-[var(--text-weak)]">
+              Screens
             </span>
             <div class="grid gap-0.5">
               <For each={props.screens}>
                 {(screen) => (
                   <button
                     type="button"
-                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                    class="flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                     onClick={() => props.onSelectScreen(screen.id)}
                   >
-                    <span class="grid size-5 shrink-0 place-items-center rounded-[5px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]">
+                    <span class="grid size-5 shrink-0 place-items-center rounded-[5px] bg-[var(--surface-base-hover)] text-[var(--text-weak)]">
                       <Icon name="smartphone" size={10} />
                     </span>
                     <span class="min-w-0 flex-1 truncate">{screen.title}</span>
@@ -748,17 +845,17 @@ export function GroupInspector(props: {
               </For>
             </div>
           </div>
-          <div class="mt-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pt-1.5 pb-1">
+          <footer class="border-t border-[var(--border-weak-base)] p-2">
             <button
               type="button"
-              class="flex min-h-11 w-full items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              class="flex min-h-10 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
               onClick={props.onUngroup}
             >
               <Icon name="group" size={12} class="text-[var(--text-weak)]" />
               <span>Ungroup screens</span>
               <kbd class="ml-auto text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
             </button>
-          </div>
+          </footer>
         </aside>
       )}
     </Show>
@@ -800,20 +897,19 @@ export function ConnectionInspector(props: {
 }) {
   const pending = () => props.connection.state === "needs-recording";
   const [optionsOpen, setOptionsOpen] = createSignal(false);
+  const [caseStackOpen, setCaseStackOpen] = createSignal(false);
   const [actionsOpen, setActionsOpen] = createSignal(false);
   const actionCount = () => props.actionCount ?? props.connection.stepIds.length;
   const verified = () => props.connection.review?.status === "verified";
   const failed = () => props.connection.review?.status === "failed";
-  const modeLabel = () =>
-    props.connection.mode === "automatic"
-      ? "Automatic"
-      : props.connection.mode === "reusable"
-        ? "Reusable"
-        : "Device interaction";
   return (
-    <aside class="absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(328px,calc(100%-24px))] overflow-y-auto rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-3.5 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto">
+    <aside
+      data-app-map-connection-inspector
+      class="absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] overscroll-contain overflow-y-auto rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] p-3 shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
+      onWheel={(event) => event.stopPropagation()}
+    >
       <div class="flex items-center justify-between gap-3">
-        <span class="text-[10px] font-medium text-[var(--text-weak)]">Connection</span>
+        <span class="text-[10px] font-medium text-[var(--text-weak)]">Path</span>
         <div class="flex items-center gap-1.5">
           <span
             class={cn(
@@ -826,15 +922,15 @@ export function ConnectionInspector(props: {
                     ? "bg-surface-critical-weak text-text-critical-base"
                     : props.connection.takeId || props.connection.videoTakeId
                       ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
-                      : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]",
+                      : "bg-[var(--surface-base-hover)] text-[var(--text-base)]",
             )}
           >
-            {connectionStatusLabel(props.connection)}
+            {pending() ? "Not recorded" : connectionStatusLabel(props.connection)}
           </span>
           <button
             type="button"
-            class="grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-            aria-label="Close connection details"
+            class="grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+            aria-label="Close path details"
             onClick={props.onClose}
           >
             <Icon name="x" size={11} />
@@ -846,18 +942,23 @@ export function ConnectionInspector(props: {
       </strong>
       <p class="m-0 mt-1 text-[11.5px]/[1.5] text-[var(--text-weak)]">
         {pending()
-          ? "Choose what should move the device to the next screen. You can record it or start with a simple behavior."
-          : `${modeLabel()} · ${actionCount()} action${actionCount() === 1 ? "" : "s"}${props.connection.videoTakeId ? " · video" : ""}${props.connection.videoClip ? " · trimmed" : ""}`}
+          ? "This path has no actions yet. Open the device to record it, or choose another behavior below."
+          : describeConnectionPath({
+              sourceTitle: props.sourceTitle,
+              targetTitle: props.targetTitle,
+              actions: props.actions,
+              mode: props.connection.mode,
+            })}
       </p>
       <Show when={!pending() && (props.actions?.length ?? 0) > 0}>
-        <section class="mt-3 border-t border-[var(--v2-border-border-muted)] pt-2">
+        <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
           <button
             type="button"
-            class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+            class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
             aria-expanded={actionsOpen()}
             onClick={() => setActionsOpen((value) => !value)}
           >
-            <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
+            <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base-hover)] text-[var(--text-base)]">
               <Icon name="command" size={11} />
             </span>
             <span class="min-w-0 flex-1">
@@ -873,16 +974,16 @@ export function ConnectionInspector(props: {
             </span>
           </button>
           <Show when={actionsOpen()}>
-            <ol class="m-0 mt-1 grid list-none gap-1 rounded-[9px] bg-[var(--v2-background-bg-layer-01)] p-1.5">
+            <ol class="m-0 mt-1 grid list-none gap-1 rounded-[9px] bg-[var(--surface-base)] p-1.5">
               <For each={props.actions}>
                 {(action, index) => (
                   <li class="grid min-h-10 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-[7px] px-2 text-[10px] text-[var(--text-base)]">
-                    <span class="grid size-5 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] font-mono text-[8.5px] tabular-nums text-[var(--text-weak)]">
+                    <span class="grid size-5 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] font-mono text-[8.5px] tabular-nums text-[var(--text-weak)]">
                       {index() + 1}
                     </span>
                     <span class="min-w-0 leading-[1.35]">{action.label}</span>
                     <Show when={action.waitMs !== undefined}>
-                      <label class="flex h-8 items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] px-2 text-[var(--text-weak)] focus-within:outline-2 focus-within:outline-[var(--border-focus)]">
+                      <label class="flex h-8 items-center rounded-[7px] bg-[var(--surface-base-hover)] px-2 text-[var(--text-weak)] focus-within:outline-2 focus-within:outline-[var(--border-focus)]">
                         <input
                           type="number"
                           min="0"
@@ -908,11 +1009,18 @@ export function ConnectionInspector(props: {
           </Show>
         </section>
       </Show>
-      <ConnectionCaseStack {...props.cases} />
+      <ConnectionCaseStack
+        {...props.cases}
+        open={caseStackOpen()}
+        onOpenChange={(open) => {
+          setCaseStackOpen(open);
+          if (open) setOptionsOpen(false);
+        }}
+      />
       <Show
         when={!pending() && (Boolean(props.connection.review) || props.replay.state !== "idle")}
       >
-        <div class="mt-2 grid gap-1 border-t border-[var(--v2-border-border-muted)] pt-2">
+        <div class="mt-2 grid gap-1 border-t border-[var(--border-weak-base)] pt-2">
           <div class="flex min-h-8 items-center gap-2 px-0.5">
             <span
               class={cn(
@@ -943,7 +1051,7 @@ export function ConnectionInspector(props: {
           </div>
           <For each={props.connection.review?.targets ?? []}>
             {(target) => (
-              <div class="flex min-h-7 items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-1 pt-1 text-[9.5px]">
+              <div class="flex min-h-7 items-center gap-2 border-t border-[var(--border-weak-base)] px-1 pt-1 text-[9.5px]">
                 <i
                   class={cn(
                     "size-1.5 rounded-full",
@@ -993,92 +1101,117 @@ export function ConnectionInspector(props: {
                 }
               />
               {props.replay.state === "running"
-                ? "Replaying on device…"
+                ? "Trying on device…"
                 : verified()
-                  ? "Replay again"
-                  : "Replay and verify"}
+                  ? "Run this path again"
+                  : "Run this path"}
             </Button>
-            <div class="flex flex-wrap items-center gap-1">
-              <Show when={props.replay.canEditActions}>
+            <button
+              type="button"
+              class="flex min-h-10 w-full items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+              aria-expanded={optionsOpen()}
+              onClick={() =>
+                setOptionsOpen((open) => {
+                  const next = !open;
+                  if (next) setCaseStackOpen(false);
+                  return next;
+                })
+              }
+            >
+              <Icon name={optionsOpen() ? "chevron-down" : "chevron-right"} size={10} />
+              <span>Path options</span>
+            </button>
+            <Show when={optionsOpen()}>
+              <div class="grid gap-1 border-t border-[var(--border-weak-base)] pt-2">
+                <Show when={props.replay.canEditActions}>
+                  <button
+                    type="button"
+                    class="flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] hover:bg-[var(--surface-base-hover)]"
+                    onClick={props.replay.onSelectStep}
+                  >
+                    <Icon name="arrow-right" size={11} /> Edit steps
+                  </button>
+                </Show>
                 <button
                   type="button"
-                  class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                  onClick={props.replay.onSelectStep}
+                  class="flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] hover:bg-[var(--surface-base-hover)]"
+                  title="Throw away this take and capture the path again from the start screen"
+                  onClick={props.replay.onRewrite}
                 >
-                  <Icon name="arrow-right" size={10} /> Edit actions
+                  <Icon name="refresh" size={11} /> Recapture steps
                 </button>
-              </Show>
-              <button
-                type="button"
-                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                onClick={props.replay.onRewrite}
-              >
-                <Icon name="refresh" size={10} /> Record again
-              </button>
-              <button
-                type="button"
-                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                onClick={props.replay.onSaveReusable}
-              >
-                <Icon name="copy" size={10} /> Save as routine
-              </button>
-              <Show when={props.connection.source === "authored"}>
                 <button
                   type="button"
-                  class="relative ml-auto grid size-9 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
-                  aria-label="Remove connection"
-                  title="Remove connection"
-                  onClick={props.onRemove}
+                  class="flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] hover:bg-[var(--surface-base-hover)]"
+                  title="Reuse these steps from other paths"
+                  onClick={props.replay.onSaveReusable}
                 >
-                  <Icon name="trash" size={11} />
+                  <Icon name="copy" size={11} /> Save for reuse
                 </button>
-              </Show>
-            </div>
+                <Show when={props.connection.source === "authored"}>
+                  <button
+                    type="button"
+                    class="mt-1 flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] px-2 pt-1 text-left text-[10.5px] text-[var(--icon-critical-base)] hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)]"
+                    onClick={props.onRemove}
+                  >
+                    <Icon name="trash" size={11} /> Remove path
+                  </button>
+                </Show>
+              </div>
+            </Show>
           </div>
         }
       >
         <div class="mt-3 grid gap-2">
           <Button variant="primary" size="lg" class="w-full" onClick={props.setup.onRecord}>
-            <Icon name="smartphone" size={11} /> Record transition
+            <Icon name="smartphone" size={12} /> Open device to record
           </Button>
           <button
             type="button"
-            class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[7px] text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            class="flex min-h-10 w-full items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-expanded={optionsOpen()}
-            onClick={() => setOptionsOpen((open) => !open)}
+            onClick={() =>
+              setOptionsOpen((open) => {
+                const next = !open;
+                if (next) setCaseStackOpen(false);
+                return next;
+              })
+            }
           >
-            <Icon name="plus" size={10} /> More ways to continue
-            <Icon name={optionsOpen() ? "chevron-up" : "chevron-down"} size={10} />
+            <Icon name={optionsOpen() ? "chevron-down" : "chevron-right"} size={10} />
+            <span>Set path behavior</span>
           </button>
           <Show when={optionsOpen()}>
-            <div class="grid gap-1 border-t border-[var(--v2-border-border-muted)] pt-2">
+            <div class="grid gap-0 border-t border-[var(--border-weak-base)] pt-1.5">
               <button
                 type="button"
-                class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
+                class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--surface-base-hover)]"
                 onClick={props.setup.onBack}
               >
-                <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+                <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                   <Icon name="undo" size={11} />
                 </span>
                 <span>
                   <strong class="block font-medium text-[var(--text-strong)]">Back button</strong>
                   <span class="text-[9.5px] text-[var(--text-weak)]">
-                    Go to the previous screen
+                    Press Android or iOS Back
                   </span>
                 </span>
               </button>
               <button
                 type="button"
-                class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
+                class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--surface-base-hover)]"
                 onClick={props.setup.onAutomatic}
               >
-                <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+                <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                   <Icon name="clock" size={11} />
                 </span>
                 <span>
-                  <strong class="block font-medium text-[var(--text-strong)]">No action</strong>
+                  <strong class="block font-medium text-[var(--text-strong)]">
+                    Wait for screen change
+                  </strong>
                   <span class="text-[9.5px] text-[var(--text-weak)]">
-                    Wait briefly for the next screen
+                    For loading or automatic navigation
                   </span>
                 </span>
               </button>
@@ -1090,10 +1223,10 @@ export function ConnectionInspector(props: {
                   {(behavior) => (
                     <button
                       type="button"
-                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
+                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--surface-base-hover)]"
                       onClick={() => props.setup.onAttachBehavior(behavior.id)}
                     >
-                      <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+                      <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--surface-base-hover)] text-[var(--text-interactive-base)]">
                         <Icon name="copy" size={11} />
                       </span>
                       <span class="min-w-0 flex-1">
@@ -1111,10 +1244,10 @@ export function ConnectionInspector(props: {
               <Show when={props.connection.source === "authored"}>
                 <button
                   type="button"
-                  class="mt-1 inline-flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-[10px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+                  class="mt-1 flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] px-2 pt-1 text-left text-[10.5px] text-[var(--icon-critical-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)]"
                   onClick={props.onRemove}
                 >
-                  <Icon name="trash" size={10} /> Remove connection
+                  <Icon name="trash" size={11} /> Remove path
                 </button>
               </Show>
             </div>

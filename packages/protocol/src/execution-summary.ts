@@ -11,8 +11,10 @@ function summarizeJob(value: unknown): unknown {
   const frames = Array.isArray(job.frames) ? job.frames : undefined;
   const artifacts = Array.isArray(job.artifacts) ? job.artifacts : undefined;
   const logs = Array.isArray(job.logs)
-    ? job.logs.filter((entry): entry is string => typeof entry === "string").slice(-5)
-    : [];
+    ? job.logs.filter((entry): entry is string => typeof entry === "string").slice(-24)
+    : Array.isArray(job.lastLogs)
+      ? job.lastLogs.filter((entry): entry is string => typeof entry === "string").slice(-24)
+      : [];
   const optional = [
     "title",
     "action",

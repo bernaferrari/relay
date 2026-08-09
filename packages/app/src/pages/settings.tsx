@@ -29,7 +29,7 @@ const SECTIONS = [
   ["targets", "Browser targets"],
   ["matrices", "Test environments"],
   ["devices", "Mobile devices"],
-  ["recipes", "Agents & accounts"],
+  ["recipes", "Accounts"],
   ["privacy", "Privacy & evidence"],
   ["server", "Connection"],
   ["appearance", "Appearance"],

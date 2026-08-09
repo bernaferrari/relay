@@ -238,3 +238,82 @@ test("event streams parse canonical envelopes, deduplicate cursors, and surface 
   assert.equal(request?.headers.get("last-event-id"), "1");
   assert.equal(request?.headers.get("x-relay-operation-id"), "event.stream");
 });
+
+test("HTTP errors prefer an explicit error field over joined doctor checks", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error: "No device is visible. Connect an Android phone or an iPhone/iPad.",
+            checks: [
+              { id: "node", ok: true, message: "Node.js 22" },
+              {
+                id: "devices",
+                ok: false,
+                message: "No device is visible. Connect an Android phone or an iPhone/iPad.",
+              },
+            ],
+          }),
+          { status: 503, statusText: "Service Unavailable" },
+        ),
+    },
+  );
+
+  await assert.rejects(
+    () => client.invoke("system.doctor.get", {}),
+    (error: unknown) =>
+      error instanceof ApiError &&
+      error.message === "No device is visible. Connect an Android phone or an iPhone/iPad.",
+  );
+});
+
+test("HTTP errors prefer doctor check text over 503 Service Unavailable", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            checks: [
+              { id: "node", ok: true, message: "Node.js 22" },
+              {
+                id: "devices",
+                ok: false,
+                message:
+                  "No device is visible. Connect an Android phone or an iPhone/iPad, then run relay device list.",
+              },
+            ],
+          }),
+          { status: 503, statusText: "Service Unavailable" },
+        ),
+    },
+  );
+
+  await assert.rejects(
+    () => client.invoke("system.doctor.get", {}),
+    (error: unknown) =>
+      error instanceof ApiError &&
+      error.status === 503 &&
+      /iPhone\/iPad/.test(error.message) &&
+      !/undefined/.test(error.message) &&
+      !/Service Unavailable/.test(error.message),
+  );
+});

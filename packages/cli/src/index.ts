@@ -88,19 +88,42 @@ async function watchJob(
     const status = jobStatus(result);
     output.snapshot(operationId, summarizeExecutionOperationResult(operationId, result));
     if (terminalJobStatuses.has(status)) return result;
+    const job =
+      result && typeof result === "object" && "job" in result
+        ? (result as { job?: { logs?: unknown; lastLogs?: unknown } }).job
+        : undefined;
+    const rawLogs = Array.isArray(job?.logs)
+      ? job.logs
+      : Array.isArray(job?.lastLogs)
+        ? job.lastLogs
+        : [];
+    const logs = rawLogs.filter((item): item is string => typeof item === "string");
+    const last = logs.at(-1);
+    if (last) output.heartbeat(last.length > 120 ? `${last.slice(0, 117)}…` : last);
     await waitForPoll(pollIntervalMs, signal);
   }
 }
 
 function startedJobId(response: unknown): string {
-  if (!response || typeof response !== "object" || !("job" in response)) {
+  if (!response || typeof response !== "object") {
     throw new Error("Malformed execution response: expected { job: { id: string } }");
   }
-  const job = response.job;
-  if (!job || typeof job !== "object" || !("id" in job) || typeof job.id !== "string") {
-    throw new Error("Malformed execution response: expected { job: { id: string } }");
+  const direct = "job" in response ? response.job : undefined;
+  if (direct && typeof direct === "object" && "id" in direct && typeof direct.id === "string") {
+    return direct.id;
   }
-  return job.id;
+  const jobs = "jobs" in response && Array.isArray(response.jobs) ? response.jobs : [];
+  const first = jobs[0];
+  if (
+    first &&
+    typeof first === "object" &&
+    first &&
+    "id" in first &&
+    typeof first.id === "string"
+  ) {
+    return first.id;
+  }
+  throw new Error("Malformed execution response: expected { job: { id: string } }");
 }
 
 function summarizeResult(operationId: string, result: unknown): unknown {

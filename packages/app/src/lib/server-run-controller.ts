@@ -6,6 +6,14 @@ import type { ServerRequest } from "./server-matrix-remote";
 import {
   enqueueAppMapFlow,
   enqueueAppMapConnection,
+  enqueueLocaleMatrix,
+  inferLocaleMatrix,
+  inferOptionMatrix,
+  enqueueOptionMatrix,
+  saveVariableRemote,
+  saveTestRemote,
+  saveCombineRemote,
+  buildLocaleMatrixInput,
   enqueueMatrix,
   enqueueRecipe,
   loadMatrixReport,
@@ -23,7 +31,7 @@ type RunControllerDependencies = {
   selectedJobId: Accessor<string | null>;
   prodAccountMatch: Accessor<string>;
   projectId: () => string;
-  projectVariables: Accessor<import("@relay/protocol").TestVariable[]>;
+  projectVariables: Accessor<import("@relay/protocol").TestData[]>;
   activeJob: Accessor<JobInfo | null>;
   queuedJobs: Accessor<JobInfo[]>;
   captureBeforeRun: (label: string, actionId: string) => Promise<unknown>;
@@ -48,7 +56,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
     const serial = deps.selectedDevice() ?? undefined;
     if (!serial) {
-      toast("Choose a device before replaying this connection", "info");
+      toast("Choose a device before trying this path", "info");
       return null;
     }
     const targetPlatform =
@@ -68,7 +76,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
       deps.setSelectedAction(connectionId);
       deps.rememberJob(job);
       toast(
-        jobs.length > 1 ? `Replaying ${jobs.length} cases for ${title}` : `Replaying ${title}`,
+        jobs.length > 1 ? `Replaying ${jobs.length} runs for ${title}` : `Replaying ${title}`,
         "success",
       );
       void deps.refreshJobs();
@@ -89,7 +97,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
     const serial = deps.selectedDevice() ?? undefined;
     if (!serial) {
-      toast("Choose a device before running this flow", "info");
+      toast("Choose a device before running this path", "info");
       return;
     }
     const targetPlatform =
@@ -109,8 +117,13 @@ export function createServerRunController(deps: RunControllerDependencies) {
       deps.setSelectedAction(appMapId);
       deps.rememberJob(job);
       toast(
-        jobs.length > 1 ? `Running ${jobs.length} cases for ${title}` : `Running ${title}`,
+        jobs.length > 1
+          ? `Running ${jobs.length} runs · open Run history for results`
+          : `Running “${title}” · open Run history for live results`,
         "success",
+      );
+      window.dispatchEvent(
+        new CustomEvent("relay:open-run-history", { detail: { jobId: job.id } }),
       );
       void deps.refreshJobs();
     } catch (error) {
@@ -148,14 +161,191 @@ export function createServerRunController(deps: RunControllerDependencies) {
       const title = deps.recipes().find((recipe) => recipe.id === id)?.title ?? id;
       if (repetitions > 1) {
         toast(`Queued ${repetitions} frozen trials for ${title}`, "success");
-        void deps.notify?.("Stage", `Queued ${repetitions} trials for ${title}`);
+        void deps.notify?.("Relay", `Queued ${repetitions} trials for ${title}`);
       } else if (willQueue) {
         toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
-        void deps.notify?.("Stage", `Queued ${title} — position ${queuedBefore + 1}`);
+        void deps.notify?.("Relay", `Queued ${title} — position ${queuedBefore + 1}`);
       } else {
         toast(`Running ${title}`, "success");
-        void deps.notify?.("Stage", `Running ${title}`);
+        void deps.notify?.("Relay", `Running ${title}`);
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "error");
+      deps.setError(message);
+    }
+  }
+
+  async function inferLocaleOptionsFromDevice(
+    nodes: unknown[],
+    examples: Array<{ locale: string; identifier?: string; label?: string; text?: string }>,
+    options?: {
+      locales?: string[];
+      app?: string;
+      screenshotEachLocale?: boolean;
+      appMapId?: string;
+      bodyFlowId?: string;
+      entryPath?: unknown[];
+      languagePath?: unknown[];
+    },
+  ) {
+    return inferLocaleMatrix(deps.request, {
+      nodes,
+      examples,
+      locales: options?.locales,
+      app: options?.app,
+      screenshotEachLocale: options?.screenshotEachLocale ?? true,
+      appMapId: options?.appMapId,
+      bodyFlowId: options?.bodyFlowId,
+      entryPath: options?.entryPath,
+      languagePath: options?.languagePath,
+    });
+  }
+
+  async function inferVariableFromDevice(
+    nodes: unknown[],
+    examples: Array<{ id: string; identifier?: string; label?: string; text?: string }>,
+    options?: {
+      kind?: string;
+      name?: string;
+      appMapId?: string;
+      inConnectionId?: string;
+      outConnectionId?: string;
+      listScreenId?: string;
+      entryPath?: unknown[];
+      pickerPath?: unknown[];
+    },
+  ) {
+    return inferOptionMatrix(deps.request, {
+      nodes,
+      examples,
+      kind: options?.kind,
+      name: options?.name,
+      appMapId: options?.appMapId,
+      inConnectionId: options?.inConnectionId,
+      outConnectionId: options?.outConnectionId,
+      listScreenId: options?.listScreenId,
+      entryPath: options?.entryPath,
+      pickerPath: options?.pickerPath,
+    });
+  }
+
+  async function runPathAcrossVariables(input: {
+    appMapId: string;
+    flowId?: string;
+    testId?: string;
+    combineId?: string;
+    sets?: unknown[];
+    variableIds?: string[];
+    selected?: Record<string, string[]>;
+    strategy?: "zip" | "cartesian" | "pairwise";
+    title?: string;
+  }): Promise<void> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t run yet", "warning");
+      return;
+    }
+    const serial = deps.selectedDevice() ?? undefined;
+    if (!serial) {
+      toast("Choose a ready device first", "warning");
+      return;
+    }
+    const targetPlatform =
+      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    try {
+      const data = await enqueueOptionMatrix(deps.request, {
+        appMapId: input.appMapId,
+        flowId: input.flowId,
+        testId: input.testId,
+        combineId: input.combineId,
+        serial,
+        targetKind: targetPlatform === "browser" ? "browser" : "device",
+        platform: targetPlatform === "browser" ? undefined : targetPlatform,
+        variableIds: input.variableIds,
+        sets: input.sets,
+        selected: input.selected,
+        strategy: input.strategy,
+        title: input.title,
+        projectId: deps.projectId(),
+      });
+      if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);
+      const worlds = data.batch.worlds.length;
+      toast(
+        worlds <= 1
+          ? `Running ${data.batch.title}`
+          : `Running ${data.batch.title} · ${worlds} runs`,
+        "success",
+      );
+      void deps.refreshJobs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "error");
+      deps.setError(message);
+    }
+  }
+
+  async function saveVariable(input: Parameters<typeof saveVariableRemote>[1]) {
+    return saveVariableRemote(deps.request, input);
+  }
+
+  async function saveTest(input: Parameters<typeof saveTestRemote>[1]) {
+    return saveTestRemote(deps.request, input);
+  }
+
+  async function saveCombine(input: Parameters<typeof saveCombineRemote>[1]) {
+    return saveCombineRemote(deps.request, input);
+  }
+
+  async function runRecipeAcrossLocales(
+    id: string,
+    locales: string[],
+    options?: {
+      preset?: "grok";
+      profileId?: string;
+      title?: string;
+      appMapId?: string;
+      flowId?: string;
+      scope?: import("./server-run-remote").LocaleMatrixInput["scope"];
+    },
+  ): Promise<void> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t run yet", "warning");
+      return;
+    }
+    const serial = deps.selectedDevice() ?? undefined;
+    if (!serial) {
+      toast("Choose a ready device first", "warning");
+      return;
+    }
+    const targetPlatform =
+      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    const title = options?.title ?? deps.recipes().find((recipe) => recipe.id === id)?.title ?? id;
+    deps.appendLog(`enqueue locale matrix ${id} × ${locales.join(", ")} on ${serial}…`, "info");
+    try {
+      await deps.captureBeforeRun(`before · locales · ${id}`, id).catch(() => undefined);
+      const data = await enqueueLocaleMatrix(
+        deps.request,
+        buildLocaleMatrixInput({
+          recipe: options?.appMapId ? undefined : id,
+          appMapId: options?.appMapId,
+          flowId: options?.flowId,
+          serial,
+          targetKind: targetPlatform === "browser" ? "browser" : "device",
+          platform: targetPlatform === "browser" ? undefined : targetPlatform,
+          locales,
+          scope: options?.scope,
+          preset: options?.preset,
+          profileId: options?.profileId,
+          title,
+          projectId: deps.projectId(),
+        }),
+      );
+      if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);
+      toast(`Running ${title} across ${data.batch.locales.length} locales`, "success");
+      void deps.notify?.("Relay", `Running ${title} across ${data.batch.locales.length} locales`);
+      void deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.appendLog(message, "error");
@@ -223,6 +413,13 @@ export function createServerRunController(deps: RunControllerDependencies) {
 
   return {
     runRecipe,
+    inferLocaleOptionsFromDevice,
+    inferVariableFromDevice,
+    runPathAcrossVariables,
+    saveVariable,
+    saveTest,
+    saveCombine,
+    runRecipeAcrossLocales,
     runAppMapConnection,
     runAppMapFlow,
     runCompatibilityMatrix,

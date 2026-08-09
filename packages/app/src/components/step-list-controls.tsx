@@ -174,8 +174,8 @@ export function AddMenu(props: {
         }}
         class={cn(
           "ui-pop fixed z-[200] flex w-[288px] flex-col overflow-hidden rounded-xl",
-          "border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha",
-          "text-text-strong shadow-[var(--v2-elevation-overlay)]",
+          "border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha",
+          "text-text-strong shadow-[var(--shadow-lg)]",
           pos().openAbove ? "origin-bottom" : "origin-top",
         )}
         style={{
@@ -218,7 +218,7 @@ export function AddMenu(props: {
                 class="size-2 justify-self-center rounded-full bg-[var(--icon-critical-base)]"
                 aria-hidden="true"
               />
-              <span class="truncate">Record transition</span>
+              <span class="truncate">Record path</span>
             </button>
             <div class="my-1 h-px bg-border-weak-base" />
           </Show>

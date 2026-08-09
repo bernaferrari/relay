@@ -298,6 +298,36 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  it("keeps tour origin identity and prelude inside the walk", () => {
+    const originFingerprint = "a".repeat(64);
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "tour",
+          originTitle: "Settings",
+          originFingerprint,
+          preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
+          fallbackStops: [{ label: "Appearance" }],
+          excludeLanguageRows: true,
+        },
+      ]),
+      [
+        {
+          kind: "tour",
+          originTitle: "Settings",
+          originFingerprint,
+          preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
+          fallbackStops: [{ label: "Appearance" }],
+          excludeLanguageRows: true,
+        },
+      ],
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "tour", originFingerprint: "not-a-fingerprint" }]),
+      /originFingerprint/,
+    );
+  });
+
   it("preserves stable accessibility identifiers as first-class targets", () => {
     assert.deepEqual(
       validateRecipeSteps([
@@ -880,6 +910,13 @@ describe("describeRecipeStep", () => {
       describeRecipeStep({ kind: "screenshot", caption: "proof" }),
       "Screenshot · proof",
     );
+    assert.equal(describeRecipeStep({ kind: "tour" }), "Tour visible rows");
+    assert.equal(describeRecipeStep({ kind: "tour", depth: 0 }), "Tour visible rows");
+    assert.equal(describeRecipeStep({ kind: "tour", depth: 1 }), "Tour visible rows depth 1");
+    assert.equal(
+      describeRecipeStep({ kind: "tour", originTitle: "Settings" }),
+      "Tour Settings rows",
+    );
     assert.equal(describeRecipeStep({ kind: "flow", flow: "logout" }), "Flow: logout");
     assert.equal(describeRecipeStep({ kind: "pause", message: "2FA" }), "Pause: 2FA");
     assert.equal(
@@ -932,6 +969,7 @@ describe("describeRecipeStep", () => {
     );
     assert.deepEqual(glyphsForStep({ kind: "pause", message: "x" }), ["wait"]);
     assert.deepEqual(glyphsForStep({ kind: "screenshot" }), ["shot"]);
+    assert.deepEqual(glyphsForStep({ kind: "tour" }), ["tap", "shot"]);
     assert.deepEqual(glyphsForStep({ kind: "flow", flow: "logout" }), ["store"]);
   });
 });

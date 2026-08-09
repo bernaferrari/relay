@@ -2,7 +2,7 @@ import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recip
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity, TargetProfile } from "./index.js";
 
-export const APP_MAP_SCHEMA_VERSION = 2 as const;
+export const APP_MAP_SCHEMA_VERSION = 1 as const;
 
 export type VolatileSemanticKind =
   | "clock"
@@ -174,14 +174,92 @@ export type Connection = AppMapEntity & {
 
 export type CaseExpansionStrategy = "zip" | "cartesian" | "pairwise";
 
-/** A reusable coverage definition. Values remain project variables so private
+/** A reusable coverage definition. Values remain project test data so private
  * actor-local data never has to enter the collaborative App Map document. */
 export type CaseStack = AppMapEntity & {
   name: string;
   description?: string;
-  variableIds: string[];
+  dataIds: string[];
   strategy: CaseExpansionStrategy;
   maxCases: number;
+};
+
+/** Language, location, theme, account, later toggles — one array × a path. */
+export type AppMapVariableKind =
+  | "language"
+  | "location"
+  | "account"
+  | "theme"
+  | "workspace"
+  | "build"
+  | "toggle"
+  | "custom";
+
+export type VariableNavStep =
+  | {
+      kind: "tap";
+      target: { identifier?: string; label?: string; text?: string };
+    }
+  | { kind: "back" }
+  | { kind: "wait"; ms: number }
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | { kind: "relaunch" }
+  | { kind: "openApp"; app: string; relaunch?: boolean };
+
+export type VariableRow = {
+  id: string;
+  identifier?: string;
+  label?: string;
+  text?: string;
+};
+
+export type VariableApply =
+  | {
+      kind: "list";
+      /** Recorded map connection that opens the list (preferred over flattened nav). */
+      inConnectionId?: string;
+      /** Recorded map connection that leaves the list before work runs. */
+      outConnectionId?: string;
+      listScreenId?: string;
+      /** Recipe step id of the demonstrated list tap; In is before, Out after if no outConnectionId. */
+      pickStepId?: string;
+      entryPath?: VariableNavStep[];
+      pickerPath?: VariableNavStep[];
+      exitPath?: VariableNavStep[];
+    }
+  | {
+      kind: "toggle";
+      target: StepTarget;
+      on: { identifier?: string; label?: string };
+      off: { identifier?: string; label?: string };
+    };
+
+/** Named possibilities that change app state, then a map path runs in each world. */
+export type AppMapVariable = AppMapEntity & {
+  name: string;
+  kind: AppMapVariableKind;
+  apply: VariableApply;
+  options: VariableRow[];
+  restoreId?: string;
+  screenshotEach?: boolean;
+};
+
+/** A test you can bind to variables. Path = recorded flow. Tour = live children. */
+export type AppMapTest = AppMapEntity & {
+  name: string;
+  kind: "path" | "tour";
+  flowId?: string;
+  rootScreenId?: string;
+  depth?: number;
+  screenshotEach?: boolean;
+};
+
+/** Figma-like binding: variables × tests. Extra variables are M×N×O; extra tests run in order. */
+export type AppMapCombine = AppMapEntity & {
+  name: string;
+  variableIds: string[];
+  testIds: string[];
+  strategy?: "zip" | "cartesian";
 };
 
 export type Routine = AppMapEntity & {
@@ -363,6 +441,9 @@ export type ActivitySubjectKind =
   | "flow"
   | "routine"
   | "case-stack"
+  | "variable"
+  | "test"
+  | "combine"
   | "proposal"
   | "run";
 
@@ -388,6 +469,12 @@ export type ActivityEvent = AppMapScope & {
     | "case-stack.saved"
     | "case-stack.attached"
     | "case-stack.removed"
+    | "variable.saved"
+    | "variable.removed"
+    | "test.saved"
+    | "test.removed"
+    | "combine.saved"
+    | "combine.removed"
     | "recording.committed"
     | "run.finished"
     | "proposal.submitted"
@@ -414,6 +501,9 @@ export type AppMap = {
   screenVariants: Record<string, ScreenVariant>;
   connections: Record<string, Connection>;
   caseStacks: Record<string, CaseStack>;
+  variables: Record<string, AppMapVariable>;
+  tests: Record<string, AppMapTest>;
+  combines: Record<string, AppMapCombine>;
   routines: Record<string, Routine>;
   flows: Record<string, Flow>;
   runs: Record<string, RunReference>;
@@ -454,6 +544,9 @@ export type SerializedAppMap = Omit<
   | "screenVariants"
   | "connections"
   | "caseStacks"
+  | "variables"
+  | "tests"
+  | "combines"
   | "routines"
   | "flows"
   | "runs"
@@ -467,6 +560,9 @@ export type SerializedAppMap = Omit<
   screenVariants: ScreenVariant[];
   connections: Connection[];
   caseStacks: CaseStack[];
+  variables: AppMapVariable[];
+  tests: AppMapTest[];
+  combines: AppMapCombine[];
   routines: Routine[];
   flows: Flow[];
   runs: RunReference[];
@@ -573,12 +669,45 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         ...(flow.setup ? { setup: flow.setup } : {}),
         connectionIds: flow.connectionIds,
       })),
+      variables: byId(map.variables ?? {}).map((set) => ({
+        id: set.id,
+        name: set.name,
+        kind: set.kind,
+        optionCount: set.options.length,
+        sandwich:
+          set.apply.kind === "list"
+            ? {
+                in: Boolean(set.apply.inConnectionId || set.apply.entryPath?.length),
+                list: set.options.length > 0,
+                out: Boolean(set.apply.outConnectionId || set.apply.exitPath?.length),
+              }
+            : { toggle: true },
+      })),
+      tests: byId(map.tests ?? {}).map((work) => ({
+        id: work.id,
+        name: work.name,
+        kind: work.kind,
+        ...(work.flowId ? { flowId: work.flowId } : {}),
+        ...(work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
+        depth: work.depth ?? (work.kind === "tour" ? 0 : undefined),
+      })),
+      combines: byId(map.combines ?? {}).map((combine) => ({
+        id: combine.id,
+        name: combine.name,
+        formula: [...combine.variableIds, ...combine.testIds].join(" × "),
+        variableIds: combine.variableIds,
+        testIds: combine.testIds,
+        strategy: combine.strategy ?? (combine.variableIds.length > 1 ? "cartesian" : "zip"),
+      })),
       counts: {
         screens: Object.keys(map.screens).length,
         variants: Object.keys(map.screenVariants).length,
         connections: Object.keys(map.connections).length,
         groups: Object.keys(map.groups).length,
         caseStacks: Object.keys(map.caseStacks).length,
+        variables: Object.keys(map.variables ?? {}).length,
+        tests: Object.keys(map.tests ?? {}).length,
+        combines: Object.keys(map.combines ?? {}).length,
         routines: Object.keys(map.routines).length,
         flows: Object.keys(map.flows).length,
         runs: Object.keys(map.runs).length,

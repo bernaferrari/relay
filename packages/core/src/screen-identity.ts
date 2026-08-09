@@ -376,6 +376,98 @@ export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIde
   };
 }
 
+const LOCALIZED_STRING_KEY = /^LocalizedStringKey\(key: "([^"]+)"/u;
+
+/** Extract a SwiftUI LocalizedStringKey symbolic key when the a11y label carries one. */
+export function stableLabelKey(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const key = LOCALIZED_STRING_KEY.exec(value)?.[1]?.trim();
+  return key || undefined;
+}
+
+/**
+ * Locale-stable structural identity for i18n corpus.
+ * Uses role + accessibility identifier + LocalizedStringKey when present.
+ * Visible localized labels and values are intentionally excluded so the same
+ * Settings page collapses across languages.
+ */
+export function observeLocaleStableIdentity(
+  nodes: readonly SnapshotNode[],
+): ScreenIdentityObservation {
+  const ignoredSystemInput = systemInputIndexes(nodes);
+  const applicationNodes = nodes.filter(
+    (node) =>
+      node.bundleId !== "com.android.systemui" &&
+      !/^(?:com\.google\.android\.inputmethod\.latin|com\.samsung\.android\.honeyboard|com\.touchtype\.swiftkey)$/u.test(
+        node.bundleId ?? "",
+      ),
+  );
+  const identityNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
+  const entries = nodes
+    .filter((node) => identityNodes.includes(node))
+    .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))
+    .filter((node) => node.visibleToUser !== false)
+    .flatMap((node) => {
+      const role = normalizeText(node.role ?? node.type, "label").value;
+      const identifier = normalizeText(node.identifier, "identifier").value;
+      const key = stableLabelKey(node.label) ?? stableLabelKey(node.value);
+      if (!role && !identifier && !key) return [];
+      // Only keep nodes that contribute structural anchors. Pure localized copy
+      // (label without id/key) is dropped so language changes do not re-key screens.
+      if (!identifier && !key) return [];
+      return [
+        {
+          node: {
+            role,
+            ...(identifier ? { identifier } : {}),
+            ...(key ? { label: key } : {}),
+            ...(node.enabled !== undefined ? { enabled: node.enabled } : {}),
+            ...(node.selected !== undefined ? { selected: node.selected } : {}),
+          } satisfies NormalizedSemanticNode,
+        },
+      ];
+    })
+    .sort((left, right) => canonicalNode(left.node).localeCompare(canonicalNode(right.node)));
+  const normalized = entries.map((entry) => entry.node);
+  return {
+    fingerprint: digest(
+      `relay-locale-stable-identity:v1:${normalized.map(canonicalNode).join("\n")}`,
+    ),
+    nodes: normalized,
+    volatileSignals: [],
+  };
+}
+
+/** Stable control key for one interactive node across locales. */
+export function corpusControlStableKey(node: {
+  identifier?: string;
+  label?: string;
+  value?: string;
+  role?: string;
+  type?: string;
+}): string {
+  const identifier = node.identifier?.trim();
+  if (identifier) return `id:${identifier.toLocaleLowerCase()}`;
+  const key = stableLabelKey(node.label) ?? stableLabelKey(node.value);
+  if (key) return `key:${key.toLocaleLowerCase()}`;
+  const role = (node.role ?? node.type ?? "control").trim().toLocaleLowerCase() || "control";
+  const label = (node.label ?? node.value ?? "").trim().toLocaleLowerCase();
+  // Last resort: role+label — locale-bound, but still useful within one pass.
+  return `label:${role}:${label}`;
+}
+
+export function slugCorpusPathSegment(value: string): string {
+  const key = stableLabelKey(value) ?? value;
+  const slug = key
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return slug || "screen";
+}
+
 type FeatureMap = Map<string, number>;
 
 function addFeature(features: FeatureMap, key: string, weight = 1): void {

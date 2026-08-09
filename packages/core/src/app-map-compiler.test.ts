@@ -53,7 +53,7 @@ function fixture(): AppMap {
     ],
   };
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: scope.appMapId,
     organizationId: scope.organizationId,
     projectId: scope.projectId,
@@ -71,11 +71,14 @@ function fixture(): AppMap {
       "thinking-levels": {
         ...entity("thinking-levels"),
         name: "Thinking levels",
-        variableIds: ["thinking-level"],
+        dataIds: ["thinking-level"],
         strategy: "zip",
         maxCases: 10,
       },
     },
+    variables: {},
+    tests: {},
+    combines: {},
     routines: { [signIn.id]: signIn },
     flows: {
       checkout: {

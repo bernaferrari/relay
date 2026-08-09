@@ -316,7 +316,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       }
 
       const body = {
-        title: title().trim() || "Untitled",
+        title: title().trim() || "My map",
         description: description().trim() || undefined,
         parameters: parameters(),
         steps: persistSteps,
@@ -532,7 +532,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     }
 
     /**
-     * Recording needs somewhere to land: any selected recipe works (builtins
+     * Recording needs somewhere to land: any selected recipe tests (builtins
      * auto-fork on the first appended step). Only when NOTHING is selected do
      * we create a fresh "Recorded test <n>" and select it.
      */

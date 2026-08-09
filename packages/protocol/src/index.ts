@@ -149,6 +149,7 @@ export type JobSummary = {
   batchId?: string;
   frameCount: number;
   evidenceComplete?: boolean;
+  lastLogs?: string[];
 };
 
 export type TraceFrameDto = {
@@ -689,6 +690,225 @@ export type DiscoverySession = {
   transitions: ObservedTransition[];
 };
 
+/** Bounds for a first-class settings / i18n tree corpus. */
+export type CorpusScope = {
+  /** Maximum navigation depth from the corpus root (0 = root only). */
+  maxDepth: number;
+  maxScreens: number;
+  maxTransitions: number;
+  maxDurationMs: number;
+  /** Locales to capture. First is the map locale unless mapLocale is set. */
+  locales: string[];
+  /**
+   * map-once-replay (default): DFS the tree once in the map locale, then switch
+   * language and replay the same path plan for every other locale.
+   * crawl-each: independent DFS per locale (legacy).
+   */
+  strategy?: "map-once-replay" | "crawl-each";
+  /** Locale used to discover the tree. Defaults to locales[0]. */
+  mapLocale?: string;
+  /** App to open / relaunch between locale passes (bundle id or name). */
+  app?: string;
+  /** Optional path from the current screen to the corpus root (e.g. open Settings). */
+  entryPath?: CorpusNavStep[];
+  /**
+   * Path from the corpus root to the in-app language picker. Used before each
+   * non-map locale so the next language can be chosen.
+   */
+  languagePath?: CorpusNavStep[];
+  /**
+   * Per-locale selection steps inside the language picker. Keys are locale tags
+   * from `locales` (e.g. "pt-BR"). Prefer accessibility identifiers over labels.
+   */
+  languageOptions?: Record<string, CorpusNavStep[]>;
+  allowSensitiveControls?: boolean;
+};
+
+export type CorpusStatus = "draft" | "running" | "paused" | "complete" | "stopped" | "failed";
+
+export type CorpusNavStep =
+  | {
+      kind: "tap";
+      target: {
+        identifier?: string;
+        label?: string;
+        text?: string;
+      };
+    }
+  | { kind: "back" }
+  | { kind: "wait"; ms: number }
+  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  | { kind: "relaunch" }
+  /** Open/switch foreground app without requiring relaunch (deep-link handoff). */
+  | { kind: "openApp"; app: string; relaunch?: boolean };
+
+export type CorpusControl = {
+  id: string;
+  label: string;
+  /** Locale-stable control key when identifiers or LocalizedStringKey exist. */
+  stableKey: string;
+  role?: string;
+  target: {
+    identifier?: string;
+    ref?: string;
+    label?: string;
+    text?: string;
+    point?: { x: number; y: number };
+  };
+};
+
+/** One concrete screen observation inside a corpus, always bound to a locale. */
+export type CorpusScreen = {
+  id: string;
+  /** Locale-stable structural identity shared across language passes. */
+  canonicalKey: string;
+  /** Full semantic fingerprint for this locale's copy. */
+  fingerprint: string;
+  locale: string;
+  depth: number;
+  /** Slash-joined path labels from the corpus root (localized). */
+  path: string[];
+  /** Stable path keys when available (identifiers / string keys). */
+  pathKeys: string[];
+  title?: string;
+  capturedAt: number;
+  screenshotPath?: string;
+  /** Relative pack path written at export time, e.g. pt-BR/settings/app-language.png */
+  artifactPath?: string;
+  snapshotDigest?: string;
+  controls?: CorpusControl[];
+  /** Localized labels observed on this screen, keyed by stable control key. */
+  localizedLabels?: Record<string, string>;
+};
+
+export type CorpusTransition = {
+  id: string;
+  fromScreenId: string;
+  toScreenId?: string;
+  locale: string;
+  kind: "tap" | "scroll" | "back" | "relaunch" | "manual";
+  label?: string;
+  stableKey?: string;
+  target?: CorpusControl["target"];
+  depth: number;
+  capturedAt: number;
+  changedScreen: boolean;
+};
+
+/** One step recorded while mapping the tree in the map locale. */
+export type CorpusMapAction =
+  | {
+      kind: "open";
+      stableKey: string;
+      label: string;
+      target: CorpusControl["target"];
+      depth: number;
+      /** Stable path keys after this open (root → … → this control). */
+      pathKeys: string[];
+      /** Localized path labels from the map locale (display only). */
+      path: string[];
+      fromCanonicalKey: string;
+      toCanonicalKey?: string;
+    }
+  | {
+      kind: "back";
+      depth: number;
+      fromCanonicalKey: string;
+    };
+
+/** Deterministic tree plan produced by the map-locale DFS, replayed per locale. */
+export type CorpusMapPlan = {
+  mappedLocale: string;
+  rootCanonicalKey?: string;
+  /** Preorder open/back actions from the map crawl. */
+  actions: CorpusMapAction[];
+  mappedAt: number;
+};
+
+export type CorpusProgress = {
+  phase:
+    | "idle"
+    | "opening"
+    | "mapping"
+    | "switching-language"
+    | "replaying"
+    | "crawling"
+    | "exporting"
+    | "complete"
+    | "failed";
+  locale?: string;
+  depth?: number;
+  path?: string[];
+  screensCaptured: number;
+  transitionsCaptured: number;
+  message?: string;
+  updatedAt: number;
+};
+
+export type CorpusPackManifest = {
+  schemaVersion: 1;
+  sessionId: string;
+  name: string;
+  generatedAt: number;
+  locales: string[];
+  rootDir: string;
+  screens: Array<{
+    id: string;
+    locale: string;
+    canonicalKey: string;
+    depth: number;
+    path: string[];
+    pathKeys: string[];
+    title?: string;
+    file: string;
+  }>;
+  /** canonicalKey → locale → relative PNG path for side-by-side compare */
+  byCanonicalKey: Record<string, Record<string, string>>;
+};
+
+export type CorpusSession = {
+  id: string;
+  name: string;
+  projectId?: string;
+  organizationId?: string;
+  targetId: string;
+  targetProfile?: TargetProfile;
+  scope: CorpusScope;
+  status: CorpusStatus;
+  createdAt: number;
+  updatedAt: number;
+  currentScreenId?: string;
+  currentLocale?: string;
+  progress: CorpusProgress;
+  screens: CorpusScreen[];
+  transitions: CorpusTransition[];
+  /** Tree discovered in the map locale; replayed for every other language. */
+  mapPlan?: CorpusMapPlan;
+  /** Relative directory under .relay/corpus/<id>/pack when exported. */
+  packRoot?: string;
+  error?: string;
+};
+
+export type CorpusCoverageItem = {
+  id: string;
+  label: string;
+  canonicalKey: string;
+  observedLocales: string[];
+  missingLocales: string[];
+  screenIds: string[];
+};
+
+export type CorpusCoverageReport = {
+  sessionId: string;
+  name: string;
+  generatedAt: number;
+  locales: string[];
+  screens: CorpusCoverageItem[];
+  complete: number;
+  partial: number;
+  missing: number;
+};
+
 export type Revisioned<T> = {
   revision: number;
   value: T;
@@ -748,7 +968,7 @@ export type DeviceLease = {
   handoffReason?: string;
 };
 
-export type TestVariable = {
+export type TestData = {
   id: string;
   name: string;
   /** Shared values are collaborative. Private definitions are collaborative,
@@ -1026,7 +1246,7 @@ export type GenerationResult = {
 export type RunCaseProvenance = {
   variableId: string;
   variableName: string;
-  source: TestVariable["source"];
+  source: TestData["source"];
   provider?: string;
   model?: string;
   generatedAt?: number;

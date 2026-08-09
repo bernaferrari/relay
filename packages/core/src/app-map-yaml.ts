@@ -24,6 +24,9 @@ const APP_MAP_FIELDS = new Set([
   "screenVariants",
   "connections",
   "caseStacks",
+  "variables",
+  "tests",
+  "combines",
   "routines",
   "flows",
   "runs",
@@ -40,6 +43,9 @@ const ENTITY_FIELDS = [
   "screenVariants",
   "connections",
   "caseStacks",
+  "variables",
+  "tests",
+  "combines",
   "routines",
   "flows",
   "runs",
@@ -153,6 +159,9 @@ export function rescopeAppMap(
     screenVariants: mapEntities(value.screenVariants),
     connections: mapEntities(value.connections),
     caseStacks: mapEntities(value.caseStacks),
+    variables: mapEntities(value.variables ?? {}),
+    tests: mapEntities(value.tests ?? {}),
+    combines: mapEntities(value.combines ?? {}),
     routines: mapEntities(value.routines),
     flows: mapEntities(value.flows),
     runs: mapEntities(value.runs),
@@ -185,7 +194,12 @@ export function parseAppMapYaml(
   for (const key of Object.keys(value)) {
     if (!APP_MAP_FIELDS.has(key)) throw new Error(`unknown Relay App Map field: ${key}`);
   }
-  for (const field of ENTITY_FIELDS) value[field] = entityRecord(value[field], field);
+  for (const field of ENTITY_FIELDS) {
+    const raw =
+      value[field] ??
+      (field === "variables" || field === "tests" || field === "combines" ? [] : value[field]);
+    value[field] = entityRecord(raw, field);
+  }
   const appMap = validateAppMap(value as AppMap);
   return destination ? rescopeAppMap(appMap, destination) : appMap;
 }

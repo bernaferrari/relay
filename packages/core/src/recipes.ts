@@ -147,8 +147,11 @@ export async function readRecipe(id: string): Promise<Recipe | null> {
 export type FrozenRecipeGraph = Record<string, Recipe>;
 
 /** Resolve every reusable-flow dependency before a job enters the queue. */
-export async function freezeRecipeGraph(root: Recipe): Promise<FrozenRecipeGraph> {
-  const graph: FrozenRecipeGraph = { [root.id]: structuredClone(root) };
+export async function freezeRecipeGraph(
+  root: Recipe,
+  seed: FrozenRecipeGraph = {},
+): Promise<FrozenRecipeGraph> {
+  const graph: FrozenRecipeGraph = { ...structuredClone(seed), [root.id]: structuredClone(root) };
   const visiting = new Set<string>();
 
   const dependencies = (recipe: Recipe): string[] =>

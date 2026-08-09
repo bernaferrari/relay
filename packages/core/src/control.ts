@@ -185,13 +185,29 @@ export async function cooperativeCheckpointWithTimeout(
 }
 
 /** Best-effort: close agent-device session so in-flight commands drop. */
-export async function hardStopDeviceSession(target: TargetContext): Promise<void> {
+export async function hardStopDeviceSession(
+  target: TargetContext,
+  options?: { alsoCloseSessions?: string[] },
+): Promise<void> {
   try {
     const { createAgentDeviceClient } = await import("agent-device");
-    const client = createAgentDeviceClient({
-      session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(target),
-    });
-    await client.sessions.close({ shutdown: false });
+    const names = [
+      process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(target),
+      ...(options?.alsoCloseSessions ?? []),
+    ].filter((name, index, all): name is string => Boolean(name) && all.indexOf(name) === index);
+
+    for (const session of names) {
+      try {
+        const client = createAgentDeviceClient({ session });
+        // shutdown:true tears down the on-device XCTest process. Without that, a
+        // watchdog-wedged runner keeps failing every command until the iPad reboots.
+        await client.sessions.close({ shutdown: true }).catch(async () => {
+          await client.sessions.close({ shutdown: false });
+        });
+      } catch {
+        /* session may already be gone */
+      }
+    }
   } catch {
     /* session may already be gone */
   }

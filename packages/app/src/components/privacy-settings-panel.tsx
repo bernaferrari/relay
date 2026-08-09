@@ -1,4 +1,5 @@
 import { Show, createSignal, onMount } from "solid-js";
+import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { SensitiveEvidenceControls } from "./sensitive-evidence-controls";
@@ -15,13 +16,13 @@ export function PrivacySettingsPanel() {
     ]).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   });
 
-  async function toggle(): Promise<void> {
+  async function toggle(enabled: boolean): Promise<void> {
     const policy = server.redactionPolicy();
     if (!policy || policy.locked || busy()) return;
     setBusy(true);
     setError("");
     try {
-      await server.setRedactionEnabled(!policy.enabled);
+      await server.setRedactionEnabled(enabled);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -48,28 +49,12 @@ export function PrivacySettingsPanel() {
             before Relay exposes or saves new evidence.
           </span>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={server.redactionPolicy()?.enabled ?? false}
+        <Switch
+          checked={server.redactionPolicy()?.enabled ?? false}
           aria-label="Redact sensitive evidence"
           disabled={!server.redactionPolicy() || server.redactionPolicy()?.locked || busy()}
-          class={cn(
-            "relative h-5 w-9 shrink-0 rounded-full border border-border-weak-base transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus disabled:cursor-not-allowed disabled:opacity-50",
-            server.redactionPolicy()?.enabled
-              ? "bg-icon-success-base"
-              : "bg-surface-raised-stronger-non-alpha",
-          )}
-          onClick={() => void toggle()}
-        >
-          <span
-            aria-hidden="true"
-            class={cn(
-              "absolute top-0.5 left-0.5 size-3.5 rounded-full bg-text-on-brand-base shadow-sm transition-transform",
-              server.redactionPolicy()?.enabled && "translate-x-4",
-            )}
-          />
-        </button>
+          onCheckedChange={(enabled) => void toggle(enabled)}
+        />
       </div>
 
       <div class="flex items-center justify-between gap-3 py-3 text-12-regular">

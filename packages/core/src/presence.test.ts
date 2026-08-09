@@ -155,7 +155,7 @@ test("upsertPresence rejects empty actor ids and enforces capacity", () => {
         }),
       /presence capacity exceeded/,
     );
-    // Updating an existing actor still works at capacity.
+    // Updating an existing actor still tests at capacity.
     const refreshed = upsertPresence({
       projectId: "alpha",
       actorId: "human:0",

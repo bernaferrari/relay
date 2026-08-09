@@ -10,6 +10,8 @@ import {
 import { removeCanvasScreen, withCanvasGraph } from "./app-map-canvas-graph";
 import { nextBranchPosition, type CanvasPoint } from "./app-map-canvas-layout";
 import { applyScreenRemovalToCanvas, applyScreenRenameToCanvas } from "./app-map-workspace-helpers";
+import { NEXT_SCREEN_TOAST, PATH_ADDED_TOAST, PATH_REMOVED_TOAST } from "./app-map-path-draft";
+import { toast } from "../context/toast";
 
 /** Screen/connection mutations that only need canvas state + persist. */
 export function useAppMapGraphEdits(options: {
@@ -44,6 +46,7 @@ export function useAppMapGraphEdits(options: {
     options.setKeyboardConnectionSourceId(null);
     options.setSelectedConnectionId(connection?.id ?? null);
     options.setSelectedNodeId(null);
+    toast(PATH_ADDED_TOAST, "success");
   };
 
   const createKeyboardDestination = (fromScreenId: string) => {
@@ -62,11 +65,14 @@ export function useAppMapGraphEdits(options: {
       Date.now(),
       options.draftSteps(),
     );
-    const connection = next.graph?.transitions.at(-1);
+    const screenId = next.graph?.screens.at(-1)?.id;
     options.persistMetadata(next);
     options.setKeyboardConnectionSourceId(null);
-    options.setSelectedConnectionId(connection?.id ?? null);
-    options.setSelectedNodeId(null);
+    options.setSelectedConnectionId(null);
+    options.setSelectedNodeId(screenId ?? null);
+    options.setScreenInspectorOpen(false);
+    options.setRenamingNodeId(screenId ?? null);
+    toast(NEXT_SCREEN_TOAST, "success");
   };
 
   const removeConnection = (connection: CanvasConnection) => {
@@ -74,6 +80,7 @@ export function useAppMapGraphEdits(options: {
     const next = removeAuthoredConnection(options.canvasState(), connection.id);
     options.persistMetadata(next);
     options.setSelectedConnectionId(null);
+    toast(PATH_REMOVED_TOAST, "info");
   };
 
   const removeScreen = (node: MapTreeNode) => {

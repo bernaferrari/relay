@@ -18,10 +18,10 @@ import {
 } from "./take-action-model";
 
 const field =
-  "h-11 w-full rounded-[8px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[16px] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-[12px]";
+  "h-11 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[16px] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-[12px]";
 const label = "grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]";
 const iconButton =
-  "grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
 
 type BindingRow = { id: number; name: string; value: string };
 
@@ -82,8 +82,8 @@ export function TakeActionEditor(props: {
       if (names.some((name) => !name) || new Set(names).size !== names.length) {
         setError(
           names.some((name) => !name)
-            ? "Every routine input needs a name."
-            : "Routine input names must be unique.",
+            ? "Every path input needs a name."
+            : "Input names must be unique.",
         );
         queueMicrotask(() => firstField?.focus({ preventScroll: true }));
         return;
@@ -107,7 +107,7 @@ export function TakeActionEditor(props: {
 
   return (
     <form
-      class="grid gap-3 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-3"
+      class="grid gap-3 border-t border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-3"
       aria-labelledby={titleId}
       aria-describedby={error() ? errorId : undefined}
       onSubmit={(event) => void submit(event)}
@@ -530,7 +530,7 @@ export function TakeActionEditor(props: {
           return (
             <>
               <label class={label}>
-                Routine ID
+                Saved path ID
                 <input
                   class={field}
                   value={interaction.recipeId}
@@ -541,7 +541,7 @@ export function TakeActionEditor(props: {
                   }
                 />
               </label>
-              <div class="grid gap-2" aria-label="Routine inputs">
+              <div class="grid gap-2" aria-label="Saved path inputs">
                 <For each={bindingRows()}>
                   {(row) => (
                     <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] gap-2">
@@ -549,7 +549,7 @@ export function TakeActionEditor(props: {
                         class={field}
                         value={row.name}
                         placeholder="Input name"
-                        aria-label="Routine input name"
+                        aria-label="Input name"
                         disabled={props.pending}
                         spellcheck={false}
                         onInput={(event) =>
@@ -566,7 +566,7 @@ export function TakeActionEditor(props: {
                         class={field}
                         value={row.value}
                         placeholder="Value"
-                        aria-label="Routine input value"
+                        aria-label="Input value"
                         disabled={props.pending}
                         onInput={(event) =>
                           setBindingRows((rows) =>
@@ -581,7 +581,7 @@ export function TakeActionEditor(props: {
                       <button
                         type="button"
                         class={iconButton}
-                        aria-label="Remove routine input"
+                        aria-label="Remove input"
                         disabled={props.pending}
                         onClick={() =>
                           setBindingRows((rows) =>
@@ -596,7 +596,7 @@ export function TakeActionEditor(props: {
                 </For>
                 <button
                   type="button"
-                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] border border-[var(--v2-border-border-muted)] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] border border-[var(--border-weak-base)] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                   disabled={props.pending}
                   onClick={() =>
                     setBindingRows((rows) => [
@@ -614,7 +614,7 @@ export function TakeActionEditor(props: {
       </Show>
 
       <Show when={draft().kind === "steps"}>
-        <p class="m-0 rounded-[8px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3 py-2.5 text-[10.5px]/[1.5] text-[var(--text-weak)]">
+        <p class="m-0 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-2.5 text-[10.5px]/[1.5] text-[var(--text-weak)]">
           This action contains custom or grouped steps. They will stay unchanged unless you choose
           another action type.
         </p>
@@ -635,7 +635,7 @@ export function TakeActionEditor(props: {
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
-          class="min-h-11 rounded-[8px] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--text-strong)]"
+          class="min-h-11 rounded-[8px] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)]"
           disabled={props.pending}
           onClick={props.onCancel}
         >
@@ -643,7 +643,7 @@ export function TakeActionEditor(props: {
         </button>
         <button
           type="submit"
-          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={props.pending}
         >
           <Show when={props.pending} fallback={<Icon name="check" size={12} />}>

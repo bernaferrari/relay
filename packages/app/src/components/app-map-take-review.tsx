@@ -50,7 +50,7 @@ export function AppMapTakeReview(props: AppMapTakeReviewProps) {
         onRemove={props.onRemove}
       />
       <section
-        class="relative min-h-0 min-w-0 overflow-hidden border-l border-[var(--v2-border-border-muted)] max-[760px]:border-t max-[760px]:border-l-0"
+        class="relative min-h-0 min-w-0 overflow-hidden border-l border-[var(--border-weak-base)] max-[760px]:border-t max-[760px]:border-l-0"
         aria-label="Recorded action playback"
       >
         <RecordedTakePlayer

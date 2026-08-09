@@ -5,7 +5,7 @@ import { formatAppMapYaml, parseAppMapYaml } from "./app-map-yaml.js";
 
 function emptyMap(): AppMap {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id: "checkout",
     organizationId: "source-org",
     projectId: "source-project",
@@ -18,6 +18,9 @@ function emptyMap(): AppMap {
     screenVariants: {},
     connections: {},
     caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
     routines: {},
     flows: {},
     runs: {},
@@ -33,7 +36,7 @@ test("App Map YAML round-trips deterministically and can move between projects",
   const yaml = formatAppMapYaml(emptyMap());
   assert.match(
     yaml,
-    /^schemaVersion: 2\nid: checkout\norganizationId: source-org\nprojectId: source-project\nname: Checkout\ndescription:/u,
+    /^schemaVersion: 1\nid: checkout\norganizationId: source-org\nprojectId: source-project\nname: Checkout\ndescription:/u,
   );
   assert.equal(formatAppMapYaml(parseAppMapYaml(yaml)), yaml);
   const moved = parseAppMapYaml(yaml, {
@@ -47,9 +50,15 @@ test("App Map YAML round-trips deterministically and can move between projects",
   assert.equal(moved.description, "A portable checkout map");
 });
 
+test("App Map YAML without variables still loads as an empty record", () => {
+  const yaml = formatAppMapYaml(emptyMap()).replace(/\nvariables:\n \[\]\n/u, "\n");
+  const parsed = parseAppMapYaml(yaml.replace(/\nvariables: \[\]\n/u, "\n"));
+  assert.deepEqual(parsed.variables ?? {}, {});
+});
+
 test("App Map YAML rejects aliases, duplicate ids, and unknown root fields", () => {
   assert.throws(
-    () => parseAppMapYaml("schemaVersion: 2\nid: &id checkout\nname: *id\n"),
+    () => parseAppMapYaml("schemaVersion: 1\nid: &id checkout\nname: *id\n"),
     /anchors and aliases/iu,
   );
   const duplicate = formatAppMapYaml({

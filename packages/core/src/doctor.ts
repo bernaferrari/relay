@@ -60,68 +60,136 @@ async function checkAdb(): Promise<DoctorCheck> {
   }
 }
 
-async function checkDevices(): Promise<DoctorCheck> {
-  try {
-    const adbDevices = await listAdbDevices();
-    const unauthorized = adbDevices.filter((device) => device.connectionState === "unauthorized");
-    if (unauthorized.length > 0) {
-      return {
-        id: "devices",
-        ok: false,
-        message:
-          `Android device detected but authorization is pending (${unauthorized.map((device) => device.name).join(", ")}). ` +
-          "Unlock the phone and approve the USB debugging dialog, then run relay device list.",
-      };
-    }
+type DoctorListedDevice = {
+  name: string;
+  serial: string;
+  platform: string;
+};
 
-    const offline = adbDevices.filter((device) => device.connectionState === "offline");
-    if (offline.length > 0) {
-      return {
-        id: "devices",
-        ok: false,
-        message:
-          `Android device is offline (${offline.map((device) => device.name).join(", ")}). ` +
-          "Reconnect the phone or restart wireless debugging, then run relay device list.",
-      };
-    }
+type DoctorAdbDevice = {
+  name: string;
+  connectionState: string;
+};
 
-    const devices = await listDevices();
-    const androidDevices = devices.filter((device) => device.platform === "android");
-    const count = androidDevices.length;
-    if (count === 0) {
-      return {
-        id: "devices",
-        ok: false,
-        message:
-          "No Android device is visible to ADB. Connect and unlock the phone, enable USB debugging, " +
-          "approve the USB debugging dialog, then run relay device list.",
-      };
-    }
-    const summary = androidDevices
-      .slice(0, 5)
-      .map((d) => `${d.name} (${d.serial})`)
-      .join(", ");
-    const more = count > 5 ? ` +${count - 5} more` : "";
-    return {
-      id: "devices",
-      ok: true,
-      message: `${count} device(s): ${summary}${more}`,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+/** Pure device-visibility check so iOS-only and Android-only setups both pass. */
+export function devicesDoctorCheck(
+  devices: readonly DoctorListedDevice[],
+  adbDevices: readonly DoctorAdbDevice[] = [],
+): DoctorCheck {
+  const unauthorized = adbDevices.filter((device) => device.connectionState === "unauthorized");
+  const offline = adbDevices.filter((device) => device.connectionState === "offline");
+  const count = devices.length;
+
+  if (count === 0 && unauthorized.length > 0) {
     return {
       id: "devices",
       ok: false,
-      message: `listDevices failed: ${message}`,
+      message:
+        `Android device detected but authorization is pending (${unauthorized.map((device) => device.name).join(", ")}). ` +
+        "Unlock the phone and approve the USB debugging dialog, then run relay device list.",
+    };
+  }
+
+  if (count === 0 && offline.length > 0) {
+    return {
+      id: "devices",
+      ok: false,
+      message:
+        `Android device is offline (${offline.map((device) => device.name).join(", ")}). ` +
+        "Reconnect the phone or restart wireless debugging, then run relay device list.",
+    };
+  }
+
+  if (count === 0) {
+    return {
+      id: "devices",
+      ok: false,
+      message:
+        "No device is visible. Connect an Android phone (USB debugging) or an iPhone/iPad " +
+        "(trusted, unlocked, Developer Mode), then run relay device list.",
+    };
+  }
+  const summary = devices
+    .slice(0, 5)
+    .map((d) => `${d.name} (${d.platform}, ${d.serial})`)
+    .join(", ");
+  const more = count > 5 ? ` +${count - 5} more` : "";
+  const noise = [
+    unauthorized.length
+      ? `ADB authorization pending (${unauthorized.map((device) => device.name).join(", ")})`
+      : "",
+    offline.length ? `ADB offline (${offline.map((device) => device.name).join(", ")})` : "",
+  ].filter(Boolean);
+  return {
+    id: "devices",
+    ok: true,
+    message: `${count} device(s): ${summary}${more}${noise.length ? `. Note: ${noise.join("; ")}` : ""}`,
+  };
+}
+
+export type DoctorRuntime = {
+  listDevices?: () => Promise<readonly DoctorListedDevice[]>;
+  listAdbDevices?: () => Promise<readonly DoctorAdbDevice[]>;
+  adbVersion?: () => Promise<DoctorCheck>;
+  node?: () => Promise<DoctorCheck>;
+};
+
+async function loadDoctorDevices(
+  runtime: DoctorRuntime,
+): Promise<{ listed: readonly DoctorListedDevice[]; check: DoctorCheck }> {
+  try {
+    const listed = await (runtime.listDevices ?? listDevices)();
+    const adbDevices = await (runtime.listAdbDevices ?? listAdbDevices)();
+    return { listed, check: devicesDoctorCheck(listed, adbDevices) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      listed: [],
+      check: {
+        id: "devices",
+        ok: false,
+        message: `listDevices failed: ${message}`,
+      },
     };
   }
 }
 
-/** Run local toolchain checks. Does not require the HTTP server. */
-export async function runDoctor(): Promise<DoctorResult> {
-  const checks = await Promise.all([checkNode(), checkAdb(), checkDevices()]);
+/** Compact failure text for CLI/HTTP clients that only read `error`. */
+export function doctorFailureMessage(result: DoctorResult): string | undefined {
+  if (result.ok) return undefined;
+  const failed = result.checks.filter((check) => !check.ok).map((check) => check.message);
+  return failed.length ? failed.join("; ") : "Doctor checks failed";
+}
+
+function androidVisible(devices: readonly DoctorListedDevice[]): boolean {
+  return devices.some((device) => device.platform === "android");
+}
+
+function adbBlocksDoctor(adb: DoctorCheck, listedAndroid: boolean): boolean {
+  if (adb.ok) return false;
+  if (listedAndroid) return true;
+  return !/adb not found on PATH/i.test(adb.message);
+}
+
+export function doctorResultFromChecks(
+  node: DoctorCheck,
+  adb: DoctorCheck,
+  devices: DoctorCheck,
+  listed: readonly DoctorListedDevice[] = [],
+): DoctorResult {
+  const checks = [node, adb, devices];
   return {
-    ok: checks.every((c) => c.ok),
+    ok: node.ok && devices.ok && !adbBlocksDoctor(adb, androidVisible(listed)),
     checks,
   };
+}
+
+/** Run local toolchain checks. Does not require the HTTP server. */
+export async function runDoctor(runtime: DoctorRuntime = {}): Promise<DoctorResult> {
+  const [{ listed, check: devices }, node, adb] = await Promise.all([
+    loadDoctorDevices(runtime),
+    (runtime.node ?? checkNode)(),
+    (runtime.adbVersion ?? checkAdb)(),
+  ]);
+  return doctorResultFromChecks(node, adb, devices, listed);
 }

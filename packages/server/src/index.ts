@@ -32,10 +32,13 @@ import {
   getActiveJobs,
   getJob,
   interact,
+  previewInteract,
   IdempotencyConflict,
   listActionsWithTrace,
+  listAndroidDevicesFast,
   listDevices,
   devicePlatformForSerial,
+  resolveJobDevicePlatform,
   bootDevice,
   requestAndroidAuthorization,
   listJobs,
@@ -53,11 +56,13 @@ import {
   parseRecipeYaml,
   runsRoot,
   runDoctor,
+  doctorFailureMessage,
   toJobReport,
   toJunitXml,
   type InteractInput,
   type JobReport,
   generateValues,
+  DEVICE_LEASE_TTL_MS,
   leaseDevice,
   listBuilds,
   listDeviceLeases,
@@ -87,9 +92,15 @@ import {
   loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
   loadDeviceSetup,
+  describeTargetUi,
+  dismissTowardParent,
+  exploreControls,
+  scrollCollectControls,
   runWithTargetContext,
   restartAgentDeviceDaemonForBuildDrift,
+  restartAgentDeviceDaemonForSigningEnvDrift,
   authoringSessions,
+  listAppMaps,
   runWithOperationContext,
   readAuthoringEvidence,
   reconcilePersistedAppMapRuns,
@@ -122,6 +133,8 @@ import {
   type AndroidKeyboardInput,
   type AndroidTouchAction,
 } from "./live-video.js";
+import { streamIosGoIosMjpeg, readIosLivePreviewBackend } from "./ios-live-video.js";
+import { iosLivePreviewUsesStream } from "@relay/core";
 import {
   readIosVideoTake,
   pruneIosVideoTakes,
@@ -142,6 +155,7 @@ import {
 } from "./activity-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
 import { handleDiscoveryRoute } from "./discovery-routes.js";
+import { handleCorpusRoute } from "./corpus-routes.js";
 import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
@@ -157,7 +171,7 @@ import type {
   GenerationRequest,
   Project,
   RevisionWrite,
-  TestVariable,
+  TestData,
   ActorKind,
 } from "@relay/protocol";
 
@@ -208,26 +222,38 @@ async function liveStreamOperationContext(
   targetId: string,
   leaseId: string | undefined,
 ) {
-  if (!leaseId) throw new HttpError(403, "A target lease is required for live streaming");
-  const lease = (await listDeviceLeases(scope.projectId)).find(
-    (candidate) =>
-      candidate.id === leaseId &&
-      candidate.deviceSerial === targetId &&
-      candidate.status === "leased" &&
-      candidate.expiresAt > now(),
-  );
+  const at = now();
+  const leases = await listDeviceLeases(scope.projectId);
   const requestedActorHeader = request.headers["x-relay-actor-id"];
   let requestedActor: { actorId: string; actorKind: ActorKind } | undefined;
-  if (requestedActorHeader !== undefined) {
+  if (requestedActorHeader !== undefined || !leaseId) {
     try {
       requestedActor = resolveCommandActor(request.headers, scope);
     } catch (error) {
       throw new HttpError(403, error instanceof Error ? error.message : String(error));
     }
   }
+  const lease = leaseId
+    ? leases.find(
+        (candidate) =>
+          candidate.id === leaseId &&
+          candidate.deviceSerial === targetId &&
+          candidate.status === "leased" &&
+          candidate.expiresAt > at,
+      )
+    : leases.find(
+        (candidate) =>
+          candidate.deviceSerial === targetId &&
+          candidate.ownerId === requestedActor?.actorId &&
+          candidate.status === "leased" &&
+          candidate.expiresAt > at,
+      );
+  if (!leaseId && !lease) {
+    throw new HttpError(403, "A target lease is required for live streaming");
+  }
   const attributable =
     lease &&
-    (!requestedActor || requestedActor.actorId === lease.ownerId) &&
+    (!requestedActorHeader || requestedActor?.actorId === lease.ownerId) &&
     (scope.localTrusted || lease.ownerId === scope.subject);
   if (!attributable) {
     recordAudit(scope, {
@@ -251,10 +277,11 @@ async function liveStreamOperationContext(
     actorKind: requestedActor?.actorKind ?? actorKindForLeaseOwner(lease.ownerId, scope),
     organizationId: scope.organizationId,
     projectId: scope.projectId,
-    operationId: "target.stream.open",
+    operationId: "target.stream.open" as const,
     requestId,
     idempotencyKey: requestId,
-    issuedAt: now(),
+    issuedAt: at,
+    leaseId: lease.id,
   };
 }
 
@@ -265,7 +292,25 @@ async function handleRequest(
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
-  liveVideoStream = streamAndroidVideo,
+  liveVideoStream = async (response: http.ServerResponse, serial: string) => {
+    const platform = await devicePlatformForSerial(serial);
+    if (platform === "android") {
+      await streamAndroidVideo(response, serial);
+      return;
+    }
+    if (platform === "ios") {
+      const backend = await readIosLivePreviewBackend();
+      if (iosLivePreviewUsesStream(backend)) {
+        await streamIosGoIosMjpeg(response, serial);
+        return;
+      }
+      throw new HttpError(
+        409,
+        "iOS live H.264/MJPEG preview is off. Enable go-ios MJPEG in Device settings, or use PNG preview.",
+      );
+    }
+    throw new HttpError(400, `Live video is not available for platform ${platform}`);
+  },
   captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
 ): Promise<void> {
@@ -365,6 +410,17 @@ async function handleRequest(
     )
       return;
     if (
+      await handleCorpusRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
+      return;
+    if (
       await handleSettingsRoute({
         method,
         pathname,
@@ -401,6 +457,8 @@ async function handleRequest(
         product: "relay",
         version: PRODUCT_VERSION,
         mode: "app-testing",
+        pid: process.pid,
+        startedAt: serverStartedAt,
         at: now(),
         uptimeMs: now() - serverStartedAt,
         activeJob: active
@@ -451,6 +509,11 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/devices") {
+      if (url.searchParams.get("phase") === "android") {
+        const devices = await listAndroidDevicesFast().catch(() => []);
+        json(res, 200, { devices });
+        return;
+      }
       const mobile = await listDevices().catch(() => []);
       const browsers = (await listTargets()).map((target) => ({
         id: target.id,
@@ -676,7 +739,7 @@ async function handleRequest(
           poolId: body.poolId,
           deviceSerial: body.deviceSerial,
           ownerId: currentOperationContext()!.actorId,
-          expiresAt: body.expiresAt ?? now() + 15 * 60_000,
+          expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
         });
       } catch (error) {
         throw new HttpError(409, error instanceof Error ? error.message : String(error));
@@ -702,7 +765,7 @@ async function handleRequest(
           lease: await takeOverDeviceLease(takeoverLeaseMatch.id!, {
             projectId: scope.projectId,
             ownerId: currentOperationContext()!.actorId,
-            expiresAt: body.expiresAt ?? now() + 15 * 60_000,
+            expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
             reason: body.reason,
           }),
         });
@@ -733,7 +796,7 @@ async function handleRequest(
     }
 
     if (method === "PUT" && pathname === "/project/variables") {
-      const body = (await parseJsonBody(req)) as RevisionWrite<TestVariable[]>;
+      const body = (await parseJsonBody(req)) as RevisionWrite<TestData[]>;
       if (!Number.isInteger(body.expectedRevision) || !Array.isArray(body.value)) {
         throw new HttpError(400, "expectedRevision and value are required");
       }
@@ -869,6 +932,12 @@ async function handleRequest(
         sessions.some((session) =>
           session.take?.replayAttempts.some((attempt) =>
             attempt.evidence.some((evidence) => evidence.uri === uri),
+          ),
+        ) ||
+        (await listAppMaps(scope.projectId)).some((appMap) =>
+          Object.values(appMap.screenVariants).some(
+            (variant) =>
+              variant.screenshotUri === uri || variant.evidenceUris?.includes(uri) === true,
           ),
         );
       if (!permitted) throw new HttpError(404, "Authoring evidence not found");
@@ -1112,7 +1181,7 @@ async function handleRequest(
       const job = enqueueJob({
         recipe: runMatch.id!,
         serial: body.serial,
-        platform: body.platform,
+        platform: body.platform ?? (await resolveJobDevicePlatform(body.serial)),
         prodAccountMatch: body.prodAccountMatch,
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
@@ -1152,8 +1221,10 @@ async function handleRequest(
     if (method === "GET" && pathname === "/snapshot") {
       const serial = url.searchParams.get("serial") ?? undefined;
       const interactiveOnly = url.searchParams.get("interactiveOnly") === "1";
+      const includeVisual =
+        url.searchParams.get("visual") === "1" || url.searchParams.get("visual") === "true";
       assertTargetObservation(scope, serial);
-      const snap = await captureSnapshot({ serial, interactiveOnly });
+      const snap = await captureSnapshot({ serial, interactiveOnly, includeVisual });
       const tree = formatSnapshotTree(snap.nodes);
       json(res, 200, { ...snap, tree });
       return;
@@ -1164,12 +1235,20 @@ async function handleRequest(
       const caption = url.searchParams.get("caption") ?? undefined;
       const jobId = url.searchParams.get("jobId") ?? undefined;
       const ephemeral = url.searchParams.get("ephemeral") === "1";
+      const previewX = Number(url.searchParams.get("previewX"));
+      const previewY = Number(url.searchParams.get("previewY"));
       assertTargetObservation(scope, serial);
       const shot = await captureTargetScreenshot({
         serial,
         caption: caption ?? undefined,
         jobId,
         ephemeral,
+        // Screenshots must not take an accessibility tree — that wedges XCTest
+        // on physical iPads and blocks the next interact/snapshot.
+        includeScreenMatch: false,
+        ...(Number.isFinite(previewX) && Number.isFinite(previewY)
+          ? { previewTap: { x: previewX, y: previewY } }
+          : {}),
       });
       json(res, 200, shot);
       if (ephemeral) await cleanupScreenshot(shot.path);
@@ -1182,7 +1261,7 @@ async function handleRequest(
       const leaseId = url.searchParams.get("lease") ?? undefined;
       const streamContext = await liveStreamOperationContext(req, scope, serial, leaseId);
       await runWithOperationContext(streamContext, async () => {
-        await assertTargetLease(scope, serial, leaseId);
+        await assertTargetLease(scope, serial, streamContext.leaseId);
         await liveVideoStream(res, serial);
       });
       return;
@@ -1352,15 +1431,77 @@ async function handleRequest(
       return;
     }
 
+    if (method === "GET" && pathname === "/target/ui") {
+      const serial = url.searchParams.get("serial") ?? undefined;
+      if (!serial) throw new HttpError(400, "serial is required");
+      assertTargetObservation(scope, serial);
+      const description = await describeTargetUi(serial);
+      json(res, 200, description);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/target/ui/back") {
+      const body = (await parseJsonBody(req)) as { serial?: string; parentTitles?: string[] };
+      const serial = body.serial;
+      if (!serial) throw new HttpError(400, "serial is required");
+      await assertTargetControl(scope, serial);
+      const methodUsed = await dismissTowardParent({
+        serial,
+        parentTitles: body.parentTitles,
+      });
+      json(res, 200, { method: methodUsed });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/target/ui/scroll-collect") {
+      const body = (await parseJsonBody(req)) as {
+        serial?: string;
+        maxScrolls?: number;
+        allowSensitive?: boolean;
+      };
+      const serial = body.serial;
+      if (!serial) throw new HttpError(400, "serial is required");
+      await assertTargetControl(scope, serial);
+      const collected = await scrollCollectControls({
+        serial,
+        maxScrolls: body.maxScrolls,
+        extract: (nodes) =>
+          exploreControls(nodes, {
+            allowSensitive: body.allowSensitive === true,
+          }),
+      });
+      json(res, 200, { controls: collected.controls, count: collected.controls.length });
+      return;
+    }
+
     if (method === "POST" && pathname === "/interact") {
       const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
       if (!body || typeof body !== "object" || !("kind" in body)) {
         throw new HttpError(
           400,
-          "body.kind required (label|point|ref|find|text-match|swipe|key|type|replace)",
+          "body.kind required (identifier|label|point|ref|find|text-match|swipe|key|type|replace)",
         );
       }
-      const { serial, ...input } = body;
+      const { serial, preview, ...input } = body as InteractInput & {
+        serial?: string;
+        preview?: unknown;
+      };
+      if (preview === true) {
+        assertTargetObservation(scope, serial);
+        const result = await previewInteract(input as InteractInput, { serial });
+        json(res, 200, {
+          ok: true,
+          preview: true,
+          mime: "image/png",
+          base64: result.base64,
+          bytes: result.bytes,
+          width: result.width,
+          height: result.height,
+          inspectable: result.inspectable,
+          ...(result.resolution ? { resolution: result.resolution } : {}),
+        });
+        return;
+      }
       if (getActiveJob(serial)?.status === "running") {
         throw new HttpError(
           409,
@@ -1368,8 +1509,11 @@ async function handleRequest(
         );
       }
       await assertTargetControl(scope, serial);
-      await interact(input as InteractInput, { serial });
-      json(res, 200, { ok: true });
+      const result = await interact(input as InteractInput, { serial });
+      json(res, 200, {
+        ok: true,
+        ...(result.resolution ? { resolution: result.resolution } : {}),
+      });
       return;
     }
 
@@ -1428,7 +1572,11 @@ async function handleRequest(
 
     if (method === "GET" && pathname === "/doctor") {
       const result = await runDoctor();
-      json(res, result.ok ? 200 : 503, result);
+      json(
+        res,
+        result.ok ? 200 : 503,
+        result.ok ? result : { ...result, error: doctorFailureMessage(result) },
+      );
       return;
     }
 
@@ -1527,6 +1675,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   // session on an unattended iPad and is deliberately preserved.
   await loadDeviceSetup();
   await restartAgentDeviceDaemonForBuildDrift();
+  // Signing env is frozen at daemon spawn. Reconcile shell/stale identity drift
+  // against the saved Apple setup so prepare does not fight automatic signing.
+  await restartAgentDeviceDaemonForSigningEnvDrift();
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;

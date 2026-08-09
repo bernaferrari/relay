@@ -93,10 +93,15 @@ export function bindOperationRequest(
 ): OperationHandlerRegistration | null {
   const registration = findOperationHandler(method, pathname);
   if (!registration) return null;
+  // Media and SSE fetches are not command envelopes. Identity for live video is
+  // installed by the stream route from the target lease.
+  if (registration.definition.mode === "stream") return null;
   const header = (name: string): string | undefined => {
     const value = request.headers[name];
     return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
   };
+  // curl /health and browser probes are not operation envelopes.
+  if (!header("x-relay-operation-id")) return null;
   const operationId = header("x-relay-operation-id");
   if (operationId !== registration.id) {
     throw new OperationContractError(

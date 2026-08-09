@@ -159,7 +159,7 @@ test("friendly command families invoke through the operation client", async () =
 
     assert.equal(code, ExitCode.success, testCase.argv.join(" "));
     assert.deepEqual(calls, [{ operationId: testCase.operationId, input: testCase.input }]);
-    assert.equal(io.stderr(), "");
+    assert.equal(io.stderr().replace(/\{"type":"progress"[^\n]*\}\n/g, ""), "");
   }
 });
 
@@ -331,7 +331,12 @@ test("root and family help are useful without creating a client", async () => {
     },
     {
       argv: ["session", "--help"],
-      matches: [/session start <sessionId>/, /session commit <sessionId>/, /--actor/],
+      matches: [
+        /session start <sessionId>/,
+        /session commit <sessionId>/,
+        /session replay <sessionId>/,
+        /--actor/,
+      ],
     },
     {
       argv: ["take", "--help"],
@@ -365,7 +370,7 @@ test("root and family help are useful without creating a client", async () => {
       argv: ["lease", "--help"],
       matches: [
         /lease create <serial>/,
-        /defaults to 15 minutes from now/,
+        /defaults to 2 hours from now/,
         /same --actor for subsequent device input/,
       ],
     },
@@ -520,6 +525,51 @@ test("job watch --no-wait gets the job exactly once", async () => {
     operationId: "job.get",
     result: running,
   });
+});
+
+test("work run watches jobs[0] when the 202 body omits job", async () => {
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  let polls = 0;
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId === "job.combine.start") {
+        return {
+          jobs: [{ id: "work-job", status: "running", lastLogs: ["tour: 2 stop(s)"] }],
+          batch: { id: "work-job", worlds: ["once"] },
+        };
+      }
+      polls += 1;
+      return {
+        job: {
+          id: "work-job",
+          status: polls === 1 ? "running" : "ok",
+          lastLogs: ["tour → Haptics", "tour: done"],
+        },
+      };
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(["work", "run", "grok-ios", "settings-tour", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => client,
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls, [
+    {
+      operationId: "job.combine.start",
+      input: { appMapId: "grok-ios", testId: "settings-tour" },
+    },
+    { operationId: "job.get", input: { jobId: "work-job" } },
+    { operationId: "job.get", input: { jobId: "work-job" } },
+  ]);
+  assert.match(io.stdout(), /"ok":true/);
 });
 
 test("flow run starts once, then watches that execution job", async () => {

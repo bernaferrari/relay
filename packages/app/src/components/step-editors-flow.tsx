@@ -24,7 +24,7 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
               <span class={fieldLabel}>Flow</span>
               <select
                 class={valueCls}
-                aria-label="Built-in flow"
+                aria-label="Built-in path"
                 value={s.flow}
                 onChange={(e) => onEdit({ kind: "flow", flow: e.currentTarget.value })}
               >
@@ -77,7 +77,7 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
                 </select>
               </div>
               <Show when={parameters().length > 0}>
-                <div class="my-0.5 mb-1 grid gap-2 rounded-[9px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_60%,transparent)] p-2.5">
+                <div class="my-0.5 mb-1 grid gap-2 rounded-[9px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base)_60%,transparent)] p-2.5">
                   <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--text-base)]">
                     <span>Flow inputs</span>
                     <small class="text-[10px] font-normal text-[var(--text-weak)]">

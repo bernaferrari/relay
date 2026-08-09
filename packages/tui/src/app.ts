@@ -136,7 +136,7 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
   console.log(banner(client.mode));
   statusLine([
     theme.muted(`mode ${client.mode}`),
-    client.baseUrl ? theme.muted(client.baseUrl) : theme.muted("in-process"),
+    client.baseUrl ? theme.muted(client.baseUrl) : theme.muted("offline"),
     hint([
       ["↑↓", "move"],
       ["enter", "select"],

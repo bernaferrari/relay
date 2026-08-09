@@ -6,6 +6,10 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.dev/guide/.
 
+## Built-in Commands vs Scripts
+
+`vp <name>` runs a built-in command. `vp run <name>` runs a `package.json` script or a `vite.config.ts` task. Scripts cannot overwrite built-ins, so `vp dev` and `vp run dev` may do different things. Check `package.json` and `vite.config.ts` first, and run `vp run <name>` when the project defines a script or task with that name.
+
 ## Review Checklist
 
 - [ ] Run `vp install` after pulling remote changes and before getting started.
@@ -43,9 +47,62 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 ```bash
 vp install
 pnpm dev            # interactive CLI
-pnpm dev:serve      # HTTP :8787
+pnpm ensure:serve     # kill :8787, start a fresh detached watched server
+pnpm dev:serve        # foreground watch, logs in this terminal
 pnpm dev:tui
 pnpm dev:app
 pnpm dev:desktop
 pnpm typecheck
 ```
+
+## Agent dogfood (iPad / App Map)
+
+Leave this standing so agents do not rediscover it after compaction.
+
+**Runtime**
+
+```bash
+export RELAY_URL=http://127.0.0.1:8787
+export RELAY_ACTOR_ID=agent:grok-ios-mapper
+```
+
+- One server on `:8787`. Do **not** wrap `tsx src/index.ts` in a long-lived agent bash task. Run `pnpm ensure:serve` — it **kills whatever is on the port and starts fresh**. Use `node scripts/ensure-server.mjs --reuse` only when you explicitly want the current process. Detached + `tsx watch` so core/server edits reload it. Logs: `.relay/server.log`. `GET /health` includes `pid` and `startedAt`.
+- Exclusive lease owner must match `--actor`. Default CLI actor `human:local-cli` will 403 on a mapper lease. Local trusted server **mints** a 2-hour lease on first control if nobody else holds the device, and **renews** it while you work. Still set `RELAY_ACTOR_ID` so you do not fight yourself.
+- Prefer `pnpm exec tsx packages/cli/src/index.ts` with `--json` (avoid `pnpm --filter … exec` — it appends a failure footer to stdout). **Parse the first JSON object on stdout**. **Read stderr** for waits (`Waiting on iOS accessibility tree…`, last job log). Do not merge stderr into the JSON parser. Default HTTP timeout is 180s; pass `--timeout 240000` if a cold iOS snapshot still dies. `relay test run` infers iOS vs Android from the serial — do not omit `serial`.
+
+**Where am I**
+
+- XCTest is **optional**. Pixels + point is a complete control path. Snapshot summary includes `app`, `header`, ranked `controls` (tabs first), `fingerprint` (16 chars), `nodeCount`, `inspectable`, `inspectionState`. If `inspectable` is false, screenshot + tap `{kind:"point",x,y}` still works (`proposedRows` are label-side tap points). Do not retry snapshot in a loop. Do not fail a tour only because the tree is missing.
+- **Android has one UiAutomation slot.** The bundled helper APK (`packages/core/android-helpers/`, `com.callstack.agentdevice.snapshothelper`) owns it. Never run `uiautomator dump` while the helper is alive — dump dies with exit 137 / `UiAutomationService already registered`. Stock dump also returns `null root` when Niagara is bound; the helper uses `getWindows()` instead. Do **not** turn off Niagara. `--mark x,y` is screenshot pixels, same as `adb input tap`. If `nodeCount` is still 0 after recover, use pixels.
+- Live “Here” on the map is fingerprint/alias (tree first, visual hash second). Nav title is not identity — Grok child sheets keep header “Settings”. Unchanged identity after hamburger is a toggle, not a new screen.
+- Preview any selection (tree or point) before tapping: `relay device interact <serial> --preview --file preview.png --input '{"kind":"label","label":"Back"}'`. Same command without `--preview` commits. Point-only shortcut: `device screenshot --mark 78,88 --file preview.png`.
+- If the screenshot is not that app/header, it is a **handoff** (Grok → iOS Settings is the usual case). XCTest stays on Grok. Do not keep tapping the Grok tree. `relay device launch <serial> com.apple.Preferences` (or `ai.x.GrokApp`), then snapshot again.
+- Launch does **not** wait on XCTest. Relay tries 10s `devicectl process launch`, then go-ios, then **primes** the XCTest session (5s, non-blocking). Screenshot and live MJPEG prefer go-ios. Taps (point, identifier, label, swipe) use **one** agent-device XCTest session. Do not treat “No active session” as “launch failed” — Reconnect prepares the runner.
+- go-ios is for **pixels + launch + recover** (`vendor/go-ios/bin/ios`). Do not use DeviceKit or `ios ax`. `ios lang` is **device** locale, not Grok’s in-app list.
+- If the runner is down, **do not reboot the iPad**. Press **Reconnect** (`relay device recover`): kill zombie AgentDeviceRunner/testmanagerd, remount DDI only if prepare fails, start the XCTest runner again. Do **not** restart CoreDevice for a probe timeout.
+- Android **Reconnect** / `relay device recover <serial>` wakes the screen and retries labels. It does **not** disable accessibility services. Unlock still needs a person.
+- A stage point tap that does not change pixels **fails** — tap the label, not a dead cell. Unique identifiers (hamburger/gear) tap the control center via that same XCTest session.
+
+**Authoring**
+
+- App Map is truth. No second recipe library. No product `--v2-*` tokens.
+- Fail closed: do not invent Grok Settings nav unless `preset:"grok"` / `profileId:"grok-ios"` or a **saved** In path.
+- Unedited live recording that landed on the expected screen can commit without a second pass. Edits still need replay.
+- A tap that does not change AX fingerprint cannot become a new screen. If pixels changed, treat as handoff.
+- Prefer identifier → label → text → point. Huge SwiftUI cells are often `hittable:false`; tap the **label**, not the cell center. Ignore 20px status-bar app names.
+
+**Combine**
+
+Same three words in the UI and the CLI:
+
+- **Variable** = a list (Language). Teach 1–2 rows, infer the rest. `relay variable save`
+- **Test** = what you run once (path, or open-every-row tour). `relay test run grok-ios settings-tour`
+- **Combine** = the visible grid of every selected variable value × the test. Click one cell or `relay combine run` — do **not** fire all cells unless the human asked (15 locales).
+
+Tour seek reaches the origin screen (fingerprint, then mapped row overlap, then Back/Settings/prelude) before walking rows. Tour back is label-overlap, not nav title — Grok child sheets often keep header “Settings”.
+
+**Grok iOS map (default:grok-ios)**
+
+- Physical iPad Pro serial `db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5`.
+- Language list is iOS Settings → Grok → Preferred Language, not only the in-app sheet.
+- In-app “App Language” label opens system Settings; cell-center tap often no-ops.

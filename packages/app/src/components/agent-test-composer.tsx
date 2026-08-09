@@ -58,9 +58,9 @@ export function AgentTestComposer(
           : "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] border border-dashed transition-colors",
         open()
           ? props.variant === "canvas"
-            ? "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_38%,var(--v2-border-border-muted))] bg-surface-raised-stronger-non-alpha"
-            : "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_45%,transparent)] bg-[var(--product-accent-soft)]"
-          : "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_9%,transparent)]",
+            ? "border-[color-mix(in_srgb,var(--text-interactive-base)_38%,var(--border-weak-base))] bg-surface-raised-stronger-non-alpha"
+            : "border-[color-mix(in_srgb,var(--text-interactive-base)_45%,transparent)] bg-[var(--product-accent-soft)]"
+          : "border-[color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)] bg-[color-mix(in_srgb,var(--text-interactive-base)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_9%,transparent)]",
       )}
     >
       <button
@@ -72,7 +72,7 @@ export function AgentTestComposer(
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="grid size-7 place-items-center rounded-lg text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--v2-background-bg-accent)_35%,transparent)]">
+        <span class="grid size-7 place-items-center rounded-lg text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--text-interactive-base)_35%,transparent)]">
           <Icon name="sparkle" size={14} />
         </span>
         <strong class="truncate text-[13px]/[1.25] font-medium text-[var(--text-interactive-base)]">
@@ -90,7 +90,7 @@ export function AgentTestComposer(
       <Show when={open()}>
         <div
           class={cn(
-            "grid gap-2.5 border-t border-[var(--v2-border-border-muted)] pb-3",
+            "grid gap-2.5 border-t border-[var(--border-weak-base)] pb-3",
             props.variant === "canvas" ? "px-4" : "px-3.5",
           )}
         >

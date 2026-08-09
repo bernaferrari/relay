@@ -101,7 +101,13 @@ async function runJsonCommand(
     { env: {}, streams: capture.streams, registerSignalHandlers: false },
   );
   assert.equal(code, 0, capture.stderr());
-  assert.equal(capture.stderr(), "");
+  for (const line of capture.stderr().trim().split("\n").filter(Boolean)) {
+    const progress = JSON.parse(line) as Record<string, unknown>;
+    assert.equal(progress.type, "progress");
+    assert.equal(typeof progress.operationId, "string");
+    assert.match(String(progress.phase), /^(invoking|following|watching)$/u);
+    assert.equal(typeof progress.message, "string");
+  }
   const terminal = JSON.parse(capture.stdout()) as {
     type: string;
     ok: boolean;

@@ -19,8 +19,8 @@ export const TAKE_ACTION_KINDS: Array<{ id: TakeActionKind; label: string }> = [
   { id: "wait", label: "Wait" },
   { id: "observe", label: "Observe only" },
   { id: "screenshot", label: "Take screenshot" },
-  { id: "reusable", label: "Run routine" },
-  { id: "steps", label: "Custom recorded action" },
+  { id: "reusable", label: "Run saved path" },
+  { id: "steps", label: "Custom steps" },
 ];
 
 export function interactionForAction(action: RecordingTakeAction): AuthoringInteraction {
@@ -226,11 +226,11 @@ export function takeActionError(interaction: AuthoringInteraction): string | und
   if (interaction.kind === "wait" && (!Number.isFinite(interaction.ms) || interaction.ms < 0))
     return "Wait time must be zero or greater.";
   if (interaction.kind === "reusable") {
-    if (!interaction.recipeId.trim()) return "Choose a routine to run.";
+    if (!interaction.recipeId.trim()) return "Choose a saved path to run.";
     const keys = Object.keys(interaction.bindings ?? {});
-    if (keys.some((key) => !key.trim())) return "Every routine input needs a name.";
+    if (keys.some((key) => !key.trim())) return "Every path input needs a name.";
     if (new Set(keys.map((key) => key.trim())).size !== keys.length)
-      return "Routine input names must be unique.";
+      return "Path input names must be unique.";
   }
   if (interaction.kind === "steps" && interaction.steps.length === 0)
     return "Choose another action type before saving.";
@@ -254,6 +254,8 @@ export function moveActionIds(
 
 export function describeTakeAction(action: RecordingTakeAction): string {
   if (action.steps.length === 0) return action.label?.trim() || "Observe the next screen";
+  // Single sleep under the canonical "Recorded pause" label still renders as
+  // sentenceForStep ("Wait Xs"); the stored action.label stays unchanged.
   if (action.steps.length === 1) return describeStep(action.steps[0]!);
   return `${action.steps.length} recorded steps`;
 }

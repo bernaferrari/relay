@@ -39,7 +39,7 @@
   [role="tab"]:focus-visible,
   [role="option"]:focus-visible,
   a:focus-visible,
-  input:focus-visible,
+  input:focus-visible:not([data-focus-contained]),
   select:focus-visible,
   textarea:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--text-strong) 72%, transparent) !important;
@@ -48,12 +48,12 @@
 
   /*
    * Device frame — abstract viewport only (no speaker / island).
-   * High-contrast ink on always-dark chassis (fixed v2 greys).
+   * High-contrast ink on always-dark chassis.
    */
   [data-device-chrome] {
-    --phone-bezel: var(--v2-grey-1000, #242424);
-    --phone-screen: var(--v2-grey-1200, #080808);
-    --phone-fg: var(--v2-grey-50, #ffffff);
+    --phone-bezel: var(--text-strong, #242424);
+    --phone-screen: #080808;
+    --phone-fg: #ffffff;
     /* Stronger hierarchy than 42–68% — previous empty-state was unreadable */
     --phone-fg-muted: color-mix(in srgb, var(--phone-fg) 78%, transparent);
     --phone-fg-faint: color-mix(in srgb, var(--phone-fg) 56%, transparent);
@@ -160,7 +160,7 @@
   .ui-device-companion [data-device-content="status"] button:hover:enabled,
   .ui-device-companion [data-device-content="status"] [type="button"]:hover:enabled {
     color: var(--text-interactive-base);
-    background: color-mix(in srgb, var(--v2-background-bg-accent) 18%, transparent);
+    background: color-mix(in srgb, var(--text-interactive-base) 18%, transparent);
     border-color: color-mix(in srgb, var(--text-interactive-base) 28%, transparent);
   }
 }
@@ -195,7 +195,9 @@
 
 @keyframes ui-refresh-spin {
   to {
-    transform: rotate(360deg);
+    /* Follow the refresh glyph's arrowheads instead of visibly running
+       against them. */
+    transform: rotate(-360deg);
   }
 }
 
@@ -283,7 +285,7 @@
 }
 
 .app-map-icon-button:hover:enabled {
-  background: var(--v2-background-bg-layer-02);
+  background: var(--surface-base-hover);
   color: var(--text-strong);
 }
 

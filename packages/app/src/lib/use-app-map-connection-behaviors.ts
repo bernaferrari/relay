@@ -21,7 +21,7 @@ export function useAppMapConnectionBehaviors(options: {
     const map = options.activeAppMap();
     const canonical = options.canonicalConnectionFor(connection);
     if (!map || !canonical) {
-      toast("This connection is still syncing. Try again in a moment.", "info");
+      toast("This path is still syncing. Try again in a moment.", "info");
       return;
     }
     try {
@@ -72,14 +72,14 @@ export function useAppMapConnectionBehaviors(options: {
     appendConnectionAction(
       connection,
       { id: `back-${crypto.randomUUID()}`, kind: "back" },
-      "Back added to this connection",
+      "Back added to this path",
     );
 
   const attachAutomaticBehavior = (connection: CanvasConnection) =>
     appendConnectionAction(
       connection,
       { id: `passive-${crypto.randomUUID()}`, kind: "passive", reason: "automatic" },
-      "Marked as an automatic transition",
+      "Marked as an automatic path",
     );
 
   const attachReusableBehavior = async (connection: CanvasConnection, routineId: string) => {
@@ -131,7 +131,7 @@ export function useAppMapConnectionBehaviors(options: {
         },
       });
       await server.refreshAppMaps();
-      toast(`Saved “${title}” as a Routine`, "success");
+      toast(`Saved “${title}” for reuse on other paths`, "success");
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");
     }

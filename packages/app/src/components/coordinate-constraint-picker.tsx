@@ -49,8 +49,8 @@ export function CoordinateConstraintPicker(props: {
           "grid min-h-10 w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left",
           "transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.985]",
           props.active
-            ? "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-layer-01))]"
-            : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)]",
+            ? "border-[color-mix(in_srgb,var(--text-interactive-base)_58%,transparent)] bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--surface-base))]"
+            : "border-[var(--border-weak-base)] bg-[var(--surface-base)] hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base-hover)]",
         )}
         onClick={props.onActivate}
       >
@@ -58,16 +58,13 @@ export function CoordinateConstraintPicker(props: {
           class={cn(
             "grid size-3.5 place-items-center rounded-full border",
             props.active
-              ? "border-[var(--v2-background-bg-accent)]"
-              : "border-[var(--v2-border-border-strong)]",
+              ? "border-[var(--text-interactive-base)]"
+              : "border-[var(--border-strong-base)]",
           )}
           aria-hidden="true"
         >
           <i
-            class={cn(
-              "size-1.5 rounded-full",
-              props.active && "bg-[var(--v2-background-bg-accent)]",
-            )}
+            class={cn("size-1.5 rounded-full", props.active && "bg-[var(--text-interactive-base)]")}
           />
         </span>
         <strong class="truncate text-[11px] font-medium text-[var(--text-strong)]">
@@ -157,7 +154,7 @@ export function CoordinatePinPicker(props: {
       <button
         ref={(element) => (trigger = element)}
         type="button"
-        class="grid h-8 w-full grid-cols-[minmax(0,1fr)_12px] items-center gap-1.5 rounded-md bg-[var(--v2-background-bg-layer-01)] px-2.5 text-left shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-[background-color,box-shadow] duration-100 ease-out hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]"
+        class="grid h-8 w-full grid-cols-[minmax(0,1fr)_12px] items-center gap-1.5 rounded-md bg-[var(--surface-base)] px-2.5 text-left shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-[background-color,box-shadow] duration-100 ease-out hover:bg-[var(--surface-base-hover)] focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]"
         aria-haspopup="dialog"
         aria-expanded={open()}
         onClick={() => {
@@ -283,10 +280,10 @@ function CoordinateField(props: {
   return (
     <div
       class={cn(
-        "grid h-8 grid-cols-[22px_minmax(0,1fr)] items-center rounded-md bg-[var(--v2-background-bg-layer-01)] pr-2 pl-1 shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]",
+        "grid h-8 grid-cols-[22px_minmax(0,1fr)] items-center rounded-md bg-[var(--surface-base)] pr-2 pl-1 shadow-[inset_0_0_0_1px_var(--border-strong-base)]",
         "focus-within:shadow-[inset_0_0_0_1px_var(--text-base),0_0_0_2px_color-mix(in_srgb,var(--text-base)_10%,transparent)]",
         scrubbing() &&
-          "shadow-[inset_0_0_0_1px_var(--v2-background-bg-accent),0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)]",
+          "shadow-[inset_0_0_0_1px_var(--text-interactive-base),0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)]",
       )}
     >
       <span
@@ -353,7 +350,7 @@ function ConstraintPad(props: {
           "relative h-[82px] w-[104px] overflow-hidden rounded-lg",
           props.flat
             ? "bg-transparent"
-            : "bg-[var(--v2-background-bg-deep)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]",
+            : "bg-[var(--background-deep)] shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
         )}
         role="radiogroup"
         aria-label="Pin coordinates to screen"
@@ -370,14 +367,14 @@ function ConstraintPad(props: {
             height="69"
             rx="7"
             fill="none"
-            stroke="var(--v2-border-border-muted)"
+            stroke="var(--border-weak-base)"
           />
           <line
             x1={horizontalGuideStart()}
             y1={selectedY()}
             x2={horizontalGuideEnd()}
             y2={selectedY()}
-            stroke="var(--v2-background-bg-accent)"
+            stroke="var(--text-interactive-base)"
             stroke-width="1.25"
             stroke-dasharray="2.5 3"
             stroke-linecap="round"
@@ -388,7 +385,7 @@ function ConstraintPad(props: {
             y1={verticalGuideStart()}
             x2={selectedX()}
             y2={verticalGuideEnd()}
-            stroke="var(--v2-background-bg-accent)"
+            stroke="var(--text-interactive-base)"
             stroke-width="1.25"
             stroke-dasharray="2.5 3"
             stroke-linecap="round"
@@ -411,7 +408,7 @@ function ConstraintPad(props: {
                       class={cn(
                         "group grid min-h-0 min-w-0 cursor-pointer place-items-center rounded-[5px] outline-none",
                         "transition-[background-color,transform] duration-100 ease-out hover:bg-[color-mix(in_srgb,var(--text-base)_7%,transparent)] active:scale-90",
-                        "focus-visible:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--v2-background-bg-accent)]",
+                        "focus-visible:bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--text-interactive-base)]",
                       )}
                       aria-label={`Pin to ${positionLabel().toLowerCase()}`}
                       aria-checked={selected()}
@@ -420,10 +417,10 @@ function ConstraintPad(props: {
                     >
                       <i
                         class={cn(
-                          "size-1.5 rounded-full border border-[color-mix(in_srgb,var(--text-base)_28%,transparent)] bg-[color-mix(in_srgb,var(--text-base)_58%,var(--v2-background-bg-deep))]",
+                          "size-1.5 rounded-full border border-[color-mix(in_srgb,var(--text-base)_28%,transparent)] bg-[color-mix(in_srgb,var(--text-base)_58%,var(--background-deep))]",
                           "transition-[background-color,border-color,box-shadow,transform] duration-100 group-hover:scale-125 group-hover:border-[color-mix(in_srgb,var(--text-base)_55%,transparent)] group-hover:bg-[var(--text-base)]",
                           selected() &&
-                            "scale-125 border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent)] group-hover:bg-[var(--v2-background-bg-accent)]",
+                            "scale-125 border-[color-mix(in_srgb,var(--text-interactive-base)_72%,white)] bg-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] group-hover:bg-[var(--text-interactive-base)]",
                         )}
                         aria-hidden="true"
                       />

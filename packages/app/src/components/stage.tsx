@@ -30,12 +30,14 @@ import {
   type VerticalConstraint,
 } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
+import { humanError } from "../lib/human-error";
 import { evidenceForStep } from "./take-step-presentation";
 import { targetIsPhysicalIos, targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_FALLBACK_FRAME_INTERVAL_MS,
+  LIVE_IOS_FALLBACK_FRAME_INTERVAL_MS,
   LIVE_SNAPSHOT_INTERVAL_MS,
   POST_INTERACTION_SNAPSHOT_DELAY_MS,
   liveInspectionPolicy,
@@ -47,6 +49,7 @@ import {
   interactBodyForStrategy,
   iosSetupGuidanceText,
   liveImageStyleFromLayout,
+  liveInspectionHint,
   pickerNodeLabel,
   pickerNodeMetaLine,
   PHONE_SHELL,
@@ -69,7 +72,7 @@ import {
   DEFAULT_TOUCH_BOUNDS,
   DevicePanelStatus,
 } from "./device-stage-previews";
-import { StageViewToggle, StageRecordingControls } from "./stage-chrome";
+import { StageViewToggle, StageRecordingControls, StageInspectionHint } from "./stage-chrome";
 import { StageScreenFallback } from "./stage-screen-fallback";
 import { StageTargetPicker } from "./stage-target-picker";
 
@@ -152,12 +155,10 @@ export function DeviceStage(_props: {
   // A live surface must never borrow an old recording frame. That made the
   // device look awake while it was actually locked or had switched targets.
   const frame = () => (liveViewActive() ? (server.liveFrame() ?? undefined) : undefined);
-  const recordingEvidenceSrc = createMemo(() => {
-    if (!rec.recording()) return "";
-    const take = rec.take();
-    return take?.destinationEvidenceUrl ?? take?.sourceEvidenceUrl ?? "";
-  });
-  const liveSurfaceSrc = () => liveFrameSrc() || recordingEvidenceSrc();
+  // Live mode only paints pixels observed in this preview session. Recorded
+  // evidence belongs in Recorded mode; using it as a video bootstrap made an
+  // old screenshot flash while the current stream was still connecting.
+  const liveSurfaceSrc = () => liveFrameSrc();
   const liveInteractionSurfaceAvailable = () => liveViewActive() && Boolean(liveSurfaceSrc());
   const recordedEvidenceSrc = createMemo(() => {
     // A playback request owns both the marker and its screenshot. Using the
@@ -600,14 +601,18 @@ export function DeviceStage(_props: {
       });
       return;
     }
-    const body = interactBodyForStrategy(strategy);
+    const bounds = server.snapshot()?.bounds;
+    const tapPoint = bounds
+      ? { x: Math.round(p.fx * bounds.width), y: Math.round(p.fy * bounds.height) }
+      : undefined;
+    const body = interactBodyForStrategy(strategy, tapPoint);
     let ok = await server.interactStep(body, `tap ${strategy.describe}`);
     // chosen strategy failed (likely no session) — fall back to a coordinate tap
-    if (!ok && strategy.kind !== "point") {
-      const b = server.snapshot()?.bounds;
-      const fx = Math.round(p.fx * (b?.width ?? 1));
-      const fy = Math.round(p.fy * (b?.height ?? 1));
-      ok = await server.interactStep({ kind: "point", x: fx, y: fy }, `tap ${fx},${fy}`);
+    if (!ok && strategy.kind !== "point" && tapPoint) {
+      ok = await server.interactStep(
+        { kind: "point", x: tapPoint.x, y: tapPoint.y },
+        `tap ${tapPoint.x},${tapPoint.y}`,
+      );
     }
     if (ok && rec.recording())
       void rec.recordPick(strategy, p.fx, p.fy, {
@@ -904,12 +909,15 @@ export function DeviceStage(_props: {
     if (!displayImageSrc()) void tickLiveFrame();
     if (policy.pollFallbackFrame) {
       void tickLiveFrame();
-      // Android normally promotes to H.264 and only polls while recovering.
-      // Physical iOS currently uses PNG fallback; its full-resolution frames
-      // can be several megabytes, so a calm cadence avoids saturating the UI.
-      // Post-interaction refreshes remain immediate through
-      // `scheduleLiveSnapshot` and the touch/keyboard completion paths.
-      frameTimer = setInterval(() => void tickLiveFrame(), LIVE_FALLBACK_FRAME_INTERVAL_MS);
+      // Android promotes to H.264 and only polls while recovering.
+      // Physical iOS defaults to the go-ios stream; PNG polling is the explicit fallback.
+      const frameMs =
+        targetIsPhysicalIos(currentDevice()) &&
+        (server.appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto") ===
+          "agent-device-png"
+          ? LIVE_IOS_FALLBACK_FRAME_INTERVAL_MS
+          : LIVE_FALLBACK_FRAME_INTERVAL_MS;
+      frameTimer = setInterval(() => void tickLiveFrame(), frameMs);
     }
     onCleanup(stopLiveTimers);
   });
@@ -1004,6 +1012,7 @@ export function DeviceStage(_props: {
     if (wheelRaf) cancelAnimationFrame(wheelRaf);
     if (wheelEndTimer) clearTimeout(wheelEndTimer);
     if (feedbackTimer) clearTimeout(feedbackTimer);
+    if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
   });
   /** The mirrored device is always interactive. Recording is an explicit
    *  start/stop action that decides whether interactions are also saved. */
@@ -1030,14 +1039,43 @@ export function DeviceStage(_props: {
   } | null = null;
   let lastLivePointerActionAt = -Infinity;
   let touchChain = Promise.resolve(false);
-  let pendingMove: { fx: number; fy: number; pointerId: number } | null = null;
+  let pendingMove: {
+    fx: number;
+    fy: number;
+    displayFx: number;
+    displayFy: number;
+    pointerId: number;
+  } | null = null;
   let moveRaf = 0;
+  let gestureTrail: HTMLDivElement | undefined;
+  let gestureTrailLine: SVGLineElement | undefined;
+  let gestureTrailHead: HTMLElement | undefined;
+  let gestureTrailTimer: number | undefined;
   let pendingWheel: { fx: number; fy: number; dx: number; dy: number } | null = null;
   let wheelBurst: { startedAt: number; dx: number; dy: number } | null = null;
   let wheelChain = Promise.resolve(false);
   let wheelSent = false;
   let wheelRaf = 0;
   let wheelEndTimer: number | undefined;
+
+  function paintGestureTrail(fromX: number, fromY: number, toX: number, toY: number): void {
+    if (!gestureTrail || !gestureTrailLine || !gestureTrailHead) return;
+    gestureTrail.style.opacity = "1";
+    gestureTrailLine.setAttribute("x1", String(fromX * 100));
+    gestureTrailLine.setAttribute("y1", String(fromY * 100));
+    gestureTrailLine.setAttribute("x2", String(toX * 100));
+    gestureTrailLine.setAttribute("y2", String(toY * 100));
+    gestureTrailHead.style.left = `${toX * 100}%`;
+    gestureTrailHead.style.top = `${toY * 100}%`;
+  }
+
+  function settleGestureTrail(): void {
+    if (!gestureTrail) return;
+    if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
+    gestureTrailTimer = window.setTimeout(() => {
+      if (gestureTrail) gestureTrail.style.opacity = "0";
+    }, 120);
+  }
 
   function companionPointerPoint(
     element: HTMLElement,
@@ -1206,7 +1244,16 @@ export function DeviceStage(_props: {
     _props.onOrientation?.(presentation.orientation);
   });
   const targetReady = () => targetIsReady(currentDevice(), server.health() === "online");
-  const supportsH264Stream = () => currentDevice()?.platform === "android";
+  const supportsH264Stream = () => {
+    const device = currentDevice();
+    if (!device) return false;
+    if (device.platform === "android") return true;
+    if (device.platform === "ios") {
+      const backend = server.appleDeviceSetup()?.setup.iosLivePreview?.backend ?? "go-ios-auto";
+      return backend !== "agent-device-png";
+    }
+    return false;
+  };
   const usesScreenshotPreview = () =>
     !supportsH264Stream() || videoFailed() || !server.selectedLeaseId();
   const physicalIosRecording = () => rec.recording() && targetIsPhysicalIos(currentDevice());
@@ -1264,6 +1311,39 @@ export function DeviceStage(_props: {
       checkingIosSetup: checkingIosSetup(),
       preparingIosScreen: preparingIosScreen(),
     });
+  const [inspectionRecovering, setInspectionRecovering] = createSignal(false);
+  const [panelRetrying, setPanelRetrying] = createSignal(false);
+  const inspectionHint = createMemo(() => {
+    const snap = server.snapshot();
+    if (stageView() !== "live" || !displayImageSrc() || !snap) return null;
+    return liveInspectionHint({
+      inspectable: snap.inspectable,
+      inspectionState: snap.inspectionState,
+      nodeCount: snap.nodes?.length,
+    });
+  });
+  const controlHint = createMemo(() => {
+    const issue = server.controlIssue();
+    if (stageView() !== "live" || !displayImageSrc() || !issue) return null;
+    return {
+      title: "View only",
+      detail: humanError(issue),
+      actionLabel: "Try again",
+    };
+  });
+  const retryInspection = async () => {
+    if (inspectionRecovering()) return;
+    setInspectionRecovering(true);
+    try {
+      const recovered = await server.recoverSelectedTarget("observe");
+      await Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+      if (!recovered) {
+        /* hint stays until the next snapshot is inspectable */
+      }
+    } finally {
+      setInspectionRecovering(false);
+    }
+  };
   const devicePanelState = createMemo(() =>
     resolveDevicePanelState({
       serverOnline: server.health() === "online",
@@ -1326,6 +1406,19 @@ export function DeviceStage(_props: {
     }
     void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
   }
+  async function retryDevicePanel(): Promise<void> {
+    if (panelRetrying()) return;
+    setPanelRetrying(true);
+    try {
+      if (server.health() !== "online") {
+        await server.retryConnection();
+        return;
+      }
+      await retryScreenPreview();
+    } finally {
+      setPanelRetrying(false);
+    }
+  }
   function retryVideo(): void {
     setVideoReady(false);
     setVideoFailed(true);
@@ -1384,7 +1477,7 @@ export function DeviceStage(_props: {
             class="pointer-events-none absolute inset-[8%] -z-[1] rounded-full opacity-70 blur-3xl"
             style={{
               background:
-                "radial-gradient(circle,color-mix(in srgb,var(--v2-background-bg-accent) 9%,transparent),transparent 68%)",
+                "radial-gradient(circle,color-mix(in srgb,var(--text-interactive-base) 9%,transparent),transparent 68%)",
             }}
             aria-hidden="true"
           />
@@ -1494,9 +1587,11 @@ export function DeviceStage(_props: {
                       setTapFeedback({ x: point.displayFx * 100, y: point.displayFy * 100 });
                       if (feedbackTimer) clearTimeout(feedbackTimer);
                       feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
-                      void rec.driveTap(point.fx, point.fy).then(() => {
-                        if (rec.interacting()) scheduleLiveSnapshot();
-                      });
+                      void rec
+                        .driveTap(point.fx, point.fy, false, liveImageDimensions())
+                        .then(() => {
+                          if (rec.interacting()) scheduleLiveSnapshot();
+                        });
                     }}
                     onLoad={(e) => {
                       const img = e.currentTarget;
@@ -1537,6 +1632,13 @@ export function DeviceStage(_props: {
                         t: e.timeStamp,
                         pointerId: e.pointerId,
                       };
+                      if (gestureTrailTimer) clearTimeout(gestureTrailTimer);
+                      paintGestureTrail(
+                        point.displayFx,
+                        point.displayFy,
+                        point.displayFx,
+                        point.displayFy,
+                      );
                       e.currentTarget.setPointerCapture(e.pointerId);
                       void queueTouch("down", down.fx, down.fy);
                     }}
@@ -1551,6 +1653,8 @@ export function DeviceStage(_props: {
                       pendingMove = {
                         fx: point.fx,
                         fy: point.fy,
+                        displayFx: point.displayFx,
+                        displayFy: point.displayFy,
                         pointerId: e.pointerId,
                       };
                       if (!moveRaf) {
@@ -1559,6 +1663,12 @@ export function DeviceStage(_props: {
                           const move = pendingMove;
                           pendingMove = null;
                           if (move && down?.pointerId === move.pointerId) {
+                            paintGestureTrail(
+                              down.displayFx,
+                              down.displayFy,
+                              move.displayFx,
+                              move.displayFy,
+                            );
                             void queueTouch("move", move.fx, move.fy);
                           }
                         });
@@ -1580,6 +1690,13 @@ export function DeviceStage(_props: {
                       const point = companionPointerPoint(e.currentTarget, e.clientX, e.clientY);
                       const fx = point.fx;
                       const fy = point.fy;
+                      paintGestureTrail(
+                        start.displayFx,
+                        start.displayFy,
+                        point.displayFx,
+                        point.displayFy,
+                      );
+                      settleGestureTrail();
                       flushPendingMove(e.pointerId);
                       down = null;
                       const appliedLive = queueTouch("up", fx, fy);
@@ -1594,7 +1711,7 @@ export function DeviceStage(_props: {
                         feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
                         void appliedLive.then((live) =>
-                          rec.driveTap(start.fx, start.fy, live).then(() => {
+                          rec.driveTap(start.fx, start.fy, live, liveImageDimensions()).then(() => {
                             if (rec.interacting()) scheduleLiveSnapshot();
                           }),
                         );
@@ -1610,6 +1727,7 @@ export function DeviceStage(_props: {
                               { x: fx, y: fy },
                               durationMs,
                               live,
+                              liveImageDimensions(),
                             )
                             .then(() => {
                               if (rec.interacting()) scheduleLiveSnapshot();
@@ -1623,6 +1741,7 @@ export function DeviceStage(_props: {
                         return;
                       }
                       cancelGesture(e.pointerId);
+                      settleGestureTrail();
                     }}
                     onLostPointerCapture={(e) => {
                       if (recordedCoordinateDrag?.pointerId === e.pointerId) {
@@ -1630,6 +1749,7 @@ export function DeviceStage(_props: {
                         return;
                       }
                       cancelGesture(e.pointerId);
+                      settleGestureTrail();
                     }}
                     onWheel={(e) => {
                       if (!liveInteractionSurfaceAvailable() || !liveControlActive() || down)
@@ -1695,7 +1815,7 @@ export function DeviceStage(_props: {
                     <For each={recordedNodeOutlines()}>
                       {(highlight) => (
                         <i
-                          class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_34%,transparent)]"
+                          class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
                           style={highlight}
                           data-recorded-node-outline
                           aria-hidden="true"
@@ -1706,7 +1826,7 @@ export function DeviceStage(_props: {
                   <Show when={recordedHoverHighlight()}>
                     {(highlight) => (
                       <i
-                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
                         style={highlight()}
                         aria-hidden="true"
                       />
@@ -1715,7 +1835,7 @@ export function DeviceStage(_props: {
                   <Show when={focusedEvidenceHighlight()}>
                     {(highlight) => (
                       <div
-                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
+                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
                         style={highlight()}
                         aria-hidden="true"
                       />
@@ -1739,6 +1859,35 @@ export function DeviceStage(_props: {
                   {stepPlayback() && playbackBounds() && (
                     <StepPlaybackPreview step={stepPlayback()!.step} bounds={playbackBounds()!} />
                   )}
+                  <Show
+                    when={controlHint()}
+                    fallback={
+                      <Show when={inspectionHint()}>
+                        {(hint) => (
+                          <StageInspectionHint
+                            title={hint().title}
+                            detail={hint().detail}
+                            actionLabel={hint().actionLabel}
+                            busy={inspectionRecovering()}
+                            onRetry={() => {
+                              void retryInspection();
+                            }}
+                          />
+                        )}
+                      </Show>
+                    }
+                  >
+                    {(hint) => (
+                      <StageInspectionHint
+                        title={hint().title}
+                        detail={hint().detail}
+                        actionLabel={hint().actionLabel}
+                        onRetry={() => {
+                          void retryScreenPreview();
+                        }}
+                      />
+                    )}
+                  </Show>
                   <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
                     {(h) => (
                       <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
@@ -1771,6 +1920,36 @@ export function DeviceStage(_props: {
                     )}
                   </Show>
 
+                  <div
+                    ref={(element) => {
+                      gestureTrail = element;
+                    }}
+                    class="pointer-events-none absolute inset-0 z-[6] opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none"
+                    aria-hidden="true"
+                  >
+                    <svg
+                      class="absolute inset-0 h-full w-full"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <line
+                        ref={(element) => {
+                          gestureTrailLine = element;
+                        }}
+                        class="stroke-[var(--text-interactive-base)] opacity-80"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        vector-effect="non-scaling-stroke"
+                      />
+                    </svg>
+                    <i
+                      ref={(element) => {
+                        gestureTrailHead = element;
+                      }}
+                      class="absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--text-interactive-base)] shadow-[0_0_0_2px_rgb(255_255_255/88%),0_2px_8px_rgb(0_0_0/35%)]"
+                    />
+                  </div>
+
                   {/* tap confirmation ring */}
                   <Show when={tapFeedback()}>
                     {(fb) => (
@@ -1794,6 +1973,7 @@ export function DeviceStage(_props: {
           {(state) => (
             <DevicePanelStatus
               state={state()}
+              busy={panelRetrying()}
               onOpenXcode={() => void platform.openXcode?.()}
               onOpenSettings={() =>
                 window.dispatchEvent(
@@ -1801,11 +1981,7 @@ export function DeviceStage(_props: {
                 )
               }
               onRetry={() => {
-                if (server.health() !== "online") {
-                  void server.retryConnection();
-                  return;
-                }
-                retryScreenPreview();
+                void retryDevicePanel();
               }}
             />
           )}

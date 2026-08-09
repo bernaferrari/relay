@@ -18,4 +18,13 @@ test("automatic evidence preserves causal frames without duplicating passive ste
   );
   assert.deepEqual(automaticEvidencePhases({ kind: "sleep", ms: 500 }), []);
   assert.deepEqual(automaticEvidencePhases({ kind: "screenshot" }), []);
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "tour",
+      depth: 0,
+      screenshot: true,
+      excludeLanguageRows: true,
+    }),
+    [],
+  );
 });

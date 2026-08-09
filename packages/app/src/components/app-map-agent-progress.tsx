@@ -25,7 +25,7 @@ export function AppMapAgentProgress(props: {
 
   return (
     <div class="grid gap-5">
-      <section class="grid gap-3 rounded-[12px] bg-[var(--v2-background-bg-layer-01)] p-4">
+      <section class="grid gap-3 rounded-[12px] bg-[var(--surface-base)] p-4">
         <div class="flex items-center justify-between gap-3">
           <span class="inline-flex items-center gap-2 text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
             <i
@@ -53,7 +53,7 @@ export function AppMapAgentProgress(props: {
             {props.stage}
           </h2>
           <p class="mt-1 text-[10.5px] text-[var(--text-weak)] tabular-nums">
-            {screens()} screens · {interactions()} interactions · {proposals()} proposals
+            {screens()} screens · {interactions()} steps · {proposals()} suggestions
           </p>
         </div>
       </section>
@@ -65,7 +65,7 @@ export function AppMapAgentProgress(props: {
         <ul class="grid gap-1.5">
           <For each={props.workers}>
             {(worker) => (
-              <li class="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2.5">
+              <li class="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] bg-[var(--surface-base)] px-2.5 py-2.5">
                 <span
                   class={cn(
                     "grid size-8 place-items-center rounded-full text-[9px] font-semibold",
@@ -85,7 +85,7 @@ export function AppMapAgentProgress(props: {
                       {worker.model.label}
                     </strong>
                     <Show when={worker.planner === "semantic"}>
-                      <small class="shrink-0 rounded-full bg-[var(--v2-background-bg-base)] px-1.5 py-0.5 text-[8.5px] text-[var(--text-weak)]">
+                      <small class="shrink-0 rounded-full bg-[var(--background-base)] px-1.5 py-0.5 text-[8.5px] text-[var(--text-weak)]">
                         local fallback
                       </small>
                     </Show>

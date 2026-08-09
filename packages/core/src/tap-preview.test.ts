@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { PNG } from "pngjs";
+import { annotateTapPreview, mapTapPreviewToPixels } from "./tap-preview.js";
+
+function solidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
+  const png = new PNG({ width, height });
+  for (let i = 0; i < png.data.length; i += 4) {
+    png.data[i] = rgb[0];
+    png.data[i + 1] = rgb[1];
+    png.data[i + 2] = rgb[2];
+    png.data[i + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+test("logical iPad points scale onto a 2x screenshot only when bounds are known", () => {
+  const mapped = mapTapPreviewToPixels(
+    { x: 78, y: 88 },
+    { width: 1668, height: 2224 },
+    { width: 834, height: 1112 },
+  );
+  assert.equal(mapped.scale, 2);
+  assert.equal(mapped.x, 156);
+  assert.equal(mapped.y, 176);
+});
+
+test("Android screenshot pixels match tap units without a 2x guess", () => {
+  const mapped = mapTapPreviewToPixels({ x: 281, y: 330 }, { width: 1080, height: 2340 });
+  assert.equal(mapped.scale, 1);
+  assert.equal(mapped.x, 281);
+  assert.equal(mapped.y, 330);
+});
+
+test("explicit logical bounds matching the image stay 1:1", () => {
+  const mapped = mapTapPreviewToPixels(
+    { x: 78, y: 88 },
+    { width: 1668, height: 2224 },
+    { width: 1668, height: 2224 },
+  );
+  assert.equal(mapped.x, 78);
+  assert.equal(mapped.y, 88);
+});
+
+test("preview paints a ring without changing the rest of the frame", () => {
+  const original = solidPng(80, 80, [10, 20, 30]);
+  const marked = annotateTapPreview(original, { x: 40, y: 40 });
+  const before = PNG.sync.read(original);
+  const after = PNG.sync.read(marked);
+  assert.equal(after.width, 80);
+  assert.equal(after.height, 80);
+  const onRing = (80 * 40 + 56) << 2;
+  assert.notEqual(after.data[onRing], before.data[onRing]);
+  const corner = (80 * 2 + 2) << 2;
+  assert.equal(after.data[corner], before.data[corner]);
+  assert.equal(after.data[corner + 1], before.data[corner + 1]);
+});
+
+test("preview can outline a resolved control bounds", () => {
+  const original = solidPng(80, 80, [10, 20, 30]);
+  const marked = annotateTapPreview(original, {
+    point: { x: 40, y: 40 },
+    bounds: { x: 20, y: 20, width: 40, height: 30 },
+  });
+  const before = PNG.sync.read(original);
+  const after = PNG.sync.read(marked);
+  const edge = (80 * 20 + 30) << 2;
+  assert.notEqual(after.data[edge], before.data[edge]);
+});

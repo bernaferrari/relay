@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import type { TestVariable } from "@relay/protocol";
+import type { TestData } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
@@ -120,9 +120,7 @@ export function DataWorkspace(props: {
   return (
     <section
       class={
-        props.embedded
-          ? "flex h-full min-h-0 flex-col bg-[var(--v2-background-bg-deep)]"
-          : productPage
+        props.embedded ? "flex h-full min-h-0 flex-col bg-[var(--background-deep)]" : productPage
       }
     >
       <div
@@ -133,7 +131,7 @@ export function DataWorkspace(props: {
         }
       >
         <div class="min-w-0">
-          <span class={eyebrow}>Variables</span>
+          <span class={eyebrow}>Test data</span>
           <h2
             class={
               props.embedded
@@ -141,12 +139,12 @@ export function DataWorkspace(props: {
                 : productPageTitle
             }
           >
-            {props.embedded ? "Workspace variables" : "Test data"}
+            Test data
           </h2>
           <Show when={!props.embedded}>
             <p class={productPageLead}>
-              Prepare fresh inputs before a run while keeping every test deterministic and
-              debuggable.
+              Create reusable lists such as languages, accounts, or models. Run with data repeats a
+              path for each selected value.
             </p>
           </Show>
         </div>
@@ -155,13 +153,13 @@ export function DataWorkspace(props: {
             Generation settings
           </Button>
           <Button variant="primary" size="lg" onClick={addRow}>
-            <Icon name="plus" size={15} /> New variable
+            <Icon name="plus" size={15} /> New value
           </Button>
           <Show when={props.embedded && props.onClose}>
             <button
               type="button"
               class={productIconButton}
-              aria-label="Close workspace variables"
+              aria-label="Close test data"
               onClick={() => props.onClose?.()}
             >
               <Icon name="x" size={14} />
@@ -241,11 +239,11 @@ export function DataWorkspace(props: {
                   Add data only when a test needs it
                 </strong>
                 <p class="m-0 mt-1.5 text-[11px]/[1.5] text-text-weaker">
-                  Use a list to cover plans or locales. Keep logins private so each teammate can use
-                  their own account without sharing credentials.
+                  Use a list to cover plans or roles. Language and theme can drive a data run. Keep
+                  logins private so each teammate can use their own account.
                 </p>
                 <Button variant="primary" size="lg" class="mt-4" onClick={addRow}>
-                  <Icon name="plus" size={14} /> Add first variable
+                  <Icon name="plus" size={14} /> Add first value
                 </Button>
               </div>
             </div>
@@ -433,7 +431,7 @@ export function DataWorkspace(props: {
   );
 }
 
-function variableToDataRow(variable: TestVariable, privateValue = ""): DataRow {
+function variableToDataRow(variable: TestData, privateValue = ""): DataRow {
   return {
     id: variable.id,
     name: variable.name,
@@ -446,7 +444,7 @@ function variableToDataRow(variable: TestVariable, privateValue = ""): DataRow {
   };
 }
 
-function dataRowToVariable(row: DataRow): TestVariable {
+function dataRowToVariable(row: DataRow): TestData {
   const values =
     row.mode === "List"
       ? (row.values ?? [row.preview]).map((value) => value.trim()).filter(Boolean)

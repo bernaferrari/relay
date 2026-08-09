@@ -50,8 +50,8 @@ export function StepPlaybackPreview(props: {
               aria-hidden="true"
               data-step-playback="tap"
             >
-              <i class="absolute inset-0 rounded-full border-[1.5px] border-white/95 bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent)] shadow-[0_2px_10px_rgb(0_0_0/44%)] motion-safe:animate-[step-preview-tap_620ms_ease-out_both]" />
-              <i class="step-preview-tap-dot absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_1.5px_white,0_1px_4px_rgb(0_0_0/48%)]" />
+              <i class="absolute inset-0 rounded-full border-[1.5px] border-white/95 bg-[color-mix(in_srgb,var(--text-interactive-base)_24%,transparent)] shadow-[0_2px_10px_rgb(0_0_0/44%)] motion-safe:animate-[step-preview-tap_620ms_ease-out_both]" />
+              <i class="step-preview-tap-dot absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--text-interactive-base)] shadow-[0_0_0_1.5px_white,0_1px_4px_rgb(0_0_0/48%)]" />
             </span>
           );
         })()}
@@ -79,7 +79,7 @@ export function StepPlaybackPreview(props: {
                   y1={down ? "36" : "64"}
                   x2="50"
                   y2={down ? "64" : "36"}
-                  stroke="var(--v2-background-bg-accent)"
+                  stroke="var(--text-interactive-base)"
                   stroke-width="1"
                   stroke-dasharray="2 3"
                   stroke-linecap="round"

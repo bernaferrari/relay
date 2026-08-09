@@ -6,12 +6,7 @@ import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
-import {
-  addPlannedConnection,
-  addPlannedScreenConnection,
-  canvasConnections,
-  type CanvasConnection,
-} from "../lib/app-map-connection-draft";
+import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
 import {
   buildCanvasGraphTree,
   ensureCanvasGraph,
@@ -96,6 +91,9 @@ import { useAppMapRunFlow } from "../lib/use-app-map-run-flow";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
 import { groupForScreen } from "../lib/app-map-groups";
 import { bindAppMapWorkspaceShellEvents } from "../lib/app-map-workspace-shell-events";
+import { pathDraftClick } from "../lib/app-map-path-draft";
+import { canvasCombineCards } from "../lib/app-map-combine-canvas";
+import { matchLiveScreen } from "../lib/app-map-live-location";
 import {
   screenshotOrientationEvidence,
   screenshotUrl,
@@ -137,9 +135,8 @@ export function AppMapWorkspace(props: {
   onOpenActions: () => void;
   onOpenVariables: () => void;
   onOpenRun?: (id: string) => void;
+  onOpenCombine?: (combineId?: string) => void;
   navigatorOpen?: boolean;
-  addNoteOnReady?: boolean;
-  onAddNoteHandled?: () => void;
 }) {
   const server = useServer();
   const draft = useRecipeDraft();
@@ -292,7 +289,7 @@ export function AppMapWorkspace(props: {
   );
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
-  const [connectionPreview, setConnectionPreview] = createSignal<CanvasPoint | null>(null);
+
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
   const [deviceCompanionOrientation, setDeviceCompanionOrientation] = createSignal<
     "portrait" | "landscape" | "square" | "unknown"
@@ -333,14 +330,6 @@ export function AppMapWorkspace(props: {
         origin: CanvasPoint;
         moved: boolean;
         before: AppMapCanvasState;
-      }
-    | undefined;
-  let connectionDrag:
-    | {
-        fromScreenId: string;
-        pointerId: number;
-        origin: CanvasPoint;
-        point: CanvasPoint;
       }
     | undefined;
   let pendingConnectionId: string | null = null;
@@ -395,14 +384,6 @@ export function AppMapWorkspace(props: {
       x: (clientX - rect.left - viewport.x) / viewport.scale,
       y: (clientY - rect.top - viewport.y) / viewport.scale,
     });
-    if (connectionDrag) {
-      connectionDrag.point = {
-        x: (clientX - rect.left - viewport.x) / viewport.scale,
-        y: (clientY - rect.top - viewport.y) / viewport.scale,
-      };
-      setConnectionPreview({ ...connectionDrag.point });
-      return;
-    }
     if (nodeDrag) {
       const moved = Math.hypot(clientX - nodeDrag.x, clientY - nodeDrag.y) > 4;
       if (!moved && !nodeDrag.moved) return;
@@ -507,6 +488,12 @@ export function AppMapWorkspace(props: {
   } = useAppMapCapturePanel({
     clearContextSurface: () => setContextSurface(null),
   });
+  const openLiveDevice = () => {
+    if (!captureOpen()) server.resetLivePreview();
+    openCapturePanel();
+    const serial = server.selectedDevice();
+    if (serial) void server.setSelectedDevice(serial);
+  };
   onCleanup(() => {
     if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
   });
@@ -584,13 +571,13 @@ export function AppMapWorkspace(props: {
     )
       return;
     deviceAutoOpenedForMap = appMapId;
-    setCaptureOpen(true);
+    openLiveDevice();
   });
   // Recording starts from the navigator as well as from this workspace. The
   // drawer must follow that state so a fresh map never appears to be an
   // empty graph while it is already capturing real work.
   createEffect(() => {
-    if (recorder.recording() || recorder.take()) setCaptureOpen(true);
+    if (recorder.recording() || recorder.take()) openLiveDevice();
   });
 
   createEffect(() => {
@@ -618,7 +605,7 @@ export function AppMapWorkspace(props: {
     }
     if (state !== "ready") return;
     setWaitingForRecordTarget(false);
-    setCaptureOpen(true);
+    openLiveDevice();
     void recorder.enterRecordMode();
   });
   const positions = () => canvasState().positions;
@@ -627,6 +614,37 @@ export function AppMapWorkspace(props: {
     canvasState().screenTitles?.[node.id]?.trim() || node.title;
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
+  const liveLocation = createMemo(() =>
+    matchLiveScreen(Object.values(activeAppMap()?.screens ?? {}), [
+      server.snapshot()?.screenIdentity?.fingerprint,
+      server.liveFrame()?.visualFingerprint,
+      server.liveFrame()?.fingerprint,
+    ]),
+  );
+  const liveDeviceUnmapped = createMemo(
+    () =>
+      liveLocation().kind === "unknown" &&
+      Boolean(selectedDevice()) &&
+      Boolean(server.liveFrame()?.base64) &&
+      !server.controlIssue(),
+  );
+  const hereScreenId = createMemo(() => {
+    const location = liveLocation();
+    return location.kind === "here" ? location.screenId : null;
+  });
+  const hereScreenTitle = createMemo(() => {
+    const id = hereScreenId();
+    const node = id ? tree().nodes.find((candidate) => candidate.id === id) : undefined;
+    return node ? titleFor(node) : undefined;
+  });
+  const combineCards = createMemo(() => {
+    const map = activeAppMap();
+    if (!map) return [];
+    return canvasCombineCards(map, (screenId) => {
+      const node = tree().nodes.find((candidate) => candidate.id === screenId);
+      return node ? positionFor(node) : undefined;
+    });
+  });
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
   );
@@ -674,10 +692,9 @@ export function AppMapWorkspace(props: {
   const graphRunReadiness = createMemo(() =>
     gateGraphRunReadiness(baseGraphRunReadiness(), Boolean(runnableFlow())),
   );
-  const { runCanvasGraph, refreshMapScreenshots } = useAppMapRunFlow({
+  const { runCanvasGraph } = useAppMapRunFlow({
     activeAppMap,
     runnableFlow,
-    graphRunReadiness,
   });
   const reusableBehaviors = createMemo(() => listReusableBehaviors(activeAppMap()));
   const bounds = createMemo(() =>
@@ -835,7 +852,7 @@ export function AppMapWorkspace(props: {
           await server.runAction("app-map.commit", {
             appMapId,
             expectedRevision: appMap.revision,
-            summary: "Updated App Map canvas",
+            summary: "Updated map",
             changes,
             ...(notesChanged ? { patch: { notes: canonicalNotes } } : {}),
           })
@@ -853,7 +870,7 @@ export function AppMapWorkspace(props: {
             // Preserve the local state when even the recovery read is offline.
           }
         }
-        toast(error instanceof Error ? error.message : "The App Map could not be saved", "warning");
+        toast(error instanceof Error ? error.message : "The map could not be saved", "warning");
       });
   }
   const persistMetadata = (
@@ -940,7 +957,7 @@ export function AppMapWorkspace(props: {
       setSelectedNodeId(captured.screen.id);
       setSelectedConnectionId(null);
       setCaptureOpen(false);
-      toast("Start screen added", "success");
+      toast("Start screen saved · record a path or capture more screenshots", "success");
       return true;
     } finally {
       setStartCaptureBusy(false);
@@ -949,7 +966,7 @@ export function AppMapWorkspace(props: {
   const captureCurrentScreen = async () => {
     if (startCaptureBusy()) return;
     if (!targetIsReady(selectedDevice(), server.health() === "online")) {
-      toast("Choose a connected device before capturing its screen", "info");
+      toast("Choose a connected device before saving a screen", "info");
       openDevicePicker();
       return;
     }
@@ -972,7 +989,7 @@ export function AppMapWorkspace(props: {
         (candidate) => candidate.id === captured.screen.id,
       );
       if (node) selectNode(node);
-      toast(captured.created ? "Screen added to the map" : "Existing screen refreshed", "success");
+      toast(captured.created ? "Screen saved to the map" : "Screenshot refreshed", "success");
     } finally {
       setStartCaptureBusy(false);
     }
@@ -986,20 +1003,6 @@ export function AppMapWorkspace(props: {
     });
     persistNotes([...(canvasState().notes ?? []), note]);
   };
-  let automaticFirstNoteHandledFor = "";
-  createEffect(() => {
-    const appMapId = server.selectedAppMapId();
-    if (
-      !appMapId ||
-      automaticFirstNoteHandledFor === appMapId ||
-      !props.addNoteOnReady ||
-      loadedAppMapId() !== appMapId
-    )
-      return;
-    automaticFirstNoteHandledFor = appMapId;
-    addNote();
-    props.onAddNoteHandled?.();
-  });
   const {
     reviewStepIndex,
     setReviewStepIndex,
@@ -1062,7 +1065,7 @@ export function AppMapWorkspace(props: {
         state === "preparing-screen" ||
         state === "checking-ios"
       ) {
-        setCaptureOpen(true);
+        openLiveDevice();
         setWaitingForRecordTarget(true);
         return;
       }
@@ -1074,12 +1077,23 @@ export function AppMapWorkspace(props: {
     // outline say which screen the captured actions belong to without adding a
     // second, non-runnable graph model.
     recordRequestedAfterDeviceSelection = false;
-    setCaptureOpen(true);
+    openLiveDevice();
     void recorder.enterRecordMode();
     // Keep the graph visible: the device is already alongside it, and a new
     // action will appear on the selected screen as soon as it is captured.
   };
-  const recordFromHere = () => recordFromNode(selectedNode());
+  const recordFromHere = () => {
+    const liveScreenId = hereScreenId();
+    const liveNode = liveScreenId
+      ? (tree().nodes.find((node) => node.id === liveScreenId) ?? null)
+      : null;
+    if (liveNode) {
+      selectNode(liveNode);
+      recordFromNode(liveNode);
+      return;
+    }
+    recordFromNode(selectedNode());
+  };
   const captureContextLabel = () =>
     buildCaptureContextLabel({
       pendingConnectionId,
@@ -1127,20 +1141,6 @@ export function AppMapWorkspace(props: {
       ],
       connectionPathTitle(connection, tree().nodes, titleFor),
     );
-  };
-  const beginConnection = (event: PointerEvent, fromScreenId: string) => {
-    const element = canvas;
-    if (!element) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const point = canvasPointFromClientRect(
-      event.clientX,
-      event.clientY,
-      element.getBoundingClientRect(),
-      view(),
-    );
-    connectionDrag = { fromScreenId, pointerId: event.pointerId, origin: point, point };
-    element.setPointerCapture(event.pointerId);
   };
   const {
     chooseKeyboardConnection,
@@ -1229,7 +1229,7 @@ export function AppMapWorkspace(props: {
     onToggleDevicePanel: () => {
       setHistoryOpen(false);
       if (captureOpen()) closeCapturePanel();
-      else setCaptureOpen(true);
+      else openLiveDevice();
     },
     onCloseDevicePanel: closeCapturePanel,
     onRunMap: runCanvasGraph,
@@ -1246,8 +1246,10 @@ export function AppMapWorkspace(props: {
     onAddNote: addNote,
     onCreateConnection: () => {
       const node = selectedNode();
-      if (node) setKeyboardConnectionSourceId(node.id);
-      else toast("Select the screen where this connection begins", "info");
+      if (node) {
+        setScreenInspectorOpen(false);
+        setKeyboardConnectionSourceId(node.id);
+      } else toast("Select a screen first, then add a path from it", "info");
     },
     onRecord: () => {
       if (recorder.recording()) {
@@ -1260,8 +1262,8 @@ export function AppMapWorkspace(props: {
       }
       const connection = selectedConnection();
       if (connection) recordConnection(connection);
-      else if (selectedNode()) recordFromHere();
-      else toast("Select a screen or connection to record", "info");
+      else if (hereScreenId() || selectedNode()) recordFromHere();
+      else toast("Select a screen or path to record", "info");
     },
     onGroupSelection: groupSelection,
     onUngroupSelection: () => {
@@ -1314,17 +1316,25 @@ export function AppMapWorkspace(props: {
           ? "grid-cols-[minmax(280px,320px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(260px,42%)_minmax(0,1fr)]"
           : "grid-cols-1",
       )}
+      style={{
+        "--app-map-device-panel-width":
+          deviceCompanionOrientation() === "landscape"
+            ? "clamp(420px, 36vw, 560px)"
+            : "clamp(360px, 31vw, 440px)",
+      }}
       aria-busy={appMapLoadState().status === "loading"}
     >
       <Show when={appMapLoadState().status === "ready" && !reviewingTake()}>
         <section
           ref={observeCanvas}
           class={cn(
-            "relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden",
+            "relative isolate flex min-h-0 min-w-0 select-none overflow-hidden",
+            workspaceView() === "map" && "touch-none",
             canvasTool() === "hand" ? "cursor-grab active:cursor-grabbing" : "cursor-default",
           )}
-          aria-label="App Map"
+          aria-label="Map"
           onWheel={(event) => {
+            if (workspaceView() !== "map") return;
             if (!hasCanvasContent()) return;
             const action = canvasWheelAction({
               deltaX: event.deltaX,
@@ -1382,56 +1392,11 @@ export function AppMapWorkspace(props: {
             flushCanvasPointerMove(event.clientX, event.clientY);
             const marquee = selectionMarquee();
             if (marquee?.pointerId === event.pointerId) {
-              if (!marquee.moved && !marquee.additive) setSelectedNodeId(null);
+              if (!marquee.moved && !marquee.additive) {
+                if (keyboardConnectionSourceId()) setKeyboardConnectionSourceId(null);
+                else setSelectedNodeId(null);
+              }
               setSelectionMarquee(null);
-              return;
-            }
-            if (connectionDrag) {
-              const source = connectionDrag.fromScreenId;
-              const hit = document.elementFromPoint(event.clientX, event.clientY);
-              const target = hit?.closest<HTMLElement>("[data-app-map-screen-id]")?.dataset
-                .appMapScreenId;
-              let next: AppMapCanvasState | null = null;
-              if (target && target !== source) {
-                next = addPlannedConnection(
-                  canvasState(),
-                  {
-                    fromScreenId: source,
-                    toScreenId: target,
-                  },
-                  Date.now(),
-                  draft.steps(),
-                );
-              } else if (
-                !target &&
-                hit?.closest('[aria-label="App Map"]') === event.currentTarget &&
-                !hit.closest("button, aside, header") &&
-                Math.hypot(
-                  connectionDrag.point.x - connectionDrag.origin.x,
-                  connectionDrag.point.y - connectionDrag.origin.y,
-                ) > 72
-              ) {
-                next = addPlannedScreenConnection(
-                  canvasState(),
-                  {
-                    fromScreenId: source,
-                    position: {
-                      x: Math.max(24, connectionDrag.point.x - 98),
-                      y: Math.max(64, connectionDrag.point.y - 124),
-                    },
-                  },
-                  Date.now(),
-                  draft.steps(),
-                );
-              }
-              if (next) {
-                const connection = next.graph?.transitions.at(-1);
-                persistMetadata(next);
-                setSelectedConnectionId(connection?.id ?? null);
-                setSelectedNodeId(null);
-              }
-              connectionDrag = undefined;
-              setConnectionPreview(null);
               return;
             }
             if (nodeDrag?.moved) {
@@ -1452,8 +1417,6 @@ export function AppMapWorkspace(props: {
             if (pointerMoveFrame !== undefined) cancelAnimationFrame(pointerMoveFrame);
             pointerMoveFrame = undefined;
             pendingPointerMove = undefined;
-            connectionDrag = undefined;
-            setConnectionPreview(null);
             nodeDrag = undefined;
             noteDrag = undefined;
             pan = undefined;
@@ -1504,9 +1467,7 @@ export function AppMapWorkspace(props: {
               onClose={() => {
                 setAgentOpen(false);
                 queueMicrotask(() =>
-                  document
-                    .querySelector<HTMLButtonElement>('[aria-label="Explore with Relay"]')
-                    ?.focus(),
+                  document.querySelector<HTMLButtonElement>('[aria-label="Map with AI"]')?.focus(),
                 );
               }}
               onProposalReady={() => {
@@ -1560,21 +1521,13 @@ export function AppMapWorkspace(props: {
                       server.setSelectedJobId(runId);
                       props.onOpenRun?.(runId);
                     }}
-                    onToggleDevice={() =>
-                      captureOpen() ? closeCapturePanel() : openCapturePanel()
-                    }
+                    onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
                     onCaptureScreen={() => void captureCurrentScreen()}
                     onOpenAgent={() => {
                       closeCapturePanel();
                       setHistoryOpen(false);
                       setAgentOpen(true);
                     }}
-                    refreshScreenshotsHint={
-                      graphRunReadiness().ready
-                        ? "Replay the flow and compare fresh captures with approved baselines"
-                        : graphRunReadiness().reason
-                    }
-                    onRefreshScreenshots={refreshMapScreenshots}
                   />
                 )}
               </Show>
@@ -1608,9 +1561,8 @@ export function AppMapWorkspace(props: {
                   liveScreenSrc={liveScreenSrc()}
                   captureBusy={startCaptureBusy()}
                   onStartRecording={recordFromHere}
-                  onCaptureScreen={() => void captureCurrentScreen()}
                   onAddNote={addNote}
-                  onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
+                  onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
                 />
               }
             >
@@ -1653,14 +1605,6 @@ export function AppMapWorkspace(props: {
                   renamingNodeId={renamingNodeId()}
                   renamingGroupId={renamingGroupId()}
                   keyboardConnectionSourceId={keyboardConnectionSourceId()}
-                  connectionPreview={
-                    connectionPreview() && connectionDrag
-                      ? {
-                          fromScreenId: connectionDrag.fromScreenId,
-                          point: connectionPreview()!,
-                        }
-                      : undefined
-                  }
                   awareness={remoteAwareness()}
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
@@ -1678,9 +1622,7 @@ export function AppMapWorkspace(props: {
                     ) || variantOrientationEvidence(activeAppMap(), node.id)
                   }
                   detailsOpen={screenInspectorOpen()}
-                  isFlowStart={(node) =>
-                    !connections().some((connection) => connection.toScreenId === node.id)
-                  }
+                  isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
                   connectionRunState={(connectionId) =>
                     runProjection().transitions[connectionId]?.state
@@ -1691,7 +1633,21 @@ export function AppMapWorkspace(props: {
                       ? caseStackCount(stack, server.projectVariables().value)
                       : undefined;
                   }}
-                  onSelectNode={selectNode}
+                  onSelectNode={(node, event) => {
+                    const draft = pathDraftClick({
+                      sourceScreenId: keyboardConnectionSourceId(),
+                      clickedScreenId: node.id,
+                    });
+                    if (draft.kind === "connect") {
+                      chooseKeyboardConnection(draft.fromScreenId, draft.toScreenId);
+                      return;
+                    }
+                    if (draft.kind === "cancel") {
+                      setKeyboardConnectionSourceId(null);
+                      return;
+                    }
+                    selectNode(node, event);
+                  }}
                   onNodeContextMenu={(event, node) => {
                     if (!selectedNodeIds().includes(node.id)) setSelectedNodeId(node.id);
                     openGroupMenu(event, {
@@ -1711,13 +1667,17 @@ export function AppMapWorkspace(props: {
                     setScreenInspectorOpen(true);
                   }}
                   onCommitNodeRename={renameScreen}
-                  onConnectStart={(event, node) => beginConnection(event, node.id)}
                   onConnectKeyboard={(node) => {
-                    selectNode(node);
+                    setSelectedNodeId(node.id);
+                    setScreenInspectorOpen(false);
                     setKeyboardConnectionSourceId(node.id);
                   }}
                   onNodePointerDown={(event, node) => {
                     if (event.button !== 0) return;
+                    if (keyboardConnectionSourceId()) {
+                      event.stopPropagation();
+                      return;
+                    }
                     if (canvasTool() === "hand") {
                       event.stopPropagation();
                       pan = { x: event.clientX, y: event.clientY, view: view() };
@@ -1815,6 +1775,9 @@ export function AppMapWorkspace(props: {
                       (canvasState().notes ?? []).filter((entry) => entry.id !== note.id),
                     )
                   }
+                  hereScreenId={hereScreenId()}
+                  combines={combineCards()}
+                  onOpenCombine={(combineId) => props.onOpenCombine?.(combineId)}
                 />
               </div>
               <Show when={groupMenu()}>
@@ -1845,7 +1808,7 @@ export function AppMapWorkspace(props: {
                               <button
                                 type="button"
                                 role="menuitem"
-                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                                 onClick={groupSelection}
                               >
                                 <span class="inline-flex items-center gap-2">
@@ -1858,7 +1821,7 @@ export function AppMapWorkspace(props: {
                               <button
                                 type="button"
                                 role="menuitem"
-                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                                class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                                 onClick={ungroupSelection}
                               >
                                 <span>Ungroup</span>
@@ -1878,7 +1841,7 @@ export function AppMapWorkspace(props: {
                             <button
                               type="button"
                               role="menuitem"
-                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                               onClick={() => {
                                 setGroupMenu(null);
                                 setRenamingGroupId(group().id);
@@ -1890,7 +1853,7 @@ export function AppMapWorkspace(props: {
                             <button
                               type="button"
                               role="menuitem"
-                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                              class="flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                               onClick={() => ungroup(group())}
                             >
                               <span>Ungroup</span>
@@ -1939,9 +1902,7 @@ export function AppMapWorkspace(props: {
                           }
                           isFlowStart={
                             selectedNode()
-                              ? !connections().some(
-                                  (connection) => connection.toScreenId === selectedNode()!.id,
-                                )
+                              ? graph().flows.some((flow) => flow.screenId === selectedNode()!.id)
                               : false
                           }
                           connections={connections().filter(
@@ -1953,6 +1914,12 @@ export function AppMapWorkspace(props: {
                             setSelectedConnectionId(connection.id);
                             setSelectedNodeId(null);
                             setScreenInspectorOpen(false);
+                          }}
+                          onRename={() => {
+                            const node = selectedNode();
+                            if (!node) return;
+                            setScreenInspectorOpen(false);
+                            setRenamingNodeId(node.id);
                           }}
                           onRemove={() => {
                             const node = selectedNode();
@@ -2060,11 +2027,12 @@ export function AppMapWorkspace(props: {
                 explorationState={agentExploration.state()}
                 explorationCount={agentExploration.workers().length}
                 onToolChange={setCanvasTool}
-                onCaptureScreen={() => void captureCurrentScreen()}
                 onCreateConnection={() => {
                   const node = selectedNode();
-                  if (node) setKeyboardConnectionSourceId(node.id);
-                  else toast("Select the screen where this connection begins", "info");
+                  if (node) {
+                    setScreenInspectorOpen(false);
+                    setKeyboardConnectionSourceId(node.id);
+                  } else toast("Select a screen first, then add a path from it", "info");
                 }}
                 onAddNote={addNote}
                 onExplore={() => {
@@ -2072,7 +2040,7 @@ export function AppMapWorkspace(props: {
                   setHistoryOpen(false);
                   setAgentOpen(true);
                 }}
-                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
+                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openLiveDevice())}
               />
               <AppMapMinimap
                 scale={view().scale}
@@ -2130,19 +2098,25 @@ export function AppMapWorkspace(props: {
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
           deviceLabel={selectedDevice()?.name ?? selectedDevice()?.serial}
-          status={livePanelStatus()}
+          status={
+            liveDeviceUnmapped() && livePanelStatus().kind === "ready"
+              ? {
+                  label: "Not saved to map",
+                  kind: "info",
+                  detail: `Choose Save screen to add it to ${activeAppMap()?.name ?? "this map"}.`,
+                }
+              : livePanelStatus()
+          }
+          unmapped={liveDeviceUnmapped()}
+          mappedScreenName={hereScreenTitle()}
           captureBusy={startCaptureBusy()}
           canRecord={canRecord()}
-          hasCanvasContent={hasCanvasContent()}
-          selectedConnection={selectedConnection}
-          selectedNode={selectedNode}
-          nodes={() => tree().nodes}
-          titleFor={titleFor}
+          mapName={activeAppMap()?.name}
           captureContextLabel={captureContextLabel()}
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}
-          onRecordFromHere={recordFromHere}
-          onRecordConnection={recordConnection}
+          onSaveScreen={() => void captureCurrentScreen()}
+          onRecord={recordFromHere}
           onOrientation={setDeviceCompanionOrientation}
         />
       </Show>

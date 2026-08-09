@@ -239,12 +239,14 @@ export type SnapshotState = {
   bounds?: { width: number; height: number };
   /** False when the device hierarchy cannot be reliably mapped onto its pixels. */
   inspectable?: boolean;
-  source?: "sdk" | "android-system";
+  source?: "sdk" | "android-system" | "pixels-only";
   inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
   foregroundApp?: string;
   treeApp?: string;
   bindingState?: "matched" | "rebound" | "unavailable";
   screenIdentity?: ScreenIdentityObservation;
+  visualFingerprint?: string;
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
 } | null;
 
 export type Frame = {
@@ -258,4 +260,9 @@ export type Frame = {
   jobId?: string;
   actionId?: string;
   path?: string;
+  width?: number;
+  height?: number;
+  fingerprint?: string;
+  visualFingerprint?: string;
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
 };

@@ -7,6 +7,11 @@ test("builds stable interaction payloads", () => {
     kind: "label",
     label: "Send",
   });
+  assert.deepEqual(interactionBody({ kind: "label", label: "Home", point: { x: 240, y: 720 } }), {
+    kind: "label",
+    label: "Home",
+    point: { x: 240, y: 720 },
+  });
   assert.deepEqual(interactionBody({ kind: "swipe", from: { x: 1, y: 2 }, to: { x: 3, y: 4 } }), {
     kind: "swipe",
     from: { x: 1, y: 2 },

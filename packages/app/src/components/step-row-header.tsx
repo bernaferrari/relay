@@ -123,8 +123,8 @@ export function StepRowHeader(props: {
             class={cn(
               "grid size-[30px] place-items-center rounded-[9px] font-mono text-[12px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-150",
               props.selected()
-                ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_16%,transparent)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_30%,transparent)]"
-                : "text-[var(--text-base)] ring-1 ring-inset ring-[var(--v2-border-border-strong)]",
+                ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_30%,transparent)]"
+                : "text-[var(--text-base)] ring-1 ring-inset ring-[var(--border-strong-base)]",
             )}
           >
             {props.index + 1}

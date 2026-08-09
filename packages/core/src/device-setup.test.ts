@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "node:test";
 import {
   agentDeviceDaemonExecutable,
   agentDeviceDaemonPidsForStateDir,
+  expectedIosSigningEnv,
   findAppleSigningIdentities,
   findXcodeProvisioningTeams,
   readDeviceSetup,
@@ -101,6 +102,12 @@ test("Apple device setup persists in the Relay workspace and applies at runtime"
     assert.equal(process.env.AGENT_DEVICE_IOS_TEAM_ID, "ABCDE12345");
     assert.equal(process.env.AGENT_DEVICE_IOS_BUNDLE_ID, "com.example.relay.runner");
     assert.equal(process.env.AGENT_DEVICE_IOS_SIGNING_IDENTITY, undefined);
+    assert.deepEqual(expectedIosSigningEnv(saved), {
+      AGENT_DEVICE_IOS_TEAM_ID: "ABCDE12345",
+      AGENT_DEVICE_IOS_BUNDLE_ID: "com.example.relay.runner",
+      AGENT_DEVICE_IOS_SIGNING_IDENTITY: "",
+      AGENT_DEVICE_IOS_PROVISIONING_PROFILE: "",
+    });
     assert.equal(process.env.AGENT_DEVICE_IOS_PROVISIONING_PROFILE, undefined);
     await assert.rejects(
       saveAppleDeviceSetup({ teamId: "not a team", bundleId: "com.example.relay.runner" }),

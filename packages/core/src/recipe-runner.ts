@@ -9,7 +9,7 @@
  */
 import type { Device } from "./device.js";
 import { createHash } from "node:crypto";
-import { resolveStepPoint, type StepPoint } from "@relay/protocol";
+import { describeSnapshotChrome, resolveStepPoint, type StepPoint } from "@relay/protocol";
 import {
   pressIdentifier,
   pressRef,
@@ -18,6 +18,8 @@ import {
   findClick,
   pressPoint,
   pressText,
+  pressResolvedControl,
+  resolveNamedControl,
   resolveSnapshotTargetPoint,
   selectedPlatform,
   replaceText,
@@ -84,6 +86,7 @@ import {
   labelsForIdentifierPrefix,
   labelsForScope,
 } from "./recipe-target-match.js";
+import { runTourStep } from "./recipe-runner-tour.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
@@ -426,7 +429,12 @@ async function tapTarget(
   repetitions = 1,
   intervalMs = 90,
   region?: NonNullable<RecipeStep["when"]>["region"],
-): Promise<string> {
+): Promise<{
+  strategy: string;
+  method?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+  point?: { x: number; y: number };
+}> {
   const repeated =
     repetitions > 1
       ? {
@@ -437,6 +445,23 @@ async function tapTarget(
           ...(repetitions === 2 ? { doubleTap: true } : {}),
         }
       : undefined;
+  const namedTarget = {
+    ...(target.identifier ? { identifier: target.identifier } : {}),
+    ...(target.label ? { label: target.label } : {}),
+    ...(target.text ? { text: target.text } : {}),
+    ...(target.point ? { point: await resolvePointForDevice(device, target.point) } : {}),
+  };
+  const nodes = await snapshot(device);
+  const named = resolveNamedControl(nodes, namedTarget);
+  if (named) {
+    await pressResolvedControl(device, named, namedTarget, repeated);
+    return {
+      strategy: named.method,
+      method: named.method,
+      bounds: named.bounds,
+      point: named.point,
+    };
+  }
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
   if (target.identifier)
     attempts.push({
@@ -459,9 +484,6 @@ async function tapTarget(
     });
   if (target.label)
     attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!, repeated) });
-  // Accessibility bridges can expose the same visible control as a text node
-  // instead of a native label selector. Keep the direct selector fast, then
-  // use the current snapshot as a bounded coordinate fallback before giving up.
   if (target.label)
     attempts.push({
       strategy: "snapshot-label",
@@ -491,7 +513,7 @@ async function tapTarget(
     const a = attempts[i]!;
     try {
       await a.run();
-      return a.strategy;
+      return { strategy: a.strategy, method: a.strategy };
     } catch (err) {
       if (isCancel(err)) throw err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -530,7 +552,7 @@ async function tapRecordedTarget(
   const failures: string[] = [];
   for (const [index, candidate] of unique.entries()) {
     try {
-      const strategy = await tapTarget(
+      const hit = await tapTarget(
         device,
         candidate,
         ctx.log,
@@ -538,6 +560,19 @@ async function tapRecordedTarget(
         intervalMs,
         input.region,
       );
+      const resolution = {
+        kind: "target-resolution" as const,
+        capturedAt: now(),
+        data: {
+          method: hit.method ?? hit.strategy,
+          strategy: hit.strategy,
+          ...(hit.bounds ? { bounds: hit.bounds } : {}),
+          ...(hit.point ? { point: hit.point } : {}),
+          target: candidate,
+        },
+      };
+      ctx.job?.artifacts.push(resolution);
+      ctx.artifacts?.push(resolution);
       if (index > 0) {
         const configuredFallback = index < configuredTargetCount;
         ctx.job?.artifacts.push({
@@ -546,13 +581,13 @@ async function tapRecordedTarget(
           data: {
             original: input.target,
             replacement: candidate,
-            strategy,
+            strategy: hit.strategy,
             reason: failures.join("; "),
             persisted: false,
           },
         });
         ctx.log(
-          `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${strategy})`,
+          `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${hit.strategy})`,
         );
       }
       return;
@@ -762,6 +797,10 @@ async function runRequiredRecipeStep(
       await captureScreenshot({ jobId: job?.id, caption: step.caption, device });
       break;
 
+    case "tour":
+      await runTourStep(device, step, log, job);
+      break;
+
     case "wait-for": {
       const target = step.target;
       const timeout = Math.min(step.timeoutMs ?? 30_000, MAX_WAIT_MS);
@@ -891,10 +930,18 @@ async function runRequiredRecipeStep(
       const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
       const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
       const deadline = Date.now() + timeout;
-      let observedFingerprint = "unavailable";
+      let observedTitle = "unknown";
       let reached = false;
       do {
-        const observed = observeScreenIdentity(await snapshot(device));
+        let nodes: SnapshotNode[] = [];
+        try {
+          nodes = await snapshot(device);
+        } catch {
+          nodes = [];
+        }
+        const chrome = describeSnapshotChrome(nodes);
+        observedTitle = chrome.header ?? chrome.app ?? "unknown";
+        const observed = observeScreenIdentity(nodes);
         const semanticMatch = (step.observations ?? []).some(
           (observation) => compareScreenIdentity(observed, observation).decision === "match",
         );
@@ -922,7 +969,6 @@ async function runRequiredRecipeStep(
                 "base64",
               ),
             );
-        observedFingerprint = visualFingerprint ?? observed.fingerprint;
         if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
           reached = true;
           break;
@@ -931,10 +977,7 @@ async function runRequiredRecipeStep(
       } while (Date.now() < deadline);
 
       if (!reached) {
-        throw new Error(
-          `expect-screen: reached a different screen instead of "${step.screenTitle}" ` +
-            `(expected ${step.fingerprint.slice(0, 8)}, observed ${observedFingerprint.slice(0, 8)})`,
-        );
+        throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
       }
       log(`screen: reached ${step.screenTitle}`);
       break;

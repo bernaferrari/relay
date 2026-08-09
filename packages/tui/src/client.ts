@@ -1,28 +1,30 @@
-import {
-  ACTIONS,
-  cancelJob,
-  captureScreenshot,
-  captureSnapshot,
-  createDevice,
-  enqueueJob,
-  formatSnapshotTree,
-  getActiveJob,
-  getJob,
-  listDevices,
-  listJobs,
-  loadRedactionPolicy,
-  loadEvidenceCollectionPolicy,
-  pauseJob,
-  resumeJob,
-  runWithOperationContext,
-  type ActionMeta,
-  type ListedDevice,
-  type TestJob,
-} from "@relay/core";
 import { RelayClient } from "@relay/client";
 
+export type ActionMeta = {
+  id: string;
+  title: string;
+  description?: string;
+  category?: string;
+  requiresProdMatch?: boolean;
+};
+
+export type ListedDevice = {
+  serial: string;
+  name: string;
+  platform?: string;
+};
+
+export type TestJob = {
+  id: string;
+  action: string;
+  status: string;
+  error?: string;
+  result?: unknown;
+  logs?: string[];
+};
+
 export type DeviceClient = {
-  mode: "http" | "in-process";
+  mode: "http";
   baseUrl?: string;
   listDevices: () => Promise<ListedDevice[]>;
   listActions: () => Promise<ActionMeta[]>;
@@ -62,101 +64,6 @@ async function probe(url: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function inProcessClient(): DeviceClient {
-  return {
-    mode: "in-process",
-    async listDevices() {
-      return listDevices();
-    },
-    async listActions() {
-      return [...ACTIONS];
-    },
-    async listJobs() {
-      return listJobs(30);
-    },
-    async selectDevice(serial) {
-      void serial;
-    },
-    async snapshot(serial) {
-      const snap = await captureSnapshot({ serial });
-      return { ...snap, tree: formatSnapshotTree(snap.nodes) };
-    },
-    async screenshot(serial) {
-      const shot = await captureScreenshot({ serial });
-      return { path: shot.path, bytes: shot.bytes };
-    },
-    async runAction(opts) {
-      const platform = (await listDevices()).find(
-        (device) => device.serial === opts.serial,
-      )?.platform;
-      if (platform !== "android" && platform !== "ios") {
-        throw new Error(`Target ${opts.serial} is not connected`);
-      }
-      const requestId = crypto.randomUUID();
-      const job = runWithOperationContext(
-        {
-          schemaVersion: 1,
-          actorId: "human:local-tui",
-          actorKind: "human",
-          organizationId: "local",
-          projectId: "default",
-          operationId: "job.create",
-          requestId,
-          idempotencyKey: requestId,
-          issuedAt: Date.now(),
-        },
-        () =>
-          enqueueJob({
-            recipe: opts.action,
-            serial: opts.serial,
-            platform,
-          }),
-      );
-      let seen = 0;
-      for (;;) {
-        const current = getJob(job.id)!;
-        if (opts.onLog) {
-          const fresh = current.logs.slice(seen);
-          for (const line of fresh) opts.onLog(line);
-          seen = current.logs.length;
-        }
-        if (
-          current.status === "ok" ||
-          current.status === "error" ||
-          current.status === "healed" ||
-          current.status === "cancelled"
-        ) {
-          return {
-            ok: current.status === "ok" || current.status === "healed",
-            error: current.error,
-            result: current.result,
-            status: current.status,
-          };
-        }
-        await new Promise((r) => setTimeout(r, 80));
-      }
-    },
-    async cancel(jobId) {
-      const id = jobId ?? getActiveJob()?.id;
-      if (!id) throw new Error("No active job");
-      cancelJob(id);
-    },
-    async pause(jobId) {
-      const id = jobId ?? getActiveJob()?.id;
-      if (!id) throw new Error("No active job");
-      pauseJob(id);
-    },
-    async resume(jobId) {
-      const id = jobId ?? getActiveJob()?.id;
-      if (!id) throw new Error("No active job");
-      resumeJob(id);
-    },
-    async getActiveJobId() {
-      return getActiveJob()?.id ?? null;
-    },
-  };
 }
 
 function httpClient(baseUrl: string): DeviceClient {
@@ -255,11 +162,8 @@ function httpClient(baseUrl: string): DeviceClient {
 export async function createClient(serverUrl?: string): Promise<DeviceClient> {
   const envUrl = process.env.RELAY_URL?.trim();
   const candidate = (serverUrl ?? envUrl ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
-  if (serverUrl || envUrl || (await probe(candidate))) {
-    if (await probe(candidate)) return httpClient(candidate);
-  }
-  await Promise.all([loadRedactionPolicy(), loadEvidenceCollectionPolicy()]);
-  // ensure device client constructable
-  createDevice();
-  return inProcessClient();
+  if (await probe(candidate)) return httpClient(candidate);
+  throw new Error(
+    `Relay server is not reachable at ${candidate}. Start it with \`pnpm dev:serve\`, then retry.`,
+  );
 }

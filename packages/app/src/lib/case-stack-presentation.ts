@@ -1,16 +1,16 @@
-import type { CaseExpansionStrategy, CaseStack, TestVariable } from "@relay/protocol";
+import type { CaseExpansionStrategy, CaseStack, TestData } from "@relay/protocol";
 
-function valueCount(variable: TestVariable): number {
+function valueCount(variable: TestData): number {
   return variable.scope === "private" ? 1 : Math.max(1, variable.values?.length ?? 1);
 }
 
 export function caseStackCount(
-  stack: Pick<CaseStack, "variableIds" | "strategy" | "maxCases">,
-  variables: TestVariable[],
+  stack: Pick<CaseStack, "dataIds" | "strategy" | "maxCases">,
+  variables: TestData[],
 ): { count: number; exact: boolean } {
-  const counts = stack.variableIds
+  const counts = stack.dataIds
     .map((id) => variables.find((variable) => variable.id === id))
-    .filter((variable): variable is TestVariable => Boolean(variable))
+    .filter((variable): variable is TestData => Boolean(variable))
     .map(valueCount);
   if (!counts.length) return { count: 0, exact: true };
   const limit = Math.min(250, Math.max(1, stack.maxCases));

@@ -66,10 +66,10 @@ export function RecordingEvidencePanel(props: {
 
   return (
     <section
-      class="min-w-0 overflow-hidden rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_82%,var(--v2-background-bg-base))]"
-      aria-label="Recorded interaction evidence"
+      class="min-w-0 overflow-hidden rounded-[10px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base)_82%,var(--background-base))]"
+      aria-label="Recorded step evidence"
     >
-      <header class="flex min-h-[34px] items-center justify-between gap-2.5 border-b border-[var(--v2-border-border-muted)] px-2.5">
+      <header class="flex min-h-[34px] items-center justify-between gap-2.5 border-b border-[var(--border-weak-base)] px-2.5">
         <div class="flex min-w-0 items-center gap-1.5 text-[var(--text-base)]">
           <Icon name="camera" size={13} />
           <strong class="text-[10px] font-semibold">Recorded evidence</strong>
@@ -84,15 +84,15 @@ export function RecordingEvidencePanel(props: {
       </header>
       <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2.5 p-2.5">
         <Show when={props.evidence.screenshot}>
-          <div class="relative aspect-[9/16] w-[76px] overflow-hidden rounded-lg bg-[var(--v2-background-bg-layer-02)] shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]">
+          <div class="relative aspect-[9/16] w-[76px] overflow-hidden rounded-lg bg-[var(--surface-base-hover)] shadow-[inset_0_0_0_1px_var(--border-strong-base)]">
             <img
               src={screenshotUrl()}
-              alt="Screen after this recorded interaction"
+              alt="Screen after this recorded step"
               class="size-full object-cover"
             />
             <Show when={props.evidence.pointer && props.evidence.deviceBounds}>
               <span
-                class="absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]"
+                class="absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]"
                 style={{
                   left: `${(props.evidence.pointer!.x / props.evidence.deviceBounds!.width) * 100}%`,
                   top: `${(props.evidence.pointer!.y / props.evidence.deviceBounds!.height) * 100}%`,
@@ -129,7 +129,7 @@ export function RecordingEvidencePanel(props: {
                       type="button"
                       role="option"
                       class={cn(
-                        "grid min-h-[30px] min-w-0 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-[7px] text-left shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] hover:enabled:bg-surface-raised-base-hover",
+                        "grid min-h-[30px] min-w-0 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-[7px] text-left shadow-[inset_0_0_0_1px_var(--border-weak-base)] hover:enabled:bg-surface-raised-base-hover",
                         active() &&
                           "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_var(--border-interactive-base)]",
                       )}

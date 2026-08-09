@@ -61,6 +61,13 @@ export function classifyError(error: unknown): CliError {
     }
     if (error.status === 408) return new CliError(error.message, ExitCode.connection, error.body);
     if (error.status === 499) return new CliError(error.message, ExitCode.cancellation, error.body);
+    if (/no active session|run open first/i.test(error.message)) {
+      return new CliError(
+        "The app is open, but the tap session is not attached. Retry the tap once.",
+        ExitCode.server,
+        error.body,
+      );
+    }
     return new CliError(error.message, ExitCode.server, error.body);
   }
   if (error instanceof TypeError) {

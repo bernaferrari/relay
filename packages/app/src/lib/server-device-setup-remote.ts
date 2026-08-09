@@ -7,8 +7,14 @@ export type AppleDeviceSetup = {
   provisioningProfile?: string;
 };
 
+export type IosLivePreviewBackend = "agent-device-png" | "go-ios-auto" | "go-ios-mjpeg";
+
 export type AppleSetupStatus = {
-  setup: { version: number; ios?: AppleDeviceSetup };
+  setup: {
+    version: number;
+    ios?: AppleDeviceSetup;
+    iosLivePreview?: { backend: IosLivePreviewBackend };
+  };
   suggestion?: AppleDeviceSetup & {
     label: string;
   };
@@ -58,5 +64,19 @@ export async function saveAppleDeviceSetup(
     method: "PUT",
     body: JSON.stringify(input),
   });
+  return result.setup;
+}
+
+export async function saveIosLivePreview(
+  request: ServerRequest,
+  backend: IosLivePreviewBackend,
+): Promise<AppleSetupStatus["setup"]> {
+  const result = await request<{ setup: AppleSetupStatus["setup"] }>(
+    "/settings/devices/apple/live-preview",
+    {
+      method: "PUT",
+      body: JSON.stringify({ backend }),
+    },
+  );
   return result.setup;
 }

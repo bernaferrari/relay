@@ -34,7 +34,7 @@ export async function runDueSchedules(at = Date.now()): Promise<void> {
       const variables = await readProjectVariables(schedule.projectId);
       const matrix = await prepareRunMatrix({
         variables: variables.value,
-        variableIds: referencedVariableIds(recipeGraph, variables.value),
+        dataIds: referencedVariableIds(recipeGraph, variables.value),
         repetitions: schedule.repetitions,
         seed: at,
       });

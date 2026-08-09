@@ -62,7 +62,7 @@ export function presentTarget(target: DeviceInfo): TargetPresentation {
         : target.platform === "ios" && target.developerMode === "disabled"
           ? "Turn on Developer Mode"
           : target.platform === "ios" && target.developerServicesAvailable === false
-            ? "Preparing for control"
+            ? "Preparing…"
             : target.booted === false
               ? "Unavailable"
               : target.platform === "browser"

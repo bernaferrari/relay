@@ -16,7 +16,7 @@ export function RelayMark(props: { size?: number; class?: string }): JSX.Element
       fill="none"
       aria-hidden="true"
     >
-      <rect width="20" height="20" rx="6" fill="var(--v2-background-bg-accent)" />
+      <rect width="20" height="20" rx="6" fill="var(--text-interactive-base)" />
       <path
         d="M5 11.7c1.2 2.2 4.2 2.9 6.8 1.5 2.2-1.1 3.4-3.4 3.1-5.5"
         stroke="white"

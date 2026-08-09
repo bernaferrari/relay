@@ -15,6 +15,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import { isUnsafeExploreControlText } from "./explore.js";
 import { readRecipe, saveRecipe, type Recipe, type RecipeStep } from "./recipes.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeScreenIdentity } from "./screen-identity.js";
@@ -172,7 +173,8 @@ export function fingerprintDiscoveryScreen(
 }
 
 function unsafeControlText(value: string): boolean {
-  return /(delete|remove|purchase|pay|subscribe|logout|sign out|password|permission)/i.test(value);
+  // Shared with tree crawl / explore — keep destructive filters consistent.
+  return isUnsafeExploreControlText(value);
 }
 
 /** Safe, semantic candidates for assisted exploration. These are suggestions, never commands. */

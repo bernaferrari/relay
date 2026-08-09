@@ -18,6 +18,9 @@ export function Switch(props: SwitchProps) {
     "value",
     "onCheckedChange",
     "children",
+    "aria-label",
+    "aria-labelledby",
+    "aria-describedby",
   ]);
 
   return (
@@ -35,6 +38,9 @@ export function Switch(props: SwitchProps) {
         disabled={state.disabled}
         name={state.name}
         value={state.value}
+        aria-label={state["aria-label"]}
+        aria-labelledby={state["aria-labelledby"]}
+        aria-describedby={state["aria-describedby"]}
         data-slot="switch-input"
         onChange={(event) => state.onCheckedChange?.(event.currentTarget.checked)}
       />

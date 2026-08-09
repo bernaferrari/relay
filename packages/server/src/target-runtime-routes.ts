@@ -85,7 +85,28 @@ export async function handleTargetRuntimeRoute(context: {
     // Physical iOS devices can reject termination when the requested app is
     // not currently running, which previously made a normal launch fail.
     const relaunch = body.relaunch === true;
-    await runtime.launchApp({ serial, platform: device.platform, app, relaunch });
+    try {
+      await runtime.launchApp({ serial, platform: device.platform, app, relaunch });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        device.platform === "ios" &&
+        /xcrun timed out|devicectl timed out|CoreDevice\.ActionError|Failed to list iOS apps|developer services|ddi/i.test(
+          message,
+        )
+      ) {
+        throw new HttpError(503, message, {
+          recovery:
+            "Apple device communication stalled. Recover the iPad, keep it unlocked, then launch again.",
+          recoveryAction: {
+            operationId: "target.recover",
+            input: { serial, reason: "control" },
+            cli: { argv: ["device", "recover", serial, "--input", '{"reason":"control"}'] },
+          },
+        });
+      }
+      throw error;
+    }
     json(response, 200, {
       launched: { serial, app, platform: device.platform, launchedAt: Date.now() },
     });
@@ -102,8 +123,11 @@ export async function handleTargetRuntimeRoute(context: {
       (candidate) => candidate.serial === serial,
     );
     if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
-    if (device.platform !== "ios") {
-      throw new HttpError(400, "Automatic runtime recovery is available for Apple devices only");
+    if (device.platform !== "ios" && device.platform !== "android") {
+      throw new HttpError(
+        400,
+        "Automatic runtime recovery is available for connected devices only",
+      );
     }
     const recovery = await runtime.recoverTarget(serial, reason);
     await appendActivity({

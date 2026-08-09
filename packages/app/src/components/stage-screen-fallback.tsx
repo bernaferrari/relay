@@ -204,7 +204,7 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                     </p>
                     <button
                       type="button"
-                      class="min-h-11 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
+                      class="min-h-11 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97]"
                       onClick={() => {
                         if (issue().kind === "setup") {
                           window.dispatchEvent(

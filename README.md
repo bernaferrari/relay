@@ -5,8 +5,8 @@ they cannot access or modify its source code. Mobile control is built on
 [agent-device](https://oss.callstack.com/agent-device/docs/quick-start); web control uses Playwright
 inside a Relay-owned browser profile.
 
-Architecture and theming follow [OpenCode](https://github.com/anomalyco/opencode) patterns
-(core · HTTP/SSE · thin hosts · full theme resolve/v2). Product craft aims at the bar set by
+Architecture follows [OpenCode](https://github.com/anomalyco/opencode) patterns
+(core · HTTP/SSE · thin hosts). Product craft aims at the bar set by
 teams like PostHog: clear empty states, project presence, golden CI smoke, doctor checks, evidence on disk.
 
 ```
@@ -19,7 +19,7 @@ packages/
   mcp/       scoped MCP v2 adapter with native PNG screenshots
   tui/       terminal workspace
   ui/        OpenCode theme engine + primitives
-  app/       Stage UI (device hero · steps · overlays)
+  app/       App Map UI (canvas · device companion · runs)
   desktop/   Electron shell
 ```
 
@@ -29,7 +29,7 @@ packages/
 vp install                 # or pnpm install
 pnpm doctor                # node, adb, devices — fix anything red
 pnpm dev:serve             # terminal 1 — API on :8787
-pnpm dev:app               # terminal 2 — Stage UI
+pnpm dev:app               # terminal 2 — App Map UI
 ```
 
 Relay reopens the latest **App Map** as a free-form canvas. A new project starts with one unsaved
@@ -50,7 +50,8 @@ The equivalent CLI flow is:
 ```bash
 relay target create --input '{"name":"Store staging","url":"https://staging.example.com"}'
 relay target open <target-id>           # sign in normally in Relay's isolated profile
-relay app-map flow run --input '{...}'  # freeze the Flow revision and explicit Target
+relay flow run <map-id> <flow-id> --input '{"serial":"<device>"}'
+relay job locale-matrix start --input '{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}'
 ```
 
 Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertion, or reusable flow
@@ -59,19 +60,23 @@ target, and unsupported device-only operations fail explicitly instead of being 
 
 ### App Maps
 
-An App Map is the canonical product model: **screens** are unique app states, **connections** are
-actions or transitions, and **flows** are reusable paths through the same graph. Layout and notes
-are document concerns; a selected path compiles to the target-neutral recipe IR when it runs. That
-seam makes the canvas the visual source of truth while keeping every device adapter target-neutral.
-The same map also has **Screens** and **Coverage** projections for browsing large
-products and comparing per-device, per-actor results without creating another source of truth.
+An App Map is the canonical product model. Same three words in the UI, CLI, and agents:
+
+- **Screen** — a unique app state. **Connection** — the recorded path between two screens.
+- **Variable** — a list the app can be in (language, theme, location). Teach 1–2 rows; infer the rest. Relay does not invent how to open that list.
+- **Test** — what you run once (a recorded path, or “open every Settings row”).
+- **Combine** — a visible grid: every selected variable value × the test. Run one cell, or run all.
+
+Layout and notes are document concerns. A selected path compiles to target-neutral recipe IR when it
+runs — people never author a second recipe library. The same map has **Screens** and **Results**
+projections for browsing large products without another source of truth.
 
 ```text
 Start screen ── recorded transition ──> Settings
                  └─ return transition ─> Start screen
 ```
 
-Relay is pre-release, so App Map schema v2 is the only accepted canvas format. Unsupported state is
+Relay is pre-release, so App Map schema v1 is the only accepted canvas format. Unsupported state is
 discarded; Relay does not carry a migration reader or dual-write path.
 
 Every recording captures semantic observations before and after the action. Relay normalizes
@@ -260,12 +265,11 @@ accessible interactive controls. Pass `--reload`, `--settle 1200`, or
 | TUI | `pnpm dev` / `tui` | Terminal workspace |
 | Doctor | `pnpm doctor` | Node ≥22, adb, devices |
 
-### UI behavior (quality bar)
-
 - **Server offline** — full overlay with `pnpm dev:serve` + Retry
 - **No devices** — empty states + adb hint
 - **Job fail** — heal callout + Retry / heal
 - **Execution timeline** — one planned/live/replay timeline; screenshots attach to the exact step
+- **Tree crawl (screen corpus)** — from **Runs → Tree crawl**, map a settings tree once, replay across languages/switcher options, export a labeled pack under `.relay/corpus/`. Shared navigation helpers live in `@relay/core` `explore`. Ops are `corpus.*` (HTTP `/corpus`). Agent/CLI explore verbs: `target.ui.describe`, `target.ui.back`, `target.ui.scrollCollect`.
 - **Themes** — OpenCode resolve + v2 (Settings / top bar Theme)
 - **Desktop updates** — packaged macOS/Windows builds check at launch and every four hours; a
   downloaded signed release shows its changelog with **Restart & update** or **Skip this version**
@@ -301,6 +305,8 @@ POST /generate
 GET  /report  GET /report/:id  GET /report/junit
 GET  /snapshot /screenshot
 POST /interact /device/select
+GET  /target/ui  POST /target/ui/back  POST /target/ui/scroll-collect
+GET/POST /corpus  POST /corpus/:id/start  GET /corpus/:id/export
 GET  /runs /runs/:id /runs/:id/frames/:file
 ```
 

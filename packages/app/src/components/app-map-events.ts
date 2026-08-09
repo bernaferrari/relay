@@ -92,6 +92,8 @@ export function createAppMapEventOrchestration(options: {
     const onToggleDevicePanel = () => options.onToggleDevicePanel();
     const onCloseDevicePanel = () => options.onCloseDevicePanel();
     const onRunMap = () => options.onRunMap();
+    const onRecordPath = () => options.onRecord();
+    const onCaptureScreen = () => options.onCaptureScreen();
     const onUndoRequest = (event: Event) => {
       const request = event as CustomEvent<{ redo: boolean }>;
       options.onUndoRequest(event, request.detail.redo);
@@ -159,6 +161,8 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
     window.addEventListener("relay:run-app-map", onRunMap);
+    window.addEventListener("relay:record-path", onRecordPath);
+    window.addEventListener("relay:capture-screen", onCaptureScreen);
     window.addEventListener("relay:undo-request", onUndoRequest);
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
@@ -167,6 +171,8 @@ export function createAppMapEventOrchestration(options: {
       window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
       window.removeEventListener("relay:run-app-map", onRunMap);
+      window.removeEventListener("relay:record-path", onRecordPath);
+      window.removeEventListener("relay:capture-screen", onCaptureScreen);
       window.removeEventListener("relay:undo-request", onUndoRequest);
       window.removeEventListener("keydown", onCanvasKey);
       window.removeEventListener("keyup", onCanvasKeyUp);

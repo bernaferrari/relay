@@ -21,7 +21,7 @@ export function useAppMapCaseStack(options: {
 
   const saveConnectionCaseStack = async (
     connection: CanvasConnection,
-    value: { name: string; variableIds: string[]; strategy: CaseExpansionStrategy },
+    value: { name: string; dataIds: string[]; strategy: CaseExpansionStrategy },
   ) => {
     const map = options.activeAppMap();
     const canonicalConnection = options.canonicalConnectionFor(connection);
@@ -40,7 +40,7 @@ export function useAppMapCaseStack(options: {
       projectId: map.projectId,
       appMapId: map.id,
       name: value.name,
-      variableIds: value.variableIds,
+      dataIds: value.dataIds,
       strategy: value.strategy,
       maxCases: existing?.maxCases ?? 20,
       createdAt: existing?.createdAt ?? at,
@@ -57,7 +57,7 @@ export function useAppMapCaseStack(options: {
       });
       await server.refreshAppMaps();
       toast(
-        `Added ${value.variableIds.length === 1 ? "a case stack" : "combined coverage"}`,
+        `Added ${value.dataIds.length === 1 ? "a case stack" : "combined coverage"}`,
         "success",
       );
     } catch (error) {

@@ -154,7 +154,7 @@ test("replacement validation blocks incomplete or unsafe action drafts", () => {
     takeActionError({ kind: "app", action: "open" }),
     "Choose an app, link, or local artifact.",
   );
-  assert.equal(takeActionError({ kind: "reusable", recipeId: "" }), "Choose a routine to run.");
+  assert.equal(takeActionError({ kind: "reusable", recipeId: "" }), "Choose a saved path to run.");
   assert.equal(
     takeActionError({ kind: "steps", steps: [] }),
     "Choose another action type before saving.",

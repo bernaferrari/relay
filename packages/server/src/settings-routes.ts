@@ -10,6 +10,8 @@ import {
   resetIosRunnerState,
   restartAgentDeviceDaemonForSetup,
   saveAppleDeviceSetup,
+  saveIosLivePreviewSettings,
+  isIosLivePreviewBackend,
   setRedactionEnabled,
   setSensitiveEvidenceConsent,
 } from "@relay/core";
@@ -105,6 +107,19 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
     resetDeviceClients();
     resetIosRunnerState();
     await restartAgentDeviceDaemonForSetup();
+    json(res, 200, { setup });
+    return true;
+  }
+
+  if (method === "PUT" && pathname === "/settings/devices/apple/live-preview") {
+    if (!scope.localTrusted) {
+      throw new HttpError(403, "Device setup can only be changed from a local Relay host");
+    }
+    const body = (await parseJsonBody(req)) as { backend?: unknown };
+    if (!isIosLivePreviewBackend(body.backend)) {
+      throw new HttpError(400, "backend must be agent-device-png, go-ios-auto, or go-ios-mjpeg");
+    }
+    const setup = await saveIosLivePreviewSettings({ backend: body.backend });
     json(res, 200, { setup });
     return true;
   }

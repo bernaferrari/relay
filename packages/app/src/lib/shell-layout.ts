@@ -12,7 +12,7 @@ import { cn } from "./cn";
  * resolve by stylesheet order, not class-list order.
  */
 export const shellRoot = cn(
-  "grid h-full w-full min-h-0 overflow-hidden text-[var(--text-strong)] bg-[var(--v2-background-bg-deep)] isolation-isolate",
+  "grid h-full w-full min-h-0 overflow-hidden text-[var(--text-strong)] bg-[var(--background-deep)] isolation-isolate",
   "grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
 );
 
@@ -28,7 +28,7 @@ export function shellRootNavVar(open: boolean): Record<string, string> {
  */
 export const shellNav = cn(
   "fixed top-0 bottom-0 left-0 z-[80] flex min-h-0 w-[var(--shell-nav-width)] flex-col overflow-hidden",
-  "border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
+  "border-r border-[var(--border-weak-base)] bg-[var(--background-base)]",
   "shadow-[18px_0_56px_rgb(0_0_0/32%)] transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
   "will-change-transform",
   // Inner content keeps its width during the collapse so text does not reflow.
@@ -39,11 +39,11 @@ export const shellNavClosed =
   "pointer-events-none -translate-x-3.5 opacity-0 border-r-0 max-[900px]:-translate-x-full";
 
 export const shellMain =
-  "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-deep)]";
+  "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--background-deep)]";
 
 export const shellTopbar = cn(
-  "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--v2-border-border-muted)]",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-base)_78%,var(--v2-background-bg-deep))] px-4",
+  "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--border-weak-base)]",
+  "bg-[color-mix(in_srgb,var(--background-base)_78%,var(--background-deep))] px-4",
 );
 
 export const shellTopbarContext = "flex min-w-0 flex-1 items-center gap-2";
@@ -64,13 +64,13 @@ export const shellViewTabs = "flex items-center gap-1";
 export const shellViewTab = cn(
   "inline-flex min-h-[30px] items-center gap-[7px] rounded-lg px-2.5",
   "text-[12px] font-medium text-[var(--text-weak)] transition-colors",
-  "hover:enabled:bg-[var(--v2-background-bg-layer-01)] hover:enabled:text-[var(--text-strong)]",
+  "hover:enabled:bg-[var(--surface-base)] hover:enabled:text-[var(--text-strong)]",
   "disabled:cursor-not-allowed disabled:opacity-40",
 );
 
 export const shellViewTabActive = cn(
-  "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
-  "shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]",
+  "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
+  "shadow-[inset_0_0_0_1px_var(--border-strong-base)]",
 );
 
 export const shellSaveState = "mr-1.5 text-[11px] text-[var(--text-weak)]";
@@ -113,16 +113,19 @@ export const shellAsideDrawer = cn(
   "max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
 );
 
-export const shellStageWrap = cn(
+export const shellMapWrap = cn(
   "relative min-h-0 min-w-0 overflow-hidden",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_94%,var(--v2-background-bg-accent))]",
+  "bg-[color-mix(in_srgb,var(--background-deep)_94%,var(--text-interactive-base))]",
   "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:content-['']",
-  "before:bg-[radial-gradient(circle_at_50%_34%,color-mix(in_srgb,var(--v2-background-bg-accent)_7%,transparent),transparent_48%)]",
+  "before:bg-[radial-gradient(circle_at_50%_34%,color-mix(in_srgb,var(--text-interactive-base)_7%,transparent),transparent_48%)]",
   "[&>*]:relative [&>*]:z-[1]",
 );
 
+/** @deprecated use shellMapWrap */
+export const shellStageWrap = shellMapWrap;
+
 export const shellSteps = cn(
-  "flex min-h-0 min-w-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
+  "flex min-h-0 min-w-0 flex-col border-l border-[var(--border-weak-base)] bg-[var(--background-base)]",
 );
 
 export const shellStepsBody = "min-h-0 min-w-0 flex-1 overflow-hidden";

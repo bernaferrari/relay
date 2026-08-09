@@ -960,6 +960,90 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "tour": {
+        if (raw.depth !== undefined && (!isNumber(raw.depth) || raw.depth < 0 || raw.depth > 3)) {
+          throw stepErr(index, "tour.depth must be 0–3");
+        }
+        if (raw.maxStops !== undefined && (!isNumber(raw.maxStops) || raw.maxStops < 1)) {
+          throw stepErr(index, "tour.maxStops must be a positive number");
+        }
+        const fallbackStops = Array.isArray(raw.fallbackStops)
+          ? raw.fallbackStops.flatMap((item) => {
+              if (!item || typeof item !== "object") return [];
+              const row = item as {
+                label?: unknown;
+                identifier?: unknown;
+                point?: { x?: unknown; y?: unknown };
+              };
+              const label = typeof row.label === "string" ? row.label.trim() : "";
+              if (!label) return [];
+              const identifier = typeof row.identifier === "string" ? row.identifier.trim() : "";
+              const point =
+                row.point && isNumber(row.point.x) && isNumber(row.point.y)
+                  ? { x: row.point.x, y: row.point.y }
+                  : undefined;
+              return [
+                {
+                  label,
+                  ...(identifier ? { identifier } : {}),
+                  ...(point ? { point } : {}),
+                },
+              ];
+            })
+          : [];
+        const originScreenId =
+          isString(raw.originScreenId) && raw.originScreenId.trim()
+            ? raw.originScreenId.trim()
+            : undefined;
+        const originTitle =
+          isString(raw.originTitle) && raw.originTitle.trim() ? raw.originTitle.trim() : undefined;
+        if (
+          raw.originFingerprint !== undefined &&
+          (!isString(raw.originFingerprint) || !/^[a-f0-9]{64}$/u.test(raw.originFingerprint))
+        ) {
+          throw stepErr(index, "tour.originFingerprint must be a SHA-256 fingerprint");
+        }
+        if (
+          raw.originAliases !== undefined &&
+          (!Array.isArray(raw.originAliases) ||
+            raw.originAliases.length > 256 ||
+            !raw.originAliases.every((alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias)))
+        ) {
+          throw stepErr(index, "tour.originAliases must be SHA-256 fingerprints");
+        }
+        let preludeSteps: Extract<RecipeStep, { kind: "tap" | "key" }>[] | undefined;
+        if (raw.preludeSteps !== undefined) {
+          if (!Array.isArray(raw.preludeSteps) || raw.preludeSteps.length > 16) {
+            throw stepErr(index, "tour.preludeSteps must contain at most 16 steps");
+          }
+          const parsed = validateRecipeSteps(raw.preludeSteps);
+          for (const [offset, item] of parsed.entries()) {
+            if (item.kind !== "tap" && item.kind !== "key") {
+              throw stepErr(index, `tour.preludeSteps[${offset}] must be tap or key`);
+            }
+          }
+          preludeSteps = parsed as Extract<RecipeStep, { kind: "tap" | "key" }>[];
+        }
+        const step: Extract<RecipeStep, { kind: "tour" }> = {
+          kind: "tour",
+          ...(isNumber(raw.depth) ? { depth: raw.depth } : {}),
+          ...(raw.screenshot === false ? { screenshot: false } : {}),
+          ...(raw.screenshot === true ? { screenshot: true } : {}),
+          ...(isNumber(raw.maxStops) ? { maxStops: raw.maxStops } : {}),
+          ...(raw.excludeLanguageRows === true ? { excludeLanguageRows: true } : {}),
+          ...(originScreenId ? { originScreenId } : {}),
+          ...(originTitle ? { originTitle } : {}),
+          ...(isString(raw.originFingerprint) ? { originFingerprint: raw.originFingerprint } : {}),
+          ...(Array.isArray(raw.originAliases) && raw.originAliases.length
+            ? { originAliases: raw.originAliases }
+            : {}),
+          ...(preludeSteps?.length ? { preludeSteps } : {}),
+          ...(fallbackStops.length ? { fallbackStops } : {}),
+          ...(note ? { note } : {}),
+        };
+        out.push(step);
+        break;
+      }
       case "review": {
         if (!isString(raw.capability) || !raw.capability.trim()) {
           throw stepErr(index, "review.capability is required");

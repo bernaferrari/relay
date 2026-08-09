@@ -11,7 +11,7 @@ import {
   type ResourceEvent,
   type RevisionWrite,
   type Revisioned,
-  type TestVariable,
+  type TestData,
 } from "@relay/protocol";
 import { now, publish } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
@@ -20,13 +20,18 @@ import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
 
+/** Local/agent leases last long enough for a Settings tour + a server blink. */
+export const DEVICE_LEASE_TTL_MS = 2 * 60 * 60 * 1000;
+/** Touching the device with <30 minutes left extends the same lease. */
+export const DEVICE_LEASE_RENEW_UNDER_MS = 30 * 60 * 1000;
+
 type CollaborationState = {
   projects: Project[];
   builds: Build[];
   pools: DevicePool[];
   matrices: CompatibilityMatrix[];
   leases: DeviceLease[];
-  variables: Record<string, Revisioned<TestVariable[]>>;
+  variables: Record<string, Revisioned<TestData[]>>;
   appMaps: Record<string, AppMap>;
   idempotency: Record<string, number | string>;
 };
@@ -60,7 +65,7 @@ function emptyState(): CollaborationState {
 async function readState(): Promise<CollaborationState> {
   try {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<CollaborationState>;
-    // App Map v2 is a clean product reset. Unsupported map schemas are
+    // App Map schema v1 is the only persisted canvas. Unsupported maps are
     // discarded instead of migrated or kept as dual state.
     const appMaps = Object.fromEntries(
       Object.entries(parsed.appMaps ?? {}).filter(
@@ -313,6 +318,24 @@ export async function leaseDevice(
   });
 }
 
+export async function renewDeviceLease(id: string, expiresAt: number): Promise<DeviceLease> {
+  return mutate((state) => {
+    const at = now();
+    const lease = state.leases.find((item) => item.id === id);
+    if (!lease || lease.status !== "leased") throw new Error("Device lease not found");
+    if (expiresAt <= at) throw new Error("Renewal expiry must be in the future");
+    lease.expiresAt = expiresAt;
+    emit({
+      type: "lease.changed",
+      at,
+      projectId: lease.projectId,
+      resource: "lease",
+      resourceId: lease.id,
+    });
+    return lease;
+  });
+}
+
 export async function releaseDeviceLease(
   id: string,
   scope?: { projectId: string; ownerId?: string },
@@ -394,11 +417,11 @@ export async function takeOverDeviceLease(
   });
 }
 
-export async function readProjectVariables(projectId: string): Promise<Revisioned<TestVariable[]>> {
+export async function readProjectVariables(projectId: string): Promise<Revisioned<TestData[]>> {
   return (await readState()).variables[projectId] ?? revisioned([]);
 }
 
-function validateProjectVariables(value: TestVariable[]): TestVariable[] {
+function validateProjectVariables(value: TestData[]): TestData[] {
   if (!Array.isArray(value)) throw new Error("Variables must be an array");
   const ids = new Set<string>();
   const names = new Set<string>();
@@ -438,8 +461,8 @@ function validateProjectVariables(value: TestVariable[]): TestVariable[] {
 
 export async function writeProjectVariables(
   projectId: string,
-  write: RevisionWrite<TestVariable[]>,
-): Promise<Revisioned<TestVariable[]>> {
+  write: RevisionWrite<TestData[]>,
+): Promise<Revisioned<TestData[]>> {
   return mutate((state) => {
     if (
       write.idempotencyKey &&
@@ -537,6 +560,9 @@ export async function createAppMap(input: {
       screenVariants: {},
       connections: {},
       caseStacks: {},
+      variables: {},
+      tests: {},
+      combines: {},
       routines: {},
       flows: {},
       runs: {},
@@ -658,6 +684,9 @@ export async function duplicateAppMap(input: {
       screenVariants,
       connections: duplicateEntityRecord(source.connections, input.appMapId, at),
       caseStacks: duplicateEntityRecord(source.caseStacks, input.appMapId, at),
+      variables: duplicateEntityRecord(source.variables ?? {}, input.appMapId, at),
+      tests: duplicateEntityRecord(source.tests ?? {}, input.appMapId, at),
+      combines: duplicateEntityRecord(source.combines ?? {}, input.appMapId, at),
       routines: duplicateEntityRecord(source.routines, input.appMapId, at),
       flows: duplicateEntityRecord(source.flows, input.appMapId, at),
       runs: {},

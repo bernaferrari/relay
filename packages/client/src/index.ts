@@ -9,7 +9,7 @@ import {
   type RevisionWrite,
   type Revisioned,
   type ServerConnection,
-  type TestVariable,
+  type TestData,
   parseRunSummary,
   parseJobSummary,
   type JobSummary,
@@ -43,6 +43,37 @@ export class ApiError<T = unknown> extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/** Prefer structured failure text over a bare HTTP status line. */
+export function httpErrorMessage(status: number, statusText: string, body: unknown): string {
+  const fallback = `${status} ${statusText}`.trim() || String(status);
+  if (!body || typeof body !== "object") return fallback;
+  const record = body as Record<string, unknown>;
+  const error = record.error;
+  const fromError =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object"
+        ? (error as { message?: unknown }).message
+        : undefined;
+  const fromChecks = Array.isArray(record.checks)
+    ? record.checks
+        .flatMap((check) => {
+          if (!check || typeof check !== "object") return [];
+          const item = check as { ok?: unknown; message?: unknown };
+          return item.ok === false && typeof item.message === "string" ? [item.message] : [];
+        })
+        .join("; ")
+    : undefined;
+  return firstNonEmptyString(fromError, record.message, fromChecks) ?? fallback;
 }
 
 export type RelayClientOptions = {
@@ -171,11 +202,11 @@ export class RelayClient {
       body = text;
     }
     if (!response.ok) {
-      const message =
-        typeof body === "object" && body && "error" in body
-          ? String((body as { error: unknown }).error)
-          : `${response.status} ${response.statusText}`;
-      throw new ApiError(response.status, message, body);
+      throw new ApiError(
+        response.status,
+        httpErrorMessage(response.status, response.statusText, body),
+        body,
+      );
     }
     return body;
   }
@@ -372,14 +403,14 @@ export class RelayClient {
   releaseLease(id: string): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.release", { leaseId: id }) as Promise<{ lease: DeviceLease }>;
   }
-  variables(): Promise<Revisioned<TestVariable[]>> {
-    return this.invoke("workspace.variables.get", {}) as Promise<Revisioned<TestVariable[]>>;
+  variables(): Promise<Revisioned<TestData[]>> {
+    return this.invoke("workspace.variables.get", {}) as Promise<Revisioned<TestData[]>>;
   }
-  updateVariables(write: RevisionWrite<TestVariable[]>): Promise<Revisioned<TestVariable[]>> {
-    return this.invoke("workspace.variables.update", write) as Promise<Revisioned<TestVariable[]>>;
+  updateVariables(write: RevisionWrite<TestData[]>): Promise<Revisioned<TestData[]>> {
+    return this.invoke("workspace.variables.update", write) as Promise<Revisioned<TestData[]>>;
   }
-  authoringSessions() {
-    return this.invoke("authoring.session.list", {});
+  authoringSessions(input: OperationInput<"authoring.session.list"> = {}) {
+    return this.invoke("authoring.session.list", input);
   }
   authoringSession(sessionId: string) {
     return this.invoke("authoring.session.get", { sessionId });

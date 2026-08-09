@@ -23,6 +23,9 @@ import type {
   AppMapCompiledFlow,
   AppMapPatch,
   CaseStack,
+  AppMapVariable,
+  AppMapTest,
+  AppMapCombine,
   CreateConnectionInput,
   CreateScreenInput,
   ConnectionPatch,
@@ -99,7 +102,7 @@ type RevisionWriteDto<T> = {
   idempotencyKey?: string;
 };
 
-type TestVariableDto = {
+type TestDataDto = {
   id: string;
   name: string;
   scope: "shared" | "private";
@@ -194,7 +197,8 @@ export type OperationCategory =
   | "execution"
   | "evidence"
   | "workspace"
-  | "discovery";
+  | "discovery"
+  | "corpus";
 
 export type RuntimeParser<T> = {
   readonly description: string;
@@ -286,11 +290,11 @@ type SpecificOperationMap = {
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": { input: Record<string, never>; output: { devices: DeviceSummary[] } };
   "target.snapshot.capture": {
-    input: { serial: string };
+    input: { serial: string; visual?: boolean };
     output: { nodes: unknown[]; interactive: unknown[]; tree: string };
   };
   "target.screenshot.capture": {
-    input: { serial: string };
+    input: { serial: string; previewX?: number; previewY?: number };
     output: {
       path: string;
       bytes: number;
@@ -302,9 +306,17 @@ type SpecificOperationMap = {
       height?: number;
       screenMatch?: {
         fingerprint: string;
+        visualFingerprint?: string;
         matchedScreenId: string | null;
         status: "observed" | "unavailable";
       };
+      proposedRows?: Array<{
+        x: number;
+        y: number;
+        top?: number;
+        bottom?: number;
+        height?: number;
+      }>;
     };
   };
   "target.app.launch": {
@@ -316,6 +328,38 @@ type SpecificOperationMap = {
         platform: "android" | "ios";
         launchedAt: number;
       };
+    };
+  };
+  "target.ui.describe": {
+    input: { serial: string };
+    output: {
+      summary: string;
+      platform?: string;
+      serial?: string;
+      foregroundApp?: string;
+      titles: string[];
+      sheetLikely: boolean;
+      keyboardLikely: boolean;
+      topLabels: string[];
+      coordinateSpace: "logical-points";
+      bounds?: { width: number; height: number };
+      nodeCount: number;
+      treePreview: string;
+    };
+  };
+  "target.ui.back": {
+    input: { serial: string; parentTitles?: string[] };
+    output: { method: "back" | "parent" | "close" | "key" | "edge-swipe" };
+  };
+  "target.ui.scrollCollect": {
+    input: { serial: string; maxScrolls?: number; allowSensitive?: boolean };
+    output: {
+      controls: Array<{
+        label: string;
+        role?: string;
+        target: { identifier?: string; ref?: string; label?: string; text?: string };
+      }>;
+      count: number;
     };
   };
   "target.recover": {
@@ -397,11 +441,11 @@ type SpecificOperationMap = {
   };
   "workspace.variables.get": {
     input: Record<string, never>;
-    output: RevisionedDto<TestVariableDto[]>;
+    output: RevisionedDto<TestDataDto[]>;
   };
   "workspace.variables.update": {
-    input: RevisionWriteDto<TestVariableDto[]>;
-    output: RevisionedDto<TestVariableDto[]>;
+    input: RevisionWriteDto<TestDataDto[]>;
+    output: RevisionedDto<TestDataDto[]>;
   };
   "app-map.list": { input: Record<string, never>; output: { appMaps: AppMap[] } };
   "app-map.get": { input: { appMapId: string }; output: { appMap: AppMap } };
@@ -466,6 +510,30 @@ type SpecificOperationMap = {
       screen: Screen;
       variant: ScreenVariant;
       created: boolean;
+    };
+  };
+  "app-map.teach": {
+    input: {
+      appMapId: string;
+      expectedRevision?: number;
+      eventId?: string;
+      target: AuthoringTarget;
+      leaseId: string;
+      fromScreenId?: string;
+      title?: string;
+      label?: string;
+      interaction?:
+        | { kind: "point"; x: number; y: number }
+        | { kind: "label"; label: string; point?: { x: number; y: number } }
+        | { kind: "identifier"; identifier: string; point?: { x: number; y: number } };
+    };
+    output: {
+      appMapId: string;
+      appMapRevision: number;
+      screen: Screen;
+      variant: ScreenVariant;
+      created: boolean;
+      connectionId?: string;
     };
   };
   "app-map.screen.update": {
@@ -621,6 +689,63 @@ type SpecificOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.variable.save": {
+    input: {
+      appMapId: string;
+      variableId: string;
+      expectedRevision: number;
+      eventId?: string;
+      variable: AppMapVariable;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.variable.remove": {
+    input: {
+      appMapId: string;
+      variableId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.test.save": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+      test: AppMapTest;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.test.remove": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.combine.save": {
+    input: {
+      appMapId: string;
+      combineId: string;
+      expectedRevision: number;
+      eventId?: string;
+      combine: AppMapCombine;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.combine.remove": {
+    input: {
+      appMapId: string;
+      combineId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
+  };
   "app-map.routine.save": {
     input: {
       appMapId: string;
@@ -672,7 +797,11 @@ type SpecificOperationMap = {
     output: { appMap: AppMap };
   };
   "authoring.session.list": {
-    input: Record<string, never>;
+    input: {
+      appMapId?: string;
+      targetId?: string;
+      activeOnly?: boolean;
+    };
     output: AuthoringSessionListResponse;
   };
   "authoring.session.get": {
@@ -808,10 +937,14 @@ type GenericOperationId =
   | "target.boot"
   | "target.authorize"
   | "target.interact"
+  | "target.ui.describe"
+  | "target.ui.back"
+  | "target.ui.scrollCollect"
   | "target.touch"
   | "target.key"
   | "target.scroll"
   | "target.video.start"
+  | "target.stream.open"
   | "action.run"
   | "recipe.list"
   | "recipe.get"
@@ -847,6 +980,28 @@ type GenericOperationId =
   | "discovery.coverage"
   | "discovery.export"
   | "discovery.promote"
+  | "corpus.list"
+  | "corpus.create"
+  | "corpus.get"
+  | "corpus.rename"
+  | "corpus.status.update"
+  | "corpus.start"
+  | "corpus.cancel"
+  | "corpus.coverage"
+  | "corpus.export"
+  | "job.locale-matrix.start"
+  | "job.locale-matrix.export"
+  | "job.locale-matrix.infer"
+  | "job.combine.start"
+  | "job.combine.export"
+  | "job.combine.infer"
+  | "corpus.screen.get"
+  | "language-profile.list"
+  | "language-profile.scan"
+  | "language-profile.save"
+  | "switcher-profile.list"
+  | "switcher-profile.scan"
+  | "switcher-profile.save"
   | "job.retry"
   | "job.active.cancel"
   | "job.matrix.start"
@@ -883,8 +1038,12 @@ function string(value: unknown, label: string): string {
 }
 
 function number(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fail(label, "must be a number");
-  return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fail(label, "must be a number");
 }
 
 function boolean(value: unknown, label: string): boolean {
@@ -1081,6 +1240,19 @@ const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
 
 const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
   string(input.serial, "target serial");
+  if (input.previewX !== undefined) number(input.previewX, "previewX");
+  if (input.previewY !== undefined) number(input.previewY, "previewY");
+  if (input.preview !== undefined) boolean(input.preview, "preview");
+  if (input.visual !== undefined && input.visual !== true && input.visual !== false) {
+    if (
+      input.visual !== "true" &&
+      input.visual !== "false" &&
+      input.visual !== "1" &&
+      input.visual !== "0"
+    ) {
+      fail("visual", "must be a boolean");
+    }
+  }
 });
 
 const targetAppLaunchInputParser = objectParser<OperationInput<"target.app.launch">>(
@@ -1208,7 +1380,7 @@ const evidencePolicyParser = objectParser<{ policy: EvidenceCollectionPolicyDto 
   },
 );
 
-const revisionedVariablesParser = objectParser<RevisionedDto<TestVariableDto[]>>(
+const revisionedVariablesParser = objectParser<RevisionedDto<TestDataDto[]>>(
   "variables response",
   (input) => {
     number(input.revision, "variables revision");
@@ -1493,6 +1665,70 @@ const appMapScreenCaptureOutputParser = objectParser<OperationOutput<"app-map.sc
     record(output.screen, "App Map screen capture response screen");
     record(output.variant, "App Map screen capture response variant");
     boolean(output.created, "App Map screen capture response created");
+  },
+);
+
+const appMapTeachParser = objectParser<OperationInput<"app-map.teach">>(
+  "App Map teach",
+  (input) => {
+    string(input.appMapId, "App Map teach appMapId");
+    if (input.expectedRevision !== undefined) {
+      number(input.expectedRevision, "App Map teach expectedRevision");
+    }
+    if (input.eventId !== undefined) string(input.eventId, "App Map teach eventId");
+    string(input.leaseId, "App Map teach leaseId");
+    const target = record(input.target, "App Map teach target");
+    if (target.kind !== "device" && target.kind !== "browser") {
+      fail("App Map teach target kind", "must be device or browser");
+    }
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      fail("App Map teach target platform", "must be android, ios, or browser");
+    }
+    string(target.targetId, "App Map teach targetId");
+    if (input.fromScreenId !== undefined) string(input.fromScreenId, "App Map teach fromScreenId");
+    if (input.title !== undefined) string(input.title, "App Map teach title");
+    if (input.label !== undefined) string(input.label, "App Map teach label");
+    if (input.interaction !== undefined) {
+      const interaction = record(input.interaction, "App Map teach interaction");
+      const kind = string(interaction.kind, "App Map teach interaction kind");
+      if (kind === "point") {
+        number(interaction.x, "App Map teach interaction x");
+        number(interaction.y, "App Map teach interaction y");
+      } else if (kind === "label") {
+        string(interaction.label, "App Map teach interaction label");
+        if (interaction.point !== undefined) {
+          const point = record(interaction.point, "App Map teach interaction point");
+          number(point.x, "App Map teach interaction point x");
+          number(point.y, "App Map teach interaction point y");
+        }
+      } else if (kind === "identifier") {
+        string(interaction.identifier, "App Map teach interaction identifier");
+        if (interaction.point !== undefined) {
+          const point = record(interaction.point, "App Map teach interaction point");
+          number(point.x, "App Map teach interaction point x");
+          number(point.y, "App Map teach interaction point y");
+        }
+      } else {
+        fail("App Map teach interaction kind", "must be point, label, or identifier");
+      }
+    }
+  },
+);
+
+const appMapTeachOutputParser = objectParser<OperationOutput<"app-map.teach">>(
+  "App Map teach response",
+  (output) => {
+    string(output.appMapId, "App Map teach response appMapId");
+    number(output.appMapRevision, "App Map teach response revision");
+    record(output.screen, "App Map teach response screen");
+    record(output.variant, "App Map teach response variant");
+    boolean(output.created, "App Map teach response created");
+    if (output.connectionId !== undefined)
+      string(output.connectionId, "App Map teach connectionId");
   },
 );
 
@@ -1956,6 +2192,19 @@ const authoringSessionListParser: RuntimeParser<AuthoringSessionListResponse> = 
   parse: parseAuthoringSessionListResponse,
 };
 
+const authoringSessionListInputParser = objectParser<OperationInput<"authoring.session.list">>(
+  "authoring session list input",
+  (input) => {
+    if (input.appMapId !== undefined) string(input.appMapId, "authoring App Map id");
+    if (input.targetId !== undefined) string(input.targetId, "authoring target id");
+    if (input.activeOnly !== undefined) {
+      if (input.activeOnly === "true") input.activeOnly = true;
+      if (input.activeOnly === "false") input.activeOnly = false;
+      boolean(input.activeOnly, "authoring activeOnly");
+    }
+  },
+);
+
 const generic = operationRecordParser;
 
 type DefinitionOptions = Omit<OperationDefinition<OperationId>, "version" | "input" | "output"> & {
@@ -2126,6 +2375,30 @@ export const operationDefinitions = [
     lease: "exclusive",
     input: targetInputParser,
   }),
+  query("target.ui.describe", "Describe target UI context", "/target/ui", {
+    category: "target",
+    targetCapabilities: ["snapshot"],
+    lease: "shared",
+    input: targetInputParser,
+  }),
+  command("target.ui.back", "Sheet-aware back / dismiss toward parent", "POST", "/target/ui/back", {
+    category: "target",
+    targetCapabilities: ["tap"],
+    lease: "exclusive",
+    input: targetInputParser,
+  }),
+  command(
+    "target.ui.scrollCollect",
+    "Scroll list and collect interactive controls",
+    "POST",
+    "/target/ui/scroll-collect",
+    {
+      category: "target",
+      targetCapabilities: ["scroll", "snapshot"],
+      lease: "exclusive",
+      input: targetInputParser,
+    },
+  ),
   command("target.touch", "Send target touch", "POST", "/device/touch", {
     category: "target",
     targetCapabilities: ["tap"],
@@ -2149,6 +2422,12 @@ export const operationDefinitions = [
     targetCapabilities: ["recording"],
     lease: "shared",
     input: targetInputParser,
+  }),
+  query("target.stream.open", "Stream live target video", "/device/stream", {
+    category: "target",
+    mode: "stream",
+    targetCapabilities: ["observe"],
+    lease: "shared",
   }),
   query("project.list", "List projects", "/projects", {
     input: emptyInputParser,
@@ -2386,6 +2665,19 @@ export const operationDefinitions = [
     },
   ),
   command(
+    "app-map.teach",
+    "Tap a control, capture the destination, and connect it on the App Map",
+    "POST",
+    "/app-maps/:appMapId/teach",
+    {
+      category: "authoring",
+      targetCapabilities: ["snapshot", "screenshot", "tap"],
+      lease: "exclusive",
+      input: appMapTeachParser,
+      output: appMapTeachOutputParser,
+    },
+  ),
+  command(
     "app-map.screen.update",
     "Update App Map screen",
     "PUT",
@@ -2554,6 +2846,81 @@ export const operationDefinitions = [
     },
   ),
   command(
+    "app-map.variable.save",
+    "Save an App Map variable",
+    "PUT",
+    "/app-maps/:appMapId/variables/:variableId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.variable.save">("Variable save", "variable", [
+        "variableId",
+      ]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.variable.remove",
+    "Remove an App Map variable",
+    "POST",
+    "/app-maps/:appMapId/variables/:variableId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.variable.remove">("Variable removal", undefined, [
+        "variableId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.test.save",
+    "Save a map test (path or tour)",
+    "PUT",
+    "/app-maps/:appMapId/tests/:testId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.test.save">("Test save", "test", ["testId"]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.test.remove",
+    "Remove a map test",
+    "POST",
+    "/app-maps/:appMapId/tests/:testId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.test.remove">("Test removal", undefined, ["testId"]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.combine.save",
+    "Save a Combine (variables × tests)",
+    "PUT",
+    "/app-maps/:appMapId/combines/:combineId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.combine.save">("Combine save", "combine", ["combineId"]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.combine.remove",
+    "Remove a Combine",
+    "POST",
+    "/app-maps/:appMapId/combines/:combineId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.combine.remove">("Combine removal", undefined, [
+        "combineId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
     "app-map.routine.save",
     "Save App Map Routine",
     "PUT",
@@ -2630,7 +2997,7 @@ export const operationDefinitions = [
   ),
   query("authoring.session.list", "List Authoring Sessions", "/authoring-sessions", {
     category: "authoring",
-    input: emptyInputParser,
+    input: authoringSessionListInputParser,
     output: authoringSessionListParser,
   }),
   query("authoring.session.get", "Get Authoring Session", "/authoring-sessions/:sessionId", {
@@ -2878,6 +3245,64 @@ export const operationDefinitions = [
   command("discovery.promote", "Promote Discovery path", "POST", "/discovery/:sessionId/promote", {
     category: "discovery",
   }),
+  query("corpus.list", "List corpus sessions", "/corpus", { category: "corpus" }),
+  command("corpus.create", "Create corpus session", "POST", "/corpus", {
+    category: "corpus",
+  }),
+  query("corpus.get", "Get corpus session", "/corpus/:sessionId", { category: "corpus" }),
+  command("corpus.rename", "Rename corpus session", "POST", "/corpus/:sessionId/name", {
+    category: "corpus",
+  }),
+  command("corpus.status.update", "Update corpus status", "POST", "/corpus/:sessionId/status", {
+    category: "corpus",
+  }),
+  command("corpus.start", "Start settings corpus crawl", "POST", "/corpus/:sessionId/start", {
+    category: "corpus",
+    targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
+    lease: "exclusive",
+    progress: true,
+    cancellable: true,
+  }),
+  command("corpus.cancel", "Cancel corpus crawl", "POST", "/corpus/:sessionId/cancel", {
+    category: "corpus",
+    confirmation: "confirm",
+  }),
+  query("corpus.coverage", "Corpus locale coverage", "/corpus/:sessionId/coverage", {
+    category: "corpus",
+  }),
+  query("corpus.export", "Export corpus pack", "/corpus/:sessionId/export", {
+    category: "corpus",
+  }),
+  query("corpus.screen.get", "Get corpus screenshot", "/corpus/:sessionId/screens/:screenId", {
+    category: "corpus",
+  }),
+
+  query("language-profile.list", "List language profiles", "/language-profiles", {
+    category: "corpus",
+  }),
+  query("switcher-profile.list", "List switcher profiles", "/switcher-profiles", {
+    category: "corpus",
+  }),
+  command("switcher-profile.scan", "Scan app switcher picker", "POST", "/switcher-profiles/scan", {
+    category: "corpus",
+    targetCapabilities: ["tap", "snapshot", "launch"],
+    lease: "exclusive",
+    progress: true,
+  }),
+  command("switcher-profile.save", "Save switcher profile", "POST", "/switcher-profiles", {
+    category: "corpus",
+  }),
+
+  command("language-profile.scan", "Scan app language picker", "POST", "/language-profiles/scan", {
+    category: "corpus",
+    targetCapabilities: ["tap", "snapshot", "launch"],
+    lease: "exclusive",
+    progress: true,
+  }),
+  command("language-profile.save", "Save language profile", "POST", "/language-profiles", {
+    category: "corpus",
+  }),
+
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
   command("job.start", "Start job", "POST", "/jobs", {
@@ -2915,6 +3340,53 @@ export const operationDefinitions = [
     progress: true,
     cancellable: true,
   }),
+  command(
+    "job.locale-matrix.start",
+    "Run a map path across locales",
+    "POST",
+    "/jobs/locale-matrix",
+    {
+      category: "execution",
+      progress: true,
+      cancellable: true,
+      lease: "exclusive",
+      targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
+    },
+  ),
+  query(
+    "job.locale-matrix.export",
+    "Export locale-run screenshot pack",
+    "/jobs/locale-matrix/:batchId/export",
+    { category: "execution" },
+  ),
+  command(
+    "job.locale-matrix.infer",
+    "Infer locale options from taught live-screen rows",
+    "POST",
+    "/jobs/locale-matrix/infer",
+    {
+      category: "execution",
+    },
+  ),
+  command("job.combine.start", "Run Combine (variables × a test)", "POST", "/jobs/combine", {
+    category: "execution",
+    progress: true,
+    cancellable: true,
+    lease: "exclusive",
+    targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
+  }),
+  query("job.combine.export", "Export Combine screenshot pack", "/jobs/combine/:batchId/export", {
+    category: "execution",
+  }),
+  command(
+    "job.combine.infer",
+    "Infer variable rows from taught live-screen rows",
+    "POST",
+    "/jobs/combine/infer",
+    {
+      category: "execution",
+    },
+  ),
   command(
     "job.compatibility-matrix.start",
     "Run compatibility matrix",

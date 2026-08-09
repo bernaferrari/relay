@@ -255,6 +255,25 @@ test("unsupported target interactions stay explicit and are not recorded", async
   });
 });
 
+test("stopping without an action cancels the empty take instead of opening review", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.stop(session.id, runtime);
+
+    assert.equal(session.state, "cancelled");
+    assert.equal(session.take?.state, "discarded");
+    assert.equal(session.take?.revisions.at(-1)?.actions.length, 0);
+    assert.deepEqual(runtime.lifecycle, [
+      "observe",
+      "observe",
+      "start-video",
+      "stop-video",
+      "observe",
+    ]);
+  });
+});
+
 test("the session routes every supported control and evidence-only interaction", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
@@ -435,21 +454,21 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     runtime.replayScreen = "source";
     session = await store.replay(session.id, runtime);
     assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
-    assert.match(session.take!.replayAttempts.at(-1)?.error ?? "", /different screen/);
+    assert.match(session.take!.replayAttempts.at(-1)?.error ?? "", /landed on|different screen/);
     runtime.screen = "source";
     runtime.replayScreen = "destination";
     session = await store.replay(session.id, runtime);
     assert.deepEqual(
       session.take!.replayAttempts.map((attempt) => attempt.outcome),
-      ["failed", "failed", "passed"],
+      ["passed", "failed", "failed", "passed"],
     );
-    const immutableFailed = structuredClone(session.take!.replayAttempts[0]);
+    const immutableFirst = structuredClone(session.take!.replayAttempts[0]);
 
     session = await store.commit(session.id, {
       destination: { kind: "new-screen", title: "Home" },
     });
     assert.equal(session.state, "committed");
-    assert.deepEqual(session.take!.replayAttempts[0], immutableFailed);
+    assert.deepEqual(session.take!.replayAttempts[0], immutableFirst);
     const appMap = await readAppMap("project-a", appMapId);
     assert.ok(appMap);
     const connection = appMap.connections[session.committedConnectionId!];
@@ -620,26 +639,92 @@ test("an edited planned connection adopts the successfully replayed destination"
   });
 });
 
-test("a zero-action Take commits as an explicit verified observe-only edge", async () => {
+test("an unedited live demonstration can be committed without a second pass", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+    assert.equal(runtime.replayed.length, 0);
+
+    session = await store.commit(session.id, {
+      destination: { kind: "new-screen", title: "Home" },
+    });
+    assert.equal(session.state, "committed");
+    const appMap = await readAppMap("project-a", appMapId);
+    const connection = appMap?.connections[session.committedConnectionId!];
+    assert.equal(connection?.state, "ready");
+    assert.equal(connection?.actions[0]?.kind, "recorded");
+  });
+});
+
+test("a tap that never leaves the source screen cannot become a new destination", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.execute = async (_session, interaction) => {
+      runtime.executed.push(interaction);
+    };
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "App Language" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+    await assert.rejects(
+      store.commit(session.id, { destination: { kind: "new-screen", title: "App Language" } }),
+      /did not leave the source screen/,
+    );
+  });
+});
+
+test("editing a Take still requires a successful replay before commit", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    const actionId = session.take!.revisions.at(-1)!.actions[0]!.id;
+    session = await store.replace(session.id, actionId, {
+      kind: "tap",
+      target: { label: "Next" },
+    });
+    await assert.rejects(
+      store.commit(session.id, { destination: { kind: "new-screen", title: "Home" } }),
+      /Replay the current Take successfully/,
+    );
+
+    runtime.screen = "source";
+    runtime.replayScreen = "destination";
+    session = await store.replay(session.id, runtime);
+    session = await store.commit(session.id, {
+      destination: { kind: "new-screen", title: "Home" },
+    });
+    assert.equal(session.state, "committed");
+  });
+});
+
+test("a zero-action Take cannot manufacture an observe-only path", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     session = await store.stop(session.id, runtime);
-    session = await store.replay(session.id, runtime);
-    session = await store.commit(session.id, {});
+    assert.equal(session.state, "cancelled");
+    await assert.rejects(store.replay(session.id, runtime), /expected reviewing/);
+    await assert.rejects(store.commit(session.id, {}), /expected reviewing/);
     const appMap = await readAppMap("project-a", appMapId);
     assert.ok(appMap);
-    const connection = appMap.connections[session.committedConnectionId!];
-    assert.deepEqual(connection?.actions, [
-      { id: `passive-${session.take!.id}`, kind: "passive", reason: "observe-only" },
-    ]);
-    assert.equal(connection?.state, "ready");
-    assert.equal(connection?.destination.kind, "screen");
-    assert.equal(
-      connection?.destination.kind === "screen" ? connection.destination.screenId : undefined,
-      connection?.fromScreenId,
-      "the canonical semantic identity merges an observe-only cycle back to its source Screen",
-    );
+    assert.equal(Object.keys(appMap.connections).length, 0);
   });
 });
 

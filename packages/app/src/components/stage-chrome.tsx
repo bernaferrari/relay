@@ -60,7 +60,7 @@ export function StageViewToggle(props: {
         }
       >
         <div
-          class="inline-flex h-8 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5 shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
+          class="inline-flex h-8 items-center rounded-lg bg-[var(--surface-base)] p-0.5 shadow-[inset_0_0_0_1px_var(--border-strong-base)]"
           role="group"
           aria-label="Device view"
         >
@@ -69,8 +69,8 @@ export function StageViewToggle(props: {
             class={cn(
               "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
               props.stageView === "recorded"
-                ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
+                ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
+                : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
             )}
             aria-pressed={props.stageView === "recorded"}
             disabled={props.recording}
@@ -83,8 +83,8 @@ export function StageViewToggle(props: {
             class={cn(
               "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
               props.stageView === "live"
-                ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
+                ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
+                : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
             )}
             aria-pressed={props.stageView === "live"}
             disabled={!props.targetReady}
@@ -114,6 +114,36 @@ export function StageViewToggle(props: {
   );
 }
 
+/** Calm chip on the live glass when pixels work but names do not. */
+export function StageInspectionHint(props: {
+  title: string;
+  detail: string;
+  actionLabel: string;
+  busy?: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div class="pointer-events-auto absolute inset-x-3 bottom-3 z-[6] flex items-start gap-2 rounded-[12px] bg-[color-mix(in_srgb,var(--surface-raised-base)_92%,transparent)] px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/28%),inset_0_0_0_1px_var(--border-weak-base)]">
+      <div class="min-w-0 flex-1">
+        <strong class="block text-[11px] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
+          {props.title}
+        </strong>
+        <p class="m-0 mt-0.5 text-[10.5px] leading-4 text-[var(--text-weak)]">{props.detail}</p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={props.busy}
+        aria-busy={props.busy}
+        onClick={() => props.onRetry()}
+      >
+        {props.actionLabel}
+      </Button>
+    </div>
+  );
+}
+
 /** Record / screenshot utilities beneath the live device (non-embedded only). */
 export function StageRecordingControls(props: {
   stageView: "recorded" | "live";
@@ -137,22 +167,22 @@ export function StageRecordingControls(props: {
             variant={props.recording ? "danger" : "primary"}
             size="md"
             class="min-w-[104px] gap-2 rounded-lg"
-            aria-label={props.recording ? "Stop recording interactions" : "Record interactions"}
+            aria-label={props.recording ? "Stop recording path" : "Record path"}
             disabled={!props.recording && !props.selectedLeaseId}
             onClick={props.onToggleRecording}
             data-tip={
               props.recording
-                ? "Stop recording steps"
+                ? "Stop when you reach the next screen"
                 : props.selectedLeaseId
-                  ? "Record interactions as steps"
+                  ? "Record taps as a path on the map"
                   : "Restoring device control…"
             }
           >
             <Icon name={props.recording ? "square" : "circle"} size={10} />
-            {props.recording ? "Stop" : "Record"}
+            {props.recording ? "Stop" : "Record path"}
           </Button>
           <Show when={props.recording}>
-            <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+            <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--surface-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
               <input
                 class="h-full w-32 min-w-0 bg-transparent px-2.5 text-[12px] font-medium text-[var(--text-strong)] outline-none placeholder:text-text-weak"
                 aria-label="Current recording task"
@@ -162,7 +192,7 @@ export function StageRecordingControls(props: {
               />
               <button
                 type="button"
-                class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-text-strong active:scale-[0.97]"
+                class="grid size-9 shrink-0 place-items-center rounded-r-lg text-text-weak transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-text-strong active:scale-[0.97]"
                 aria-label="Start a new recording task"
                 data-tip="Start a new task"
                 onClick={() => props.startNextRecordingGroup()}
@@ -176,8 +206,8 @@ export function StageRecordingControls(props: {
             variant="ghost"
             size="normal"
             class="!size-9 rounded-lg"
-            data-tip="Screenshot (⌘⇧S)"
-            aria-label="Capture screenshot"
+            data-tip="Save screenshot to the map (⌘⇧S)"
+            aria-label="Save screenshot to the map"
             disabled={props.busyCapture}
             onClick={props.onCaptureScreenshot}
           >

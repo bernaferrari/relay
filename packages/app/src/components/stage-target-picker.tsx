@@ -56,7 +56,7 @@ export function StageTargetPicker(props: {
       <div
         class={cn(
           popover,
-          "!overflow-visible border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-0 shadow-[var(--v2-elevation-overlay)]",
+          "!overflow-visible border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-0 shadow-[var(--shadow-lg)]",
         )}
         style={{
           "--ui-pop-origin": props.picker().placement === "above" ? "bottom left" : "top left",
@@ -80,7 +80,7 @@ export function StageTargetPicker(props: {
           </span>
           <button
             type="button"
-            class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+            class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
             aria-label="Close target picker"
             onClick={props.onClose}
           >
@@ -89,10 +89,10 @@ export function StageTargetPicker(props: {
         </header>
 
         <Show when={props.ancestryLength > 1}>
-          <div class="mx-2.5 flex h-8 items-center justify-between rounded-lg bg-[var(--v2-background-bg-layer-01)] px-1">
+          <div class="mx-2.5 flex h-8 items-center justify-between rounded-lg bg-[var(--surface-base)] px-1">
             <button
               type="button"
-              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index <= 0}
               onClick={() => props.onRetarget(props.picker().index - 1)}
             >
@@ -103,7 +103,7 @@ export function StageTargetPicker(props: {
             </span>
             <button
               type="button"
-              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index >= props.ancestryLength - 1}
               onClick={() => props.onRetarget(props.picker().index + 1)}
             >
@@ -122,9 +122,9 @@ export function StageTargetPicker(props: {
                   aria-pressed={selected()}
                   class={cn(
                     "grid min-h-10 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
-                    "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
+                    "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
                     selected() &&
-                      "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
+                      "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]",
                   )}
                   onClick={() => {
                     props.setStrategyId(strategy.id);
@@ -132,7 +132,7 @@ export function StageTargetPicker(props: {
                 >
                   <span
                     class={cn(
-                      "grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]",
+                      "grid size-[26px] place-items-center rounded-md bg-[var(--surface-base)] text-[var(--text-weak)]",
                       selected() && "text-[var(--text-interactive-base)]",
                     )}
                   >
@@ -148,8 +148,8 @@ export function StageTargetPicker(props: {
                   </span>
                   <span
                     class={cn(
-                      "size-3.5 rounded-full border border-[var(--v2-border-border-strong)]",
-                      selected() && "border-[4px] border-[var(--v2-background-bg-accent)] bg-white",
+                      "size-3.5 rounded-full border border-[var(--border-strong-base)]",
+                      selected() && "border-[4px] border-[var(--text-interactive-base)] bg-white",
                     )}
                     aria-hidden="true"
                   />
@@ -165,14 +165,14 @@ export function StageTargetPicker(props: {
                 type="button"
                 class={cn(
                   "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left",
-                  "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
+                  "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
                   props.strategyId === "point" &&
-                    "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
+                    "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]",
                 )}
                 aria-pressed={props.strategyId === "point"}
                 onClick={() => props.setStrategyId("point")}
               >
-                <span class="grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-interactive-base)]">
+                <span class="grid size-[26px] place-items-center rounded-md bg-[var(--surface-base)] text-[var(--text-interactive-base)]">
                   <Icon name="scan" size={13} />
                 </span>
                 <span class="min-w-0">
@@ -180,10 +180,10 @@ export function StageTargetPicker(props: {
                     Coordinates
                   </strong>
                   <span class="mt-1 flex gap-1.5">
-                    <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
                       X {props.strategies.find((strategy) => strategy.kind === "point")?.x ?? 0}
                     </code>
-                    <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
                       Y {props.strategies.find((strategy) => strategy.kind === "point")?.y ?? 0}
                     </code>
                   </span>
@@ -206,7 +206,7 @@ export function StageTargetPicker(props: {
           </Show>
         </div>
 
-        <footer class="flex items-center justify-end gap-1.5 border-t border-[var(--v2-border-border-muted)] px-2.5 py-2.5">
+        <footer class="flex items-center justify-end gap-1.5 border-t border-[var(--border-weak-base)] px-2.5 py-2.5">
           <Button
             variant="secondary"
             size="sm"

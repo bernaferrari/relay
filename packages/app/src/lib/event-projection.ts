@@ -9,6 +9,7 @@ export type EventRefresh =
   | "variables"
   | "matrices"
   | "discoveries"
+  | "corpora"
   | "authoring";
 
 export type EventActivity = {
@@ -32,6 +33,7 @@ const RESOURCE_REFRESH: Partial<Record<ResourceKind, EventRefresh>> = {
   "app-map": "appMaps",
   matrix: "matrices",
   "discovery-session": "discoveries",
+  "corpus-session": "corpora",
   "recording-session": "authoring",
 };
 
@@ -44,6 +46,7 @@ const GAP_REFRESH: EventRefresh[] = [
   "variables",
   "matrices",
   "discoveries",
+  "corpora",
   "authoring",
 ];
 

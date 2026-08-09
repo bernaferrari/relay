@@ -94,16 +94,10 @@ export function AboutSettingsPanel() {
           </span>
         </div>
         <div class="shrink-0">
-          <button
-            type="button"
-            class={cn(
-              "h-7 rounded-md px-2.5 text-12-medium text-text-strong hover:bg-surface-base-hover",
-            )}
-            onClick={() => cmd.setOpen(true)}
-          >
+          <Button variant="secondary" size="sm" onClick={() => cmd.setOpen(true)}>
             <Icon name="search" size={13} />
             Open palette
-          </button>
+          </Button>
         </div>
       </div>
     </>

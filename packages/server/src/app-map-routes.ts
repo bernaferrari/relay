@@ -8,6 +8,7 @@ import {
   connectAppMapScreens,
   commitAppMapChanges,
   commitAppMapScreenCapture,
+  interact,
   createAppMap,
   currentOperationContext,
   deleteAppMap,
@@ -26,6 +27,9 @@ import {
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
+  removeAppMapVariable,
+  removeAppMapTest,
+  removeAppMapCombine,
   removeAppMapFlow,
   removeAppMapGroup,
   removeAppMapRoutine,
@@ -33,6 +37,9 @@ import {
   saveAppMapFlow,
   saveAppMapGroup,
   saveAppMapCaseStack,
+  saveAppMapVariable,
+  saveAppMapTest,
+  saveAppMapCombine,
   saveAppMapRoutine,
   submitAppMapProposal,
   updateAppMap,
@@ -359,13 +366,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     await assertTargetLease(scope, body.target.targetId, body.leaseId);
     const current = await readAppMap(scope.projectId, screenCapture.appMapId!);
     if (!current) throw new HttpError(404, `App Map ${screenCapture.appMapId} not found`);
-    if (current.revision !== body.expectedRevision) {
-      throw new HttpError(409, "App Map changed before the screen could be captured", {
-        code: "revision-conflict",
-        recovery: "Reload the App Map and retry against its current revision.",
-        current,
-      });
-    }
+    const expectedRevision =
+      current.revision !== body.expectedRevision ? current.revision : body.expectedRevision;
 
     let session: AuthoringSession | undefined;
     try {
@@ -373,32 +375,28 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         appMapId: current.id,
         target: body.target,
         leaseId: body.leaseId,
-        expectedAppMapRevision: body.expectedRevision,
+        expectedAppMapRevision: expectedRevision,
       });
       session = await authoringSessions.capture(session.id, createAuthoringRuntime());
-      const revision = currentTakeRevision(session);
-      if (!revision?.before) throw new HttpError(502, "The target returned no screen observation");
-      const profile = await profileForCapture(body.target, revision.before.capturedAt);
+      const take = currentTakeRevision(session);
+      if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      const profile = await profileForCapture(body.target, take.before.capturedAt);
       let capturedScreenId = "";
       let capturedVariantId = "";
       let created = false;
-      const appMap = await applyMutation(
-        scope,
-        current.id,
-        body.expectedRevision,
-        body.eventId,
-        (map, context) => {
+      const persistCapture = (mapRevision: number) =>
+        applyMutation(scope, current.id, mapRevision, body.eventId, (map, context) => {
           const result = commitAppMapScreenCapture(
             map,
             {
               target: body.target,
               targetProfile: profile,
-              observation: revision.before!,
+              observation: take.before!,
               evidenceUrisById: Object.fromEntries(
-                revision.evidence.map((item) => [item.id, item.uri]),
+                take.evidence.map((item) => [item.id, item.uri]),
               ),
               evidenceKindsById: Object.fromEntries(
-                revision.evidence.map((item) => [item.id, item.kind]),
+                take.evidence.map((item) => [item.id, item.kind]),
               ),
               ...(body.title?.trim() ? { title: body.title.trim() } : {}),
               ...(body.position ? { position: body.position } : {}),
@@ -409,14 +407,215 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
           capturedVariantId = result.variantId;
           created = result.created;
           return result.appMap;
-        },
-      );
+        });
+      let appMap: AppMap;
+      try {
+        appMap = await persistCapture(expectedRevision);
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status !== 409) throw error;
+        const latest = await readAppMap(scope.projectId, current.id);
+        if (!latest) throw error;
+        appMap = await persistCapture(latest.revision);
+      }
       json(response, 200, {
         appMapId: appMap.id,
         appMapRevision: appMap.revision,
         screen: appMap.screens[capturedScreenId],
         variant: appMap.screenVariants[capturedVariantId],
         created,
+      });
+    } finally {
+      if (session) {
+        // Screenshot-only capture borrows the Authoring Session observation
+        // boundary, but it is not a path proposal. Make the temporary review
+        // terminal before removing it; cleanup intentionally rejects live
+        // sessions and previously left every Save screen action behind as a
+        // phantom review in the desktop app.
+        if (!["committed", "cancelled", "failed"].includes(session.state)) {
+          await authoringSessions
+            .cancel(session.id, createAuthoringRuntime())
+            .catch(() => undefined);
+        }
+        await authoringSessions.cleanup(session.id).catch(() => undefined);
+      }
+    }
+    return true;
+  }
+
+  const teach = matchPath(pathname, "/app-maps/:appMapId/teach");
+  if (method === "POST" && teach) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.teach">,
+      "appMapId"
+    >;
+    await assertTargetLease(scope, body.target.targetId, body.leaseId);
+    const appMapId = teach.appMapId!;
+    const existing = await readAppMap(scope.projectId, appMapId);
+    if (!existing) throw new HttpError(404, `App Map ${appMapId} not found`);
+    let current = existing;
+    if (body.interaction && !body.fromScreenId?.trim()) {
+      throw new HttpError(400, "fromScreenId is required when tapping a destination");
+    }
+    if (body.fromScreenId && !current.screens[body.fromScreenId]) {
+      throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
+    }
+    if (body.interaction) {
+      const serial = body.target.targetId;
+      const interaction = body.interaction;
+      if (interaction.kind === "point") {
+        await interact({ kind: "point", x: interaction.x, y: interaction.y }, { serial });
+      } else if (interaction.kind === "label") {
+        await interact(
+          {
+            kind: "label",
+            label: interaction.label,
+            ...(interaction.point ? { point: interaction.point } : {}),
+          },
+          { serial },
+        );
+      } else {
+        await interact(
+          {
+            kind: "identifier",
+            identifier: interaction.identifier,
+            ...(interaction.point ? { point: interaction.point } : {}),
+          },
+          { serial },
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+
+    let session: AuthoringSession | undefined;
+    try {
+      {
+        const latestMap = await readAppMap(scope.projectId, appMapId);
+        if (latestMap) current = latestMap;
+      }
+      const expectedRevision = current.revision;
+      const mapId = current.id;
+      session = await authoringSessions.create({
+        appMapId: mapId,
+        target: body.target,
+        leaseId: body.leaseId,
+        expectedAppMapRevision: expectedRevision,
+      });
+      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      const take = currentTakeRevision(session);
+      if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      const profile = await profileForCapture(body.target, take.before.capturedAt);
+      let capturedScreenId = "";
+      let capturedVariantId = "";
+      let created = false;
+      const persistCapture = (mapRevision: number) =>
+        applyMutation(scope, mapId, mapRevision, body.eventId, (map, context) => {
+          const result = commitAppMapScreenCapture(
+            map,
+            {
+              target: body.target,
+              targetProfile: profile,
+              observation: take.before!,
+              evidenceUrisById: Object.fromEntries(
+                take.evidence.map((item) => [item.id, item.uri]),
+              ),
+              evidenceKindsById: Object.fromEntries(
+                take.evidence.map((item) => [item.id, item.kind]),
+              ),
+              ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+            },
+            context,
+          );
+          capturedScreenId = result.screenId;
+          capturedVariantId = result.variantId;
+          created = result.created;
+          return result.appMap;
+        });
+      let appMap: AppMap;
+      try {
+        appMap = await persistCapture(expectedRevision);
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status !== 409) throw error;
+        const latest = await readAppMap(scope.projectId, mapId);
+        if (!latest) throw error;
+        appMap = await persistCapture(latest.revision);
+      }
+
+      let connectionId: string | undefined;
+      if (body.fromScreenId && body.interaction && capturedScreenId !== body.fromScreenId) {
+        const label =
+          body.label?.trim() ||
+          body.title?.trim() ||
+          appMap.screens[capturedScreenId]?.title ||
+          "Open";
+        const slug = label
+          .toLocaleLowerCase()
+          .replace(/[^a-z0-9]+/gu, "-")
+          .replace(/^-+|-+$/gu, "")
+          .slice(0, 40);
+        connectionId = slug ? `open-${slug}` : `open-${Date.now().toString(36)}`;
+        if (appMap.connections[connectionId]) {
+          connectionId = `${connectionId}-${appMap.revision}`;
+        }
+        const target =
+          body.interaction.kind === "point"
+            ? { point: { x: body.interaction.x, y: body.interaction.y }, label }
+            : body.interaction.kind === "label"
+              ? {
+                  label: body.interaction.label,
+                  ...(body.interaction.point ? { point: body.interaction.point } : {}),
+                }
+              : {
+                  identifier: body.interaction.identifier,
+                  ...(body.interaction.point ? { point: body.interaction.point } : {}),
+                };
+        const persistConnection = (mapRevision: number) =>
+          applyMutation(
+            scope,
+            mapId,
+            mapRevision,
+            `${body.eventId?.trim() || currentOperationContext()?.requestId || "teach"}-connect`,
+            (map, context) =>
+              connectAppMapScreens(
+                map,
+                {
+                  id: connectionId!,
+                  organizationId: map.organizationId,
+                  projectId: map.projectId,
+                  appMapId: map.id,
+                  fromScreenId: body.fromScreenId!,
+                  destination: { kind: "screen", screenId: capturedScreenId },
+                  label,
+                  state: "ready",
+                  actions: [
+                    {
+                      id: `tap-${connectionId}`,
+                      kind: "tap",
+                      target,
+                    },
+                  ],
+                  createdAt: context.at,
+                  updatedAt: context.at,
+                },
+                context,
+              ),
+          );
+        try {
+          appMap = await persistConnection(appMap.revision);
+        } catch (error) {
+          if (!(error instanceof HttpError) || error.status !== 409) throw error;
+          const latest = await readAppMap(scope.projectId, mapId);
+          if (!latest) throw error;
+          appMap = await persistConnection(latest.revision);
+        }
+      }
+
+      json(response, 200, {
+        appMapId: appMap.id,
+        appMapRevision: appMap.revision,
+        screen: appMap.screens[capturedScreenId],
+        variant: appMap.screenVariants[capturedVariantId],
+        created,
+        ...(connectionId ? { connectionId } : {}),
       });
     } finally {
       if (session) await authoringSessions.cleanup(session.id).catch(() => undefined);
@@ -678,6 +877,117 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       body.expectedRevision,
       body.eventId,
       (map, context) => removeAppMapCaseStack(map, caseStackRemove.caseStackId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const variableSave = matchPath(pathname, "/app-maps/:appMapId/variables/:variableId");
+  if (method === "PUT" && variableSave) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.variable.save">,
+      "appMapId" | "variableId"
+    >;
+    if (body.variable.id !== variableSave.variableId) {
+      throw new HttpError(400, "Variable id must match the route");
+    }
+    const appMap = await applyMutation(
+      scope,
+      variableSave.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => saveAppMapVariable(map, body.variable, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const variableRemove = matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/remove");
+  if (method === "POST" && variableRemove) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.variable.remove">,
+      "appMapId" | "variableId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      variableRemove.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => removeAppMapVariable(map, variableRemove.variableId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const testSave = matchPath(pathname, "/app-maps/:appMapId/tests/:testId");
+  if (method === "PUT" && testSave) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.save">,
+      "appMapId" | "testId"
+    >;
+    if (body.test.id !== testSave.testId) {
+      throw new HttpError(400, "Test id must match the route");
+    }
+    const appMap = await applyMutation(
+      scope,
+      testSave.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => saveAppMapTest(map, body.test, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const testRemove = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/remove");
+  if (method === "POST" && testRemove) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.remove">,
+      "appMapId" | "testId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      testRemove.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => removeAppMapTest(map, testRemove.testId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const comboSave = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId");
+  if (method === "PUT" && comboSave) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.combine.save">,
+      "appMapId" | "combineId"
+    >;
+    if (body.combine.id !== comboSave.combineId) {
+      throw new HttpError(400, "Combine id must match the route");
+    }
+    const appMap = await applyMutation(
+      scope,
+      comboSave.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => saveAppMapCombine(map, body.combine, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const comboRemove = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId/remove");
+  if (method === "POST" && comboRemove) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.combine.remove">,
+      "appMapId" | "combineId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      comboRemove.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => removeAppMapCombine(map, comboRemove.combineId!, context),
     );
     json(response, 200, { appMap });
     return true;

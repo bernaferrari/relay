@@ -1,11 +1,10 @@
-import { Show, createMemo, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import type { RecordingTake } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./app-map-capture-review";
 import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
-import { companionFooterMode } from "./app-map-device-companion-geometry";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 
 export function AppMapDeviceCompanion(props: {
@@ -15,28 +14,21 @@ export function AppMapDeviceCompanion(props: {
   status: AppMapDeviceStatus;
   recording: boolean;
   take: RecordingTake | null;
-  arming: boolean;
+  unmapped: boolean;
+  mappedScreenName?: string;
   captureBusy: boolean;
   canRecord: boolean;
-  recordLabel: string;
-  recordContextLabel: string | undefined;
+  mapName?: string;
   captureContextLabel: string | undefined;
   onClose: () => void;
   onOpenTargets: () => void;
+  onSaveScreen: () => void;
   onRecord: () => void;
   onStop: () => void;
   onOrientation?: (orientation: DeviceCompanionOrientation) => void;
 }) {
   const [renderedOrientation, setRenderedOrientation] =
     createSignal<DeviceCompanionOrientation>("unknown");
-  const footerMode = createMemo(() =>
-    companionFooterMode({
-      deviceSelected: props.deviceSelected,
-      canRecord: props.canRecord,
-      arming: props.arming,
-      captureBusy: props.captureBusy,
-    }),
-  );
   return (
     <aside
       class={cn(
@@ -45,16 +37,14 @@ export function AppMapDeviceCompanion(props: {
         props.deviceSelected
           ? cn(
               "bottom-4 rounded-[14px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
-              renderedOrientation() === "landscape"
-                ? "w-[min(548px,calc(100%-32px))]"
-                : "w-[min(388px,calc(100%-32px))]",
+              "w-[min(var(--app-map-device-panel-width),calc(100%-32px))]",
             )
           : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[14px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
       )}
       data-frame-orientation={renderedOrientation()}
       aria-label="Device"
     >
-      <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-4">
+      <header class="relative z-[100] flex min-h-10 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-3">
         <DeviceStatusLabel status={props.status} label={props.deviceLabel ?? "Device"} />
         <Show when={!props.recording}>
           <button
@@ -79,39 +69,64 @@ export function AppMapDeviceCompanion(props: {
       <Show
         when={props.recording ? props.take : null}
         fallback={
-          <Show when={footerMode() !== "hidden"}>
-            <footer
-              class={cn(
-                "flex min-h-[68px] shrink-0 items-center border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-4",
-                props.recordContextLabel ? "justify-between gap-3" : "justify-center",
-              )}
-            >
-              <Show when={props.recordContextLabel}>
-                <div class="grid min-w-0 gap-0.5">
-                  <span class="text-[9.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
-                    Next action
-                  </span>
-                  <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-                    {props.recordContextLabel}
-                  </strong>
-                </div>
-              </Show>
-              <Button
-                variant="primary"
-                size="lg"
-                class={props.recordContextLabel ? "min-w-[116px]" : "min-w-[148px]"}
-                disabled={footerMode() === "busy"}
-                aria-busy={footerMode() === "busy"}
-                onClick={props.onRecord}
+          <Show when={props.unmapped || props.mappedScreenName}>
+            <footer class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3">
+              <span class="min-w-0 text-[11px] text-[var(--text-weak)]">
+                {props.unmapped
+                  ? `Add this screen to ${props.mapName?.trim() || "the map"}`
+                  : `Continue from ${props.mappedScreenName}`}
+              </span>
+              <Show
+                when={props.unmapped}
+                fallback={
+                  <div class="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      disabled={props.captureBusy}
+                      aria-busy={props.captureBusy}
+                      data-tip="Refresh this screen's saved screenshot"
+                      onClick={props.onSaveScreen}
+                    >
+                      <Icon
+                        name={props.captureBusy ? "refresh" : "camera"}
+                        size={13}
+                        class={
+                          props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
+                        }
+                      />
+                      Screenshot
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      class="shrink-0"
+                      disabled={!props.canRecord}
+                      onClick={props.onRecord}
+                    >
+                      Start recording
+                    </Button>
+                  </div>
+                }
               >
-                <Show
-                  when={footerMode() === "busy"}
-                  fallback={<i class="size-2 rounded-full bg-white/90" />}
+                <Button
+                  variant="primary"
+                  size="lg"
+                  class="shrink-0"
+                  disabled={props.captureBusy}
+                  aria-busy={props.captureBusy}
+                  onClick={props.onSaveScreen}
                 >
-                  <Icon name="refresh" size={13} class="ui-refresh-spin motion-reduce:opacity-70" />
-                </Show>
-                {props.recordLabel}
-              </Button>
+                  <Icon
+                    name={props.captureBusy ? "refresh" : "camera"}
+                    size={13}
+                    class={
+                      props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
+                    }
+                  />
+                  {props.captureBusy ? "Saving…" : "Save screen"}
+                </Button>
+              </Show>
             </footer>
           </Show>
         }

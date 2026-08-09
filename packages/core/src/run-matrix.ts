@@ -4,15 +4,15 @@ import type {
   CaseStack,
   FrozenRunCase,
   RunCaseProvenance,
-  TestVariable,
+  TestData,
 } from "@relay/protocol";
 import { generateValues } from "./generation.js";
 
 export type RunMatrixStrategy = "repeat" | CaseExpansionStrategy;
 
 export type PrepareRunMatrixInput = {
-  variables: TestVariable[];
-  variableIds?: string[];
+  variables: TestData[];
+  dataIds?: string[];
   strategy?: RunMatrixStrategy;
   repetitions?: number;
   seed?: number;
@@ -45,7 +45,7 @@ export class RunMatrixError extends Error {
 }
 
 type ResolvedVariable = {
-  definition: TestVariable;
+  definition: TestData;
   name: string;
   values: string[];
   provenance: RunCaseProvenance;
@@ -62,7 +62,7 @@ function compactValues(value: string | string[] | undefined): string[] {
 }
 
 async function resolveVariable(
-  variable: TestVariable,
+  variable: TestData,
   input: PrepareRunMatrixInput,
   generationCount: number,
   seed: number,
@@ -307,7 +307,7 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
   const maxCases = bounded(input.maxCases, 20, 250);
   const seed = Number.isFinite(input.seed) ? Math.floor(input.seed!) : Date.now();
   const strategy = input.strategy ?? "repeat";
-  const selectedIds = input.variableIds ? new Set(input.variableIds) : null;
+  const selectedIds = input.dataIds ? new Set(input.dataIds) : null;
   const selected = input.variables.filter(
     (variable) => !selectedIds || selectedIds.has(variable.id),
   );
@@ -351,7 +351,7 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
 }
 
 export async function prepareCaseStackMatrix(input: {
-  variables: TestVariable[];
+  variables: TestData[];
   caseStacks: CaseStack[];
   runtimeValues?: Record<string, string | string[]>;
   seed?: number;
@@ -364,7 +364,7 @@ export async function prepareCaseStackMatrix(input: {
     matrices.push(
       await prepareRunMatrix({
         variables: input.variables,
-        variableIds: stack.variableIds,
+        dataIds: stack.dataIds,
         strategy: stack.strategy,
         maxCases: stack.maxCases,
         runtimeValues: input.runtimeValues,
@@ -424,7 +424,7 @@ export async function prepareCaseStackMatrix(input: {
 /** Safe for reports, Activity, and transport. Raw values remain execution-only. */
 export function redactRunMatrix(
   matrix: PreparedRunMatrix,
-  variables: TestVariable[],
+  variables: TestData[],
 ): PreparedRunMatrix {
   const privateNames = new Set(
     variables

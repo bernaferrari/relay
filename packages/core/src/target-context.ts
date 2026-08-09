@@ -23,6 +23,19 @@ export function targetIdentity(context = currentTargetContext()): string {
   return context.kind === "browser" ? context.targetId : context.serial;
 }
 
+/** Sync guess when a job omits platform. 40-hex is an iOS UDID, not Android. */
+export function inferDevicePlatformFromSerial(
+  serial: string | undefined,
+): "android" | "ios" | undefined {
+  const id = serial?.trim() ?? "";
+  if (!id) return undefined;
+  if (/^[0-9a-f]{40}$/i.test(id)) return "ios";
+  if (/^[0-9a-f]{8}-[0-9a-f]{16}$/i.test(id)) return "ios";
+  if (/^0000[0-9a-f-]+$/i.test(id)) return "ios";
+  if (/emulator-|localhost:\d+|:\d{4,5}$/i.test(id)) return "android";
+  return undefined;
+}
+
 /** Stable, filesystem-safe agent-device session isolation per selected target. */
 export function targetSessionName(context = currentTargetContext()): string {
   const identity = targetIdentity(context)

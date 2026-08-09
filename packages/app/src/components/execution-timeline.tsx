@@ -16,7 +16,7 @@ function stateDot(state: ExecutionMomentState): string {
   if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
   if (state === "passed") return "bg-[var(--icon-success-base)]";
   if (state === "paused") return "bg-[var(--icon-warning-base)]";
-  if (state === "running") return "bg-[var(--v2-background-bg-accent)]";
+  if (state === "running") return "bg-[var(--text-interactive-base)]";
   return "bg-[var(--text-weak)]";
 }
 
@@ -24,7 +24,7 @@ function evidenceDot(tone: RunEvidenceEvent["tone"]): string {
   if (tone === "critical") return "bg-[var(--icon-critical-base)]";
   if (tone === "warning") return "bg-[var(--icon-warning-base)]";
   if (tone === "success") return "bg-[var(--icon-success-base)]";
-  if (tone === "info") return "bg-[var(--v2-background-bg-accent)]";
+  if (tone === "info") return "bg-[var(--text-interactive-base)]";
   return "bg-[var(--text-weak)]";
 }
 
@@ -120,10 +120,10 @@ export function ExecutionTimeline(props: {
   return (
     <section
       class={cn(
-        "relative z-[3] shrink-0 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3 py-2",
+        "relative z-[3] shrink-0 border-t border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-2",
         props.class,
       )}
-      aria-label={props.mode === "replay" ? "Run timeline" : "Execution timeline"}
+      aria-label={props.mode === "replay" ? "Run timeline" : "Run progress"}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();
@@ -174,9 +174,9 @@ export function ExecutionTimeline(props: {
                   Step {props.moments.length ? safeIndex() + 1 : 0} of {props.moments.length}
                 </small>
               </div>
-              <div class="h-1 overflow-hidden rounded-full bg-[var(--v2-background-bg-layer-02)]">
+              <div class="h-1 overflow-hidden rounded-full bg-[var(--surface-base-hover)]">
                 <div
-                  class="h-full w-full origin-left rounded-full bg-[var(--v2-background-bg-accent)] transition-transform duration-150 ease-out"
+                  class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-150 ease-out"
                   style={{ transform: `scaleX(${overviewPercent() / 100})` }}
                 />
               </div>
@@ -210,7 +210,7 @@ export function ExecutionTimeline(props: {
         <div class="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            class="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--text-strong)] text-[var(--v2-background-bg-base)] shadow-[0_1px_2px_rgb(0_0_0/18%)] transition-[background-color,transform] duration-150 hover:bg-[var(--text-base)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+            class="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--text-strong)] text-[var(--background-base)] shadow-[0_1px_2px_rgb(0_0_0/18%)] transition-[background-color,transform] duration-150 hover:bg-[var(--text-base)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
             aria-label={props.playing ? "Pause run playback" : "Play run playback"}
             aria-pressed={props.playing}
             onClick={() => props.onTogglePlayback?.()}
@@ -258,9 +258,9 @@ export function ExecutionTimeline(props: {
           >
             {/* Full-height div is the drag hit area; the visible rail is a thin
                 centered bar so the track reads as one line, not a fat slab. */}
-            <div class="pointer-events-none absolute top-1/2 left-0 h-1.5 w-full -translate-y-1/2 overflow-hidden rounded-full bg-[var(--v2-background-bg-layer-01)]">
+            <div class="pointer-events-none absolute top-1/2 left-0 h-1.5 w-full -translate-y-1/2 overflow-hidden rounded-full bg-[var(--surface-base)]">
               <div
-                class="h-full w-full origin-left rounded-full bg-[var(--v2-background-bg-accent)] transition-transform duration-150 ease-linear"
+                class="h-full w-full origin-left rounded-full bg-[var(--text-interactive-base)] transition-transform duration-150 ease-linear"
                 style={{ transform: `scaleX(${fillPercent() / 100})` }}
               />
             </div>
@@ -268,7 +268,7 @@ export function ExecutionTimeline(props: {
               {(moment) => (
                 <button
                   type="button"
-                  class="absolute top-1/2 z-[2] flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)]"
+                  class="absolute top-1/2 z-[2] flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)]"
                   style={{ left: `${offsetPercent(moment)}%` }}
                   aria-label={`Jump to step ${moment.index + 1}: ${moment.title}. ${executionStateLabel(moment.state, "step")}`}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -279,7 +279,7 @@ export function ExecutionTimeline(props: {
                 >
                   <i
                     class={cn(
-                      "size-1.5 rounded-full ring-2 ring-[var(--v2-background-bg-layer-01)]",
+                      "size-1.5 rounded-full ring-2 ring-[var(--surface-base)]",
                       stateDot(moment.state),
                     )}
                   />
@@ -290,7 +290,7 @@ export function ExecutionTimeline(props: {
               {(marker) => (
                 <button
                   type="button"
-                  class="absolute top-1/2 z-[1] flex size-11 -translate-x-1/2 -translate-y-1/2 items-start justify-center rounded-full pt-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)]"
+                  class="absolute top-1/2 z-[1] flex size-11 -translate-x-1/2 -translate-y-1/2 items-start justify-center rounded-full pt-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)]"
                   style={{ left: `${Math.max(0, Math.min(1, marker.fraction)) * 100}%` }}
                   aria-label={`${marker.event.channel}: ${marker.event.label}${marker.event.detail ? `. ${marker.event.detail}` : ""}`}
                   data-tip={`${marker.event.label}${marker.event.detail ? ` · ${marker.event.detail}` : ""}`}
@@ -313,7 +313,7 @@ export function ExecutionTimeline(props: {
             <For each={props.skippedFractions ?? []}>
               {(fraction) => (
                 <span
-                  class="pointer-events-none absolute top-1/2 z-[3] grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--v2-background-bg-base)] text-[9px] leading-none text-[var(--text-weaker)]"
+                  class="pointer-events-none absolute top-1/2 z-[3] grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--background-base)] text-[9px] leading-none text-[var(--text-weaker)]"
                   style={{ left: `${Math.max(0, Math.min(1, fraction)) * 100}%` }}
                   aria-label="Quiet time skipped"
                 >

@@ -35,6 +35,7 @@ test("maps every tool-eligible operation exactly once", () => {
     relayMcpExclusions.map(({ operationId }) => operationId),
     [
       "event.stream",
+      "target.stream.open",
       "recipe.list",
       "recipe.get",
       "recipe.create",

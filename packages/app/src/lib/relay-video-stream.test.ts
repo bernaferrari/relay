@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { relayVideoPacketStream } from "./relay-video-stream";
+import { relayPreviewPacketIsPaintable, relayVideoPacketStream } from "./relay-video-stream";
 
 function framedPacket(payload: Uint8Array): Uint8Array {
   const bytes = new Uint8Array(16 + payload.byteLength);
@@ -32,4 +32,29 @@ test("parses a timestamped video packet split across HTTP chunks", async () => {
   assert.equal(result.value.keyframe, true);
   assert.equal(result.value.pts, 42n);
   assert.deepEqual(result.value.data, Uint8Array.of(7, 8, 9));
+});
+
+test("JPEG and scrcpy H.264 paint; raw annex-B does not", () => {
+  assert.equal(
+    relayPreviewPacketIsPaintable({ type: "jpeg", pts: 0n, data: Uint8Array.of(0xff, 0xd8) }),
+    true,
+  );
+  assert.equal(
+    relayPreviewPacketIsPaintable({
+      type: "data",
+      keyframe: true,
+      pts: 0n,
+      data: Uint8Array.of(1),
+    }),
+    true,
+  );
+  assert.equal(
+    relayPreviewPacketIsPaintable({
+      type: "annexb",
+      pts: 0n,
+      keyframe: true,
+      data: Uint8Array.of(0, 0, 0, 1, 0x65),
+    }),
+    false,
+  );
 });

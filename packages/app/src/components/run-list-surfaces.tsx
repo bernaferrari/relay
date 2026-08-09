@@ -26,11 +26,11 @@ export function RunStepList(props: {
   );
   return (
     <div class="grid content-start">
-      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--v2-border-border-strong)]">
+      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--border-strong-base)]">
         <For
           each={nodes()}
           fallback={
-            <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-5 text-center text-[12px] text-[var(--text-weak)]">
+            <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-5 text-center text-[12px] text-[var(--text-weak)]">
               No steps were recorded for this run.
             </div>
           }
@@ -44,8 +44,8 @@ export function RunStepList(props: {
                 class={cn(
                   "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
                   active()
-                    ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-base))]"
-                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
+                    ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--background-base))]"
+                    : "hover:bg-[var(--surface-base)]",
                   node.state === "planned" && !active() && "opacity-55",
                 )}
                 aria-current={active() ? "step" : undefined}
@@ -53,12 +53,12 @@ export function RunStepList(props: {
               >
                 <span
                   class={cn(
-                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--v2-background-bg-base)] font-mono text-[11px] font-semibold tabular-nums",
+                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--background-base)] font-mono text-[11px] font-semibold tabular-nums",
                     active()
-                      ? "border-[var(--v2-background-bg-accent)] text-[var(--text-interactive-base)]"
+                      ? "border-[var(--text-interactive-base)] text-[var(--text-interactive-base)]"
                       : node.state === "failed"
                         ? "border-[var(--icon-critical-base)] text-[var(--icon-critical-base)]"
-                        : "border-[var(--v2-border-border-strong)] text-[var(--text-weak)]",
+                        : "border-[var(--border-strong-base)] text-[var(--text-weak)]",
                   )}
                 >
                   {node.index + 1}
@@ -147,7 +147,7 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}

@@ -37,20 +37,24 @@ export function ChooseDeviceEmptyState(props: {
         {props.offline
           ? "Relay is offline"
           : props.scanning
-            ? "Looking for devices"
-            : "No device connected"}
+            ? "Looking for devices…"
+            : props.purpose === "record"
+              ? "Connect a device to record"
+              : "Connect a device to begin"}
       </h2>
-      <p class="m-0 mt-1.5 max-w-[32ch] text-[12px]/[1.5] text-[var(--text-weak)]">
+      <p class="m-0 mt-1.5 max-w-[34ch] text-[12px]/[1.5] text-[var(--text-weak)]">
         {props.offline
-          ? "Restart the local Relay service. Devices will appear when it reconnects."
+          ? "Start the local Relay service again. Your maps stay safe."
           : props.scanning
-            ? "Relay is checking connected Android and iOS devices."
-            : "Connect a phone or start a simulator, then choose it here."}
+            ? "Checking USB, Wi‑Fi, and simulators for Android and iOS."
+            : props.purpose === "record"
+              ? "Plug in a phone, start a simulator, or pick a browser target — then record the path."
+              : "Plug in a phone, start a simulator, or open a browser target to see the live screen."}
       </p>
       <Show when={!props.scanning && !props.offline}>
         <Button variant="primary" size="lg" class="mt-4" onClick={props.onChooseDevice}>
           <Icon name="smartphone" size={13} />
-          Choose device
+          {props.purpose === "record" ? "Choose device to record" : "Choose device"}
         </Button>
       </Show>
     </section>

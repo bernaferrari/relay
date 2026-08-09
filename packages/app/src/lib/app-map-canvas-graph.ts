@@ -13,7 +13,7 @@ import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
 /**
- * The FigJam-facing projection of the canonical App Map.
+ * The map-canvas projection of the canonical App Map.
  *
  * A recipe is still the compact, target-neutral program Relay executes. This
  * module owns the separate document people arrange: screens, transitions, and
@@ -406,7 +406,7 @@ export function addGraphScreenConnection(
   }
   const screen: CanvasScreen = {
     id: id("screen", at),
-    title: input.title?.trim() || "New screen",
+    title: input.title?.trim() || "Untitled screen",
     createdAt: at,
     updatedAt: at,
   };
@@ -565,7 +565,7 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           stepIndex: stepIndex ?? 0,
           label:
             transition.label ||
-            (stepIndex !== undefined ? transitionLabel(steps[stepIndex]!) : "Record action"),
+            (stepIndex !== undefined ? transitionLabel(steps[stepIndex]!) : "Not recorded"),
           kind:
             (depths.get(transition.destination.screenId) ?? 0) <=
             (depths.get(transition.fromScreenId) ?? 0)

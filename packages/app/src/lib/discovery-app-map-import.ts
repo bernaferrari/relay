@@ -69,7 +69,7 @@ function firstNonEmptyTitle(screens: ObservedScreen[]): string {
     const title = screen.title?.trim();
     if (title) return title;
   }
-  return "Untitled screen";
+  return "Unnamed screen";
 }
 
 function transitionLabel(transition: ObservedTransition): string {

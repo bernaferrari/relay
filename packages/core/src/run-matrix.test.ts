@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { TestVariable } from "@relay/protocol";
+import type { TestData } from "@relay/protocol";
 import { prepareRunMatrix } from "./run-matrix.js";
 
 test("run matrices freeze list and generated values before execution", async () => {
@@ -39,7 +39,7 @@ test("run matrices freeze list and generated values before execution", async () 
 test("zip broadcasts scalar values across one named list", async () => {
   const matrix = await prepareRunMatrix({
     strategy: "zip",
-    variableIds: ["tier", "locale"],
+    dataIds: ["tier", "locale"],
     variables: [
       {
         id: "tier",
@@ -67,7 +67,7 @@ test("zip broadcasts scalar values across one named list", async () => {
 });
 
 test("cartesian and pairwise expansion are deterministic and bounded", async () => {
-  const variables: TestVariable[] = [
+  const variables: TestData[] = [
     { id: "a", name: "a", scope: "shared", source: "list", values: ["1", "2"] },
     { id: "b", name: "b", scope: "shared", source: "list", values: ["1", "2", "3"] },
     { id: "c", name: "c", scope: "shared", source: "list", values: ["1", "2"] },
@@ -89,7 +89,7 @@ test("cartesian and pairwise expansion are deterministic and bounded", async () 
 
 test("pairwise coverage scales without constructing the Cartesian product", async () => {
   const values = Array.from({ length: 11 }, (_, index) => String(index));
-  const variables: TestVariable[] = ["a", "b", "c", "d"].map((name) => ({
+  const variables: TestData[] = ["a", "b", "c", "d"].map((name) => ({
     id: name,
     name,
     scope: "shared",
@@ -133,7 +133,7 @@ test("private variables never fall back to collaborative values", async () => {
 
 test("unselected private variables do not block an unrelated run", async () => {
   const matrix = await prepareRunMatrix({
-    variableIds: ["locale"],
+    dataIds: ["locale"],
     variables: [
       { id: "locale", name: "locale", scope: "shared", source: "static", values: ["en"] },
       { id: "login", name: "login_email", scope: "private", source: "static" },

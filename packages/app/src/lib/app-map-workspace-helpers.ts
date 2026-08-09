@@ -361,17 +361,18 @@ export function findRunnableFlow(
 }
 
 export function gateGraphRunReadiness<
-  T extends { ready: boolean; reason?: string; label?: string },
+  T extends { ready: boolean; reason?: string; label?: string; next?: string },
 >(
   readiness: T,
   hasRunnableFlow: boolean,
-): T | (T & { ready: false; reason: string; label: "Run flow" }) {
+): T | (T & { ready: false; reason: string; label: "Choose a destination"; next: "pick" }) {
   if (!readiness.ready || hasRunnableFlow) return readiness;
   return {
     ...readiness,
     ready: false,
-    reason: "Select the last screen in a path to run that flow",
-    label: "Run flow" as const,
+    reason: "Select the last screen on a kept path to run it",
+    label: "Choose a destination" as const,
+    next: "pick" as const,
   };
 }
 

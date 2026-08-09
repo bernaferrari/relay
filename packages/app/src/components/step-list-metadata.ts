@@ -25,7 +25,8 @@ export function kindLabel(kind: string): string {
     scroll: "Scroll",
     swipe: "Swipe",
     screenshot: "Shot",
-    flow: "Flow",
+    tour: "Tour",
+    flow: "Named path",
     module: "Reuse",
     branch: "Branch",
     repeat: "Repeat",
@@ -50,7 +51,7 @@ export function kindIcon(kind: RecipeStep["kind"]): IconName {
   if (["expect", "expect-set", "assert-content", "evaluate-semantic"].includes(kind))
     return "check";
   if (["wait-for", "wait-response", "sleep", "pause", "review"].includes(kind)) return "clock";
-  if (["screenshot", "extract"].includes(kind)) return "camera";
+  if (["screenshot", "extract", "tour"].includes(kind)) return "camera";
   if (["flow", "module", "branch", "repeat"].includes(kind)) return "move";
   if (["device", "rotate"].includes(kind)) return "smartphone";
   if (kind === "app") return "grid";
@@ -208,7 +209,7 @@ export const ADD_GROUPS: AddGroup[] = [
     label: "Reuse & logic",
     items: [
       { label: "Pause for human", make: () => ({ kind: "pause", message: "" }) },
-      { label: "Attach recorded flow", make: () => ({ kind: "module", recipeId: "" }) },
+      { label: "Attach saved path", make: () => ({ kind: "module", recipeId: "" }) },
       {
         label: "Branch to another test",
         make: () => ({

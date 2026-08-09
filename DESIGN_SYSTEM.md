@@ -6,60 +6,39 @@ actually uses today—not a migration plan and not a mood board.
 
 ## 1. Token reality
 
-Product UI draws from three cooperating layers. All three are legitimate; do not invent a fourth
-scale or ban an in-use family.
+Product UI uses **one** vocabulary from `@relay/ui` classic tokens, plus a handful of map-only
+layout tokens. Do not invent a second family and do not use `--v2-*` in product TSX or CSS.
 
-### Semantic text and status (`@relay/ui` classic tokens)
+### Semantic tokens
 
-Used heavily in product TSX via `var(--…)` and Tailwind color utilities mapped from the same names:
+Via `var(--…)` or the matching Tailwind utilities (`text-text-strong`, `bg-background-base`,
+`border-border-weak-base`):
 
 - Text: `--text-strong`, `--text-base`, `--text-weak`, `--text-weaker`, `--text-interactive-base`
-- Status text/icons: `--text-success-base`, `--text-warning-base`, `--text-critical-base`,
-  `--icon-success-base`, `--icon-critical-base`, and peers
-- Surfaces / borders still referenced by utilities: `background-*`, `surface-*`, `border-*`,
-  `surface-raised-*`, focus rings such as `--border-focus` / `--border-strong-focus`
-
-### V2 semantic surfaces (`--v2-*`)
-
-Shipped from `packages/ui/src/v2/styles`. Product components correctly use these for layered chrome.
-This is the current approach—not a temporary alias and not forbidden:
-
-- Backgrounds: `--v2-background-bg-base`, `--v2-background-bg-deep`, `--v2-background-bg-layer-01` …
-  `--v2-background-bg-layer-04`, `--v2-background-bg-accent`, inverse/contrast variants
-- Borders: `--v2-border-border-muted`, `--v2-border-border-base`, `--v2-border-border-strong`,
-  `--v2-border-border-focus`
-- Elevation: `--v2-elevation-raised`, `--v2-elevation-floating`, `--v2-elevation-overlay`, button and
-  switch elevations
-- State: `--v2-state-bg-*`, `--v2-state-fg-*`, `--v2-state-border-*` for success / warning / danger /
-  info
-- Raw ramps (`--v2-grey-*`, `--v2-blue-*`, alpha scales) stay inside theme files; product TSX should
-  prefer the semantic `--v2-background-*` / `--v2-border-*` / `--v2-state-*` names
+- Status: `--text-success-base`, `--text-warning-base`, `--text-critical-base`, `--icon-*-base`
+- Surfaces: `--background-base`, `--background-weak` / `--background-deep` (page), `--surface-base`,
+  `--surface-base-hover`, `--surface-raised-*`
+- Borders / focus: `--border-weak-base`, `--border-base`, `--border-strong-base`, `--border-focus`
+- Accent wash: `--product-accent-soft` (tint of `--text-interactive-base`)
+- Elevation: `--shadow-md`, `--shadow-lg`, plus map elevations below
 
 ### App Map shell tokens (`packages/app/src/styles/tokens.css`)
 
-Canvas-only product tokens used by empty states, companions, and map chrome:
-
-- `--map-canvas`, `--map-grid-dot`
-- `--map-control-surface`, `--map-divider`
-- `--map-elevation-control`, `--map-elevation-panel`
-- `--product-accent-soft` (derived from `--v2-background-bg-accent`)
-- `--shell-nav-width`
-
-Dark scheme overrides for the map tokens live under `[data-color-scheme="dark"]` in the same file.
+Canvas-only: `--map-canvas`, `--map-grid-dot`, `--map-control-surface`, `--map-divider`,
+`--map-elevation-control`, `--map-elevation-panel`, `--shell-nav-width`.
 
 ### What is banned
 
-`packages/app/scripts/check-ui-boundaries.mjs` only rejects **retired numbered product classes** such
-as `relay-text-2`, `relay-text-3`, `relay-panel-2`, `relay-panel-3`, and `relay-data` /
-`relay-workflow` leftovers. It does **not** ban `--v2-*`, `--map-*`, or semantic `--text-*` variables.
-Do not reintroduce those retired class names.
+`packages/app/scripts/check-ui-boundaries.mjs` rejects `--v2-*` / `bg-v2-*` and retired numbered
+classes (`relay-text-2`, `relay-panel-3`, `relay-data`, `relay-workflow`). Theme JSON may still emit
+v2 ramps internally; product code must not mention them.
 
 ## 2. Styling ownership
 
 - **`@relay/ui` primitives** own shared controls: `Button`, `Card`, `Icon`, switches, and related
   primitive CSS. Prefer them before hand-rolling an equivalent control.
 - **Tailwind utilities in product TSX** own ordinary layout, spacing, typography, borders, colors
-  (including `text-[var(--text-strong)]` / `bg-[var(--v2-background-bg-layer-01)]` patterns), hover,
+  (including `text-[var(--text-strong)]` / `bg-[var(--surface-base)]` patterns), hover,
   focus-visible, selected, disabled, and responsive behavior.
 - **Authored CSS** stays limited to:
   - global reset, fonts, and theme wiring;
@@ -69,8 +48,7 @@ Do not reintroduce those retired class names.
   - animation keyframes shared by more than one component;
   - a reusable primitive whose states cannot be expressed clearly at the call site.
 
-Do not add a late override block to repair an earlier rule. Change or remove the owning rule. Do not
-migrate working `--v2-*` call sites “back” to an unused vocabulary for purity.
+Do not add a late override block to repair an earlier rule. Change or remove the owning rule.
 
 ## 3. Compact, consistent rhythm
 
@@ -112,7 +90,8 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 
 Prefer user language:
 
-- App Map (canvas), Test or Recipe (executable IR)—not internal schema names in list rows
+- App Map (canvas), path or run (execution)—not recipe, suite, or Journey in chrome
+- **Variable** (language/theme list), **Test** (what you run), **Combine** (the visible grid)—never option set, work, or locale matrix in chrome
 - Run report, not immutable report
 - Target or device, not adapter instance
 - Saved with this run, not frozen observability payload

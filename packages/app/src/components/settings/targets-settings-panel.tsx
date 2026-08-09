@@ -5,6 +5,7 @@ import { useServer } from "../../context/server";
 import { Icon } from "../icon";
 import { EmptyState } from "../empty-state";
 import { cn } from "../../lib/cn";
+import { humanError } from "../../lib/human-error";
 import { inputCls, rowDescCls, rowTitleCls } from "./settings-styles";
 
 export function TargetsSettingsPanel() {
@@ -32,7 +33,7 @@ export function TargetsSettingsPanel() {
       });
       setTargetUrl("");
     } catch (error) {
-      setTargetError(error instanceof Error ? error.message : String(error));
+      setTargetError(humanError(error, "Could not save this browser target."));
     } finally {
       setTargetBusy(false);
     }
@@ -51,7 +52,7 @@ export function TargetsSettingsPanel() {
       setPreflight({
         id,
         ok: false,
-        message: error instanceof Error ? error.message : String(error),
+        message: humanError(error, "Could not check this target’s setup."),
       });
     }
   }
@@ -62,7 +63,7 @@ export function TargetsSettingsPanel() {
     try {
       await server.openBrowserTarget(id);
     } catch (error) {
-      setTargetError(error instanceof Error ? error.message : String(error));
+      setTargetError(humanError(error, "Could not open this browser target."));
     } finally {
       setOpeningTargetId(null);
     }
@@ -157,7 +158,7 @@ export function TargetsSettingsPanel() {
                       {openingTargetId() === target.id ? "Opening…" : "Open & sign in"}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => void checkTarget(target.id)}>
-                      Preflight
+                      Check setup
                     </Button>
                     <IconButton
                       variant="ghost"
