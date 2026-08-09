@@ -6,10 +6,30 @@ import {
   composeOptionRunRecipes,
   resolveVariableApply,
   assertOptionSandwichReady,
+  navStepsToRecipe,
   stabilizeOptionIds,
   prepareOptionRunMatrix,
   type OptionRunSet,
 } from "./option-run.js";
+
+test("state navigation keeps translated fallback labels", () => {
+  assert.deepEqual(
+    navStepsToRecipe([
+      {
+        kind: "tap",
+        target: { label: "App Language" },
+        fallbackTargets: [{ label: "Lingua App" }],
+      },
+    ]),
+    [
+      {
+        kind: "tap",
+        target: { label: "App Language" },
+        fallbackTargets: [{ label: "Lingua App" }],
+      },
+    ],
+  );
+});
 
 const body: Recipe = {
   id: "checkout",

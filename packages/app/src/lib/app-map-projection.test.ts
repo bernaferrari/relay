@@ -1,7 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, CanvasGraph, ScreenVariant } from "@relay/protocol";
-import { mergeAppMapProjection, planAppMapProjection } from "./app-map-projection.js";
+import {
+  connectionStepsFromActions,
+  mergeAppMapProjection,
+  planAppMapProjection,
+} from "./app-map-projection.js";
+
+test("canonical taps remain simple canvas interactions", () => {
+  assert.deepEqual(
+    connectionStepsFromActions([
+      {
+        id: "open-settings",
+        kind: "tap",
+        target: {
+          label: "Settings",
+          point: { x: 900, y: 1800, referenceBounds: { width: 1080, height: 2340 } },
+        },
+      },
+    ]),
+    [
+      {
+        id: "open-settings",
+        kind: "tap",
+        target: {
+          label: "Settings",
+          point: { x: 900, y: 1800, referenceBounds: { width: 1080, height: 2340 } },
+        },
+      },
+    ],
+  );
+});
 
 const map: AppMap = {
   schemaVersion: 1,

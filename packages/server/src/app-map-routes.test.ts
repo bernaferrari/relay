@@ -137,6 +137,41 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.equal(approved.appMap.screens.welcome?.title, "Start");
     assert.equal(approved.appMap.proposals["proposal-start-title"]?.status, "approved");
 
+    const variableSaved = await human.invoke("app-map.variable.save", {
+      appMapId: "store",
+      variableId: "language",
+      expectedRevision: 4,
+      variable: {
+        name: "Language",
+        kind: "language",
+        apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Language" } }] },
+        options: [{ id: "en", label: "English" }],
+      },
+    } as never);
+    assert.equal(variableSaved.appMap.variables.language?.appMapId, "store");
+    assert.equal(variableSaved.appMap.variables.language?.organizationId, "acme");
+
+    const testSaved = await human.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "welcome-tour",
+      expectedRevision: 5,
+      test: { name: "Welcome tour", kind: "tour", rootScreenId: "welcome", depth: 0 },
+    } as never);
+    assert.equal(testSaved.appMap.tests["welcome-tour"]?.projectId, "mobile");
+
+    const combineSaved = await human.invoke("app-map.combine.save", {
+      appMapId: "store",
+      combineId: "language-welcome",
+      expectedRevision: 6,
+      combine: {
+        name: "Language × Welcome",
+        variableIds: ["language"],
+        testIds: ["welcome-tour"],
+        strategy: "cartesian",
+      },
+    } as never);
+    assert.equal(combineSaved.appMap.combines["language-welcome"]?.id, "language-welcome");
+
     await assert.rejects(
       agent.invoke("app-map.screen.update", {
         appMapId: "store",

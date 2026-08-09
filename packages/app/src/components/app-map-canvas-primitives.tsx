@@ -141,6 +141,7 @@ export function ScreenCard(props: {
   /** The selected recorded connection's source target, if one exists. */
   sourceAnchor?: CanvasInteractionAnchor;
   onRotationChange?: (rotation: ScreenshotRotation) => void;
+  onNaturalSize?: (size: { width: number; height: number }) => void;
   detailsOpen?: boolean;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
@@ -407,6 +408,7 @@ export function ScreenCard(props: {
                 loading="lazy"
                 class="size-full object-contain object-top"
                 evidence={props.orientationEvidence}
+                onNaturalSize={props.onNaturalSize}
                 onError={() => setImageFailed(true)}
                 onRotationChange={props.onRotationChange}
                 overlay={

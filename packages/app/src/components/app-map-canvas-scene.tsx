@@ -132,6 +132,9 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const [screenRotations, setScreenRotations] = createSignal<Record<string, CanvasScreenRotation>>(
     {},
   );
+  const [screenNaturalSizes, setScreenNaturalSizes] = createSignal<
+    Record<string, { width: number; height: number }>
+  >({});
   const [hoveredConnectionId, setHoveredConnectionId] = createSignal<string | null>(null);
   let clearHoveredConnectionTimer: ReturnType<typeof setTimeout> | undefined;
   const keepConnectionHovered = (connectionId: string) => {
@@ -164,8 +167,22 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       current[nodeId] === rotation ? current : { ...current, [nodeId]: rotation },
     );
   };
-  const geometryForNode = (node: MapTreeNode) =>
-    screenCardGeometry(props.orientationEvidenceFor(node));
+  const geometryForNode = (node: MapTreeNode) => {
+    const evidence = props.orientationEvidenceFor(node);
+    return screenCardGeometry({
+      ...evidence,
+      logicalViewport: evidence?.logicalViewport ?? screenNaturalSizes()[node.id],
+    });
+  };
+  const rememberNaturalSize = (nodeId: string, size: { width: number; height: number }) => {
+    if (!size.width || !size.height) return;
+    setScreenNaturalSizes((current) => {
+      const previous = current[nodeId];
+      return previous?.width === size.width && previous.height === size.height
+        ? current
+        : { ...current, [nodeId]: size };
+    });
+  };
   const geometries = createMemo(
     () =>
       new Map(
@@ -453,6 +470,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               geometry={geometryForNode(node)}
               src={() => props.imageFor(node)}
               orientationEvidence={props.orientationEvidenceFor(node)}
+              onNaturalSize={(size) => rememberNaturalSize(node.id, size)}
               detailsOpen={props.detailsOpen && node.id === props.selectedNodeId}
               sourceAnchor={selectedConnectionAnchor()}
               pathDraft={props.keyboardConnectionSourceId === node.id}

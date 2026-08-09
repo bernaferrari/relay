@@ -89,6 +89,50 @@ test("translated settings rows still become tour stops", () => {
   );
 });
 
+test("Compose TextViews inherit their hittable row and suppress row subtitles", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 1127, width: 990, height: 203 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "Appearance",
+      rect: { x: 203, y: 1172, width: 242, height: 53 },
+    },
+    {
+      index: 3,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "Dark",
+      rect: { x: 203, y: 1236, width: 83, height: 49 },
+    },
+    {
+      index: 4,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 1336, width: 990, height: 158 },
+    },
+    {
+      index: 5,
+      parentIndex: 4,
+      type: "android.widget.TextView",
+      label: "Haptics",
+      rect: { x: 203, y: 1389, width: 155, height: 53 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Appearance", "Haptics"],
+  );
+  assert.deepEqual(stops[0]?.point, { x: 540, y: 1228.5 });
+});
+
 test("tour origin uses child rows, not a shared nav title", () => {
   const settings = [
     {

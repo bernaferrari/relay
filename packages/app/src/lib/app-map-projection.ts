@@ -14,6 +14,32 @@ import { normalizedAnchorForStep } from "./app-map-interaction-anchor";
 
 export type AppMapProjectionChange = AppMapBatchChange;
 
+/** Reduce canonical connection actions to the recipe steps the canvas needs
+ * for interaction labels and source anchors. Deterministic taps are real
+ * interactions too; treating only recorded takes as steps made ordinary
+ * `Menu`/`Settings` paths look like complex, permanently labelled flows. */
+export function connectionStepsFromActions(actions: readonly ActionSpec[]): RecipeStep[] {
+  return actions.flatMap((action): RecipeStep[] => {
+    if (action.kind === "recorded" || action.kind === "steps") return action.steps;
+    if (action.kind === "tap") {
+      return [{ id: action.id, kind: "tap", target: structuredClone(action.target) }];
+    }
+    if (action.kind === "wait") return [{ id: action.id, kind: "sleep", ms: action.ms }];
+    if (action.kind === "gesture" && action.gesture.kind === "swipe") {
+      return [
+        {
+          id: action.id,
+          kind: "swipe",
+          from: structuredClone(action.gesture.from),
+          to: structuredClone(action.gesture.to),
+          durationMs: action.gesture.durationMs,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
 function comparable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(comparable);
   if (!value || typeof value !== "object") return value;
@@ -239,14 +265,10 @@ export function mergeAppMapProjection(
   const transitions = Object.values(appMap.connections)
     .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
     .map((connection) => {
-      const stepActions = connection.actions.filter(
-        (action) => action.kind === "recorded" || action.kind === "steps",
-      );
+      const connectionSteps = connectionStepsFromActions(connection.actions);
       const recordings = connection.actions.filter((action) => action.kind === "recorded");
-      const stepIds = stepActions.flatMap((action) =>
-        action.steps.flatMap((step) => (step.id ? [step.id] : [])),
-      );
-      const sourceAnchor = sourceAnchorForSteps(stepActions.flatMap((action) => action.steps));
+      const stepIds = connectionSteps.flatMap((step) => (step.id ? [step.id] : []));
+      const sourceAnchor = sourceAnchorForSteps(connectionSteps);
       const evidenceIds = recordings.flatMap((action) => action.evidenceIds);
       const firstRecording = recordings[0];
       const mode = connection.actions.some((action) => action.kind === "routine")

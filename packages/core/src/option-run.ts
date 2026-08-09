@@ -260,9 +260,25 @@ export function navStepsToRecipe(steps: VariableNavStep[] | undefined, app?: str
       continue;
     }
     const target = step.target;
-    if (target.identifier) out.push({ kind: "tap", target: { identifier: target.identifier } });
-    else if (target.label) out.push({ kind: "tap", target: { label: target.label } });
-    else if (target.text) out.push({ kind: "tap", target: { text: target.text } });
+    const fallbackTargets = step.fallbackTargets?.map((fallback) => ({ ...fallback }));
+    if (target.identifier)
+      out.push({
+        kind: "tap",
+        target: { identifier: target.identifier },
+        ...(fallbackTargets?.length ? { fallbackTargets } : {}),
+      });
+    else if (target.label)
+      out.push({
+        kind: "tap",
+        target: { label: target.label },
+        ...(fallbackTargets?.length ? { fallbackTargets } : {}),
+      });
+    else if (target.text)
+      out.push({
+        kind: "tap",
+        target: { text: target.text },
+        ...(fallbackTargets?.length ? { fallbackTargets } : {}),
+      });
     else throw new Error("option nav tap requires identifier, label, or text");
   }
   return out;

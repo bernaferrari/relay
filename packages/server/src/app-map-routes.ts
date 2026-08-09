@@ -903,15 +903,27 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.variable.save">,
       "appMapId" | "variableId"
     >;
-    if (body.variable.id !== variableSave.variableId) {
-      throw new HttpError(400, "Variable id must match the route");
-    }
     const appMap = await applyMutation(
       scope,
       variableSave.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => saveAppMapVariable(map, body.variable, context),
+      (map, context) => {
+        const id = variableSave.variableId!;
+        return saveAppMapVariable(
+          map,
+          {
+            ...body.variable,
+            id,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            createdAt: map.variables[id]?.createdAt ?? context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
     );
     json(response, 200, { appMap });
     return true;
@@ -940,15 +952,27 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.test.save">,
       "appMapId" | "testId"
     >;
-    if (body.test.id !== testSave.testId) {
-      throw new HttpError(400, "Test id must match the route");
-    }
     const appMap = await applyMutation(
       scope,
       testSave.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => saveAppMapTest(map, body.test, context),
+      (map, context) => {
+        const id = testSave.testId!;
+        return saveAppMapTest(
+          map,
+          {
+            ...body.test,
+            id,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            createdAt: map.tests[id]?.createdAt ?? context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
     );
     json(response, 200, { appMap });
     return true;
@@ -977,15 +1001,27 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.combine.save">,
       "appMapId" | "combineId"
     >;
-    if (body.combine.id !== comboSave.combineId) {
-      throw new HttpError(400, "Combine id must match the route");
-    }
     const appMap = await applyMutation(
       scope,
       comboSave.appMapId!,
       body.expectedRevision,
       body.eventId,
-      (map, context) => saveAppMapCombine(map, body.combine, context),
+      (map, context) => {
+        const id = comboSave.combineId!;
+        return saveAppMapCombine(
+          map,
+          {
+            ...body.combine,
+            id,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            createdAt: map.combines[id]?.createdAt ?? context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
     );
     json(response, 200, { appMap });
     return true;

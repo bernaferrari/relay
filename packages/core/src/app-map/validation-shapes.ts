@@ -318,6 +318,19 @@ function assertVariableNavStep(step: VariableNavStep, label: string): void {
     if (!target.identifier?.trim() && !target.label?.trim() && !target.text?.trim()) {
       appMapFail("invalid-map", `${label}.target needs identifier, label, or text`);
     }
+    if (step.fallbackTargets !== undefined) {
+      if (!Array.isArray(step.fallbackTargets) || step.fallbackTargets.length > 8) {
+        appMapFail("invalid-map", `${label}.fallbackTargets must contain at most 8 targets`);
+      }
+      step.fallbackTargets.forEach((fallback, index) => {
+        if (!fallback.identifier?.trim() && !fallback.label?.trim() && !fallback.text?.trim()) {
+          appMapFail(
+            "invalid-map",
+            `${label}.fallbackTargets[${index}] needs identifier, label, or text`,
+          );
+        }
+      });
+    }
     return;
   }
   if (step.kind !== "back" && step.kind !== "relaunch") {

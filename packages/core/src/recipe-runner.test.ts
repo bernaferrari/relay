@@ -144,6 +144,27 @@ describe("runRecipeStep tap gestures", () => {
     assert.deepEqual(recorded?.data.bounds, home.rect);
   });
 
+  it("accepts an intentional Android Settings handoff from a semantic tap", async () => {
+    const language = {
+      type: "android.widget.TextView",
+      label: "Lingua App",
+      enabled: true,
+      hittable: true,
+      rect: { x: 80, y: 1500, width: 320, height: 80 },
+    };
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: [language] }),
+      press: () =>
+        Promise.reject(
+          new Error(
+            "press coordinate tap left ai.x.grok and foregrounded com.android.settings. The tap likely escaped the app.",
+          ),
+        ),
+    });
+
+    await runRecipeStep(device, { kind: "tap", target: { label: "Lingua App" } }, noLog);
+  });
+
   it("uses a stable accessibility identifier before weaker fallbacks", async () => {
     const field = {
       type: "TextField",
@@ -1258,6 +1279,29 @@ describe("runRecipeStep conversational evidence", () => {
       input: "response",
       operator: "contains",
       expected: "success",
+      matched: false,
+      recipeId: undefined,
+    });
+  });
+
+  it("keeps a templated branch input as a variable reference", async () => {
+    const owner = job();
+    owner.resolvedInputs.language_identifier = "-";
+    const resolved = resolveRecipeStep(
+      {
+        kind: "branch",
+        input: "{{language_identifier}}",
+        operator: "not-equals",
+        expected: "-",
+        thenRecipeId: "tap-identifier",
+      },
+      owner.resolvedInputs,
+    );
+    await runRecipeStep(stubDevice({}), resolved, { log: () => {}, job: owner });
+    assert.deepEqual(owner.artifacts.at(-1)?.data, {
+      input: "language_identifier",
+      operator: "not-equals",
+      expected: "-",
       matched: false,
       recipeId: undefined,
     });

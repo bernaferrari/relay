@@ -53,7 +53,11 @@ import {
   canvasWheelAction,
   createAppMapEventOrchestration,
 } from "./app-map-events";
-import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
+import {
+  connectionStepsFromActions,
+  mergeAppMapProjection,
+  planAppMapProjection,
+} from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
 import { AppMapCanvasScene } from "./app-map-canvas-scene";
@@ -1379,9 +1383,11 @@ export function AppMapWorkspace(props: {
                   connectionLabelMode={(connection) =>
                     connectionLabelMode(
                       connection,
-                      activeAppMap()?.connections[connection.id]?.actions.flatMap((action) =>
-                        action.kind === "recorded" || action.kind === "steps" ? action.steps : [],
-                      ) ?? draft.steps(),
+                      activeAppMap()?.connections[connection.id]
+                        ? connectionStepsFromActions(
+                            activeAppMap()!.connections[connection.id]!.actions,
+                          )
+                        : draft.steps(),
                     )
                   }
                   onSelectNode={(node, event) => {

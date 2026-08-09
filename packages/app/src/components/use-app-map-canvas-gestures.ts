@@ -240,7 +240,10 @@ export function useAppMapCanvasGestures(options: {
     const marquee = selectionMarquee();
     if (marquee?.pointerId === event.pointerId) {
       if (!marquee.moved && !marquee.additive) {
-        if (!options.clearKeyboardConnection()) options.setSelectedNodeId(null);
+        if (!options.clearKeyboardConnection()) {
+          options.setSelectedNodeIds([]);
+          options.setSelectedNodeId(null);
+        }
       }
       setSelectionMarquee(null);
       return;

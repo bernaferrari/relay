@@ -1530,11 +1530,21 @@ export async function pressResolvedControl(
   repeated?: RepeatedPress,
 ): Promise<NamedControlResolution> {
   if (resolution.method === "identifier" && target.identifier?.trim()) {
-    await pressIdentifier(device, target.identifier, repeated);
+    try {
+      await pressIdentifier(device, target.identifier, repeated);
+    } catch (error) {
+      if (!semanticSelectorDidNotMatch(error)) throw error;
+      await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
+    }
     return resolution;
   }
   if (resolution.method === "label" && target.label?.trim()) {
-    await pressLabel(device, target.label, repeated);
+    try {
+      await pressLabel(device, target.label, repeated);
+    } catch (error) {
+      if (!semanticSelectorDidNotMatch(error)) throw error;
+      await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
+    }
     return resolution;
   }
   if (resolution.method === "text" && target.text?.trim()) {
@@ -1543,6 +1553,30 @@ export async function pressResolvedControl(
   }
   await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
   return resolution;
+}
+
+function semanticSelectorDidNotMatch(error: unknown): boolean {
+  if (error instanceof Error && error.name === "JobCancelledError") return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bno match\b|did not match|element not found|selector.*not.*element/i.test(message);
+}
+
+/** agent-device reports every Android package transition after a coordinate
+ * fallback as an escaped tap. A semantic settings control may intentionally
+ * open Android Settings (App Language is one example). Accept only that
+ * trusted system handoff; arbitrary apps, launchers, and raw points still fail
+ * closed until a connection can declare its expected destination package. */
+export function androidNamedPressCompletedHandoff(
+  error: unknown,
+  target: NamedControlTarget,
+): boolean {
+  if (selectedPlatform() !== "android") return false;
+  if (!target.identifier?.trim() && !target.label?.trim() && !target.text?.trim()) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  const handoff = /press coordinate tap left\s+(\S+)\s+and foregrounded\s+(\S+)/i.exec(message);
+  const destination = handoff?.[2]?.replace(/[.,;:]+$/, "");
+  if (!destination || destination === handoff?.[1]) return false;
+  return destination === "com.android.settings";
 }
 
 /** Snapshot → resolveNamedControl → press. Used by recipe taps, mouse interact, and CLI. */
@@ -1577,14 +1611,17 @@ export async function pressNamedControl(
   if (!resolved) {
     throw new Error("no unique control matched identifier, label, text, or point");
   }
-  return pressResolvedControl(device, resolved, target, repeated);
+  try {
+    return await pressResolvedControl(device, resolved, target, repeated);
+  } catch (error) {
+    if (androidNamedPressCompletedHandoff(error, target)) return resolved;
+    throw error;
+  }
 }
 
 function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
   if (selectedPlatform() !== "ios") return false;
-  if (error instanceof Error && error.name === "JobCancelledError") return false;
-  const message = error instanceof Error ? error.message : String(error);
-  return /\bno match\b|did not match|element not found|selector.*not.*element/i.test(message);
+  return semanticSelectorDidNotMatch(error);
 }
 
 async function iosSnapshotFallbackPoint(

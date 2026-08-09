@@ -19,6 +19,7 @@ import {
   pressPoint,
   pressText,
   pressResolvedControl,
+  androidNamedPressCompletedHandoff,
   resolveNamedControl,
   resolveSnapshotTargetPoint,
   selectedPlatform,
@@ -411,7 +412,15 @@ export function resolveRecipeStep(step: RecipeStep, variables: Record<string, st
     }
     return value;
   };
-  return visit(step) as RecipeStep;
+  const resolved = visit(step) as RecipeStep;
+  // Branch input names are references, not display strings. Replacing
+  // `{{language_identifier}}` here turns the reference into its value (`-`),
+  // then the executor incorrectly looks up a variable literally named `-`.
+  // Preserve the reference while still resolving expected values and every
+  // other field in the step.
+  return step.kind === "branch" && resolved.kind === "branch"
+    ? { ...resolved, input: step.input }
+    : resolved;
 }
 
 function isCancel(err: unknown): boolean {
@@ -454,7 +463,15 @@ async function tapTarget(
   const nodes = await snapshot(device);
   const named = resolveNamedControl(nodes, namedTarget);
   if (named) {
-    await pressResolvedControl(device, named, namedTarget, repeated);
+    try {
+      await pressResolvedControl(device, named, namedTarget, repeated);
+    } catch (error) {
+      // A semantic control may intentionally open a system surface (for
+      // example Grok's App Language row opens Android Settings). Keep the
+      // recipe executor aligned with pressNamedControl: accept that completed
+      // handoff, but continue rejecting raw-point and launcher escapes.
+      if (!androidNamedPressCompletedHandoff(error, namedTarget)) throw error;
+    }
     return {
       strategy: named.method,
       method: named.method,

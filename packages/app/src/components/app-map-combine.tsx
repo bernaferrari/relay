@@ -352,10 +352,11 @@ export function AppMapCombine(props: {
                     id="matrix-states-title"
                     class={cn(copyTitle, "m-0 text-[12px] font-semibold")}
                   >
-                    1. State sets
+                    1. Prepare device
                   </h3>
                   <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-                    Relay applies one value from each selected set before testing.
+                    Choose reusable state sets. Relay applies each value, then returns to the test
+                    start.
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setCreatingSet(true)}>
@@ -470,7 +471,7 @@ export function AppMapCombine(props: {
               <section class="grid gap-2" aria-labelledby="coverage-title">
                 <div class={copyStack}>
                   <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
-                    2. Build device states
+                    2. Build combinations
                   </h3>
                   <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                     Choose how values from different state sets form device states.
@@ -536,7 +537,7 @@ export function AppMapCombine(props: {
             <section class="grid gap-2" aria-labelledby="matrix-tests-title">
               <div class={copyStack}>
                 <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
-                  {selectedVariables().length > 1 ? "3" : "2"}. Tests
+                  {selectedVariables().length > 1 ? "3" : "2"}. Run tests
                 </h3>
                 <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                   Every selected test runs in every device state above.

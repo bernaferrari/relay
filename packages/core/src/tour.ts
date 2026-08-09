@@ -23,39 +23,79 @@ export function extractTourStops(
   input: { maxStops?: number; excludeLanguageRows?: boolean } = {},
 ): TourStop[] {
   const maxStops = input.maxStops ?? 24;
-  const candidates: Array<TourStop & { y: number; area: number; isCell: boolean }> = [];
+  const nodesByIndex = new Map(
+    nodes.flatMap((node) => (typeof node.index === "number" ? [[node.index, node] as const] : [])),
+  );
+  const closestHittableAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
+    let parentIndex = node.parentIndex;
+    while (typeof parentIndex === "number") {
+      const parent = nodesByIndex.get(parentIndex);
+      if (!parent) return undefined;
+      if (parent.hittable && parent.rect) return parent;
+      parentIndex = parent.parentIndex;
+    }
+    return undefined;
+  };
+  const candidates: Array<
+    TourStop & {
+      y: number;
+      labelY: number;
+      area: number;
+      isCell: boolean;
+      rowKey?: string;
+    }
+  > = [];
   for (const node of nodes) {
     const label = (node.label ?? node.value ?? "").trim();
     if (!label || label.length > 80) continue;
     const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
-    const isCell = type === "cell" || type === "button";
-    if (!isCell && type !== "statictext") continue;
+    const isNativeCell = type === "cell" || type === "button" || type.endsWith(".button");
+    const isText = type === "statictext" || type.endsWith(".textview");
+    if (!isNativeCell && !isText) continue;
     if (HEADER.test(label) && label.length <= 12) continue;
     if (SKIP.test(label)) continue;
     if (input.excludeLanguageRows && LANGUAGE_ROW.test(label)) continue;
     if (label.length > 48 || /@|\bprofile picture\b/i.test(label)) continue;
     const rect = node.rect;
     if (!rect || rect.width * rect.height < 40 * 24) continue;
+    // Jetpack Compose often exposes an unlabeled hittable row containing one
+    // or more TextViews. Treat that ancestor as the cell so the title becomes
+    // a stable tour stop and subtitles in the same row are ignored.
+    const row = isNativeCell ? node : closestHittableAncestor(node);
+    const rowRect = row?.rect ?? rect;
     candidates.push({
       label,
-      ...(node.identifier?.trim() ? { identifier: node.identifier.trim() } : {}),
-      y: rect.y,
-      area: rect.width * rect.height,
-      isCell,
+      ...(row?.identifier?.trim()
+        ? { identifier: row.identifier.trim() }
+        : node.identifier?.trim()
+          ? { identifier: node.identifier.trim() }
+          : {}),
+      point: { x: rowRect.x + rowRect.width / 2, y: rowRect.y + rowRect.height / 2 },
+      y: rowRect.y,
+      labelY: rect.y,
+      area: rowRect.width * rowRect.height,
+      isCell: isNativeCell || Boolean(row),
+      ...(typeof row?.index === "number" ? { rowKey: `index:${row.index}` } : {}),
     });
   }
   const preferCells = candidates.some((item) => item.isCell);
   const filtered = preferCells ? candidates.filter((item) => item.isCell) : candidates;
-  filtered.sort((left, right) => left.y - right.y || right.area - left.area);
+  filtered.sort(
+    (left, right) => left.y - right.y || left.labelY - right.labelY || right.area - left.area,
+  );
   const seen = new Set<string>();
+  const seenRows = new Set<string>();
   const stops: TourStop[] = [];
   for (const item of filtered) {
+    if (item.rowKey && seenRows.has(item.rowKey)) continue;
     const key = item.label.toLocaleLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
+    if (item.rowKey) seenRows.add(item.rowKey);
     stops.push({
       label: item.label,
       ...(item.identifier ? { identifier: item.identifier } : {}),
+      ...(item.point ? { point: item.point } : {}),
     });
     if (stops.length >= maxStops) break;
   }

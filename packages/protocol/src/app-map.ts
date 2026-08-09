@@ -199,6 +199,9 @@ export type VariableNavStep =
   | {
       kind: "tap";
       target: { identifier?: string; label?: string; text?: string };
+      /** Ordered aliases for the same control, such as a settings row whose
+       * visible label changes after the language state is applied. */
+      fallbackTargets?: Array<{ identifier?: string; label?: string; text?: string }>;
     }
   | { kind: "back" }
   | { kind: "wait"; ms: number }

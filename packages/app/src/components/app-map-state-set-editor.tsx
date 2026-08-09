@@ -63,7 +63,7 @@ export function AppMapStateSetEditor(props: {
   const [outConnectionId, setOutConnectionId] = createSignal("");
   const [reading, setReading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
-  const [pathsOpen, setPathsOpen] = createSignal(false);
+  const [pathsOpen, setPathsOpen] = createSignal(true);
   const map = createMemo(() => server.selectedAppMap());
   const connections = createMemo(() => {
     const current = map();
@@ -190,8 +190,8 @@ export function AppMapStateSetEditor(props: {
           New state set
         </h3>
         <p class="m-0 mt-1 max-w-[52ch] text-[11.5px]/[1.45] text-[var(--text-weak)]">
-          A state set is one thing that changes between runs. Read a visible list from the device,
-          or enter the values yourself.
+          Prepare one reusable device state, then return to the screen where your tests begin. Read
+          a visible list or enter its values yourself.
         </p>
       </div>
 
@@ -350,34 +350,34 @@ export function AppMapStateSetEditor(props: {
         aria-expanded={pathsOpen()}
         onClick={() => setPathsOpen((open) => !open)}
       >
-        <span>Switching paths</span>
+        <span>Set up and return</span>
         <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-weak)]">
-          Optional <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
+          Reuse mapped paths <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
         </span>
       </button>
       <Show when={pathsOpen()}>
         <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">Open the list with</span>
+            <span class="text-[10.5px] text-[var(--text-base)]">Set up from</span>
             <select
               class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
               value={inConnectionId()}
               onChange={(event) => setInConnectionId(event.currentTarget.value)}
             >
-              <option value="">Use the current screen</option>
+              <option value="">Current device screen</option>
               <For each={connections()}>
                 {(item) => <option value={item.id}>{item.label}</option>}
               </For>
             </select>
           </label>
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">After changing, return with</span>
+            <span class="text-[10.5px] text-[var(--text-base)]">Return to the test start with</span>
             <select
               class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
               value={outConnectionId()}
               onChange={(event) => setOutConnectionId(event.currentTarget.value)}
             >
-              <option value="">Stay on the resulting screen</option>
+              <option value="">The resulting screen is the test start</option>
               <For each={connections()}>
                 {(item) => <option value={item.id}>{item.label}</option>}
               </For>

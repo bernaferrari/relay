@@ -27,6 +27,7 @@ export function OrientedScreenshot(props: {
   loading?: JSX.ImgHTMLAttributes<HTMLImageElement>["loading"];
   overlay?: OrientedScreenshotOverlay;
   onRotationChange?: (rotation: ScreenshotRotation) => void;
+  onNaturalSize?: (size: CompanionDimensions) => void;
   onError?: () => void;
 }) {
   const [natural, setNatural] = createSignal<CompanionDimensions>();
@@ -77,12 +78,14 @@ export function OrientedScreenshot(props: {
               }
             : undefined
         }
-        onLoad={(event) =>
-          setNatural({
+        onLoad={(event) => {
+          const size = {
             width: event.currentTarget.naturalWidth,
             height: event.currentTarget.naturalHeight,
-          })
-        }
+          };
+          setNatural(size);
+          props.onNaturalSize?.(size);
+        }}
         onError={() => props.onError?.()}
       />
       <Show when={props.overlay}>

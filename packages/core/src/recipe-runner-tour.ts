@@ -156,6 +156,22 @@ function firstPreludeTargetVisible(
   });
 }
 
+export function foregroundApplicationBundle(nodes: SnapshotNode[]): string | undefined {
+  const areas = new Map<string, number>();
+  for (const node of nodes) {
+    const bundleId = node.bundleId?.trim();
+    if (
+      !bundleId ||
+      node.visibleToUser === false ||
+      /^(?:com\.android\.systemui|com\.samsung\.android\.)/.test(bundleId)
+    )
+      continue;
+    const area = node.rect ? node.rect.width * node.rect.height : 0;
+    areas.set(bundleId, Math.max(areas.get(bundleId) ?? 0, area));
+  }
+  return [...areas].sort((left, right) => right[1] - left[1])[0]?.[0];
+}
+
 async function restoreRememberedApp(
   device: Device,
   nodes: SnapshotNode[],
@@ -163,12 +179,9 @@ async function restoreRememberedApp(
 ): Promise<boolean> {
   const remembered = await rememberedTargetApplication();
   if (!remembered) return false;
-  const appNodes = nodes.filter(
-    (node) =>
-      node.bundleId && !/^(?:com\.android\.systemui|com\.samsung\.android\.)/.test(node.bundleId),
-  );
-  if (!appNodes.length || appNodes.some((node) => node.bundleId === remembered)) return false;
-  log(`tour: ${appNodes[0]!.bundleId} is foreground — reopening ${remembered}`);
+  const foreground = foregroundApplicationBundle(nodes);
+  if (!foreground || foreground === remembered) return false;
+  log(`tour: ${foreground} is foreground — reopening ${remembered}`);
   await openApp(device, remembered, { relaunch: false });
   return true;
 }

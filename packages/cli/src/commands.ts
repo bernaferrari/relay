@@ -772,6 +772,36 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "app-map.variable.save",
     path("state-set save", ["appMapId", "variableId"], undefined, {
       summary: "Save a reusable device state set (language, account, theme, …)",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "variableId", type: "string", description: "Stable state set identifier" },
+      ],
+      inputHelp: [
+        { name: "expectedRevision", type: "number", description: "Current App Map revision" },
+        {
+          name: "variable",
+          type: "object",
+          description: "Name, kind, values, and the recorded path that opens the value list",
+        },
+      ],
+      examples: [
+        `relay state-set save settings language --input '${JSON.stringify({
+          expectedRevision: 4,
+          variable: {
+            name: "Language",
+            kind: "language",
+            apply: {
+              kind: "list",
+              entryPath: [{ kind: "tap", target: { label: "App Language" } }],
+            },
+            options: [
+              { id: "en", label: "English" },
+              { id: "it", label: "Italiano" },
+            ],
+          },
+        })}'`,
+      ],
+      note: "A state set changes one reusable dimension. A run matrix combines one or more state sets with one or more tests.",
     }),
     path("variable save", ["appMapId", "variableId"], undefined, {
       summary: "Legacy alias of state-set save",
@@ -802,6 +832,30 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "app-map.combine.save",
     path("run-matrix save", ["appMapId", "combineId"], undefined, {
       summary: "Save selected state sets × selected tests",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "combineId", type: "string", description: "Stable run matrix identifier" },
+      ],
+      inputHelp: [
+        { name: "expectedRevision", type: "number", description: "Current App Map revision" },
+        {
+          name: "combine",
+          type: "object",
+          description: "Matrix name plus state-set ids and test ids",
+        },
+      ],
+      examples: [
+        `relay run-matrix save settings language-x-tour --input '${JSON.stringify({
+          expectedRevision: 5,
+          combine: {
+            name: "Language × Settings tour",
+            variableIds: ["language"],
+            testIds: ["settings-tour"],
+            strategy: "cartesian",
+          },
+        })}'`,
+      ],
+      note: "Each cell applies one value from every state set, then runs every selected test.",
     }),
     path("combine save", ["appMapId", "combineId"], undefined, {
       summary: "Legacy alias of run-matrix save",
