@@ -229,6 +229,7 @@ export function recordStateFromReadiness(
 export function buildMinimapNodes(input: {
   nodes: MapTreeNode[];
   notes: CanvasNote[];
+  matrices?: Array<{ id: string; position: CanvasPoint }>;
   bounds: CanvasBounds;
   positionFor: (node: MapTreeNode) => CanvasPoint;
   selectedNodeIds: readonly string[];
@@ -258,6 +259,19 @@ export function buildMinimapNodes(input: {
       return {
         id: note.id,
         kind: "note" as const,
+        x: point.x,
+        y: point.y,
+        selected: false,
+      };
+    }),
+    ...(input.matrices ?? []).map((matrix) => {
+      const point = minimapPoint(
+        { x: matrix.position.x + 142, y: matrix.position.y + 75 },
+        input.bounds,
+      );
+      return {
+        id: matrix.id,
+        kind: "matrix" as const,
         x: point.x,
         y: point.y,
         selected: false,

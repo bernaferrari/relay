@@ -6,14 +6,14 @@ export type CanvasCombineCardModel = {
   id: string;
   name: string;
   position: { x: number; y: number };
-  values: string[];
+  modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
 };
 
 const CARD_GAP = 28;
 const CARD_STACK = 156;
-const PREVIEW_VALUES = 6;
+const PREVIEW_VALUES = 3;
 
 export function canvasCombineCards(
   map: Pick<AppMap, "combines" | "tests" | "variables" | "flows">,
@@ -33,10 +33,14 @@ export function canvasCombineCards(
         .map((test) => (test.flowId ? map.flows?.[test.flowId]?.startScreenId : undefined))
         .find((id) => id?.trim());
     const anchor = rootScreenId ? positionFor(rootScreenId) : undefined;
-    const values = variables
-      .flatMap((variable) => variable.options.map((option) => combineValueLabel(option)))
-      .filter(Boolean)
-      .slice(0, PREVIEW_VALUES);
+    const modifiers = variables.map((variable) => ({
+      id: variable.id,
+      name: variable.name,
+      values: variable.options
+        .map((option) => combineValueLabel(option))
+        .filter(Boolean)
+        .slice(0, PREVIEW_VALUES),
+    }));
     const testNames = tests.map((test) => test.name).filter(Boolean);
     const projection = projectCombine(
       variables.map((variable) => ({
@@ -62,7 +66,7 @@ export function canvasCombineCards(
         x: (anchor?.x ?? 48) + SCREEN_CARD_WIDTH + CARD_GAP,
         y: (anchor?.y ?? 48) + index * CARD_STACK,
       },
-      values,
+      modifiers,
       tests: testNames,
       cellCount: projection.cellCount,
     };

@@ -42,6 +42,21 @@ test("buildMinimapNodes carries every marquee-selected screen into the overview"
   );
 });
 
+test("buildMinimapNodes includes visible run-matrix objects", () => {
+  const overview = buildMinimapNodes({
+    nodes: [],
+    notes: [],
+    matrices: [{ id: "language-settings", position: { x: 400, y: 100 } }],
+    bounds: { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 },
+    positionFor: (node) => ({ x: node.x, y: node.y }),
+    selectedNodeIds: [],
+    screenStates: {},
+  });
+
+  assert.equal(overview[0]?.id, "language-settings");
+  assert.equal(overview[0]?.kind, "matrix");
+});
+
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {
   // Ordering only inspects `kind`; payloads are intentionally incomplete stubs.
   const changes = [

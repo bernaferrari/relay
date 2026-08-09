@@ -1,6 +1,6 @@
 import { CaseExpansionError, expandCaseIndexes, type CaseExpansionStrategy } from "@relay/protocol";
 
-/** User-facing projection for a run matrix: state sets × tests. */
+/** User-facing projection for a run matrix: modifiers × tests. */
 export type CombineValue = {
   id: string;
   label: string;
@@ -60,7 +60,8 @@ export function combineHeadline(input: {
   if (!variables.length && !tests.length) return "New run matrix";
   if (!variables.length) return "New run matrix";
   if (!tests.length) return variables.join(" × ");
-  return `${variables.join(" × ")} → ${tests.join(" + ")}`;
+  const testGroup = tests.length > 1 ? `(${tests.join(" + ")})` : tests[0];
+  return `${variables.join(" × ")} × ${testGroup}`;
 }
 
 export function combineSubhead(input: {
@@ -71,7 +72,7 @@ export function combineSubhead(input: {
   hasTest: boolean;
 }): string {
   if (!input.hasTest) return "Choose one or more paths to test.";
-  if (!input.hasVariable) return "Choose a state set such as languages, accounts, or models.";
+  if (!input.hasVariable) return "Choose a modifier such as language, account, or model.";
   const worlds = input.worldCount ?? input.cellCount;
   const tests = input.testCount ?? 1;
   if (input.cellCount <= 1) return "One device run with one test.";

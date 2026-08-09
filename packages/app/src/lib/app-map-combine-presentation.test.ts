@@ -42,7 +42,7 @@ test("run matrix labels visible values and its group-to-group formula", () => {
       testNames: ["Visit Settings", "Send a message"],
       cellCount: 8,
     }),
-    "Language × Theme → Visit Settings + Send a message",
+    "Language × Theme × (Visit Settings + Send a message)",
   );
 });
 

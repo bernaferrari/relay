@@ -56,8 +56,10 @@ test("Combine sits next to the test's root screen", () => {
   );
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "language-x-tour");
-  assert.equal(cards[0]?.name, "Language → Open every Settings row");
-  assert.deepEqual(cards[0]?.values, ["English", "Italiano"]);
+  assert.equal(cards[0]?.name, "Language × Open every Settings row");
+  assert.deepEqual(cards[0]?.modifiers, [
+    { id: "language", name: "Language", values: ["English", "Italiano"] },
+  ]);
   assert.deepEqual(cards[0]?.tests, ["Open every Settings row"]);
   assert.equal(cards[0]?.cellCount, 2);
   assert.deepEqual(cards[0]?.position, { x: 120 + SCREEN_CARD_WIDTH + 28, y: 80 });

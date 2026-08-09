@@ -142,6 +142,14 @@ test("fit includes content positioned left and above the world origin", () => {
   assert.ok(negative.y * view.scale + view.y >= 0);
 });
 
+test("canvas bounds include run-matrix objects beside the screen graph", () => {
+  const bounds = canvasBounds([start], [], (node) => node, [
+    { x: 720, y: 80, width: 284, height: 150 },
+  ]);
+  assert.ok(bounds.right >= 1004);
+  assert.ok(bounds.width >= 1004);
+});
+
 test("opening a tall map keeps screen labels readable while Fit remains exact", () => {
   const content = { left: 0, top: -630, width: 1104, height: 1576 };
   const fitted = fitCanvasViewport({ width: 1440, height: 716 }, content);

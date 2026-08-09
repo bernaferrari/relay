@@ -140,28 +140,33 @@ export function canvasBounds(
   nodes: MapTreeNode[],
   notes: CanvasNote[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
+  extras: Array<{ x: number; y: number; width: number; height: number }> = [],
 ): CanvasBounds {
-  if (!nodes.length && !notes.length) {
+  if (!nodes.length && !notes.length && !extras.length) {
     return { left: 0, top: 0, right: 760, bottom: 560, width: 760, height: 560 };
   }
   const left = Math.min(
     0,
     ...nodes.map((node) => positionFor(node).x),
     ...notes.map((note) => note.x),
+    ...extras.map((item) => item.x),
   );
   const top = Math.min(
     0,
     ...nodes.map((node) => positionFor(node).y),
     ...notes.map((note) => note.y),
+    ...extras.map((item) => item.y),
   );
   const right = Math.max(
     ...nodes.map((node) => positionFor(node).x + SCREEN_CARD_WIDTH),
     ...notes.map((note) => note.x + 220),
+    ...extras.map((item) => item.x + item.width),
     648,
   );
   const bottom = Math.max(
     ...nodes.map((node) => positionFor(node).y + SCREEN_CARD_HEIGHT),
     ...notes.map((note) => note.y + 132),
+    ...extras.map((item) => item.y + item.height),
     448,
   );
   const width = Math.max(760, right - left + 112);

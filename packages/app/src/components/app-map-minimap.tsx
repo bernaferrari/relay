@@ -5,7 +5,7 @@ import { cn } from "../lib/cn";
 
 export type AppMapMinimapNode = {
   id: string;
-  kind: "screen" | "note";
+  kind: "screen" | "note" | "matrix";
   x: number;
   y: number;
   selected: boolean;
@@ -147,13 +147,13 @@ export function AppMapMinimap(props: {
               {(node) => (
                 <rect
                   class={nodeColor(node)}
-                  x={node.x - (node.kind === "note" ? 2.6 : 2.2)}
-                  y={node.y - (node.kind === "note" ? 1.6 : 3.4)}
-                  width={node.kind === "note" ? 5.2 : 4.4}
-                  height={node.kind === "note" ? 3.2 : 6.8}
-                  rx={node.kind === "note" ? 0.7 : 1.1}
+                  x={node.x - (node.kind === "screen" ? 2.2 : 2.6)}
+                  y={node.y - (node.kind === "screen" ? 3.4 : 1.6)}
+                  width={node.kind === "screen" ? 4.4 : 5.2}
+                  height={node.kind === "screen" ? 6.8 : 3.2}
+                  rx={node.kind === "screen" ? 1.1 : 0.7}
                   fill="currentColor"
-                  fill-opacity={node.selected ? 1 : node.kind === "note" ? 0.62 : 0.9}
+                  fill-opacity={node.selected ? 1 : node.kind === "screen" ? 0.9 : 0.62}
                   stroke={node.selected ? "var(--text-interactive-base)" : "var(--map-canvas)"}
                   stroke-width={node.selected ? 1.5 : 0.65}
                   vector-effect="non-scaling-stroke"
@@ -206,6 +206,7 @@ export function AppMapMinimap(props: {
 
 function nodeColor(node: AppMapMinimapNode): string {
   if (node.kind === "note") return "text-[var(--icon-warning-base)]";
+  if (node.kind === "matrix") return "text-[var(--text-interactive-base)]";
   return stateColor(node.state, node.selected);
 }
 

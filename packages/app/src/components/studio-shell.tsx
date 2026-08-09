@@ -349,12 +349,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     setDevicePanelOpen((open) => !open);
   };
-  const openRunMatrix = (combineId?: string) => {
+  const toggleRunMatrix = (combineId?: string) => {
+    const requestedId = combineId?.trim() || undefined;
+    if (combineOpen() && (!requestedId || requestedId === combineFocusId())) {
+      setCombineOpen(false);
+      setCombineFocusId(undefined);
+      return;
+    }
     setSettingsOpen(false);
     setVariablesOpen(false);
     setNavOpen(false);
     window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
-    setCombineFocusId(combineId);
+    setCombineFocusId(requestedId);
     setCombineOpen(true);
   };
   const openDevicePicker = () => {
@@ -902,11 +908,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <Button
                   variant="secondary"
                   size="lg"
-                  class="text-[12px]"
-                  aria-label="Open run matrix"
-                  data-tip="Run every selected test in every selected device state."
+                  class={cn(
+                    "text-[12px]",
+                    combineOpen() && "bg-[var(--surface-base)] text-[var(--text-strong)]",
+                  )}
+                  aria-label={combineOpen() ? "Close run matrix" : "Open run matrix"}
+                  aria-pressed={combineOpen()}
+                  data-tip={
+                    combineOpen()
+                      ? "Close run matrix"
+                      : "Multiply modifiers such as languages or models by reusable tests."
+                  }
                   disabled={!selectedMap() || Object.keys(selectedMap()!.screens).length === 0}
-                  onClick={() => openRunMatrix()}
+                  onClick={() => toggleRunMatrix()}
                 >
                   <Icon name="grid" size={13} />
                   <span class="max-[720px]:hidden">Run matrix</span>
@@ -953,7 +967,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       onOpenTargets={() => props.onOpenSettings("targets")}
                       onOpenActions={() => undefined}
                       onOpenVariables={() => setVariablesOpen(true)}
-                      onOpenCombine={openRunMatrix}
+                      onOpenCombine={toggleRunMatrix}
                       onOpenRun={(id) => {
                         server.setSelectedJobId(id);
                         setArea("runs");

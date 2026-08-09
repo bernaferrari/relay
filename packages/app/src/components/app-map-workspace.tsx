@@ -497,12 +497,18 @@ export function AppMapWorkspace(props: {
   };
   const reusableBehaviors = createMemo(() => listReusableBehaviors(activeAppMap()));
   const bounds = createMemo(() =>
-    canvasBounds(tree().nodes, canvasState().notes ?? [], positionFor),
+    canvasBounds(
+      tree().nodes,
+      canvasState().notes ?? [],
+      positionFor,
+      combineCards().map((card) => ({ ...card.position, width: 284, height: 150 })),
+    ),
   );
   const minimapNodes = createMemo(() =>
     buildMinimapNodes({
       nodes: tree().nodes,
       notes: canvasState().notes ?? [],
+      matrices: combineCards().map((card) => ({ id: card.id, position: card.position })),
       bounds: bounds(),
       positionFor,
       selectedNodeIds: selectedNodeIds(),

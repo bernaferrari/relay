@@ -77,7 +77,7 @@ export function CanvasCombineCard(props: {
   id: string;
   name: string;
   position: { x: number; y: number };
-  values: string[];
+  modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
   onOpen: () => void;
@@ -86,42 +86,69 @@ export function CanvasCombineCard(props: {
     <button
       type="button"
       data-app-map-combine-id={props.id}
-      class="absolute z-[8] w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] text-left shadow-[0_8px_26px_rgb(0_0_0/16%)] transition-[transform,box-shadow] duration-150 hover:shadow-[0_10px_28px_rgb(0_0_0/20%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+      class="group/matrix absolute z-[8] w-[284px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
-      aria-label={`Open run matrix ${props.name}`}
+      aria-label={`Edit run matrix ${props.name}`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();
         props.onOpen();
       }}
     >
-      <header class="flex h-8 items-center gap-1.5 border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-2.5">
-        <Icon name="grid" size={11} class="text-[var(--text-interactive-base)]" />
-        <span class="text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--text-interactive-base)]">
-          Run matrix
+      <header class="flex min-h-11 items-center gap-2 border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-3">
+        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base)] text-[var(--text-base)]">
+          <Icon name="grid" size={12} />
         </span>
-        <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">{props.name}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-[10px] font-medium text-[var(--text-weak)]">Run matrix</span>
+          <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
+            {props.name}
+          </strong>
+        </span>
+        <Icon
+          name="chevron-right"
+          size={12}
+          class="shrink-0 text-[var(--text-weaker)] transition-colors duration-150 group-hover/matrix:text-[var(--text-strong)]"
+        />
       </header>
-      <div class="grid gap-1.5 px-2.5 py-2">
-        <Show when={props.values.length}>
-          <div class="flex flex-wrap gap-1">
-            <For each={props.values}>
-              {(value) => (
-                <span class="rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-interactive-base)]">
-                  {value}
+      <div class="grid grid-cols-[1fr_20px_1fr] items-stretch gap-1.5 px-3 py-2.5">
+        <div class="min-w-0">
+          <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
+            {props.modifiers.length === 1 ? "Modifier" : "Modifiers"}
+          </span>
+          <For each={props.modifiers}>
+            {(modifier) => (
+              <div class="mt-1 min-w-0">
+                <strong class="block truncate text-[11px] font-medium text-[var(--text-strong)]">
+                  {modifier.name}
+                </strong>
+                <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                  {modifier.values.join(" · ")}
                 </span>
-              )}
-            </For>
-          </div>
-        </Show>
-        <Show when={props.tests.length}>
-          <p class="m-0 truncate text-[11px] font-medium text-[var(--text-strong)]">
+              </div>
+            )}
+          </For>
+        </div>
+        <span
+          class="grid place-items-center text-[14px] text-[var(--text-weaker)]"
+          aria-hidden="true"
+        >
+          ×
+        </span>
+        <div class="min-w-0">
+          <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
+            {props.tests.length === 1 ? "Test" : "Tests"}
+          </span>
+          <p class="m-0 mt-1 line-clamp-3 text-[11px]/[1.35] font-medium text-[var(--text-strong)]">
             {props.tests.join(" · ")}
           </p>
-        </Show>
-        <p class="m-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+        </div>
+      </div>
+      <div class="flex h-8 items-center justify-between border-t border-[var(--border-weak-base)] px-3">
+        <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
           {props.cellCount} {props.cellCount === 1 ? "run" : "runs"}
-        </p>
+        </span>
+        <span class="text-[10px] font-medium text-[var(--text-base)]">Edit matrix</span>
       </div>
     </button>
   );

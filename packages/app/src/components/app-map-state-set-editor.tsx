@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
-import type { AppMapVariableKind } from "@relay/protocol";
+import type { AppMapVariable, AppMapVariableKind } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
@@ -48,19 +48,33 @@ function uniqueVariableId(existing: Record<string, unknown>, label: string): str
 }
 
 export function AppMapStateSetEditor(props: {
-  onCreated: (id: string) => void;
+  variable?: AppMapVariable;
+  onSaved: (id: string) => void;
   onCancel: () => void;
   onOpenDevice: () => void;
 }) {
   const server = useServer();
-  const [sourceMode, setSourceMode] = createSignal<SourceMode>("device");
-  const [kind, setKind] = createSignal<AppMapVariableKind>("language");
-  const [name, setName] = createSignal("");
-  const [manualText, setManualText] = createSignal("");
-  const [rows, setRows] = createSignal<LiveRow[]>([]);
-  const [selectedKeys, setSelectedKeys] = createSignal<string[]>([]);
-  const [inConnectionId, setInConnectionId] = createSignal("");
-  const [outConnectionId, setOutConnectionId] = createSignal("");
+  const existingListApply = () =>
+    props.variable?.apply.kind === "list" ? props.variable.apply : undefined;
+  const [sourceMode, setSourceMode] = createSignal<SourceMode>(
+    props.variable ? "manual" : "device",
+  );
+  const [kind, setKind] = createSignal<AppMapVariableKind>(props.variable?.kind ?? "language");
+  const [name, setName] = createSignal(props.variable?.name ?? "");
+  const [manualText, setManualText] = createSignal(
+    props.variable?.options.map((option) => option.label ?? option.text ?? option.id).join("\n") ??
+      "",
+  );
+  const [rows, setRows] = createSignal<LiveRow[]>(props.variable?.options ?? []);
+  const [selectedKeys, setSelectedKeys] = createSignal<string[]>(
+    (props.variable?.options ?? []).slice(0, 2).map(rowKey),
+  );
+  const [inConnectionId, setInConnectionId] = createSignal(
+    existingListApply()?.inConnectionId ?? "",
+  );
+  const [outConnectionId, setOutConnectionId] = createSignal(
+    existingListApply()?.outConnectionId ?? "",
+  );
   const [reading, setReading] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [pathsOpen, setPathsOpen] = createSignal(true);
@@ -121,7 +135,7 @@ export function AppMapStateSetEditor(props: {
     setSaving(true);
     try {
       const now = Date.now();
-      const fallbackName = KINDS.find((item) => item.id === kind())?.label ?? "State set";
+      const fallbackName = KINDS.find((item) => item.id === kind())?.label ?? "Modifier";
       const variable =
         sourceMode() === "device"
           ? (
@@ -145,65 +159,78 @@ export function AppMapStateSetEditor(props: {
               )
             ).variable
           : {
-              id: uniqueVariableId(currentMap.variables, name().trim() || fallbackName),
+              id:
+                props.variable?.id ??
+                uniqueVariableId(currentMap.variables, name().trim() || fallbackName),
               name: name().trim() || fallbackName,
               kind: kind(),
               apply: {
+                ...existingListApply(),
                 kind: "list" as const,
                 ...(inConnectionId() ? { inConnectionId: inConnectionId() } : {}),
                 ...(outConnectionId() ? { outConnectionId: outConnectionId() } : {}),
               },
-              options: manualRows().map((label, index) => ({
-                id: `${slug(label)}-${index + 1}`,
-                label,
-              })),
+              options: manualRows().map((label, index) => {
+                const existing = props.variable?.options.find(
+                  (option) =>
+                    (option.label ?? option.text ?? option.id).toLocaleLowerCase() ===
+                    label.toLocaleLowerCase(),
+                );
+                return existing
+                  ? { ...existing, label }
+                  : { id: `${slug(label)}-${index + 1}`, label };
+              }),
             };
       await server.saveVariable({
         appMapId: currentMap.id,
         expectedRevision: currentMap.revision,
         variable: {
           ...variable,
+          id: props.variable?.id ?? variable.id,
           organizationId: currentMap.organizationId,
           projectId: currentMap.projectId,
           appMapId: currentMap.id,
-          createdAt: now,
+          createdAt: props.variable?.createdAt ?? now,
           updatedAt: now,
         },
       });
       await server.refreshAppMaps();
-      toast(`Created ${variable.name} with ${variable.options.length} values`, "success");
-      props.onCreated(variable.id);
+      toast(
+        `${props.variable ? "Updated" : "Created"} ${variable.name} with ${variable.options.length} values`,
+        "success",
+      );
+      props.onSaved(props.variable?.id ?? variable.id);
     } catch (error) {
-      toast(humanError(error, "Could not create this state set"), "error");
+      toast(humanError(error, "Could not save this modifier"), "error");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <section class="grid w-full gap-3" aria-labelledby="new-state-set-title">
+    <section class="grid w-full gap-3" aria-labelledby="modifier-editor-title">
       <div>
         <h3
-          id="new-state-set-title"
+          id="modifier-editor-title"
           class="m-0 text-[13px] font-semibold text-[var(--text-strong)]"
         >
-          New state set
+          {props.variable ? `Edit ${props.variable.name}` : "New modifier"}
         </h3>
         <p class="m-0 mt-1 max-w-[52ch] text-[11.5px]/[1.45] text-[var(--text-weak)]">
-          Prepare one reusable device state, then return to the screen where your tests begin. Read
-          a visible list or enter its values yourself.
+          A modifier changes one thing before a test—such as language, account, theme, or model.
+          Relay applies a value, returns to the test start, and repeats.
         </p>
       </div>
 
       <div
         class="grid grid-cols-2 gap-1 rounded-[9px] bg-[var(--surface-base)] p-1"
         role="tablist"
-        aria-label="State set source"
+        aria-label="How Relay learns modifier values"
       >
         <For
           each={[
-            { id: "device" as const, label: "Read from device" },
-            { id: "manual" as const, label: "Enter values" },
+            { id: "device" as const, label: "Read an open list" },
+            { id: "manual" as const, label: "Enter labels" },
           ]}
         >
           {(source) => (
@@ -230,7 +257,7 @@ export function AppMapStateSetEditor(props: {
         <input
           class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={name()}
-          placeholder={KINDS.find((item) => item.id === kind())?.label ?? "State set"}
+          placeholder={KINDS.find((item) => item.id === kind())?.label ?? "Modifier"}
           onInput={(event) => setName(event.currentTarget.value)}
         />
       </label>
@@ -251,7 +278,8 @@ export function AppMapStateSetEditor(props: {
         fallback={
           <label class="grid gap-1.5">
             <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
-              Values <span class="font-normal text-[var(--text-weak)]">One per line</span>
+              Labels Relay should tap
+              <span class="font-normal text-[var(--text-weak)]">One per line</span>
             </span>
             <textarea
               class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[13px]/[1.5] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
@@ -259,8 +287,8 @@ export function AppMapStateSetEditor(props: {
               placeholder={"English\nPortuguês\n日本語"}
               onInput={(event) => setManualText(event.currentTarget.value)}
             />
-            <span class="text-[10.5px] tabular-nums text-[var(--text-weak)]">
-              {manualRows().length} {manualRows().length === 1 ? "value" : "values"}
+            <span class="text-[10.5px] text-[var(--text-weak)]">
+              Relay looks for each label in the value list. You can set the paths below.
             </span>
           </label>
         }
@@ -350,28 +378,29 @@ export function AppMapStateSetEditor(props: {
         aria-expanded={pathsOpen()}
         onClick={() => setPathsOpen((open) => !open)}
       >
-        <span>Set up and return</span>
+        <span>Where is the list?</span>
         <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-weak)]">
-          Reuse mapped paths <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
+          Set start and return paths
+          <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
         </span>
       </button>
       <Show when={pathsOpen()}>
         <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">Set up from</span>
+            <span class="text-[10.5px] text-[var(--text-base)]">Open the value list with</span>
             <select
               class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
               value={inConnectionId()}
               onChange={(event) => setInConnectionId(event.currentTarget.value)}
             >
-              <option value="">Current device screen</option>
+              <option value="">The list is already open</option>
               <For each={connections()}>
                 {(item) => <option value={item.id}>{item.label}</option>}
               </For>
             </select>
           </label>
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">Return to the test start with</span>
+            <span class="text-[10.5px] text-[var(--text-base)]">After choosing a value</span>
             <select
               class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
               value={outConnectionId()}
@@ -395,7 +424,7 @@ export function AppMapStateSetEditor(props: {
           disabled={saving() || !canCreate()}
           onClick={() => void createSet()}
         >
-          {saving() ? "Creating…" : "Create state set"}
+          {saving() ? "Saving…" : props.variable ? "Save modifier" : "Create modifier"}
         </Button>
       </footer>
     </section>

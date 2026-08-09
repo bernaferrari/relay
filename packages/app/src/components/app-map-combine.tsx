@@ -35,8 +35,23 @@ function matrixId(variableIds: string[], testIds: string[]): string {
   return `matrix-${slug || "run"}`;
 }
 
+function modifierMethodLabel(variable: AppMapVariable): string {
+  if (variable.apply.kind === "toggle") return "toggle";
+  const opensWithPath = Boolean(
+    variable.apply.inConnectionId ||
+    variable.apply.entryPath?.length ||
+    variable.apply.pickerPath?.length,
+  );
+  const returnsWithPath = Boolean(
+    variable.apply.outConnectionId || variable.apply.exitPath?.length,
+  );
+  if (opensWithPath && returnsWithPath) return "mapped open + return";
+  if (opensWithPath) return "mapped list";
+  return "visible list labels";
+}
+
 /**
- * A Figma-like run-plan inspector. State sets are dimensions, tests are
+ * A Figma-like run-plan inspector. Modifiers are dimensions, tests are
  * columns, and the visible grid is the exact work Relay will execute.
  */
 export function AppMapCombine(props: {
@@ -51,6 +66,7 @@ export function AppMapCombine(props: {
   const [strategy, setStrategy] = createSignal<CaseExpansionStrategy>("cartesian");
   const [editingValuesFor, setEditingValuesFor] = createSignal<string>();
   const [creatingSet, setCreatingSet] = createSignal(false);
+  const [editingModifierId, setEditingModifierId] = createSignal<string>();
   const [busy, setBusy] = createSignal(false);
   let initializedFor = "";
 
@@ -85,6 +101,11 @@ export function AppMapCombine(props: {
     const chosen = new Set(selectedTestKeys());
     return candidates().filter((candidate) => chosen.has(candidateKey(candidate)));
   });
+  const modifierBeingEdited = createMemo(() => {
+    const id = editingModifierId();
+    return id ? map()?.variables[id] : undefined;
+  });
+  const modifierEditorOpen = () => creatingSet() || Boolean(editingModifierId());
 
   function valuesFor(variable: AppMapVariable): string[] {
     const selected = selectedValues()[variable.id];
@@ -125,7 +146,7 @@ export function AppMapCombine(props: {
     }),
   );
   const runIssue = createMemo(() => {
-    if (!selectedVariables().length) return "Choose at least one state set.";
+    if (!selectedVariables().length) return "Choose at least one modifier.";
     if (!selectedTests().length) return "Choose at least one test.";
     if (projection().issue) return projection().issue!;
     if (projection().totalWorlds > MAX_DEVICE_WORLDS) {
@@ -331,14 +352,18 @@ export function AppMapCombine(props: {
         onWheel={(event) => event.stopPropagation()}
       >
         <Show
-          when={!creatingSet()}
+          when={!modifierEditorOpen()}
           fallback={
             <AppMapStateSetEditor
+              variable={modifierBeingEdited()}
               onOpenDevice={props.onOpenDevice}
-              onCancel={() => setCreatingSet(false)}
-              onCreated={(id) => {
-                initializedFor = "";
+              onCancel={() => {
                 setCreatingSet(false);
+                setEditingModifierId(undefined);
+              }}
+              onSaved={(id) => {
+                setCreatingSet(false);
+                setEditingModifierId(undefined);
                 setSelectedVariableIds([id]);
               }}
             />
@@ -352,15 +377,21 @@ export function AppMapCombine(props: {
                     id="matrix-states-title"
                     class={cn(copyTitle, "m-0 text-[12px] font-semibold")}
                   >
-                    1. Prepare device
+                    1. Choose modifiers
                   </h3>
                   <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-                    Choose reusable state sets. Relay applies each value, then returns to the test
-                    start.
+                    A modifier changes one thing, then returns to the test start.
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setCreatingSet(true)}>
-                  <Icon name="plus" size={12} /> New set
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditingModifierId(undefined);
+                    setCreatingSet(true);
+                  }}
+                >
+                  <Icon name="plus" size={12} /> New modifier
                 </Button>
               </div>
 
@@ -374,10 +405,10 @@ export function AppMapCombine(props: {
                   >
                     <span class={cn(copyStack, "items-center")}>
                       <strong class={cn(copyTitle, "block text-[12px]")}>
-                        Add the first state set
+                        Create the first modifier
                       </strong>
                       <span class={cn(copyDescription, "block text-[10.5px]")}>
-                        Languages, accounts, themes, models, or any list.
+                        Teach Relay a language, account, theme, model, or another list.
                       </span>
                     </span>
                   </button>
@@ -416,7 +447,8 @@ export function AppMapCombine(props: {
                                   {variable.name}
                                 </strong>
                                 <span class={cn(copyDescription, "block text-[10px] tabular-nums")}>
-                                  {valuesFor(variable).length} of {variable.options.length} values
+                                  {valuesFor(variable).length} of {variable.options.length} values ·{" "}
+                                  {modifierMethodLabel(variable)}
                                 </span>
                               </span>
                             </button>
@@ -431,6 +463,20 @@ export function AppMapCombine(props: {
                                 }
                               >
                                 <Icon name={editing() ? "chevron-up" : "sliders"} size={12} />
+                              </button>
+                            </Show>
+                            <Show when={variable.apply.kind === "list"}>
+                              <button
+                                type="button"
+                                class="grid size-10 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                                aria-label={`Edit ${variable.name} modifier`}
+                                data-tip={`Edit ${variable.name}`}
+                                onClick={() => {
+                                  setCreatingSet(false);
+                                  setEditingModifierId(variable.id);
+                                }}
+                              >
+                                <Icon name="edit" size={12} />
                               </button>
                             </Show>
                           </div>
@@ -471,10 +517,10 @@ export function AppMapCombine(props: {
               <section class="grid gap-2" aria-labelledby="coverage-title">
                 <div class={copyStack}>
                   <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
-                    2. Build combinations
+                    2. Multiply modifiers
                   </h3>
                   <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-                    Choose how values from different state sets form device states.
+                    Choose whether every value meets every other value.
                   </p>
                 </div>
                 <div
@@ -537,10 +583,10 @@ export function AppMapCombine(props: {
             <section class="grid gap-2" aria-labelledby="matrix-tests-title">
               <div class={copyStack}>
                 <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
-                  {selectedVariables().length > 1 ? "3" : "2"}. Run tests
+                  {selectedVariables().length > 1 ? "3" : "2"}. Choose tests
                 </h3>
                 <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-                  Every selected test runs in every device state above.
+                  Every selected test runs once for every modifier combination above.
                 </p>
               </div>
               <Show
@@ -614,7 +660,7 @@ export function AppMapCombine(props: {
                       Run plan
                     </h3>
                     <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-                      Each row is one prepared device state. Each column is a test.
+                      Rows are modifier combinations. Columns are reusable tests.
                     </p>
                   </div>
                   <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
@@ -637,7 +683,7 @@ export function AppMapCombine(props: {
                       <thead class="sticky top-0 z-[2] bg-[var(--surface-raised-stronger-non-alpha)]">
                         <tr class="border-b border-[var(--border-weak-base)]">
                           <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[10px] font-medium text-[var(--text-weak)]">
-                            Device state
+                            Modifiers
                           </th>
                           <For each={selectedTests()}>
                             {(test) => (
@@ -691,10 +737,10 @@ export function AppMapCombine(props: {
         </Show>
       </div>
 
-      <Show when={!creatingSet()}>
+      <Show when={!modifierEditorOpen()}>
         <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
           <span class="min-w-0 truncate text-[10.5px] text-[var(--text-weak)]">
-            {projection().totalWorlds || 0} states × {selectedTests().length} tests
+            {projection().totalWorlds || 0} combinations × {selectedTests().length} tests
           </span>
           <Button
             variant="primary"

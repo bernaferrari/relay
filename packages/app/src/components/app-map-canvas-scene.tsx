@@ -523,7 +523,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             id={combine.id}
             name={combine.name}
             position={combine.position}
-            values={combine.values}
+            modifiers={combine.modifiers}
             tests={combine.tests}
             cellCount={combine.cellCount}
             onOpen={() => props.onOpenCombine?.(combine.id)}
