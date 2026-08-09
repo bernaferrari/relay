@@ -432,7 +432,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         browserTargetId: body.browserTargetId,
         request: {
           sets,
-          selected: body.selected,
+          selected: body.selected ?? combine?.selected,
           strategy: body.strategy,
           screenshotEach: true,
         },

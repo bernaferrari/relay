@@ -52,7 +52,7 @@ const map = {
 
 test("Combine sits next to the test's root screen", () => {
   const cards = canvasCombineCards(map, (screenId) =>
-    screenId === "settings" ? { x: 120, y: 80 } : undefined,
+    screenId === "settings" ? { position: { x: 120, y: 80 }, title: "Settings" } : undefined,
   );
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "language-x-tour");
@@ -62,6 +62,11 @@ test("Combine sits next to the test's root screen", () => {
   ]);
   assert.deepEqual(cards[0]?.tests, ["Open every Settings row"]);
   assert.equal(cards[0]?.cellCount, 2);
+  assert.deepEqual(cards[0]?.startsAt, {
+    screenId: "settings",
+    title: "Settings",
+    position: { x: 120, y: 80 },
+  });
   assert.deepEqual(cards[0]?.position, { x: 120 + SCREEN_CARD_WIDTH + 28, y: 80 });
 });
 
@@ -97,8 +102,19 @@ test("multiple state sets count worlds × tests instead of flattening their valu
       variables: { [language.id]: language, [theme.id]: theme },
       flows: {},
     },
-    () => ({ x: 0, y: 0 }),
+    () => ({ position: { x: 0, y: 0 }, title: "Settings" }),
   );
   assert.equal(cards[0]?.cellCount, 8);
   assert.match(cards[0]?.name ?? "", /Language × Theme/);
+});
+
+test("canvas preview uses the value subset saved with the matrix", () => {
+  const selected = { ...combine, selected: { language: ["it"] } };
+  const cards = canvasCombineCards({ ...map, combines: { [selected.id]: selected } }, () => ({
+    position: { x: 0, y: 0 },
+    title: "Settings",
+  }));
+
+  assert.deepEqual(cards[0]?.modifiers[0]?.values, ["Italiano"]);
+  assert.equal(cards[0]?.cellCount, 1);
 });

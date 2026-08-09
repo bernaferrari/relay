@@ -4,6 +4,7 @@ import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
+import { targetIsReady } from "../lib/target-presentation";
 import {
   combineHeadline,
   combineSubhead,
@@ -11,8 +12,10 @@ import {
   projectCombine,
   type CombineTestColumn,
 } from "../lib/app-map-combine-presentation";
+import { combineWithoutVariable } from "../lib/app-map-combine-edit";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
+import { confirmAction } from "./confirm-dialog";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 
@@ -68,9 +71,16 @@ export function AppMapCombine(props: {
   const [creatingSet, setCreatingSet] = createSignal(false);
   const [editingModifierId, setEditingModifierId] = createSignal<string>();
   const [busy, setBusy] = createSignal(false);
+  const [savingOnly, setSavingOnly] = createSignal(false);
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
+  const canRunOnDevice = createMemo(() =>
+    targetIsReady(
+      server.devices().find((device) => device.serial === server.selectedDevice()),
+      server.health() === "online",
+    ),
+  );
   const variables = createMemo(() => Object.values(map()?.variables ?? {}));
   const candidates = createMemo((): TestCandidate[] => {
     const current = map();
@@ -178,7 +188,9 @@ export function AppMapCombine(props: {
       Object.fromEntries(
         nextVariables.map((id) => [
           id,
-          current.variables[id]?.options.map((option) => option.id) ?? [],
+          existing?.selected?.[id] ??
+            current.variables[id]?.options.map((option) => option.id) ??
+            [],
         ]),
       ),
     );
@@ -257,15 +269,149 @@ export function AppMapCombine(props: {
     return { testIds, revision };
   }
 
+  async function deleteModifier(variable: AppMapVariable) {
+    const currentMap = map();
+    if (!currentMap || busy()) return;
+    const dependentMatrices = Object.values(currentMap.combines ?? {}).filter((combine) =>
+      combine.variableIds.includes(variable.id),
+    );
+    confirmAction({
+      title: `Delete ${variable.name}?`,
+      body: dependentMatrices.length
+        ? `Relay will remove this modifier from ${dependentMatrices.length} ${dependentMatrices.length === 1 ? "run matrix" : "run matrices"}. Tests and recorded paths remain.`
+        : "The modifier will be removed. Tests and recorded paths remain.",
+      confirmLabel: "Delete modifier",
+      tone: "destructive",
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          let revision = currentMap.revision;
+          for (const combine of dependentMatrices) {
+            const nextCombine = combineWithoutVariable(combine, variable.id, Date.now());
+            const result = nextCombine
+              ? await server.saveCombine({
+                  appMapId: currentMap.id,
+                  expectedRevision: revision,
+                  combine: nextCombine,
+                })
+              : await server.removeCombine({
+                  appMapId: currentMap.id,
+                  combineId: combine.id,
+                  expectedRevision: revision,
+                });
+            revision = result.appMap.revision;
+          }
+          await server.removeVariable({
+            appMapId: currentMap.id,
+            variableId: variable.id,
+            expectedRevision: revision,
+          });
+          await server.refreshAppMaps();
+          setSelectedVariableIds((ids) => ids.filter((id) => id !== variable.id));
+          setEditingModifierId(undefined);
+          toast(`Deleted ${variable.name}`, "success");
+        } catch (error) {
+          toast(humanError(error, `Could not delete ${variable.name}`), "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+
+  function deleteMatrix() {
+    const currentMap = map();
+    const id = props.combineId?.trim();
+    const existing = id ? currentMap?.combines[id] : undefined;
+    if (!currentMap || !existing || busy()) return;
+    confirmAction({
+      title: `Delete ${existing.name}?`,
+      body: "This removes the saved matrix from the canvas. Its modifiers, tests, and recorded paths remain.",
+      confirmLabel: "Delete matrix",
+      tone: "destructive",
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await server.removeCombine({
+            appMapId: currentMap.id,
+            combineId: existing.id,
+            expectedRevision: currentMap.revision,
+          });
+          await server.refreshAppMaps();
+          toast(`Deleted ${existing.name}`, "success");
+          props.onClose();
+        } catch (error) {
+          toast(humanError(error, `Could not delete ${existing.name}`), "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+
+  function selectedOptionIds(): Record<string, string[]> {
+    return Object.fromEntries(
+      selectedVariables().map((variable) => [variable.id, valuesFor(variable)]),
+    );
+  }
+
+  async function persistMatrix(currentMap: NonNullable<ReturnType<typeof map>>) {
+    const ensured = await ensureTests(currentMap);
+    const variableIds = selectedVariables().map((variable) => variable.id);
+    const selected = selectedOptionIds();
+    const id = props.combineId?.trim() || matrixId(variableIds, ensured.testIds);
+    const existing = currentMap.combines?.[id];
+    const now = Date.now();
+    await server.saveCombine({
+      appMapId: currentMap.id,
+      expectedRevision: ensured.revision,
+      combine: {
+        id,
+        organizationId: currentMap.organizationId,
+        projectId: currentMap.projectId,
+        appMapId: currentMap.id,
+        name: headline(),
+        variableIds,
+        testIds: ensured.testIds,
+        selected,
+        strategy: strategy(),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+    });
+    await server.refreshAppMaps();
+    return { id, variableIds, selected };
+  }
+
+  async function saveMatrix() {
+    const currentMap = map();
+    if (!currentMap || runIssue() || busy()) return;
+    setBusy(true);
+    setSavingOnly(true);
+    try {
+      await persistMatrix(currentMap);
+      toast(`Saved ${headline()} on the canvas`, "success");
+      props.onClose();
+    } catch (error) {
+      toast(humanError(error, "Could not save this run matrix"), "error");
+    } finally {
+      setSavingOnly(false);
+      setBusy(false);
+    }
+  }
+
   async function runMatrix(input?: { worldIndex: number; test: TestCandidate }) {
     const currentMap = map();
     if (!currentMap || runIssue()) {
       toast(runIssue() || "This run matrix is incomplete", "warning");
       return;
     }
+    if (!canRunOnDevice()) {
+      toast("Connect a ready device to run this matrix", "warning");
+      return;
+    }
     setBusy(true);
     try {
-      const ensured = await ensureTests(currentMap);
       const variableIds = selectedVariables().map((variable) => variable.id);
       const selected = input
         ? Object.fromEntries(
@@ -278,6 +424,7 @@ export function AppMapCombine(props: {
             selectedVariables().map((variable) => [variable.id, valuesFor(variable)]),
           );
       if (input) {
+        await ensureTests(currentMap);
         const testId = input.test.source === "test" ? input.test.id : `flow-${input.test.flow.id}`;
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
@@ -288,31 +435,12 @@ export function AppMapCombine(props: {
           title: `${projection().worlds[input.worldIndex]?.label ?? "State"} → ${input.test.name}`,
         });
       } else {
-        const id = props.combineId?.trim() || matrixId(variableIds, ensured.testIds);
-        const existing = currentMap.combines?.[id];
-        const now = Date.now();
-        await server.saveCombine({
-          appMapId: currentMap.id,
-          expectedRevision: ensured.revision,
-          combine: {
-            id,
-            organizationId: currentMap.organizationId,
-            projectId: currentMap.projectId,
-            appMapId: currentMap.id,
-            name: headline(),
-            variableIds,
-            testIds: ensured.testIds,
-            strategy: strategy(),
-            createdAt: existing?.createdAt ?? now,
-            updatedAt: now,
-          },
-        });
-        await server.refreshAppMaps();
+        const persisted = await persistMatrix(currentMap);
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
-          combineId: id,
-          variableIds,
-          selected,
+          combineId: persisted.id,
+          variableIds: persisted.variableIds,
+          selected: persisted.selected,
           strategy: strategy(),
           title: headline(),
         });
@@ -356,6 +484,11 @@ export function AppMapCombine(props: {
           fallback={
             <AppMapStateSetEditor
               variable={modifierBeingEdited()}
+              onDelete={
+                modifierBeingEdited()
+                  ? () => void deleteModifier(modifierBeingEdited()!)
+                  : undefined
+              }
               onOpenDevice={props.onOpenDevice}
               onCancel={() => {
                 setCreatingSet(false);
@@ -707,7 +840,12 @@ export function AppMapCombine(props: {
                                     <button
                                       type="button"
                                       class="grid min-h-9 w-full place-items-center rounded-[7px] text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
-                                      disabled={busy()}
+                                      data-tip={
+                                        canRunOnDevice()
+                                          ? undefined
+                                          : "Connect a ready device to run this check"
+                                      }
+                                      disabled={busy() || !canRunOnDevice()}
                                       aria-label={`Run ${test.name} in ${world.label}`}
                                       onClick={() =>
                                         void runMatrix({ worldIndex: worldIndex(), test })
@@ -739,22 +877,46 @@ export function AppMapCombine(props: {
 
       <Show when={!modifierEditorOpen()}>
         <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
-          <span class="min-w-0 truncate text-[10.5px] text-[var(--text-weak)]">
-            {projection().totalWorlds || 0} combinations × {selectedTests().length} tests
-          </span>
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={busy() || Boolean(runIssue())}
-            onClick={() => void runMatrix()}
-          >
-            <Icon name="play" size={12} />
-            {busy()
-              ? "Starting…"
-              : projection().cellCount
-                ? `Run ${projection().cellCount} ${projection().cellCount === 1 ? "check" : "checks"}`
-                : "Run matrix"}
-          </Button>
+          <div class="flex min-w-0 items-center gap-2">
+            <Show when={props.combineId && map()?.combines[props.combineId]}>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="shrink-0 text-[var(--icon-critical-base)] hover:text-[var(--icon-critical-base)]"
+                disabled={busy()}
+                onClick={deleteMatrix}
+              >
+                <Icon name="trash" size={11} /> Delete
+              </Button>
+            </Show>
+            <span class="min-w-0 truncate text-[10.5px] text-[var(--text-weak)]">
+              {projection().totalWorlds || 0} combinations × {selectedTests().length} tests
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              disabled={busy() || Boolean(runIssue())}
+              onClick={() => void saveMatrix()}
+            >
+              {savingOnly() ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              data-tip={canRunOnDevice() ? undefined : "Connect a ready device to run this matrix"}
+              disabled={busy() || Boolean(runIssue()) || !canRunOnDevice()}
+              onClick={() => void runMatrix()}
+            >
+              <Icon name="play" size={12} />
+              {busy() && !savingOnly()
+                ? "Starting…"
+                : projection().cellCount
+                  ? `Run ${projection().cellCount} ${projection().cellCount === 1 ? "check" : "checks"}`
+                  : "Run matrix"}
+            </Button>
+          </div>
         </footer>
       </Show>
     </section>

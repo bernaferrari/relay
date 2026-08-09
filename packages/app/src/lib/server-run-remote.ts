@@ -343,6 +343,7 @@ export async function saveCombineRemote(
       name: string;
       variableIds: string[];
       testIds: string[];
+      selected?: Record<string, string[]>;
       strategy?: "zip" | "cartesian" | "pairwise";
       createdAt: number;
       updatedAt: number;
@@ -354,6 +355,19 @@ export async function saveCombineRemote(
     {
       method: "PUT",
       body: JSON.stringify({ expectedRevision: input.expectedRevision, combine: input.combine }),
+    },
+  );
+}
+
+export async function removeCombineRemote(
+  request: ServerRequest,
+  input: { appMapId: string; combineId: string; expectedRevision: number },
+): Promise<{ appMap: { revision: number } }> {
+  return request(
+    `/app-maps/${encodeURIComponent(input.appMapId)}/combines/${encodeURIComponent(input.combineId)}/remove`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision: input.expectedRevision }),
     },
   );
 }
@@ -385,6 +399,19 @@ export async function saveVariableRemote(
         expectedRevision: input.expectedRevision,
         variable: input.variable,
       }),
+    },
+  );
+}
+
+export async function removeVariableRemote(
+  request: ServerRequest,
+  input: { appMapId: string; variableId: string; expectedRevision: number },
+): Promise<{ appMap: { revision: number } }> {
+  return request(
+    `/app-maps/${encodeURIComponent(input.appMapId)}/variables/${encodeURIComponent(input.variableId)}/remove`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision: input.expectedRevision }),
     },
   );
 }

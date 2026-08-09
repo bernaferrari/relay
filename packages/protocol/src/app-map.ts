@@ -262,6 +262,8 @@ export type AppMapCombine = AppMapEntity & {
   name: string;
   variableIds: string[];
   testIds: string[];
+  /** Optional value subset per variable. Missing entries mean every saved value. */
+  selected?: Record<string, string[]>;
   strategy?: CaseExpansionStrategy;
 };
 
@@ -700,6 +702,7 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         formula: [...combine.variableIds, ...combine.testIds].join(" × "),
         variableIds: combine.variableIds,
         testIds: combine.testIds,
+        ...(combine.selected ? { selected: combine.selected } : {}),
         strategy: combine.strategy ?? (combine.variableIds.length > 1 ? "cartesian" : "zip"),
       })),
       counts: {

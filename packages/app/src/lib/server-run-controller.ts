@@ -11,8 +11,10 @@ import {
   inferOptionMatrix,
   enqueueOptionMatrix,
   saveVariableRemote,
+  removeVariableRemote,
   saveTestRemote,
   saveCombineRemote,
+  removeCombineRemote,
   buildLocaleMatrixInput,
   enqueueMatrix,
   enqueueRecipe,
@@ -296,12 +298,20 @@ export function createServerRunController(deps: RunControllerDependencies) {
     return saveVariableRemote(deps.request, input);
   }
 
+  async function removeVariable(input: Parameters<typeof removeVariableRemote>[1]) {
+    return removeVariableRemote(deps.request, input);
+  }
+
   async function saveTest(input: Parameters<typeof saveTestRemote>[1]) {
     return saveTestRemote(deps.request, input);
   }
 
   async function saveCombine(input: Parameters<typeof saveCombineRemote>[1]) {
     return saveCombineRemote(deps.request, input);
+  }
+
+  async function removeCombine(input: Parameters<typeof removeCombineRemote>[1]) {
+    return removeCombineRemote(deps.request, input);
   }
 
   async function runRecipeAcrossLocales(
@@ -423,8 +433,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
     inferVariableFromDevice,
     runPathAcrossVariables,
     saveVariable,
+    removeVariable,
     saveTest,
     saveCombine,
+    removeCombine,
     runRecipeAcrossLocales,
     runAppMapConnection,
     runAppMapFlow,

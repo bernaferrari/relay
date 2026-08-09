@@ -6,6 +6,7 @@ export type CanvasCombineCardModel = {
   id: string;
   name: string;
   position: { x: number; y: number };
+  startsAt?: { screenId: string; title: string; position: { x: number; y: number } };
   modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
@@ -15,9 +16,20 @@ const CARD_GAP = 28;
 const CARD_STACK = 156;
 const PREVIEW_VALUES = 3;
 
+function selectedOptions<T extends { id: string }>(
+  options: T[],
+  selected: string[] | undefined,
+): T[] {
+  if (!selected) return options;
+  const selectedIds = new Set(selected);
+  return options.filter((option) => selectedIds.has(option.id));
+}
+
 export function canvasCombineCards(
   map: Pick<AppMap, "combines" | "tests" | "variables" | "flows">,
-  positionFor: (screenId: string) => { x: number; y: number } | undefined,
+  screenFor: (
+    screenId: string,
+  ) => { position: { x: number; y: number }; title: string } | undefined,
 ): CanvasCombineCardModel[] {
   const combines = Object.values(map.combines ?? {});
   return combines.map((combine, index) => {
@@ -32,11 +44,12 @@ export function canvasCombineCards(
       tests
         .map((test) => (test.flowId ? map.flows?.[test.flowId]?.startScreenId : undefined))
         .find((id) => id?.trim());
-    const anchor = rootScreenId ? positionFor(rootScreenId) : undefined;
+    const rootScreen = rootScreenId ? screenFor(rootScreenId) : undefined;
+    const anchor = rootScreen?.position;
     const modifiers = variables.map((variable) => ({
       id: variable.id,
       name: variable.name,
-      values: variable.options
+      values: selectedOptions(variable.options, combine.selected?.[variable.id])
         .map((option) => combineValueLabel(option))
         .filter(Boolean)
         .slice(0, PREVIEW_VALUES),
@@ -46,10 +59,12 @@ export function canvasCombineCards(
       variables.map((variable) => ({
         id: variable.id,
         name: variable.name,
-        values: variable.options.map((option) => ({
-          id: option.id,
-          label: combineValueLabel(option),
-        })),
+        values: selectedOptions(variable.options, combine.selected?.[variable.id]).map(
+          (option) => ({
+            id: option.id,
+            label: combineValueLabel(option),
+          }),
+        ),
       })),
       tests.map((test) => ({ id: test.id, name: test.name, kind: test.kind })),
       combine.strategy ?? (variables.length > 1 ? "cartesian" : "zip"),
@@ -66,6 +81,15 @@ export function canvasCombineCards(
         x: (anchor?.x ?? 48) + SCREEN_CARD_WIDTH + CARD_GAP,
         y: (anchor?.y ?? 48) + index * CARD_STACK,
       },
+      ...(rootScreenId && rootScreen
+        ? {
+            startsAt: {
+              screenId: rootScreenId,
+              title: rootScreen.title,
+              position: rootScreen.position,
+            },
+          }
+        : {}),
       modifiers,
       tests: testNames,
       cellCount: projection.cellCount,

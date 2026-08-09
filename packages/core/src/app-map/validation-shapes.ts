@@ -424,6 +424,16 @@ export function assertAppMapCombine(
   if (!combine.variableIds.length)
     appMapFail("invalid-map", `${label} needs at least one variable`);
   if (!combine.testIds.length) appMapFail("invalid-map", `${label} needs at least one test`);
+  if (combine.selected !== undefined) {
+    const selected = objectValue(combine.selected, `${label}.selected`);
+    for (const [variableId, optionIds] of Object.entries(selected)) {
+      identifier(variableId, `${label}.selected key`);
+      stringArray(optionIds, `${label}.selected.${variableId}`);
+      if (!(optionIds as string[]).length) {
+        appMapFail("invalid-map", `${label}.selected.${variableId} needs at least one value`);
+      }
+    }
+  }
   if (
     combine.strategy !== undefined &&
     combine.strategy !== "zip" &&

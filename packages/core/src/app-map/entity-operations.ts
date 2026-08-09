@@ -196,6 +196,12 @@ export function removeAppMapTest(
 ): AppMap {
   const work = map.tests?.[testId];
   if (!work) appMapFail("missing-reference", `Test ${testId} does not exist`);
+  const dependent = Object.values(map.combines ?? {}).find((combine) =>
+    combine.testIds.includes(testId),
+  );
+  if (dependent) {
+    appMapFail("missing-reference", `Test ${testId} is still used by Combine ${dependent.id}`);
+  }
   return mutateAppMap(
     map,
     context,
@@ -223,6 +229,24 @@ export function saveAppMapCombine(
   }
   for (const id of combine.testIds) {
     if (!map.tests?.[id]) appMapFail("missing-reference", `Test ${id} does not exist`);
+  }
+  for (const [variableId, optionIds] of Object.entries(combine.selected ?? {})) {
+    if (!combine.variableIds.includes(variableId)) {
+      appMapFail(
+        "missing-reference",
+        `Combine ${combine.id} selects unused Variable ${variableId}`,
+      );
+    }
+    const variable = map.variables?.[variableId];
+    if (!variable) appMapFail("missing-reference", `Variable ${variableId} does not exist`);
+    const available = new Set(variable.options.map((option) => option.id));
+    const missing = optionIds.find((optionId) => !available.has(optionId));
+    if (missing) {
+      appMapFail(
+        "missing-reference",
+        `Combine ${combine.id} selects missing value ${missing} from Variable ${variableId}`,
+      );
+    }
   }
   return mutateAppMap(
     map,
@@ -268,6 +292,15 @@ export function removeAppMapVariable(
 ): AppMap {
   const set = map.variables?.[variableId];
   if (!set) appMapFail("missing-reference", `Variable ${variableId} does not exist`);
+  const dependent = Object.values(map.combines ?? {}).find((combine) =>
+    combine.variableIds.includes(variableId),
+  );
+  if (dependent) {
+    appMapFail(
+      "missing-reference",
+      `Variable ${variableId} is still used by Combine ${dependent.id}`,
+    );
+  }
   return mutateAppMap(
     map,
     context,

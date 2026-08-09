@@ -130,6 +130,42 @@ function assertGroups(map: AppMap): void {
   }
 }
 
+function assertCombines(map: AppMap): void {
+  for (const combine of Object.values(map.combines ?? {})) {
+    for (const variableId of combine.variableIds) {
+      const variable = map.variables?.[variableId];
+      if (!variable) {
+        appMapFail(
+          "missing-reference",
+          `Combine ${combine.id} references missing Variable ${variableId}`,
+        );
+      }
+      const available = new Set(variable.options.map((option) => option.id));
+      for (const optionId of combine.selected?.[variableId] ?? []) {
+        if (!available.has(optionId)) {
+          appMapFail(
+            "missing-reference",
+            `Combine ${combine.id} selects missing value ${optionId} from Variable ${variableId}`,
+          );
+        }
+      }
+    }
+    for (const selectedId of Object.keys(combine.selected ?? {})) {
+      if (!combine.variableIds.includes(selectedId)) {
+        appMapFail(
+          "missing-reference",
+          `Combine ${combine.id} selects unused Variable ${selectedId}`,
+        );
+      }
+    }
+    for (const testId of combine.testIds) {
+      if (!map.tests?.[testId]) {
+        appMapFail("missing-reference", `Combine ${combine.id} references missing Test ${testId}`);
+      }
+    }
+  }
+}
+
 function assertConnectionsAndActions(map: AppMap): void {
   for (const connection of Object.values(map.connections)) {
     if (!map.screens[connection.fromScreenId]) {
@@ -428,6 +464,7 @@ export function validateAppMap(value: unknown): AppMap {
 
   assertVariants(input);
   assertGroups(input);
+  assertCombines(input);
   assertConnectionsAndActions(input);
   assertRoutineGraph(input);
   assertFlows(input);

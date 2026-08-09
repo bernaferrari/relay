@@ -50,6 +50,7 @@ function uniqueVariableId(existing: Record<string, unknown>, label: string): str
 export function AppMapStateSetEditor(props: {
   variable?: AppMapVariable;
   onSaved: (id: string) => void;
+  onDelete?: () => void;
   onCancel: () => void;
   onOpenDevice: () => void;
 }) {
@@ -415,17 +416,28 @@ export function AppMapStateSetEditor(props: {
         </div>
       </Show>
 
-      <footer class="flex items-center justify-end gap-2 border-t border-[var(--border-weak-base)] pt-3">
-        <Button variant="ghost" onClick={props.onCancel}>
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          disabled={saving() || !canCreate()}
-          onClick={() => void createSet()}
-        >
-          {saving() ? "Saving…" : props.variable ? "Save modifier" : "Create modifier"}
-        </Button>
+      <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] pt-3">
+        <Show when={props.variable && props.onDelete} fallback={<span />}>
+          <Button
+            variant="ghost"
+            class="text-[var(--icon-critical-base)] hover:text-[var(--icon-critical-base)]"
+            onClick={() => props.onDelete?.()}
+          >
+            <Icon name="trash" size={12} /> Delete modifier
+          </Button>
+        </Show>
+        <div class="flex items-center gap-2">
+          <Button variant="ghost" onClick={props.onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={saving() || !canCreate()}
+            onClick={() => void createSet()}
+          >
+            {saving() ? "Saving…" : props.variable ? "Save modifier" : "Create modifier"}
+          </Button>
+        </div>
       </footer>
     </section>
   );

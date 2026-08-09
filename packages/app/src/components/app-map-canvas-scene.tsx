@@ -315,6 +315,25 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             )}
           </For>
         </defs>
+        <For each={props.combines?.filter((combine) => combine.startsAt) ?? []}>
+          {(combine) => {
+            const start = combine.startsAt!;
+            const x1 = start.position.x + SCREEN_CARD_WIDTH;
+            const y1 = start.position.y + 22;
+            const x2 = combine.position.x;
+            const y2 = combine.position.y + 22;
+            const bend = Math.max(12, (x2 - x1) / 2);
+            return (
+              <path
+                d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
+                class="fill-none stroke-[var(--text-interactive-base)] opacity-55 [stroke-dasharray:3_4]"
+                stroke-width="1.25"
+                stroke-linecap="round"
+                aria-hidden="true"
+              />
+            );
+          }}
+        </For>
         <For each={visibleConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
@@ -523,6 +542,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             id={combine.id}
             name={combine.name}
             position={combine.position}
+            startsAt={combine.startsAt}
             modifiers={combine.modifiers}
             tests={combine.tests}
             cellCount={combine.cellCount}

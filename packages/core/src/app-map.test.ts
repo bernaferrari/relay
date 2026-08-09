@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { TargetProfile } from "@relay/protocol";
+import type { AppMapCombine, AppMapTest, AppMapVariable, TargetProfile } from "@relay/protocol";
 import {
   AppMapDomainError,
   addAppMapScreen,
@@ -13,10 +13,15 @@ import {
   removeAppMapConnection,
   removeAppMapCaseStack,
   removeAppMapFlow,
+  removeAppMapTest,
+  removeAppMapVariable,
   removeAppMapRoutine,
   removeAppMapScreen,
   saveAppMapFlow,
   saveAppMapCaseStack,
+  saveAppMapCombine,
+  saveAppMapTest,
+  saveAppMapVariable,
   saveAppMapRoutine,
   serializeAppMap,
   submitAppMapProposal,
@@ -975,6 +980,65 @@ test("creates and attaches a Case Stack in one attributable revision", () => {
   assert.equal(attached.caseStacks[stack.id]?.name, "Thinking levels");
   assert.equal(attached.connections["open-home"]?.caseStackId, stack.id);
   assert.equal(attached.activity["apply-stack"]?.eventType, "case-stack.attached");
+});
+
+test("a saved Combine preserves its exact value subset and protects dependencies", () => {
+  const input = mapFixture();
+  const variable: AppMapVariable = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language",
+    apply: { kind: "list" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "it", label: "Italiano" },
+      { id: "pt", label: "Português" },
+    ],
+  };
+  const withVariable = saveAppMapVariable(
+    input,
+    variable,
+    context(input, "save-language", input.updatedAt + 1),
+  );
+  const work: AppMapTest = {
+    ...entity("settings-tour", withVariable.updatedAt + 1),
+    name: "Open every Settings row",
+    kind: "tour",
+    rootScreenId: "start",
+  };
+  const withTest = saveAppMapTest(
+    withVariable,
+    work,
+    context(withVariable, "save-tour", work.updatedAt),
+  );
+  const combine: AppMapCombine = {
+    ...entity("language-settings", withTest.updatedAt + 1),
+    name: "Language × Settings",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    selected: { [variable.id]: ["en", "it"] },
+    strategy: "zip",
+  };
+  const saved = saveAppMapCombine(
+    withTest,
+    combine,
+    context(withTest, "save-combine", combine.updatedAt),
+  );
+
+  assert.deepEqual(saved.combines[combine.id]?.selected, { language: ["en", "it"] });
+  expectError("missing-reference", () =>
+    removeAppMapVariable(saved, variable.id, context(saved, "remove-used-variable")),
+  );
+  expectError("missing-reference", () =>
+    removeAppMapTest(saved, work.id, context(saved, "remove-used-test")),
+  );
+  expectError("missing-reference", () =>
+    saveAppMapCombine(
+      withTest,
+      { ...combine, selected: { language: ["missing"] } },
+      context(withTest, "save-bad-combine", combine.updatedAt),
+    ),
+  );
 });
 
 test("updates App Map metadata and stores finite collaborative screen positions", () => {

@@ -77,6 +77,7 @@ export function CanvasCombineCard(props: {
   id: string;
   name: string;
   position: { x: number; y: number };
+  startsAt?: { screenId: string; title: string; position: { x: number; y: number } };
   modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
@@ -144,11 +145,13 @@ export function CanvasCombineCard(props: {
           </p>
         </div>
       </div>
-      <div class="flex h-8 items-center justify-between border-t border-[var(--border-weak-base)] px-3">
-        <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
+      <div class="flex h-8 items-center justify-between gap-2 border-t border-[var(--border-weak-base)] px-3">
+        <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">
+          {props.startsAt ? `Starts at ${props.startsAt.title}` : "Reusable tests"}
+        </span>
+        <span class="shrink-0 text-[10px] font-medium tabular-nums text-[var(--text-base)]">
           {props.cellCount} {props.cellCount === 1 ? "run" : "runs"}
         </span>
-        <span class="text-[10px] font-medium text-[var(--text-base)]">Edit matrix</span>
       </div>
     </button>
   );

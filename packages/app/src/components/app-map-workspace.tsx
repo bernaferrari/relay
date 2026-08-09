@@ -429,7 +429,7 @@ export function AppMapWorkspace(props: {
     if (!map) return [];
     return canvasCombineCards(map, (screenId) => {
       const node = tree().nodes.find((candidate) => candidate.id === screenId);
-      return node ? positionFor(node) : undefined;
+      return node ? { position: positionFor(node), title: titleFor(node) } : undefined;
     });
   });
   const selectedNode = createMemo(

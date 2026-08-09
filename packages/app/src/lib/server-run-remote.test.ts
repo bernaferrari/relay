@@ -5,9 +5,50 @@ import {
   enqueueAppMapFlow,
   enqueueMatrix,
   enqueueRecipe,
+  removeCombineRemote,
+  removeVariableRemote,
   retryJob,
   withLocalePickerNav,
 } from "./server-run-remote";
+
+test("matrix and modifier removal use revision-checked App Map actions", async () => {
+  const calls: Array<{ path: string; init?: RequestInit }> = [];
+  const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    calls.push({ path, init });
+    return { appMap: { revision: 8 } } as T;
+  };
+
+  await removeCombineRemote(request, {
+    appMapId: "map/a",
+    combineId: "language × settings",
+    expectedRevision: 6,
+  });
+  await removeVariableRemote(request, {
+    appMapId: "map/a",
+    variableId: "language/locale",
+    expectedRevision: 7,
+  });
+
+  assert.deepEqual(
+    calls.map(({ path, init }) => ({
+      path,
+      method: init?.method,
+      body: JSON.parse(String(init?.body)),
+    })),
+    [
+      {
+        path: "/app-maps/map%2Fa/combines/language%20%C3%97%20settings/remove",
+        method: "POST",
+        body: { expectedRevision: 6 },
+      },
+      {
+        path: "/app-maps/map%2Fa/variables/language%2Flocale/remove",
+        method: "POST",
+        body: { expectedRevision: 7 },
+      },
+    ],
+  );
+});
 
 test("keeps execution endpoints typed and predictable", async () => {
   const calls: string[] = [];
