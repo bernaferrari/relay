@@ -3,6 +3,7 @@ import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
+import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 
 const CHANNELS: Array<{
   id: SensitiveEvidenceChannel;
@@ -64,9 +65,9 @@ export function SensitiveEvidenceControls() {
         {(channel) => (
           <div class="border-b border-border-weak-base py-3 last:border-b-0">
             <div class="flex items-center justify-between gap-5">
-              <div class="min-w-0">
-                <span class="block text-12-medium text-text-strong">{channel.label}</span>
-                <span class="mt-0.5 block text-12-regular leading-snug text-text-weak">
+              <div class={copyStack}>
+                <span class={`block text-12-medium ${copyTitle}`}>{channel.label}</span>
+                <span class={`block text-12-regular ${copyDescription}`}>
                   {channel.description}
                 </span>
               </div>

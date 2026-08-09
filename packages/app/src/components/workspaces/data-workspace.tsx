@@ -17,6 +17,9 @@ import {
   productPageTitle,
   productPageLead,
   productIconButton,
+  copyDescription,
+  copyStack,
+  copyTitle,
 } from "../../lib/ui";
 
 type DataRow = {
@@ -193,11 +196,9 @@ export function DataWorkspace(props: {
                 )}
                 onClick={() => setSelectedId(row.id)}
               >
-                <span class="min-w-0">
-                  <strong class="block truncate text-[13px]/[1.25] text-text-base">
-                    {row.name}
-                  </strong>
-                  <small class="mt-1 block truncate text-[10px]/[1.25] text-text-weaker">
+                <span class={copyStack}>
+                  <strong class={`${copyTitle} block truncate text-[13px]`}>{row.name}</strong>
+                  <small class={`${copyDescription} block truncate text-[10px] text-text-weaker`}>
                     {draftIds().has(row.id)
                       ? "Not saved yet"
                       : row.scope === "private"

@@ -2,6 +2,7 @@ import { Show, createSignal, onMount } from "solid-js";
 import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { SensitiveEvidenceControls } from "./sensitive-evidence-controls";
 
 export function PrivacySettingsPanel() {
@@ -40,11 +41,11 @@ export function PrivacySettingsPanel() {
   return (
     <section aria-labelledby="redaction-title">
       <div class="flex items-center justify-between gap-5 border-b border-border-weak-base py-3">
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <span id="redaction-title" class="text-12-medium text-text-strong">
+        <div class={copyStack}>
+          <span id="redaction-title" class={`text-12-medium ${copyTitle}`}>
             Redact sensitive evidence
           </span>
-          <span class="max-w-[520px] text-12-regular leading-snug text-text-weak">
+          <span class={`max-w-[520px] text-12-regular ${copyDescription}`}>
             Removes credentials, cookies, clipboard contents, typed secrets, and URL query values
             before Relay exposes or saves new evidence.
           </span>

@@ -6,6 +6,7 @@ import { Icon } from "../icon";
 import { EmptyState } from "../empty-state";
 import { cn } from "../../lib/cn";
 import { humanError } from "../../lib/human-error";
+import { copyDescription, copyStack, copyTitle } from "../../lib/ui";
 import { inputCls, rowDescCls, rowTitleCls } from "./settings-styles";
 
 export function TargetsSettingsPanel() {
@@ -140,11 +141,11 @@ export function TargetsSettingsPanel() {
             {(target) => (
               <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
                 <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <strong class="block truncate text-12-medium text-text-strong">
+                  <div class={copyStack}>
+                    <strong class={`block truncate text-12-medium ${copyTitle}`}>
                       {target.name}
                     </strong>
-                    <span class="mt-0.5 block truncate text-12-regular text-text-weak">
+                    <span class={`block truncate text-12-regular ${copyDescription}`}>
                       {target.browser?.startUrl}
                     </span>
                   </div>

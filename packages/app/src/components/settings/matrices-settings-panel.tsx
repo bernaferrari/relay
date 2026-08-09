@@ -3,6 +3,7 @@ import type { CompatibilityMatrix } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { IconButton } from "@relay/ui/icon-button";
 import { useServer } from "../../context/server";
+import { copyDescription, copyStack, copyTitle } from "../../lib/ui";
 import { Icon } from "../icon";
 import { matrixSummary } from "../matrix-selector-editor";
 import { TestEnvironmentEditor } from "./test-environment-editor";
@@ -124,11 +125,11 @@ export function MatricesSettingsPanel() {
           {(matrix) => (
             <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
               <div class="flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <strong class="block truncate text-12-medium text-text-strong">
+                <div class={copyStack}>
+                  <strong class={`block truncate text-12-medium ${copyTitle}`}>
                     {matrix.name}
                   </strong>
-                  <span class="mt-0.5 block truncate text-11-regular text-text-weak">
+                  <span class={`block truncate text-11-regular ${copyDescription}`}>
                     {matrixSummary(matrix)}
                   </span>
                 </div>

@@ -44,6 +44,13 @@ export const textSecondary = inkBase;
 export const textMuted = inkMuted;
 export const textFaint = inkFaint;
 
+/** Dense two-line labels used by list rows, inspectors, and settings. Keep
+ * their rhythm independent from paragraph leading so title/subtitle pairs
+ * read as one unit. */
+export const copyStack = "flex min-w-0 flex-col gap-px";
+export const copyTitle = "leading-[1.25] text-text-strong";
+export const copyDescription = "leading-[1.35] text-text-weak";
+
 /* ─── Surfaces ─── */
 /** App chrome deep plate */
 export const surfaceDeep = "bg-background-weak text-text-strong";

@@ -12,6 +12,7 @@ import {
   type CombineTestColumn,
 } from "../lib/app-map-combine-presentation";
 import { cn } from "../lib/cn";
+import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 
@@ -310,10 +311,10 @@ export function AppMapCombine(props: {
           <p class="m-0 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-weaker)]">
             Run matrix
           </p>
-          <h2 class="m-0 mt-1 truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
+          <h2 class="m-0 mt-0.5 truncate text-[15px]/[1.25] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
             {headline()}
           </h2>
-          <p class="m-0 mt-1 text-[11.5px]/[1.4] text-[var(--text-weak)]">{subhead()}</p>
+          <p class="m-0 mt-0.5 text-[11.5px]/[1.35] text-[var(--text-weak)]">{subhead()}</p>
         </div>
         <button
           type="button"
@@ -346,14 +347,14 @@ export function AppMapCombine(props: {
           <div class="grid gap-4">
             <section class="grid gap-2" aria-labelledby="matrix-states-title">
               <div class="flex min-h-8 items-center justify-between gap-2">
-                <div>
+                <div class={copyStack}>
                   <h3
                     id="matrix-states-title"
-                    class="m-0 text-[12px] font-semibold text-[var(--text-strong)]"
+                    class={cn(copyTitle, "m-0 text-[12px] font-semibold")}
                   >
                     1. State sets
                   </h3>
-                  <p class="m-0 mt-0.5 text-[10.5px] text-[var(--text-weak)]">
+                  <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                     Relay applies one value from each selected set before testing.
                   </p>
                 </div>
@@ -370,11 +371,11 @@ export function AppMapCombine(props: {
                     class="grid min-h-20 place-items-center rounded-[10px] border border-dashed border-[var(--border-strong-base)] px-4 text-center hover:bg-[var(--surface-base-hover)]"
                     onClick={() => setCreatingSet(true)}
                   >
-                    <span>
-                      <strong class="block text-[12px] text-[var(--text-strong)]">
+                    <span class={cn(copyStack, "items-center")}>
+                      <strong class={cn(copyTitle, "block text-[12px]")}>
                         Add the first state set
                       </strong>
-                      <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
+                      <span class={cn(copyDescription, "block text-[10.5px]")}>
                         Languages, accounts, themes, models, or any list.
                       </span>
                     </span>
@@ -407,11 +408,13 @@ export function AppMapCombine(props: {
                                   <Icon name="check" size={9} />
                                 </Show>
                               </span>
-                              <span class="min-w-0 flex-1">
-                                <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                              <span class={cn(copyStack, "flex-1")}>
+                                <strong
+                                  class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}
+                                >
                                   {variable.name}
                                 </strong>
-                                <span class="block text-[10px] tabular-nums text-[var(--text-weak)]">
+                                <span class={cn(copyDescription, "block text-[10px] tabular-nums")}>
                                   {valuesFor(variable).length} of {variable.options.length} values
                                 </span>
                               </span>
@@ -465,14 +468,11 @@ export function AppMapCombine(props: {
 
             <Show when={selectedVariables().length > 1}>
               <section class="grid gap-2" aria-labelledby="coverage-title">
-                <div>
-                  <h3
-                    id="coverage-title"
-                    class="m-0 text-[12px] font-semibold text-[var(--text-strong)]"
-                  >
+                <div class={copyStack}>
+                  <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
                     2. Build device states
                   </h3>
-                  <p class="m-0 mt-0.5 text-[10.5px] text-[var(--text-weak)]">
+                  <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                     Choose how values from different state sets form device states.
                   </p>
                 </div>
@@ -534,25 +534,25 @@ export function AppMapCombine(props: {
             </Show>
 
             <section class="grid gap-2" aria-labelledby="matrix-tests-title">
-              <div>
-                <h3
-                  id="matrix-tests-title"
-                  class="m-0 text-[12px] font-semibold text-[var(--text-strong)]"
-                >
+              <div class={copyStack}>
+                <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
                   {selectedVariables().length > 1 ? "3" : "2"}. Tests
                 </h3>
-                <p class="m-0 mt-0.5 text-[10.5px] text-[var(--text-weak)]">
+                <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                   Every selected test runs in every device state above.
                 </p>
               </div>
               <Show
                 when={candidates().length}
                 fallback={
-                  <div class="rounded-[9px] bg-[var(--surface-base)] px-3 py-4 text-center">
-                    <strong class="block text-[12px] text-[var(--text-strong)]">
-                      Record a path first
-                    </strong>
-                    <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
+                  <div
+                    class={cn(
+                      copyStack,
+                      "items-center rounded-[9px] bg-[var(--surface-base)] px-3 py-4 text-center",
+                    )}
+                  >
+                    <strong class={cn(copyTitle, "block text-[12px]")}>Record a path first</strong>
+                    <span class={cn(copyDescription, "block text-[10.5px]")}>
                       Paths and screen tours become reusable tests.
                     </span>
                   </div>
@@ -584,11 +584,13 @@ export function AppMapCombine(props: {
                               <Icon name="check" size={9} />
                             </Show>
                           </span>
-                          <span class="min-w-0 flex-1">
-                            <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                          <span class={cn(copyStack, "flex-1")}>
+                            <strong
+                              class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}
+                            >
                               {candidate.name}
                             </strong>
-                            <span class="block text-[10px] text-[var(--text-weak)]">
+                            <span class={cn(copyDescription, "block text-[10px]")}>
                               {candidate.kind === "tour" ? "Visit mapped screens" : "Recorded path"}
                             </span>
                           </span>
@@ -603,14 +605,14 @@ export function AppMapCombine(props: {
             <Show when={selectedVariables().length && selectedTests().length}>
               <section class="grid gap-2" aria-labelledby="matrix-preview-title">
                 <div class="flex items-end justify-between gap-2">
-                  <div>
+                  <div class={copyStack}>
                     <h3
                       id="matrix-preview-title"
-                      class="m-0 text-[12px] font-semibold text-[var(--text-strong)]"
+                      class={cn(copyTitle, "m-0 text-[12px] font-semibold")}
                     >
                       Run plan
                     </h3>
-                    <p class="m-0 mt-0.5 text-[10.5px] text-[var(--text-weak)]">
+                    <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
                       Each row is one prepared device state. Each column is a test.
                     </p>
                   </div>

@@ -4,6 +4,7 @@ import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
+import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 
 const labelClass = "text-12-medium text-text-strong";
 const inputClass =
@@ -167,11 +168,11 @@ export function DeviceSettingsPanel() {
                       <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
                         <div class="flex items-start gap-2.5">
                           <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-warning-base" />
-                          <div class="min-w-0">
-                            <p class="m-0 text-12-medium text-text-strong">
+                          <div class={copyStack}>
+                            <p class={`m-0 text-12-medium ${copyTitle}`}>
                               Apple device access needs attention
                             </p>
-                            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                            <p class={`m-0 text-11-regular ${copyDescription}`}>
                               Open Xcode once and add an Apple account. Relay will use that local
                               permission for this device.
                             </p>
@@ -211,11 +212,9 @@ export function DeviceSettingsPanel() {
                       <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3 shadow-xs-border-base">
                         <div class="flex items-start gap-2.5">
                           <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
-                          <div class="min-w-0">
-                            <p class="m-0 text-12-medium text-text-strong">
-                              Use this Xcode account
-                            </p>
-                            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                          <div class={copyStack}>
+                            <p class={`m-0 text-12-medium ${copyTitle}`}>Use this Xcode account</p>
+                            <p class={`m-0 text-11-regular ${copyDescription}`}>
                               Relay found {suggestion().label} on this Mac.
                             </p>
                           </div>
@@ -252,11 +251,11 @@ export function DeviceSettingsPanel() {
                 <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
                   <div class="flex min-w-0 items-start gap-2.5">
                     <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
-                    <div class="min-w-0">
-                      <p class="m-0 text-12-medium text-text-strong">
+                    <div class={copyStack}>
+                      <p class={`m-0 text-12-medium ${copyTitle}`}>
                         Ready to control Apple devices
                       </p>
-                      <p class="mt-1 mb-0 text-11-regular text-text-weak">
+                      <p class={`m-0 text-11-regular ${copyDescription}`}>
                         Relay will connect automatically when you choose an iPhone or iPad.
                       </p>
                     </div>
@@ -275,11 +274,13 @@ export function DeviceSettingsPanel() {
 
               <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
                 <div class="flex flex-col gap-1.5">
-                  <span class={labelClass}>iOS live preview</span>
-                  <p class="m-0 text-11-regular text-text-weak">
-                    Live preview defaults to a go-ios video/MJPEG stream. Screenshots stay for
-                    evidence. Switch to PNG only if the stream is unavailable.
-                  </p>
+                  <div class={copyStack}>
+                    <span class={`${labelClass} ${copyTitle}`}>iOS live preview</span>
+                    <p class={`m-0 text-11-regular ${copyDescription}`}>
+                      Live preview defaults to a go-ios video/MJPEG stream. Screenshots stay for
+                      evidence. Switch to PNG only if the stream is unavailable.
+                    </p>
+                  </div>
                   <select
                     class={inputClass}
                     value={

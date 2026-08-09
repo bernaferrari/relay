@@ -8,12 +8,7 @@ import {
 } from "../lib/accessibility-overlay-mode";
 import { cn } from "../lib/cn";
 import { seg, segBtn, segBtnOn } from "../lib/ui";
-
-const rowCls =
-  "flex items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-b-0";
-const rowCopyCls = "flex min-w-0 flex-col gap-0.5";
-const rowTitleCls = "text-12-medium text-text-strong";
-const rowDescCls = "text-12-regular leading-snug text-text-weak";
+import { rowCls, rowCopyCls, rowDescCls, rowTitleCls } from "./settings/settings-styles";
 
 export function AppearanceSettingsPanel() {
   const theme = useTheme();

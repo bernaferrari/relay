@@ -13,6 +13,7 @@ import {
 import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 import { describeConnectionPath } from "../lib/connection-action-presentation";
 import { trapFocus } from "../lib/modal";
+import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { Icon } from "./icon";
 import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
 import {
@@ -977,19 +978,21 @@ export function ConnectionInspector(props: {
           </button>
         </div>
       </div>
-      <strong class="mt-1.5 block text-[13px] text-[var(--text-strong)]">
-        {props.sourceTitle} <span class="text-[var(--text-weak)]">→</span> {props.targetTitle}
-      </strong>
-      <p class="m-0 mt-1 text-[11.5px]/[1.5] text-[var(--text-weak)]">
-        {pending()
-          ? "This path has no actions yet. Open the device to record it, or choose another behavior below."
-          : describeConnectionPath({
-              sourceTitle: props.sourceTitle,
-              targetTitle: props.targetTitle,
-              actions: props.actions,
-              mode: props.connection.mode,
-            })}
-      </p>
+      <div class={cn(copyStack, "mt-1")}>
+        <strong class={cn(copyTitle, "block text-[13px]")}>
+          {props.sourceTitle} <span class="text-[var(--text-weak)]">→</span> {props.targetTitle}
+        </strong>
+        <p class={cn(copyDescription, "m-0 text-[11.5px]")}>
+          {pending()
+            ? "This path has no actions yet. Open the device to record it, or choose another behavior below."
+            : describeConnectionPath({
+                sourceTitle: props.sourceTitle,
+                targetTitle: props.targetTitle,
+                actions: props.actions,
+                mode: props.connection.mode,
+              })}
+        </p>
+      </div>
       <Show when={!pending() && (props.actions?.length ?? 0) > 0}>
         <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
           <button
@@ -1001,11 +1004,11 @@ export function ConnectionInspector(props: {
             <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base-hover)] text-[var(--text-base)]">
               <Icon name="command" size={11} />
             </span>
-            <span class="min-w-0 flex-1">
-              <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
+            <span class={cn(copyStack, "flex-1")}>
+              <strong class={cn(copyTitle, "block text-[10.5px] font-medium")}>
                 {actionCount()} action{actionCount() === 1 ? "" : "s"}
               </strong>
-              <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+              <span class={cn(copyDescription, "block truncate text-[9.5px]")}>
                 {props.actions?.[0]?.label}
               </span>
             </span>
