@@ -263,12 +263,12 @@ importers:
 
   packages/platform-web:
     dependencies:
-      '@agent-device/capture-kit':
-        specifier: workspace:*
-        version: link:../capture-kit
       '@agent-device/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@agent-device/kernel':
+        specifier: workspace:*
+        version: link:../kernel
 
   packages/provider-limrun:
     dependencies:
@@ -287,6 +287,9 @@ importers:
 
   packages/provider-webdriver:
     dependencies:
+      '@agent-device/capture-kit':
+        specifier: workspace:*
+        version: link:../capture-kit
       '@agent-device/contracts':
         specifier: workspace:*
         version: link:../contracts
