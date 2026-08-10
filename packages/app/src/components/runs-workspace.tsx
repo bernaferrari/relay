@@ -434,16 +434,9 @@ export function RunsWorkspace(props: {
                 Run history
               </h2>
               <div class="flex items-center gap-2">
-                <Show when={rows().length > 0}>
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={() => setView(view() === "corpus" ? "runs" : "corpus")}
-                  >
-                    <Icon name="scan" size={15} />{" "}
-                    {view() === "corpus" ? "Run history" : "Screenshot crawl"}
-                  </Button>
-                </Show>
+                <Button variant="secondary" size="lg" onClick={() => setView("corpus")}>
+                  <Icon name="scan" size={15} /> Screenshot crawl
+                </Button>
                 <Show when={rows().length > 0}>
                   <Button
                     variant="secondary"
@@ -546,9 +539,11 @@ export function RunsWorkspace(props: {
                         size="lg"
                         icon="wave"
                         title="No runs yet"
-                        description="Run a kept path from the map. Results, screenshots, and play-back show up here. Screenshot crawl unlocks after your first run."
+                        description="Run a kept path from the map, or capture a screen-first review pack across languages and environments."
                         actionLabel="Go to map"
                         onAction={props.onOpenTests}
+                        secondaryLabel="Screenshot crawl"
+                        onSecondary={() => setView("corpus")}
                         class="py-14"
                       />
                     </Show>
