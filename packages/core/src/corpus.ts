@@ -999,6 +999,11 @@ export async function exportCorpusPack(sessionId: string): Promise<{
     const absolute = join(rootDir, relative);
     await mkdir(join(absolute, ".."), { recursive: true });
     await copyFile(screenAssetPath(session.id, screen.id), absolute);
+    const screenshotDigest =
+      screen.snapshotDigest ??
+      createHash("sha256")
+        .update(await readFile(absolute))
+        .digest("hex");
     screen.artifactPath = `pack/${relative}`;
     screens.push({
       id: screen.id,
@@ -1009,6 +1014,7 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       pathKeys: screen.pathKeys,
       ...(screen.title ? { title: screen.title } : {}),
       file: relative,
+      sha256: screenshotDigest,
     });
     const bucket = byCanonicalKey[screen.canonicalKey] ?? {};
     bucket[screen.locale] = relative;
@@ -1016,12 +1022,26 @@ export async function exportCorpusPack(sessionId: string): Promise<{
   }
 
   const manifest: CorpusPackManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId: session.id,
     name: session.name,
     generatedAt: Date.now(),
     locales: [...session.scope.locales],
     rootDir: `pack`,
+    execution: {
+      ...(session.projectId ? { projectId: session.projectId } : {}),
+      ...(session.organizationId ? { organizationId: session.organizationId } : {}),
+      status: session.status,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      targetId: session.targetId,
+      ...(session.targetProfile ? { targetProfile: { ...session.targetProfile } } : {}),
+      strategy: session.scope.strategy,
+      mapLocale: session.scope.mapLocale ?? session.scope.locales[0]!,
+      ...(session.scope.app ? { app: session.scope.app } : {}),
+      completedLocales: [...(session.progress.completedLocales ?? [])],
+      ...(session.mapPlan ? { mapPlan: session.mapPlan } : {}),
+    },
     screens,
     byCanonicalKey,
     analysis,
@@ -1035,9 +1055,11 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       "",
       `Locales: ${session.scope.locales.join(", ")}`,
       `Screens: ${screens.length}`,
+      `Target: ${session.targetProfile?.name ?? session.targetId}`,
+      `Strategy: ${session.scope.strategy} · baseline ${session.scope.mapLocale ?? session.scope.locales[0]}`,
       "",
       "Each PNG path is `<locale>/<path>__<canonicalKey>.png`.",
-      "`manifest.json` groups the same logical screen across languages under `byCanonicalKey`.",
+      "`manifest.json` freezes execution provenance, SHA-256 digests, and groups the same logical screen across languages under `byCanonicalKey`.",
       `Findings: ${analysis.critical} critical · ${analysis.warnings} warnings across ${analysis.affectedScreens} screens.`,
       "`analysis.json` contains deterministic missing-screen, missing-control, unchanged-locale, and possible-untranslated-text findings.",
       "",
@@ -1789,6 +1811,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
           await writeSession(session);
           emitCorpus(session);
         }
+        session = await markCorpusLocaleComplete(session, mapLocale);
 
         for (const locale of otherLocales) {
           if (isCancelled(sessionId)) throw new Error("corpus cancelled");
@@ -1803,6 +1826,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             device,
             plan,
           });
+          session = await markCorpusLocaleComplete(session, locale);
         }
       } else {
         for (const locale of session.scope.locales) {
@@ -1816,6 +1840,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             session = (await readCorpusSession(sessionId))!;
           }
           session = await crawlLocale({ session, locale, serial, device });
+          session = await markCorpusLocaleComplete(session, locale);
         }
       }
 
@@ -1831,6 +1856,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
         phase: "complete",
         screensCaptured: session.screens.length,
         transitionsCaptured: session.transitions.length,
+        completedLocales: [...session.scope.locales],
         message: `Captured ${session.screens.length} screens across ${session.scope.locales.length} locales${planNote}`,
         updatedAt: Date.now(),
       };
@@ -1885,10 +1911,14 @@ export async function startCorpusSession(id: string): Promise<CorpusSession> {
   activeCorpusCrawls.set(id, { cancel: false });
   session.status = "running";
   session.error = undefined;
+  const completedLocales = session.mapPlan
+    ? session.scope.locales.filter((locale) => corpusLocaleIsComplete(session, locale))
+    : [];
   session.progress = {
     phase: "opening",
     screensCaptured: session.screens.length,
     transitionsCaptured: session.transitions.length,
+    completedLocales,
     message: "Starting corpus",
     updatedAt: Date.now(),
   };
@@ -1901,6 +1931,19 @@ export async function startCorpusSession(id: string): Promise<CorpusSession> {
     // errors persisted on the session
   });
   return session;
+}
+
+async function markCorpusLocaleComplete(
+  session: CorpusSession,
+  locale: string,
+): Promise<CorpusSession> {
+  const completed = new Set(session.progress.completedLocales ?? []);
+  completed.add(locale);
+  return await updateProgress(session, {
+    locale,
+    completedLocales: session.scope.locales.filter((value) => completed.has(value)),
+    message: `Captured ${locale}`,
+  });
 }
 
 function corpusLocaleIsComplete(session: CorpusSession, locale: string): boolean {

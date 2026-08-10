@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CorpusScreen, CorpusSession } from "@relay/protocol";
-import { buildCorpusReviewModel } from "./corpus-review-model";
+import {
+  buildCorpusComparison,
+  buildCorpusReviewModel,
+  buildCorpusRunProgress,
+} from "./corpus-review-model";
 
 test("a 7-value by 10-screen crawl reviews as ten complete screen groups", () => {
   const values = ["en", "it", "pt-BR", "de", "fr", "ja", "ar"];
@@ -34,6 +38,50 @@ test("coverage stays partial when a value is absent or an unknown value is dupli
   assert.deepEqual(model.coverage, { shots: 4, logical: 1, complete: 0, partial: 1 });
   assert.equal(model.groups[0]?.coveredValues, 3);
   assert.equal(model.groups[0]?.expectedValues, 3);
+});
+
+test("a 45-value screen comparison stays bounded to baseline and one selected value", () => {
+  const values = Array.from({ length: 45 }, (_, index) => `locale-${index + 1}`);
+  const screens = values.map((locale) => screenFixture(0, locale));
+  const session = sessionFixture(values, screens);
+
+  const comparison = buildCorpusComparison(session, "screen-0", "locale-45");
+
+  assert.equal(comparison?.baseline.locale, "locale-1");
+  assert.equal(comparison?.target?.locale, "locale-45");
+  assert.equal(comparison?.values.length, 44);
+  assert.equal(Object.keys(comparison ?? {}).includes("screens"), false);
+});
+
+test("comparison names missing evidence without substituting another value", () => {
+  const values = ["en", "it", "de"];
+  const session = sessionFixture(values, [screenFixture(0, "en"), screenFixture(0, "it")]);
+
+  const comparison = buildCorpusComparison(session, "screen-0", "de");
+
+  assert.equal(comparison?.selectedValue, "de");
+  assert.equal(comparison?.target, null);
+});
+
+test("a single-value corpus does not invent a comparison", () => {
+  const session = sessionFixture(["en"], [screenFixture(0, "en")]);
+  assert.equal(buildCorpusComparison(session, "screen-0"), null);
+});
+
+test("run progress reports persisted value completion without guessing from screenshots", () => {
+  const values = Array.from({ length: 45 }, (_, index) => `locale-${index + 1}`);
+  const session = sessionFixture(values, [screenFixture(0, "locale-1")]);
+  session.status = "running";
+  session.progress.locale = "locale-13";
+  session.progress.completedLocales = values.slice(0, 12);
+
+  assert.deepEqual(buildCorpusRunProgress(session), {
+    completed: 12,
+    total: 45,
+    percentage: 27,
+    currentValue: "locale-13",
+    currentPosition: 13,
+  });
 });
 
 function screenFixture(index: number, locale: string, suffix = ""): CorpusScreen {

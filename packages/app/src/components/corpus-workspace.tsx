@@ -11,7 +11,11 @@ import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { deviceReadiness } from "../lib/device-readiness";
 import { cn } from "../lib/cn";
-import { buildCorpusReviewModel } from "../lib/corpus-review-model";
+import {
+  buildCorpusComparison,
+  buildCorpusReviewModel,
+  buildCorpusRunProgress,
+} from "../lib/corpus-review-model";
 import { eyebrow, mono } from "../lib/ui";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
@@ -51,6 +55,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
   const [maxDepth, setMaxDepth] = createSignal(3);
   const [localeFilter, setLocaleFilter] = createSignal<string | "all">("all");
   const [compareKey, setCompareKey] = createSignal<string | null>(null);
+  const [compareLocale, setCompareLocale] = createSignal<string | null>(null);
   const [analysis, setAnalysis] = createSignal<CorpusAnalysisReport | null>(null);
   const [setupOpen, setSetupOpen] = createSignal(false);
   const [optionsOpen, setOptionsOpen] = createSignal(false);
@@ -159,16 +164,26 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
   });
   const screenGroups = createMemo(() => reviewModel()?.groups ?? []);
 
-  const compareGroup = createMemo(() => {
+  const comparison = createMemo(() => {
     const session = selected();
-    const key = compareKey();
-    if (!session || !key) return [] as CorpusScreen[];
-    return session.screens
-      .filter((screen) => screen.canonicalKey === key)
-      .sort((left, right) => left.locale.localeCompare(right.locale));
+    return session ? buildCorpusComparison(session, compareKey(), compareLocale()) : null;
   });
 
   const coverageSummary = createMemo(() => reviewModel()?.coverage ?? null);
+  const runProgress = createMemo(() => {
+    const session = selected();
+    return session ? buildCorpusRunProgress(session) : null;
+  });
+
+  function openComparison(canonicalKey: string, locale?: string): void {
+    setCompareKey(canonicalKey);
+    setCompareLocale(locale ?? null);
+  }
+
+  function closeComparison(): void {
+    setCompareKey(null);
+    setCompareLocale(null);
+  }
 
   async function createAndMaybeStart(start: boolean) {
     const targetId = selectedDeviceSerial();
@@ -335,8 +350,8 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                 <div>
                   <h2 class="text-[13px] font-semibold text-text-strong">New crawl</h2>
                   <p class="mt-0.5 text-[11.5px] leading-[1.45] text-text-weak">
-                    Choose values once. Relay maps the first, then repeats the same walk for every
-                    other value.
+                    Choose what changes and how far to explore. Relay maps one value, then repeats
+                    the same path.
                   </p>
                 </div>
                 <label class="grid gap-1">
@@ -348,7 +363,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                   />
                 </label>
                 <label class="grid gap-1">
-                  <span class="text-[11px] font-medium text-text-weak">Switcher profile</span>
+                  <span class="text-[11px] font-medium text-text-weak">What changes?</span>
                   <select
                     class="h-9 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12.5px] text-text-strong outline-none focus-visible:border-border-strong-focus"
                     value={profileId()}
@@ -378,14 +393,14 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                 </label>
                 <div class="grid gap-1.5">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-[11px] font-medium text-text-weak">Values</span>
+                    <span class="text-[11px] font-medium text-text-weak">Values to capture</span>
                     <button
                       type="button"
                       class="text-[10.5px] font-medium text-text-interactive-base hover:underline disabled:text-text-disabled"
                       disabled={scanning() || !selectedDeviceSerial() || !activeProfile()}
                       onClick={() => void scanOptionsOnDevice()}
                     >
-                      {scanning() ? "Scanning…" : "Scan device"}
+                      {scanning() ? "Reading device…" : "Refresh from device"}
                     </button>
                   </div>
                   <button
@@ -471,19 +486,31 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                   </Show>
                 </div>
                 <label class="grid gap-1">
-                  <span class="text-[11px] font-medium text-text-weak">Max depth</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="6"
-                    class="h-9 w-24 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12.5px] text-text-strong outline-none focus-visible:border-border-strong-focus"
+                  <span class="text-[11px] font-medium text-text-weak">
+                    How far should Relay explore?
+                  </span>
+                  <select
+                    class="h-9 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12.5px] text-text-strong outline-none focus-visible:border-border-strong-focus"
                     value={maxDepth()}
-                    onInput={(event) => setMaxDepth(Number(event.currentTarget.value) || 0)}
-                  />
+                    onChange={(event) => setMaxDepth(Number(event.currentTarget.value))}
+                  >
+                    <option value="0">Current screen only</option>
+                    <option value="1">Open pages linked from this screen</option>
+                    <option value="2">Explore 2 levels</option>
+                    <option value="3">Explore 3 levels · recommended</option>
+                    <option value="4">Explore 4 levels</option>
+                    <option value="5">Explore 5 levels</option>
+                    <option value="6">Explore 6 levels</option>
+                  </select>
                 </label>
                 <p class="text-[10.5px] text-text-weaker">
                   Device: {selectedDevice()?.name ?? selectedDeviceSerial() ?? "None selected"}
                 </p>
+                <Show when={crawlBlockedReason()}>
+                  {(reason) => (
+                    <p class="text-[10.5px] leading-[1.4] text-text-danger">{reason()}</p>
+                  )}
+                </Show>
                 <div class="flex flex-wrap gap-2 pt-1">
                   <Button
                     variant="secondary"
@@ -491,7 +518,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                     disabled={creating() || starting() || scanning() || !selectedDeviceSerial()}
                     onClick={() => void createAndMaybeStart(false)}
                   >
-                    Create
+                    Save draft
                   </Button>
                   <Button
                     variant="primary"
@@ -507,15 +534,12 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                   >
                     <Icon name="play" size={13} />
                     {crawlBlockedReason()
-                      ? "Device not ready"
+                      ? "Connect device to start"
                       : starting()
                         ? "Starting…"
                         : "Start crawl"}
                   </Button>
                 </div>
-                <p class="text-[11px] leading-[1.45] text-text-weaker">
-                  Start maps the first value, then switches and captures every selected value.
-                </p>
               </div>
             </section>
           </Show>
@@ -551,7 +575,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                           onClick={() => {
                             setSelectedId(session.id);
                             server.setActiveCorpusSessionId(session.id);
-                            setCompareKey(null);
+                            closeComparison();
                             setLocaleFilter("all");
                           }}
                         >
@@ -610,7 +634,8 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                         {session().name}
                       </h2>
                       <p class="mt-0.5 text-[12px] text-text-weak">
-                        Depth {session().scope.maxDepth} · {corpusValuesLabel(session())} ·{" "}
+                        {explorationLabel(session().scope.maxDepth)} ·{" "}
+                        {corpusValuesLabel(session())} ·{" "}
                         {session().targetProfile?.name ?? session().targetId}
                       </p>
                     </div>
@@ -625,24 +650,25 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                       <div class="flex items-center justify-between gap-3 text-[11.5px]">
                         <span class="font-medium text-text-strong">
                           {session().progress.message ?? session().progress.phase}
+                          <Show when={runProgress()?.currentPosition}>
+                            {(position) => (
+                              <span class="font-normal text-text-weak">
+                                {" "}
+                                · value {position()} of {runProgress()!.total}
+                              </span>
+                            )}
+                          </Show>
                         </span>
                         <span class={cn(mono, "text-text-weaker")}>
-                          {session().progress.screensCaptured} screens ·{" "}
-                          {session().progress.transitionsCaptured} paths
+                          {runProgress()?.completed ?? 0} of {runProgress()?.total ?? 0} values ·{" "}
+                          {session().progress.screensCaptured} screenshots
                         </span>
                       </div>
                       <div class="h-1.5 overflow-hidden rounded-full bg-surface-base-active">
                         <div
                           class="h-full rounded-full bg-text-interactive-base transition-[width] duration-300"
                           style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(
-                                (session().screens.length /
-                                  Math.max(1, session().scope.maxScreens * 0.25)) *
-                                  100,
-                              ),
-                            )}%`,
+                            width: `${Math.min(100, runProgress()?.percentage ?? 0)}%`,
                           }}
                         />
                       </div>
@@ -757,8 +783,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                                 type="button"
                                 class="grid w-full grid-cols-[7px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-raised-base-hover"
                                 onClick={() => {
-                                  setCompareKey(finding.canonicalKey);
-                                  setLocaleFilter(finding.locale);
+                                  openComparison(finding.canonicalKey, finding.locale);
                                 }}
                               >
                                 <span
@@ -795,44 +820,53 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                   )}
                 </Show>
 
-                <Show when={compareGroup().length > 1}>
-                  <section class="grid gap-3">
-                    <div class="flex items-center justify-between gap-2">
-                      <h3 class="text-[12px] font-semibold tracking-[0.04em] text-text-weak uppercase">
-                        Locale compare
-                      </h3>
-                      <Button variant="ghost" size="sm" onClick={() => setCompareKey(null)}>
-                        Clear
-                      </Button>
-                    </div>
-                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      <For each={compareGroup()}>
-                        {(screen) => (
-                          <figure class="overflow-hidden rounded-[12px] border border-border-weak-base bg-surface-raised-stronger-non-alpha">
-                            <figcaption class="flex items-center justify-between gap-2 border-b border-border-weak-base px-3 py-2">
-                              <span class="text-[12px] font-medium text-text-strong">
-                                {screen.locale}
-                              </span>
-                              <span class={cn(mono, "text-[10px] text-text-weaker")}>
-                                d{screen.depth}
-                              </span>
-                            </figcaption>
-                            <div class="grid h-[320px] place-items-center bg-[var(--background-deep)]">
-                              <img
-                                loading="lazy"
-                                src={server.corpusScreenUrl(session().id, screen.id)}
-                                alt={`${screen.locale} ${screen.path.join(" / ") || "root"}`}
-                                class="max-h-full max-w-full object-contain"
-                              />
-                            </div>
-                            <p class="truncate px-3 py-2 text-[11px] text-text-weak">
-                              {screen.path.join(" › ") || screen.title || "Root"}
-                            </p>
-                          </figure>
-                        )}
-                      </For>
-                    </div>
-                  </section>
+                <Show when={comparison()}>
+                  {(compare) => (
+                    <section class="grid gap-3 rounded-[14px] bg-[var(--surface-base)] p-4">
+                      <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="min-w-0">
+                          <h3 class="truncate text-[13px] font-semibold text-text-strong">
+                            Compare {screenTitle(compare().baseline)}
+                          </h3>
+                          <p class="mt-0.5 text-[11.5px] text-text-weak">
+                            Baseline and one value at a time. Choose another value without loading
+                            the whole pack.
+                          </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <select
+                            aria-label="Value to compare with the baseline"
+                            class="h-9 max-w-56 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12px] text-text-strong outline-none focus-visible:ring-1 focus-visible:ring-border-strong-focus"
+                            value={compare().selectedValue ?? ""}
+                            onChange={(event) => setCompareLocale(event.currentTarget.value)}
+                          >
+                            <For each={compare().values}>
+                              {(locale) => <option value={locale}>{locale}</option>}
+                            </For>
+                          </select>
+                          <Button variant="ghost" size="sm" onClick={closeComparison}>
+                            Close
+                          </Button>
+                        </div>
+                      </div>
+                      <div class="grid gap-3 xl:grid-cols-2">
+                        <CorpusEvidenceFigure
+                          label={`${compare().baseline.locale} · baseline`}
+                          screen={compare().baseline}
+                          imageUrl={server.corpusScreenUrl(session().id, compare().baseline.id)}
+                        />
+                        <CorpusEvidenceFigure
+                          label={compare().selectedValue ?? "Comparison"}
+                          screen={compare().target}
+                          imageUrl={
+                            compare().target
+                              ? server.corpusScreenUrl(session().id, compare().target!.id)
+                              : undefined
+                          }
+                        />
+                      </div>
+                    </section>
+                  )}
                 </Show>
 
                 <section class="grid gap-3 pb-4">
@@ -890,7 +924,11 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                                   session={session()}
                                   imageUrl={server.corpusScreenUrl(session().id, screen.id)}
                                   meta={`${screen.locale} · d${screen.depth}`}
-                                  onClick={() => setCompareKey(screen.canonicalKey)}
+                                  onClick={
+                                    session().scope.locales.length > 1
+                                      ? () => openComparison(screen.canonicalKey, screen.locale)
+                                      : undefined
+                                  }
                                 />
                               )}
                             </For>
@@ -909,7 +947,11 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                                 group.representative.id,
                               )}
                               meta={`${group.coveredValues} of ${group.expectedValues} values`}
-                              onClick={() => setCompareKey(group.canonicalKey)}
+                              onClick={
+                                session().scope.locales.length > 1
+                                  ? () => openComparison(group.canonicalKey)
+                                  : undefined
+                              }
                             />
                           )}
                         </For>
@@ -945,18 +987,88 @@ function corpusValuesLabel(session: CorpusSession): string {
   return `${count} values`;
 }
 
+function explorationLabel(depth: number): string {
+  if (depth === 0) return "Current screen";
+  if (depth === 1) return "1 level";
+  return `${depth} levels`;
+}
+
+function screenTitle(screen: CorpusScreen): string {
+  return screen.path.join(" › ") || screen.title || "Root";
+}
+
+function CorpusEvidenceFigure(props: {
+  label: string;
+  screen: CorpusScreen | null;
+  imageUrl?: string;
+}) {
+  return (
+    <figure class="overflow-hidden rounded-[12px] border border-border-weak-base bg-surface-raised-stronger-non-alpha">
+      <figcaption class="flex min-h-10 items-center justify-between gap-2 border-b border-border-weak-base px-3 py-2">
+        <span class="truncate text-[12px] font-medium text-text-strong">{props.label}</span>
+        <Show when={props.screen}>
+          {(screen) => (
+            <span class={cn(mono, "shrink-0 text-[10px] text-text-weaker")}>
+              depth {screen().depth} · {formatCapturedAt(screen().capturedAt)}
+            </span>
+          )}
+        </Show>
+      </figcaption>
+      <Show
+        when={Boolean(props.screen && props.imageUrl)}
+        fallback={
+          <div class="grid h-[360px] place-items-center bg-[var(--background-deep)] px-6 text-center">
+            <div>
+              <Icon name="camera" size={18} class="mx-auto text-text-weaker" />
+              <p class="mt-2 text-[12px] font-medium text-text-strong">Screenshot missing</p>
+              <p class="mt-0.5 text-[11px] text-text-weak">
+                This screen was not captured for {props.label}.
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <>
+          <div class="grid h-[360px] place-items-center bg-[var(--background-deep)]">
+            <img
+              loading="lazy"
+              src={props.imageUrl}
+              alt={`${props.label} ${props.screen!.path.join(" / ") || "root"}`}
+              class="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <p class="truncate px-3 py-2 text-[11px] text-text-weak">{screenTitle(props.screen!)}</p>
+        </>
+      </Show>
+    </figure>
+  );
+}
+
+function formatCapturedAt(capturedAt: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(capturedAt);
+}
+
 function CorpusScreenCard(props: {
   screen: CorpusScreen;
   session: CorpusSession;
   imageUrl: string;
   meta: string;
-  onClick: () => void;
+  onClick?: () => void;
 }) {
-  const title = () => props.screen.path.join(" › ") || props.screen.title || "Root";
+  const title = () => screenTitle(props.screen);
   return (
     <button
       type="button"
-      class="group overflow-hidden rounded-[12px] border border-border-weak-base bg-surface-raised-stronger-non-alpha text-left transition-colors hover:border-border-strong-base"
+      class={cn(
+        "group overflow-hidden rounded-[12px] border border-border-weak-base bg-surface-raised-stronger-non-alpha text-left transition-colors",
+        props.onClick
+          ? "cursor-pointer hover:border-border-strong-base"
+          : "cursor-default disabled:opacity-100",
+      )}
+      disabled={!props.onClick}
       onClick={props.onClick}
     >
       <div class="flex items-center justify-between gap-2 border-b border-border-weak-base px-3 py-2">

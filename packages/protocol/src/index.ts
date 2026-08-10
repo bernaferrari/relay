@@ -855,17 +855,33 @@ export type CorpusProgress = {
   path?: string[];
   screensCaptured: number;
   transitionsCaptured: number;
+  /** Values whose complete mapped screen set has been captured. */
+  completedLocales?: string[];
   message?: string;
   updatedAt: number;
 };
 
 export type CorpusPackManifest = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   sessionId: string;
   name: string;
   generatedAt: number;
   locales: string[];
   rootDir: string;
+  execution: {
+    projectId?: string;
+    organizationId?: string;
+    status: CorpusStatus;
+    createdAt: number;
+    updatedAt: number;
+    targetId: string;
+    targetProfile?: TargetProfile;
+    strategy: CorpusScope["strategy"];
+    mapLocale: string;
+    app?: string;
+    completedLocales: string[];
+    mapPlan?: CorpusMapPlan;
+  };
   screens: Array<{
     id: string;
     locale: string;
@@ -875,6 +891,7 @@ export type CorpusPackManifest = {
     pathKeys: string[];
     title?: string;
     file: string;
+    sha256: string;
   }>;
   /** canonicalKey → locale → relative PNG path for side-by-side compare */
   byCanonicalKey: Record<string, Record<string, string>>;

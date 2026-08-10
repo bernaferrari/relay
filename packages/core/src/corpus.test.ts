@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -8,6 +8,7 @@ import {
   analyzeCorpus,
   buildCorpusCoverage,
   createCorpusSession,
+  exportCorpusPack,
   formatCorpusExport,
   corpusControls,
   listCorpusSessions,
@@ -402,6 +403,48 @@ test("an interrupted or stopped corpus is presented as resumable", async () => {
   await setCorpusStatus(session.id, "stopped");
   const resumed = await setCorpusStatus(session.id, "running");
   assert.equal(resumed.status, "running");
+});
+
+test("corpus pack freezes execution provenance and verifies every screenshot", async () => {
+  const root = await workspace();
+  const screenshot = join(root, "screen.png");
+  await writeFile(screenshot, Buffer.from("frozen evidence bytes"));
+  const session = await createCorpusSession({
+    name: "Auditable pack",
+    targetId: "android-physical",
+    projectId: "mobile",
+    organizationId: "relay",
+    scope: {
+      locales: ["en", "it"],
+      mapLocale: "en",
+      strategy: "map-once-replay",
+      app: "ai.x.GrokApp",
+      maxDepth: 1,
+    },
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: settingsNodes("en"),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+    screenshotPath: screenshot,
+  });
+
+  const exported = await exportCorpusPack(session.id);
+  const onDisk = JSON.parse(
+    await readFile(join(exported.rootDir, "manifest.json"), "utf8"),
+  ) as typeof exported.manifest;
+
+  assert.equal(onDisk.schemaVersion, 2);
+  assert.equal(onDisk.execution.projectId, "mobile");
+  assert.equal(onDisk.execution.organizationId, "relay");
+  assert.equal(onDisk.execution.targetId, "android-physical");
+  assert.equal(onDisk.execution.strategy, "map-once-replay");
+  assert.equal(onDisk.execution.mapLocale, "en");
+  assert.equal(onDisk.execution.app, "ai.x.GrokApp");
+  assert.match(onDisk.screens[0]?.sha256 ?? "", /^[a-f0-9]{64}$/u);
 });
 
 test("normalizeScope defaults to map-once-replay and orders map locale first", async () => {

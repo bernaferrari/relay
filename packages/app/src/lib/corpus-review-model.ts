@@ -20,6 +20,21 @@ export type CorpusReviewModel = {
   coverage: CorpusCoverageSummary;
 };
 
+export type CorpusComparisonModel = {
+  baseline: CorpusScreen;
+  values: string[];
+  selectedValue: string | null;
+  target: CorpusScreen | null;
+};
+
+export type CorpusRunProgressModel = {
+  completed: number;
+  total: number;
+  percentage: number;
+  currentValue: string | null;
+  currentPosition: number | null;
+};
+
 /**
  * Projects a flat screenshot corpus into the screen-first review model used by
  * the desktop UI. A 7-value x 10-screen crawl therefore opens as ten cards,
@@ -68,6 +83,50 @@ export function buildCorpusReviewModel(session: CorpusSession): CorpusReviewMode
       partial: groups.length - complete,
       shots: session.screens.length,
     },
+  };
+}
+
+/** Builds a bounded two-up comparison regardless of corpus size. */
+export function buildCorpusComparison(
+  session: CorpusSession,
+  canonicalKey: string | null,
+  requestedValue?: string | null,
+): CorpusComparisonModel | null {
+  if (!canonicalKey) return null;
+  const screens = session.screens.filter((screen) => screen.canonicalKey === canonicalKey);
+  if (screens.length === 0) return null;
+  const baseline =
+    screens.find((screen) => screen.locale === session.scope.mapLocale) ?? screens[0]!;
+  const values = session.scope.locales.filter((locale) => locale !== baseline.locale);
+  if (values.length === 0) return null;
+  const selectedValue =
+    (requestedValue && values.includes(requestedValue) ? requestedValue : undefined) ??
+    values.find((locale) => screens.some((screen) => screen.locale === locale)) ??
+    values[0] ??
+    null;
+  return {
+    baseline,
+    values,
+    selectedValue,
+    target: screens.find((screen) => screen.locale === selectedValue) ?? null,
+  };
+}
+
+export function buildCorpusRunProgress(session: CorpusSession): CorpusRunProgressModel {
+  const values = session.scope.locales;
+  const completedValues =
+    session.status === "complete"
+      ? values
+      : (session.progress.completedLocales ?? []).filter((locale) => values.includes(locale));
+  const completed = new Set(completedValues).size;
+  const currentValue = session.progress.locale ?? session.currentLocale ?? null;
+  const currentIndex = currentValue ? values.indexOf(currentValue) : -1;
+  return {
+    completed,
+    total: values.length,
+    percentage: values.length > 0 ? Math.round((completed / values.length) * 100) : 0,
+    currentValue,
+    currentPosition: currentIndex >= 0 ? currentIndex + 1 : null,
   };
 }
 
