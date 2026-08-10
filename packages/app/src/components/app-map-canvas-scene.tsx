@@ -12,7 +12,7 @@ import {
 import type { MapTreeNode } from "../lib/app-map-tree";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
-import type { CanvasCombineCardModel } from "../lib/app-map-combine-canvas";
+import type { CanvasCombineCardModel, CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import {
@@ -81,7 +81,7 @@ export type AppMapCanvasSceneProps = {
   onDeleteNote: (note: CanvasNote) => void;
   hereScreenId?: string | null;
   combines?: readonly CanvasCombineCardModel[];
-  onOpenCombine?: (combineId: string) => void;
+  onOpenCombine?: (combineId: string, section: CanvasCombineSection) => void;
 };
 
 const markerClass = (
@@ -546,7 +546,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             modifiers={combine.modifiers}
             tests={combine.tests}
             cellCount={combine.cellCount}
-            onOpen={() => props.onOpenCombine?.(combine.id)}
+            onOpen={(section) => props.onOpenCombine?.(combine.id, section)}
           />
         )}
       </For>

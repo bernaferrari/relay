@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseConnectedAppleHardwareDevices } from "./workspace-devices.js";
+import {
+  parseConnectedAppleHardwareDevices,
+  reconcileAdapterAndroidReachability,
+} from "./workspace-devices.js";
 
 const physicalIpad = {
   connectionProperties: { tunnelState: "connected" },
@@ -59,4 +62,28 @@ test("drops paired Apple hardware whose control tunnel is disconnected", () => {
     ]),
     [],
   );
+});
+
+test("a successful empty ADB sample removes a stale adapter phone", () => {
+  const android = {
+    id: "pixel",
+    serial: "pixel",
+    name: "Pixel",
+    kind: "Physical device",
+    booted: true,
+    platform: "android" as const,
+  };
+  const ipad = {
+    id: "ipad",
+    serial: "ipad",
+    name: "iPad",
+    kind: "Physical device",
+    booted: true,
+    platform: "ios" as const,
+  };
+  assert.deepEqual(reconcileAdapterAndroidReachability([android, ipad], [], true), [ipad]);
+  assert.deepEqual(reconcileAdapterAndroidReachability([android, ipad], [], false), [
+    android,
+    ipad,
+  ]);
 });

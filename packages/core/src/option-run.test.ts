@@ -12,6 +12,7 @@ import {
   expectedRecipeScreenshotCount,
   type OptionRunSet,
 } from "./option-run.js";
+import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
 
 test("state navigation keeps translated fallback labels", () => {
   assert.deepEqual(
@@ -314,6 +315,108 @@ test("In → select → Out → work; Out is back before the body", () => {
   const work = kinds.indexOf("module:checkout");
   assert.ok(profile >= 0 && select > profile && back > select && work > back);
   assert.ok(!kinds.some((step) => /sidebar|app language/i.test(step)));
+});
+
+test("an explicit empty selection never expands to every saved option", async () => {
+  const set: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "com.example" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "it", label: "Italiano" },
+    ],
+  };
+  await assert.rejects(
+    prepareOptionRunMatrix({ sets: [set], selected: { language: [] } }),
+    /needs at least one option/,
+  );
+});
+
+test("run matrix preflight reports the exact device and screenshot expansion", async () => {
+  const base = sandwichMap();
+  const variable = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language" as const,
+    apply: { kind: "appLocale" as const, app: "com.example" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "it", label: "Italiano" },
+    ],
+    restoreId: "en",
+  };
+  const work = {
+    ...entity("settings-tour"),
+    name: "Settings tour",
+    kind: "tour" as const,
+    rootScreenId: "home",
+    screenIds: ["cities"],
+    capture: { mode: "every-screen" as const },
+  };
+  const combine = {
+    ...entity("language-x-settings"),
+    name: "Language × Settings",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    selected: { [variable.id]: ["en", "it"] },
+    strategy: "cartesian" as const,
+  };
+  const map: AppMap = {
+    ...base,
+    connections: {
+      ...base.connections,
+      "open-cities": { ...base.connections["open-cities"]!, label: "Profile" },
+    },
+    variables: { [variable.id]: variable },
+    tests: { [work.id]: work },
+    combines: { [combine.id]: combine },
+  };
+
+  const preflight = await preflightAppMapCombine(map, combine);
+  assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  assert.equal(preflight.worlds, 2);
+  assert.equal(preflight.deviceRuns, 2);
+  assert.equal(preflight.checks, 2);
+  assert.equal(preflight.expectedScreenshots, 2);
+  assert.equal(preflight.modifiers[0]?.selectedCount, 2);
+});
+
+test("run matrix preflight blocks a deliberately empty modifier", async () => {
+  const base = sandwichMap();
+  const variable = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language" as const,
+    apply: { kind: "appLocale" as const, app: "com.example" },
+    options: [{ id: "en", label: "English" }],
+  };
+  const work = {
+    ...entity("settings-tour"),
+    name: "Settings tour",
+    kind: "tour" as const,
+    rootScreenId: "home",
+    screenIds: ["home"],
+  };
+  const combine = {
+    ...entity("language-x-settings"),
+    name: "Language × Settings",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    selected: { [variable.id]: [] },
+  };
+  const preflight = await preflightAppMapCombine(
+    {
+      ...base,
+      variables: { [variable.id]: variable },
+      tests: { [work.id]: work },
+      combines: { [combine.id]: combine },
+    },
+    combine,
+  );
+  assert.equal(preflight.ok, false);
+  assert.ok(preflight.blockers.some((item) => item.code === "empty-selection"));
 });
 
 test("empty Out still runs; language without In does not invent Grok nav", () => {

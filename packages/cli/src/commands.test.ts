@@ -113,6 +113,21 @@ test("matrix authoring vocabulary exposes modifiers, tests, and saved matrices",
     assert.equal(resolved.operationId, "app-map.get", command);
     assert.deepEqual(resolved.input, { appMapId: "grok-android" }, command);
   }
+  assert.deepEqual(resolveCommand(["run-matrix", "preflight", "grok-android", "locale-x-tour"]), {
+    operationId: "app-map.combine.preflight",
+    commandPath: "run-matrix preflight",
+    input: { appMapId: "grok-android", combineId: "locale-x-tour" },
+  });
+  assert.deepEqual(
+    resolveCommand(["run-matrix", "dry-run", "grok-android", "locale-x-tour"], {
+      serial: "pixel-9",
+    }),
+    {
+      operationId: "app-map.combine.preflight",
+      commandPath: "run-matrix dry-run",
+      input: { appMapId: "grok-android", combineId: "locale-x-tour", serial: "pixel-9" },
+    },
+  );
 });
 
 test("session replay is an alias of take replay", () => {

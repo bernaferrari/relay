@@ -42,6 +42,7 @@ import {
   authorizeDevice as authorizeDeviceRequest,
 } from "../lib/server-target-remote";
 import { preferredTargetSerial, targetIsReady } from "../lib/target-presentation";
+import { interimDeviceScan, reconcileDeviceScan } from "../lib/device-inventory";
 import { projectRelayEvent, type EventActivity, type EventRefresh } from "../lib/event-projection";
 import {
   deleteRecipe,
@@ -515,8 +516,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           // Keep non-Android rows from the last completed scan while replacing
           // Android with ADB's current result. A connected phone is usable now;
           // Apple discovery and simulator enumeration continue in parallel.
-          const previousNonAndroid = devices().filter((device) => device.platform !== "android");
-          applyDeviceList([...android, ...previousNonAndroid]);
+          applyDeviceList(interimDeviceScan(devices(), android));
 
           const list = (await fullScan).map((d) => ({
             ...d,
@@ -527,28 +527,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           // ADB phase authoritative for this refresh and replace only the
           // slower platforms. A disconnect is observed by the next fast phase
           // without making a connected phone blink between phases.
-          const fullAndroidBySerial = new Map(
-            list
-              .filter((device) => device.platform === "android")
-              .map((device) => [device.serial, device]),
-          );
-          const enrichedAndroid = android.map((device) => {
-            const details = fullAndroidBySerial.get(device.serial);
-            return details
-              ? {
-                  ...device,
-                  ...details,
-                  // ADB's current sample owns reachability; the full adapter
-                  // contributes stable metadata such as Android version.
-                  booted: device.booted,
-                  connectionState: device.connectionState,
-                }
-              : device;
-          });
-          const stableList = [
-            ...enrichedAndroid,
-            ...list.filter((device) => device.platform !== "android"),
-          ];
+          const stableList = reconcileDeviceScan(devices(), android, list);
           // Device discovery runs from polling, manual refresh, and target
           // changes. Ignore an older reply so a transient stale list cannot
           // make the current device disappear or rebind the wrong target.
@@ -1824,6 +1803,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       removeVariable,
       saveTest,
       saveCombine,
+      preflightCombine,
       removeCombine,
       runRecipeAcrossLocales: runRecipeAcrossLocalesRemote,
       runAppMapConnection: runAppMapConnectionRemote,
@@ -2021,6 +2001,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       removeVariable,
       saveTest,
       saveCombine,
+      preflightCombine,
       removeCombine,
       runRecipeAcrossLocalesRemote,
       runAppMapConnectionRemote,

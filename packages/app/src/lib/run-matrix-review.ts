@@ -19,6 +19,7 @@ export type RunMatrixRow = {
   values: RunMatrixValue[];
   captures: RunMatrixCapture[];
   expectedScreenshots?: number;
+  missingCaptures: number;
 };
 export type RunMatrixReview = {
   rows: RunMatrixRow[];
@@ -27,6 +28,7 @@ export type RunMatrixReview = {
   failed: number;
   active: number;
   complete: number;
+  missingCaptures: number;
 };
 
 function frozenInputs(job: JobInfo): FrozenMatrixInputs | undefined {
@@ -89,6 +91,9 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
     const world =
       typeof data?.world === "string" && data.world.trim() ? data.world : `Run ${rowIndex + 1}`;
     const expected = data?.expectedScreenshots;
+    const terminal = ["ok", "healed", "error", "cancelled"].includes(job.status);
+    const expectedCount =
+      typeof expected === "number" && Number.isFinite(expected) ? Math.max(0, expected) : undefined;
     return {
       job,
       world,
@@ -98,9 +103,11 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
         caption,
         frame: job.frames?.[index],
       })),
-      ...(typeof expected === "number" && Number.isFinite(expected)
-        ? { expectedScreenshots: expected }
-        : {}),
+      missingCaptures:
+        terminal && expectedCount !== undefined
+          ? Math.max(0, expectedCount - (job.frames?.length ?? 0))
+          : 0,
+      ...(expectedCount !== undefined ? { expectedScreenshots: expectedCount } : {}),
     };
   });
   const active = matrixRows.filter((job) =>
@@ -117,7 +124,26 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
     failed,
     active,
     complete: passed + failed,
+    missingCaptures: projected.reduce((total, row) => total + row.missingCaptures, 0),
   };
+}
+
+export function filterRunMatrixRows(
+  review: RunMatrixReview,
+  input: { query?: string; problemsOnly?: boolean },
+): RunMatrixRow[] {
+  const query = input.query?.trim().toLocaleLowerCase() ?? "";
+  return review.rows.filter((row) => {
+    const problem =
+      row.missingCaptures > 0 || row.job.status === "error" || row.job.status === "cancelled";
+    if (input.problemsOnly && !problem) return false;
+    if (!query) return true;
+    return [
+      row.world,
+      ...row.values.flatMap((value) => [value.name, value.value]),
+      ...row.captures.map((capture) => capture.caption),
+    ].some((value) => value.toLocaleLowerCase().includes(query));
+  });
 }
 
 export function stepIndexForMatrixCapture(job: JobInfo, frameIndex: number): number {

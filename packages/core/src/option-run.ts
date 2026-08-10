@@ -167,8 +167,9 @@ function sanitizeId(value: string): string {
 }
 
 function selectedIds(set: OptionRunSet, selected?: Record<string, string[]>): string[] {
-  const override = selected?.[set.id]?.map((id) => id.trim()).filter(Boolean);
-  const ids = override?.length ? override : set.options.map((row) => row.id.trim()).filter(Boolean);
+  const hasOverride = Object.hasOwn(selected ?? {}, set.id);
+  const override = selected?.[set.id]?.map((id) => id.trim()).filter(Boolean) ?? [];
+  const ids = hasOverride ? override : set.options.map((row) => row.id.trim()).filter(Boolean);
   const known = new Set(set.options.map((row) => row.id));
   for (const id of ids) {
     if (!known.has(id)) throw new Error(`variable “${set.name}” has no option ${id}`);

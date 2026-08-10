@@ -14,6 +14,7 @@ import { resolveGoIosBinary } from "./ios-app-launch.js";
 import { readTarget } from "./targets.js";
 import {
   listAdbDevices,
+  probeAdbDevices,
   type AndroidConnectionState,
   type AdbDeviceObservation,
 } from "./adb-devices.js";
@@ -279,12 +280,13 @@ export async function listDevices(): Promise<ListedDevice[]> {
       }, DEVICE_DISCOVERY_TIMEOUT_MS);
     }),
   ]);
-  const [adapterResult, adbDevices, appleHardware, goIosSerials] = await Promise.all([
+  const [adapterResult, adbInventory, appleHardware, goIosSerials] = await Promise.all([
     adapterList,
-    listAdbDevices(),
+    probeAdbDevices(),
     listAppleHardwareDevices(),
     listGoIosDeviceSerials(),
   ]);
+  const adbDevices = adbInventory.devices;
   if (adapterResult.error && adbDevices.length === 0 && appleHardware.devices.length === 0) {
     throw adapterResult.error;
   }
@@ -312,6 +314,8 @@ export async function listDevices(): Promise<ListedDevice[]> {
         };
       }),
   );
+
+  listed = reconcileAdapterAndroidReachability(listed, adbDevices, adbInventory.authoritative);
 
   const connectedAppleDevices = new Map(
     appleHardware.devices.map((device) => [device.serial, device]),
@@ -381,6 +385,20 @@ export async function listDevices(): Promise<ListedDevice[]> {
   }
   publish({ type: "device.list", at: now(), count: merged.length });
   return merged;
+}
+
+/** A successful ADB sample owns Android reachability. Adapter metadata may be
+ * slower or cached, but it must never keep an unplugged phone selectable. */
+export function reconcileAdapterAndroidReachability(
+  adapterDevices: readonly ListedDevice[],
+  adbDevices: readonly AdbDeviceObservation[],
+  authoritative: boolean,
+): ListedDevice[] {
+  if (!authoritative) return [...adapterDevices];
+  const attached = new Set(adbDevices.map((device) => device.serial));
+  return adapterDevices.filter(
+    (device) => device.platform !== "android" || attached.has(device.serial),
+  );
 }
 
 function mergeAppleObservation(

@@ -12,6 +12,12 @@ export type AdbDeviceObservation = {
   connectionState: AndroidConnectionState;
 };
 
+export type AdbDeviceInventory = {
+  devices: AdbDeviceObservation[];
+  /** A successful empty response means Android really is disconnected. */
+  authoritative: boolean;
+};
+
 function readableModel(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return value.replaceAll("_", " ").trim() || undefined;
@@ -50,16 +56,20 @@ export function parseAdbDevices(output: string): AdbDeviceObservation[] {
   return observations;
 }
 
-export async function listAdbDevices(): Promise<AdbDeviceObservation[]> {
+export async function probeAdbDevices(): Promise<AdbDeviceInventory> {
   try {
     const { stdout } = await execFileAsync("adb", ["devices", "-l"], {
       timeout: 4_000,
       maxBuffer: 64 * 1024,
     });
-    return parseAdbDevices(stdout);
+    return { devices: parseAdbDevices(stdout), authoritative: true };
   } catch {
     // iOS-only machines and remote runners may not have ADB. The adapter
     // inventory remains authoritative for every target it can observe.
-    return [];
+    return { devices: [], authoritative: false };
   }
+}
+
+export async function listAdbDevices(): Promise<AdbDeviceObservation[]> {
+  return (await probeAdbDevices()).devices;
 }

@@ -842,6 +842,26 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("work remove", ["appMapId", "testId"]),
   ),
   mapped(
+    "app-map.combine.preflight",
+    path("run-matrix preflight", ["appMapId", "combineId"], undefined, {
+      summary: "Preview expansion, evidence, duration, and blockers without starting",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "combineId", type: "string", description: "Saved run matrix" },
+      ],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Optional connected device to verify" },
+      ],
+      examples: [
+        "relay run-matrix preflight grok-android language-x-settings",
+        'relay run-matrix preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
+      ],
+    }),
+    path("run-matrix dry-run", ["appMapId", "combineId"], undefined, {
+      summary: "Alias of run-matrix preflight",
+    }),
+  ),
+  mapped(
     "app-map.combine.save",
     path("run-matrix save", ["appMapId", "combineId"], undefined, {
       summary: "Save selected state sets × selected tests",

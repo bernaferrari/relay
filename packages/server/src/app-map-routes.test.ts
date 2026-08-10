@@ -33,6 +33,12 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
     ]),
     "connected",
   );
+  assert.equal(
+    explicitTargetAvailability("ipad-1", [
+      { serial: "ipad-1", booted: true, developerServicesAvailable: false },
+    ]),
+    "not-ready",
+  );
 });
 
 test("App Map operations are equivalent for human and agent actors", async () => {

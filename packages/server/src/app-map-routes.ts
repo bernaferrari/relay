@@ -25,6 +25,7 @@ import {
   readDiscoverySession,
   appMapYamlFilename,
   parseAppMapYaml,
+  preflightAppMapCombine,
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
@@ -1024,6 +1025,46 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       },
     );
     json(response, 200, { appMap });
+    return true;
+  }
+
+  const comboPreflight = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId/preflight");
+  if (method === "POST" && comboPreflight) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.combine.preflight">,
+      "appMapId" | "combineId"
+    >;
+    const appMap = await readAppMap(scope.projectId, comboPreflight.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${comboPreflight.appMapId} not found`);
+    const combine = appMap.combines[comboPreflight.combineId!];
+    if (!combine) throw new HttpError(404, `Run matrix ${comboPreflight.combineId} not found`);
+    const preflight = await preflightAppMapCombine(appMap, combine);
+    const serial = body.serial?.trim();
+    if (serial) {
+      const devices = await listDevices().catch(() => []);
+      const device = devices.find((candidate) => candidate.serial === serial);
+      const state = !device
+        ? "missing"
+        : device.connectionState === "offline" ||
+            device.connectionState === "unauthorized" ||
+            device.booted === false ||
+            device.developerMode === "disabled" ||
+            device.developerServicesAvailable === false
+          ? "not-ready"
+          : "connected";
+      preflight.target = { serial, state };
+      if (state !== "connected") {
+        preflight.blockers.push({
+          code: state === "missing" ? "target-missing" : "target-not-ready",
+          message:
+            state === "missing"
+              ? "The selected device is not connected."
+              : "The selected device must be unlocked and ready for control.",
+        });
+        preflight.ok = false;
+      }
+    }
+    json(response, 200, { preflight });
     return true;
   }
 

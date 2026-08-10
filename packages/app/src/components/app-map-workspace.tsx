@@ -101,7 +101,12 @@ import { useAppMapRunFlow } from "../lib/use-app-map-run-flow";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
 import { bindAppMapWorkspaceShellEvents } from "../lib/app-map-workspace-shell-events";
 import { pathDraftClick } from "../lib/app-map-path-draft";
-import { canvasCombineCards } from "../lib/app-map-combine-canvas";
+import {
+  CANVAS_COMBINE_CARD_HEIGHT,
+  CANVAS_COMBINE_CARD_WIDTH,
+  canvasCombineCards,
+  type CanvasCombineSection,
+} from "../lib/app-map-combine-canvas";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import {
   screenshotOrientationEvidence,
@@ -127,7 +132,7 @@ export function AppMapWorkspace(props: {
   onOpenActions: () => void;
   onOpenVariables: () => void;
   onOpenRun?: (id: string) => void;
-  onOpenCombine?: (combineId?: string) => void;
+  onOpenCombine?: (combineId?: string, section?: CanvasCombineSection) => void;
   navigatorOpen?: boolean;
 }) {
   const server = useServer();
@@ -501,7 +506,11 @@ export function AppMapWorkspace(props: {
       tree().nodes,
       canvasState().notes ?? [],
       positionFor,
-      combineCards().map((card) => ({ ...card.position, width: 284, height: 150 })),
+      combineCards().map((card) => ({
+        ...card.position,
+        width: CANVAS_COMBINE_CARD_WIDTH,
+        height: CANVAS_COMBINE_CARD_HEIGHT,
+      })),
     ),
   );
   const minimapNodes = createMemo(() =>
@@ -1547,7 +1556,7 @@ export function AppMapWorkspace(props: {
                   }
                   hereScreenId={hereScreenId()}
                   combines={combineCards()}
-                  onOpenCombine={(combineId) => props.onOpenCombine?.(combineId)}
+                  onOpenCombine={(combineId, section) => props.onOpenCombine?.(combineId, section)}
                 />
               </div>
               <AppMapGroupMenu

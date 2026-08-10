@@ -26,6 +26,7 @@ import type {
   AppMapVariable,
   AppMapTest,
   AppMapCombine,
+  AppMapCombinePreflight,
   CreateConnectionInput,
   CreateScreenInput,
   ConnectionPatch,
@@ -737,6 +738,14 @@ type SpecificOperationMap = {
       combine: AppMapCombine;
     };
     output: { appMap: AppMap };
+  };
+  "app-map.combine.preflight": {
+    input: {
+      appMapId: string;
+      combineId: string;
+      serial?: string;
+    };
+    output: { preflight: AppMapCombinePreflight };
   };
   "app-map.combine.remove": {
     input: {
@@ -1641,6 +1650,17 @@ const appMapRoutineSaveParser = objectParser<OperationInput<"app-map.routine.sav
 );
 
 const appMapOutputParser = objectFieldParser<{ appMap: AppMap }>("App Map response", "appMap");
+const appMapCombinePreflightInputParser = objectParser<OperationInput<"app-map.combine.preflight">>(
+  "Run matrix preflight",
+  (input) => {
+    string(input.appMapId, "Run matrix preflight appMapId");
+    string(input.combineId, "Run matrix preflight combineId");
+    if (input.serial !== undefined) string(input.serial, "Run matrix preflight serial");
+  },
+);
+const appMapCombinePreflightOutputParser = objectFieldParser<
+  OperationOutput<"app-map.combine.preflight">
+>("Run matrix preflight response", "preflight");
 
 const appMapScreenCaptureParser = objectParser<OperationInput<"app-map.screen.capture">>(
   "App Map screen capture",
@@ -2906,6 +2926,17 @@ export const operationDefinitions = [
       input: appMapMutationParser<"app-map.test.remove">("Test removal", undefined, ["testId"]),
       output: appMapOutputParser,
       confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.combine.preflight",
+    "Preview a run matrix without starting it",
+    "POST",
+    "/app-maps/:appMapId/combines/:combineId/preflight",
+    {
+      category: "authoring",
+      input: appMapCombinePreflightInputParser,
+      output: appMapCombinePreflightOutputParser,
     },
   ),
   command(

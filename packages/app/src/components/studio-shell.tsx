@@ -19,6 +19,7 @@ import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
 import { deviceReadiness } from "../lib/device-readiness";
+import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import { trapFocus } from "../lib/modal";
@@ -84,6 +85,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [combineOpen, setCombineOpen] = createSignal(false);
   const [combineFocusId, setCombineFocusId] = createSignal<string>();
+  const [combineFocusSection, setCombineFocusSection] = createSignal<CanvasCombineSection>();
   const [query, setQuery] = createSignal("");
   const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
@@ -349,11 +351,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     setDevicePanelOpen((open) => !open);
   };
-  const toggleRunMatrix = (combineId?: string) => {
+  const toggleRunMatrix = (combineId?: string, section?: CanvasCombineSection) => {
     const requestedId = combineId?.trim() || undefined;
-    if (combineOpen() && (!requestedId || requestedId === combineFocusId())) {
+    if (!section && combineOpen() && (!requestedId || requestedId === combineFocusId())) {
       setCombineOpen(false);
       setCombineFocusId(undefined);
+      setCombineFocusSection(undefined);
       return;
     }
     setSettingsOpen(false);
@@ -361,7 +364,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setNavOpen(false);
     window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
     setCombineFocusId(requestedId);
+    setCombineFocusSection(undefined);
     setCombineOpen(true);
+    if (section) queueMicrotask(() => setCombineFocusSection(section));
   };
   const openDevicePicker = () => {
     if (area() === "tests" && !devicePanelOpen()) {
@@ -997,9 +1002,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   >
                     <AppMapCombine
                       combineId={combineFocusId()}
+                      focusSection={combineFocusSection()}
                       onOpenDevice={() => {
                         setCombineOpen(false);
                         setCombineFocusId(undefined);
+                        setCombineFocusSection(undefined);
                         if (!devicePanelOpen()) {
                           window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
                         }
@@ -1007,6 +1014,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       onClose={() => {
                         setCombineOpen(false);
                         setCombineFocusId(undefined);
+                        setCombineFocusSection(undefined);
                       }}
                     />
                   </Suspense>

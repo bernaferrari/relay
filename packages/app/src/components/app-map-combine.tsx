@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import type {
   AppMapCapturePolicy,
+  AppMapCombinePreflight,
   AppMapTest,
   AppMapVariable,
   CaseExpansionStrategy,
@@ -20,10 +21,12 @@ import {
   type CombineTestColumn,
 } from "../lib/app-map-combine-presentation";
 import { combineWithoutVariable } from "../lib/app-map-combine-edit";
+import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { confirmAction } from "./confirm-dialog";
 import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
+import { AppMapCombinePreflightSummary } from "./app-map-combine-preflight";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 
@@ -92,6 +95,7 @@ export function AppMapCombine(props: {
   onClose: () => void;
   onOpenDevice: () => void;
   combineId?: string;
+  focusSection?: CanvasCombineSection;
 }) {
   const server = useServer();
   const [selectedVariableIds, setSelectedVariableIds] = createSignal<string[]>([]);
@@ -104,6 +108,8 @@ export function AppMapCombine(props: {
   const [editingModifierId, setEditingModifierId] = createSignal<string>();
   const [busy, setBusy] = createSignal(false);
   const [savingOnly, setSavingOnly] = createSignal(false);
+  const [preflight, setPreflight] = createSignal<AppMapCombinePreflight>();
+  let scrollArea: HTMLDivElement | undefined;
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
@@ -160,6 +166,19 @@ export function AppMapCombine(props: {
     return id ? map()?.variables[id] : undefined;
   });
   const modifierEditorOpen = () => creatingSet() || Boolean(editingModifierId());
+
+  createEffect(() => {
+    const focusSection = props.focusSection;
+    if (!focusSection || !scrollArea || modifierEditorOpen()) return;
+    queueMicrotask(() => {
+      const section = scrollArea?.querySelector<HTMLElement>(
+        `[data-matrix-section="${focusSection}"]`,
+      );
+      if (!section || !scrollArea) return;
+      scrollArea.scrollTop = Math.max(0, section.offsetTop - 12);
+      section.focus({ preventScroll: true });
+    });
+  });
 
   function valuesFor(variable: AppMapVariable): string[] {
     const selected = selectedValues()[variable.id];
@@ -271,6 +290,34 @@ export function AppMapCombine(props: {
 
   createEffect(initialize);
   onMount(initialize);
+
+  createEffect(() => {
+    const current = map();
+    const id = props.combineId?.trim();
+    if (!current || !id || !current.combines[id]) {
+      setPreflight();
+      return;
+    }
+    const revision = current.revision;
+    const serial = server.selectedDevice() || undefined;
+    void server
+      .preflightCombine({ appMapId: current.id, combineId: id, serial })
+      .then((result) => {
+        if (map()?.revision === revision && props.combineId?.trim() === id) setPreflight(result);
+      })
+      .catch(() => setPreflight());
+  });
+
+  createEffect(() => {
+    // A server preflight describes the saved matrix revision. Hide it as soon
+    // as the draft changes so an old “Ready” badge can never bless new work.
+    selectedVariableIds();
+    selectedValues();
+    selectedTestKeys();
+    captureModes();
+    strategy();
+    setPreflight();
+  });
 
   function toggleVariable(variable: AppMapVariable) {
     setSelectedVariableIds((current) =>
@@ -527,6 +574,16 @@ export function AppMapCombine(props: {
         });
       } else {
         const persisted = await persistMatrix(currentMap);
+        const checked = await server.preflightCombine({
+          appMapId: currentMap.id,
+          combineId: persisted.id,
+          serial: server.selectedDevice() || undefined,
+        });
+        setPreflight(checked);
+        if (!checked.ok) {
+          toast(checked.blockers[0]?.message ?? "This run matrix is not ready", "warning");
+          return;
+        }
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           combineId: persisted.id,
@@ -567,6 +624,9 @@ export function AppMapCombine(props: {
       </header>
 
       <div
+        ref={(element) => {
+          scrollArea = element;
+        }}
         class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
         onWheel={(event) => event.stopPropagation()}
       >
@@ -594,7 +654,12 @@ export function AppMapCombine(props: {
           }
         >
           <div class="grid gap-4">
-            <section class="grid gap-2" aria-labelledby="matrix-states-title">
+            <section
+              class="grid scroll-mt-3 gap-2 outline-none"
+              aria-labelledby="matrix-states-title"
+              data-matrix-section="modifiers"
+              tabIndex={-1}
+            >
               <div class="flex min-h-8 items-center justify-between gap-2">
                 <div class={copyStack}>
                   <h3
@@ -796,7 +861,12 @@ export function AppMapCombine(props: {
               </section>
             </Show>
 
-            <section class="grid gap-2" aria-labelledby="matrix-tests-title">
+            <section
+              class="grid scroll-mt-3 gap-2 outline-none"
+              aria-labelledby="matrix-tests-title"
+              data-matrix-section="tests"
+              tabIndex={-1}
+            >
               <div class={copyStack}>
                 <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
                   {selectedVariables().length > 1 ? "3" : "2"}. Choose tests
@@ -898,7 +968,12 @@ export function AppMapCombine(props: {
             </section>
 
             <Show when={selectedVariables().length && selectedTests().length}>
-              <section class="grid gap-2" aria-labelledby="matrix-preview-title">
+              <section
+                class="grid scroll-mt-3 gap-2 outline-none"
+                aria-labelledby="matrix-preview-title"
+                data-matrix-section="plan"
+                tabIndex={-1}
+              >
                 <div class="flex items-end justify-between gap-2">
                   <div class={copyStack}>
                     <h3
@@ -985,6 +1060,9 @@ export function AppMapCombine(props: {
               <p class="m-0 flex items-start gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 py-2 text-[10.5px]/[1.4] text-[var(--text-base)]">
                 <Icon name="info" size={12} class="mt-0.5 shrink-0" /> {runIssue()}
               </p>
+            </Show>
+            <Show when={preflight()}>
+              {(value) => <AppMapCombinePreflightSummary preflight={value()} />}
             </Show>
           </div>
         </Show>

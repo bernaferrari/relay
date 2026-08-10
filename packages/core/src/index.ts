@@ -67,5 +67,6 @@ export * from "./visual-rows.js";
 export * from "./authoring-evidence.js";
 export * from "./authoring-sessions.js";
 export * from "./app-map.js";
+export * from "./app-map-combine-preflight.js";
 export * from "./app-map-compiler.js";
 export * from "./app-map-run-history.js";

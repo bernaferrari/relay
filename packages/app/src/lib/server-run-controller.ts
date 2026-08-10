@@ -14,6 +14,7 @@ import {
   removeVariableRemote,
   saveTestRemote,
   saveCombineRemote,
+  preflightCombineRemote,
   removeCombineRemote,
   buildLocaleMatrixInput,
   enqueueMatrix,
@@ -315,6 +316,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
     return saveCombineRemote(deps.request, input);
   }
 
+  async function preflightCombine(input: Parameters<typeof preflightCombineRemote>[1]) {
+    return preflightCombineRemote(deps.request, input);
+  }
+
   async function removeCombine(input: Parameters<typeof removeCombineRemote>[1]) {
     return removeCombineRemote(deps.request, input);
   }
@@ -441,6 +446,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     removeVariable,
     saveTest,
     saveCombine,
+    preflightCombine,
     removeCombine,
     runRecipeAcrossLocales,
     runAppMapConnection,

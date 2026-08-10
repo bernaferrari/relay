@@ -290,6 +290,54 @@ export type AppMapCombine = AppMapEntity & {
   strategy?: CaseExpansionStrategy;
 };
 
+export type AppMapCombinePreflightIssue = {
+  code:
+    | "missing-modifier"
+    | "missing-test"
+    | "empty-selection"
+    | "invalid-modifier"
+    | "invalid-test"
+    | "compile-failed"
+    | "large-run"
+    | "unknown-screenshot-count"
+    | "target-missing"
+    | "target-not-ready";
+  message: string;
+};
+
+/** Exact run-plan projection shared by the canvas, server, and CLI. */
+export type AppMapCombinePreflight = {
+  ok: boolean;
+  appMapId: string;
+  combineId: string;
+  name: string;
+  formula: string;
+  strategy: CaseExpansionStrategy;
+  modifiers: Array<{
+    id: string;
+    name: string;
+    selectedCount: number;
+    availableCount: number;
+  }>;
+  tests: Array<{
+    id: string;
+    name: string;
+    kind: AppMapTest["kind"];
+    expectedScreenshots?: number;
+  }>;
+  worlds: number;
+  checks: number;
+  deviceRuns: number;
+  expectedScreenshots?: number;
+  estimatedDurationMs?: number;
+  blockers: AppMapCombinePreflightIssue[];
+  warnings: AppMapCombinePreflightIssue[];
+  target?: {
+    serial: string;
+    state: "connected" | "not-ready" | "missing";
+  };
+};
+
 export type Routine = AppMapEntity & {
   name: string;
   description?: string;

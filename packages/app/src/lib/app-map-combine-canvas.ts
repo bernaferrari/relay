@@ -12,8 +12,13 @@ export type CanvasCombineCardModel = {
   cellCount: number;
 };
 
+export type CanvasCombineSection = "modifiers" | "tests" | "plan";
+
+export const CANVAS_COMBINE_CARD_WIDTH = 300;
+export const CANVAS_COMBINE_CARD_HEIGHT = 160;
+
 const CARD_GAP = 28;
-const CARD_STACK = 156;
+const CARD_STACK = CANVAS_COMBINE_CARD_HEIGHT + 16;
 const PREVIEW_VALUES = 3;
 
 function selectedOptions<T extends { id: string }>(

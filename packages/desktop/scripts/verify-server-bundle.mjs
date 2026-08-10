@@ -5,6 +5,7 @@ import { bundleServer } from "./bundle-server.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const port = 18_000 + Math.floor(Math.random() * 1_000);
+const SERVER_STARTUP_TIMEOUT_MS = 30_000;
 await bundleServer();
 const child = spawn(
   process.execPath,
@@ -20,7 +21,7 @@ child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
 try {
   let healthy = false;
   let lastProbe = "server did not accept a connection";
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + SERVER_STARTUP_TIMEOUT_MS;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const requestId = crypto.randomUUID();
@@ -51,7 +52,7 @@ try {
   if (!healthy) {
     throw new Error(
       [
-        "bundled server did not become healthy within 15s",
+        `bundled server did not become healthy within ${SERVER_STARTUP_TIMEOUT_MS / 1_000}s`,
         `last probe: ${lastProbe}`,
         `exit: ${child.exitCode ?? "running"}`,
         stdout.trim() ? `stdout:\n${stdout.trim()}` : "",

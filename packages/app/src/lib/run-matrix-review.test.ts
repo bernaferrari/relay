@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { JobInfo } from "./api-types";
-import { isRunMatrixJob, projectRunMatrix, stepIndexForMatrixCapture } from "./run-matrix-review";
+import {
+  filterRunMatrixRows,
+  isRunMatrixJob,
+  projectRunMatrix,
+  stepIndexForMatrixCapture,
+} from "./run-matrix-review";
 
 function job(input: Partial<JobInfo> & Pick<JobInfo, "id" | "status">): JobInfo {
   return {
@@ -59,6 +64,7 @@ test("projects one modifier row by screenshot column without exposing selector h
           kind: "combine",
           world: "Italiano",
           values: { language: "it", language_label: "Italiano" },
+          expectedScreenshots: 2,
         },
       },
     ],
@@ -71,8 +77,39 @@ test("projects one modifier row by screenshot column without exposing selector h
   assert.equal(review.rows[1]?.captures[1]?.frame, undefined);
   assert.equal(review.passed, 1);
   assert.equal(review.failed, 1);
+  assert.equal(review.missingCaptures, 1);
   assert.equal(isRunMatrixJob(first), true);
   assert.equal(stepIndexForMatrixCapture(first, 0), 0);
+});
+
+test("filters problems and modifier values without mutating the review", () => {
+  const review = projectRunMatrix([
+    job({
+      id: "en",
+      status: "ok",
+      matrixCase: { kind: "combine", world: "English", values: { language: "English" } },
+    }),
+    job({
+      id: "it",
+      status: "error",
+      matrixCase: {
+        kind: "combine",
+        world: "Italiano",
+        values: { language: "Italiano" },
+        expectedScreenshots: 2,
+      },
+    }),
+  ]);
+  assert.ok(review);
+  assert.deepEqual(
+    filterRunMatrixRows(review, { query: "ital" }).map((row) => row.job.id),
+    ["it"],
+  );
+  assert.deepEqual(
+    filterRunMatrixRows(review, { problemsOnly: true }).map((row) => row.job.id),
+    ["it"],
+  );
+  assert.equal(review.rows.length, 2);
 });
 
 test("reserves expected screenshot columns before live frames arrive", () => {

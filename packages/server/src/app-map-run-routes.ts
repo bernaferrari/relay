@@ -28,6 +28,8 @@ type ObservedTarget = {
   serial: string;
   connectionState?: string;
   booted?: boolean | null;
+  developerMode?: "enabled" | "disabled";
+  developerServicesAvailable?: boolean;
 };
 
 /**
@@ -48,6 +50,9 @@ export function explicitTargetAvailability(
     return "not-ready";
   }
   if (device.booted === false) return "not-ready";
+  if (device.developerMode === "disabled" || device.developerServicesAvailable === false) {
+    return "not-ready";
+  }
   return "connected";
 }
 

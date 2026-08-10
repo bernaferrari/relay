@@ -1,4 +1,4 @@
-import type { AppMapCapturePolicy, MatrixExpansion } from "@relay/protocol";
+import type { AppMapCapturePolicy, AppMapCombinePreflight, MatrixExpansion } from "@relay/protocol";
 import type { CompatibilityReport, JobInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 
@@ -368,6 +368,18 @@ export async function saveCombineRemote(
       body: JSON.stringify({ expectedRevision: input.expectedRevision, combine: input.combine }),
     },
   );
+}
+
+export async function preflightCombineRemote(
+  request: ServerRequest,
+  input: { appMapId: string; combineId: string; serial?: string },
+): Promise<AppMapCombinePreflight> {
+  const { appMapId, combineId, ...body } = input;
+  const result = await request<{ preflight: AppMapCombinePreflight }>(
+    `/app-maps/${encodeURIComponent(appMapId)}/combines/${encodeURIComponent(combineId)}/preflight`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  return result.preflight;
 }
 
 export async function removeCombineRemote(

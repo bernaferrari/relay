@@ -67,6 +67,15 @@ An App Map is the canonical product model. Same three words in the UI, CLI, and 
 - **Test** — what you run once (a recorded path, or “open every Settings row”).
 - **Run matrix** — a visible grid: every selected device state × every selected test. Run one cell or the full matrix.
 
+Preview the exact expansion before using a device. `dry-run` is an alias of
+`preflight`; both report modifier values, checks, screenshots, estimated time,
+and readiness blockers from the same compiler used by the desktop app.
+
+```bash
+relay run-matrix preflight <map-id> <matrix-id> --input '{"serial":"<device>"}'
+relay run-matrix run <map-id> <matrix-id> --input '{"serial":"<device>"}'
+```
+
 Layout and notes are document concerns. A selected path compiles to target-neutral recipe IR when it
 runs — people never author a second recipe library. The same map has **Screens** and **Results**
 projections for browsing large products without another source of truth.

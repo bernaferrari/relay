@@ -6,6 +6,7 @@ import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
+import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
 import {
   companionLogicalPointToDisplayed,
@@ -81,39 +82,45 @@ export function CanvasCombineCard(props: {
   modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
-  onOpen: () => void;
+  onOpen: (section: CanvasCombineSection) => void;
 }) {
+  const open = (event: MouseEvent, section: CanvasCombineSection) => {
+    event.stopPropagation();
+    props.onOpen(section);
+  };
   return (
-    <button
-      type="button"
+    <article
       data-app-map-combine-id={props.id}
-      class="group/matrix absolute z-[8] w-[284px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+      class="group/matrix absolute z-[8] w-[300px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)]"
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       aria-label={`Edit run matrix ${props.name}`}
       onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.stopPropagation();
-        props.onOpen();
-      }}
     >
-      <header class="flex min-h-11 items-center gap-2 border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-3">
-        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base)] text-[var(--text-base)]">
-          <Icon name="grid" size={12} />
-        </span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-[10px] font-medium text-[var(--text-weak)]">Run matrix</span>
-          <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
-            {props.name}
-          </strong>
-        </span>
-        <Icon
-          name="chevron-right"
-          size={12}
-          class="shrink-0 text-[var(--text-weaker)] transition-colors duration-150 group-hover/matrix:text-[var(--text-strong)]"
-        />
+      <header class="border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)]">
+        <button
+          type="button"
+          class="flex min-h-11 w-full items-center gap-2 px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+          onClick={(event) => open(event, "plan")}
+        >
+          <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base)] text-[var(--text-base)]">
+            <Icon name="grid" size={12} />
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-[10px] font-medium text-[var(--text-weak)]">Run matrix</span>
+            <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
+              {props.name}
+            </strong>
+          </span>
+          <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weaker)]" />
+        </button>
       </header>
-      <div class="grid grid-cols-[1fr_20px_1fr] items-stretch gap-1.5 px-3 py-2.5">
-        <div class="min-w-0">
+      <div class="grid grid-cols-[1fr_20px_1fr] items-stretch gap-1.5 px-2 py-2">
+        <button
+          type="button"
+          class="min-h-16 min-w-0 rounded-[8px] px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          aria-label="Edit matrix modifiers"
+          onClick={(event) => open(event, "modifiers")}
+        >
           <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
             {props.modifiers.length === 1 ? "Modifier" : "Modifiers"}
           </span>
@@ -129,31 +136,40 @@ export function CanvasCombineCard(props: {
               </div>
             )}
           </For>
-        </div>
+        </button>
         <span
           class="grid place-items-center text-[14px] text-[var(--text-weaker)]"
           aria-hidden="true"
         >
           ×
         </span>
-        <div class="min-w-0">
+        <button
+          type="button"
+          class="min-h-16 min-w-0 rounded-[8px] px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          aria-label="Edit matrix tests"
+          onClick={(event) => open(event, "tests")}
+        >
           <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
             {props.tests.length === 1 ? "Test" : "Tests"}
           </span>
           <p class="m-0 mt-1 line-clamp-3 text-[11px]/[1.35] font-medium text-[var(--text-strong)]">
             {props.tests.join(" · ")}
           </p>
-        </div>
+        </button>
       </div>
-      <div class="flex h-8 items-center justify-between gap-2 border-t border-[var(--border-weak-base)] px-3">
+      <button
+        type="button"
+        class="flex min-h-9 w-full items-center justify-between gap-2 border-t border-[var(--border-weak-base)] px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+        onClick={(event) => open(event, "plan")}
+      >
         <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">
           {props.startsAt ? `Starts at ${props.startsAt.title}` : "Reusable tests"}
         </span>
         <span class="shrink-0 text-[10px] font-medium tabular-nums text-[var(--text-base)]">
           {props.cellCount} {props.cellCount === 1 ? "run" : "runs"}
         </span>
-      </div>
-    </button>
+      </button>
+    </article>
   );
 }
 
