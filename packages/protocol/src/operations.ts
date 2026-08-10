@@ -54,6 +54,7 @@ import type {
   TargetWorkerStatus,
 } from "./target-runtime.js";
 import type { RunReview } from "./run-review.js";
+import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 type RedactionPolicyDto = {
   enabled: boolean;
   source: "default" | "workspace" | "environment";
@@ -272,6 +273,10 @@ export type HealthSummary = {
 type SpecificOperationMap = {
   "system.health.get": { input: Record<string, never>; output: HealthSummary };
   "event.stream": { input: Record<string, never>; output: OperationRecord };
+  "activity.export": {
+    input: Record<string, never>;
+    output: { export: ActivityExport };
+  };
   "workspace.privacy.get": {
     input: Record<string, never>;
     output: { policy: RedactionPolicyDto };
@@ -1119,6 +1124,11 @@ const healthParser = objectParser<HealthSummary>("health response", (input) => {
   number(input.at, "health at");
   number(input.uptimeMs, "health uptimeMs");
 });
+
+const activityExportParser: RuntimeParser<{ export: ActivityExport }> = {
+  description: "project activity export",
+  parse: parseActivityExportResponse,
+};
 
 const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices response", (input) => {
   if (!Array.isArray(input.devices)) fail("devices", "must be an array");
@@ -2306,6 +2316,11 @@ export const operationDefinitions = [
   }),
   query("system.doctor.get", "Inspect Relay prerequisites", "/doctor", { category: "system" }),
   query("system.audit.list", "List audit events", "/audit", { category: "system" }),
+  query("activity.export", "Export project activity", "/activity/export", {
+    category: "workspace",
+    input: emptyInputParser,
+    output: activityExportParser,
+  }),
   query("event.stream", "Stream Relay events", "/events", {
     category: "system",
     mode: "stream",

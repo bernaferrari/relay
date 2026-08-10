@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ActorKind } from "@relay/protocol";
+import type { ActivityExport, ActivityRecord } from "@relay/protocol";
 import { KeyedSerialQueue } from "./coordination-store.js";
 import {
   currentOperationContext,
@@ -21,34 +21,7 @@ export type ActivityScope = {
   projectId: string;
 };
 
-export type ActivityRecord = ActivityScope & {
-  schemaVersion: 1;
-  activityId: string;
-  actorId: string;
-  actorKind: ActorKind;
-  operationId: string;
-  requestId: string;
-  timestamp: number;
-  eventType: string;
-  resourceKind: string;
-  resourceId: string;
-  summary: string;
-  correlationId?: string;
-  causationId?: string;
-  sessionId?: string;
-  leaseId?: string;
-  beforeRevision?: number;
-  afterRevision?: number;
-  evidenceIds?: string[];
-  /** Terminal operation outcome. Requested events intentionally omit it. */
-  outcome?: "succeeded" | "failed" | "cancelled";
-  /** Wall-clock duration from request acceptance to response completion. */
-  durationMs?: number;
-  /** HTTP is a transport detail, but its bounded status is safe and useful evidence. */
-  statusCode?: number;
-  /** Stable, non-sensitive recovery key such as HTTP_422 or CLIENT_DISCONNECTED. */
-  errorCode?: string;
-};
+export type { ActivityExport, ActivityRecord } from "@relay/protocol";
 
 export type AppendActivityInput = {
   eventType: string;
@@ -257,6 +230,7 @@ export class ActivityLog {
       throw new TypeError("statusCode must be between 100 and 599");
     }
     const errorCode = optionalText(input.errorCode, "errorCode");
+    const timestamp = nonNegativeInteger(input.timestamp ?? Date.now(), "timestamp")!;
     const record: ActivityRecord = {
       schemaVersion: 1,
       activityId: randomUUID(),
@@ -266,7 +240,7 @@ export class ActivityLog {
       actorKind: operation.actorKind,
       operationId: boundedText(operation.operationId, "operationId"),
       requestId: boundedText(operation.requestId, "requestId"),
-      timestamp: input.timestamp ?? Date.now(),
+      timestamp,
       eventType: boundedText(input.eventType, "eventType"),
       resourceKind: boundedText(input.resourceKind, "resourceKind"),
       resourceId: boundedText(input.resourceId, "resourceId"),
@@ -283,10 +257,6 @@ export class ActivityLog {
       ...(statusCode !== undefined ? { statusCode } : {}),
       ...(errorCode ? { errorCode } : {}),
     };
-    if (!Number.isFinite(record.timestamp) || record.timestamp < 0) {
-      throw new TypeError("timestamp must be a non-negative finite number");
-    }
-
     const path = this.#path(scope);
     await this.#writes.run(path, async () => {
       await mkdir(this.#directory(), { recursive: true, mode: 0o700 });
@@ -299,6 +269,29 @@ export class ActivityLog {
       }
     });
     return structuredClone(record);
+  }
+
+  async #records(scope: ActivityScope): Promise<ActivityRecord[]> {
+    let contents: string;
+    try {
+      contents = await readFile(this.#path(scope), "utf8");
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    }
+    return contents
+      .split("\n")
+      .filter((line) => line.trim())
+      .flatMap((line) => {
+        try {
+          const record = parseActivityRecord(JSON.parse(line) as unknown, scope);
+          return record ? [record] : [];
+        } catch {
+          // A crash may leave a partial trailing write. Valid preceding records
+          // remain readable, and isolated malformed records never poison history.
+          return [];
+        }
+      });
   }
 
   async list(input: ListActivityInput = {}): Promise<ActivityPage> {
@@ -316,29 +309,7 @@ export class ActivityLog {
       ? Math.max(1, Math.min(Math.floor(requested), maxPageSize))
       : defaultPageSize;
 
-    let contents: string;
-    try {
-      contents = await readFile(this.#path(scope), "utf8");
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        return { items: [] };
-      }
-      throw error;
-    }
-    const records = contents
-      .split("\n")
-      .filter((line) => line.trim())
-      .flatMap((line) => {
-        try {
-          const record = parseActivityRecord(JSON.parse(line) as unknown, scope);
-          return record ? [record] : [];
-        } catch {
-          // A crash may leave a partial trailing write. Valid preceding records
-          // remain readable, and isolated malformed records never poison history.
-          return [];
-        }
-      })
-      .reverse();
+    const records = (await this.#records(scope)).reverse();
 
     let start = 0;
     if (input.cursor) {
@@ -356,6 +327,26 @@ export class ActivityLog {
         : {}),
     };
   }
+
+  async export(input: Partial<ActivityScope> = {}): Promise<ActivityExport> {
+    const scope = scopeFrom(input);
+    const records = await this.#records(scope);
+    const ndjson = records.length
+      ? `${records.map((record) => JSON.stringify(record)).join("\n")}\n`
+      : "";
+    return {
+      manifest: {
+        schemaVersion: 1,
+        generatedAt: Date.now(),
+        ...scope,
+        recordCount: records.length,
+        ...(records[0] ? { firstTimestamp: records[0].timestamp } : {}),
+        ...(records.at(-1) ? { lastTimestamp: records.at(-1)!.timestamp } : {}),
+        sha256: createHash("sha256").update(ndjson, "utf8").digest("hex"),
+      },
+      records: structuredClone(records),
+    };
+  }
 }
 
 export const activityLog = new ActivityLog();
@@ -369,4 +360,8 @@ export function appendActivity(
 
 export function listActivity(input: ListActivityInput = {}): Promise<ActivityPage> {
   return activityLog.list(input);
+}
+
+export function exportActivity(input: Partial<ActivityScope> = {}): Promise<ActivityExport> {
+  return activityLog.export(input);
 }

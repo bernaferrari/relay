@@ -1,13 +1,16 @@
 import { Show, createSignal, onMount } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
+import { Icon } from "./icon";
 import { SensitiveEvidenceControls } from "./sensitive-evidence-controls";
 
 export function PrivacySettingsPanel() {
   const server = useServer();
   const [busy, setBusy] = createSignal(false);
+  const [exporting, setExporting] = createSignal(false);
   const [error, setError] = createSignal("");
 
   onMount(() => {
@@ -28,6 +31,30 @@ export function PrivacySettingsPanel() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function downloadActivity(): Promise<void> {
+    if (exporting()) return;
+    setExporting(true);
+    setError("");
+    try {
+      const result = await server.runAction("activity.export", {});
+      const exported = result.export;
+      const date = new Date(exported.manifest.generatedAt).toISOString().slice(0, 10);
+      const project = exported.manifest.projectId.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const url = URL.createObjectURL(
+        new Blob([`${JSON.stringify(exported)}\n`], { type: "application/json" }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `relay-${project}-activity-${date}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not export project activity.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -101,6 +128,26 @@ export function PrivacySettingsPanel() {
         immutable and are not rewritten.
       </p>
       <SensitiveEvidenceControls />
+
+      <div class="mt-4 flex items-center justify-between gap-5 border-t border-border-weak-base py-3">
+        <div class={copyStack}>
+          <span class={`text-12-medium ${copyTitle}`}>Project activity</span>
+          <span class={`max-w-[500px] text-12-regular ${copyDescription}`}>
+            Download every attributed operation in this project with a SHA-256 integrity digest.
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={exporting() || server.health() !== "online"}
+          onClick={() => void downloadActivity()}
+        >
+          <span class={exporting() ? "ui-refresh-spin" : ""}>
+            <Icon name={exporting() ? "refresh" : "download"} size={13} />
+          </span>
+          {exporting() ? "Exporting…" : "Export activity"}
+        </Button>
+      </div>
     </section>
   );
 }

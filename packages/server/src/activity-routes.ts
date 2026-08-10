@@ -3,6 +3,7 @@ import {
   ActivityCursorError,
   appendActivity,
   currentOperationContext,
+  exportActivity,
   listActivity,
   MAX_ACTIVITY_PAGE_SIZE,
 } from "@relay/core";
@@ -154,13 +155,26 @@ export async function handleActivityRoute(input: {
   response: http.ServerResponse;
   scope: RequestContext;
 }): Promise<boolean> {
-  if (input.method !== "GET" || input.pathname !== "/activity") return false;
+  if (
+    input.method !== "GET" ||
+    (input.pathname !== "/activity" && input.pathname !== "/activity/export")
+  ) {
+    return false;
+  }
   try {
     // A completed command response is the public durability boundary. Its
     // terminal activity write is scheduled from the response's `finish`
     // event, so make reads wait for those already-finished commands instead
     // of briefly returning a requested event without its outcome.
     await flushOperationActivity();
+    if (input.pathname === "/activity/export") {
+      const exported = await exportActivity({
+        organizationId: input.scope.organizationId,
+        projectId: input.scope.projectId,
+      });
+      json(input.response, 200, { export: exported });
+      return true;
+    }
     const page = await listActivity({
       organizationId: input.scope.organizationId,
       projectId: input.scope.projectId,

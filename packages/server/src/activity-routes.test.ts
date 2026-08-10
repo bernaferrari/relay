@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ActivityPage } from "@relay/core";
+import type { ActivityExport, ActivityPage } from "@relay/core";
 import { startServer } from "./index.js";
 
 function operationHeaders(input: {
@@ -143,6 +143,23 @@ test("GET /activity lists durable scoped semantic operations without persisting 
       await fetch(`${baseUrl}/activity`, { headers: scopeHeaders("project-b") })
     ).json()) as ActivityPage;
     assert.deepEqual(otherProject.items, []);
+
+    const exportResponse = await fetch(`${baseUrl}/activity/export`, {
+      headers: scopeHeaders("project-a"),
+    });
+    assert.equal(exportResponse.status, 200);
+    const exported = (await exportResponse.json()) as { export: ActivityExport };
+    assert.equal(exported.export.manifest.projectId, "project-a");
+    assert.equal(exported.export.manifest.recordCount, 6);
+    assert.deepEqual(
+      exported.export.records.map((record) => record.requestId),
+      ["request-0", "request-0", "request-1", "request-1", "request-2", "request-2"],
+    );
+    const otherExport = (await (
+      await fetch(`${baseUrl}/activity/export`, { headers: scopeHeaders("project-b") })
+    ).json()) as { export: ActivityExport };
+    assert.equal(otherExport.export.manifest.recordCount, 0);
+    assert.deepEqual(otherExport.export.records, []);
 
     const activityDirectory = join(process.env.RELAY_STATE_DIR, "activity");
     const files = await readdir(activityDirectory);

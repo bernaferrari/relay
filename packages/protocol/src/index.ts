@@ -1,6 +1,7 @@
 export * from "./recipes.js";
 export * from "./operations.js";
 export * from "./coordination.js";
+export * from "./activity.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";

@@ -22,6 +22,11 @@ export const relayMcpExclusions = [
     operationId: "target.stream.open",
     reason: "Live target video is a media stream, not an MCP tool.",
   },
+  {
+    operationId: "activity.export",
+    reason:
+      "Complete project activity can be multi-megabyte; export it as an app or CLI artifact instead of returning it inline to an agent.",
+  },
   ...(
     [
       "recipe.list",

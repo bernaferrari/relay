@@ -88,6 +88,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       behavior: "event-stream",
     }),
   ),
+  mapped(
+    "activity.export",
+    path("activity export", [], undefined, {
+      summary: "Export the complete attributed project activity log",
+      examples: ["relay activity export --json > relay-activity.json"],
+    }),
+  ),
   {
     operationId: "target.stream.open",
     exclusion: "internal",

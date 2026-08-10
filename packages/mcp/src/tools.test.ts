@@ -36,6 +36,7 @@ test("maps every tool-eligible operation exactly once", () => {
     [
       "event.stream",
       "target.stream.open",
+      "activity.export",
       "recipe.list",
       "recipe.get",
       "recipe.create",
@@ -52,6 +53,10 @@ test("maps every tool-eligible operation exactly once", () => {
   assert.ok(relayMcpExclusions.every(({ reason }) => reason.trim().length > 0));
   assert.equal(
     relayMcpTools.some(({ name }) => name === "relay_event_stream"),
+    false,
+  );
+  assert.equal(
+    relayMcpTools.some(({ name }) => name === "relay_activity_export"),
     false,
   );
 });

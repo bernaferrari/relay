@@ -181,6 +181,19 @@ and crash diagnostics. Consent is stored in `.relay/evidence.json`, attributed t
 and frozen into every queued job and evidence manifest. Turning a collector off affects future jobs;
 already-frozen runs remain auditable.
 
+Every consequential project operation also enters a payload-safe, attributed Activity log. Export
+the complete chronological log from **Settings → Privacy & evidence → Project activity**, or use the
+same registered operation from the CLI:
+
+```bash
+relay activity export --json > relay-activity.json
+```
+
+The export is scoped to the configured organization and project. Its manifest records the scope,
+time range, record count, and SHA-256 digest of the canonical NDJSON records so compliance tooling
+can verify that the downloaded history was not silently changed. Full exports are deliberately not
+returned inline through MCP because a mature project can contain megabytes of attributed records.
+
 Evidence redaction is a separate, easy workspace toggle and defaults **off**. Its state is stored in
 `.relay/privacy.json`; `RELAY_REDACTION_MODE=on|off` can lock it for a process. Relay refuses a
 non-loopback server binding while redaction is off. With redaction disabled—or with network bodies

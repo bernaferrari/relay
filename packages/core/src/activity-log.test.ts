@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { appendFile, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -181,6 +182,45 @@ test("Malformed and partial JSONL records do not hide valid Activity history", a
     assert.deepEqual(
       page.items.map((item) => item.summary),
       ["Still readable"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Activity export is chronological, scoped, and self-verifying", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-activity-export-"));
+  try {
+    const log = new ActivityLog({ rootDirectory: root });
+    await log.append(activity("First", 100), operation("project-a", "request-a"));
+    await log.append(activity("Second", 200), operation("project-a", "request-b"));
+    await log.append(activity("Other project", 300), operation("project-b", "request-c"));
+
+    const exported = await log.export({ organizationId: "acme", projectId: "project-a" });
+    assert.deepEqual(
+      exported.records.map((record) => record.summary),
+      ["First", "Second"],
+    );
+    assert.deepEqual(
+      {
+        organizationId: exported.manifest.organizationId,
+        projectId: exported.manifest.projectId,
+        recordCount: exported.manifest.recordCount,
+        firstTimestamp: exported.manifest.firstTimestamp,
+        lastTimestamp: exported.manifest.lastTimestamp,
+      },
+      {
+        organizationId: "acme",
+        projectId: "project-a",
+        recordCount: 2,
+        firstTimestamp: 100,
+        lastTimestamp: 200,
+      },
+    );
+    const ndjson = `${exported.records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+    assert.equal(
+      exported.manifest.sha256,
+      createHash("sha256").update(ndjson, "utf8").digest("hex"),
     );
   } finally {
     await rm(root, { recursive: true, force: true });
