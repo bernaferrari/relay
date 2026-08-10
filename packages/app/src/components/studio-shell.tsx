@@ -393,12 +393,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       if (!devicePanelOpen()) toggleDevicePanel();
       return;
     }
-    if (action.kind === "cancel") {
+    if (action.kind === "view-run") {
       const active = server.activeJob();
-      // The running summary can briefly arrive before the detailed jobs
-      // list. The server's active-cancel operation remains authoritative in
-      // that gap, so Stop must never turn into a no-op.
-      void server.cancelJob(active?.id);
+      window.dispatchEvent(
+        new CustomEvent("relay:open-run-history", { detail: { jobId: active?.id } }),
+      );
       return;
     }
     if (action.kind === "record-path") {
@@ -881,7 +880,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <Show when={graphRunReadiness().visible}>
                 <Show
                   when={
-                    graphPrimaryAction().kind === "run" || graphPrimaryAction().kind === "cancel"
+                    graphPrimaryAction().kind === "run" || graphPrimaryAction().kind === "view-run"
                   }
                 >
                   <Button
@@ -985,7 +984,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               </Show>
               <Show when={combineOpen()}>
                 <aside
-                  class="relative z-[6] flex min-h-0 w-[clamp(380px,36vw,480px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(480px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
+                  class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
                   aria-label="Run matrix"
                   onWheel={(event) => event.stopPropagation()}
                 >

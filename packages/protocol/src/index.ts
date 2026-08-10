@@ -148,6 +148,16 @@ export type JobSummary = {
   outcome?: string;
   review?: import("./run-review.js").RunReview;
   batchId?: string;
+  caseIndex?: number;
+  caseCount?: number;
+  /** Safe, redacted matrix identity used by live progress UIs and CLI output.
+   * Raw/private run inputs remain execution-only. */
+  matrixCase?: {
+    kind: "combine";
+    world: string;
+    values: Record<string, string>;
+    expectedScreenshots?: number;
+  };
   frameCount: number;
   evidenceComplete?: boolean;
   lastLogs?: string[];

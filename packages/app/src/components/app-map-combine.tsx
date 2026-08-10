@@ -23,6 +23,7 @@ import { combineWithoutVariable } from "../lib/app-map-combine-edit";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { confirmAction } from "./confirm-dialog";
+import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 
@@ -162,7 +163,7 @@ export function AppMapCombine(props: {
 
   function valuesFor(variable: AppMapVariable): string[] {
     const selected = selectedValues()[variable.id];
-    return selected?.length ? selected : variable.options.map((option) => option.id);
+    return selected !== undefined ? selected : variable.options.map((option) => option.id);
   }
 
   const projection = createMemo(() =>
@@ -214,6 +215,8 @@ export function AppMapCombine(props: {
   );
   const runIssue = createMemo(() => {
     if (!selectedVariables().length) return "Choose at least one modifier.";
+    const empty = selectedVariables().find((variable) => valuesFor(variable).length === 0);
+    if (empty) return `Choose at least one ${empty.name} value.`;
     if (!selectedTests().length) return "Choose at least one test.";
     if (projection().issue) return projection().issue!;
     if (projection().totalWorlds > MAX_DEVICE_WORLDS) {
@@ -277,22 +280,11 @@ export function AppMapCombine(props: {
     );
     setSelectedValues((current) => ({
       ...current,
-      [variable.id]: current[variable.id]?.length
-        ? current[variable.id]!
-        : variable.options.map((option) => option.id),
+      [variable.id]:
+        current[variable.id] !== undefined
+          ? current[variable.id]!
+          : variable.options.map((option) => option.id),
     }));
-  }
-
-  function toggleValue(variable: AppMapVariable, optionId: string) {
-    setSelectedValues((current) => {
-      const base = current[variable.id]?.length
-        ? current[variable.id]!
-        : variable.options.map((option) => option.id);
-      const next = base.includes(optionId)
-        ? base.filter((id) => id !== optionId)
-        : [...base, optionId];
-      return { ...current, [variable.id]: next };
-    });
   }
 
   function toggleTest(candidate: TestCandidate) {
@@ -718,29 +710,16 @@ export function AppMapCombine(props: {
                             </Show>
                           </div>
                           <Show when={editing()}>
-                            <div class="flex flex-wrap gap-1 border-t border-[var(--border-weak-base)] px-2 py-2">
-                              <For each={variable.options}>
-                                {(option) => {
-                                  const optionSelected = () =>
-                                    valuesFor(variable).includes(option.id);
-                                  return (
-                                    <button
-                                      type="button"
-                                      class={cn(
-                                        "min-h-9 rounded-[7px] px-2 text-[10.5px] transition-colors duration-150",
-                                        optionSelected()
-                                          ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
-                                          : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]",
-                                      )}
-                                      aria-pressed={optionSelected()}
-                                      onClick={() => toggleValue(variable, option.id)}
-                                    >
-                                      {combineValueLabel(option)}
-                                    </button>
-                                  );
-                                }}
-                              </For>
-                            </div>
+                            <AppMapMatrixValuePicker
+                              variable={variable}
+                              selectedIds={valuesFor(variable)}
+                              onChange={(ids) =>
+                                setSelectedValues((current) => ({
+                                  ...current,
+                                  [variable.id]: ids,
+                                }))
+                              }
+                            />
                           </Show>
                         </div>
                       );

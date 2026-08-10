@@ -130,3 +130,90 @@ test("non-map operation results remain untouched", () => {
   const malformedCatalog = { appMaps: [{ id: "map-1" }] };
   assert.equal(summarizeAppMapOperationResult("app-map.list", malformedCatalog), malformedCatalog);
 });
+
+test("App Map summaries expose complete modifier values and matrix evidence policy", () => {
+  const scope = {
+    organizationId: "local",
+    projectId: "project-1",
+    appMapId: "map-1",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const appMap = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "local",
+    projectId: "project-1",
+    name: "Grok",
+    revision: 4,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {
+      language: {
+        ...scope,
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "appLocale", app: "ai.x.grok" },
+        options: [
+          { id: "en-US", label: "English (United States)" },
+          { id: "it-IT", label: "Italiano" },
+        ],
+      },
+    },
+    tests: {
+      settings: {
+        ...scope,
+        id: "settings",
+        name: "Settings sweep",
+        kind: "tour",
+        rootScreenId: "settings",
+        capture: { mode: "every-screen" },
+      },
+    },
+    combines: {
+      matrix: {
+        ...scope,
+        id: "matrix",
+        name: "Locales × settings",
+        variableIds: ["language"],
+        testIds: ["settings"],
+        selected: { language: ["en-US", "it-IT"] },
+        captures: { settings: { mode: "every-screen" } },
+        strategy: "cartesian",
+      },
+    },
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 2,
+  } satisfies AppMap;
+
+  const result = summarizeAppMapOperationResult("app-map.get", { appMap }) as {
+    appMap: {
+      variables: Array<{ options: Array<{ id: string; label?: string }> }>;
+      combines: Array<{
+        formula: string;
+        selectedCounts: Record<string, number>;
+        captures: Record<string, unknown>;
+      }>;
+    };
+  };
+  assert.deepEqual(result.appMap.variables[0]?.options, [
+    { id: "en-US", label: "English (United States)" },
+    { id: "it-IT", label: "Italiano" },
+  ]);
+  assert.equal(result.appMap.combines[0]?.formula, "Language × Settings sweep");
+  assert.deepEqual(result.appMap.combines[0]?.selectedCounts, { language: 2 });
+  assert.deepEqual(result.appMap.combines[0]?.captures, {
+    settings: { mode: "every-screen" },
+  });
+});

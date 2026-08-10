@@ -287,6 +287,9 @@ export function createServerRunController(deps: RunControllerDependencies) {
           : `Running ${data.batch.title} · ${worlds} runs`,
         "success",
       );
+      window.dispatchEvent(
+        new CustomEvent("relay:open-run-history", { detail: { jobId: data.jobs[0]?.id } }),
+      );
       void deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

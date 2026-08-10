@@ -444,6 +444,19 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("flow list", ["appMapId"]),
     path("routine list", ["appMapId"]),
     path("proposal list", ["appMapId"]),
+    path("state-set list", ["appMapId"], undefined, {
+      summary: "List every saved modifier and its available values",
+      examples: ["relay state-set list grok-android"],
+    }),
+    path("variable list", ["appMapId"]),
+    path("test list", ["appMapId"], undefined, {
+      summary: "List reusable tests and their screenshot policies",
+      examples: ["relay test list grok-android"],
+    }),
+    path("run-matrix list", ["appMapId"], undefined, {
+      summary: "List saved modifier × test plans",
+      examples: ["relay run-matrix list grok-android"],
+    }),
   ),
   mapped(
     "app-map.create",

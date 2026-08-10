@@ -43,6 +43,7 @@ import { RunBrowser } from "./run-browser";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunRow, RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
+import { RunMatrixReview } from "./run-matrix-review";
 import { VisualDiffReview } from "./visual-diff-review";
 import {
   filterRunRows,
@@ -54,6 +55,11 @@ import {
   RUN_REPORT_TABS,
   type RunFilterId,
 } from "../lib/runs-workspace-helpers";
+import {
+  isRunMatrixJob,
+  projectRunMatrix,
+  stepIndexForMatrixCapture,
+} from "../lib/run-matrix-review";
 
 const CorpusWorkspace = lazy(() =>
   import("./corpus-workspace").then((module) => ({ default: module.CorpusWorkspace })),
@@ -78,6 +84,7 @@ export function RunsWorkspace(props: {
     | "network"
     | "logs"
     | "performance"
+    | "matrix"
     | "compatibility"
   >("timeline");
   const [runEvidence, setRunEvidence] = createSignal<RunEvidenceQuery | null>(null);
@@ -148,6 +155,12 @@ export function RunsWorkspace(props: {
   const selected = createMemo(() => rows().find((row) => row.id === selectedId()) ?? null, null, {
     equals: runsEqualForSelection,
   });
+  const selectedMatrixRows = createMemo(() => {
+    const job = selected();
+    if (!job?.batchId || !isRunMatrixJob(job)) return [];
+    return rows().filter((row) => row.batchId === job.batchId && isRunMatrixJob(row));
+  });
+  const selectedMatrixReview = createMemo(() => projectRunMatrix(selectedMatrixRows()));
   /**
    * A run report owns its local replay cursor, but when the corresponding
    * test is open it must also advance the shared workbench selection. This
@@ -166,6 +179,16 @@ export function RunsWorkspace(props: {
     }
     if (run?.evidence) void server.loadRunSignals(run.id).then(setRegressionSignals);
     else setRegressionSignals([]);
+  });
+  createEffect(() => {
+    for (const run of selectedMatrixRows()) {
+      const needsDetail =
+        (run.frameCount ?? 0) > (run.frames?.length ?? 0) ||
+        (!run.matrixCase && !run.artifacts?.length);
+      if (!needsDetail || requestedDetails.has(run.id)) continue;
+      requestedDetails.add(run.id);
+      void server.loadRunDetail(run.id).finally(() => requestedDetails.delete(run.id));
+    }
   });
   createEffect(() => {
     const job = selected();
@@ -268,11 +291,36 @@ export function RunsWorkspace(props: {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
     selectRunStep(initialRunReviewStep(job));
-    setTab("timeline");
+    setTab(
+      job.batchId &&
+        rows().filter((row) => row.batchId === job.batchId).length > 1 &&
+        isRunMatrixJob(job)
+        ? "matrix"
+        : "timeline",
+    );
     if (!job.steps?.length && !requestedDetails.has(job.id)) {
       requestedDetails.add(job.id);
       void server.loadRunDetail(job.id).finally(() => requestedDetails.delete(job.id));
     }
+  };
+  const openMatrixCapture = (job: JobInfo, frameIndex: number) => {
+    setSelectedId(job.id);
+    server.setSelectedJobId(job.id);
+    selectRunStep(stepIndexForMatrixCapture(job, frameIndex));
+  };
+  const retryFailedMatrixRuns = async () => {
+    const failed = selectedMatrixRows().filter((job) =>
+      ["error", "cancelled"].includes(job.status),
+    );
+    for (const job of failed) await server.retrySelectedJob(job.id);
+    if (failed.length)
+      toast(`Queued ${failed.length} failed ${failed.length === 1 ? "run" : "runs"}`, "success");
+  };
+  const stopMatrixRuns = async () => {
+    const pending = selectedMatrixRows().filter((job) =>
+      ["queued", "running", "paused"].includes(job.status),
+    );
+    for (const job of pending) await server.cancelJob(job.id);
   };
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
   const selectedRecipe = createMemo(() => {
@@ -305,7 +353,13 @@ export function RunsWorkspace(props: {
     const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
     selectRunStep(initialRunReviewStep(requestedRun));
-    setTab("timeline");
+    setTab(
+      requestedRun.batchId &&
+        rows().filter((row) => row.batchId === requestedRun.batchId).length > 1 &&
+        isRunMatrixJob(requestedRun)
+        ? "matrix"
+        : "timeline",
+    );
   });
   createEffect(() => {
     const job = selected();
@@ -499,22 +553,36 @@ export function RunsWorkspace(props: {
         </Show>
         <Show when={selected()}>
           {(job) => (
-            <RunReplayStage
-              job={job()}
-              items={selectedCanvasItems()}
-              evidence={runEvidenceRunId() === job().id ? runEvidence() : null}
-              selectedIndex={selectedRunStep()}
-              onSelect={selectRunStep}
-              onOpenEvidence={(event) => {
-                setTab(evidenceTabForChannel(event.channel));
-              }}
-              onBack={() => {
-                setSelectedId(null);
-                const url = new URL(window.location.href);
-                url.searchParams.delete("run");
-                window.history.replaceState({}, "", url);
-              }}
-            />
+            <Show
+              when={tab() === "matrix" && selectedMatrixReview()}
+              fallback={
+                <RunReplayStage
+                  job={job()}
+                  items={selectedCanvasItems()}
+                  evidence={runEvidenceRunId() === job().id ? runEvidence() : null}
+                  selectedIndex={selectedRunStep()}
+                  onSelect={selectRunStep}
+                  onOpenEvidence={(event) => {
+                    setTab(evidenceTabForChannel(event.channel));
+                  }}
+                  onBack={() => {
+                    setSelectedId(null);
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("run");
+                    window.history.replaceState({}, "", url);
+                  }}
+                />
+              }
+            >
+              {(review) => (
+                <RunMatrixReview
+                  review={review()}
+                  selectedId={job().id}
+                  onOpen={openMatrixCapture}
+                  onRetryFailed={() => void retryFailedMatrixRuns()}
+                />
+              )}
+            </Show>
           )}
         </Show>
         <Show when={selected()}>
@@ -591,6 +659,29 @@ export function RunsWorkspace(props: {
                       onClick={() => void server.retrySelectedJob(job().id)}
                     >
                       <Icon name="refresh" size={12} /> Retry
+                    </Button>
+                  </Show>
+                  <Show when={["running", "paused"].includes(job().status)}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      class="text-[11px]"
+                      onClick={() =>
+                        void (job().status === "paused"
+                          ? server.resumeJob(job().id)
+                          : server.pauseJob(job().id))
+                      }
+                    >
+                      <Icon name={job().status === "paused" ? "play" : "pause"} size={12} />
+                      {job().status === "paused" ? "Resume" : "Pause"}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      class="text-[11px]"
+                      onClick={() => void server.cancelJob(job().id)}
+                    >
+                      <Icon name="square" size={11} /> Stop
                     </Button>
                   </Show>
                 </div>
@@ -734,6 +825,28 @@ export function RunsWorkspace(props: {
                     ) : null}
                   </button>
                 ))}
+                <Show when={selectedMatrixReview() && selectedMatrixRows().length > 1}>
+                  <button
+                    type="button"
+                    role="tab"
+                    id="run-report-tab-matrix"
+                    aria-controls="run-report-panel"
+                    aria-selected={tab() === "matrix"}
+                    tabindex={tab() === "matrix" ? 0 : -1}
+                    class={cn(
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      tab() === "matrix" &&
+                        "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
+                    )}
+                    onClick={() => setTab("matrix")}
+                    onKeyDown={onReportTabKeyDown}
+                  >
+                    Matrix
+                    <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[10px]/4 tabular-nums text-text-interactive-base">
+                      {selectedMatrixRows().length}
+                    </span>
+                  </button>
+                </Show>
                 <Show when={job().batchId && job().targetProfile}>
                   <button
                     type="button"
@@ -938,6 +1051,34 @@ export function RunsWorkspace(props: {
                 </Show>
                 <Show when={tab() === "performance"}>
                   <RunPerformanceEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
+                </Show>
+                <Show when={tab() === "matrix" && selectedMatrixReview()}>
+                  {(review) => (
+                    <div class="grid gap-3">
+                      <div class="grid gap-1 rounded-xl border border-border-weak-base bg-surface-base px-3 py-3">
+                        <strong class="text-[12px] font-semibold text-text-strong">
+                          {review().complete} of {review().rows.length} runs complete
+                        </strong>
+                        <p class="m-0 text-[10.5px]/[1.45] text-text-weak">
+                          Select any screenshot in the grid to inspect its exact steps and evidence.
+                        </p>
+                      </div>
+                      <Show when={review().failed > 0}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void retryFailedMatrixRuns()}
+                        >
+                          <Icon name="refresh" size={12} /> Retry failed runs
+                        </Button>
+                      </Show>
+                      <Show when={review().active > 0}>
+                        <Button variant="danger" size="sm" onClick={() => void stopMatrixRuns()}>
+                          <Icon name="square" size={11} /> Stop remaining runs
+                        </Button>
+                      </Show>
+                    </div>
+                  )}
                 </Show>
                 <Show when={tab() === "compatibility"}>
                   <CompatibilityReportPanel

@@ -70,7 +70,7 @@ test("a ready map and device produce the run action", () => {
   );
 });
 
-test("an active replay can always be stopped", () => {
+test("an active replay opens its live report instead of making Stop the primary action", () => {
   assert.deepEqual(
     appMapPrimaryAction({
       saveState: "saved",
@@ -80,10 +80,10 @@ test("an active replay can always be stopped", () => {
       running: true,
     }),
     {
-      kind: "cancel",
-      label: "Stop run",
-      reason: "Stop the current run on the device",
-      icon: "x",
+      kind: "view-run",
+      label: "View run",
+      reason: "Open live progress, device video, screenshots, and run controls",
+      icon: "arrow-right",
     },
   );
 });

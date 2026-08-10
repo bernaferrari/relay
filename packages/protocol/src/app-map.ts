@@ -702,6 +702,12 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         name: set.name,
         kind: set.kind,
         optionCount: set.options.length,
+        options: set.options.map((option) => ({
+          id: option.id,
+          ...(option.label ? { label: option.label } : {}),
+          ...(option.text ? { text: option.text } : {}),
+          ...(option.identifier ? { identifier: option.identifier } : {}),
+        })),
         sandwich:
           set.apply.kind === "list"
             ? {
@@ -717,15 +723,26 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         kind: work.kind,
         ...(work.flowId ? { flowId: work.flowId } : {}),
         ...(work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
+        ...(work.capture ? { capture: work.capture } : {}),
         depth: work.depth ?? (work.kind === "tour" ? 0 : undefined),
       })),
       combines: byId(map.combines ?? {}).map((combine) => ({
         id: combine.id,
         name: combine.name,
-        formula: [...combine.variableIds, ...combine.testIds].join(" × "),
+        formula: [
+          ...combine.variableIds.map((id) => map.variables?.[id]?.name ?? id),
+          ...combine.testIds.map((id) => map.tests?.[id]?.name ?? id),
+        ].join(" × "),
         variableIds: combine.variableIds,
         testIds: combine.testIds,
         ...(combine.selected ? { selected: combine.selected } : {}),
+        selectedCounts: Object.fromEntries(
+          combine.variableIds.map((id) => [
+            id,
+            combine.selected?.[id]?.length ?? map.variables?.[id]?.options.length ?? 0,
+          ]),
+        ),
+        ...(combine.captures ? { captures: combine.captures } : {}),
         strategy: combine.strategy ?? (combine.variableIds.length > 1 ? "cartesian" : "zip"),
       })),
       counts: {

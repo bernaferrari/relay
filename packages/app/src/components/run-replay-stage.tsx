@@ -18,6 +18,7 @@ import {
 import { seg, segBtn, segBtnOn } from "../lib/ui";
 import type { RunEvidenceEvent, RunEvidenceQuery } from "@relay/protocol";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
+import { DeviceVideoStream } from "./device-video-stream";
 
 type VideoArtifactData = {
   startedAt?: number;
@@ -43,6 +44,10 @@ export function RunReplayStage(props: {
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
   const [mediaAspect, setMediaAspect] = createSignal<number | null>(null);
+  const [liveVideoReady, setLiveVideoReady] = createSignal(false);
+  const [liveVideoRetrying, setLiveVideoRetrying] = createSignal(false);
+  const [liveVideoAttempt, setLiveVideoAttempt] = createSignal(0);
+  let liveVideoRetryTimer: number | undefined;
   const cycleSpeed = () => setSpeed((current) => (current >= 8 ? 1 : current * 2));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
@@ -69,6 +74,39 @@ export function RunReplayStage(props: {
     }
     return null;
   };
+  const liveVideoSrc = createMemo(() => {
+    if (
+      liveVideoRetrying() ||
+      !["running", "paused"].includes(props.job.status) ||
+      props.job.serial !== server.selectedDevice()
+    ) {
+      return null;
+    }
+    const lease = server.selectedLeaseId();
+    const base = server.serverUrl().replace(/\/+$/, "");
+    if (!props.job.serial || !lease || !base) return null;
+    return `${base}/device/stream?serial=${encodeURIComponent(props.job.serial)}&lease=${encodeURIComponent(lease)}&attempt=${liveVideoAttempt()}`;
+  });
+  const retryLiveVideo = () => {
+    setLiveVideoReady(false);
+    setLiveVideoRetrying(true);
+    window.clearTimeout(liveVideoRetryTimer);
+    liveVideoRetryTimer = window.setTimeout(() => {
+      setLiveVideoAttempt((attempt) => attempt + 1);
+      setLiveVideoRetrying(false);
+    }, 1_200);
+  };
+  createEffect(
+    on(
+      () => props.job.id,
+      () => {
+        setLiveVideoReady(false);
+        setLiveVideoRetrying(false);
+        setLiveVideoAttempt(0);
+      },
+    ),
+  );
+  onCleanup(() => window.clearTimeout(liveVideoRetryTimer));
   const glyphFor = (stepIndex: number) => {
     const kind = snapshot()?.steps[stepIndex]?.kind;
     return kind ? kindIcon(kind) : "bolt";
@@ -398,52 +436,82 @@ export function RunReplayStage(props: {
             }}
           >
             <Show
-              when={hasVideo()}
+              keyed
+              when={liveVideoSrc()}
               fallback={
                 <Show
-                  when={frameSrc()}
+                  when={hasVideo()}
                   fallback={
-                    <div class="grid justify-items-center gap-1.5 px-6 text-center">
-                      <Icon
-                        name={node()?.state === "failed" ? "alert" : "camera"}
-                        size={16}
-                        class="text-text-weaker"
-                      />
-                      <span class="text-[11px]/[1.4] text-text-weaker">
-                        {node()?.observed ? "No screenshot captured here" : "Step not reached"}
-                      </span>
-                    </div>
+                    <Show
+                      when={frameSrc()}
+                      fallback={
+                        <div class="grid justify-items-center gap-1.5 px-6 text-center">
+                          <Icon
+                            name={node()?.state === "failed" ? "alert" : "camera"}
+                            size={16}
+                            class="text-text-weaker"
+                          />
+                          <span class="text-[11px]/[1.4] text-text-weaker">
+                            {node()?.observed ? "No screenshot captured here" : "Step not reached"}
+                          </span>
+                        </div>
+                      }
+                    >
+                      {(src) => (
+                        <img
+                          src={src()}
+                          alt={`Step ${index() + 1} evidence`}
+                          class="h-full w-full object-contain"
+                          onLoad={(event) => {
+                            const image = event.currentTarget;
+                            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                              setMediaAspect(image.naturalWidth / image.naturalHeight);
+                            }
+                          }}
+                        />
+                      )}
+                    </Show>
                   }
                 >
-                  {(src) => (
-                    <img
-                      src={src()}
-                      alt={`Step ${index() + 1} evidence`}
-                      class="h-full w-full object-contain"
-                      onLoad={(event) => {
-                        const image = event.currentTarget;
-                        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-                          setMediaAspect(image.naturalWidth / image.naturalHeight);
-                        }
-                      }}
-                    />
-                  )}
+                  <video
+                    ref={(element) => {
+                      videoRef = element;
+                    }}
+                    src={videoSrc() ?? undefined}
+                    muted
+                    playsinline
+                    preload="metadata"
+                    class="h-full w-full object-contain"
+                    onTimeUpdate={onVideoTimeUpdate}
+                    onLoadedMetadata={onVideoLoadedMetadata}
+                    onEnded={() => setPlaying(false)}
+                  />
                 </Show>
               }
             >
-              <video
-                ref={(element) => {
-                  videoRef = element;
-                }}
-                src={videoSrc() ?? undefined}
-                muted
-                playsinline
-                preload="metadata"
-                class="h-full w-full object-contain"
-                onTimeUpdate={onVideoTimeUpdate}
-                onLoadedMetadata={onVideoLoadedMetadata}
-                onEnded={() => setPlaying(false)}
-              />
+              {(src) => (
+                <div class="absolute inset-0 bg-[var(--background-base)]">
+                  <DeviceVideoStream
+                    src={src}
+                    onReady={() => setLiveVideoReady(true)}
+                    onFailure={retryLiveVideo}
+                    onSize={(width, height) => {
+                      if (width > 0 && height > 0) setMediaAspect(width / height);
+                    }}
+                  />
+                  <Show when={!liveVideoReady()}>
+                    <div class="absolute inset-0 grid place-items-center text-[11px] text-text-weaker">
+                      Connecting to live device…
+                    </div>
+                  </Show>
+                  <Show when={liveVideoReady()}>
+                    <span class="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full bg-black/65 px-2 py-1 text-[9px] font-medium text-white backdrop-blur-sm">
+                      <span class="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+                      Live
+                    </span>
+                  </Show>
+                </div>
+              )}
             </Show>
           </div>
         </div>

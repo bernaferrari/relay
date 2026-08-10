@@ -4,7 +4,7 @@ import type { AppMapRunReadiness } from "./app-map-run-readiness";
 export type AppMapPrimaryAction = {
   kind:
     | "run"
-    | "cancel"
+    | "view-run"
     | "choose-device"
     | "open-device"
     | "record-path"
@@ -13,7 +13,7 @@ export type AppMapPrimaryAction = {
     | "blocked";
   label: string;
   reason: string;
-  icon: "play" | "x" | "smartphone" | "refresh" | "alert" | "circle" | "camera" | "check";
+  icon: "play" | "arrow-right" | "smartphone" | "refresh" | "alert" | "circle" | "camera" | "check";
 };
 
 /**
@@ -47,10 +47,10 @@ export function appMapPrimaryAction(input: {
   }
   if (input.running) {
     return {
-      kind: "cancel",
-      label: "Stop run",
-      reason: "Stop the current run on the device",
-      icon: "x",
+      kind: "view-run",
+      label: "View run",
+      reason: "Open live progress, device video, screenshots, and run controls",
+      icon: "arrow-right",
     };
   }
 

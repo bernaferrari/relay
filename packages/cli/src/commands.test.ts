@@ -107,6 +107,14 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
+test("matrix authoring vocabulary exposes modifiers, tests, and saved matrices", () => {
+  for (const command of ["state-set list", "variable list", "test list", "run-matrix list"]) {
+    const resolved = resolveCommand([...command.split(" "), "grok-android"]);
+    assert.equal(resolved.operationId, "app-map.get", command);
+    assert.deepEqual(resolved.input, { appMapId: "grok-android" }, command);
+  }
+});
+
 test("session replay is an alias of take replay", () => {
   assert.deepEqual(resolveCommand(["session", "replay", "authoring-1"]), {
     operationId: "authoring.take.replay",
