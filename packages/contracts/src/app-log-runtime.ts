@@ -7,13 +7,7 @@ import type {
   HostCommandRunner,
   HostToolchainPreparer,
 } from './platform-runtime-host.ts';
-import type {
-  DeviceRuntimeOwner,
-  ResourceOwnershipFence,
-  RuntimeProviderMode,
-  RuntimeOwnerRef,
-  RuntimePlatformModule,
-} from './platform-runtime.ts';
+import type { ResourceOwnershipFence, RuntimeProviderMode } from './platform-runtime.ts';
 import type { PendingTransferGuard } from './async-lifecycle.ts';
 import {
   type CleanupOutcome,
@@ -182,15 +176,4 @@ export type AppLogRuntimeHost = Readonly<{
     now(): number;
     sleep(milliseconds: number, signal?: AbortSignal): Promise<void>;
   }>;
-}>;
-
-export type AppLogRuntimePlatformModule = RuntimePlatformModule<
-  AppLogRuntimeOperations,
-  AppLogRuntimeHost
->;
-
-/** Cheap provider metadata stays eager; provider mechanics load only after selection. */
-export type AppLogRuntimeProviderModule = Readonly<{
-  owner: Extract<RuntimeOwnerRef, { kind: 'provider-runtime' }>;
-  loadRuntime(host: AppLogRuntimeHost): Promise<DeviceRuntimeOwner<AppLogRuntimeOperations>>;
 }>;
