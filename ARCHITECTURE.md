@@ -144,6 +144,9 @@ silently appearing successful.
 
 ## Development verification
 
-Run `vp check`, `vp test`, and `pnpm run test:packages`. For the exact Electron renderer, run
-`pnpm dev:desktop`, then `pnpm inspect:desktop` in another terminal. The inspector captures the real
-preload/IPC renderer, a screenshot, console and page errors, layout overflow, and accessible controls.
+Run `vp check`, `pnpm run check:architecture`, `vp test`, and `pnpm run test:packages`. The architecture
+check keeps new components below 700 lines and other source modules below 900. Existing larger
+modules have explicit, exact ceilings that may only move downward, so refactors become a permanent
+ratchet instead of temporary cleanup. For the exact Electron renderer, run `pnpm dev:desktop`, then
+`pnpm inspect:desktop` in another terminal. The inspector captures the real preload/IPC renderer, a
+screenshot, console and page errors, layout overflow, and accessible controls.
