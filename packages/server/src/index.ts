@@ -144,6 +144,7 @@ import {
 } from "./ios-video-capture.js";
 import {
   bindOperationRequest,
+  OperationAuthorizationError,
   OperationContractError,
   serverOperationManifest,
 } from "./operations.js";
@@ -485,6 +486,11 @@ async function handleRequest(
         deviceCount: lastKnownDeviceCount,
         sseClients: sse.count(),
         runsDir: scope.localTrusted ? runsRoot() : "runs",
+        access: {
+          role: scope.role,
+          organizationId: scope.organizationId,
+          projectId: scope.projectId,
+        },
       });
       return;
     }
@@ -1643,6 +1649,18 @@ async function handleRequest(
     }
     if (err instanceof IdempotencyConflict) {
       json(res, 409, { error: err.message });
+      return;
+    }
+    if (err instanceof OperationAuthorizationError) {
+      json(res, 403, {
+        error: err.message,
+        code: "PROJECT_ROLE_REQUIRED",
+        operationId: err.operationId,
+        role: err.actualRole,
+        requiredRole: err.requiredRole,
+        recovery:
+          "Use a Relay connection whose configured project role permits this operation, or ask a project administrator to perform it.",
+      });
       return;
     }
     if (err instanceof OperationContractError) {

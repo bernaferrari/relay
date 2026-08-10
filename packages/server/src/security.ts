@@ -1,7 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { redactText } from "@relay/core";
-import type { ActorIdentity, ActorKind } from "@relay/protocol";
+import {
+  projectRoles,
+  type ActorIdentity,
+  type ActorKind,
+  type ProjectRole,
+} from "@relay/protocol";
 
 const MIN_TOKEN_LENGTH = 24;
 
@@ -82,6 +87,7 @@ export type RequestContext = {
   allowedProjects: string[];
   tokenKind: "local" | "service";
   localTrusted: boolean;
+  role: ProjectRole;
 };
 
 const REMOTE_ACTOR_KIND: ActorKind = "agent";
@@ -121,6 +127,14 @@ function header(headers: IncomingHttpHeaders, name: string): string | undefined 
   return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
 }
 
+function configuredProjectRole(): ProjectRole {
+  const value = process.env.RELAY_AUTH_ROLE?.trim() || "admin";
+  if (!projectRoles.includes(value as ProjectRole)) {
+    throw new Error("RELAY_AUTH_ROLE must be viewer, author, runner, or admin");
+  }
+  return value as ProjectRole;
+}
+
 /** Minimal configuration-backed scope model until a product identity provider is selected. */
 export function resolveRequestContext(
   headers: IncomingHttpHeaders,
@@ -134,6 +148,7 @@ export function resolveRequestContext(
       allowedProjects: [header(headers, "x-project-id") ?? "default"],
       tokenKind: "local",
       localTrusted: true,
+      role: "admin",
     };
   }
   const organizationId = process.env.RELAY_AUTH_ORGANIZATION_ID?.trim() || "local";
@@ -153,6 +168,7 @@ export function resolveRequestContext(
     allowedProjects,
     tokenKind: "service",
     localTrusted: false,
+    role: configuredProjectRole(),
   };
 }
 

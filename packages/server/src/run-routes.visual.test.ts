@@ -18,6 +18,7 @@ const scope: RequestContext = {
   allowedProjects: ["project-a"],
   tokenKind: "local",
   localTrusted: true,
+  role: "admin",
 };
 
 const ONE_PIXEL_PNGS = [

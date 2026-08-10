@@ -32,6 +32,7 @@ function scopeFor(projectId: string, localTrusted: boolean): RequestContext {
     allowedProjects: [projectId],
     tokenKind: localTrusted ? "local" : "service",
     localTrusted,
+    role: "admin",
   };
 }
 

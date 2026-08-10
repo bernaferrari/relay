@@ -3,13 +3,15 @@ import {
   operationDefinitions,
   operationManifest,
   parseCommandEnvelope,
+  projectRoleAllows,
   type CommandIdentity,
   type OperationDefinition,
   type OperationId,
   type OperationManifestItem,
+  type ProjectRole,
 } from "@relay/protocol";
 import { enterOperationContext } from "@relay/core";
-import { resolveCommandActor, type RequestContext } from "./security.js";
+import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 
 type RequestOperationContext = {
   definition: OperationDefinition<OperationId>;
@@ -29,6 +31,19 @@ export class OperationContractError extends Error {
   ) {
     super(`${operationId} ${phase}: ${message}`);
     this.name = "OperationContractError";
+  }
+}
+
+export class OperationAuthorizationError extends Error {
+  constructor(
+    readonly operationId: OperationId,
+    readonly actualRole: ProjectRole,
+    readonly requiredRole: ProjectRole,
+  ) {
+    super(
+      `${operationId} requires the ${requiredRole} role; this connection has the ${actualRole} role`,
+    );
+    this.name = "OperationAuthorizationError";
   }
 }
 
@@ -93,6 +108,18 @@ export function bindOperationRequest(
 ): OperationHandlerRegistration | null {
   const registration = findOperationHandler(method, pathname);
   if (!registration) return null;
+  if (!projectRoleAllows(scope.role, registration.definition.minimumRole)) {
+    recordAudit(scope, {
+      action: "operation.authorize",
+      resource: registration.id,
+      result: "deny",
+    });
+    throw new OperationAuthorizationError(
+      registration.id,
+      scope.role,
+      registration.definition.minimumRole,
+    );
+  }
   // Media and SSE fetches are not command envelopes. Identity for live video is
   // installed by the stream route from the target lease.
   if (registration.definition.mode === "stream") return null;

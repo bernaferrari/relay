@@ -4,6 +4,7 @@ import {
   operationDefinition,
   operationDefinitions,
   operationManifest,
+  projectRoleAllows,
   validateOperationDefinitions,
   type OperationDefinition,
   type OperationInput,
@@ -15,6 +16,32 @@ test("operation descriptors have unique IDs, transports, and complete safety met
     new Set(operationDefinitions.map((item) => item.id)).size,
     operationDefinitions.length,
   );
+});
+
+test("project roles form one explicit least-privilege hierarchy", () => {
+  assert.equal(projectRoleAllows("viewer", "viewer"), true);
+  assert.equal(projectRoleAllows("viewer", "author"), false);
+  assert.equal(projectRoleAllows("author", "viewer"), true);
+  assert.equal(projectRoleAllows("author", "runner"), false);
+  assert.equal(projectRoleAllows("runner", "author"), true);
+  assert.equal(projectRoleAllows("runner", "admin"), false);
+  assert.equal(projectRoleAllows("admin", "viewer"), true);
+  assert.equal(projectRoleAllows("admin", "admin"), true);
+});
+
+test("operation roles keep viewing, authoring, execution, and administration distinct", () => {
+  assert.equal(operationDefinition("system.health.get").minimumRole, "viewer");
+  assert.equal(operationDefinition("app-map.update").minimumRole, "author");
+  assert.equal(operationDefinition("corpus.create").minimumRole, "author");
+  assert.equal(operationDefinition("job.start").minimumRole, "runner");
+  assert.equal(operationDefinition("corpus.start").minimumRole, "runner");
+  assert.equal(operationDefinition("authoring.session.interact").minimumRole, "runner");
+  assert.equal(operationDefinition("authoring.take.replay").minimumRole, "runner");
+  assert.equal(operationDefinition("target.video.start").minimumRole, "runner");
+  assert.equal(operationDefinition("workspace.privacy.update").minimumRole, "admin");
+  assert.equal(operationDefinition("activity.list").minimumRole, "admin");
+  assert.equal(operationDefinition("activity.export").minimumRole, "admin");
+  assert.equal(operationDefinition("target.delete").minimumRole, "admin");
 });
 
 test("map teach accepts a point tap without expectedRevision", () => {
@@ -191,6 +218,13 @@ test("descriptor invariants catch duplicates and unsafe cancellation metadata", 
         },
       ]),
     /does not report progress/,
+  );
+  assert.throws(
+    () =>
+      validateOperationDefinitions([
+        { ...first, minimumRole: "superuser" as OperationDefinition["minimumRole"] },
+      ]),
+    /unsupported minimum role/,
   );
 });
 

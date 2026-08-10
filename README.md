@@ -334,24 +334,35 @@ GET  /runs /runs/:id /runs/:id/frames/:file
 
 ## Env
 
-| Variable                  | Default                 | Meaning                                                                                  |
-| ------------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
-| `WORK_ACCOUNT_MATCH`      | `teachx.ai`             | Alpha Play account                                                                       |
-| `HOME_ACCOUNT_MATCH`      | `gmail.com`             | Restore after alpha                                                                      |
-| `PROD_ACCOUNT_MATCH`      | —                       | Required for `*-prod`                                                                    |
-| `AGENT_DEVICE_SERIAL`     | —                       | Default device                                                                           |
-| `RELAY_URL`               | `http://127.0.0.1:8787` | App/TUI server                                                                           |
-| `RELAY_RUNS_DIR`          | `<repo>/runs`           | Evidence root                                                                            |
-| `RELAY_TESTS_DIR`         | `<repo>/tests`          | Git-tracked YAML test definition root                                                    |
-| `RELAY_AUTH_TOKEN`        | —                       | Bearer token required for non-loopback HTTP serving                                      |
-| `RELAY_REDACTION_MODE`    | workspace setting       | Lock evidence redaction `on` or `off` for this process                                   |
-| `RELAY_GITHUB_REPOSITORY` | —                       | `owner/repo` for public GitHub Releases through Electron's update service                |
-| `RELAY_UPDATE_FEED_URL`   | —                       | Custom signed update feed; supports `{platform}`, `{arch}`, and `{version}` placeholders |
-| `INSTALL_TIMEOUT_MS`      | `300000`                | Install/update wait                                                                      |
+| Variable                     | Default                 | Meaning                                                                                  |
+| ---------------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
+| `WORK_ACCOUNT_MATCH`         | `teachx.ai`             | Alpha Play account                                                                       |
+| `HOME_ACCOUNT_MATCH`         | `gmail.com`             | Restore after alpha                                                                      |
+| `PROD_ACCOUNT_MATCH`         | —                       | Required for `*-prod`                                                                    |
+| `AGENT_DEVICE_SERIAL`        | —                       | Default device                                                                           |
+| `RELAY_URL`                  | `http://127.0.0.1:8787` | App/TUI server                                                                           |
+| `RELAY_RUNS_DIR`             | `<repo>/runs`           | Evidence root                                                                            |
+| `RELAY_TESTS_DIR`            | `<repo>/tests`          | Git-tracked YAML test definition root                                                    |
+| `RELAY_AUTH_TOKEN`           | —                       | Bearer token required for non-loopback HTTP serving                                      |
+| `RELAY_AUTH_SUBJECT`         | `configured-service`    | Stable actor ID recorded for the remote service token                                    |
+| `RELAY_AUTH_ORGANIZATION_ID` | `local`                 | Organization scope assigned to the remote service token                                  |
+| `RELAY_AUTH_PROJECT_IDS`     | `default`               | Comma-separated project scopes assigned to the remote service token                      |
+| `RELAY_AUTH_ROLE`            | `admin`                 | Service-token project role: `viewer`, `author`, `runner`, or `admin`                     |
+| `RELAY_REDACTION_MODE`       | workspace setting       | Lock evidence redaction `on` or `off` for this process                                   |
+| `RELAY_GITHUB_REPOSITORY`    | —                       | `owner/repo` for public GitHub Releases through Electron's update service                |
+| `RELAY_UPDATE_FEED_URL`      | —                       | Custom signed update feed; supports `{platform}`, `{arch}`, and `{version}` placeholders |
+| `INSTALL_TIMEOUT_MS`         | `300000`                | Install/update wait                                                                      |
 
 The HTTP server refuses non-loopback bindings without a bearer token. For LAN or remote access,
 set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default
 loopback binding for local desktop development.
+
+Remote service-token connections are also bound to one project role through
+`RELAY_AUTH_ROLE`. The operation registry publishes the minimum role for every operation and the
+server enforces it for direct REST, CLI, and MCP calls: viewers inspect, authors edit maps and
+tests, runners control targets and execute work, and admins change policy, targets, and audit
+exports. Local desktop requests remain trusted admins. A denied request returns
+`PROJECT_ROLE_REQUIRED` with the required role and a concrete recovery action.
 
 Sensitive evidence redaction is off by default and can be changed in **Settings → Privacy &
 evidence**. The choice is stored in `.relay/privacy.json` and applies to future evidence and API

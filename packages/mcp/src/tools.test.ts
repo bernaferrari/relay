@@ -119,7 +119,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
       operationId: "target.screenshot.capture",
       title: "Capture target screenshot",
       description:
-        "Capture target screenshot. Pass operation fields directly. Target capabilities: screenshot. Lease: shared.",
+        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -138,6 +138,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
 test("exposes app launch as one high-intent leased target tool", () => {
   const launch = tool("target.app.launch");
   assert.equal(launch.name, "relay_target_app_launch");
+  assert.match(launch.description, /Project role: runner/);
   assert.match(launch.description, /Target capabilities: launch/);
   assert.match(launch.description, /Lease: exclusive/);
   assert.deepEqual(launch.inputSchema.parse({ serial: "ipad-1", app: "Settings" }), {

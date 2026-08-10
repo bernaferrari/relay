@@ -15,6 +15,7 @@ const scope: RequestContext = {
   allowedProjects: ["control-help"],
   tokenKind: "local",
   localTrusted: true,
+  role: "admin",
 };
 
 function asActor<T>(actorId: string, operation: () => Promise<T>): Promise<T> {

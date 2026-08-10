@@ -96,6 +96,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   {
+    operationId: "activity.list",
+    exclusion: "internal",
+    reason: "Activity list uses the CLI's bounded, cursor-aware read-only resource router.",
+  },
+  {
     operationId: "target.stream.open",
     exclusion: "internal",
     reason: "Live target video is a media stream, not a CLI command.",

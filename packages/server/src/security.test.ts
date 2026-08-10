@@ -54,15 +54,18 @@ describe("server security", () => {
     const previous = {
       organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
       projects: process.env.RELAY_AUTH_PROJECT_IDS,
+      role: process.env.RELAY_AUTH_ROLE,
     };
     process.env.RELAY_AUTH_ORGANIZATION_ID = "org-a";
     process.env.RELAY_AUTH_PROJECT_IDS = "project-a,project-b";
+    process.env.RELAY_AUTH_ROLE = "runner";
     try {
       const context = resolveRequestContext(
         { "x-organization-id": "org-a", "x-project-id": "project-b" },
         { authenticated: true, localTrusted: false },
       );
       assert.equal(context.projectId, "project-b");
+      assert.equal(context.role, "runner");
       assert.throws(
         () =>
           resolveRequestContext(
@@ -71,16 +74,28 @@ describe("server security", () => {
           ),
         /not authorized/,
       );
+      process.env.RELAY_AUTH_ROLE = "superuser";
+      assert.throws(
+        () =>
+          resolveRequestContext(
+            { "x-organization-id": "org-a", "x-project-id": "project-a" },
+            { authenticated: true, localTrusted: false },
+          ),
+        /RELAY_AUTH_ROLE/,
+      );
     } finally {
       if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
       else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
       if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
       else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+      if (previous.role === undefined) delete process.env.RELAY_AUTH_ROLE;
+      else process.env.RELAY_AUTH_ROLE = previous.role;
     }
   });
 
   it("accepts normalized local human, agent, and system identities", () => {
     const context = resolveRequestContext({}, { authenticated: false, localTrusted: true });
+    assert.equal(context.role, "admin");
     assert.deepEqual(
       resolveCommandActor(
         { "x-relay-actor-id": "agent:explorer-1", "x-relay-actor-kind": "agent" },
@@ -113,6 +128,7 @@ describe("server security", () => {
       allowedProjects: ["project-a"],
       tokenKind: "service" as const,
       localTrusted: false,
+      role: "admin" as const,
     };
     assert.deepEqual(resolveCommandActor({}, context), {
       actorId: "service:indexer",

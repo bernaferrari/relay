@@ -85,6 +85,7 @@ function toolDescriptor(
 ): RelayMcpToolDescriptor {
   const requiresConfirmation = definition.confirmation !== "none";
   const requirements = [
+    `Project role: ${definition.minimumRole}.`,
     definition.targetCapabilities.length
       ? `Target capabilities: ${definition.targetCapabilities.join(", ")}.`
       : "",

@@ -192,6 +192,20 @@ type DeviceLeaseDto = {
 export type OperationMode = "query" | "command" | "stream";
 export type OperationIdempotency = "none" | "optional" | "required" | "inherent";
 export type OperationConfirmation = "none" | "confirm" | "dangerous";
+export const projectRoles = ["viewer", "author", "runner", "admin"] as const;
+export type ProjectRole = (typeof projectRoles)[number];
+
+const projectRoleRank: Record<ProjectRole, number> = {
+  viewer: 0,
+  author: 1,
+  runner: 2,
+  admin: 3,
+};
+
+export function projectRoleAllows(actual: ProjectRole, required: ProjectRole): boolean {
+  return projectRoleRank[actual] >= projectRoleRank[required];
+}
+
 export type OperationCategory =
   | "system"
   | "target"
@@ -224,6 +238,8 @@ export type OperationDefinition<Id extends string = string, Input = unknown, Out
   targetCapabilities: readonly string[];
   lease: "none" | "shared" | "exclusive";
   confirmation: OperationConfirmation;
+  /** Lowest project role allowed to invoke this operation. */
+  minimumRole: ProjectRole;
   progress: boolean;
   cancellable: boolean;
   transport: OperationTransport;
@@ -268,6 +284,11 @@ export type HealthSummary = {
   deviceCount: number | null;
   sseClients: number;
   runsDir: string;
+  access?: {
+    role: ProjectRole;
+    organizationId: string;
+    projectId: string;
+  };
 };
 
 type SpecificOperationMap = {
@@ -943,6 +964,7 @@ type SpecificOperationMap = {
 type GenericOperationId =
   | "system.doctor.get"
   | "system.audit.list"
+  | "activity.list"
   | "workspace.apple-device.update"
   | "target.list"
   | "target.create"
@@ -1123,6 +1145,14 @@ const healthParser = objectParser<HealthSummary>("health response", (input) => {
   string(input.version, "health version");
   number(input.at, "health at");
   number(input.uptimeMs, "health uptimeMs");
+  if (input.access !== undefined) {
+    const access = record(input.access, "health access");
+    if (!projectRoles.includes(access.role as ProjectRole)) {
+      fail("health access role", "must be viewer, author, runner, or admin");
+    }
+    string(access.organizationId, "health access organizationId");
+    string(access.projectId, "health access projectId");
+  }
 });
 
 const activityExportParser: RuntimeParser<{ export: ActivityExport }> = {
@@ -2251,18 +2281,35 @@ const authoringSessionListInputParser = objectParser<OperationInput<"authoring.s
 
 const generic = operationRecordParser;
 
-type DefinitionOptions = Omit<OperationDefinition<OperationId>, "version" | "input" | "output"> & {
+type DefinitionOptions = Omit<
+  OperationDefinition<OperationId>,
+  "version" | "input" | "output" | "minimumRole"
+> & {
   input?: RuntimeParser<unknown>;
   output?: RuntimeParser<unknown>;
+  minimumRole?: ProjectRole;
 };
 
 function operation(options: DefinitionOptions): OperationDefinition<OperationId> {
   return {
     ...options,
     version: 1,
+    minimumRole: options.minimumRole ?? defaultMinimumRole(options),
     input: options.input ?? generic,
     output: options.output ?? generic,
   };
+}
+
+function defaultMinimumRole(options: DefinitionOptions): ProjectRole {
+  if (options.mode !== "command") return "viewer";
+  if (options.confirmation === "dangerous" || options.category === "workspace") return "admin";
+  if (options.lease === "exclusive") return "runner";
+  if (options.category === "execution" || options.category === "target") return "runner";
+  if (options.category === "authoring" || options.category === "evidence") return "author";
+  if (options.category === "discovery" || options.category === "corpus") {
+    return options.progress ? "runner" : "author";
+  }
+  return "author";
 }
 
 const query = (
@@ -2315,9 +2362,17 @@ export const operationDefinitions = [
     output: healthParser,
   }),
   query("system.doctor.get", "Inspect Relay prerequisites", "/doctor", { category: "system" }),
-  query("system.audit.list", "List audit events", "/audit", { category: "system" }),
+  query("system.audit.list", "List audit events", "/audit", {
+    category: "system",
+    minimumRole: "admin",
+  }),
+  query("activity.list", "List durable project activity", "/activity", {
+    category: "workspace",
+    minimumRole: "admin",
+  }),
   query("activity.export", "Export project activity", "/activity/export", {
     category: "workspace",
+    minimumRole: "admin",
     input: emptyInputParser,
     output: activityExportParser,
   }),
@@ -2335,6 +2390,7 @@ export const operationDefinitions = [
     idempotency: "inherent",
   }),
   query("workspace.privacy.get", "Get privacy policy", "/settings/privacy", {
+    minimumRole: "admin",
     input: emptyInputParser,
     output: redactionPolicyParser,
   }),
@@ -2343,6 +2399,7 @@ export const operationDefinitions = [
     output: redactionPolicyParser,
   }),
   query("workspace.evidence.get", "Get evidence policy", "/settings/evidence", {
+    minimumRole: "admin",
     input: emptyInputParser,
     output: evidencePolicyParser,
   }),
@@ -2372,9 +2429,13 @@ export const operationDefinitions = [
     output: devicesParser,
   }),
   query("target.list", "List managed targets", "/targets", { category: "target" }),
-  command("target.create", "Create managed target", "POST", "/targets", { category: "target" }),
+  command("target.create", "Create managed target", "POST", "/targets", {
+    category: "target",
+    minimumRole: "admin",
+  }),
   command("target.delete", "Delete managed target", "DELETE", "/targets/:targetId", {
     category: "target",
+    minimumRole: "admin",
   }),
   command("target.preflight", "Check target readiness", "POST", "/targets/:targetId/preflight", {
     category: "target",
@@ -2388,6 +2449,7 @@ export const operationDefinitions = [
   command("target.authorize", "Authorize target", "POST", "/device/authorize", {
     category: "target",
     confirmation: "confirm",
+    minimumRole: "admin",
   }),
   query("target.snapshot.capture", "Capture target structure", "/snapshot", {
     category: "evidence",
@@ -2468,6 +2530,7 @@ export const operationDefinitions = [
   }),
   command("target.video.start", "Start target video", "POST", "/device/video", {
     category: "evidence",
+    minimumRole: "runner",
     targetCapabilities: ["recording"],
     lease: "shared",
     input: targetInputParser,
@@ -3328,6 +3391,7 @@ export const operationDefinitions = [
   command("corpus.cancel", "Cancel corpus crawl", "POST", "/corpus/:sessionId/cancel", {
     category: "corpus",
     confirmation: "confirm",
+    minimumRole: "runner",
   }),
   query("corpus.coverage", "Corpus locale coverage", "/corpus/:sessionId/coverage", {
     category: "corpus",
@@ -3583,6 +3647,9 @@ export function validateOperationDefinitions(
     transports.add(route);
     if (definition.version !== 1) throw new Error(`${definition.id} has an unsupported version`);
     if (!definition.label.trim()) throw new Error(`${definition.id} is missing a label`);
+    if (!projectRoles.includes(definition.minimumRole)) {
+      throw new Error(`${definition.id} has an unsupported minimum role`);
+    }
     if (definition.cancellable && !definition.progress) {
       throw new Error(`${definition.id} is cancellable but does not report progress`);
     }
