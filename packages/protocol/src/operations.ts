@@ -998,6 +998,7 @@ type GenericOperationId =
   | "corpus.start"
   | "corpus.cancel"
   | "corpus.coverage"
+  | "corpus.analysis"
   | "corpus.export"
   | "job.locale-matrix.start"
   | "job.locale-matrix.export"
@@ -3314,6 +3315,9 @@ export const operationDefinitions = [
     confirmation: "confirm",
   }),
   query("corpus.coverage", "Corpus locale coverage", "/corpus/:sessionId/coverage", {
+    category: "corpus",
+  }),
+  query("corpus.analysis", "Analyze corpus evidence", "/corpus/:sessionId/analysis", {
     category: "corpus",
   }),
   query("corpus.export", "Export corpus pack", "/corpus/:sessionId/export", {

@@ -14,6 +14,8 @@ import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type {
   CorpusControl,
+  CorpusAnalysisReport,
+  CorpusFinding,
   CorpusCoverageReport,
   CorpusMapAction,
   CorpusMapPlan,
@@ -77,6 +79,8 @@ const DEFAULT_SCOPE: CorpusScope = {
   strategy: "map-once-replay",
   allowSensitiveControls: false,
 };
+
+const MAX_CORPUS_LOCALES = 250;
 
 const activeCorpusCrawls = new Map<string, { cancel: boolean; promise?: Promise<void> }>();
 
@@ -213,7 +217,9 @@ function normalizeScope(scope?: Partial<CorpusScope>): CorpusScope {
     ),
   ];
   if (!locales.length) throw new Error("corpus requires at least one locale");
-  if (locales.length > 32) throw new Error("corpus supports at most 32 locales");
+  if (locales.length > MAX_CORPUS_LOCALES) {
+    throw new Error(`corpus supports at most ${MAX_CORPUS_LOCALES} locales`);
+  }
   const languageOptions = scope?.languageOptions
     ? Object.fromEntries(
         Object.entries(scope.languageOptions).map(([locale, steps]) => [
@@ -537,7 +543,24 @@ export async function listCorpusSessions(filter?: {
     for (const entry of entries) {
       if (!entry.endsWith(".json")) continue;
       const session = await readCorpusSession(entry.replace(/\.json$/, ""), filter);
-      if (session) sessions.push(session);
+      if (session) {
+        // A persisted running row without an in-process worker is an interrupted
+        // crawl, usually after Relay restarted. Present it as resumable instead
+        // of leaving the desktop stuck on a fictional live run.
+        if (session.status === "running" && !activeCorpusCrawls.has(session.id)) {
+          sessions.push({
+            ...session,
+            status: "paused",
+            progress: {
+              ...session.progress,
+              phase: "idle",
+              message: "Interrupted — ready to resume",
+            },
+          });
+        } else {
+          sessions.push(session);
+        }
+      }
     }
     return sessions.sort((left, right) => right.updatedAt - left.updatedAt);
   } catch {
@@ -561,7 +584,7 @@ const STATUS_TRANSITIONS: Record<CorpusStatus, CorpusStatus[]> = {
   running: ["paused", "complete", "stopped", "failed"],
   paused: ["running", "stopped"],
   complete: [],
-  stopped: [],
+  stopped: ["running"],
   failed: ["running", "stopped"],
 };
 
@@ -678,6 +701,9 @@ export async function recordCorpusScreen(input: {
     const destination = screenAssetPath(session.id, screen.id);
     await copyFile(input.screenshotPath, destination);
     screen.screenshotPath = `screens/${screen.id}.png`;
+    screen.snapshotDigest = createHash("sha256")
+      .update(await readFile(destination))
+      .digest("hex");
   }
   session.screens.push(screen);
   if (input.makeCurrent) {
@@ -772,6 +798,171 @@ export function buildCorpusCoverage(session: CorpusSession): CorpusCoverageRepor
   };
 }
 
+function normalizedCorpusLabel(value: string | undefined): string {
+  return (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+function meaningfulCorpusLabel(value: string | undefined): boolean {
+  const label = (value ?? "").trim();
+  if (label.length < 4 || !/\p{L}/u.test(label)) return false;
+  if (/^(?:https?:\/\/|www\.|[\d\W_]+$)/iu.test(label)) return false;
+  return true;
+}
+
+function localeFamily(locale: string): string {
+  return locale.trim().toLocaleLowerCase().split(/[-_]/u)[0] ?? locale;
+}
+
+function corpusFindingId(parts: string[]): string {
+  return digest(`relay-corpus-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
+}
+
+/** Explainable checks over locale-stable screen and control evidence. No model
+ * call is required, and possible linguistic defects remain explicitly
+ * qualified so the report does not overstate certainty. */
+export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
+  const baselineLocale = session.scope.mapLocale ?? session.scope.locales[0]!;
+  const groups = new Map<string, CorpusScreen[]>();
+  for (const screen of session.screens) {
+    const group = groups.get(screen.canonicalKey) ?? [];
+    group.push(screen);
+    groups.set(screen.canonicalKey, group);
+  }
+  const findings: CorpusFinding[] = [];
+  const add = (finding: Omit<CorpusFinding, "id">): void => {
+    findings.push({
+      ...finding,
+      id: corpusFindingId([
+        finding.code,
+        finding.canonicalKey,
+        finding.locale,
+        finding.stableKey ?? "",
+      ]),
+    });
+  };
+
+  for (const [canonicalKey, group] of groups) {
+    const baseline = group.find((screen) => screen.locale === baselineLocale);
+    const screenLabel =
+      baseline?.title ??
+      baseline?.path.at(-1) ??
+      group.find((screen) => screen.title)?.title ??
+      group[0]?.path.at(-1) ??
+      canonicalKey.slice(0, 12);
+
+    for (const locale of session.scope.locales) {
+      const current = group.find((screen) => screen.locale === locale);
+      if (!current) {
+        add({
+          code: "SCREEN_MISSING",
+          severity: "critical",
+          confidence: "high",
+          canonicalKey,
+          screenLabel,
+          locale,
+          baselineLocale,
+          detail: `${screenLabel} was not captured in ${locale}.`,
+        });
+        continue;
+      }
+      if (
+        !baseline ||
+        locale === baselineLocale ||
+        localeFamily(locale) === localeFamily(baselineLocale)
+      ) {
+        continue;
+      }
+
+      const baselineLabels = baseline.localizedLabels ?? {};
+      const currentLabels = current.localizedLabels ?? {};
+      const stableBaselineLabels = Object.entries(baselineLabels).filter(
+        ([key, label]) => !key.startsWith("label:") && meaningfulCorpusLabel(label),
+      );
+      const commonLabels = stableBaselineLabels.filter(([key]) => key in currentLabels);
+      const unchangedLabels = commonLabels.filter(
+        ([key, label]) =>
+          normalizedCorpusLabel(currentLabels[key]) === normalizedCorpusLabel(label),
+      );
+
+      const sameScreenshot =
+        Boolean(baseline.snapshotDigest) && baseline.snapshotDigest === current.snapshotDigest;
+      if (
+        (sameScreenshot || baseline.fingerprint === current.fingerprint) &&
+        stableBaselineLabels.length > 0 &&
+        commonLabels.length > 0 &&
+        unchangedLabels.length === commonLabels.length
+      ) {
+        add({
+          code: "POSSIBLE_LOCALE_NOT_APPLIED",
+          severity: "critical",
+          confidence: sameScreenshot ? "high" : "medium",
+          canonicalKey,
+          screenLabel,
+          locale,
+          baselineLocale,
+          detail: sameScreenshot
+            ? `${screenLabel} has the exact same screenshot and labels in ${baselineLocale} and ${locale}; the language may not have changed.`
+            : `${screenLabel} has the same semantic content in ${baselineLocale} and ${locale}; the language may not have changed.`,
+        });
+        continue;
+      }
+
+      for (const [stableKey, expected] of stableBaselineLabels) {
+        const observed = currentLabels[stableKey];
+        if (observed === undefined) {
+          add({
+            code: "CONTROL_MISSING",
+            severity: "warning",
+            confidence: "medium",
+            canonicalKey,
+            screenLabel,
+            locale,
+            baselineLocale,
+            stableKey,
+            expected,
+            detail: `${expected} is present in ${baselineLocale} but missing from ${locale}.`,
+          });
+          continue;
+        }
+        if (normalizedCorpusLabel(observed) === normalizedCorpusLabel(expected)) {
+          add({
+            code: "POSSIBLE_UNTRANSLATED_TEXT",
+            severity: "warning",
+            confidence: "medium",
+            canonicalKey,
+            screenLabel,
+            locale,
+            baselineLocale,
+            stableKey,
+            expected,
+            observed,
+            detail: `“${observed}” is unchanged from ${baselineLocale} on ${screenLabel}.`,
+          });
+        }
+      }
+    }
+  }
+
+  const severityOrder = { critical: 0, warning: 1 } as const;
+  findings.sort(
+    (left, right) =>
+      severityOrder[left.severity] - severityOrder[right.severity] ||
+      left.screenLabel.localeCompare(right.screenLabel) ||
+      left.locale.localeCompare(right.locale) ||
+      left.code.localeCompare(right.code),
+  );
+  return {
+    schemaVersion: 1,
+    sessionId: session.id,
+    generatedAt: Date.now(),
+    baselineLocale,
+    findings,
+    critical: findings.filter((finding) => finding.severity === "critical").length,
+    warnings: findings.filter((finding) => finding.severity === "warning").length,
+    affectedScreens: new Set(findings.map((finding) => finding.canonicalKey)).size,
+  };
+}
+
 function packRelativePath(screen: CorpusScreen): string {
   const segments = [
     slugCorpusPathSegment(screen.locale),
@@ -795,6 +986,7 @@ export async function exportCorpusPack(sessionId: string): Promise<{
   if (!session) throw new Error("corpus session not found");
   assertCorpusAccess(session);
   const rootDir = join(sessionDir(session.id), "pack");
+  const analysis = analyzeCorpus(session);
   await rm(rootDir, { recursive: true, force: true });
   await mkdir(rootDir, { recursive: true });
 
@@ -832,8 +1024,10 @@ export async function exportCorpusPack(sessionId: string): Promise<{
     rootDir: `pack`,
     screens,
     byCanonicalKey,
+    analysis,
   };
   await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(join(rootDir, "analysis.json"), `${JSON.stringify(analysis, null, 2)}\n`, "utf8");
   await writeFile(
     join(rootDir, "README.md"),
     [
@@ -844,6 +1038,8 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       "",
       "Each PNG path is `<locale>/<path>__<canonicalKey>.png`.",
       "`manifest.json` groups the same logical screen across languages under `byCanonicalKey`.",
+      `Findings: ${analysis.critical} critical · ${analysis.warnings} warnings across ${analysis.affectedScreens} screens.`,
+      "`analysis.json` contains deterministic missing-screen, missing-control, unchanged-locale, and possible-untranslated-text findings.",
       "",
     ].join("\n"),
     "utf8",
@@ -859,6 +1055,7 @@ export async function exportCorpusPack(sessionId: string): Promise<{
 export function formatCorpusExport(session: CorpusSession, format: "json" | "markdown"): string {
   if (format === "json") return `${JSON.stringify(session, null, 2)}\n`;
   const coverage = buildCorpusCoverage(session);
+  const analysis = analyzeCorpus(session);
   const lines = [
     `# ${session.name}`,
     "",
@@ -868,6 +1065,7 @@ export function formatCorpusExport(session: CorpusSession, format: "json" | "mar
     `- Screens: ${session.screens.length}`,
     `- Transitions: ${session.transitions.length}`,
     `- Coverage: ${coverage.complete} complete · ${coverage.partial} partial`,
+    `- Findings: ${analysis.critical} critical · ${analysis.warnings} warnings`,
     "",
     "## Screens by locale",
   ];
@@ -878,6 +1076,12 @@ export function formatCorpusExport(session: CorpusSession, format: "json" | "mar
       lines.push(
         `- d${screen.depth} ${path}${screen.title ? ` — ${screen.title}` : ""} (\`${screen.artifactPath ?? screen.screenshotPath ?? screen.id}\`)`,
       );
+    }
+  }
+  if (analysis.findings.length) {
+    lines.push("", "## Findings");
+    for (const finding of analysis.findings) {
+      lines.push(`- **${finding.severity}** · ${finding.locale} · ${finding.detail}`);
     }
   }
   return `${lines.join("\n")}\n`;
@@ -1552,31 +1756,44 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
       }
 
       if (strategy === "map-once-replay") {
-        const actions: CorpusMapAction[] = [];
-        session = await crawlLocale({
-          session,
-          locale: mapLocale,
-          serial,
-          device,
-          recordPlan: actions,
-        });
-        const rootScreen = session.screens.find(
-          (screen) => screen.locale === mapLocale && screen.depth === 0,
-        );
-        const plan: CorpusMapPlan = {
-          mappedLocale: mapLocale,
-          ...(rootScreen ? { rootCanonicalKey: rootScreen.canonicalKey } : {}),
-          actions,
-          mappedAt: Date.now(),
-        };
-        session.mapPlan = plan;
-        session.updatedAt = Date.now();
-        await writeSession(session);
-        emitCorpus(session);
+        let plan =
+          session.mapPlan?.mappedLocale === mapLocale && session.mapPlan.actions.length > 0
+            ? session.mapPlan
+            : undefined;
+        if (plan) {
+          await updateProgress(session, {
+            phase: "replaying",
+            locale: mapLocale,
+            message: "Reusing saved screen map",
+          });
+        } else {
+          const actions: CorpusMapAction[] = [];
+          session = await crawlLocale({
+            session,
+            locale: mapLocale,
+            serial,
+            device,
+            recordPlan: actions,
+          });
+          const rootScreen = session.screens.find(
+            (screen) => screen.locale === mapLocale && screen.depth === 0,
+          );
+          plan = {
+            mappedLocale: mapLocale,
+            ...(rootScreen ? { rootCanonicalKey: rootScreen.canonicalKey } : {}),
+            actions,
+            mappedAt: Date.now(),
+          };
+          session.mapPlan = plan;
+          session.updatedAt = Date.now();
+          await writeSession(session);
+          emitCorpus(session);
+        }
 
         for (const locale of otherLocales) {
           if (isCancelled(sessionId)) throw new Error("corpus cancelled");
           session = (await readCorpusSession(sessionId))!;
+          if (corpusLocaleIsComplete(session, locale)) continue;
           await switchToLocale({ session, locale, device, app });
           session = (await readCorpusSession(sessionId))!;
           session = await replayLocalePlan({
@@ -1658,8 +1875,9 @@ export async function startCorpusSession(id: string): Promise<CorpusSession> {
   const session = await readCorpusSession(id);
   if (!session) throw new Error("corpus session not found");
   assertCorpusAccess(session);
-  if (session.status === "running") return session;
-  if (!STATUS_TRANSITIONS[session.status].includes("running")) {
+  if (session.status === "running" && activeCorpusCrawls.has(id)) return session;
+  const interrupted = session.status === "running" && !activeCorpusCrawls.has(id);
+  if (!interrupted && !STATUS_TRANSITIONS[session.status].includes("running")) {
     throw new Error(`cannot start corpus from ${session.status}`);
   }
   if (activeCorpusCrawls.has(id)) throw new Error("corpus crawl is already active");
@@ -1683,6 +1901,22 @@ export async function startCorpusSession(id: string): Promise<CorpusSession> {
     // errors persisted on the session
   });
   return session;
+}
+
+function corpusLocaleIsComplete(session: CorpusSession, locale: string): boolean {
+  const mapLocale = session.scope.mapLocale ?? session.scope.locales[0];
+  const expected = new Set(
+    session.screens
+      .filter((screen) => screen.locale === mapLocale)
+      .map((screen) => screen.canonicalKey),
+  );
+  if (expected.size === 0) return false;
+  const observed = new Set(
+    session.screens
+      .filter((screen) => screen.locale === locale)
+      .map((screen) => screen.canonicalKey),
+  );
+  return [...expected].every((canonicalKey) => observed.has(canonicalKey));
 }
 
 export async function cancelCorpusSession(id: string): Promise<CorpusSession> {

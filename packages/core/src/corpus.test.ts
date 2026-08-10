@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import type { SnapshotNode } from "./device.js";
 import {
+  analyzeCorpus,
   buildCorpusCoverage,
   createCorpusSession,
   formatCorpusExport,
   corpusControls,
   listCorpusSessions,
+  readCorpusSession,
   recordCorpusScreen,
   resetCorpusCrawlsForTests,
+  setCorpusStatus,
   titleFromNodes,
 } from "./corpus.js";
 import {
@@ -298,6 +301,107 @@ test("recordCorpusScreen dedupes by locale-stable canonical key", async () => {
   const markdown = formatCorpusExport(listed[0]!, "markdown");
   assert.match(markdown, /Grok settings/);
   assert.match(markdown, /pt-BR/);
+});
+
+test("analyzeCorpus turns a locale crawl into an explainable review queue", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Localization review",
+    targetId: "android",
+    scope: { locales: ["en", "pt-BR", "it"], mapLocale: "en", maxDepth: 2 },
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: settingsNodes("en"),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+  await recordCorpusScreen({
+    sessionId: session.id,
+    nodes: settingsNodes("pt"),
+    locale: "pt-BR",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+  });
+  const current = (await listCorpusSessions())[0]!;
+  const report = analyzeCorpus(current);
+
+  assert.equal(report.baselineLocale, "en");
+  assert.equal(report.critical, 1);
+  assert.ok(
+    report.findings.some((finding) => finding.code === "SCREEN_MISSING" && finding.locale === "it"),
+  );
+  assert.ok(
+    report.findings.some(
+      (finding) =>
+        finding.code === "POSSIBLE_UNTRANSLATED_TEXT" &&
+        finding.stableKey === "id:settings.appearance",
+    ),
+  );
+  assert.ok(report.findings.every((finding) => finding.confidence !== undefined));
+});
+
+test("analyzeCorpus detects when a requested locale was probably not applied", async () => {
+  const root = await workspace();
+  const screenshot = join(root, "unchanged.png");
+  await writeFile(screenshot, Buffer.from("same deterministic screenshot"));
+  const session = await createCorpusSession({
+    name: "Locale switch check",
+    targetId: "android",
+    scope: { locales: ["en", "it"], mapLocale: "en", maxDepth: 1 },
+  });
+  for (const locale of session.scope.locales) {
+    await recordCorpusScreen({
+      sessionId: session.id,
+      nodes: settingsNodes("en"),
+      locale,
+      depth: 0,
+      path: [],
+      pathKeys: [],
+      screenshotPath: screenshot,
+    });
+  }
+  const saved = (await listCorpusSessions())[0]!;
+  assert.ok(saved.screens.every((screen) => screen.snapshotDigest?.length === 64));
+  const report = analyzeCorpus(saved);
+  const finding = report.findings.find(
+    (item) => item.code === "POSSIBLE_LOCALE_NOT_APPLIED" && item.locale === "it",
+  );
+  assert.equal(finding?.confidence, "high");
+  assert.match(finding?.detail ?? "", /exact same screenshot/iu);
+});
+
+test("corpus accepts every dynamically discovered Grok locale", async () => {
+  await workspace();
+  const locales = Array.from({ length: 45 }, (_, index) => `x-relay-${index + 1}`);
+  const session = await createCorpusSession({
+    name: "All discovered locales",
+    targetId: "android",
+    scope: { locales, mapLocale: locales[0], maxDepth: 1 },
+  });
+  assert.deepEqual(session.scope.locales, locales);
+});
+
+test("an interrupted or stopped corpus is presented as resumable", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Resumable crawl",
+    targetId: "android",
+    scope: { locales: ["en", "it"], mapLocale: "en", maxDepth: 1 },
+  });
+
+  await setCorpusStatus(session.id, "running");
+  const interrupted = (await listCorpusSessions())[0]!;
+  assert.equal(interrupted.status, "paused");
+  assert.match(interrupted.progress.message ?? "", /ready to resume/iu);
+  assert.equal((await readCorpusSession(session.id))?.status, "running");
+
+  await setCorpusStatus(session.id, "stopped");
+  const resumed = await setCorpusStatus(session.id, "running");
+  assert.equal(resumed.status, "running");
 });
 
 test("normalizeScope defaults to map-once-replay and orders map locale first", async () => {

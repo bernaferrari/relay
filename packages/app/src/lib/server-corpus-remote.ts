@@ -1,4 +1,5 @@
 import type {
+  CorpusAnalysisReport,
   CorpusCoverageReport,
   CorpusPackManifest,
   CorpusScope,
@@ -133,6 +134,16 @@ export async function getCorpusCoverage(
     `/corpus/${encodeURIComponent(id)}/coverage`,
   );
   return data.coverage;
+}
+
+export async function getCorpusAnalysis(
+  request: ServerRequest,
+  id: string,
+): Promise<CorpusAnalysisReport> {
+  const data = await request<{ analysis: CorpusAnalysisReport }>(
+    `/corpus/${encodeURIComponent(id)}/analysis`,
+  );
+  return data.analysis;
 }
 
 export async function exportCorpusPack(

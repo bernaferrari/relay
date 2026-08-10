@@ -106,6 +106,13 @@ test("prepareLocaleRunMatrix zips locale fields and restores English at end", as
   assert.equal(prepared.matrix.cases[3]!.values.locale, "en");
 });
 
+test("prepareLocaleRunMatrix keeps all dynamically discovered locale options", async () => {
+  const locales = Array.from({ length: 45 }, (_, index) => `x-relay-${index + 1}`);
+  const prepared = await prepareLocaleRunMatrix({ locales, restoreAtEnd: false }, 42);
+  assert.equal(prepared.matrix.cases.length, 45);
+  assert.deepEqual(prepared.locales, locales);
+});
+
 test("languageOptions can supply stable identifiers per locale", async () => {
   const prepared = await prepareLocaleRunMatrix({
     locales: ["en", "pt-BR"],
@@ -482,7 +489,10 @@ test("startLocaleRecipeRun freezes screenshot-each-locale steps and export copie
       title: batch.title,
     });
     assert.equal(pack.manifest.cases.length, 2);
-    assert.ok(pack.manifest.cases.every((item) => item.frames.length === 1));
+    assert.ok(
+      pack.manifest.cases.every((item) => item.frames.length === 1),
+      JSON.stringify(pack.manifest.cases, null, 2),
+    );
     assert.ok(pack.manifest.locales.includes("en"));
     assert.ok(pack.manifest.locales.includes("it"));
     const report = await readFile(join(pack.rootDir, "index.html"), "utf8");

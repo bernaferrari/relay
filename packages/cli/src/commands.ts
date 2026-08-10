@@ -1449,6 +1449,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("corpus.start", path("corpus start", ["sessionId"])),
   mapped("corpus.cancel", path("corpus cancel", ["sessionId"])),
   mapped("corpus.coverage", path("corpus coverage", ["sessionId"])),
+  mapped("corpus.analysis", path("corpus analysis", ["sessionId"])),
   mapped("corpus.export", path("corpus export", ["sessionId"])),
   mapped("corpus.screen.get", path("corpus screen", ["sessionId", "screenId"])),
 

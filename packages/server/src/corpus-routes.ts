@@ -1,5 +1,6 @@
 import type http from "node:http";
 import {
+  analyzeCorpus,
   buildCorpusCoverage,
   buildTargetProfiles,
   cancelCorpusSession,
@@ -266,6 +267,13 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
   if (method === "GET" && coverageMatch) {
     const session = await loadScopedSession(coverageMatch.id!, scope);
     json(response, 200, { coverage: buildCorpusCoverage(session) });
+    return true;
+  }
+
+  const analysisMatch = matchPath(pathname, "/corpus/:id/analysis");
+  if (method === "GET" && analysisMatch) {
+    const session = await loadScopedSession(analysisMatch.id!, scope);
+    json(response, 200, { analysis: analyzeCorpus(session) });
     return true;
   }
 

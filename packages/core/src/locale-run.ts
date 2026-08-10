@@ -191,7 +191,7 @@ function requiredText(value: unknown, label: string): string {
 function normalizeLocales(locales: string[]): string[] {
   const next = [...new Set(locales.map((locale) => locale.trim()).filter(Boolean))];
   if (!next.length) throw new Error("at least one locale is required");
-  if (next.length > 32) throw new Error("at most 32 locales per run");
+  if (next.length > 250) throw new Error("at most 250 locales per run");
   return next;
 }
 
@@ -776,7 +776,7 @@ export async function prepareLocaleRunMatrix(
   const matrix = await prepareRunMatrix({
     strategy: "zip",
     seed,
-    maxCases: 64,
+    maxCases: 250,
     variables: [
       { id: "locale", name: "locale", scope: "shared", source: "list", values: locales },
       {

@@ -878,6 +878,8 @@ export type CorpusPackManifest = {
   }>;
   /** canonicalKey → locale → relative PNG path for side-by-side compare */
   byCanonicalKey: Record<string, Record<string, string>>;
+  /** Deterministic findings derived from the same frozen screenshots and UI trees. */
+  analysis: CorpusAnalysisReport;
 };
 
 export type CorpusSession = {
@@ -921,6 +923,41 @@ export type CorpusCoverageReport = {
   complete: number;
   partial: number;
   missing: number;
+};
+
+export type CorpusFindingCode =
+  | "SCREEN_MISSING"
+  | "POSSIBLE_LOCALE_NOT_APPLIED"
+  | "CONTROL_MISSING"
+  | "POSSIBLE_UNTRANSLATED_TEXT";
+
+export type CorpusFinding = {
+  id: string;
+  code: CorpusFindingCode;
+  severity: "critical" | "warning";
+  confidence: "high" | "medium";
+  canonicalKey: string;
+  screenLabel: string;
+  locale: string;
+  baselineLocale: string;
+  stableKey?: string;
+  expected?: string;
+  observed?: string;
+  detail: string;
+};
+
+/** A bounded, explainable localization review. This intentionally reports
+ * possible translation defects instead of pretending deterministic heuristics
+ * can prove linguistic correctness. */
+export type CorpusAnalysisReport = {
+  schemaVersion: 1;
+  sessionId: string;
+  generatedAt: number;
+  baselineLocale: string;
+  findings: CorpusFinding[];
+  critical: number;
+  warnings: number;
+  affectedScreens: number;
 };
 
 export type Revisioned<T> = {
