@@ -41,6 +41,9 @@ test("operation roles keep viewing, authoring, execution, and administration dis
   assert.equal(operationDefinition("workspace.privacy.update").minimumRole, "admin");
   assert.equal(operationDefinition("activity.list").minimumRole, "admin");
   assert.equal(operationDefinition("activity.export").minimumRole, "admin");
+  assert.equal(operationDefinition("run.share.list").minimumRole, "admin");
+  assert.equal(operationDefinition("run.share.create").minimumRole, "admin");
+  assert.equal(operationDefinition("run.share.revoke").minimumRole, "admin");
   assert.equal(operationDefinition("target.delete").minimumRole, "admin");
 });
 
@@ -107,6 +110,22 @@ test("runtime parsers reject malformed input and output", () => {
   assert.throws(
     () => operationDefinition("job.start").input.parse({ serial: "device" }),
     /job recipe/,
+  );
+  assert.deepEqual(
+    operationDefinition("run.share.create").input.parse({
+      runId: "run-1",
+      expiresInHours: "24",
+      includeBatch: true,
+    }),
+    { runId: "run-1", expiresInHours: 24, includeBatch: true },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("run.share.create").input.parse({
+        runId: "run-1",
+        expiresInHours: 900,
+      }),
+    /30 days/u,
   );
   assert.throws(
     () => operationDefinition("target.screenshot.capture").output.parse({ path: "shot.png" }),

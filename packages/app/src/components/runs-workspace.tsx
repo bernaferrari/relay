@@ -44,6 +44,7 @@ import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunRow, RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
 import { RunMatrixReview } from "./run-matrix-review";
+import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
 import {
   filterRunRows,
@@ -164,6 +165,12 @@ export function RunsWorkspace(props: {
     // the selected run proves this is a matrix, include every sibling so the
     // detail-loading effect below can hydrate the complete review.
     return rows().filter((row) => row.batchId === job.batchId);
+  });
+  const selectedBatchRunCount = createMemo(() => {
+    const job = selected();
+    if (!job?.batchId) return 1;
+    const loaded = rows().filter((row) => row.batchId === job.batchId).length;
+    return Math.max(loaded, job.caseCount ?? 1);
   });
   const selectedMatrixReview = createMemo(() => projectRunMatrix(selectedMatrixRows()));
   /**
@@ -634,21 +641,6 @@ export function RunsWorkspace(props: {
                         <button
                           type="button"
                           class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
-                          aria-label="Copy report link"
-                          data-tip="Copy report link"
-                          onClick={() => {
-                            const url = new URL(window.location.href);
-                            url.searchParams.set("run", job().id);
-                            void navigator.clipboard?.writeText(url.toString());
-                            window.history.replaceState({}, "", url);
-                            toast("Report link copied", "success");
-                          }}
-                        >
-                          <Icon name="copy" size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                           aria-label="Close report"
                           data-tip="Close report"
                           onClick={() => {
@@ -663,6 +655,7 @@ export function RunsWorkspace(props: {
                       </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                      <RunShareMenu run={job()} batchRunCount={selectedBatchRunCount()} />
                       <Button
                         variant="secondary"
                         size="sm"

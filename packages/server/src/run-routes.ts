@@ -7,10 +7,12 @@ import {
   buildSoakReport,
   compareEvidenceMetrics,
   buildRunEvidence,
+  createRunShare,
   extractEvidenceMetrics,
   listJobs,
   listPersistedRuns,
   listRunSummaries,
+  listRunShares,
   readFrameFile,
   readVisualBaselineFrame,
   readPersistedRun,
@@ -24,6 +26,7 @@ import {
   getVisualComparisonPolicy,
   reviewVisualComparison,
   reviewPersistedRun,
+  revokeRunShare,
   RunReviewError,
   updateVisualComparisonPolicy,
   VISUAL_REVIEW_ACTIONS,
@@ -171,6 +174,78 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     };
     json(response, 200, await applyRunRetention(runsRoot(), body));
     return true;
+  }
+
+  const shareRevokeMatch = matchPath(pathname, "/runs/:id/shares/:shareId/revoke");
+  if (method === "POST" && shareRevokeMatch) {
+    const run = await readPersistedRun(shareRevokeMatch.id!);
+    assertRunAccess(scope, run);
+    const actor = reviewActor(context);
+    const share = await revokeRunShare({
+      root: runsRoot(),
+      id: shareRevokeMatch.shareId!,
+      scope: {
+        projectId: run.projectId ?? "local",
+        ...(run.ownerId ? { ownerId: run.ownerId } : {}),
+        localTrusted: scope.localTrusted,
+      },
+      actorId: actor.id,
+    });
+    if (!share) throw new HttpError(404, "Run share not found");
+    recordAudit(scope, {
+      action: "run.share.revoke",
+      resource: `${run.id}:${share.id}`,
+      result: "allow",
+    });
+    json(response, 200, { share });
+    return true;
+  }
+
+  const sharesMatch = matchPath(pathname, "/runs/:id/shares");
+  if (sharesMatch) {
+    const run = await readPersistedRun(sharesMatch.id!);
+    assertRunAccess(scope, run);
+    const shareScope = {
+      projectId: run.projectId ?? "local",
+      ...(run.ownerId ? { ownerId: run.ownerId } : {}),
+      localTrusted: scope.localTrusted,
+    };
+    if (method === "GET") {
+      json(response, 200, {
+        shares: await listRunShares(runsRoot(), { ...shareScope, runId: run.id }),
+      });
+      return true;
+    }
+    if (method === "POST") {
+      const body = (await parseJsonBody(request)) as {
+        expiresInHours?: unknown;
+        includeBatch?: unknown;
+      };
+      const expiresInHours = Number(body.expiresInHours);
+      if (!Number.isFinite(expiresInHours)) {
+        throw new HttpError(400, "expiresInHours is required");
+      }
+      let created;
+      try {
+        created = await createRunShare({
+          root: runsRoot(),
+          run,
+          relatedRuns: await listPersistedRuns(1_000),
+          actorId: reviewActor(context).id,
+          expiresAt: Date.now() + expiresInHours * 60 * 60 * 1_000,
+          includeBatch: body.includeBatch === true,
+        });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      recordAudit(scope, {
+        action: "run.share.create",
+        resource: `${run.id}:${created.share.id}`,
+        result: "allow",
+      });
+      json(response, 201, created);
+      return true;
+    }
   }
 
   const signalsMatch = matchPath(pathname, "/runs/:id/signals");

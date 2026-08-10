@@ -67,6 +67,7 @@ import {
   type AndroidSetupStatus,
 } from "../lib/server-device-setup-remote";
 import { createServerRunController } from "../lib/server-run-controller";
+import { createServerRunReportController } from "../lib/server-run-report-controller";
 import type {
   ActionInfo,
   DeviceInfo,
@@ -79,7 +80,6 @@ import type {
   RecipeInfo,
   RecipeStep,
   RecipeStability,
-  RunEvidenceQuery,
   SnapshotState,
   TraceFrameRef,
   LocalSchedule,
@@ -881,115 +881,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function loadRunDetail(id: string): Promise<void> {
-      try {
-        const live = await request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}`);
-        if (live.job) {
-          setJobs((current) => current.map((job) => (job.id === id ? live.job : job)));
-          return;
-        }
-      } catch {
-        /* completed jobs may only exist in persisted storage after restart */
-      }
-      try {
-        const data = await request<{ run: PersistedRun }>(`/runs/${encodeURIComponent(id)}`);
-        if (!data.run) return;
-        setPersistedRuns((current) => {
-          const index = current.findIndex((run) => run.id === id);
-          if (index < 0) return [data.run, ...current];
-          return current.map((run) => (run.id === id ? data.run : run));
-        });
-      } catch {
-        return;
-      }
-    }
-
-    async function loadRunSignals(
-      id: string,
-    ): Promise<import("@relay/protocol").RegressionSignal[]> {
-      try {
-        const data = await request<{ signals?: import("@relay/protocol").RegressionSignal[] }>(
-          `/runs/${encodeURIComponent(id)}/signals`,
-        );
-        return data.signals ?? [];
-      } catch {
-        return [];
-      }
-    }
-
-    async function loadRunEvidence(
-      id: string,
-      options: { limit?: number; includeBodies?: boolean } = {},
-    ): Promise<RunEvidenceQuery | null> {
-      try {
-        const query = new URLSearchParams();
-        if (options.limit !== undefined) query.set("limit", String(options.limit));
-        if (options.includeBodies) query.set("includeBodies", "true");
-        const suffix = query.size ? `?${query.toString()}` : "";
-        const data = await request<{ evidence?: RunEvidenceQuery }>(
-          `/runs/${encodeURIComponent(id)}/evidence${suffix}`,
-        );
-        return data.evidence ?? null;
-      } catch {
-        return null;
-      }
-    }
-
-    async function compareVisualRun(
-      id: string,
-    ): Promise<import("@relay/protocol").VisualComparison | null> {
-      try {
-        return (await runAction("run.visual.compare", { runId: id })).comparison;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function reviewVisualRun(
-      id: string,
-      comparisonId: string,
-      action: import("@relay/protocol").VisualReviewAction,
-      note?: string,
-    ): Promise<import("@relay/protocol").VisualReviewDecision | null> {
-      try {
-        return (
-          await runAction("run.visual.review", {
-            runId: id,
-            comparisonId,
-            action,
-            ...(note?.trim() ? { note: note.trim() } : {}),
-          })
-        ).decision;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function reviewRun(
-      id: string,
-      action: "approve" | "reject",
-      note?: string,
-    ): Promise<import("@relay/protocol").RunReview | null> {
-      try {
-        const result = await runAction("run.review", {
-          runId: id,
-          action,
-          ...(note?.trim() ? { note: note.trim() } : {}),
-        });
-        await refreshRuns();
-        await loadRunDetail(id);
-        return result.review;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        toast(message, "error");
-        return null;
-      }
-    }
-
     async function refreshProjectVariables() {
       if (!client || health() === "offline") return;
       try {
@@ -1047,6 +938,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         idempotencyKey: crypto.randomUUID(),
       });
     }
+
+    const {
+      loadRunDetail,
+      loadRunSignals,
+      loadRunEvidence,
+      compareVisualRun,
+      reviewVisualRun,
+      reviewRun,
+      listRunShares,
+      createRunShare,
+      revokeRunShare,
+    } = createServerRunReportController({
+      request,
+      runAction,
+      setJobs,
+      setPersistedRuns,
+      refreshRuns,
+    });
 
     async function generate(input: GenerationRequest): Promise<GenerationResult> {
       if (!client) await resolveConnection();
@@ -1993,6 +1902,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       compareVisualRun,
       reviewVisualRun,
       reviewRun,
+      listRunShares,
+      createRunShare,
+      revokeRunShare,
       pollHealth,
       retryConnection,
       recoverSelectedTarget,

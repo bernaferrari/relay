@@ -109,6 +109,7 @@ import {
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { handleRunRoute } from "./run-routes.js";
+import { handlePublicRunShareRoute } from "./run-share-routes.js";
 import { handleJobRoute } from "./job-routes.js";
 import {
   assertTargetControl,
@@ -129,12 +130,10 @@ import {
   injectAndroidKey,
   injectAndroidScroll,
   injectAndroidTouch,
-  streamAndroidVideo,
   type AndroidKeyboardInput,
   type AndroidTouchAction,
 } from "./live-video.js";
-import { streamIosGoIosMjpeg, readIosLivePreviewBackend } from "./ios-live-video.js";
-import { iosLivePreviewUsesStream } from "@relay/core";
+import { streamTargetVideo } from "./target-video-stream.js";
 import {
   readIosVideoTake,
   pruneIosVideoTakes,
@@ -293,25 +292,7 @@ async function handleRequest(
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
-  liveVideoStream = async (response: http.ServerResponse, serial: string) => {
-    const platform = await devicePlatformForSerial(serial);
-    if (platform === "android") {
-      await streamAndroidVideo(response, serial);
-      return;
-    }
-    if (platform === "ios") {
-      const backend = await readIosLivePreviewBackend();
-      if (iosLivePreviewUsesStream(backend)) {
-        await streamIosGoIosMjpeg(response, serial);
-        return;
-      }
-      throw new HttpError(
-        409,
-        "iOS live H.264/MJPEG preview is off. Enable go-ios MJPEG in Device settings, or use PNG preview.",
-      );
-    }
-    throw new HttpError(400, `Live video is not available for platform ${platform}`);
-  },
+  liveVideoStream = streamTargetVideo,
   captureTargetScreenshot = captureScreenshot,
   targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
 ): Promise<void> {
@@ -336,6 +317,11 @@ async function handleRequest(
     res.end();
     return;
   }
+
+  // Signed report URLs are bearer capabilities with their own expiry and
+  // revocation checks. They deliberately bypass the workspace bearer token,
+  // but expose only the redacted public projection handled by this route.
+  if (await handlePublicRunShareRoute({ method, pathname, response: res })) return;
 
   if (!authorizationMatches(req.headers.authorization, token)) {
     res.setHeader("WWW-Authenticate", 'Bearer realm="relay"');

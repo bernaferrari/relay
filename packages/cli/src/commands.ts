@@ -1,5 +1,6 @@
 import { operationDefinitions, type OperationId } from "@relay/protocol";
 import { UsageError } from "./errors.js";
+import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 
 export type CliExclusionReason = "ui-only" | "internal" | "unsafe";
 
@@ -1679,17 +1680,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "Compiled recipe storage is internal; people and agents author App Map flows.",
   })),
 
-  mapped("run.list", path("run list")),
-  {
-    operationId: "run.get",
-    exclusion: "internal",
-    reason: "Exposed through the read-only `relay run get` resource command.",
-  },
-  {
-    operationId: "run.evidence.get",
-    exclusion: "internal",
-    reason: "Exposed through the read-only `relay run evidence` resource command.",
-  },
+  ...runEvidenceCommandDescriptors,
   mapped("run.catalog.rebuild", path("run catalog rebuild")),
   mapped("run.retention.apply", path("run retention apply")),
   mapped(

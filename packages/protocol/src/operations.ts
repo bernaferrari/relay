@@ -54,6 +54,7 @@ import type {
   TargetWorkerStatus,
 } from "./target-runtime.js";
 import type { RunReview } from "./run-review.js";
+import { runShareOperationDefinitions, type RunShareOperationMap } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 type RedactionPolicyDto = {
   enabled: boolean;
@@ -436,10 +437,7 @@ type SpecificOperationMap = {
     input: { runId: string; limit?: number; includeBodies?: boolean };
     output: { evidence: OperationRecord };
   };
-  "run.visual.compare": {
-    input: { runId: string };
-    output: { comparison: VisualComparison };
-  };
+  "run.visual.compare": { input: { runId: string }; output: { comparison: VisualComparison } };
   "run.visual.review": {
     input: { runId: string; comparisonId: string; action: VisualReviewAction; note?: string };
     output: { decision: VisualReviewDecision; baseline: VisualBaseline | null };
@@ -959,7 +957,7 @@ type SpecificOperationMap = {
     output: { lease: DeviceLeaseDto };
   };
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
-};
+} & RunShareOperationMap;
 
 type GenericOperationId =
   | "system.doctor.get"
@@ -3556,6 +3554,7 @@ export const operationDefinitions = [
     category: "evidence",
     input: runEvidenceInputParser,
   }),
+  ...runShareOperationDefinitions,
   command("run.catalog.rebuild", "Rebuild Run catalog", "POST", "/runs/catalog/rebuild", {
     category: "execution",
     confirmation: "confirm",

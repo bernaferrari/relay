@@ -8,6 +8,7 @@ export * from "./app-map.js";
 export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
+export * from "./run-share.js";
 export * from "./visual-verification.js";
 export * from "./target-runtime.js";
 export * from "./target-summary.js";
@@ -1329,13 +1330,6 @@ export type FrozenRunCase = {
   values: Record<string, string>;
   provenance: RunCaseProvenance[];
 };
-
-export type RunOutcome =
-  | "passed"
-  | "product-failure"
-  | "harness-failure"
-  | "uncertain"
-  | "cancelled";
 
 export type FailureCategory =
   | "environment"
