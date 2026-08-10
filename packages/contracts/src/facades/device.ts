@@ -1,4 +1,7 @@
 export type { TriggerAppEventCommandResult } from '../app-events.ts';
+export { ANDROID_ADB_TIMEOUT_FAILURE, classifyAndroidAdbFailure } from '../android-adb-failure.ts';
+export type { AndroidAdbFailureClassification } from '../android-adb-failure.ts';
+export { isAndroidEmulatorSerial, normalizeAndroidDeviceName } from '../android-device.ts';
 export {
   DEFAULT_APPS_FILTER,
   assertResolvedAppsFilter,
@@ -10,18 +13,22 @@ export {
   LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS,
   WEB_DESKTOP_DEVICE,
   countDeviceInventoryByGroup,
-  shouldUseHostMacFastPath,
+  filterDeviceInventoryProjection,
+  projectProviderDeviceInventoryRequest,
 } from '../device-inventory.ts';
 export type {
   DeviceInventoryGroup,
   DeviceInventoryGroupCounts,
   DeviceInventoryRequest,
+  ProviderDeviceInventoryRequest,
 } from '../device-inventory.ts';
 export type {
   DeviceInventoryProvider,
   DeviceLease,
   LeaseLifecycleContext,
   LeaseLifecycleProvider,
+  ProviderDeviceInventoryOutcome,
+  ProviderDeviceInventorySource,
 } from '../device-provider.ts';
 export {
   DEVICE_ROTATIONS,
