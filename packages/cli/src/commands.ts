@@ -1620,6 +1620,10 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.combine.export",
+    path("run-matrix export", ["batchId"], undefined, {
+      summary: "Export a run matrix screenshot pack",
+      examples: ["relay run-matrix export <batch-id>"],
+    }),
     path("job combine export", ["batchId"], undefined, {
       summary: "Export run-matrix screenshot pack",
     }),

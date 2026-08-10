@@ -88,7 +88,7 @@ function promptText(response: RpcResponse): { description: string; text: string 
   };
 }
 
-test("lists the three curated Relay prompts with required scoped arguments", async () => {
+test("lists the curated Relay prompts with required scoped arguments", async () => {
   const session = await connectMcp();
   try {
     const response = await session.request("prompts/list", {});
@@ -132,6 +132,15 @@ test("lists the three curated Relay prompts with required scoped arguments", asy
             { name: "appMapId", required: true },
             { name: "sessionId", required: true },
             { name: "takeId", required: true },
+          ],
+        },
+        {
+          ...relayMcpPrompts[3],
+          arguments: [
+            { name: "projectId", required: true },
+            { name: "targetId", required: true },
+            { name: "appMapId", required: true },
+            { name: "goal", required: true },
           ],
         },
       ],
@@ -197,6 +206,25 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
         ],
       },
     },
+    {
+      name: relayMcpPromptNames.planRunMatrix,
+      arguments: {
+        projectId,
+        targetId: "target-1",
+        appMapId: "map-1",
+        goal: "capture settings in every language",
+      },
+      expected: {
+        description: relayMcpPrompts[3].description,
+        firstLine:
+          "Plan a run matrix for “capture settings in every language” in App Map map-1, project project-a, using Target target-1.",
+        headings: [
+          "Safety contract:",
+          "Observation and plan (no mutation):",
+          "Save, preflight, and run (only after explicit confirmation):",
+        ],
+      },
+    },
   ] as const;
 
   try {
@@ -250,6 +278,15 @@ test("prompt snapshots preserve the observation, authority, and evidence safety 
         takeId: "take-1",
       },
     },
+    {
+      name: relayMcpPromptNames.planRunMatrix,
+      arguments: {
+        projectId,
+        targetId: "target-1",
+        appMapId: "map-1",
+        goal: "capture settings in every language",
+      },
+    },
   ] as const;
 
   try {
@@ -295,6 +332,30 @@ test("mapping prompt turns one delegation into a bounded autonomous proposal", a
     assert.match(text, /reviewable proposal/);
     assert.match(text, /Do not directly approve the proposal/);
     assert.doesNotMatch(text, /Discovery operations/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("matrix prompt keeps authoring, preflight, execution, retry, and export on one saved plan", async () => {
+  const session = await connectMcp();
+  try {
+    const { text } = promptText(
+      await session.request("prompts/get", {
+        name: relayMcpPromptNames.planRunMatrix,
+        arguments: {
+          projectId,
+          targetId: "target-1",
+          appMapId: "map-1",
+          goal: "run ten Settings screens across all locales",
+        },
+      }),
+    );
+    assert.match(text, /variables as modifiers/);
+    assert.match(text, /relay_app_map_combine_preflight/);
+    assert.match(text, /retry only problem cells/i);
+    assert.match(text, /portable screenshot report/);
+    assert.match(text, /absent from the canvas/);
   } finally {
     await session.close();
   }

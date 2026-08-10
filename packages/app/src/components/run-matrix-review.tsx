@@ -12,7 +12,9 @@ export function RunMatrixReview(props: {
   review: RunMatrixReviewModel;
   selectedId: string;
   onOpen: (job: JobInfo, frameIndex: number) => void;
-  onRetryFailed: () => void;
+  onRetryProblems: () => void;
+  onExport: () => void;
+  exporting?: boolean;
 }) {
   const server = useServer();
   const [query, setQuery] = createSignal("");
@@ -45,11 +47,26 @@ export function RunMatrixReview(props: {
               Modifier values are rows. Captured screens are columns.
             </p>
           </div>
-          <Show when={props.review.failed > 0}>
-            <Button variant="secondary" size="sm" onClick={props.onRetryFailed}>
-              <Icon name="refresh" size={12} /> Retry {props.review.failed} failed
-            </Button>
-          </Show>
+          <div class="flex shrink-0 items-center gap-2">
+            <Show when={props.review.batchId}>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={props.exporting || props.review.active > 0}
+                aria-busy={props.exporting}
+                data-tip={props.review.active > 0 ? "Export after every run finishes" : undefined}
+                onClick={props.onExport}
+              >
+                <Icon name="download" size={12} />
+                {props.exporting ? "Exporting…" : "Export screenshots"}
+              </Button>
+            </Show>
+            <Show when={props.review.problemRuns > 0}>
+              <Button variant="secondary" size="sm" onClick={props.onRetryProblems}>
+                <Icon name="refresh" size={12} /> Retry {props.review.problemRuns}
+              </Button>
+            </Show>
+          </div>
         </div>
         <div
           class="flex items-center gap-3 text-[10.5px] tabular-nums text-[var(--text-weak)]"
@@ -82,6 +99,19 @@ export function RunMatrixReview(props: {
           />
         </div>
       </header>
+      <Show when={props.review.insights.length > 0}>
+        <div class="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-[var(--border-weak-base)] px-4 py-2 text-[10.5px]">
+          <span class="shrink-0 font-medium text-[var(--text-strong)]">Needs attention</span>
+          <For each={props.review.insights}>
+            {(insight) => (
+              <span class="shrink-0 rounded-[7px] bg-[var(--surface-base)] px-2 py-1 text-[var(--text-base)]">
+                <strong class="font-medium">{insight.label}</strong>
+                <span class="ml-1.5 text-[var(--text-weak)]">{insight.detail}</span>
+              </span>
+            )}
+          </For>
+        </div>
+      </Show>
       <div class="flex shrink-0 items-center gap-2 border-b border-[var(--border-weak-base)] px-4 py-2">
         <label class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)]">
           <Icon name="search" size={12} class="text-[var(--text-weak)]" />

@@ -248,6 +248,9 @@ function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
   );
   return {
     kind: "combine",
+    ...(typeof candidate.combineId === "string" && candidate.combineId.trim()
+      ? { combineId: candidate.combineId.trim() }
+      : {}),
     world: candidate.world,
     values,
     ...(typeof candidate.expectedScreenshots === "number" &&

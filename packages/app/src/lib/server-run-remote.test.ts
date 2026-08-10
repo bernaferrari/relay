@@ -5,6 +5,7 @@ import {
   enqueueAppMapFlow,
   enqueueMatrix,
   enqueueRecipe,
+  exportRunMatrixPack,
   removeCombineRemote,
   removeVariableRemote,
   retryJob,
@@ -68,11 +69,13 @@ test("keeps execution endpoints typed and predictable", async () => {
     projectId: "default",
   });
   await enqueueMatrix(request, { recipe: "login", matrixId: "smoke", repetitions: 1 });
+  await exportRunMatrixPack(request, "batch/one");
   const job = await retryJob(request, "job-1");
   assert.equal(job.id, "job-2");
   assert.deepEqual(calls, [
     "POST /jobs/matrix",
     "POST /jobs/compatibility-matrix",
+    "GET /jobs/combine/batch%2Fone/export",
     "POST /jobs/job-1/retry",
   ]);
 });

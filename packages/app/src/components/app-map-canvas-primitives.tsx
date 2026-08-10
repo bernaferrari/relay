@@ -82,11 +82,29 @@ export function CanvasCombineCard(props: {
   modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
+  run?: {
+    jobId: string;
+    complete: number;
+    total: number;
+    passed: number;
+    problems: number;
+    active: number;
+  };
   onOpen: (section: CanvasCombineSection) => void;
+  onOpenResults?: (jobId: string) => void;
 }) {
   const open = (event: MouseEvent, section: CanvasCombineSection) => {
     event.stopPropagation();
     props.onOpen(section);
+  };
+  const progress = () =>
+    props.run?.total ? Math.min(100, (props.run.complete / props.run.total) * 100) : 0;
+  const resultLabel = () => {
+    const run = props.run;
+    if (!run) return `${props.cellCount} ${props.cellCount === 1 ? "run" : "runs"}`;
+    if (run.active) return `${run.complete} of ${run.total} complete`;
+    if (run.problems) return `${run.problems} need attention`;
+    return `${run.passed} passed`;
   };
   return (
     <article
@@ -159,14 +177,40 @@ export function CanvasCombineCard(props: {
       </div>
       <button
         type="button"
-        class="flex min-h-9 w-full items-center justify-between gap-2 border-t border-[var(--border-weak-base)] px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
-        onClick={(event) => open(event, "plan")}
+        class="relative flex min-h-9 w-full items-center justify-between gap-2 overflow-hidden border-t border-[var(--border-weak-base)] px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (props.run && props.onOpenResults) props.onOpenResults(props.run.jobId);
+          else props.onOpen("plan");
+        }}
       >
+        <Show when={props.run?.active}>
+          <span
+            class="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[var(--text-interactive-base)] transition-transform duration-150 motion-reduce:transition-none"
+            style={{ transform: `scaleX(${progress() / 100})` }}
+            aria-hidden="true"
+          />
+        </Show>
         <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">
-          {props.startsAt ? `Starts at ${props.startsAt.title}` : "Reusable tests"}
+          {props.run?.active
+            ? "Running now"
+            : props.run
+              ? "View results"
+              : props.startsAt
+                ? `Starts at ${props.startsAt.title}`
+                : "Reusable tests"}
         </span>
-        <span class="shrink-0 text-[10px] font-medium tabular-nums text-[var(--text-base)]">
-          {props.cellCount} {props.cellCount === 1 ? "run" : "runs"}
+        <span
+          class={cn(
+            "shrink-0 text-[10px] font-medium tabular-nums",
+            props.run?.problems
+              ? "text-[var(--icon-critical-base)]"
+              : props.run && !props.run.active
+                ? "text-[var(--icon-success-base)]"
+                : "text-[var(--text-base)]",
+          )}
+        >
+          {resultLabel()}
         </span>
       </button>
     </article>

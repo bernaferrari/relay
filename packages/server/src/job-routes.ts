@@ -437,6 +437,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         browserTargetId: body.browserTargetId,
         request: {
           sets,
+          ...(combine ? { combineId: combine.id } : {}),
           selected: body.selected ?? combine?.selected,
           strategy: body.strategy,
           // Tests and saved matrices own their evidence policy. The generic

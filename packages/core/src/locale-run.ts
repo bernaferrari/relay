@@ -104,6 +104,42 @@ export type LocaleRunPackManifest = {
   }>;
 };
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function portablePackHtml(manifest: LocaleRunPackManifest): string {
+  const passed = manifest.cases.filter((item) => item.status === "ok" || item.status === "healed");
+  const expected = manifest.cases.reduce((total, item) => total + (item.expectedFrames ?? 0), 0);
+  const captured = manifest.cases.reduce((total, item) => total + item.frames.length, 0);
+  const cards = manifest.cases
+    .map(
+      (item) => `<section class="case">
+  <header><div><strong>${escapeHtml(item.locale)}</strong><span>${escapeHtml(item.name)}</span></div><b data-status="${escapeHtml(item.status)}">${escapeHtml(item.status)}</b></header>
+  <div class="frames">${
+    item.frames.length
+      ? item.frames
+          .map(
+            (frame, index) =>
+              `<figure><img loading="lazy" src="${frame.split("/").map(encodeURIComponent).join("/")}" alt="${escapeHtml(item.locale)} screenshot ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`,
+          )
+          .join("")
+      : '<p class="empty">No screenshots captured</p>'
+  }</div>
+</section>`,
+    )
+    .join("\n");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(manifest.title)}</title>
+<style>:root{color-scheme:light dark;font:14px ui-sans-serif,system-ui,sans-serif;background:#f7f7f8;color:#18181b}*{box-sizing:border-box}body{margin:0}main{max-width:1440px;margin:auto;padding:32px}h1{font-size:24px;letter-spacing:-.03em;margin:0 0 6px}.summary{color:#64646c;margin:0 0 28px}.case{background:#fff;border:1px solid #dedee3;border-radius:14px;margin:0 0 16px;overflow:hidden}.case>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid #e8e8eb}.case header div{display:grid;gap:2px}.case header span{font-size:12px;color:#71717a}.case header b{font-size:11px;text-transform:capitalize}.case header b[data-status=error],.case header b[data-status=cancelled]{color:#c2410c}.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;padding:10px}.frames figure{position:relative;margin:0;border-radius:9px;overflow:hidden;background:#eee;min-height:120px}.frames img{display:block;width:100%;height:240px;object-fit:contain}.frames figcaption{position:absolute;right:6px;bottom:6px;border-radius:99px;background:#000b;color:white;padding:3px 7px;font-size:10px}.empty{color:#71717a;padding:20px}@media(prefers-color-scheme:dark){:root{background:#171719;color:#f4f4f5}.case{background:#222225;border-color:#39393f}.case>header{border-color:#39393f}.case header span,.summary,.empty{color:#a1a1aa}.frames figure{background:#111}}</style></head>
+<body><main><h1>${escapeHtml(manifest.title)}</h1><p class="summary">${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${new Date(manifest.generatedAt).toISOString()}</p>${cards}</main></body></html>\n`;
+}
+
 function expectedEvidenceFrames(job: TestJob): number | undefined {
   for (const artifact of job.artifacts ?? []) {
     if (
@@ -942,6 +978,7 @@ export async function exportLocaleRunPack(input: {
     cases,
   };
   await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(join(rootDir, "index.html"), portablePackHtml(manifest), "utf8");
   await writeFile(
     join(rootDir, "README.md"),
     [
@@ -950,7 +987,7 @@ export async function exportLocaleRunPack(input: {
       `Batch: ${batchId}`,
       `Locales: ${manifest.locales.join(", ")}`,
       "",
-      "Each folder is one locale case. Frames are ordered screenshots from that run.",
+      "Open index.html for a portable visual report. Each folder is one matrix case; frames are ordered screenshots from that run.",
       "",
     ].join("\n"),
     "utf8",

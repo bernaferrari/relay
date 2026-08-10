@@ -21,7 +21,14 @@ export type RunMatrixRow = {
   expectedScreenshots?: number;
   missingCaptures: number;
 };
+export type RunMatrixInsight = {
+  kind: "failure" | "missing-capture";
+  label: string;
+  count: number;
+  detail: string;
+};
 export type RunMatrixReview = {
+  batchId?: string;
   rows: RunMatrixRow[];
   captureLabels: string[];
   passed: number;
@@ -29,6 +36,8 @@ export type RunMatrixReview = {
   active: number;
   complete: number;
   missingCaptures: number;
+  problemRuns: number;
+  insights: RunMatrixInsight[];
 };
 
 function frozenInputs(job: JobInfo): FrozenMatrixInputs | undefined {
@@ -117,7 +126,46 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
     (job) => job.status === "error" || job.status === "cancelled",
   ).length;
   const passed = matrixRows.filter((job) => job.status === "ok" || job.status === "healed").length;
+  const failedValues = new Map<string, { count: number; label: string }>();
+  const missingByCapture = new Map<string, number>();
+  for (const row of projected) {
+    if (row.job.status === "error" || row.job.status === "cancelled") {
+      const dimensions = row.values.length
+        ? row.values.map((value) => `${value.name}: ${value.value}`)
+        : [row.world];
+      for (const label of dimensions) {
+        failedValues.set(label, {
+          label,
+          count: (failedValues.get(label)?.count ?? 0) + 1,
+        });
+      }
+    }
+    if (row.missingCaptures > 0) {
+      for (const capture of row.captures
+        .filter((item) => !item.frame)
+        .slice(0, row.missingCaptures)) {
+        missingByCapture.set(capture.caption, (missingByCapture.get(capture.caption) ?? 0) + 1);
+      }
+    }
+  }
+  const insights: RunMatrixInsight[] = [
+    ...[...failedValues.values()].map((item) => ({
+      kind: "failure" as const,
+      label: item.label,
+      count: item.count,
+      detail: `${item.count} failed ${item.count === 1 ? "run" : "runs"}`,
+    })),
+    ...[...missingByCapture].map(([label, count]) => ({
+      kind: "missing-capture" as const,
+      label,
+      count,
+      detail: `Missing in ${count} ${count === 1 ? "run" : "runs"}`,
+    })),
+  ]
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 4);
   return {
+    ...(matrixRows[0]?.batchId ? { batchId: matrixRows[0].batchId } : {}),
     rows: projected,
     captureLabels,
     passed,
@@ -125,6 +173,11 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
     active,
     complete: passed + failed,
     missingCaptures: projected.reduce((total, row) => total + row.missingCaptures, 0),
+    problemRuns: projected.filter(
+      (row) =>
+        row.missingCaptures > 0 || row.job.status === "error" || row.job.status === "cancelled",
+    ).length,
+    insights,
   };
 }
 

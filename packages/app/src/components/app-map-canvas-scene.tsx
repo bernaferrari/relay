@@ -82,6 +82,7 @@ export type AppMapCanvasSceneProps = {
   hereScreenId?: string | null;
   combines?: readonly CanvasCombineCardModel[];
   onOpenCombine?: (combineId: string, section: CanvasCombineSection) => void;
+  onOpenCombineResults?: (jobId: string) => void;
 };
 
 const markerClass = (
@@ -546,7 +547,9 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             modifiers={combine.modifiers}
             tests={combine.tests}
             cellCount={combine.cellCount}
+            run={combine.run}
             onOpen={(section) => props.onOpenCombine?.(combine.id, section)}
+            onOpenResults={props.onOpenCombineResults}
           />
         )}
       </For>

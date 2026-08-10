@@ -1810,6 +1810,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runAppMapFlow: runAppMapFlowRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
       loadCompatibilityReport,
+      exportMatrixEvidence,
       retrySelectedJob,
     } = createServerRunController({
       request,
@@ -2008,6 +2009,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runAppMapFlowRemote,
       runCompatibilityMatrixRemote,
       loadCompatibilityReport,
+      exportMatrixEvidence,
       saveRecipeRemote,
       loadRecipeYaml,
       importRecipeYaml,

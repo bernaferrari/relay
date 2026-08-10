@@ -78,6 +78,11 @@ test("projects one modifier row by screenshot column without exposing selector h
   assert.equal(review.passed, 1);
   assert.equal(review.failed, 1);
   assert.equal(review.missingCaptures, 1);
+  assert.equal(review.problemRuns, 1);
+  assert.deepEqual(review.insights, [
+    { kind: "failure", label: "language: Italiano", count: 1, detail: "1 failed run" },
+    { kind: "missing-capture", label: "Widget", count: 1, detail: "Missing in 1 run" },
+  ]);
   assert.equal(isRunMatrixJob(first), true);
   assert.equal(stepIndexForMatrixCapture(first, 0), 0);
 });

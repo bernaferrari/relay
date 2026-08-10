@@ -1,4 +1,6 @@
 import type { AppMap } from "@relay/protocol";
+import type { JobInfo } from "./api-types";
+import { projectRunMatrix } from "./run-matrix-review";
 import { combineHeadline, combineValueLabel, projectCombine } from "./app-map-combine-presentation";
 import { SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 
@@ -10,6 +12,15 @@ export type CanvasCombineCardModel = {
   modifiers: Array<{ id: string; name: string; values: string[] }>;
   tests: string[];
   cellCount: number;
+  run?: {
+    jobId: string;
+    batchId?: string;
+    complete: number;
+    total: number;
+    passed: number;
+    problems: number;
+    active: number;
+  };
 };
 
 export type CanvasCombineSection = "modifiers" | "tests" | "plan";
@@ -35,6 +46,7 @@ export function canvasCombineCards(
   screenFor: (
     screenId: string,
   ) => { position: { x: number; y: number }; title: string } | undefined,
+  jobs: readonly JobInfo[] = [],
 ): CanvasCombineCardModel[] {
   const combines = Object.values(map.combines ?? {});
   return combines.map((combine, index) => {
@@ -75,6 +87,17 @@ export function canvasCombineCards(
       combine.strategy ?? (variables.length > 1 ? "cartesian" : "zip"),
       1,
     );
+    const ownedJobs = jobs.filter((job) => job.matrixCase?.combineId === combine.id);
+    const newest = ownedJobs.reduce<JobInfo | undefined>(
+      (latest, job) => (!latest || job.queuedAt > latest.queuedAt ? job : latest),
+      undefined,
+    );
+    const batchJobs = newest?.batchId
+      ? ownedJobs.filter((job) => job.batchId === newest.batchId)
+      : newest
+        ? [newest]
+        : [];
+    const runReview = projectRunMatrix(batchJobs);
     return {
       id: combine.id,
       name: combineHeadline({
@@ -98,6 +121,19 @@ export function canvasCombineCards(
       modifiers,
       tests: testNames,
       cellCount: projection.cellCount,
+      ...(runReview && newest
+        ? {
+            run: {
+              jobId: newest.id,
+              ...(newest.batchId ? { batchId: newest.batchId } : {}),
+              complete: runReview.complete,
+              total: runReview.rows.length,
+              passed: runReview.passed,
+              problems: runReview.problemRuns,
+              active: runReview.active,
+            },
+          }
+        : {}),
     };
   });
 }

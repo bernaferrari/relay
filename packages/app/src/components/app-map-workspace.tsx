@@ -432,10 +432,14 @@ export function AppMapWorkspace(props: {
   const combineCards = createMemo(() => {
     const map = activeAppMap();
     if (!map) return [];
-    return canvasCombineCards(map, (screenId) => {
-      const node = tree().nodes.find((candidate) => candidate.id === screenId);
-      return node ? { position: positionFor(node), title: titleFor(node) } : undefined;
-    });
+    return canvasCombineCards(
+      map,
+      (screenId) => {
+        const node = tree().nodes.find((candidate) => candidate.id === screenId);
+        return node ? { position: positionFor(node), title: titleFor(node) } : undefined;
+      },
+      server.jobs(),
+    );
   });
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
@@ -1557,6 +1561,11 @@ export function AppMapWorkspace(props: {
                   hereScreenId={hereScreenId()}
                   combines={combineCards()}
                   onOpenCombine={(combineId, section) => props.onOpenCombine?.(combineId, section)}
+                  onOpenCombineResults={(jobId) =>
+                    window.dispatchEvent(
+                      new CustomEvent("relay:open-run-history", { detail: { jobId } }),
+                    )
+                  }
                 />
               </div>
               <AppMapGroupMenu

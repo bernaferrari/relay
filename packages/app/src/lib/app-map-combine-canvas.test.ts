@@ -118,3 +118,46 @@ test("canvas preview uses the value subset saved with the matrix", () => {
   assert.deepEqual(cards[0]?.modifiers[0]?.values, ["Italiano"]);
   assert.equal(cards[0]?.cellCount, 1);
 });
+
+test("canvas card reconnects the newest owned execution batch", () => {
+  const cards = canvasCombineCards(map, () => ({ position: { x: 0, y: 0 }, title: "Settings" }), [
+    {
+      id: "run-en",
+      action: "map-1",
+      status: "ok",
+      queuedAt: 10,
+      logs: [],
+      batchId: "batch-1",
+      matrixCase: {
+        kind: "combine",
+        combineId: combine.id,
+        world: "English",
+        values: { language: "English" },
+      },
+    },
+    {
+      id: "run-it",
+      action: "map-1",
+      status: "error",
+      queuedAt: 11,
+      logs: [],
+      batchId: "batch-1",
+      matrixCase: {
+        kind: "combine",
+        combineId: combine.id,
+        world: "Italiano",
+        values: { language: "Italiano" },
+      },
+    },
+  ] as never);
+
+  assert.deepEqual(cards[0]?.run, {
+    jobId: "run-it",
+    batchId: "batch-1",
+    complete: 2,
+    total: 2,
+    passed: 1,
+    problems: 1,
+    active: 0,
+  });
+});

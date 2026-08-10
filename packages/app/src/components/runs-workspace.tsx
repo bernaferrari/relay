@@ -96,6 +96,7 @@ export function RunsWorkspace(props: {
   const [visualLoading, setVisualLoading] = createSignal(false);
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [visualPolicyBusy, setVisualPolicyBusy] = createSignal(false);
+  const [matrixExporting, setMatrixExporting] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
@@ -308,13 +309,32 @@ export function RunsWorkspace(props: {
     server.setSelectedJobId(job.id);
     selectRunStep(stepIndexForMatrixCapture(job, frameIndex));
   };
-  const retryFailedMatrixRuns = async () => {
-    const failed = selectedMatrixRows().filter((job) =>
-      ["error", "cancelled"].includes(job.status),
+  const retryProblemMatrixRuns = async () => {
+    const review = selectedMatrixReview();
+    const problems = review?.rows.filter(
+      (row) =>
+        row.missingCaptures > 0 || row.job.status === "error" || row.job.status === "cancelled",
     );
-    for (const job of failed) await server.retrySelectedJob(job.id);
-    if (failed.length)
-      toast(`Queued ${failed.length} failed ${failed.length === 1 ? "run" : "runs"}`, "success");
+    for (const row of problems ?? []) await server.retrySelectedJob(row.job.id);
+    if (problems?.length)
+      toast(
+        `Queued ${problems.length} ${problems.length === 1 ? "problem run" : "problem runs"}`,
+        "success",
+      );
+  };
+  const exportSelectedMatrix = async () => {
+    const batchId = selectedMatrixReview()?.batchId;
+    if (!batchId || matrixExporting()) return;
+    setMatrixExporting(true);
+    try {
+      const exported = await server.exportMatrixEvidence(batchId);
+      await navigator.clipboard?.writeText(exported.rootDir);
+      toast("Screenshot pack exported · folder path copied", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setMatrixExporting(false);
+    }
   };
   const stopMatrixRuns = async () => {
     const pending = selectedMatrixRows().filter((job) =>
@@ -579,7 +599,9 @@ export function RunsWorkspace(props: {
                   review={review()}
                   selectedId={job().id}
                   onOpen={openMatrixCapture}
-                  onRetryFailed={() => void retryFailedMatrixRuns()}
+                  onRetryProblems={() => void retryProblemMatrixRuns()}
+                  onExport={() => void exportSelectedMatrix()}
+                  exporting={matrixExporting()}
                 />
               )}
             </Show>
@@ -1067,7 +1089,7 @@ export function RunsWorkspace(props: {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => void retryFailedMatrixRuns()}
+                          onClick={() => void retryProblemMatrixRuns()}
                         >
                           <Icon name="refresh" size={12} /> Retry failed runs
                         </Button>

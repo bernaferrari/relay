@@ -460,6 +460,13 @@ export async function exportLocaleMatrixPack(
   return request(`/jobs/locale-matrix/${encodeURIComponent(batchId)}/export`);
 }
 
+export async function exportRunMatrixPack(
+  request: ServerRequest,
+  batchId: string,
+): Promise<{ rootDir: string; manifest: unknown; jobIds: string[] }> {
+  return request(`/jobs/combine/${encodeURIComponent(batchId)}/export`);
+}
+
 export async function loadMatrixReport(
   request: ServerRequest,
   batchId: string,

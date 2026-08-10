@@ -20,6 +20,7 @@ import {
   enqueueMatrix,
   enqueueRecipe,
   loadMatrixReport,
+  exportRunMatrixPack,
   retryJob,
 } from "./server-run-remote";
 import { privateValuesForRun } from "./private-variables";
@@ -420,6 +421,11 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
   }
 
+  async function exportMatrixEvidence(batchId: string): Promise<{ rootDir: string }> {
+    const exported = await exportRunMatrixPack(deps.request, batchId);
+    return { rootDir: exported.rootDir };
+  }
+
   async function retrySelectedJob(jobId?: string): Promise<void> {
     const id = jobId ?? deps.selectedJobId();
     if (!id) {
@@ -453,6 +459,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     runAppMapFlow,
     runCompatibilityMatrix,
     loadCompatibilityReport,
+    exportMatrixEvidence,
     retrySelectedJob,
   };
 }

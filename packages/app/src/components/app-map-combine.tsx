@@ -37,7 +37,8 @@ type TestCandidate = CombineTestColumn &
     | { source: "group"; group: MapGroup }
   );
 
-const MAX_DEVICE_WORLDS = 32;
+const MAX_DEVICE_WORLDS = 250;
+const MAX_PREVIEW_WORLDS = 40;
 type SimpleCaptureMode = Exclude<AppMapCapturePolicy["mode"], "checkpoints">;
 
 function candidateKey(candidate: TestCandidate): string {
@@ -199,7 +200,7 @@ export function AppMapCombine(props: {
       }),
       selectedTests(),
       strategy(),
-      MAX_DEVICE_WORLDS,
+      MAX_PREVIEW_WORLDS,
     ),
   );
   const headline = createMemo(() =>
@@ -988,6 +989,9 @@ export function AppMapCombine(props: {
                   </div>
                   <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
                     {projection().cellCount} checks
+                    {projection().truncated
+                      ? ` · first ${projection().worlds.length} rows shown`
+                      : ""}
                   </span>
                 </div>
                 <Show

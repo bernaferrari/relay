@@ -154,6 +154,9 @@ export type JobSummary = {
    * Raw/private run inputs remain execution-only. */
   matrixCase?: {
     kind: "combine";
+    /** Saved canvas matrix that produced this case. Lets live/result surfaces
+     * reconnect execution to its authoring object without exposing raw inputs. */
+    combineId?: string;
     world: string;
     values: Record<string, string>;
     expectedScreenshots?: number;

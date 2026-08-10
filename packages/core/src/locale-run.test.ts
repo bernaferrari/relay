@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -485,6 +485,9 @@ test("startLocaleRecipeRun freezes screenshot-each-locale steps and export copie
     assert.ok(pack.manifest.cases.every((item) => item.frames.length === 1));
     assert.ok(pack.manifest.locales.includes("en"));
     assert.ok(pack.manifest.locales.includes("it"));
+    const report = await readFile(join(pack.rootDir, "index.html"), "utf8");
+    assert.match(report, /of 2 runs passed/);
+    assert.match(report, /001-screen\.png/);
   } finally {
     if (previous.workspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous.workspace;

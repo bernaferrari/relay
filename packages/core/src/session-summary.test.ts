@@ -21,6 +21,7 @@ test("job summaries expose only the safe matrix identity needed by live review",
         capturedAt: 10,
         data: {
           kind: "combine",
+          combineId: "language-x-settings",
           world: "Italiano",
           values: { language: "it-IT", language_label: "Italiano" },
           expectedScreenshots: 10,
@@ -35,6 +36,7 @@ test("job summaries expose only the safe matrix identity needed by live review",
 
   assert.deepEqual(summarizeJob(job).matrixCase, {
     kind: "combine",
+    combineId: "language-x-settings",
     world: "Italiano",
     values: { language: "it-IT", language_label: "Italiano" },
     expectedScreenshots: 10,

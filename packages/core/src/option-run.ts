@@ -28,7 +28,9 @@ import {
 } from "./locale-run.js";
 
 const NONE = "-";
-const MAX_WORLDS = 32;
+// One language sweep commonly exceeds 32 locales. Keep a hard safety bound,
+// but let preflight warnings—not an arbitrary small cap—guide large runs.
+const MAX_WORLDS = 250;
 
 export type OptionRunSet = {
   id: string;
@@ -42,6 +44,8 @@ export type OptionRunSet = {
 
 export type OptionRunRequest = {
   sets: OptionRunSet[];
+  /** Saved canvas matrix that owns this execution, when one exists. */
+  combineId?: string;
   /** Present when In/Out are map connection ids. */
   map?: AppMap;
   selected?: Record<string, string[]>;
@@ -589,6 +593,7 @@ export async function startOptionRecipeRun(input: {
           capturedAt: matrix.createdAt,
           data: {
             matrixId: matrix.id,
+            ...(request.combineId?.trim() ? { combineId: request.combineId.trim() } : {}),
             optionRunBatchId: batchId,
             seed: matrix.seed,
             caseIndex: item.index,

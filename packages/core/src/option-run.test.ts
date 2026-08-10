@@ -92,6 +92,15 @@ test("zip pairs option sets of equal length", async () => {
   assert.equal(matrix.cases.length, 2);
 });
 
+test("a full 41-locale sweep is not rejected by a small UI-era cap", async () => {
+  const locales: OptionRunSet = {
+    ...languages,
+    options: Array.from({ length: 41 }, (_, index) => ({ id: `locale-${index + 1}` })),
+  };
+  const matrix = await prepareOptionRunMatrix({ sets: [locales], strategy: "zip" });
+  assert.equal(matrix.cases.length, 41);
+});
+
 test("pairwise covers every pair without constructing the full product", async () => {
   const themes: OptionRunSet = {
     id: "themes",
