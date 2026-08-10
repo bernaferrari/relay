@@ -4,6 +4,8 @@ import type { JobInfo } from "./api-types";
 import {
   filterRunMatrixRows,
   isRunMatrixJob,
+  matrixReviewPageSize,
+  pageRunMatrixRows,
   projectRunMatrix,
   stepIndexForMatrixCapture,
 } from "./run-matrix-review";
@@ -134,4 +136,67 @@ test("reserves expected screenshot columns before live frames arrive", () => {
   ]);
   assert.equal(review?.captureLabels.length, 3);
   assert.deepEqual(review?.captureLabels, ["Ask", "Screenshot 2", "Screenshot 3"]);
+});
+
+test("keeps operational before and after frames in replay but out of screenshot review", () => {
+  const review = projectRunMatrix([
+    job({
+      id: "en",
+      status: "ok",
+      frames: [
+        { path: "before.png", caption: "before · Set locale", capturedAt: 1 },
+        { path: "after.png", caption: "after · Set locale", capturedAt: 2 },
+        { path: "settings.png", caption: "screen:Settings", capturedAt: 3 },
+        { path: "widget.png", caption: "tour:Widget", capturedAt: 4 },
+      ],
+      matrixCase: {
+        kind: "combine",
+        world: "English",
+        values: { language: "en" },
+        expectedScreenshots: 2,
+      },
+    }),
+  ]);
+
+  assert.ok(review);
+  assert.deepEqual(review.captureLabels, ["Settings", "Widget"]);
+  assert.deepEqual(
+    review.rows[0]?.captures.map((capture) => capture.index),
+    [2, 3],
+    "capture indices must continue to address the original replay frames",
+  );
+  assert.equal(review.missingCaptures, 0);
+});
+
+test("keeps a large dynamic screenshot matrix bounded for screen-first review", () => {
+  const runs = Array.from({ length: 45 }, (_, valueIndex) =>
+    job({
+      id: `locale-${valueIndex + 1}`,
+      caseIndex: valueIndex,
+      status: "ok",
+      frames: Array.from({ length: 10 }, (_, screenIndex) => ({
+        path: `locale-${valueIndex + 1}-screen-${screenIndex + 1}.png`,
+        caption: `screen:Screen ${screenIndex + 1}`,
+        capturedAt: screenIndex + 1,
+      })),
+      matrixCase: {
+        kind: "combine",
+        world: `Locale ${valueIndex + 1}`,
+        values: { language: `locale-${valueIndex + 1}` },
+        expectedScreenshots: 10,
+      },
+    }),
+  );
+
+  const review = projectRunMatrix(runs);
+  assert.ok(review);
+  assert.equal(review.rows.length, 45);
+  assert.equal(review.captureLabels.length, 10);
+  assert.equal(
+    review.rows.reduce((total, row) => total + row.captures.length, 0),
+    450,
+  );
+  assert.equal(pageRunMatrixRows(review.rows).length, matrixReviewPageSize);
+  assert.equal(pageRunMatrixRows(review.rows, 24).length, 24);
+  assert.equal(review.rows.length, 45, "paging must not remove export evidence");
 });

@@ -97,6 +97,7 @@ export function RunsWorkspace(props: {
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [visualPolicyBusy, setVisualPolicyBusy] = createSignal(false);
   const [matrixExporting, setMatrixExporting] = createSignal(false);
+  const [openMatrixWhenReady, setOpenMatrixWhenReady] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
@@ -159,7 +160,10 @@ export function RunsWorkspace(props: {
   const selectedMatrixRows = createMemo(() => {
     const job = selected();
     if (!job?.batchId || !isRunMatrixJob(job)) return [];
-    return rows().filter((row) => row.batchId === job.batchId && isRunMatrixJob(row));
+    // Persisted list rows omit frozen inputs until their detail is loaded. Once
+    // the selected run proves this is a matrix, include every sibling so the
+    // detail-loading effect below can hydrate the complete review.
+    return rows().filter((row) => row.batchId === job.batchId);
   });
   const selectedMatrixReview = createMemo(() => projectRunMatrix(selectedMatrixRows()));
   /**
@@ -190,6 +194,11 @@ export function RunsWorkspace(props: {
       requestedDetails.add(run.id);
       void server.loadRunDetail(run.id).finally(() => requestedDetails.delete(run.id));
     }
+  });
+  createEffect(() => {
+    if (!openMatrixWhenReady() || (selectedMatrixReview()?.rows.length ?? 0) < 2) return;
+    setTab("matrix");
+    setOpenMatrixWhenReady(false);
   });
   createEffect(() => {
     const job = selected();
@@ -292,6 +301,9 @@ export function RunsWorkspace(props: {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
     selectRunStep(initialRunReviewStep(job));
+    setOpenMatrixWhenReady(
+      Boolean(job.batchId && rows().filter((row) => row.batchId === job.batchId).length > 1),
+    );
     setTab(
       job.batchId &&
         rows().filter((row) => row.batchId === job.batchId).length > 1 &&
@@ -373,6 +385,12 @@ export function RunsWorkspace(props: {
     const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
     selectRunStep(initialRunReviewStep(requestedRun));
+    setOpenMatrixWhenReady(
+      Boolean(
+        requestedRun.batchId &&
+        rows().filter((row) => row.batchId === requestedRun.batchId).length > 1,
+      ),
+    );
     setTab(
       requestedRun.batchId &&
         rows().filter((row) => row.batchId === requestedRun.batchId).length > 1 &&
@@ -590,7 +608,6 @@ export function RunsWorkspace(props: {
                   {(review) => (
                     <RunMatrixReview
                       review={review()}
-                      selectedId={job().id}
                       onOpen={openMatrixCapture}
                       onRetryProblems={() => void retryProblemMatrixRuns()}
                       onExport={() => void exportSelectedMatrix()}
@@ -1085,15 +1102,6 @@ export function RunsWorkspace(props: {
                               evidence.
                             </p>
                           </div>
-                          <Show when={review().failed > 0}>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => void retryProblemMatrixRuns()}
-                            >
-                              <Icon name="refresh" size={12} /> Retry failed runs
-                            </Button>
-                          </Show>
                           <Show when={review().active > 0}>
                             <Button
                               variant="danger"

@@ -1,16 +1,17 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import type { RunMatrixReview as RunMatrixReviewModel } from "../lib/run-matrix-review";
-import { cn } from "../lib/cn";
-import { runOutcomeChip } from "./status-chip";
 import { Icon } from "./icon";
-import { filterRunMatrixRows } from "../lib/run-matrix-review";
-import { RunMatrixCaptureCell } from "./run-matrix-capture-cell";
+import {
+  filterRunMatrixRows,
+  matrixReviewPageSize,
+  pageRunMatrixRows,
+} from "../lib/run-matrix-review";
+import { RunMatrixCaptureCard } from "./run-matrix-capture-card";
 
 export function RunMatrixReview(props: {
   review: RunMatrixReviewModel;
-  selectedId: string;
   onOpen: (job: JobInfo, frameIndex: number) => void;
   onRetryProblems: () => void;
   onExport: () => void;
@@ -19,11 +20,27 @@ export function RunMatrixReview(props: {
   const server = useServer();
   const [query, setQuery] = createSignal("");
   const [problemsOnly, setProblemsOnly] = createSignal(false);
+  const [selectedCaptureIndex, setSelectedCaptureIndex] = createSignal(0);
+  const [visibleCount, setVisibleCount] = createSignal(matrixReviewPageSize);
   const visibleRows = createMemo(() =>
     filterRunMatrixRows(props.review, { query: query(), problemsOnly: problemsOnly() }),
   );
+  const pagedRows = createMemo(() => pageRunMatrixRows(visibleRows(), visibleCount()));
   const total = () => props.review.rows.length;
   const progress = () => (total() ? (props.review.complete / total()) * 100 : 0);
+  const selectedCaptureLabel = () =>
+    props.review.captureLabels[selectedCaptureIndex()] ?? "Screenshot";
+  createEffect(() => {
+    if (selectedCaptureIndex() >= props.review.captureLabels.length) {
+      setSelectedCaptureIndex(0);
+    }
+  });
+  createEffect(() => {
+    query();
+    problemsOnly();
+    selectedCaptureIndex();
+    setVisibleCount(matrixReviewPageSize);
+  });
   const frameSrc = (job: JobInfo, frame: NonNullable<JobInfo["frames"]>[number]) => {
     if (frame.base64) return `data:${frame.mime || "image/png"};base64,${frame.base64}`;
     if (job.persisted || job.runDir) {
@@ -44,7 +61,7 @@ export function RunMatrixReview(props: {
               Matrix results
             </h2>
             <p class="m-0 mt-0.5 text-[11px] text-[var(--text-weak)]">
-              Modifier values are rows. Captured screens are columns.
+              Review one screen across modifier values. Every screenshot remains in the export.
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
@@ -112,118 +129,83 @@ export function RunMatrixReview(props: {
           </For>
         </div>
       </Show>
-      <div class="flex shrink-0 items-center gap-2 border-b border-[var(--border-weak-base)] px-4 py-2">
-        <label class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)]">
-          <Icon name="search" size={12} class="text-[var(--text-weak)]" />
-          <span class="sr-only">Filter matrix results</span>
-          <input
-            type="search"
-            class="min-w-0 flex-1 border-0 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
-            value={query()}
-            placeholder="Filter locale or screen"
-            onInput={(event) => setQuery(event.currentTarget.value)}
-          />
-        </label>
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-pressed={problemsOnly()}
-          onClick={() => setProblemsOnly((value) => !value)}
-        >
-          Problems only
-        </Button>
-        <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
-          {visibleRows().length} of {props.review.rows.length}
-        </span>
-      </div>
-      <div class="min-h-0 flex-1 overflow-auto overscroll-contain p-4">
-        <table class="w-full min-w-[640px] border-separate border-spacing-0 text-left">
-          <thead class="sticky top-0 z-[3] bg-[var(--background-base)]">
-            <tr>
-              <th class="sticky left-0 z-[4] w-48 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-2 text-[10px] font-medium text-[var(--text-weak)]">
-                Modifier values
-              </th>
+      <Show when={props.review.captureLabels.length > 0}>
+        <div class="grid shrink-0 gap-2.5 border-b border-[var(--border-weak-base)] px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <label class="grid min-w-0 gap-1">
+            <span class="text-[10px] font-medium text-[var(--text-weak)]">Screen</span>
+            <select
+              aria-label="Screen to review"
+              class="h-10 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px] text-[var(--text-strong)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
+              value={selectedCaptureIndex()}
+              onChange={(event) => setSelectedCaptureIndex(Number(event.currentTarget.value))}
+            >
               <For each={props.review.captureLabels}>
-                {(label) => (
-                  <th class="min-w-36 border-b border-[var(--border-weak-base)] px-2 py-2 text-[10px] font-medium text-[var(--text-weak)]">
-                    <span class="block max-w-40 truncate" title={label}>
-                      {label}
-                    </span>
-                  </th>
-                )}
+                {(label, index) => <option value={index()}>{label}</option>}
               </For>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={visibleRows()}>
-              {(row) => {
-                const status = () => runOutcomeChip(row.job);
-                return (
-                  <tr
-                    class={cn(
-                      "group",
-                      row.job.id === props.selectedId &&
-                        "bg-[color-mix(in_srgb,var(--product-accent-soft)_40%,transparent)]",
-                    )}
-                  >
-                    <th
-                      class={cn(
-                        "sticky left-0 z-[2] border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-3 align-top group-hover:bg-[var(--surface-base)]",
-                        row.job.id === props.selectedId &&
-                          "shadow-[inset_2px_0_var(--text-interactive-base)]",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        class="grid w-full gap-1 text-left focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-                        onClick={() => props.onOpen(row.job, 0)}
-                      >
-                        <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-                          {row.world}
-                        </strong>
-                        <span class="flex flex-wrap gap-x-2 gap-y-0.5 text-[9.5px] text-[var(--text-weak)]">
-                          <For each={row.values}>
-                            {(value) => (
-                              <span>
-                                {value.name}: {value.value}
-                              </span>
-                            )}
-                          </For>
-                        </span>
-                        <span
-                          class={cn(
-                            "text-[9.5px]",
-                            status().tone === "fail"
-                              ? "text-[var(--icon-critical-base)]"
-                              : "text-[var(--text-weak)]",
-                          )}
-                        >
-                          {status().label}
-                        </span>
-                        <Show when={row.missingCaptures > 0}>
-                          <span class="text-[9.5px] text-[var(--icon-warning-base)]">
-                            {row.missingCaptures} missing
-                          </span>
-                        </Show>
-                      </button>
-                    </th>
-                    <For each={row.captures}>
-                      {(capture) => (
-                        <RunMatrixCaptureCell
-                          job={row.job}
-                          world={row.world}
-                          capture={capture}
-                          source={capture.frame ? frameSrc(row.job, capture.frame) : ""}
-                          onOpen={() => props.onOpen(row.job, capture.index)}
-                        />
-                      )}
-                    </For>
-                  </tr>
-                );
-              }}
-            </For>
-          </tbody>
-        </table>
+            </select>
+          </label>
+          <span class="self-end pb-2 text-[10.5px] tabular-nums text-[var(--text-weak)]">
+            {selectedCaptureIndex() + 1} of {props.review.captureLabels.length} screens
+          </span>
+          <label class="flex h-9 min-w-0 items-center gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)]">
+            <Icon name="search" size={12} class="text-[var(--text-weak)]" />
+            <span class="sr-only">Filter modifier values</span>
+            <input
+              type="search"
+              class="min-w-0 flex-1 border-0 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+              value={query()}
+              placeholder="Filter modifier values"
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
+          </label>
+          <div class="flex items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-pressed={problemsOnly()}
+              onClick={() => setProblemsOnly((value) => !value)}
+            >
+              Problems only
+            </Button>
+            <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
+              {visibleRows().length} values
+            </span>
+          </div>
+        </div>
+      </Show>
+      <div class="min-h-0 flex-1 overflow-auto overscroll-contain p-4">
+        <div class="mb-3 flex items-baseline justify-between gap-3">
+          <h3 class="m-0 truncate text-[13px] font-semibold text-[var(--text-strong)]">
+            {selectedCaptureLabel()}
+          </h3>
+          <span class="shrink-0 text-[10px] text-[var(--text-weak)]">
+            Showing {pagedRows().length} of {visibleRows().length}
+          </span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          <For each={pagedRows()}>
+            {(row) => {
+              const capture = () => row.captures[selectedCaptureIndex()];
+              return (
+                <Show when={capture()}>
+                  {(selectedCapture) => (
+                    <RunMatrixCaptureCard
+                      job={row.job}
+                      world={row.world}
+                      values={row.values}
+                      capture={selectedCapture()}
+                      missingCaptures={row.missingCaptures}
+                      source={
+                        selectedCapture().frame ? frameSrc(row.job, selectedCapture().frame!) : ""
+                      }
+                      onOpen={() => props.onOpen(row.job, selectedCapture().index)}
+                    />
+                  )}
+                </Show>
+              );
+            }}
+          </For>
+        </div>
         <Show when={props.review.captureLabels.length > 0 && visibleRows().length === 0}>
           <div class="grid min-h-48 place-items-center text-center">
             <div>
@@ -244,6 +226,17 @@ export function RunMatrixReview(props: {
                 This matrix still records pass, failure, timing, and diagnostic evidence.
               </p>
             </div>
+          </div>
+        </Show>
+        <Show when={pagedRows().length < visibleRows().length}>
+          <div class="grid place-items-center pt-4">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setVisibleCount((count) => count + matrixReviewPageSize)}
+            >
+              Show {Math.min(matrixReviewPageSize, visibleRows().length - pagedRows().length)} more
+            </Button>
           </div>
         </Show>
       </div>

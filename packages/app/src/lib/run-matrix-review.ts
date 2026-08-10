@@ -40,6 +40,8 @@ export type RunMatrixReview = {
   insights: RunMatrixInsight[];
 };
 
+export const matrixReviewPageSize = 12;
+
 function frozenInputs(job: JobInfo): FrozenMatrixInputs | undefined {
   if (job.matrixCase) return job.matrixCase;
   const data = job.artifacts?.find((artifact) => artifact.kind === "frozen-inputs")?.data;
@@ -54,6 +56,19 @@ export function isRunMatrixJob(job: JobInfo): boolean {
 function readableCaption(caption: string | undefined, index: number): string {
   const value = caption?.replace(/^(screen|tour|final):/, "").trim();
   return value || `Screenshot ${index + 1}`;
+}
+
+function requestedScreenshotFrames(job: JobInfo): Array<{
+  index: number;
+  frame: NonNullable<JobInfo["frames"]>[number];
+}> {
+  const frames = job.frames ?? [];
+  const requested = frames.flatMap((frame, index) =>
+    /^(screen|tour|final):/.test(frame.caption ?? "") ? [{ index, frame }] : [],
+  );
+  // Reusable screenshot tours label their intentional captures. Keep setup
+  // before/after evidence in replay, but do not let it double the review grid.
+  return requested.length ? requested : frames.map((frame, index) => ({ index, frame }));
 }
 
 function valuesFor(job: JobInfo): RunMatrixValue[] {
@@ -86,17 +101,20 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
     ...matrixRows.map((job) => {
       const expected = frozenInputs(job)?.expectedScreenshots;
       return Math.max(
-        job.frames?.length ?? 0,
+        requestedScreenshotFrames(job).length,
         typeof expected === "number" && Number.isFinite(expected) ? expected : 0,
       );
     }),
   );
   const captureLabels = Array.from({ length: captureCount }, (_, index) => {
-    const frame = matrixRows.find((job) => job.frames?.[index])?.frames?.[index];
+    const frame = matrixRows.map(requestedScreenshotFrames).find((frames) => frames[index])?.[
+      index
+    ]?.frame;
     return readableCaption(frame?.caption, index);
   });
   const projected = matrixRows.map((job, rowIndex): RunMatrixRow => {
     const data = frozenInputs(job);
+    const screenshots = requestedScreenshotFrames(job);
     const world =
       typeof data?.world === "string" && data.world.trim() ? data.world : `Run ${rowIndex + 1}`;
     const expected = data?.expectedScreenshots;
@@ -107,14 +125,17 @@ export function projectRunMatrix(rows: JobInfo[]): RunMatrixReview | null {
       job,
       world,
       values: valuesFor(job),
-      captures: captureLabels.map((caption, index) => ({
-        index,
-        caption,
-        frame: job.frames?.[index],
-      })),
+      captures: captureLabels.map((caption, index) => {
+        const screenshot = screenshots[index];
+        return {
+          index: screenshot?.index ?? index,
+          caption,
+          frame: screenshot?.frame,
+        };
+      }),
       missingCaptures:
         terminal && expectedCount !== undefined
-          ? Math.max(0, expectedCount - (job.frames?.length ?? 0))
+          ? Math.max(0, expectedCount - screenshots.length)
           : 0,
       ...(expectedCount !== undefined ? { expectedScreenshots: expectedCount } : {}),
     };
@@ -197,6 +218,14 @@ export function filterRunMatrixRows(
       ...row.captures.map((capture) => capture.caption),
     ].some((value) => value.toLocaleLowerCase().includes(query));
   });
+}
+
+/** Keeps large value sets calm in the UI without hiding evidence from export. */
+export function pageRunMatrixRows(
+  rows: RunMatrixRow[],
+  visibleCount = matrixReviewPageSize,
+): RunMatrixRow[] {
+  return rows.slice(0, Math.max(0, visibleCount));
 }
 
 export function stepIndexForMatrixCapture(job: JobInfo, frameIndex: number): number {
