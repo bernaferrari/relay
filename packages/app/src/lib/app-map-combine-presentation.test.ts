@@ -67,8 +67,20 @@ test("cartesian projection makes every state combination × every test visible",
       testCount: tests.length,
       hasVariable: true,
       hasTest: true,
+      screenshotCount: 70,
     }),
-    /4 device runs · 8 checks/i,
+    /4 device runs · 8 checks.*70 screenshots/i,
+  );
+  assert.match(
+    combineSubhead({
+      cellCount: projection.cellCount,
+      worldCount: projection.totalWorlds,
+      testCount: tests.length,
+      hasVariable: true,
+      hasTest: true,
+      screenshotCount: 0,
+    }),
+    /0 screenshots/i,
   );
 });
 

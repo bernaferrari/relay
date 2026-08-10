@@ -92,6 +92,7 @@ export function describeRecipeStep(step: RecipeStep): string {
           ? "Check clipboard text"
           : "Read clipboard text";
     case "app":
+      if (step.action === "set-locale") return `Set ${step.app} language to ${step.locale}`;
       if (step.action === "switcher") return "Open app switcher";
       if (step.action === "inspect") return `Record installed version of ${step.app}`;
       if (step.action === "assert-installed")

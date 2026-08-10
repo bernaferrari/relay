@@ -8,6 +8,7 @@ export type TourStop = {
   label: string;
   identifier?: string;
   point?: { x: number; y: number };
+  capture?: boolean;
 };
 
 export type TourScreenSignature = {
@@ -16,7 +17,7 @@ export type TourScreenSignature = {
 
 const HEADER = /^(app|grok|voice|general|other)$/i;
 const SKIP = /search|close|back|done|cancel|dismiss|keyboard|undo|redo|paste/i;
-const LANGUAGE_ROW = /language|idioma|sprache|langue|言語|语言|語言/i;
+const LANGUAGE_ROW = /language|idioma|sprache|langue|lingua|língua|لغة|言語|语言|語言/i;
 
 export function extractTourStops(
   nodes: SnapshotNode[],
@@ -176,6 +177,7 @@ export function onTourOrigin(input: {
   originAliases?: readonly string[];
   stops: ReadonlyArray<{ label: string }>;
   fallbackStops?: ReadonlyArray<{ label: string }>;
+  minimumFallbackOverlap?: number;
 }): boolean {
   if (
     tourOriginFingerprintMatch(input.liveFingerprint, input.originFingerprint, input.originAliases)
@@ -184,7 +186,7 @@ export function onTourOrigin(input: {
   }
   if (input.fallbackStops?.length) {
     const hits = tourFallbackOverlap(input.stops, input.fallbackStops);
-    return hits >= Math.min(2, input.fallbackStops.length);
+    return hits >= Math.min(input.minimumFallbackOverlap ?? 2, input.fallbackStops.length);
   }
   return input.stops.length > 0;
 }

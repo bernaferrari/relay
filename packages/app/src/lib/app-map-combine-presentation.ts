@@ -16,6 +16,7 @@ export type CombineTestColumn = {
   id: string;
   name: string;
   kind: "path" | "tour";
+  screenCount?: number;
 };
 
 export type CombineWorld = {
@@ -70,13 +71,18 @@ export function combineSubhead(input: {
   testCount?: number;
   hasVariable: boolean;
   hasTest: boolean;
+  screenshotCount?: number;
 }): string {
   if (!input.hasTest) return "Choose one or more paths to test.";
   if (!input.hasVariable) return "Choose a modifier such as language, account, or model.";
   const worlds = input.worldCount ?? input.cellCount;
   const tests = input.testCount ?? 1;
   if (input.cellCount <= 1) return "One device run with one test.";
-  return `${worlds} device ${worlds === 1 ? "run" : "runs"} · ${input.cellCount} ${input.cellCount === 1 ? "check" : "checks"} across ${tests} ${tests === 1 ? "test" : "tests"}.`;
+  const screenshots =
+    input.screenshotCount !== undefined
+      ? ` · ${input.screenshotCount} ${input.screenshotCount === 1 ? "screenshot" : "screenshots"}`
+      : "";
+  return `${worlds} device ${worlds === 1 ? "run" : "runs"} · ${input.cellCount} ${input.cellCount === 1 ? "check" : "checks"} across ${tests} ${tests === 1 ? "test" : "tests"}${screenshots}.`;
 }
 
 function worldLabel(variables: CombineVariable[], values: Record<string, CombineValue>): string {

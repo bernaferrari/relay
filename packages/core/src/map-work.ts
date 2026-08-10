@@ -56,7 +56,11 @@ function navigationStepsFromActions(actions: ActionSpec[] | undefined): RecipeSt
   return steps;
 }
 
-export function fallbackTourStopsFromMap(map: AppMap, rootScreenId: string): TourStop[] {
+export function fallbackTourStopsFromMap(
+  map: AppMap,
+  rootScreenId: string,
+  captureScreenIds?: ReadonlySet<string>,
+): TourStop[] {
   const stops: TourStop[] = [];
   const seen = new Set<string>();
   for (const connection of Object.values(map.connections ?? {}) as Connection[]) {
@@ -77,13 +81,41 @@ export function fallbackTourStopsFromMap(map: AppMap, rootScreenId: string): Tou
       label: labelTarget || label,
       ...(identifier ? { identifier } : {}),
       ...(point ? { point } : {}),
+      ...(captureScreenIds && connection.destination.kind === "screen"
+        ? { capture: captureScreenIds.has(connection.destination.screenId) }
+        : {}),
     });
   }
   return stops;
 }
 
-/** Walk mapped In-paths so a tour can start from Ask/Imagine, not only Settings. */
-export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeStep[] {
+function fallbackTourStopsForScreens(
+  map: AppMap,
+  rootScreenId: string,
+  screenIds: Set<string>,
+  captureScreenIds?: ReadonlySet<string>,
+): TourStop[] {
+  const allowedLabels = new Set(
+    (Object.values(map.connections ?? {}) as Connection[])
+      .filter(
+        (connection) =>
+          connection.fromScreenId === rootScreenId &&
+          connection.destination.kind === "screen" &&
+          screenIds.has(connection.destination.screenId),
+      )
+      .map((connection) => connection.label?.trim().toLocaleLowerCase())
+      .filter((label): label is string => Boolean(label)),
+  );
+  return fallbackTourStopsFromMap(map, rootScreenId, captureScreenIds).filter((stop) =>
+    allowedLabels.has(stop.label.trim().toLocaleLowerCase()),
+  );
+}
+
+function captureMode(work: AppMapTest): NonNullable<AppMapTest["capture"]>["mode"] {
+  return work.capture?.mode ?? (work.screenshotEach === false ? "none" : "every-screen");
+}
+
+function preludeConnectionsToScreen(map: AppMap, rootScreenId: string): Connection[] {
   const connections = Object.values(map.connections ?? {}) as Connection[];
   const incoming = new Map<string, Connection[]>();
   const destinations = new Set<string>();
@@ -91,9 +123,7 @@ export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeS
     if (connection.destination.kind !== "screen") continue;
     const to = connection.destination.screenId;
     destinations.add(to);
-    const list = incoming.get(to) ?? [];
-    list.push(connection);
-    incoming.set(to, list);
+    incoming.set(to, [...(incoming.get(to) ?? []), connection]);
   }
   const startIds = new Set(
     Object.values(map.flows ?? {})
@@ -116,14 +146,19 @@ export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeS
       const from = connection.fromScreenId;
       if (seen.has(from)) continue;
       const nextPath = [connection, ...current.path];
-      if (startIds.has(from)) {
-        return nextPath.flatMap((item) => navigationStepsFromActions(item.actions));
-      }
+      if (startIds.has(from)) return nextPath;
       seen.add(from);
       queue.push({ screenId: from, path: nextPath });
     }
   }
   return [];
+}
+
+/** Walk mapped In-paths so a tour can start from Ask/Imagine, not only Settings. */
+export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeStep[] {
+  return preludeConnectionsToScreen(map, rootScreenId).flatMap((item) =>
+    navigationStepsFromActions(item.actions),
+  );
 }
 
 export function compileAppMapTest(
@@ -148,8 +183,25 @@ export function compileAppMapTest(
         },
       ]),
     );
-    const root = graph[plan.rootRecipeId];
+    let root = graph[plan.rootRecipeId];
     if (!root) throw new Error(`Test “${work.name}” compiled without a root recipe`);
+    const evidenceMode = captureMode(work);
+    if (evidenceMode !== "every-screen") {
+      for (const [id, recipe] of Object.entries(graph)) {
+        graph[id] = {
+          ...recipe,
+          steps: recipe.steps.filter((step) => step.kind !== "screenshot"),
+        };
+      }
+      root = graph[plan.rootRecipeId]!;
+    }
+    if (evidenceMode === "final-screen") {
+      root = {
+        ...root,
+        steps: [...root.steps, { kind: "screenshot", caption: `final:${work.name}` }],
+      };
+      graph[root.id] = root;
+    }
     return { root, graph };
   }
   if (!work.rootScreenId?.trim() || !map.screens[work.rootScreenId]) {
@@ -159,24 +211,98 @@ export function compileAppMapTest(
   const screen = map.screens[work.rootScreenId];
   const fingerprint = screen?.identity?.fingerprint?.trim();
   const aliases = screen?.identity?.aliases?.filter((alias) => alias.trim()) ?? [];
-  const fallbackStops = fallbackTourStopsFromMap(map, work.rootScreenId);
-  const prelude = preludeStepsToScreen(map, work.rootScreenId).flatMap((step) =>
-    step.kind === "tap" || step.kind === "key" ? [step] : [],
+  const exactScreenIds = work.screenIds?.length ? new Set(work.screenIds) : undefined;
+  const evidenceMode = captureMode(work);
+  const checkpointIds =
+    work.capture?.mode === "checkpoints" ? new Set(work.capture.screenIds) : undefined;
+  const shouldCaptureScreen = (screenId: string) =>
+    evidenceMode === "every-screen" || checkpointIds?.has(screenId) === true;
+  const preludeConnections = preludeConnectionsToScreen(map, work.rootScreenId);
+  const preludeScreenIds = new Set<string>();
+  if (preludeConnections[0]) preludeScreenIds.add(preludeConnections[0].fromScreenId);
+  for (const connection of preludeConnections) {
+    if (connection.destination.kind === "screen") {
+      preludeScreenIds.add(connection.destination.screenId);
+    }
+  }
+  const fallbackStops = exactScreenIds
+    ? fallbackTourStopsForScreens(map, work.rootScreenId, exactScreenIds, checkpointIds)
+    : fallbackTourStopsFromMap(map, work.rootScreenId, checkpointIds);
+  const childScreenIds = new Set(
+    (Object.values(map.connections ?? {}) as Connection[])
+      .filter(
+        (connection) =>
+          connection.fromScreenId === work.rootScreenId && connection.destination.kind === "screen",
+      )
+      .map((connection) =>
+        connection.destination.kind === "screen" ? connection.destination.screenId : "",
+      ),
   );
-  const steps: RecipeStep[] = [
-    {
+  if (exactScreenIds) {
+    const unsupported = [...exactScreenIds].filter(
+      (screenId) => !preludeScreenIds.has(screenId) && !childScreenIds.has(screenId),
+    );
+    if (unsupported.length) {
+      throw new Error(
+        `Test “${work.name}” cannot reach selected screen(s): ${unsupported
+          .map((id) => map.screens[id]?.title ?? id)
+          .join(", ")}`,
+      );
+    }
+  }
+  const prelude = preludeConnections
+    .flatMap((connection) => navigationStepsFromActions(connection.actions))
+    .flatMap((step) => (step.kind === "tap" || step.kind === "key" ? [step] : []));
+  const steps: RecipeStep[] = [];
+  if (exactScreenIds) {
+    const first = preludeConnections[0]?.fromScreenId;
+    if (first && exactScreenIds.has(first) && shouldCaptureScreen(first)) {
+      steps.push({ kind: "screenshot", caption: `screen:${map.screens[first]?.title ?? first}` });
+    }
+    for (const connection of preludeConnections) {
+      steps.push(...navigationStepsFromActions(connection.actions));
+      steps.push({ kind: "sleep", ms: 350 });
+      if (
+        connection.destination.kind === "screen" &&
+        exactScreenIds.has(connection.destination.screenId) &&
+        shouldCaptureScreen(connection.destination.screenId)
+      ) {
+        const destinationId = connection.destination.screenId;
+        steps.push({
+          kind: "screenshot",
+          caption: `screen:${map.screens[destinationId]?.title ?? destinationId}`,
+        });
+      }
+    }
+    if (
+      !preludeConnections.length &&
+      exactScreenIds.has(work.rootScreenId) &&
+      shouldCaptureScreen(work.rootScreenId)
+    ) {
+      steps.push({
+        kind: "screenshot",
+        caption: `screen:${map.screens[work.rootScreenId]?.title ?? work.rootScreenId}`,
+      });
+    }
+  }
+  if (!exactScreenIds || fallbackStops.length) {
+    steps.push({
       kind: "tour",
       depth,
-      screenshot: work.screenshotEach !== false,
+      screenshot: evidenceMode === "every-screen" || evidenceMode === "checkpoints",
       excludeLanguageRows: true,
       originScreenId: work.rootScreenId,
       originTitle: screen?.title ?? work.name,
       ...(fingerprint ? { originFingerprint: fingerprint } : {}),
       ...(aliases.length ? { originAliases: aliases } : {}),
-      ...(prelude.length ? { preludeSteps: prelude } : {}),
+      ...(!exactScreenIds && prelude.length ? { preludeSteps: prelude } : {}),
       ...(fallbackStops.length ? { fallbackStops } : {}),
-    },
-  ];
+      ...(exactScreenIds ? { mappedStopsOnly: true } : {}),
+    });
+  }
+  if (evidenceMode === "final-screen") {
+    steps.push({ kind: "screenshot", caption: `final:${work.name}` });
+  }
   const root: Recipe = {
     id: `test-${work.id}`,
     title: work.name,
@@ -199,7 +325,10 @@ export function compileAppMapCombine(
   for (const testId of combine.testIds) {
     const work = map.tests?.[testId];
     if (!work) throw new Error(`Test ${testId} is missing`);
-    const compiled = compileAppMapTest(map, work);
+    const compiled = compileAppMapTest(map, {
+      ...work,
+      ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
+    });
     Object.assign(graph, compiled.graph);
     modules.push({ kind: "module", recipeId: compiled.root.id });
   }

@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js";
-import type { CompatibilityMatrix } from "@relay/protocol";
+import type { AppMapCapturePolicy, CompatibilityMatrix } from "@relay/protocol";
 import { toast } from "../context/toast";
 import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
@@ -244,6 +244,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     flowId?: string;
     testId?: string;
     combineId?: string;
+    capture?: AppMapCapturePolicy;
     sets?: unknown[];
     variableIds?: string[];
     selected?: Record<string, string[]>;
@@ -267,6 +268,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
         flowId: input.flowId,
         testId: input.testId,
         combineId: input.combineId,
+        capture: input.capture,
         serial,
         targetKind: targetPlatform === "browser" ? "browser" : "device",
         platform: targetPlatform === "browser" ? undefined : targetPlatform,

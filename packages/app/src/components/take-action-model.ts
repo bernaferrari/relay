@@ -54,6 +54,9 @@ export function interactionForAction(action: RecordingTakeAction): AuthoringInte
         ...(step.match ? { match: step.match } : {}),
       };
     case "app":
+      if (step.action === "set-locale") {
+        return { kind: "steps", steps: [structuredClone(step)] };
+      }
       return {
         kind: "app",
         action: step.action,

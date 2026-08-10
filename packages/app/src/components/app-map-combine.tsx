@@ -1,5 +1,12 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
-import type { AppMapTest, AppMapVariable, CaseExpansionStrategy, Flow } from "@relay/protocol";
+import type {
+  AppMapCapturePolicy,
+  AppMapTest,
+  AppMapVariable,
+  CaseExpansionStrategy,
+  Flow,
+  MapGroup,
+} from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
@@ -20,12 +27,34 @@ import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
 
 type TestCandidate = CombineTestColumn &
-  ({ source: "test"; test: AppMapTest } | { source: "flow"; flow: Flow });
+  (
+    | { source: "test"; test: AppMapTest }
+    | { source: "flow"; flow: Flow }
+    | { source: "group"; group: MapGroup }
+  );
 
 const MAX_DEVICE_WORLDS = 32;
+type SimpleCaptureMode = Exclude<AppMapCapturePolicy["mode"], "checkpoints">;
 
 function candidateKey(candidate: TestCandidate): string {
   return `${candidate.source}:${candidate.id}`;
+}
+
+function savedTestId(candidate: TestCandidate): string {
+  return candidate.source === "test"
+    ? candidate.test.id
+    : candidate.source === "flow"
+      ? `flow-${candidate.flow.id}`
+      : `group-${candidate.group.id}`;
+}
+
+function defaultCaptureMode(candidate: TestCandidate): SimpleCaptureMode {
+  if (candidate.source === "test") {
+    const mode = candidate.test.capture?.mode;
+    if (mode && mode !== "checkpoints") return mode;
+    if (candidate.test.screenshotEach === false) return "none";
+  }
+  return "every-screen";
 }
 
 function matrixId(variableIds: string[], testIds: string[]): string {
@@ -39,6 +68,7 @@ function matrixId(variableIds: string[], testIds: string[]): string {
 }
 
 function modifierMethodLabel(variable: AppMapVariable): string {
+  if (variable.apply.kind === "appLocale") return "Android app language";
   if (variable.apply.kind === "toggle") return "toggle";
   const opensWithPath = Boolean(
     variable.apply.inConnectionId ||
@@ -66,6 +96,7 @@ export function AppMapCombine(props: {
   const [selectedVariableIds, setSelectedVariableIds] = createSignal<string[]>([]);
   const [selectedValues, setSelectedValues] = createSignal<Record<string, string[]>>({});
   const [selectedTestKeys, setSelectedTestKeys] = createSignal<string[]>([]);
+  const [captureModes, setCaptureModes] = createSignal<Record<string, SimpleCaptureMode>>({});
   const [strategy, setStrategy] = createSignal<CaseExpansionStrategy>("cartesian");
   const [editingValuesFor, setEditingValuesFor] = createSignal<string>();
   const [creatingSet, setCreatingSet] = createSignal(false);
@@ -91,6 +122,7 @@ export function AppMapCombine(props: {
       kind: test.kind,
       source: "test",
       test,
+      screenCount: test.screenIds?.length,
     }));
     const referencedFlows = new Set(
       tests.flatMap((candidate) =>
@@ -100,6 +132,17 @@ export function AppMapCombine(props: {
     for (const flow of Object.values(current.flows ?? {})) {
       if (!flow.connectionIds.length || referencedFlows.has(flow.id)) continue;
       tests.push({ id: flow.id, name: flow.name, kind: "path", source: "flow", flow });
+    }
+    for (const group of Object.values(current.groups ?? {})) {
+      if (!group.screenIds.length) continue;
+      tests.push({
+        id: group.id,
+        name: group.name,
+        kind: "tour",
+        source: "group",
+        group,
+        screenCount: group.screenIds.length,
+      });
     }
     return tests;
   });
@@ -153,6 +196,20 @@ export function AppMapCombine(props: {
       testCount: selectedTests().length,
       hasVariable: selectedVariables().length > 0,
       hasTest: selectedTests().length > 0,
+      screenshotCount:
+        projection().totalWorlds &&
+        selectedTests().every((test) => {
+          const mode = captureModes()[candidateKey(test)] ?? defaultCaptureMode(test);
+          return mode !== "every-screen" || test.screenCount !== undefined;
+        })
+          ? projection().totalWorlds *
+            selectedTests().reduce((total, test) => {
+              const mode = captureModes()[candidateKey(test)] ?? defaultCaptureMode(test);
+              if (mode === "every-screen") return total + (test.screenCount ?? 0);
+              if (mode === "final-screen") return total + 1;
+              return total;
+            }, 0)
+          : undefined,
     }),
   );
   const runIssue = createMemo(() => {
@@ -195,6 +252,17 @@ export function AppMapCombine(props: {
       ),
     );
     setSelectedTestKeys(nextTests);
+    setCaptureModes(
+      Object.fromEntries(
+        candidates().map((candidate) => {
+          const saved = existing?.captures?.[savedTestId(candidate)]?.mode;
+          return [
+            candidateKey(candidate),
+            saved && saved !== "checkpoints" ? saved : defaultCaptureMode(candidate),
+          ];
+        }),
+      ),
+    );
     setStrategy(existing?.strategy ?? "cartesian");
   }
 
@@ -242,10 +310,23 @@ export function AppMapCombine(props: {
         testIds.push(candidate.test.id);
         continue;
       }
-      const id = `flow-${candidate.flow.id}`;
+      const id = savedTestId(candidate);
       const existing = currentMap.tests?.[id];
       if (!existing) {
         const now = Date.now();
+        const rootScreenId =
+          candidate.source === "group"
+            ? [...candidate.group.screenIds].sort((left, right) => {
+                const outgoing = (screenId: string) =>
+                  Object.values(currentMap.connections).filter(
+                    (connection) =>
+                      connection.fromScreenId === screenId &&
+                      connection.destination.kind === "screen" &&
+                      candidate.group.screenIds.includes(connection.destination.screenId),
+                  ).length;
+                return outgoing(right) - outgoing(left);
+              })[0]
+            : undefined;
         const saved = await server.saveTest({
           appMapId: currentMap.id,
           expectedRevision: revision,
@@ -254,10 +335,11 @@ export function AppMapCombine(props: {
             organizationId: currentMap.organizationId,
             projectId: currentMap.projectId,
             appMapId: currentMap.id,
-            name: candidate.flow.name,
-            kind: "path",
-            flowId: candidate.flow.id,
-            screenshotEach: true,
+            name: candidate.name,
+            kind: candidate.kind,
+            ...(candidate.source === "flow"
+              ? { flowId: candidate.flow.id }
+              : { rootScreenId, screenIds: [...candidate.group.screenIds] }),
             createdAt: now,
             updatedAt: now,
           },
@@ -361,6 +443,14 @@ export function AppMapCombine(props: {
     const selected = selectedOptionIds();
     const id = props.combineId?.trim() || matrixId(variableIds, ensured.testIds);
     const existing = currentMap.combines?.[id];
+    const captures = Object.fromEntries(
+      selectedTests().map((candidate, index) => [
+        ensured.testIds[index]!,
+        {
+          mode: captureModes()[candidateKey(candidate)] ?? defaultCaptureMode(candidate),
+        } satisfies AppMapCapturePolicy,
+      ]),
+    );
     const now = Date.now();
     await server.saveCombine({
       appMapId: currentMap.id,
@@ -374,6 +464,7 @@ export function AppMapCombine(props: {
         variableIds,
         testIds: ensured.testIds,
         selected,
+        captures,
         strategy: strategy(),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -425,10 +516,18 @@ export function AppMapCombine(props: {
           );
       if (input) {
         await ensureTests(currentMap);
-        const testId = input.test.source === "test" ? input.test.id : `flow-${input.test.flow.id}`;
+        const testId =
+          input.test.source === "test"
+            ? input.test.id
+            : input.test.source === "flow"
+              ? `flow-${input.test.flow.id}`
+              : `group-${input.test.group.id}`;
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           testId,
+          capture: {
+            mode: captureModes()[candidateKey(input.test)] ?? defaultCaptureMode(input.test),
+          },
           variableIds,
           selected,
           strategy: "zip",
@@ -598,7 +697,12 @@ export function AppMapCombine(props: {
                                 <Icon name={editing() ? "chevron-up" : "sliders"} size={12} />
                               </button>
                             </Show>
-                            <Show when={variable.apply.kind === "list"}>
+                            <Show
+                              when={
+                                variable.apply.kind === "list" ||
+                                variable.apply.kind === "appLocale"
+                              }
+                            >
                               <button
                                 type="button"
                                 class="grid size-10 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
@@ -742,39 +846,71 @@ export function AppMapCombine(props: {
                   <For each={candidates()}>
                     {(candidate) => {
                       const selected = () => selectedTestKeys().includes(candidateKey(candidate));
+                      const mode = () =>
+                        captureModes()[candidateKey(candidate)] ?? defaultCaptureMode(candidate);
                       return (
-                        <button
-                          type="button"
+                        <div
                           class={cn(
                             "flex min-h-11 items-center gap-2 rounded-[8px] px-2.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                             selected() && "bg-[var(--surface-base)]",
                           )}
-                          aria-pressed={selected()}
-                          onClick={() => toggleTest(candidate)}
                         >
-                          <span
-                            class={cn(
-                              "grid size-4 shrink-0 place-items-center rounded-[4px] border",
-                              selected()
-                                ? "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]"
-                                : "border-[var(--border-strong-base)]",
-                            )}
+                          <button
+                            type="button"
+                            class="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-[7px] text-left focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                            aria-pressed={selected()}
+                            onClick={() => toggleTest(candidate)}
                           >
-                            <Show when={selected()}>
-                              <Icon name="check" size={9} />
-                            </Show>
-                          </span>
-                          <span class={cn(copyStack, "flex-1")}>
-                            <strong
-                              class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}
+                            <span
+                              class={cn(
+                                "grid size-4 shrink-0 place-items-center rounded-[4px] border",
+                                selected()
+                                  ? "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]"
+                                  : "border-[var(--border-strong-base)]",
+                              )}
                             >
-                              {candidate.name}
-                            </strong>
-                            <span class={cn(copyDescription, "block text-[10px]")}>
-                              {candidate.kind === "tour" ? "Visit mapped screens" : "Recorded path"}
+                              <Show when={selected()}>
+                                <Icon name="check" size={9} />
+                              </Show>
                             </span>
-                          </span>
-                        </button>
+                            <span class={cn(copyStack, "min-w-0 flex-1")}>
+                              <strong
+                                class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}
+                              >
+                                {candidate.name}
+                              </strong>
+                              <span class={cn(copyDescription, "block text-[10px]")}>
+                                {candidate.screenCount
+                                  ? `${candidate.screenCount} mapped ${candidate.screenCount === 1 ? "screen" : "screens"}`
+                                  : candidate.kind === "tour"
+                                    ? "Visit mapped screens"
+                                    : "Recorded path"}
+                              </span>
+                            </span>
+                          </button>
+                          <Show when={selected()}>
+                            <label class="grid shrink-0 gap-0.5 text-[9px] font-medium text-[var(--text-weak)]">
+                              Screenshots
+                              <select
+                                class="h-8 rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2 text-[10.5px] text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                                value={mode()}
+                                aria-label={`Screenshots for ${candidate.name}`}
+                                onChange={(event) =>
+                                  setCaptureModes((current) => ({
+                                    ...current,
+                                    [candidateKey(candidate)]: event.currentTarget
+                                      .value as SimpleCaptureMode,
+                                  }))
+                                }
+                              >
+                                <option value="every-screen">Every screen</option>
+                                <option value="final-screen">Final screen</option>
+                                <option value="failures-only">Failures only</option>
+                                <option value="none">None</option>
+                              </select>
+                            </label>
+                          </Show>
+                        </div>
                       );
                     }}
                   </For>

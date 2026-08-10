@@ -166,6 +166,67 @@ function assertCombines(map: AppMap): void {
   }
 }
 
+function assertTests(map: AppMap): void {
+  for (const work of Object.values(map.tests ?? {})) {
+    if (work.rootScreenId && !map.screens[work.rootScreenId]) {
+      appMapFail(
+        "missing-reference",
+        `Test ${work.id} references missing root screen ${work.rootScreenId}`,
+      );
+    }
+    for (const screenId of work.screenIds ?? []) {
+      if (!map.screens[screenId]) {
+        appMapFail("missing-reference", `Test ${work.id} references missing screen ${screenId}`);
+      }
+    }
+    if (work.capture?.mode === "checkpoints") {
+      const traversal = new Set(work.screenIds ?? []);
+      for (const screenId of work.capture.screenIds) {
+        if (!map.screens[screenId]) {
+          appMapFail("missing-reference", `Test ${work.id} captures missing screen ${screenId}`);
+        }
+        if (traversal.size && !traversal.has(screenId)) {
+          appMapFail(
+            "invalid-map",
+            `Test ${work.id} captures ${screenId} without visiting that screen`,
+          );
+        }
+      }
+    }
+  }
+}
+
+function assertCombineCaptures(map: AppMap): void {
+  for (const combine of Object.values(map.combines ?? {})) {
+    for (const [testId, capture] of Object.entries(combine.captures ?? {})) {
+      const work = map.tests?.[testId];
+      if (!work) continue;
+      if (capture.mode !== "checkpoints") continue;
+      if (work.kind !== "tour") {
+        appMapFail(
+          "invalid-map",
+          `Combine ${combine.id} uses screen checkpoints for non-tour Test ${testId}`,
+        );
+      }
+      const traversal = new Set(work.screenIds ?? []);
+      for (const screenId of capture.screenIds) {
+        if (!map.screens[screenId]) {
+          appMapFail(
+            "missing-reference",
+            `Combine ${combine.id} captures missing screen ${screenId}`,
+          );
+        }
+        if (traversal.size && !traversal.has(screenId)) {
+          appMapFail(
+            "invalid-map",
+            `Combine ${combine.id} captures ${screenId} without Test ${testId} visiting it`,
+          );
+        }
+      }
+    }
+  }
+}
+
 function assertConnectionsAndActions(map: AppMap): void {
   for (const connection of Object.values(map.connections)) {
     if (!map.screens[connection.fromScreenId]) {
@@ -464,7 +525,9 @@ export function validateAppMap(value: unknown): AppMap {
 
   assertVariants(input);
   assertGroups(input);
+  assertTests(input);
   assertCombines(input);
+  assertCombineCaptures(input);
   assertConnectionsAndActions(input);
   assertRoutineGraph(input);
   assertFlows(input);

@@ -79,6 +79,7 @@ export function resolveVariableApply(
   map?: AppMap,
   opts?: { profileId?: string; preset?: "grok" },
 ): ResolvedVariableApply {
+  if (set.apply.kind === "appLocale") return { entry: [], exit: [] };
   if (set.apply.kind === "toggle") throw new Error("toggles are not runnable yet");
   const apply = set.apply;
   let entry: VariableNavStep[] = [];
@@ -124,6 +125,7 @@ export function assertOptionSandwichReady(
   opts?: { profileId?: string; preset?: "grok" },
 ): ResolvedVariableApply {
   const resolved = resolveVariableApply(set, map, opts);
+  if (set.apply.kind === "appLocale") return resolved;
   if (!resolved.entry.length && !(set.apply.kind === "list" && set.apply.inConnectionId && !map)) {
     if (!resolved.entry.length) {
       throw new Error("Record how you open this list");
@@ -350,12 +352,26 @@ function selectSteps(prefix: string): RecipeStep[] {
 
 export function composeOptionRunRecipes(input: {
   body: Recipe;
+  bodyGraph?: Record<string, Recipe>;
   request: OptionRunRequest;
   batchId: string;
 }): { root: Recipe; graph: Record<string, Recipe> } {
   const app = input.request.app?.trim();
   const at = Date.now();
-  const screenshot = input.request.screenshotEach !== false;
+  const ownsScreenshots = (recipe: Recipe, visiting = new Set<string>()): boolean => {
+    if (visiting.has(recipe.id)) return false;
+    const nextVisiting = new Set(visiting).add(recipe.id);
+    return recipe.steps.some((step) => {
+      if (step.kind === "screenshot" || (step.kind === "tour" && step.screenshot !== false)) {
+        return true;
+      }
+      if (step.kind !== "module" && step.kind !== "repeat") return false;
+      const nested = input.bodyGraph?.[step.recipeId];
+      return nested ? ownsScreenshots(nested, nextVisiting) : false;
+    });
+  };
+  const bodyOwnsScreenshots = ownsScreenshots(input.body);
+  const screenshot = input.request.screenshotEach !== false && !bodyOwnsScreenshots;
   const steps: RecipeStep[] = [];
   const graph: Record<string, Recipe> = {
     [input.body.id]: structuredClone(input.body),
@@ -372,6 +388,19 @@ export function composeOptionRunRecipes(input: {
   }
 
   for (const set of input.request.sets) {
+    if (set.apply.kind === "appLocale") {
+      steps.push({
+        kind: "app",
+        action: "set-locale",
+        app: set.apply.app,
+        locale: `{{${set.id}}}`,
+      });
+      steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
+      steps.push({ kind: "sleep", ms: 1200 });
+      steps.push({ kind: "device", action: "keyboard-dismiss" });
+      steps.push({ kind: "sleep", ms: 250 });
+      continue;
+    }
     if (set.apply.kind === "toggle") {
       throw new Error("toggles are not runnable yet");
     }
@@ -401,6 +430,23 @@ export function composeOptionRunRecipes(input: {
     });
   }
 
+  // Restore stable state after every world so one matrix cell cannot leak into
+  // the next or leave the physical device changed after the batch. App-locales
+  // can be restored without replaying localized picker labels.
+  if (input.request.restoreAtEnd !== false) {
+    for (const set of [...input.request.sets].reverse()) {
+      if (!set.restoreId?.trim() || set.apply.kind !== "appLocale") continue;
+      steps.push({
+        kind: "app",
+        action: "set-locale",
+        app: set.apply.app,
+        locale: set.restoreId.trim(),
+      });
+      steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
+      steps.push({ kind: "sleep", ms: 1200 });
+    }
+  }
+
   const root: Recipe = {
     id: `option-run-${input.batchId}`,
     title: `${input.body.title} · across`,
@@ -412,6 +458,48 @@ export function composeOptionRunRecipes(input: {
   };
   graph[root.id] = root;
   return { root, graph };
+}
+
+export function expectedRecipeScreenshotCount(
+  recipe: Recipe,
+  graph: Record<string, Recipe>,
+  visiting = new Set<string>(),
+): number | undefined {
+  if (visiting.has(recipe.id)) return undefined;
+  const nextVisiting = new Set(visiting).add(recipe.id);
+  let count = 0;
+  for (const step of recipe.steps) {
+    if (step.kind === "screenshot") {
+      count += 1;
+      continue;
+    }
+    if (step.kind === "tour") {
+      if (!step.mappedStopsOnly) return undefined;
+      count +=
+        step.screenshot === false
+          ? 0
+          : (step.fallbackStops?.filter((stop) => stop.capture !== false).length ?? 0);
+      continue;
+    }
+    if (step.kind === "module") {
+      const module = graph[step.recipeId];
+      if (!module) return undefined;
+      const nested = expectedRecipeScreenshotCount(module, graph, nextVisiting);
+      if (nested === undefined) return undefined;
+      count += nested;
+      continue;
+    }
+    if (step.kind === "repeat") {
+      const repeated = graph[step.recipeId];
+      if (!repeated) return undefined;
+      const nested = expectedRecipeScreenshotCount(repeated, graph, nextVisiting);
+      if (nested === undefined) return undefined;
+      count += nested * step.count;
+      continue;
+    }
+    if (step.kind === "branch") return undefined;
+  }
+  return count;
 }
 
 export async function startOptionRecipeRun(input: {
@@ -439,6 +527,8 @@ export async function startOptionRecipeRun(input: {
   matrix: PreparedRunMatrix;
   jobs: TestJob[];
   composedRecipeId: string;
+  expectedScreenshotsPerWorld?: number;
+  expectedScreenshots?: number;
 }> {
   const targetId = input.targetId.trim();
   if (!targetId) throw new Error("target is required");
@@ -455,17 +545,19 @@ export async function startOptionRecipeRun(input: {
     });
   }
   const matrix = await prepareOptionRunMatrix(request, input.seed);
+  const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
   const { root, graph: seedGraph } = composeOptionRunRecipes({
     body,
+    bodyGraph,
     request,
     batchId,
   });
-  const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
   const recipeGraph: Record<string, Recipe> = {
     ...bodyGraph,
     ...seedGraph,
     [root.id]: root,
   };
+  const expectedScreenshotsPerWorld = expectedRecipeScreenshotCount(root, recipeGraph);
   const operation = currentOperationContext();
   const projectId = input.projectId?.trim() || operation?.projectId || "default";
   const ownerId = input.ownerId?.trim() || operation?.actorId;
@@ -503,6 +595,9 @@ export async function startOptionRecipeRun(input: {
             world,
             values: safeMatrix.cases[item.index]?.values ?? item.values,
             kind: "combine",
+            ...(expectedScreenshotsPerWorld !== undefined
+              ? { expectedScreenshots: expectedScreenshotsPerWorld }
+              : {}),
           },
         },
       ],
@@ -520,6 +615,12 @@ export async function startOptionRecipeRun(input: {
     matrix: safeMatrix,
     jobs,
     composedRecipeId: root.id,
+    ...(expectedScreenshotsPerWorld !== undefined
+      ? {
+          expectedScreenshotsPerWorld,
+          expectedScreenshots: expectedScreenshotsPerWorld * matrix.cases.length,
+        }
+      : {}),
   };
 }
 

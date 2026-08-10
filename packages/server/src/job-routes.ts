@@ -1,4 +1,5 @@
 import http from "node:http";
+import type { AppMapCapturePolicy } from "@relay/protocol";
 import {
   AppMapCompileError,
   cancelActiveJob,
@@ -308,6 +309,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       seed?: number;
       projectId?: string;
       sets?: OptionRunSet[];
+      capture?: AppMapCapturePolicy;
     };
     if (!body.appMapId?.trim()) {
       throw new HttpError(400, "appMapId is required");
@@ -372,7 +374,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       } else if (body.testId?.trim()) {
         const work = map.tests?.[body.testId.trim()];
         if (!work) throw new HttpError(404, `Test ${body.testId} not found`);
-        const compiled = compileAppMapTest(map, work);
+        const compiled = compileAppMapTest(map, {
+          ...work,
+          ...(body.capture ? { capture: body.capture } : {}),
+        });
         compiledBody = compiled.root;
         compiledGraph = compiled.graph;
       } else {
@@ -434,7 +439,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           sets,
           selected: body.selected ?? combine?.selected,
           strategy: body.strategy,
-          screenshotEach: true,
+          // Tests and saved matrices own their evidence policy. The generic
+          // before/after wrapper remains only for legacy raw-flow runs.
+          screenshotEach: !(combine || body.testId?.trim()),
         },
         title: body.title,
         seed: body.seed,
@@ -449,6 +456,12 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           title: batch.title,
           worlds: batch.worlds,
           createdAt: batch.createdAt,
+          ...(batch.expectedScreenshotsPerWorld !== undefined
+            ? { expectedScreenshotsPerWorld: batch.expectedScreenshotsPerWorld }
+            : {}),
+          ...(batch.expectedScreenshots !== undefined
+            ? { expectedScreenshots: batch.expectedScreenshots }
+            : {}),
         },
         matrix: batch.matrix,
         jobs: batch.jobs.map((job) => summarizeJob(job)),

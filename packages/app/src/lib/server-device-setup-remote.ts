@@ -56,6 +56,16 @@ export async function loadAndroidDeviceSetup(request: ServerRequest): Promise<An
   return request<AndroidSetupStatus>("/settings/devices/android");
 }
 
+export async function loadAndroidAppLocales(
+  request: ServerRequest,
+  serial: string,
+  packageName: string,
+): Promise<string[]> {
+  const query = new URLSearchParams({ serial, package: packageName });
+  const result = await request<{ locales: string[] }>(`/device/app/locales?${query}`);
+  return result.locales;
+}
+
 export async function saveAppleDeviceSetup(
   request: ServerRequest,
   input: AppleDeviceSetup,

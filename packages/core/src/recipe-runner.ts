@@ -39,6 +39,7 @@ import {
   changeAndroidAppBuild,
   closeApp,
   inspectAndroidApp,
+  setAndroidAppLocale,
   openApp,
   openUrl,
   openAppSwitcher,
@@ -121,14 +122,23 @@ function runtimeBounds(device: Device): Promise<{ width: number; height: number 
 async function resolvePointForDevice(
   device: Device,
   point: StepPoint,
+  mirrorX = false,
 ): Promise<{ x: number; y: number }> {
+  const bounds = await runtimeBounds(device);
   const logicalPoint =
     point.anchor && point.referenceBounds
-      ? resolveStepPoint(point, (await runtimeBounds(device)) ?? point.referenceBounds)
+      ? resolveStepPoint(point, bounds ?? point.referenceBounds)
       : { x: point.x, y: point.y };
   // agent-device's XCTest runner accepts logical application coordinates even
   // when raw snapshot children arrive in a portrait-native buffer.
-  return logicalPoint;
+  return mirrorX && bounds
+    ? { x: Math.max(0, bounds.width - logicalPoint.x), y: logicalPoint.y }
+    : logicalPoint;
+}
+
+export function isRightToLeftRun(variables?: Record<string, string>): boolean {
+  const locale = (variables?.language ?? variables?.locale ?? "").trim().toLowerCase();
+  return /^(?:ar|fa|he|iw|ps|ur)(?:-|$)/.test(locale);
 }
 
 async function waitForResponseCompletion(
@@ -438,6 +448,7 @@ async function tapTarget(
   repetitions = 1,
   intervalMs = 90,
   region?: NonNullable<RecipeStep["when"]>["region"],
+  mirrorPoints = false,
 ): Promise<{
   strategy: string;
   method?: string;
@@ -454,11 +465,14 @@ async function tapTarget(
           ...(repetitions === 2 ? { doubleTap: true } : {}),
         }
       : undefined;
+  const point = target.point
+    ? await resolvePointForDevice(device, target.point, mirrorPoints)
+    : undefined;
   const namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(target.text ? { text: target.text } : {}),
-    ...(target.point ? { point: await resolvePointForDevice(device, target.point) } : {}),
+    ...(point ? { point } : {}),
   };
   const nodes = await snapshot(device);
   const named = resolveNamedControl(nodes, namedTarget);
@@ -523,7 +537,7 @@ async function tapTarget(
         repeated ? pressText(device, target.text!, repeated) : findClick(device, target.text!),
     });
   if (target.point) {
-    const p = await resolvePointForDevice(device, target.point);
+    const p = point!;
     attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y, repeated) });
   }
   for (let i = 0; i < attempts.length; i++) {
@@ -576,6 +590,7 @@ async function tapRecordedTarget(
         repetitions,
         intervalMs,
         input.region,
+        isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
       );
       const resolution = {
         kind: "target-resolution" as const,
@@ -638,7 +653,17 @@ async function longPressRecordedTarget(
         ...(target.ref ? [{ ref: target.ref }] : []),
         ...(target.label ? [{ label: target.label }] : []),
         ...(target.text ? [{ text: target.text }] : []),
-        ...(target.point ? [{ point: await resolvePointForDevice(device, target.point) }] : []),
+        ...(target.point
+          ? [
+              {
+                point: await resolvePointForDevice(
+                  device,
+                  target.point,
+                  isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+                ),
+              },
+            ]
+          : []),
       ]),
     )
   ).flat();
@@ -1386,6 +1411,11 @@ async function runRequiredRecipeStep(
             step.app!,
             step.relaunch === undefined ? undefined : { relaunch: step.relaunch },
           );
+        break;
+      }
+      if (step.action === "set-locale") {
+        await setAndroidAppLocale(step.app!, step.locale!);
+        log(`app locale: ${step.app} → ${step.locale}`);
         break;
       }
 

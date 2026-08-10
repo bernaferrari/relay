@@ -1,4 +1,4 @@
-import type { MatrixExpansion } from "@relay/protocol";
+import type { AppMapCapturePolicy, MatrixExpansion } from "@relay/protocol";
 import type { CompatibilityReport, JobInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 
@@ -263,6 +263,7 @@ export async function enqueueOptionMatrix(
     flowId?: string;
     testId?: string;
     combineId?: string;
+    capture?: AppMapCapturePolicy;
     serial: string;
     targetKind: "browser" | "device";
     platform?: string;
@@ -274,7 +275,14 @@ export async function enqueueOptionMatrix(
     projectId: string;
   },
 ): Promise<{
-  batch: { id: string; title: string; worlds: string[]; recipeId: string };
+  batch: {
+    id: string;
+    title: string;
+    worlds: string[];
+    recipeId: string;
+    expectedScreenshotsPerWorld?: number;
+    expectedScreenshots?: number;
+  };
   jobs: JobInfo[];
   matrix: { id: string };
 }> {
@@ -289,6 +297,7 @@ export async function enqueueOptionMatrix(
       flowId: input.flowId,
       testId: input.testId,
       combineId: input.combineId,
+      capture: input.capture,
       variableIds: input.variableIds,
       sets: input.sets,
       selected: input.selected,
@@ -314,6 +323,7 @@ export async function saveTestRemote(
       kind: "path" | "tour";
       flowId?: string;
       rootScreenId?: string;
+      screenIds?: string[];
       depth?: number;
       screenshotEach?: boolean;
       createdAt: number;
@@ -344,6 +354,7 @@ export async function saveCombineRemote(
       variableIds: string[];
       testIds: string[];
       selected?: Record<string, string[]>;
+      captures?: Record<string, AppMapCapturePolicy>;
       strategy?: "zip" | "cartesian" | "pairwise";
       createdAt: number;
       updatedAt: number;

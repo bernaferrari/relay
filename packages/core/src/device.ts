@@ -697,6 +697,34 @@ export async function inspectAndroidApp(packageName: string): Promise<AndroidApp
   }
 }
 
+/** Set one app's locale through Android's public LocaleManager shell surface.
+ * Package and BCP-47 tag are separate argv values, never interpolated shell. */
+export async function setAndroidAppLocale(packageName: string, locale: string): Promise<void> {
+  requireAndroidBuildControl();
+  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
+    throw new Error("app package name contains unsupported characters");
+  }
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(locale)) {
+    throw new Error(`app locale is not a BCP-47 language tag: ${locale}`);
+  }
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  await raceCancel(
+    execFileAsync(
+      "adb",
+      androidAdbArgs([
+        "shell",
+        "cmd",
+        "locale",
+        "set-app-locales",
+        packageName,
+        "--locales",
+        locale,
+      ]),
+    ),
+  );
+}
+
 async function runAndroidInstall(
   action: "install" | "update" | "uninstall",
   packageName: string,

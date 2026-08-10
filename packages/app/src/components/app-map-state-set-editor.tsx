@@ -23,7 +23,7 @@ const KINDS: Array<{ id: AppMapVariableKind; label: string }> = [
 ];
 
 type LiveRow = { identifier?: string; label?: string; value?: string };
-type SourceMode = "device" | "manual";
+type SourceMode = "device" | "manual" | "android";
 
 function rowKey(row: LiveRow): string {
   return `${row.identifier ?? ""}|${row.label ?? row.value ?? ""}`;
@@ -58,13 +58,23 @@ export function AppMapStateSetEditor(props: {
   const existingListApply = () =>
     props.variable?.apply.kind === "list" ? props.variable.apply : undefined;
   const [sourceMode, setSourceMode] = createSignal<SourceMode>(
-    props.variable ? "manual" : "device",
+    props.variable?.apply.kind === "appLocale" ? "android" : props.variable ? "manual" : "device",
   );
   const [kind, setKind] = createSignal<AppMapVariableKind>(props.variable?.kind ?? "language");
   const [name, setName] = createSignal(props.variable?.name ?? "");
   const [manualText, setManualText] = createSignal(
     props.variable?.options.map((option) => option.label ?? option.text ?? option.id).join("\n") ??
       "",
+  );
+  const [androidPackage, setAndroidPackage] = createSignal(
+    props.variable?.apply.kind === "appLocale" ? props.variable.apply.app : "",
+  );
+  const [localeText, setLocaleText] = createSignal(
+    props.variable?.apply.kind === "appLocale"
+      ? props.variable.options
+          .map((option) => `${option.id}${option.label ? ` | ${option.label}` : ""}`)
+          .join("\n")
+      : "",
   );
   const [rows, setRows] = createSignal<LiveRow[]>(props.variable?.options ?? []);
   const [selectedKeys, setSelectedKeys] = createSignal<string[]>(
@@ -77,6 +87,7 @@ export function AppMapStateSetEditor(props: {
     existingListApply()?.outConnectionId ?? "",
   );
   const [reading, setReading] = createSignal(false);
+  const [discoveringLocales, setDiscoveringLocales] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [pathsOpen, setPathsOpen] = createSignal(true);
   const map = createMemo(() => server.selectedAppMap());
@@ -103,9 +114,28 @@ export function AppMapStateSetEditor(props: {
       })
       .slice(0, 100);
   });
-  const canCreate = createMemo(() =>
-    sourceMode() === "device" ? pickedRows().length > 0 : manualRows().length > 0,
-  );
+  const localeRows = createMemo(() => {
+    const seen = new Set<string>();
+    return localeText()
+      .split(/\r?\n/)
+      .map((line) => {
+        const [id = "", label = ""] = line.split("|").map((part) => part.trim());
+        return { id, label };
+      })
+      .filter((row) => {
+        if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(row.id) || seen.has(row.id)) {
+          return false;
+        }
+        seen.add(row.id);
+        return true;
+      })
+      .slice(0, 100);
+  });
+  const canCreate = createMemo(() => {
+    if (sourceMode() === "device") return pickedRows().length > 0;
+    if (sourceMode() === "android") return Boolean(androidPackage().trim() && localeRows().length);
+    return manualRows().length > 0;
+  });
 
   async function readCurrentList() {
     setReading(true);
@@ -119,6 +149,36 @@ export function AppMapStateSetEditor(props: {
       toast(humanError(error, "Could not read the current screen"), "error");
     } finally {
       setReading(false);
+    }
+  }
+
+  async function discoverAndroidLocales() {
+    const packageName = androidPackage().trim();
+    if (!packageName) {
+      toast("Enter the Android app package first", "warning");
+      return;
+    }
+    setDiscoveringLocales(true);
+    try {
+      const locales = await server.loadAndroidAppLocales(packageName);
+      if (!locales.length) {
+        toast("This app does not declare an Android locale list — enter tags manually", "warning");
+        return;
+      }
+      const lines = locales.map((tag) => {
+        try {
+          const label = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
+          return `${tag}${label ? ` | ${label}` : ""}`;
+        } catch {
+          return tag;
+        }
+      });
+      setLocaleText(lines.join("\n"));
+      toast(`Found ${locales.length} app languages`, "success");
+    } catch (error) {
+      toast(humanError(error, "Could not read this app's languages"), "error");
+    } finally {
+      setDiscoveringLocales(false);
     }
   }
 
@@ -159,29 +219,43 @@ export function AppMapStateSetEditor(props: {
                 },
               )
             ).variable
-          : {
-              id:
-                props.variable?.id ??
-                uniqueVariableId(currentMap.variables, name().trim() || fallbackName),
-              name: name().trim() || fallbackName,
-              kind: kind(),
-              apply: {
-                ...existingListApply(),
-                kind: "list" as const,
-                ...(inConnectionId() ? { inConnectionId: inConnectionId() } : {}),
-                ...(outConnectionId() ? { outConnectionId: outConnectionId() } : {}),
-              },
-              options: manualRows().map((label, index) => {
-                const existing = props.variable?.options.find(
-                  (option) =>
-                    (option.label ?? option.text ?? option.id).toLocaleLowerCase() ===
-                    label.toLocaleLowerCase(),
-                );
-                return existing
-                  ? { ...existing, label }
-                  : { id: `${slug(label)}-${index + 1}`, label };
-              }),
-            };
+          : sourceMode() === "android"
+            ? {
+                id:
+                  props.variable?.id ??
+                  uniqueVariableId(currentMap.variables, name().trim() || fallbackName),
+                name: name().trim() || fallbackName,
+                kind: "language" as const,
+                apply: { kind: "appLocale" as const, app: androidPackage().trim() },
+                options: localeRows().map((row) => ({
+                  id: row.id,
+                  ...(row.label ? { label: row.label } : {}),
+                })),
+                restoreId: localeRows()[0]?.id,
+              }
+            : {
+                id:
+                  props.variable?.id ??
+                  uniqueVariableId(currentMap.variables, name().trim() || fallbackName),
+                name: name().trim() || fallbackName,
+                kind: kind(),
+                apply: {
+                  ...existingListApply(),
+                  kind: "list" as const,
+                  ...(inConnectionId() ? { inConnectionId: inConnectionId() } : {}),
+                  ...(outConnectionId() ? { outConnectionId: outConnectionId() } : {}),
+                },
+                options: manualRows().map((label, index) => {
+                  const existing = props.variable?.options.find(
+                    (option) =>
+                      (option.label ?? option.text ?? option.id).toLocaleLowerCase() ===
+                      label.toLocaleLowerCase(),
+                  );
+                  return existing
+                    ? { ...existing, label }
+                    : { id: `${slug(label)}-${index + 1}`, label };
+                }),
+              };
       await server.saveVariable({
         appMapId: currentMap.id,
         expectedRevision: currentMap.revision,
@@ -224,7 +298,7 @@ export function AppMapStateSetEditor(props: {
       </div>
 
       <div
-        class="grid grid-cols-2 gap-1 rounded-[9px] bg-[var(--surface-base)] p-1"
+        class="grid grid-cols-3 gap-1 rounded-[9px] bg-[var(--surface-base)] p-1"
         role="tablist"
         aria-label="How Relay learns modifier values"
       >
@@ -232,6 +306,7 @@ export function AppMapStateSetEditor(props: {
           each={[
             { id: "device" as const, label: "Read an open list" },
             { id: "manual" as const, label: "Enter labels" },
+            { id: "android" as const, label: "Android app" },
           ]}
         >
           {(source) => (
@@ -245,7 +320,10 @@ export function AppMapStateSetEditor(props: {
                   ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[var(--shadow-xs-border-base)]"
                   : "text-[var(--text-weak)] hover:text-[var(--text-strong)]",
               )}
-              onClick={() => setSourceMode(source.id)}
+              onClick={() => {
+                setSourceMode(source.id);
+                if (source.id === "android") setKind("language");
+              }}
             >
               {source.label}
             </button>
@@ -268,6 +346,7 @@ export function AppMapStateSetEditor(props: {
         <select
           class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px] text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={kind()}
+          disabled={sourceMode() === "android"}
           onChange={(event) => setKind(event.currentTarget.value as AppMapVariableKind)}
         >
           <For each={KINDS}>{(item) => <option value={item.id}>{item.label}</option>}</For>
@@ -277,21 +356,70 @@ export function AppMapStateSetEditor(props: {
       <Show
         when={sourceMode() === "device"}
         fallback={
-          <label class="grid gap-1.5">
-            <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
-              Labels Relay should tap
-              <span class="font-normal text-[var(--text-weak)]">One per line</span>
-            </span>
-            <textarea
-              class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[13px]/[1.5] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
-              value={manualText()}
-              placeholder={"English\nPortuguês\n日本語"}
-              onInput={(event) => setManualText(event.currentTarget.value)}
-            />
-            <span class="text-[10.5px] text-[var(--text-weak)]">
-              Relay looks for each label in the value list. You can set the paths below.
-            </span>
-          </label>
+          <Show
+            when={sourceMode() === "android"}
+            fallback={
+              <label class="grid gap-1.5">
+                <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
+                  Labels Relay should tap
+                  <span class="font-normal text-[var(--text-weak)]">One per line</span>
+                </span>
+                <textarea
+                  class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[13px]/[1.5] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+                  value={manualText()}
+                  placeholder={"English\nPortuguês\n日本語"}
+                  onInput={(event) => setManualText(event.currentTarget.value)}
+                />
+                <span class="text-[10.5px] text-[var(--text-weak)]">
+                  Relay looks for each label in the value list. You can set the paths below.
+                </span>
+              </label>
+            }
+          >
+            <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
+              <label class="grid gap-1.5">
+                <span class="text-[10.5px] font-medium text-[var(--text-base)]">App package</span>
+                <input
+                  class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px]"
+                  value={androidPackage()}
+                  placeholder="ai.x.grok"
+                  onInput={(event) => setAndroidPackage(event.currentTarget.value)}
+                />
+              </label>
+              <Button
+                variant="secondary"
+                size="sm"
+                class="justify-self-start"
+                disabled={discoveringLocales() || !androidPackage().trim()}
+                onClick={() => void discoverAndroidLocales()}
+              >
+                <Icon
+                  name="refresh"
+                  size={12}
+                  class={
+                    discoveringLocales() ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
+                  }
+                />
+                {discoveringLocales() ? "Reading app languages…" : "Read languages from app"}
+              </Button>
+              <label class="grid gap-1.5">
+                <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
+                  App languages
+                  <span class="font-normal text-[var(--text-weak)]">Locale | label</span>
+                </span>
+                <textarea
+                  class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 font-mono text-[12px]/[1.5] text-[var(--text-strong)]"
+                  value={localeText()}
+                  placeholder={"en | English\nit | Italiano\npt-BR | Português (Brasil)"}
+                  onInput={(event) => setLocaleText(event.currentTarget.value)}
+                />
+                <span class="text-[10.5px]/[1.4] text-[var(--text-weak)]">
+                  All declared languages stay available here. A run matrix can select only the
+                  subset it needs.
+                </span>
+              </label>
+            </div>
+          </Show>
         }
       >
         <div class="grid gap-2">
@@ -373,19 +501,21 @@ export function AppMapStateSetEditor(props: {
         </div>
       </Show>
 
-      <button
-        type="button"
-        class="flex min-h-10 items-center justify-between rounded-[8px] px-2 text-left text-[11.5px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-        aria-expanded={pathsOpen()}
-        onClick={() => setPathsOpen((open) => !open)}
-      >
-        <span>Where is the list?</span>
-        <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-weak)]">
-          Set start and return paths
-          <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
-        </span>
-      </button>
-      <Show when={pathsOpen()}>
+      <Show when={sourceMode() !== "android"}>
+        <button
+          type="button"
+          class="flex min-h-10 items-center justify-between rounded-[8px] px-2 text-left text-[11.5px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          aria-expanded={pathsOpen()}
+          onClick={() => setPathsOpen((open) => !open)}
+        >
+          <span>Where is the list?</span>
+          <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-weak)]">
+            Set start and return paths
+            <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
+          </span>
+        </button>
+      </Show>
+      <Show when={sourceMode() !== "android" && pathsOpen()}>
         <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
           <label class="grid gap-1">
             <span class="text-[10.5px] text-[var(--text-base)]">Open the value list with</span>

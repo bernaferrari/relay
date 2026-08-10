@@ -7,7 +7,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ActionSpec, AppMap, RecipeStep, TargetProfile } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { resolveLanguageOptions, listLanguageProfilesSync } from "./language-profiles.js";
@@ -100,8 +100,52 @@ export type LocaleRunPackManifest = {
     status: string;
     name: string;
     frames: string[];
+    expectedFrames?: number;
   }>;
 };
+
+function expectedEvidenceFrames(job: TestJob): number | undefined {
+  for (const artifact of job.artifacts ?? []) {
+    if (
+      artifact.kind !== "frozen-inputs" ||
+      !artifact.data ||
+      typeof artifact.data !== "object" ||
+      !("expectedScreenshots" in artifact.data)
+    )
+      continue;
+    const expected = artifact.data.expectedScreenshots;
+    if (typeof expected === "number" && Number.isInteger(expected) && expected >= 0) {
+      return expected;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Matrix packs contain the screenshots authored by the test, not the automatic
+ * before/after diagnostics captured around setup actions. The diagnostics stay
+ * in the full run report. Failing closed keeps a nominal 7 × 10 pack from
+ * silently shipping with fewer than 70 useful screenshots.
+ */
+export function evidenceFrameNames(job: TestJob): {
+  names?: Set<string>;
+  expected?: number;
+} {
+  const expected = expectedEvidenceFrames(job);
+  if (expected === undefined) return {};
+  const names = new Set(
+    job.steps
+      .flatMap((step) => step.frames)
+      .filter((frame) => !/^(?:before|after) · /.test(frame.caption))
+      .map((frame) => basename(frame.path)),
+  );
+  if (names.size !== expected) {
+    throw new Error(
+      `run ${job.id} produced ${names.size} authored screenshot(s); expected ${expected}`,
+    );
+  }
+  return { names, expected };
+}
 
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -826,14 +870,21 @@ function localeRunRoot(): string {
   );
 }
 
-function artifactLocale(job: TestJob): string {
-  const fromInputs = job.resolvedInputs?.locale?.trim();
+export function artifactLocale(job: TestJob): string {
+  const fromInputs = (job.resolvedInputs?.locale ?? job.resolvedInputs?.language)?.trim();
   if (fromInputs) return fromInputs;
   for (const artifact of job.artifacts ?? []) {
     if (artifact.kind !== "frozen-inputs") continue;
     if (!artifact.data || typeof artifact.data !== "object") continue;
-    if (!("locale" in artifact.data)) continue;
-    const locale = artifact.data.locale;
+    const values =
+      "values" in artifact.data && artifact.data.values && typeof artifact.data.values === "object"
+        ? artifact.data.values
+        : undefined;
+    const locale =
+      ("locale" in artifact.data ? artifact.data.locale : undefined) ??
+      (values && "locale" in values ? values.locale : undefined) ??
+      (values && "language" in values ? values.language : undefined) ??
+      ("world" in artifact.data ? artifact.data.world : undefined);
     if (typeof locale === "string" && locale.trim()) return locale.trim();
   }
   return `case-${(job.caseIndex ?? 0) + 1}`;
@@ -855,10 +906,13 @@ export async function exportLocaleRunPack(input: {
     const localeDir = join(rootDir, slugCorpusPathSegment(locale));
     await mkdir(localeDir, { recursive: true });
     const frames: string[] = [];
+    const evidence = evidenceFrameNames(job);
     if (job.runDir) {
       try {
         const frameDir = join(job.runDir, "frames");
-        const entries = (await readdir(frameDir)).filter((name) => name.endsWith(".png")).sort();
+        const entries = (await readdir(frameDir))
+          .filter((name) => name.endsWith(".png") && (!evidence.names || evidence.names.has(name)))
+          .sort();
         for (const [index, name] of entries.entries()) {
           const destName = `${String(index + 1).padStart(3, "0")}-${name}`;
           await copyFile(join(frameDir, name), join(localeDir, destName));
@@ -874,6 +928,7 @@ export async function exportLocaleRunPack(input: {
       status: job.status,
       name: job.title ?? job.action,
       frames,
+      ...(evidence.expected !== undefined ? { expectedFrames: evidence.expected } : {}),
     });
   }
 

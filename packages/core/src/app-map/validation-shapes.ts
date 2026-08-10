@@ -369,6 +369,10 @@ function assertVariableApply(apply: VariableApply, label: string): void {
     }
     return;
   }
+  if (apply.kind === "appLocale") {
+    requiredText(apply.app, `${label}.app`);
+    return;
+  }
   if (apply.kind === "toggle") {
     objectValue(apply.target, `${label}.target`);
     return;
@@ -409,7 +413,36 @@ export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: st
   }
   if (work.kind === "path") identifier(work.flowId ?? "", `${label}.flowId`);
   if (work.kind === "tour") identifier(work.rootScreenId ?? "", `${label}.rootScreenId`);
+  if (work.screenIds !== undefined) stringArray(work.screenIds, `${label}.screenIds`);
   if (work.depth !== undefined) safeInteger(work.depth, `${label}.depth`);
+  if (work.capture !== undefined) {
+    const capture = objectValue(work.capture, `${label}.capture`);
+    if (
+      !(
+        capture.mode === "every-screen" ||
+        capture.mode === "checkpoints" ||
+        capture.mode === "final-screen" ||
+        capture.mode === "failures-only" ||
+        capture.mode === "none"
+      )
+    ) {
+      appMapFail("invalid-map", `${label}.capture.mode is unsupported`);
+    }
+    if (capture.mode === "checkpoints") {
+      if (work.kind !== "tour") {
+        appMapFail("invalid-map", `${label}.capture checkpoints require a screen tour`);
+      }
+      stringArray(capture.screenIds, `${label}.capture.screenIds`);
+      if (!capture.screenIds.length) {
+        appMapFail("invalid-map", `${label}.capture.screenIds must contain a screen`);
+      }
+    } else if (capture.screenIds !== undefined) {
+      appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
+    }
+  }
+  if (work.screenshotEach !== undefined && typeof work.screenshotEach !== "boolean") {
+    appMapFail("invalid-map", `${label}.screenshotEach must be a boolean`);
+  }
 }
 
 export function assertAppMapCombine(
@@ -431,6 +464,38 @@ export function assertAppMapCombine(
       stringArray(optionIds, `${label}.selected.${variableId}`);
       if (!(optionIds as string[]).length) {
         appMapFail("invalid-map", `${label}.selected.${variableId} needs at least one value`);
+      }
+    }
+  }
+  if (combine.captures !== undefined) {
+    const captures = objectValue(combine.captures, `${label}.captures`);
+    for (const [testId, value] of Object.entries(captures)) {
+      identifier(testId, `${label}.captures key`);
+      if (!combine.testIds.includes(testId)) {
+        appMapFail("invalid-map", `${label}.captures.${testId} is not a selected test`);
+      }
+      const capture = objectValue(value, `${label}.captures.${testId}`);
+      if (
+        !(
+          capture.mode === "every-screen" ||
+          capture.mode === "checkpoints" ||
+          capture.mode === "final-screen" ||
+          capture.mode === "failures-only" ||
+          capture.mode === "none"
+        )
+      ) {
+        appMapFail("invalid-map", `${label}.captures.${testId}.mode is unsupported`);
+      }
+      if (capture.mode === "checkpoints") {
+        stringArray(capture.screenIds, `${label}.captures.${testId}.screenIds`);
+        if (!capture.screenIds.length) {
+          appMapFail("invalid-map", `${label}.captures.${testId}.screenIds must contain a screen`);
+        }
+      } else if (capture.screenIds !== undefined) {
+        appMapFail(
+          "invalid-map",
+          `${label}.captures.${testId}.screenIds is only valid for checkpoints`,
+        );
       }
     }
   }

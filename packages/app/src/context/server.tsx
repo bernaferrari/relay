@@ -56,6 +56,7 @@ import {
 import { createServerPrivacyController } from "../lib/server-privacy-controller";
 import {
   loadAndroidDeviceSetup,
+  loadAndroidAppLocales as loadAndroidAppLocalesRequest,
   loadAppleDeviceSetup,
   loadAppleSetupPreflight,
   saveAppleDeviceSetup as saveAppleDeviceSetupRequest,
@@ -392,6 +393,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const status = await loadAndroidDeviceSetup(request);
       setAndroidDeviceSetup(status);
       return status;
+    }
+
+    async function loadAndroidAppLocales(packageName: string): Promise<string[]> {
+      const serial = selectedDevice();
+      if (!serial) throw new Error("Choose a connected Android device first");
+      return loadAndroidAppLocalesRequest(request, serial, packageName);
     }
 
     async function saveAppleDeviceSetup(input: AppleDeviceSetup): Promise<void> {
@@ -2046,6 +2053,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearFrames,
       busyCapture,
       captureUiSnapshot,
+      loadAndroidAppLocales,
       captureUiScreenshot,
       copyUiScreenshot,
       persistRecordingEvidence,

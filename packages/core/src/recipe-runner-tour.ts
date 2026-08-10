@@ -19,6 +19,7 @@ import {
   tourFallbackOverlap,
   tourScreenSignature,
 } from "./tour.js";
+import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { observeScreenIdentity } from "./screen-identity.js";
@@ -86,6 +87,7 @@ function liveTourOrigin(
   nodes: SnapshotNode[],
   stops: ReturnType<typeof extractTourStops>,
   step: Extract<RecipeStep, { kind: "tour" }>,
+  rightToLeft = false,
 ): boolean {
   return onTourOrigin({
     liveFingerprint: nodes.length ? observeScreenIdentity(nodes).fingerprint : undefined,
@@ -93,7 +95,22 @@ function liveTourOrigin(
     originAliases: step.originAliases,
     stops,
     fallbackStops: step.fallbackStops,
+    ...(rightToLeft && step.mappedStopsOnly ? { minimumFallbackOverlap: 1 } : {}),
   });
+}
+
+function isRightToLeftJob(job?: TestJob): boolean {
+  const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")
+    .trim()
+    .toLowerCase();
+  return /^(?:ar|fa|he|iw|ps|ur)(?:-|$)/.test(locale);
+}
+
+function isLocalizedJob(job?: TestJob): boolean {
+  const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")
+    .trim()
+    .toLowerCase();
+  return Boolean(locale && !/^en(?:-|$)/.test(locale));
 }
 
 async function readTourSurface(
@@ -172,6 +189,51 @@ export function foregroundApplicationBundle(nodes: SnapshotNode[]): string | und
   return [...areas].sort((left, right) => right[1] - left[1])[0]?.[0];
 }
 
+/** Preserve the saved screen order and fill individual accessibility gaps with
+ * mapped points. A partially inspectable screen must not silently shrink an
+ * exact coverage test. */
+export function mergeMappedTourStops(
+  live: TourStop[],
+  mapped: TourStop[],
+  options: { alignByOrder?: boolean } = {},
+): TourStop[] {
+  const labelMatches = tourFallbackOverlap(live, mapped);
+  if (
+    options.alignByOrder &&
+    live.length === mapped.length &&
+    labelMatches < Math.min(2, mapped.length)
+  ) {
+    return mapped.map((mappedStop, index) => ({
+      ...live[index]!,
+      // Keep canonical map labels in evidence while using the current
+      // localized row's actual hit point.
+      label: mappedStop.label,
+      ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
+    }));
+  }
+  const unused = new Set(live.map((_, index) => index));
+  return mapped.map((fallback) => {
+    const fallbackLabel = fallback.label.trim().toLocaleLowerCase();
+    const fallbackIdentifier = fallback.identifier?.trim().toLocaleLowerCase();
+    const matchIndex = live.findIndex((candidate, index) => {
+      if (!unused.has(index)) return false;
+      if (
+        fallbackIdentifier &&
+        candidate.identifier?.trim().toLocaleLowerCase() === fallbackIdentifier
+      ) {
+        return true;
+      }
+      return candidate.label.trim().toLocaleLowerCase() === fallbackLabel;
+    });
+    if (matchIndex < 0) return fallback;
+    unused.delete(matchIndex);
+    return {
+      ...live[matchIndex]!,
+      ...(fallback.capture === undefined ? {} : { capture: fallback.capture }),
+    };
+  });
+}
+
 async function restoreRememberedApp(
   device: Device,
   nodes: SnapshotNode[],
@@ -208,20 +270,21 @@ async function seekTourOrigin(
   device: Device,
   step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
+  rightToLeft = false,
 ): Promise<{ nodes: SnapshotNode[]; stops: ReturnType<typeof extractTourStops> }> {
   let surface = await readTourSurface(device, step);
-  if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+  if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
   const directPrelude = await tryTourPrelude(device, surface, step, log);
   if (directPrelude) {
     surface = directPrelude;
-    if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
   }
   for (let attempt = 0; attempt < 3; attempt++) {
     if (await restoreRememberedApp(device, surface.nodes, log)) {
       surface = await readTourSurface(device, step);
       const restoredPrelude = await tryTourPrelude(device, surface, step, log);
       if (restoredPrelude) surface = restoredPrelude;
-      if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
     }
     log(
       step.originTitle
@@ -241,11 +304,11 @@ async function seekTourOrigin(
     }
     await sleep(350, device);
     surface = await readTourSurface(device, step);
-    if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
     const reachedPrelude = await tryTourPrelude(device, surface, step, log);
     if (reachedPrelude) {
       surface = reachedPrelude;
-      if (liveTourOrigin(surface.nodes, surface.stops, step)) return surface;
+      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
     }
   }
   if (step.preludeSteps?.length) {
@@ -269,20 +332,34 @@ export async function runTourStep(
   log: (line: string) => void,
   job?: TestJob,
 ): Promise<void> {
-  const sought = await seekTourOrigin(device, step, log);
+  const rightToLeft = isRightToLeftJob(job);
+  const sought = await seekTourOrigin(device, step, log, rightToLeft);
   let nodes = sought.nodes;
   let stops = sought.stops;
-  const originReached = liveTourOrigin(nodes, stops, step);
+  const originReached = liveTourOrigin(nodes, stops, step, rightToLeft);
   const origin = tourScreenSignature(nodes, {
     excludeLanguageRows: step.excludeLanguageRows,
   });
+  if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
+    const alignedLocalizedRows = isLocalizedJob(job) && stops.length === step.fallbackStops.length;
+    const merged = mergeMappedTourStops(stops, step.fallbackStops, {
+      alignByOrder: isLocalizedJob(job),
+    });
+    const fallbackCount = alignedLocalizedRows
+      ? 0
+      : merged.filter((stop) => !stops.includes(stop)).length;
+    stops = merged;
+    if (fallbackCount) {
+      log(`tour: using mapped point fallback for ${fallbackCount} missing row(s)`);
+    }
+  }
   if (!stops.length && step.fallbackStops?.length) {
     stops = step.fallbackStops
       .filter((stop) => stop.label.trim())
       .filter(
         (stop) =>
           !step.excludeLanguageRows ||
-          !/language|idioma|sprache|langue|言語|语言|語言/i.test(stop.label),
+          !/language|idioma|sprache|langue|lingua|língua|لغة|言語|语言|語言/i.test(stop.label),
       )
       .slice(0, step.maxStops ?? 24);
     if (stops.length) log(`tour: no live tree — walking ${stops.length} mapped row(s)`);
@@ -322,7 +399,8 @@ export async function runTourStep(
       label: stop.label,
       ...(stop.point ? { point: stop.point } : {}),
     });
-    if (step.screenshot !== false) {
+    await sleep(350, device);
+    if (step.screenshot !== false && stop.capture !== false) {
       await captureScreenshot({
         jobId: job?.id,
         caption: `tour:${stop.label}`,

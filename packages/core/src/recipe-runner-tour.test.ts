@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { foregroundApplicationBundle } from "./recipe-runner-tour.js";
+import { foregroundApplicationBundle, mergeMappedTourStops } from "./recipe-runner-tour.js";
 
 test("foreground app ranking ignores a smaller keyboard accessibility window", () => {
   assert.equal(
@@ -36,4 +36,35 @@ test("foreground app ranking still detects a full-screen launcher handoff", () =
     ]),
     "bitpit.launcher",
   );
+});
+
+test("exact tours merge partial accessibility with mapped point fallbacks", () => {
+  const editProfile = { label: "Edit Profile", point: { x: 281, y: 425 } };
+  const usage = { label: "Usage", point: { x: 281, y: 742 } };
+  const liveUsage = { label: "Usage", point: { x: 540, y: 744 } };
+  assert.deepEqual(
+    mergeMappedTourStops(
+      [liveUsage, { label: "Unmapped row", point: { x: 1, y: 1 } }],
+      [editProfile, usage],
+    ),
+    [editProfile, liveUsage],
+  );
+});
+
+test("exact tours pair fully translated rows by current screen order", () => {
+  const merged = mergeMappedTourStops(
+    [
+      { label: "الملف الشخصي", point: { x: 540, y: 420 } },
+      { label: "الاستخدام", point: { x: 540, y: 810 } },
+    ],
+    [
+      { label: "Edit Profile", point: { x: 281, y: 425 } },
+      { label: "Usage", point: { x: 281, y: 742 } },
+    ],
+    { alignByOrder: true },
+  );
+  assert.deepEqual(merged, [
+    { label: "Edit Profile", point: { x: 540, y: 420 } },
+    { label: "Usage", point: { x: 540, y: 810 } },
+  ]);
 });

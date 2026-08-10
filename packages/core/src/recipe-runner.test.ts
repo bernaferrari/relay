@@ -4,10 +4,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  isRightToLeftRun,
   refMatchesRecordedTarget,
   resolveRecipeStep,
   runRecipeStep as runRecipeStepWithoutContext,
 } from "./recipe-runner.js";
+
+it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
+  assert.equal(isRightToLeftRun({ language: "ar" }), true);
+  assert.equal(isRightToLeftRun({ locale: "he-IL" }), true);
+  assert.equal(isRightToLeftRun({ language: "pt-BR" }), false);
+});
 import type { Device } from "./device.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";

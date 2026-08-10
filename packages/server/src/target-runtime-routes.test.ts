@@ -271,6 +271,43 @@ test("launch tells agents to recover when Apple CoreDevice cannot list apps", as
   }
 });
 
+test("discovers every locale declared by an installed Android app", async () => {
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "pixel",
+          serial: "pixel-1",
+          name: "Pixel",
+          platform: "android",
+          kind: "Pixel 9",
+          booted: true,
+        },
+      ],
+      listAndroidAppLocales: async (serial, packageName) => {
+        assert.equal(serial, "pixel-1");
+        assert.equal(packageName, "com.example.app");
+        return ["en", "it", "pt-BR"];
+      },
+    },
+  });
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${server.port}/device/app/locales?serial=pixel-1&package=com.example.app`,
+      { headers: headers("target.app.locales") },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      packageName: "com.example.app",
+      locales: ["en", "it", "pt-BR"],
+    });
+  } finally {
+    await server.close();
+  }
+});
+
 test("launch treats a wedged xcrun as recover, not a 20s mystery", async () => {
   const server = await startServer({
     host: "127.0.0.1",

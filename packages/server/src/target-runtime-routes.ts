@@ -6,6 +6,7 @@ import {
   createDevice,
   listDeviceLeases,
   listDevices,
+  listAndroidAppLocales,
   listTargetWorkers,
   preflightDevicePool,
   preflightRegisteredBuild,
@@ -32,6 +33,7 @@ export type TargetRuntimeRouteRuntime = {
   }) => Promise<void>;
   recoverTarget: (serial: string, reason?: string) => ReturnType<typeof recoverTargetRuntime>;
   runBuildCommand?: BuildCommandRunner;
+  listAndroidAppLocales: typeof listAndroidAppLocales;
 };
 
 const defaultRuntime: TargetRuntimeRouteRuntime = {
@@ -48,6 +50,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       serial,
       reason ? new Error(`Recovery requested for ${reason}`) : undefined,
     ),
+  listAndroidAppLocales,
 };
 
 export async function handleTargetRuntimeRoute(context: {
@@ -63,6 +66,24 @@ export async function handleTargetRuntimeRoute(context: {
 
   if (method === "GET" && pathname === "/target-workers") {
     json(response, 200, { workers: listTargetWorkers() });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/device/app/locales") {
+    const url = new URL(request.url ?? pathname, "http://relay.local");
+    const serial = url.searchParams.get("serial")?.trim() ?? "";
+    const packageName = url.searchParams.get("package")?.trim() ?? "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    if (!packageName) throw new HttpError(400, "package is required");
+    const device = (await runtime.listDevices().catch(() => [])).find(
+      (candidate) => candidate.serial === serial,
+    );
+    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
+    if (device.platform !== "android") {
+      throw new HttpError(400, "App locale discovery currently requires Android");
+    }
+    const locales = await runtime.listAndroidAppLocales(serial, packageName);
+    json(response, 200, { packageName, locales });
     return true;
   }
 

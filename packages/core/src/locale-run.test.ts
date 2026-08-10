@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   applyRecordedLocalePrelude,
+  artifactLocale,
   composeLocaleRunRecipes,
   defaultGrokLocaleScope,
+  evidenceFrameNames,
   exportLocaleRunPack,
   inferLocaleOptionsFromTeach,
   localeLoopBodyFlowId,
@@ -22,7 +24,7 @@ import type { SnapshotNode } from "./device.js";
 import type { Recipe } from "./recipes.js";
 import type { AppMap, AppMapEntity, Connection, Screen } from "@relay/protocol";
 import { saveRecipe } from "./recipes.js";
-import { cancelJob } from "./session.js";
+import { cancelJob, type TestJob } from "./session.js";
 import { runWithOperationContext } from "./operation-context.js";
 
 const body: Recipe = {
@@ -36,6 +38,42 @@ const body: Recipe = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+test("matrix packs omit automatic setup frames and enforce authored evidence count", () => {
+  const job = {
+    id: "seven-by-ten",
+    artifacts: [
+      {
+        kind: "frozen-inputs",
+        capturedAt: 1,
+        data: { expectedScreenshots: 2 },
+      },
+    ],
+    steps: [
+      {
+        frames: [
+          { path: "frames/001.png", caption: "before · Set locale", capturedAt: 1 },
+          { path: "frames/002.png", caption: "after · Set locale", capturedAt: 2 },
+        ],
+      },
+      {
+        frames: [
+          { path: "frames/003.png", caption: "screen:Settings", capturedAt: 3 },
+          { path: "frames/004.png", caption: "tour:Usage", capturedAt: 4 },
+        ],
+      },
+    ],
+  } as unknown as TestJob;
+
+  assert.deepEqual([...evidenceFrameNames(job).names!], ["003.png", "004.png"]);
+});
+
+test("run-matrix exports use the language value as the case folder", () => {
+  assert.equal(
+    artifactLocale({ resolvedInputs: { language: "pt-BR" } } as unknown as TestJob),
+    "pt-BR",
+  );
+});
 
 test("composeLocaleRunRecipes wraps body with language switch and helpers", () => {
   const scope: LocaleRunScope = defaultGrokLocaleScope(["en", "pt-BR"]);

@@ -9,6 +9,7 @@ import {
   navStepsToRecipe,
   stabilizeOptionIds,
   prepareOptionRunMatrix,
+  expectedRecipeScreenshotCount,
   type OptionRunSet,
 } from "./option-run.js";
 
@@ -127,6 +128,84 @@ test("location opener is recorded, not Grok Settings", () => {
     );
   assert.ok(taps.includes("City"));
   assert.ok(!taps.some((target) => /sidebar\.settings|app language/i.test(target)));
+});
+
+test("a test that owns screenshot evidence gets no generic before or after captures", () => {
+  const { root } = composeOptionRunRecipes({
+    body,
+    request: { sets: [locations], screenshotEach: true },
+    batchId: "owned-evidence",
+  });
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "screenshot"),
+    [],
+  );
+});
+
+test("an Android app-language modifier uses stable locale ids instead of picker labels", () => {
+  const { root } = composeOptionRunRecipes({
+    body,
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok" },
+          options: [{ id: "en" }, { id: "it" }],
+          restoreId: "en",
+        },
+      ],
+      screenshotEach: true,
+    },
+    batchId: "app-locale",
+  });
+  assert.deepEqual(root.steps.slice(0, 3), [
+    { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "{{language}}" },
+    { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
+    { kind: "sleep", ms: 1200 },
+  ]);
+  assert.deepEqual(root.steps.slice(-3), [
+    { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "en" },
+    { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
+    { kind: "sleep", ms: 1200 },
+  ]);
+});
+
+test("seven app languages × ten mapped screens declares exactly 70 screenshots", async () => {
+  const tenScreens: Recipe = {
+    ...body,
+    id: "ten-screens",
+    steps: [
+      { kind: "screenshot", caption: "Ask" },
+      { kind: "screenshot", caption: "Sidebar" },
+      { kind: "screenshot", caption: "Settings" },
+      {
+        kind: "tour",
+        mappedStopsOnly: true,
+        screenshot: true,
+        fallbackStops: Array.from({ length: 7 }, (_, index) => ({
+          label: `Settings ${index + 1}`,
+        })),
+      },
+    ],
+  };
+  const language: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "appLocale", app: "ai.x.grok" },
+    options: ["en", "ar", "de", "es", "fr", "it", "pt-BR"].map((id) => ({ id })),
+  };
+  const matrix = await prepareOptionRunMatrix({ sets: [language], strategy: "cartesian" });
+  const { root, graph } = composeOptionRunRecipes({
+    body: tenScreens,
+    request: { sets: [language], screenshotEach: true },
+    batchId: "seventy",
+  });
+  assert.equal(matrix.cases.length, 7);
+  assert.equal(expectedRecipeScreenshotCount(root, graph), 10);
+  assert.equal(matrix.cases.length * expectedRecipeScreenshotCount(root, graph)!, 70);
 });
 
 const at = 1;

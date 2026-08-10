@@ -231,6 +231,12 @@ export type VariableApply =
       exitPath?: VariableNavStep[];
     }
   | {
+      /** Android's first-party per-app locale API. This avoids brittle taps in
+       * a system language picker while keeping the modifier explicit. */
+      kind: "appLocale";
+      app: string;
+    }
+  | {
       kind: "toggle";
       target: StepTarget;
       on: { identifier?: string; label?: string };
@@ -248,12 +254,26 @@ export type AppMapVariable = AppMapEntity & {
 };
 
 /** A test you can bind to variables. Path = recorded flow. Tour = live children. */
+export type AppMapCapturePolicy =
+  | { mode: "every-screen" }
+  | { mode: "checkpoints"; screenIds: string[] }
+  | { mode: "final-screen" }
+  | { mode: "failures-only" }
+  | { mode: "none" };
+
 export type AppMapTest = AppMapEntity & {
   name: string;
   kind: "path" | "tour";
   flowId?: string;
   rootScreenId?: string;
+  /** Exact mapped screens this test must capture. When omitted, a tour follows
+   * every visible child row as before. */
+  screenIds?: string[];
   depth?: number;
+  /** Evidence is independent from traversal: a test can visit ten screens
+   * without necessarily saving ten screenshots. */
+  capture?: AppMapCapturePolicy;
+  /** @deprecated Read as every-screen/none when capture is absent. */
   screenshotEach?: boolean;
 };
 
@@ -264,6 +284,9 @@ export type AppMapCombine = AppMapEntity & {
   testIds: string[];
   /** Optional value subset per variable. Missing entries mean every saved value. */
   selected?: Record<string, string[]>;
+  /** Evidence policy belongs to this run plan, so the same test can be reused
+   * by a visual sweep and a fast no-screenshot smoke matrix. */
+  captures?: Record<string, AppMapCapturePolicy>;
   strategy?: CaseExpansionStrategy;
 };
 

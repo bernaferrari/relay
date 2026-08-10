@@ -279,7 +279,11 @@ export type RecipeStep = RecipeStepMetadata &
           label: string;
           identifier?: string;
           point?: { x: number; y: number };
+          /** A mapped checkpoint may be visited without becoming evidence. */
+          capture?: boolean;
         }>;
+        /** Restrict a deterministic screen test to its mapped fallback stops. */
+        mappedStopsOnly?: boolean;
       }
     | { kind: "flow"; flow: string }
     | { kind: "module"; recipeId: string; bindings?: Record<string, string> }
@@ -310,10 +314,12 @@ export type RecipeStep = RecipeStepMetadata &
           | "inspect"
           | "assert-installed"
           | "assert-not-installed"
+          | "set-locale"
           | "install"
           | "update"
           | "uninstall";
         app?: string;
+        locale?: string;
         url?: string;
         relaunch?: boolean;
         artifact?: string;

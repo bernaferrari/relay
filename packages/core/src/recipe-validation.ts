@@ -1181,6 +1181,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           "inspect",
           "assert-installed",
           "assert-not-installed",
+          "set-locale",
           "install",
           "update",
           "uninstall",
@@ -1189,6 +1190,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "app has an invalid action");
         if (raw.app !== undefined && !isString(raw.app))
           throw stepErr(index, "app.app must be a string");
+        if (raw.locale !== undefined && !isString(raw.locale))
+          throw stepErr(index, "app.locale must be a string");
         if (raw.url !== undefined && !isString(raw.url))
           throw stepErr(index, "app.url must be a string");
         if (raw.artifact !== undefined && !isString(raw.artifact))
@@ -1217,6 +1220,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, `${raw.action} requires app package or bundle identifier`);
         }
+        if (raw.action === "set-locale" && (!isString(raw.locale) || !raw.locale.trim())) {
+          throw stepErr(index, "set-locale requires a BCP-47 locale");
+        }
         if (
           (raw.action === "install" || raw.action === "update") &&
           (!isString(raw.artifact) || !raw.artifact.trim())
@@ -1230,6 +1236,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           kind: "app",
           action: raw.action as Extract<RecipeStep, { kind: "app" }>["action"],
           ...(isString(raw.app) ? { app: raw.app } : {}),
+          ...(isString(raw.locale) ? { locale: raw.locale } : {}),
           ...(isString(raw.url) ? { url: raw.url } : {}),
           ...(typeof raw.relaunch === "boolean" ? { relaunch: raw.relaunch } : {}),
           ...(isString(raw.artifact) ? { artifact: raw.artifact } : {}),

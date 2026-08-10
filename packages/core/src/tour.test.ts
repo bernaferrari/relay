@@ -211,3 +211,14 @@ test("tour origin prefers fingerprint over a shared Settings header", () => {
     false,
   );
 });
+
+test("localized exact tours may use one stable mapped landmark", () => {
+  assert.equal(
+    onTourOrigin({
+      stops: [{ label: "SuperGrok" }, { label: "الاستخدام" }],
+      fallbackStops: [{ label: "SuperGrok" }, { label: "Usage" }],
+      minimumFallbackOverlap: 1,
+    }),
+    true,
+  );
+});
