@@ -1,4 +1,13 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type {
   CorpusAnalysisReport,
   CorpusFinding,
@@ -55,6 +64,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
   const [selectedOptions, setSelectedOptions] = createSignal<string[]>(["en", "pt-BR", "it"]);
   const [maxDepth, setMaxDepth] = createSignal(3);
   const [localeFilter, setLocaleFilter] = createSignal<string | "all">("all");
+  const [screenQuery, setScreenQuery] = createSignal("");
   const [compareKey, setCompareKey] = createSignal<string | null>(null);
   const [compareLocale, setCompareLocale] = createSignal<string | null>(null);
   const [analysis, setAnalysis] = createSignal<CorpusAnalysisReport | null>(null);
@@ -77,7 +87,11 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       (session) => session.status === "running" || session.status === "draft",
     );
     const completed = rows
-      .filter((session) => session.status === "complete" && session.screens.length > 0)
+      .filter(
+        (session) =>
+          session.status === "complete" &&
+          (session.screens.length >= 5 || session.scope.locales.length >= 3),
+      )
       .sort(
         (left, right) =>
           right.screens.length - left.screens.length || right.updatedAt - left.updatedAt,
@@ -220,17 +234,42 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       locale === "all"
         ? session.screens
         : session.screens.filter((screen) => screen.locale === locale);
-    return [...rows].sort((left, right) => {
-      if (left.depth !== right.depth) return left.depth - right.depth;
-      return left.path.join("/").localeCompare(right.path.join("/"));
-    });
+    const query = screenQuery().trim().toLocaleLowerCase();
+    return rows
+      .filter((screen) => !query || screenTitle(screen).toLocaleLowerCase().includes(query))
+      .sort((left, right) => {
+        if (left.depth !== right.depth) return left.depth - right.depth;
+        return left.path.join("/").localeCompare(right.path.join("/"));
+      });
   });
 
   const reviewModel = createMemo(() => {
     const session = selected();
     return session ? buildCorpusReviewModel(session) : null;
   });
-  const screenGroups = createMemo(() => reviewModel()?.groups ?? []);
+  const screenGroups = createMemo(() => {
+    const groups = reviewModel()?.groups ?? [];
+    const query = screenQuery().trim().toLocaleLowerCase();
+    return query
+      ? groups.filter((group) =>
+          screenTitle(group.representative).toLocaleLowerCase().includes(query),
+        )
+      : groups;
+  });
+  const reviewScreens = createMemo(() =>
+    localeFilter() === "all" ? screenGroups().map((group) => group.representative) : screens(),
+  );
+  const focusedScreenIndex = createMemo(() => {
+    const focused = focusedScreen();
+    return focused ? reviewScreens().findIndex((screen) => screen.id === focused.id) : -1;
+  });
+
+  function showAdjacentScreen(offset: -1 | 1): void {
+    const rows = reviewScreens();
+    const index = focusedScreenIndex();
+    const next = rows[index + offset];
+    if (next) setFocusedScreen(next);
+  }
 
   const comparison = createMemo(() => {
     const session = selected();
@@ -259,6 +298,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
     closeComparison();
     setFocusedScreen(null);
     setLocaleFilter("all");
+    setScreenQuery("");
   }
 
   function corpusScreenImageUrl(session: CorpusSession, screen: CorpusScreen): string {
@@ -379,7 +419,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
 
   return (
     <div class="grid min-h-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] bg-background-weak">
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border-weak-base px-[clamp(18px,3vw,32px)] py-2.5">
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border-weak-base px-4 py-2.5 lg:px-5">
         <div class="min-w-0 py-0.5">
           <button
             type="button"
@@ -798,10 +838,17 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                     {(summary) => (
                       <p class="text-[11.5px] text-text-weak">
                         <span class="font-medium text-text-strong">
-                          {summary().shots} screenshot{summary().shots === 1 ? "" : "s"}
-                        </span>{" "}
-                        · {summary().complete} of {summary().logical} screens covered in every value
-                        <Show when={summary().partial > 0}> · {summary().partial} partial</Show>
+                          {summary().complete === summary().logical
+                            ? `${summary().logical} screen${summary().logical === 1 ? "" : "s"} captured`
+                            : `${summary().complete} of ${summary().logical} screens complete`}
+                        </span>
+                        <Show when={session().scope.locales.length > 1}>
+                          {` across ${session().scope.locales.length} values`}
+                          <Show when={summary().shots > summary().logical}>
+                            {` · ${summary().shots.toLocaleString()} screenshots`}
+                          </Show>
+                        </Show>
+                        <Show when={summary().partial > 0}> · {summary().partial} incomplete</Show>
                         <Show when={analysis()}>
                           {(report) =>
                             report().findings.length > 0
@@ -989,24 +1036,38 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                     <h3 class="text-[12px] font-semibold tracking-[0.04em] text-text-weak uppercase">
                       Screens
                     </h3>
-                    <span class="text-[11px] text-text-weaker">
-                      {screenGroups().length} screen{screenGroups().length === 1 ? "" : "s"}
-                    </span>
-                    <Show when={session().scope.locales.length > 1}>
-                      <select
-                        aria-label="Filter screenshots by value"
-                        class="h-8 rounded-[8px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[11.5px] text-text-strong outline-none focus-visible:ring-1 focus-visible:ring-border-strong-focus"
-                        value={localeFilter()}
-                        onChange={(event) =>
-                          setLocaleFilter(event.currentTarget.value as string | "all")
-                        }
-                      >
-                        <option value="all">All values</option>
-                        <For each={session().scope.locales}>
-                          {(locale) => <option value={locale}>{locale}</option>}
-                        </For>
-                      </select>
-                    </Show>
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                      <label class="relative block">
+                        <Icon
+                          name="search"
+                          size={12}
+                          class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-weaker"
+                        />
+                        <input
+                          type="search"
+                          aria-label="Find a captured screen"
+                          placeholder="Find a screen"
+                          value={screenQuery()}
+                          onInput={(event) => setScreenQuery(event.currentTarget.value)}
+                          class="h-8 w-40 rounded-[8px] border border-border-weak-base bg-surface-raised-stronger-non-alpha pr-2.5 pl-8 text-[11.5px] text-text-strong outline-none placeholder:text-text-weaker focus-visible:border-border-strong-focus"
+                        />
+                      </label>
+                      <Show when={session().scope.locales.length > 1}>
+                        <select
+                          aria-label="Filter screenshots by value"
+                          class="h-8 max-w-44 rounded-[8px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[11.5px] text-text-strong outline-none focus-visible:ring-1 focus-visible:ring-border-strong-focus"
+                          value={localeFilter()}
+                          onChange={(event) =>
+                            setLocaleFilter(event.currentTarget.value as string | "all")
+                          }
+                        >
+                          <option value="all">All values</option>
+                          <For each={session().scope.locales}>
+                            {(locale) => <option value={locale}>{locale}</option>}
+                          </For>
+                        </select>
+                      </Show>
+                    </div>
                   </div>
 
                   <Show
@@ -1043,7 +1104,6 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                                   screen={screen}
                                   session={session()}
                                   imageUrl={corpusScreenImageUrl(session(), screen)}
-                                  meta={`${screen.locale} · d${screen.depth}`}
                                   onClick={() => setFocusedScreen(screen)}
                                 />
                               )}
@@ -1061,8 +1121,8 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                               imageUrl={corpusScreenImageUrl(session(), group.representative)}
                               meta={
                                 group.expectedValues === 1
-                                  ? group.representative.locale
-                                  : `${group.coveredValues} of ${group.expectedValues}`
+                                  ? undefined
+                                  : `${group.coveredValues}/${group.expectedValues} values`
                               }
                               onClick={() => setFocusedScreen(group.representative)}
                             />
@@ -1082,6 +1142,14 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
           screen={focusedScreen()!}
           session={selected()!}
           imageUrl={corpusScreenImageUrl(selected()!, focusedScreen()!)}
+          position={focusedScreenIndex() + 1}
+          total={reviewScreens().length}
+          onPrevious={focusedScreenIndex() > 0 ? () => showAdjacentScreen(-1) : undefined}
+          onNext={
+            focusedScreenIndex() >= 0 && focusedScreenIndex() < reviewScreens().length - 1
+              ? () => showAdjacentScreen(1)
+              : undefined
+          }
           onClose={() => setFocusedScreen(null)}
           onCompare={
             selected()!.scope.locales.length > 1
@@ -1135,22 +1203,6 @@ function journeyCheckpointCount(session: CorpusSession): number {
   );
 }
 
-function corpusSessionStatusDot(status: CorpusSession["status"]): string {
-  switch (status) {
-    case "complete":
-      return "bg-text-success-base";
-    case "failed":
-      return "bg-text-critical-base";
-    case "paused":
-    case "stopped":
-      return "bg-text-warning-base";
-    case "running":
-      return "bg-text-interactive-base";
-    default:
-      return "bg-text-weaker";
-  }
-}
-
 function CorpusSessionList(props: {
   sessions: CorpusSession[];
   selectedId: string | null;
@@ -1161,7 +1213,6 @@ function CorpusSessionList(props: {
     <ul class={cn("grid gap-0.5", props.class)}>
       <For each={props.sessions}>
         {(session) => {
-          const status = () => statusChip(session.status);
           return (
             <li>
               <button
@@ -1175,15 +1226,15 @@ function CorpusSessionList(props: {
                 aria-current={props.selectedId === session.id ? "true" : undefined}
                 onClick={() => props.onSelect(session)}
               >
-                <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <span class="flex min-w-0 items-center justify-between gap-2">
                   <span class="truncate text-[12px] font-medium text-text-strong">
                     {corpusSessionTitle(session)}
                   </span>
-                  <span
-                    class={cn("size-1.5 rounded-full", corpusSessionStatusDot(session.status))}
-                    aria-label={status().label}
-                    title={status().label}
-                  />
+                  <Show when={session.status !== "complete"}>
+                    <span class="shrink-0 text-[10px] font-medium text-text-weak">
+                      {statusChip(session.status).label}
+                    </span>
+                  </Show>
                 </span>
                 <span class="truncate text-[10.5px] text-text-weaker">
                   {session.screens.length} checkpoint
@@ -1284,14 +1335,20 @@ function CorpusScreenReviewDialog(props: {
   screen: CorpusScreen;
   session: CorpusSession;
   imageUrl: string;
+  position: number;
+  total: number;
+  onPrevious?: () => void;
+  onNext?: () => void;
   onClose: () => void;
   onCompare?: () => void;
 }) {
+  const server = useServer();
   const title = () => screenTitle(props.screen);
   const [accessibility, setAccessibility] = createSignal<CorpusAccessibilitySnapshot | null>(null);
   const [accessibilityLoading, setAccessibilityLoading] = createSignal(false);
   const [elementsHovered, setElementsHovered] = createSignal(false);
-  const [elementsPinned, setElementsPinned] = createSignal(false);
+  const [hoveredElement, setHoveredElement] = createSignal<CorpusAccessibilityNode | null>(null);
+  const elementsPinned = () => server.accessibilityMode() === "always";
   const elementsVisible = () => elementsHovered() || elementsPinned();
   const accessibilityUrl = () =>
     `${props.imageUrl.split("?")[0]}/accessibility?v=${props.screen.capturedAt}`;
@@ -1311,25 +1368,47 @@ function CorpusScreenReviewDialog(props: {
       .slice(0, 160);
   });
   let accessibilityRequest: Promise<void> | null = null;
+  let accessibilityRequestVersion = 0;
   async function loadAccessibility(): Promise<void> {
     if (accessibility() || accessibilityRequest || !props.screen.accessibilityPath) return;
+    const screenId = props.screen.id;
+    const requestVersion = accessibilityRequestVersion;
     accessibilityRequest = (async () => {
       setAccessibilityLoading(true);
       try {
         const response = await fetch(accessibilityUrl());
-        setAccessibility(
-          response.ok
-            ? ((await response.json()) as CorpusAccessibilitySnapshot)
-            : { inspectable: false },
-        );
+        const snapshot = response.ok
+          ? ((await response.json()) as CorpusAccessibilitySnapshot)
+          : { inspectable: false };
+        if (props.screen.id === screenId && accessibilityRequestVersion === requestVersion) {
+          setAccessibility(snapshot);
+        }
       } finally {
-        setAccessibilityLoading(false);
+        if (props.screen.id === screenId && accessibilityRequestVersion === requestVersion) {
+          setAccessibilityLoading(false);
+        }
       }
     })();
     await accessibilityRequest;
   }
-  let dialog!: HTMLDivElement;
-  onMount(() => dialog.focus());
+  let dialog: HTMLDivElement | undefined;
+  onMount(() => {
+    dialog?.focus();
+  });
+  createEffect(
+    on(
+      () => props.screen.id,
+      () => {
+        accessibilityRequestVersion += 1;
+        accessibilityRequest = null;
+        setAccessibility(null);
+        setAccessibilityLoading(false);
+        setElementsHovered(false);
+        setHoveredElement(null);
+        if (elementsPinned()) void loadAccessibility();
+      },
+    ),
+  );
   return (
     <div
       class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}
@@ -1338,13 +1417,23 @@ function CorpusScreenReviewDialog(props: {
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") props.onClose();
+        if (event.key === "ArrowLeft" && props.onPrevious) {
+          event.preventDefault();
+          props.onPrevious();
+        }
+        if (event.key === "ArrowRight" && props.onNext) {
+          event.preventDefault();
+          props.onNext();
+        }
       }}
     >
       <div
-        ref={dialog}
+        ref={(element) => {
+          dialog = element;
+        }}
         class={cn(
           modalPanel,
-          "grid h-[min(88vh,900px)] w-[min(960px,calc(100vw-40px))] grid-rows-[auto_minmax(0,1fr)_auto]",
+          "grid h-[min(92vh,980px)] w-[min(1180px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)_auto]",
         )}
         role="dialog"
         tabIndex={-1}
@@ -1361,7 +1450,7 @@ function CorpusScreenReviewDialog(props: {
             </h2>
             <p class="mt-px text-[11px] text-text-weak">
               {props.screen.locale} · depth {props.screen.depth} · captured{" "}
-              {formatCapturedAt(props.screen.capturedAt)}
+              {formatCapturedAt(props.screen.capturedAt)} · {props.position} of {props.total}
             </p>
           </div>
           <Button variant="ghost" size="sm" aria-label="Close screenshot" onClick={props.onClose}>
@@ -1391,20 +1480,60 @@ function CorpusScreenReviewDialog(props: {
                 <For each={accessibilityNodes()}>
                   {(node) => (
                     <rect
+                      class="pointer-events-auto cursor-default"
                       x={node.rect!.x}
                       y={node.rect!.y}
                       width={node.rect!.width}
                       height={node.rect!.height}
                       rx={Math.min(16, node.rect!.width * 0.04, node.rect!.height * 0.2)}
-                      fill="color-mix(in oklch, var(--text-interactive-base) 9%, transparent)"
+                      fill={
+                        hoveredElement() === node
+                          ? "color-mix(in oklch, var(--text-interactive-base) 18%, transparent)"
+                          : "color-mix(in oklch, var(--text-interactive-base) 9%, transparent)"
+                      }
                       stroke="var(--text-interactive-base)"
-                      stroke-width="3"
+                      stroke-width={hoveredElement() === node ? "5" : "3"}
                       vector-effect="non-scaling-stroke"
-                    />
+                      onPointerEnter={() => setHoveredElement(node)}
+                      onPointerLeave={() => setHoveredElement(null)}
+                    >
+                      <title>{accessibilityNodeLabel(node)}</title>
+                    </rect>
                   )}
                 </For>
               </svg>
             )}
+          </Show>
+          <Show when={elementsVisible() && hoveredElement()}>
+            {(node) => (
+              <div class="pointer-events-none absolute top-6 left-1/2 max-w-[min(440px,80%)] -translate-x-1/2 truncate rounded-[7px] bg-text-strong px-2.5 py-1.5 text-[11px] font-medium text-background-strong shadow-lg">
+                {accessibilityNodeLabel(node())}
+              </div>
+            )}
+          </Show>
+          <Show when={props.onPrevious}>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="absolute top-1/2 left-3 -translate-y-1/2 shadow-md"
+              aria-label="Previous screenshot"
+              title="Previous screenshot (Left arrow)"
+              onClick={props.onPrevious}
+            >
+              <Icon name="chevron-left" size={16} />
+            </Button>
+          </Show>
+          <Show when={props.onNext}>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="absolute top-1/2 right-3 -translate-y-1/2 shadow-md"
+              aria-label="Next screenshot"
+              title="Next screenshot (Right arrow)"
+              onClick={props.onNext}
+            >
+              <Icon name="chevron-right" size={16} />
+            </Button>
           </Show>
         </div>
         <footer class="flex items-center justify-between gap-3 border-t border-border-weak-base px-4 py-3">
@@ -1424,7 +1553,7 @@ function CorpusScreenReviewDialog(props: {
               onMouseLeave={() => setElementsHovered(false)}
               onFocus={() => void loadAccessibility()}
               onClick={() => {
-                setElementsPinned((pinned) => !pinned);
+                server.setAccessibilityMode(elementsPinned() ? "hidden" : "always");
                 void loadAccessibility();
               }}
             >
@@ -1451,11 +1580,15 @@ function CorpusScreenReviewDialog(props: {
   );
 }
 
+function accessibilityNodeLabel(node: CorpusAccessibilityNode): string {
+  return node.label?.trim() || node.identifier?.trim() || "Element";
+}
+
 function CorpusScreenCard(props: {
   screen: CorpusScreen;
   session: CorpusSession;
   imageUrl: string;
-  meta: string;
+  meta?: string;
   onClick: () => void;
 }) {
   const title = () => screenTitle(props.screen);
@@ -1467,7 +1600,11 @@ function CorpusScreenCard(props: {
     >
       <div class="flex items-center justify-between gap-2 border-b border-border-weak-base px-3 py-2">
         <span class="truncate text-[11.5px] font-medium text-text-strong">{title()}</span>
-        <span class={cn(mono, "shrink-0 text-[10px] text-text-weaker")}>{props.meta}</span>
+        <Show when={props.meta}>
+          {(meta) => (
+            <span class={cn(mono, "shrink-0 text-[10px] text-text-weaker")}>{meta()}</span>
+          )}
+        </Show>
       </div>
       <div class="grid h-[220px] place-items-center bg-[var(--background-deep)]">
         <img
