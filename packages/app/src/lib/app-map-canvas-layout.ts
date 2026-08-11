@@ -357,9 +357,12 @@ function obstacleAvoidingEdge(
   direction: EdgePortDirection,
   obstacles: readonly FrameBounds[],
 ): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } | undefined {
-  // Leave enough room for the screen title above the visible frame and the
-  // next row below it. A 48px rail reads as intentional whitespace at Fit.
+  // Long connections keep the same reading direction as their endpoints:
+  // leave through the natural side, use a row/column gutter, then enter the
+  // destination through its natural side. This avoids decorative arcs that
+  // visually jump over unrelated screens.
   const margin = 48;
+  const stub = 28;
   const horizontal = direction === "left" || direction === "right";
   if (horizontal) {
     const corridorLeft = Math.min(from.right, to.right);
@@ -377,13 +380,34 @@ function obstacleAvoidingEdge(
     const topRail = Math.min(from.top, to.top, ...blockers.map((frame) => frame.top)) - margin;
     const bottomRail =
       Math.max(from.bottom, to.bottom, ...blockers.map((frame) => frame.bottom)) + margin;
-    const useTop =
-      Math.abs(recordedStart.y - topRail) + Math.abs(to.centerY - topRail) <=
-      Math.abs(recordedStart.y - bottomRail) + Math.abs(to.centerY - bottomRail);
-    const port = useTop ? "top" : "bottom";
-    const start = hasRecordedStart ? recordedStart : portPoint(from, port);
-    const end = portPoint(to, port);
-    return railEdge(start, end, useTop ? topRail : bottomRail, "horizontal");
+    const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
+    const end = portPoint(to, oppositePortDirection(direction));
+    const directionSign = direction === "right" ? 1 : -1;
+    const sourceEdge = direction === "right" ? from.right : from.left;
+    const targetEdge = direction === "right" ? to.left : to.right;
+    const routeFor = (rail: number) =>
+      compactOrthogonalPoints([
+        start,
+        { x: sourceEdge, y: start.y },
+        { x: sourceEdge + directionSign * stub, y: start.y },
+        { x: sourceEdge + directionSign * stub, y: rail },
+        { x: targetEdge - directionSign * stub, y: rail },
+        { x: targetEdge - directionSign * stub, y: end.y },
+        end,
+      ]);
+    // In a left-to-right map, the gutter below a row preserves the natural
+    // scan order and leaves section labels above the cards unobstructed.
+    const bottomRoute = routeFor(bottomRail);
+    const topRoute = routeFor(topRail);
+    const points = routeClearsObstacles(bottomRoute, obstacles)
+      ? bottomRoute
+      : routeClearsObstacles(topRoute, obstacles)
+        ? topRoute
+        : bottomRoute;
+    return orthogonalEdge(points, {
+      x: (sourceEdge + targetEdge) / 2,
+      y: points === topRoute ? topRail : bottomRail,
+    });
   }
 
   const corridorTop = Math.min(from.bottom, to.bottom);
@@ -401,34 +425,115 @@ function obstacleAvoidingEdge(
   const leftRail = Math.min(from.left, to.left, ...blockers.map((frame) => frame.left)) - margin;
   const rightRail =
     Math.max(from.right, to.right, ...blockers.map((frame) => frame.right)) + margin;
-  const useLeft =
-    Math.abs(recordedStart.x - leftRail) + Math.abs(to.centerX - leftRail) <=
-    Math.abs(recordedStart.x - rightRail) + Math.abs(to.centerX - rightRail);
-  const port = useLeft ? "left" : "right";
-  const start = hasRecordedStart ? recordedStart : portPoint(from, port);
-  const end = portPoint(to, port);
-  return railEdge(start, end, useLeft ? leftRail : rightRail, "vertical");
+  const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
+  const end = portPoint(to, oppositePortDirection(direction));
+  const directionSign = direction === "bottom" ? 1 : -1;
+  const sourceEdge = direction === "bottom" ? from.bottom : from.top;
+  const targetEdge = direction === "bottom" ? to.top : to.bottom;
+  const routeFor = (rail: number) =>
+    compactOrthogonalPoints([
+      start,
+      { x: start.x, y: sourceEdge },
+      { x: start.x, y: sourceEdge + directionSign * stub },
+      { x: rail, y: sourceEdge + directionSign * stub },
+      { x: rail, y: targetEdge - directionSign * stub },
+      { x: end.x, y: targetEdge - directionSign * stub },
+      end,
+    ]);
+  const rightRoute = routeFor(rightRail);
+  const leftRoute = routeFor(leftRail);
+  const points = routeClearsObstacles(rightRoute, obstacles)
+    ? rightRoute
+    : routeClearsObstacles(leftRoute, obstacles)
+      ? leftRoute
+      : rightRoute;
+  return orthogonalEdge(points, {
+    x: points === leftRoute ? leftRail : rightRail,
+    y: (sourceEdge + targetEdge) / 2,
+  });
 }
 
-function railEdge(
-  start: CanvasPoint,
-  end: CanvasPoint,
-  rail: number,
-  orientation: "horizontal" | "vertical",
+function compactOrthogonalPoints(points: readonly CanvasPoint[]): CanvasPoint[] {
+  const unique = points.filter(
+    (point, index) =>
+      index === 0 || point.x !== points[index - 1]!.x || point.y !== points[index - 1]!.y,
+  );
+  return unique.filter((point, index) => {
+    if (index === 0 || index === unique.length - 1) return true;
+    const before = unique[index - 1]!;
+    const after = unique[index + 1]!;
+    return !(
+      (before.x === point.x && point.x === after.x) ||
+      (before.y === point.y && point.y === after.y)
+    );
+  });
+}
+
+function routeClearsObstacles(
+  points: readonly CanvasPoint[],
+  obstacles: readonly FrameBounds[],
+): boolean {
+  const padding = 10;
+  return points.slice(1).every((point, index) => {
+    const before = points[index]!;
+    return obstacles.every((frame) => {
+      if (before.y === point.y) {
+        const left = Math.min(before.x, point.x);
+        const right = Math.max(before.x, point.x);
+        return !(
+          before.y > frame.top - padding &&
+          before.y < frame.bottom + padding &&
+          right > frame.left - padding &&
+          left < frame.right + padding
+        );
+      }
+      const top = Math.min(before.y, point.y);
+      const bottom = Math.max(before.y, point.y);
+      return !(
+        before.x > frame.left - padding &&
+        before.x < frame.right + padding &&
+        bottom > frame.top - padding &&
+        top < frame.bottom + padding
+      );
+    });
+  });
+}
+
+function orthogonalEdge(
+  points: readonly CanvasPoint[],
+  labelPoint: CanvasPoint,
 ): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
-  if (orientation === "horizontal") {
-    const middle = (start.x + end.x) / 2;
-    return {
-      path: `M ${start.x} ${start.y} C ${start.x} ${rail}, ${start.x} ${rail}, ${middle} ${rail} C ${end.x} ${rail}, ${end.x} ${rail}, ${end.x} ${end.y}`,
-      labelPoint: { x: middle, y: rail },
-      startPoint: start,
-    };
+  const start = points[0]!;
+  let path = `M ${start.x} ${start.y}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index]!;
+    const next = points[index + 1];
+    if (!next) {
+      path += ` L ${point.x} ${point.y}`;
+      break;
+    }
+    const previous = points[index - 1]!;
+    const incoming = Math.hypot(point.x - previous.x, point.y - previous.y);
+    const outgoing = Math.hypot(next.x - point.x, next.y - point.y);
+    const radius = Math.min(14, incoming / 2, outgoing / 2);
+    const before = moveToward(point, previous, radius);
+    const after = moveToward(point, next, radius);
+    path += ` L ${before.x} ${before.y} Q ${point.x} ${point.y}, ${after.x} ${after.y}`;
   }
-  const middle = (start.y + end.y) / 2;
   return {
-    path: `M ${start.x} ${start.y} C ${rail} ${start.y}, ${rail} ${start.y}, ${rail} ${middle} C ${rail} ${end.y}, ${rail} ${end.y}, ${end.x} ${end.y}`,
-    labelPoint: { x: rail, y: middle },
+    path,
+    labelPoint,
     startPoint: start,
+  };
+}
+
+function moveToward(from: CanvasPoint, to: CanvasPoint, distance: number): CanvasPoint {
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  if (!length) return from;
+  const amount = distance / length;
+  return {
+    x: from.x + (to.x - from.x) * amount,
+    y: from.y + (to.y - from.y) * amount,
   };
 }
 

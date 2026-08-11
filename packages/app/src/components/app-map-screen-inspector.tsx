@@ -16,6 +16,7 @@ export function ScreenInspector(props: {
   runState?: AppMapRunPresentationState;
   isFlowStart?: boolean;
   connections: CanvasConnection[];
+  titleForScreen: (screenId: string) => string;
   flowSetup?: {
     flowCount: number;
     mixed: boolean;
@@ -167,33 +168,33 @@ export function ScreenInspector(props: {
               }
             >
               <For each={props.connections}>
-                {(connection) => (
-                  <button
-                    type="button"
-                    class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[11px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
-                    onClick={() => props.onSelectConnection(connection)}
-                  >
-                    <span
-                      class={cn(
-                        "grid size-5 shrink-0 place-items-center rounded-[5px]",
-                        connection.state === "needs-recording"
-                          ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_16%,transparent)] text-[var(--icon-warning-base)]"
-                          : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-                      )}
+                {(connection) => {
+                  const targetTitle = () => props.titleForScreen(connection.toScreenId);
+                  return (
+                    <button
+                      type="button"
+                      class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[11px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
+                      aria-label={`Open path to ${targetTitle()}`}
+                      onClick={() => props.onSelectConnection(connection)}
                     >
-                      <Icon
-                        name={connection.state === "needs-recording" ? "clock" : "arrow-right"}
-                        size={10}
-                      />
-                    </span>
-                    <span class="min-w-0 flex-1 truncate">
-                      {connection.state === "needs-recording"
-                        ? "Record on device"
-                        : connection.label || "Open path"}
-                    </span>
-                    <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
-                  </button>
-                )}
+                      <span
+                        class={cn(
+                          "grid size-5 shrink-0 place-items-center rounded-[5px]",
+                          connection.state === "needs-recording"
+                            ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_16%,transparent)] text-[var(--icon-warning-base)]"
+                            : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+                        )}
+                      >
+                        <Icon
+                          name={connection.state === "needs-recording" ? "clock" : "arrow-right"}
+                          size={10}
+                        />
+                      </span>
+                      <span class="min-w-0 flex-1 truncate">{targetTitle()}</span>
+                      <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />
+                    </button>
+                  );
+                }}
               </For>
             </Show>
           </section>

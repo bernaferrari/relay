@@ -56,7 +56,7 @@ test("ordinary taps stay quiet while meaningful gestures keep their labels", () 
       { id: "tap", kind: "tap", target: { label: "Settings" } },
       { id: "pause", kind: "sleep", ms: 1_200 },
     ]),
-    "contextual",
+    "hidden",
   );
   assert.equal(
     connectionLabelMode(connection({ stepIds: ["double"] }), [
@@ -77,5 +77,5 @@ test("ordinary taps stay quiet while meaningful gestures keep their labels", () 
     ]),
     "always",
   );
-  assert.equal(connectionLabelMode(connection({ state: "needs-recording" }), []), "always");
+  assert.equal(connectionLabelMode(connection({ state: "needs-recording" }), []), "hidden");
 });

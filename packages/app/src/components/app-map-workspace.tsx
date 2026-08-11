@@ -415,6 +415,10 @@ export function AppMapWorkspace(props: {
   const positions = () => canvasState().positions;
   const titleFor = (node: MapTreeNode) =>
     canvasState().screenTitles?.[node.id]?.trim() || node.title;
+  const titleForScreen = (screenId: string) => {
+    const node = tree().nodes.find((candidate) => candidate.id === screenId);
+    return node ? titleFor(node) : "Untitled screen";
+  };
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
   const resolvedPositions = createMemo(() =>
@@ -1629,6 +1633,7 @@ export function AppMapWorkspace(props: {
                           connections={connections().filter(
                             (connection) => connection.fromScreenId === selectedNode()?.id,
                           )}
+                          titleForScreen={titleForScreen}
                           flowSetup={selectedFlowSetup()}
                           onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
                           onSelectConnection={(connection) => {

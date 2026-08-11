@@ -1,14 +1,14 @@
 import type { RecipeStep } from "@relay/protocol";
 import type { CanvasConnection } from "./app-map-connection-draft";
 
-/** Ordinary single taps are already communicated by the path itself. Keep
- * their text contextual so a dense map stays quiet; persistent labels are
- * reserved for gestures, multi-step behavior, and unfinished work. */
+/** Ordinary single taps and unrecorded routes are already communicated by the
+ * path treatment and inspector. Keep labels for behavior that the line alone
+ * cannot explain: gestures, waits, and multi-step paths. */
 export function connectionLabelMode(
   connection: CanvasConnection,
   steps: readonly RecipeStep[],
-): "always" | "contextual" {
-  if (connection.state === "needs-recording") return "always";
+): "always" | "hidden" {
+  if (connection.state === "needs-recording") return "hidden";
   // The recorder keeps meaningful human pauses as editable sleep steps. They
   // do not turn an otherwise ordinary tap into a visually complex gesture.
   const meaningfulSteps = steps.filter((step) => step.kind !== "sleep");
@@ -16,7 +16,7 @@ export function connectionLabelMode(
   const step = meaningfulSteps[0];
   if (step?.kind !== "tap") return "always";
   if ((step.gesture ?? "single") !== "single" || (step.tapCount ?? 1) > 1) return "always";
-  return "contextual";
+  return "hidden";
 }
 
 export function checkedTargetsLabel(

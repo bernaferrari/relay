@@ -44,7 +44,7 @@ export type AppMapCanvasSceneProps = {
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
   connectionRunState: (connectionId: string) => AppMapRunPresentationState | undefined;
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
-  connectionLabelMode: (connection: CanvasConnection) => "always" | "contextual";
+  connectionLabelMode: (connection: CanvasConnection) => "always" | "hidden";
   onSelectNode: (node: MapTreeNode, event?: MouseEvent) => void;
   onNodeContextMenu: (event: MouseEvent, node: MapTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
@@ -380,15 +380,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           const source = () => nodeFor(connection.fromScreenId);
           const target = () => nodeFor(connection.toScreenId);
           const showLabel = () => {
-            const runState = props.connectionRunState(connection.id);
-            return (
-              props.connectionLabelMode(connection) === "always" ||
-              props.selectedConnectionId === connection.id ||
-              hoveredConnectionId() === connection.id ||
-              runState === "running" ||
-              runState === "failed" ||
-              runState === "healed"
-            );
+            return props.connectionLabelMode(connection) === "always";
           };
           return (
             <button

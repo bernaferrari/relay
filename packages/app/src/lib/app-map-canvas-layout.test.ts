@@ -125,9 +125,30 @@ test("connections route around an intervening screen instead of crossing it", ()
     (node) => node,
   );
 
-  assert.deepEqual(geometry.startPoint, { x: 120, y: 30 });
-  assert.match(geometry.path, /^M 120 30 C 120 -18, 120 -18,/);
-  assert.match(geometry.path, /, 760 -18, 760 30$/);
+  assert.deepEqual(geometry.startPoint, { x: 240, y: 117 });
+  assert.match(geometry.path, /^M 240 117 L 254 117 Q 268 117, 268 131/);
+  assert.match(geometry.path, /L 268 238 Q 268 252, 282 252/);
+  assert.match(geometry.path, /L 612 131 Q 612 117, 626 117 L 640 117$/);
+  assert.deepEqual(geometry.labelPoint, { x: 440, y: 252 });
+});
+
+test("an obstacle detour preserves the recorded origin before entering the row gutter", () => {
+  const blocker = { ...settings, id: "blocker", x: 320, y: 0 };
+  const target = { ...settings, id: "target", x: 640, y: 0 };
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "target",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.75, y: 0.7 } },
+    },
+    [start, blocker, target],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 180, y: 151.8 });
+  assert.match(geometry.path, /^M 180 151\.8 L 254 151\.8 Q 268 151\.8, 268 165\.8/);
+  assert.match(geometry.path, /L 612 131 Q 612 117, 626 117 L 640 117$/);
 });
 
 test("recorded tap origins stay exact on vertical connections", () => {
