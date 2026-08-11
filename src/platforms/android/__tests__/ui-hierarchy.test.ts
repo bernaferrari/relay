@@ -243,7 +243,43 @@ test('parseUiHierarchy keeps focused non-clickable Android TV nodes in interacti
   const focused = result.nodes.find((node) => node.label === 'Featured');
 
   assert.equal(focused?.focused, true);
-  assert.equal(focused?.hittable, false);
+  // A D-pad control an agent can drive is a target regardless of which input model reaches it.
+  assert.equal(focused?.hittable, true);
+});
+
+test('parseUiHierarchy reads an omitted clickable attribute the same as clickable="false"', () => {
+  // The snapshot helper omits false attributes; stock UiAutomator writes them out. Those are two
+  // encodings of one control, so every derived answer — public projection and pruning alike — has
+  // to agree. Reading an absent attribute as a value is what made them diverge.
+  const tree = (clickable: string) => `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.TextView" text="Foreground tile" bounds="[24,120][366,200]" enabled="true" visible-to-user="true" focusable="true" ${clickable} drawing-order="1"/>
+    </node>
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Background row" bounds="[0,220][280,280]" enabled="true" visible-to-user="true" focusable="true" ${clickable} drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const omitted = parseUiHierarchy(tree(''), 800, { raw: true });
+  const explicitFalse = parseUiHierarchy(tree('clickable="false"'), 800, { raw: true });
+
+  assert.deepEqual(
+    explicitFalse.nodes.map((node) => [node.label, node.hittable]),
+    omitted.nodes.map((node) => [node.label, node.hittable]),
+  );
+  // Both encodings must also agree that the foreground surface covers the background one.
+  for (const result of [omitted, explicitFalse]) {
+    assert.equal(
+      result.nodes.some((node) => node.label === 'Foreground tile'),
+      true,
+    );
+    assert.equal(
+      result.nodes.some((node) => node.label === 'Background row'),
+      false,
+    );
+  }
 });
 
 test('parseUiHierarchy prunes Android nodes that are not visible to the user in raw snapshots', () => {
@@ -457,6 +493,71 @@ test('parseUiHierarchy keeps React Native content under a transparent Expo tools
   assert.equal(
     result.nodes.some((node) => node.label === 'Tools'),
     true,
+  );
+});
+
+test('parseUiHierarchy keeps app content under a childless focusable full-screen overlay', () => {
+  // Telegram wraps every screen in a childless full-screen focusable View drawn above the content
+  // container. Focusability is accessibility traversal, not paint (#1733).
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.View" bounds="[0,0][390,844]" enabled="true" visible-to-user="true" focusable="true" drawing-order="3"/>
+    <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Your phone number" bounds="[24,200][366,260]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.EditText" text="208 379 7171" bounds="[24,320][366,380]" clickable="true" focusable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Your phone number'),
+    true,
+  );
+  assert.equal(
+    result.nodes.some((node) => node.label === '208 379 7171'),
+    true,
+  );
+});
+
+test('parseUiHierarchy keeps an overlapped text leaf drawn inside a composite widget sibling', () => {
+  // Telegram renders the "+" of "+1" as a TextView sitting inside the country-code EditText's box.
+  const xml = `<hierarchy>
+  <node class="android.widget.LinearLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.widget.EditText" text="1" content-desc="Country code" bounds="[40,300][130,380]" clickable="true" focusable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    <node class="android.widget.TextView" text="+" bounds="[40,310][55,370]" enabled="true" visible-to-user="true" drawing-order="1"/>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.label === '+'),
+    true,
+  );
+  assert.equal(
+    result.nodes.some((node) => node.label === '1'),
+    true,
+  );
+});
+
+test('parseUiHierarchy still condemns a clickable leaf covered by a foreground sibling', () => {
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.Button" text="Modal action" bounds="[24,420][366,480]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+    <node class="android.widget.Button" text="Behind the modal" bounds="[0,220][280,280]" clickable="true" enabled="true" visible-to-user="true" drawing-order="1"/>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Modal action'),
+    true,
+  );
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Behind the modal'),
+    false,
   );
 });
 
