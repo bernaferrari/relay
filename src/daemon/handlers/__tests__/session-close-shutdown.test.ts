@@ -1634,7 +1634,6 @@ test('close --save-script on a session with an active .ad repair transaction is 
       kind: 'emulator',
       booted: true,
     }),
-    recordSession: true,
     scriptPublication: {
       kind: 'repair' as const,
       status: 'complete' as const,
