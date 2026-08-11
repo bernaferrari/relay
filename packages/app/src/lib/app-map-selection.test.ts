@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canvasSelectionRect,
+  connectionIdsInSelection,
   mergeSelectedScreenIds,
   selectionDetailsScreenId,
   screenIdsInSelection,
@@ -31,6 +32,51 @@ test("marquee selection includes every screen it touches", () => {
     "account",
     "security",
   ]);
+});
+
+test("marquee selection includes a connection curve it crosses", () => {
+  const selection = canvasSelectionRect({ x: 190, y: 90 }, { x: 210, y: 120 });
+  assert.deepEqual(
+    connectionIdsInSelection(
+      [
+        {
+          id: "path",
+          hitPoints: [
+            { x: 0, y: 100 },
+            { x: 400, y: 100 },
+          ],
+        },
+        {
+          id: "outside",
+          hitPoints: [
+            { x: 0, y: 300 },
+            { x: 400, y: 300 },
+          ],
+        },
+      ],
+      selection,
+    ),
+    ["path"],
+  );
+});
+
+test("marquee does not select a collinear connection outside its bounds", () => {
+  const selection = canvasSelectionRect({ x: 190, y: 90 }, { x: 210, y: 120 });
+  assert.deepEqual(
+    connectionIdsInSelection(
+      [
+        {
+          id: "outside",
+          hitPoints: [
+            { x: 0, y: 100 },
+            { x: 100, y: 100 },
+          ],
+        },
+      ],
+      selection,
+    ),
+    [],
+  );
 });
 
 test("temporary multi-selection gets a close collective outline", () => {

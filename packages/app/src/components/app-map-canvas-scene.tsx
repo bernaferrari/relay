@@ -211,6 +211,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       labelPoint: { x: 0, y: 0 },
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 0, y: 0 },
+      hitPoints: [],
     };
   const visibleNotes = createMemo(() =>
     props.notes.filter(

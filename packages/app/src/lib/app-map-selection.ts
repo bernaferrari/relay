@@ -37,6 +37,70 @@ export function screenIdsInSelection(
   });
 }
 
+function pointInRect(point: CanvasPoint, selection: CanvasSelectionRect): boolean {
+  return (
+    point.x >= selection.left &&
+    point.x <= selection.right &&
+    point.y >= selection.top &&
+    point.y <= selection.bottom
+  );
+}
+
+function orientation(a: CanvasPoint, b: CanvasPoint, c: CanvasPoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function pointOnSegment(start: CanvasPoint, end: CanvasPoint, point: CanvasPoint): boolean {
+  const epsilon = 0.000_001;
+  return (
+    Math.abs(orientation(start, end, point)) <= epsilon &&
+    point.x >= Math.min(start.x, end.x) - epsilon &&
+    point.x <= Math.max(start.x, end.x) + epsilon &&
+    point.y >= Math.min(start.y, end.y) - epsilon &&
+    point.y <= Math.max(start.y, end.y) + epsilon
+  );
+}
+
+function segmentsIntersect(
+  firstStart: CanvasPoint,
+  firstEnd: CanvasPoint,
+  secondStart: CanvasPoint,
+  secondEnd: CanvasPoint,
+): boolean {
+  const firstA = orientation(firstStart, firstEnd, secondStart);
+  const firstB = orientation(firstStart, firstEnd, secondEnd);
+  const secondA = orientation(secondStart, secondEnd, firstStart);
+  const secondB = orientation(secondStart, secondEnd, firstEnd);
+  if (firstA * firstB < 0 && secondA * secondB < 0) return true;
+  return (
+    pointOnSegment(firstStart, firstEnd, secondStart) ||
+    pointOnSegment(firstStart, firstEnd, secondEnd) ||
+    pointOnSegment(secondStart, secondEnd, firstStart) ||
+    pointOnSegment(secondStart, secondEnd, firstEnd)
+  );
+}
+
+export function connectionIdsInSelection(
+  connections: readonly { id: string; hitPoints: readonly CanvasPoint[] }[],
+  selection: CanvasSelectionRect,
+): string[] {
+  const corners = [
+    { x: selection.left, y: selection.top },
+    { x: selection.right, y: selection.top },
+    { x: selection.right, y: selection.bottom },
+    { x: selection.left, y: selection.bottom },
+  ];
+  const borders = corners.map((point, index) => [point, corners[(index + 1) % 4]!] as const);
+  return connections.flatMap((connection) => {
+    if (connection.hitPoints.some((point) => pointInRect(point, selection))) return [connection.id];
+    const crosses = connection.hitPoints.slice(1).some((point, index) => {
+      const previous = connection.hitPoints[index]!;
+      return borders.some(([start, end]) => segmentsIntersect(previous, point, start, end));
+    });
+    return crosses ? [connection.id] : [];
+  });
+}
+
 export function selectedScreensRect(
   screenIds: readonly string[],
   positions: Readonly<Record<string, CanvasPoint>>,

@@ -2,16 +2,19 @@ import type { AppMapCanvasState } from "@relay/protocol";
 import { createMemo, createSignal, onCleanup, type Accessor, type Setter } from "solid-js";
 import {
   canvasPointFromClientRect,
+  type CanvasEdgeGeometry,
   type CanvasPoint,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
 import {
   APP_MAP_MARQUEE_THRESHOLD,
   canvasSelectionRect,
+  connectionIdsInSelection,
   mergeSelectedScreenIds,
   screenIdsInSelection,
   type CanvasSelectionRect,
 } from "../lib/app-map-selection";
+import { snapDraggedScreens, type CanvasSnapGuide } from "../lib/app-map-snapping";
 
 type Marquee = {
   pointerId: number;
@@ -53,6 +56,8 @@ export function useAppMapCanvasGestures(options: {
   selectedNodeIds: Accessor<string[]>;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedNodeId: (id: string | null) => void;
+  connectionGeometries: Accessor<readonly { id: string; geometry: CanvasEdgeGeometry }[]>;
+  setSelectedConnectionId: (id: string | null) => void;
   clearSecondarySelection: () => void;
   onSelectionSettled: (ids: readonly string[]) => void;
   onCommitNodeDrag: (before: AppMapCanvasState) => void;
@@ -61,6 +66,7 @@ export function useAppMapCanvasGestures(options: {
   const [canvasElement, setCanvasElement] = createSignal<HTMLElement>();
   const [canvasClientSize, setCanvasClientSize] = createSignal({ width: 0, height: 0 });
   const [selectionMarquee, setSelectionMarquee] = createSignal<Marquee | null>(null);
+  const [snapGuides, setSnapGuides] = createSignal<CanvasSnapGuide[]>([]);
   let canvasResizeObserver: ResizeObserver | undefined;
   let pan: { x: number; y: number; view: CanvasViewport } | undefined;
   let nodeDrag: NodeDrag | undefined;
@@ -143,7 +149,19 @@ export function useAppMapCanvasGestures(options: {
       const selected = mergeSelectedScreenIds(marquee.baseIds, hits, marquee.additive);
       options.setSelectedNodeIds(selected);
       options.setSelectedNodeId(selected.at(-1) ?? null);
-      options.clearSecondarySelection();
+      const connectionHits = connectionIdsInSelection(
+        options.connectionGeometries().map(({ id, geometry }) => ({
+          id,
+          hitPoints: geometry.hitPoints,
+        })),
+        canvasSelectionRect(marquee.start, current),
+      );
+      if (!selected.length && connectionHits.length === 1) {
+        options.clearSecondarySelection();
+        options.setSelectedConnectionId(connectionHits[0]!);
+      } else {
+        options.clearSecondarySelection();
+      }
       return;
     }
     if (!pan) return;
@@ -155,6 +173,18 @@ export function useAppMapCanvasGestures(options: {
   };
 
   const setNodePositions = (drag: NodeDrag, clientX: number, clientY: number, scale: number) => {
+    const snap = snapDraggedScreens({
+      draggedIds: drag.ids,
+      origins: drag.origins,
+      positions: options.positions(),
+      candidateDelta: {
+        x: (clientX - drag.x) / scale,
+        y: (clientY - drag.y) / scale,
+      },
+      // Keep the perceived capture radius constant at every zoom level.
+      threshold: 7 / scale,
+    });
+    setSnapGuides(snap.guides);
     options.setCanvasState((current) => ({
       ...current,
       positions: {
@@ -165,8 +195,8 @@ export function useAppMapCanvasGestures(options: {
             return [
               id,
               {
-                x: origin.x + (clientX - drag.x) / scale,
-                y: origin.y + (clientY - drag.y) / scale,
+                x: origin.x + snap.delta.x,
+                y: origin.y + snap.delta.y,
               },
             ];
           }),
@@ -247,6 +277,7 @@ export function useAppMapCanvasGestures(options: {
         options.onSelectionSettled(options.selectedNodeIds());
       }
       setSelectionMarquee(null);
+      setSnapGuides([]);
       return;
     }
     if (nodeDrag?.moved) {
@@ -264,6 +295,7 @@ export function useAppMapCanvasGestures(options: {
     nodeDrag = undefined;
     noteDrag = undefined;
     pan = undefined;
+    setSnapGuides([]);
   };
 
   const cancelPointer = () => {
@@ -299,6 +331,7 @@ export function useAppMapCanvasGestures(options: {
     canvasElement,
     finishPointer,
     marqueeRect,
+    snapGuides,
     nodeSelectionSuppressed: () => suppressNodeSelectionClick,
     observeCanvas,
     pointFromClient,

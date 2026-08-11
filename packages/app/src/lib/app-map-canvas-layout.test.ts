@@ -119,23 +119,28 @@ test("connections can travel upward through top and bottom ports", () => {
   assert.match(geometry.path, /, 120 [\d.]+, 120 204$/);
 });
 
-test("connections route around an intervening screen instead of crossing it", () => {
+test("connections keep a stable cubic topology near intervening screens", () => {
   const blocker = { ...settings, id: "blocker", x: 320, y: 0 };
   const target = { ...settings, id: "target", x: 640, y: 0 };
-  const geometry = canvasEdgeGeometry(
+  const before = canvasEdgeGeometry(
     { from: "start", to: "target", kind: "forward" },
     [start, blocker, target],
     (node) => node,
   );
+  const after = canvasEdgeGeometry(
+    { from: "start", to: "target", kind: "forward" },
+    [start, { ...blocker, y: 3 }, target],
+    (node) => node,
+  );
 
-  assert.deepEqual(geometry.startPoint, { x: 240, y: 117 });
-  assert.match(geometry.path, /^M 240 117 L 254 117 Q 268 117, 268 131/);
-  assert.match(geometry.path, /L 268 238 Q 268 252, 282 252/);
-  assert.match(geometry.path, /L 612 131 Q 612 117, 626 117 L 640 117$/);
-  assert.deepEqual(geometry.labelPoint, { x: 440, y: 252 });
+  assert.deepEqual(before.startPoint, { x: 240, y: 117 });
+  assert.match(before.path, /^M 240 117 C /);
+  assert.match(after.path, /^M 240 117 C /);
+  assert.doesNotMatch(before.path, /[LQ]/);
+  assert.doesNotMatch(after.path, /[LQ]/);
 });
 
-test("an obstacle detour preserves the recorded origin before entering the row gutter", () => {
+test("recorded origins stay exact when another screen is near the connection", () => {
   const blocker = { ...settings, id: "blocker", x: 320, y: 0 };
   const target = { ...settings, id: "target", x: 640, y: 0 };
   const geometry = canvasEdgeGeometry(
@@ -150,8 +155,8 @@ test("an obstacle detour preserves the recorded origin before entering the row g
   );
 
   assert.deepEqual(geometry.startPoint, { x: 180, y: 151.8 });
-  assert.match(geometry.path, /^M 180 151\.8 L 254 151\.8 Q 268 151\.8, 268 165\.8/);
-  assert.match(geometry.path, /L 612 131 Q 612 117, 626 117 L 640 117$/);
+  assert.match(geometry.path, /^M 180 151\.8 C /);
+  assert.doesNotMatch(geometry.path, /[LQ]/);
 });
 
 test("unobstructed branches use one consistent cubic curve across rows", () => {

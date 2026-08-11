@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { CanvasNote, AppMapCanvasState, ScreenVariant } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -17,6 +17,7 @@ import { compactCanvasPositions } from "../lib/app-map-auto-layout";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
 import {
   canvasBounds,
+  canvasEdgeGeometry,
   clampCanvasScale,
   fitCanvasViewport,
   openCanvasViewport,
@@ -305,6 +306,21 @@ export function AppMapWorkspace(props: {
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
+    connectionGeometries: () =>
+      connections().map((connection) => ({
+        id: connection.id,
+        geometry: canvasEdgeGeometry(
+          {
+            from: connection.fromScreenId,
+            to: connection.toScreenId,
+            kind: connection.kind,
+            sourceAnchor: connection.sourceAnchor,
+          },
+          tree().nodes,
+          positionFor,
+        ),
+      })),
+    setSelectedConnectionId,
     clearSecondarySelection: () => {
       setSelectedConnectionId(null);
       setScreenInspectorOpen(false);
@@ -1376,6 +1392,39 @@ export function AppMapWorkspace(props: {
                     />
                   )}
                 </Show>
+                <For each={canvasGestures.snapGuides()}>
+                  {(guide) => {
+                    const vertical =
+                      guide.kind === "alignment" ? guide.axis === "x" : guide.axis === "y";
+                    const segments = guide.segments ?? [guide];
+                    return (
+                      <For each={segments}>
+                        {(segment) => (
+                          <div
+                            class="pointer-events-none absolute z-[49] bg-[var(--text-interactive-base)] shadow-[0_0_0_0.5px_color-mix(in_srgb,var(--background-base)_65%,transparent)]"
+                            data-app-map-snap-guide={guide.kind}
+                            aria-hidden="true"
+                            style={
+                              vertical
+                                ? {
+                                    left: `${guide.position}px`,
+                                    top: `${segment.start}px`,
+                                    width: `${1 / view().scale}px`,
+                                    height: `${Math.max(1, segment.end - segment.start)}px`,
+                                  }
+                                : {
+                                    left: `${segment.start}px`,
+                                    top: `${guide.position}px`,
+                                    width: `${Math.max(1, segment.end - segment.start)}px`,
+                                    height: `${1 / view().scale}px`,
+                                  }
+                            }
+                          />
+                        )}
+                      </For>
+                    );
+                  }}
+                </For>
                 <AppMapCanvasScene
                   nodes={tree().nodes}
                   connections={connections()}
