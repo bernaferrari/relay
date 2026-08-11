@@ -30,6 +30,7 @@ import {
   minimapWorldPoint,
 } from "../lib/app-map-minimap";
 import { zoomViewportAtPoint } from "../lib/viewport-zoom";
+import { selectionDetailsScreenId } from "../lib/app-map-selection";
 import { deviceReadiness } from "../lib/device-readiness";
 import { projectAppMapRun } from "../lib/app-map-run-projection";
 import {
@@ -292,6 +293,7 @@ export function AppMapWorkspace(props: {
       setSelectedConnectionId(null);
       setScreenInspectorOpen(false);
     },
+    onSelectionSettled: (ids) => setScreenInspectorOpen(Boolean(selectionDetailsScreenId(ids))),
     onCommitNodeDrag: (before) =>
       persistMetadata(withCanvasGraph(canvasState(), graph()), { before }),
     onCommitNoteDrag: (before) => persistNotes(canvasState().notes ?? [], before),
@@ -593,9 +595,7 @@ export function AppMapWorkspace(props: {
     }
     setSelectedGroupId(null);
     setSelectedConnectionId(null);
-    // Selection is also the entry point to object properties. This mirrors a
-    // canvas editor: click a screen, see its details; Esc or the close button
-    // dismisses them without clearing the selection.
+    // Selection is the entry point to object properties; closing Details keeps selection.
     setScreenInspectorOpen(!event?.shiftKey);
     setRenamingNodeId(null);
     if (node.representativeStepIndex >= 0) selectStep(node.representativeStepIndex);
@@ -1357,7 +1357,6 @@ export function AppMapWorkspace(props: {
                       draft.steps()[node.representativeStepIndex],
                     ) || variantOrientationEvidence(activeAppMap(), node.id)
                   }
-                  detailsOpen={screenInspectorOpen()}
                   isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
                   connectionRunState={(connectionId) =>

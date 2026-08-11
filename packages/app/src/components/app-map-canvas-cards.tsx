@@ -229,7 +229,6 @@ export function ScreenCard(props: {
   sourceAnchor?: CanvasInteractionAnchor;
   onRotationChange?: (rotation: ScreenshotRotation) => void;
   onNaturalSize?: (size: { width: number; height: number }) => void;
-  detailsOpen?: boolean;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
   onContextMenu: (event: MouseEvent) => void;
@@ -296,7 +295,12 @@ export function ScreenCard(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <Show when={screenCardActionsVisible(props)}>
+      <Show
+        when={screenCardActionsVisible({
+          ...props,
+          hasRunAction: Boolean(props.onRun),
+        })}
+      >
         <div
           role="toolbar"
           aria-label={`${props.title} screen actions`}
@@ -304,45 +308,19 @@ export function ScreenCard(props: {
           class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[9px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[0_4px_14px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
-          <Show when={props.onRun}>
-            {(run) => (
-              <IconButton
-                variant="primary"
-                size="md"
-                aria-label={`Run from Start to ${props.title}`}
-                title="Run from Start to here"
-                data-tip="Run from Start to here"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  run()();
-                }}
-              >
-                <Icon name="play" size={12} class="ml-px" />
-              </IconButton>
-            )}
-          </Show>
           <IconButton
-            variant="ghost"
+            variant="primary"
             size="md"
-            selected={props.detailsOpen}
-            aria-label={
-              props.detailsOpen
-                ? `Details open for ${props.title}`
-                : `Open details for ${props.title}`
-            }
-            aria-expanded={props.detailsOpen === true}
-            aria-controls={`app-map-screen-details-${props.node.id}`}
-            data-app-map-details-trigger
-            data-tip="Open details · Enter"
-            title="Open details · Enter"
+            aria-label={`Run from Start to ${props.title}`}
+            title="Run from Start to here"
+            data-tip="Run from Start to here"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              props.onOpenDetails();
+              props.onRun?.();
             }}
           >
-            <Icon name="info" size={13} />
+            <Icon name="play" size={12} class="ml-px" />
           </IconButton>
         </div>
       </Show>

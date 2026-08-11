@@ -61,3 +61,9 @@ export function mergeSelectedScreenIds(
 ): string[] {
   return additive ? [...new Set([...baseIds, ...hitIds])] : [...hitIds];
 }
+
+/** A property panel represents one object. Marquee selection may still select
+ * many screens, but only an unambiguous single hit opens screen details. */
+export function selectionDetailsScreenId(screenIds: readonly string[]): string | null {
+  return screenIds.length === 1 ? screenIds[0]! : null;
+}

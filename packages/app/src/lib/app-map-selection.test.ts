@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canvasSelectionRect,
   mergeSelectedScreenIds,
+  selectionDetailsScreenId,
   screenIdsInSelection,
   selectedScreensRect,
 } from "./app-map-selection";
@@ -49,4 +50,10 @@ test("shift-marquee adds to the current selection without duplicates", () => {
     "security",
   ]);
   assert.deepEqual(mergeSelectedScreenIds(["account"], ["security"], false), ["security"]);
+});
+
+test("marquee details open only for one unambiguous screen", () => {
+  assert.equal(selectionDetailsScreenId(["account"]), "account");
+  assert.equal(selectionDetailsScreenId([]), null);
+  assert.equal(selectionDetailsScreenId(["account", "security"]), null);
 });

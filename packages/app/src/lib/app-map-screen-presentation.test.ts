@@ -5,22 +5,41 @@ import {
   screenCardStartMarkerVisible,
 } from "./app-map-screen-presentation";
 
-test("screen actions stay visible while the selected screen details are open", () => {
+test("screen actions appear only when the selected screen has a real contextual action", () => {
   assert.equal(
     screenCardActionsVisible({
       selected: true,
       showActions: true,
       editing: false,
-      detailsOpen: true,
+      hasRunAction: true,
     }),
     true,
   );
   assert.equal(
-    screenCardActionsVisible({ selected: false, showActions: true, editing: false }),
+    screenCardActionsVisible({
+      selected: true,
+      showActions: true,
+      editing: false,
+      hasRunAction: false,
+    }),
     false,
   );
   assert.equal(
-    screenCardActionsVisible({ selected: true, showActions: true, editing: true }),
+    screenCardActionsVisible({
+      selected: false,
+      showActions: true,
+      editing: false,
+      hasRunAction: true,
+    }),
+    false,
+  );
+  assert.equal(
+    screenCardActionsVisible({
+      selected: true,
+      showActions: true,
+      editing: true,
+      hasRunAction: true,
+    }),
     false,
   );
 });
