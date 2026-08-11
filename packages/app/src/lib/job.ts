@@ -16,9 +16,18 @@ export function statusTone(status: JobInfo["status"] | "idle"): string {
  * it defaults to Date.now() for finished/idle jobs.
  */
 export function fmtDur(job: JobInfo, now: number = Date.now()): string {
-  const end = job.finishedAt ?? (job.status === "running" ? now : (job.startedAt ?? job.queuedAt));
+  const recorded = job.durationMs;
+  const usesLiveClock = job.status === "running" && Number.isFinite(job.startedAt);
+  const end = usesLiveClock ? now : (job.finishedAt ?? job.startedAt ?? job.queuedAt);
   const start = job.startedAt ?? job.queuedAt;
-  const ms = Math.max(0, end - start);
+  const derived = end - start;
+  const ms =
+    !usesLiveClock && Number.isFinite(recorded) && recorded! >= 0
+      ? recorded!
+      : Number.isFinite(derived)
+        ? Math.max(0, derived)
+        : Number.NaN;
+  if (!Number.isFinite(ms)) return "";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
@@ -29,7 +38,7 @@ export function fmtDur(job: JobInfo, now: number = Date.now()): string {
  * Returns "" when there's no finish timestamp (running/queued/idle).
  */
 export function fmtAgo(finishedAt?: number, now: number = Date.now()): string {
-  if (!finishedAt) return "";
+  if (!finishedAt || !Number.isFinite(finishedAt) || !Number.isFinite(now)) return "";
   const s = Math.max(0, Math.round((now - finishedAt) / 1000));
   if (s < 60) return "now";
   const m = Math.floor(s / 60);

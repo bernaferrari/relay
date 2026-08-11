@@ -23,13 +23,16 @@ export function RunMatrixCaptureCard(props: {
   const available = () => Boolean(props.source) && !imageFailed();
   const waiting = () => props.job.status === "running" || props.job.status === "queued";
   const status = () => runOutcomeChip(props.job);
+  const valueLabel = () =>
+    props.values.length ? props.values.map((value) => value.value).join(" · ") : props.world;
+  const worldLabel = () => (props.values.length && props.world !== valueLabel() ? props.world : "");
 
   return (
     <article class="min-w-0 overflow-hidden rounded-[12px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)]">
       <button
         type="button"
         class="block w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
-        aria-label={`Open ${props.capture.caption} in ${props.world}`}
+        aria-label={`Open ${props.capture.caption} for ${valueLabel()}`}
         onClick={props.onOpen}
       >
         <Show
@@ -54,29 +57,31 @@ export function RunMatrixCaptureCard(props: {
             onError={() => setImageFailed(true)}
           />
         </Show>
-        <span class="grid gap-1 border-t border-[var(--border-weak-base)] px-3 py-2.5">
-          <span class="flex min-w-0 items-center justify-between gap-2">
+        <span class="flex min-w-0 items-center gap-2 border-t border-[var(--border-weak-base)] px-3 py-2.5">
+          <span class="flex min-w-0 flex-1 items-baseline gap-2">
             <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-              {props.world}
+              {valueLabel()}
             </strong>
-            <span
-              class={cn(
-                "shrink-0 text-[9.5px]",
-                status().tone === "fail"
-                  ? "text-[var(--icon-critical-base)]"
-                  : "text-[var(--text-weak)]",
-              )}
-            >
-              {status().label}
-            </span>
+            <Show when={worldLabel()}>
+              <span class="shrink-0 text-[9.5px] text-[var(--text-weak)]">{worldLabel()}</span>
+            </Show>
           </span>
-          <Show when={props.values.length > 0}>
-            <span class="truncate text-[10px] text-[var(--text-weak)]">
-              {props.values.map((value) => `${value.name}: ${value.value}`).join(" · ")}
-            </span>
-          </Show>
-          <Show when={props.missingCaptures > 0 && !props.capture.frame}>
-            <span class="text-[9.5px] text-[var(--icon-warning-base)]">Missing screenshot</span>
+          <Show
+            when={props.missingCaptures > 0 && !props.capture.frame}
+            fallback={
+              <span
+                class={cn(
+                  "shrink-0 text-[9.5px]",
+                  status().tone === "fail"
+                    ? "text-[var(--icon-critical-base)]"
+                    : "text-[var(--text-weak)]",
+                )}
+              >
+                {status().label}
+              </span>
+            }
+          >
+            <span class="shrink-0 text-[9.5px] text-[var(--icon-warning-base)]">Missing</span>
           </Show>
         </span>
       </button>

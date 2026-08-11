@@ -3,6 +3,67 @@ import { runOutcomeChip } from "../components/status-chip";
 
 export type RunFilterId = "all" | "passed" | "attention" | "review" | "active";
 
+export type RunBatchSummary = {
+  title: string;
+  count: number;
+  passed: number;
+  attention: number;
+  active: number;
+  durationMs: number;
+  status: string;
+  tone: "pass" | "attention" | "active";
+};
+
+function sharedBatchTitle(rows: JobInfo[]): string {
+  const titles = rows.map((row) => row.title?.trim()).filter(Boolean) as string[];
+  if (!titles.length) return "Run matrix";
+  const segments = titles.map((title) => title.split(" · "));
+  const shared: string[] = [];
+  for (let index = 0; index < segments[0]!.length; index += 1) {
+    const value = segments[0]![index];
+    if (!segments.every((parts) => parts[index] === value)) break;
+    shared.push(value!);
+  }
+  if (shared.at(-1)?.toLocaleLowerCase() === "across") shared.pop();
+  return shared.join(" · ") || titles[0]!;
+}
+
+/** Present one matrix execution as one result, while retaining every cell for review. */
+export function summarizeRunBatch(row: JobInfo, allRows: JobInfo[]): RunBatchSummary | null {
+  if (!row.batchId) return null;
+  const rows = allRows.filter((candidate) => candidate.batchId === row.batchId);
+  if (rows.length < 2) return null;
+  const passed = rows.filter((candidate) => runOutcomeChip(candidate).tone === "pass").length;
+  const active = rows.filter((candidate) =>
+    ["queued", "running", "paused"].includes(candidate.status),
+  ).length;
+  const attention = rows.length - passed - active;
+  return {
+    title: sharedBatchTitle(rows),
+    count: rows.length,
+    passed,
+    attention,
+    active,
+    durationMs: rows.reduce(
+      (total, candidate) =>
+        total +
+        (candidate.durationMs ??
+          Math.max(
+            0,
+            (candidate.finishedAt ?? candidate.startedAt ?? candidate.queuedAt) -
+              (candidate.startedAt ?? candidate.queuedAt),
+          )),
+      0,
+    ),
+    status: active
+      ? `${active} active · ${passed + attention} of ${rows.length} complete`
+      : attention
+        ? `${passed} passed · ${attention} need attention`
+        : `All ${passed} passed`,
+    tone: active ? "active" : attention ? "attention" : "pass",
+  };
+}
+
 /** Filter run rows by the history toolbar chip. */
 export function filterRunRows(rows: JobInfo[], filter: RunFilterId): JobInfo[] {
   if (filter === "passed") {
@@ -53,6 +114,7 @@ export function runsEqualForSelection(a: JobInfo | null, b: JobInfo | null): boo
         ((b as { writtenAt?: number }).writtenAt ?? 0) &&
       (a.artifacts?.length ?? 0) === (b.artifacts?.length ?? 0) &&
       (a.frames?.length ?? 0) === (b.frames?.length ?? 0) &&
+      (a.steps?.length ?? 0) === (b.steps?.length ?? 0) &&
       a.review?.status === b.review?.status &&
       (a.review?.decidedAt ?? 0) === (b.review?.decidedAt ?? 0))
   );

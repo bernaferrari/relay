@@ -5,7 +5,6 @@ import type {
   GenerationRequest,
   GenerationResult,
   DiscoverySession,
-  CorpusSession,
   OperationId,
   OperationInput,
   OperationOutput,
@@ -32,8 +31,6 @@ import {
 } from "../lib/accessibility-overlay-mode";
 import { createServerTargetController } from "../lib/server-target-controller";
 import { createServerDiscoveryController } from "../lib/server-discovery-controller";
-import { createServerCorpusController } from "../lib/server-corpus-controller";
-import type { LanguageProfileInfo } from "../lib/server-corpus-remote";
 import {
   listActions,
   listAndroidDevicesFast,
@@ -138,9 +135,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [activeDiscoverySessionId, setActiveDiscoverySessionId] = createSignal<string | null>(
       null,
     );
-    const [corpusSessions, setCorpusSessions] = createSignal<CorpusSession[]>([]);
-    const [activeCorpusSessionId, setActiveCorpusSessionId] = createSignal<string | null>(null);
-    const [languageProfiles, setLanguageProfiles] = createSignal<LanguageProfileInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     const [appMaps, setAppMaps] = createSignal<AppMap[]>([]);
@@ -599,30 +593,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRecipes,
     });
 
-    const {
-      refreshCorpusSessions,
-      refreshLanguageProfiles,
-      scanLanguageProfile,
-      createCorpusSession,
-      startCorpusSession,
-      cancelCorpusSession,
-      exportCorpusPack,
-      getCorpusAnalysis,
-      getCorpusCoverage,
-      corpusScreenUrl,
-      activeCorpusSession,
-    } = createServerCorpusController({
-      request,
-      health,
-      serverUrl,
-      corpusSessions,
-      setCorpusSessions,
-      activeCorpusSessionId,
-      setActiveCorpusSessionId,
-      languageProfiles,
-      setLanguageProfiles,
-    });
-
     async function refreshAppMaps(): Promise<AppMap[]> {
       if (health() === "offline") return appMaps();
       const result = await runAction("app-map.list", {});
@@ -1079,7 +1049,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         variables: refreshProjectVariables,
         matrices: refreshMatrices,
         discoveries: refreshDiscoverySessions,
-        corpora: refreshCorpusSessions,
+        // Corpus crawling remains a CLI/internal capture primitive. Desktop
+        // screenshot evidence is projected through canonical App Map runs.
+        corpora: async () => undefined,
         authoring: refreshAuthoringSessions,
       };
       void refreshers[kind]();
@@ -1583,8 +1555,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshAuthoringSessions(),
           refreshRedactionPolicy(),
           refreshEvidenceCollectionPolicy(),
-          refreshCorpusSessions(),
-          refreshLanguageProfiles(),
         ]);
         const selectedMapId = selectedAppMapId();
         if (selectedMapId && !appMaps().some((map) => map.id === selectedMapId)) {
@@ -1788,10 +1758,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       discoverySessions,
       activeDiscoverySessionId,
       setActiveDiscoverySessionId,
-      corpusSessions,
-      activeCorpusSessionId,
-      setActiveCorpusSessionId,
-      activeCorpusSession,
       actions,
       recipes,
       recipesLoaded,
@@ -1874,17 +1840,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadDiscoveryCoverage,
       approveDiscoverySuggestion,
       backtrackDiscovery,
-      refreshCorpusSessions,
-      refreshLanguageProfiles,
-      scanLanguageProfile,
-      languageProfiles,
-      createCorpusSession,
-      startCorpusSession,
-      cancelCorpusSession,
-      exportCorpusPack,
-      getCorpusAnalysis,
-      getCorpusCoverage,
-      corpusScreenUrl,
       saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
       deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
       resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,

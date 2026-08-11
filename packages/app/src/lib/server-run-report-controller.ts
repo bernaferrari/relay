@@ -27,28 +27,44 @@ export function createServerRunReportController(input: {
   setPersistedRuns: Setter<PersistedRun[]>;
   refreshRuns: () => Promise<void>;
 }) {
-  async function loadRunDetail(id: string): Promise<void> {
-    try {
-      const live = await input.request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}`);
-      if (live.job) {
-        input.setJobs((current) => current.map((job) => (job.id === id ? live.job : job)));
-        return;
-      }
-    } catch {
-      /* completed jobs may only exist in persisted storage after restart */
-    }
+  async function loadPersistedRun(id: string): Promise<boolean> {
     try {
       const data = await input.request<{ run: PersistedRun }>(`/runs/${encodeURIComponent(id)}`);
-      if (!data.run) return;
+      if (!data.run) return false;
       input.setPersistedRuns((current) => {
         const exists = current.some((run) => run.id === id);
         return exists
           ? current.map((run) => (run.id === id ? data.run : run))
           : [data.run, ...current];
       });
+      return true;
     } catch {
+      return false;
+    }
+  }
+
+  async function loadLiveJob(id: string): Promise<boolean> {
+    try {
+      const live = await input.request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}`);
+      if (!live.job) return false;
+      input.setJobs((current) => current.map((job) => (job.id === id ? live.job : job)));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadRunDetail(id: string, persisted = false): Promise<void> {
+    // History rows already tell us where the run lives. Asking /jobs first for
+    // every completed run produced a visible 404 before loading the real
+    // artifact, which made ordinary evidence review look broken.
+    if (persisted) {
+      if (await loadPersistedRun(id)) return;
+      await loadLiveJob(id);
       return;
     }
+    if (await loadLiveJob(id)) return;
+    await loadPersistedRun(id);
   }
 
   async function loadRunSignals(id: string): Promise<RegressionSignal[]> {
@@ -122,7 +138,7 @@ export function createServerRunReportController(input: {
         ...(note?.trim() ? { note: note.trim() } : {}),
       });
       await input.refreshRuns();
-      await loadRunDetail(id);
+      await loadRunDetail(id, true);
       return result.review;
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");

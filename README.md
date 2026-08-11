@@ -157,6 +157,11 @@ seven variants in each, rather than a flat wall of 70 unrelated images. Reports 
 an expiring, revocable, signed link. Public projections exclude selectors, logs, request bodies,
 private inputs, and device identifiers.
 
+There is no separate screenshot-crawl project in the desktop app. The App Map remains the source of
+truth, the run matrix performs the multiplication, and screenshots plus accessibility trees appear
+as evidence on that map-bound run. Internal capture commands may collect the same artifacts for CLI
+automation, but they do not create another authoring model.
+
 ```bash
 pnpm relay run share create <run-id> \
   --input '{"expiresInHours":24,"includeBatch":true}' --json

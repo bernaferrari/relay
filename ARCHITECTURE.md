@@ -30,6 +30,11 @@ screens, record connections, review Takes, and organize coverage. App Map schema
 persisted canvas schema. Unsupported persisted schemas are discarded rather than migrated or
 inferred. There is no second graph document and no compatibility authoring surface.
 
+Capture engines may discover screens and collect screenshots or accessibility trees, but they never
+own a second product workspace. Their output is projected onto the frozen App Map revision as Run
+and Target Result evidence. A language sweep is therefore a matrix run of a mapped test—not a
+separate crawl document, gallery, or authoring model.
+
 **Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
 optionally bind a recorded open/leave path. Inference never invents navigation. **Tests** are saved
 tours or paths. **Combine** is every selected variable value × those tests (one visible grid, one
@@ -82,6 +87,11 @@ Shared resources are project-scoped, revisioned, and written atomically. Mutatio
 revisions and idempotency keys; stale writes return the current resource. Stable entity IDs and
 field-level operations allow a hosted collaboration provider to be added without changing domain
 entities.
+
+Relay does not currently depend on Yjs. A future Yjs adapter may project the normalized entity maps
+and field-level operations into shared types while keeping run artifacts immutable and outside the
+live document. Large screenshot matrices remain evidence references, not replicated binary arrays;
+presence and cursors use the provider's awareness channel rather than persisted map state.
 
 Presence, cursors, viewport, and transient activity are ephemeral awareness data. They are never
 execution authority and are not persisted in App Maps. Device input and recording require explicit,

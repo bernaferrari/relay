@@ -5,6 +5,7 @@ import { executionMoments, stepGlyph } from "../lib/execution-moments";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { presentTarget } from "../lib/target-presentation";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
+import type { RunBatchSummary } from "../lib/runs-workspace-helpers";
 import { mono } from "../lib/ui";
 import { ActionIconTrail } from "./action-icon-trail";
 import { Icon } from "./icon";
@@ -100,7 +101,12 @@ export function RunStepList(props: {
   );
 }
 
-export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
+export function RunRow(props: {
+  job: JobInfo;
+  selected: boolean;
+  batch?: RunBatchSummary | null;
+  onOpen: () => void;
+}) {
   const server = useServer();
   const recipe = () => server.recipes().find((item) => item.id === props.job.action);
   const targetName = () => {
@@ -109,10 +115,20 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
     return target ? presentTarget(target).displayName : (props.job.serial ?? null);
   };
   const outcome = () => runOutcomeChip(props.job);
-  const status = () => outcome().label;
+  const status = () => props.batch?.status ?? outcome().label;
+  const title = () =>
+    props.batch?.title ?? props.job.title ?? recipe()?.title ?? titleize(props.job.action);
   const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
-  const passed = () => outcome().tone === "pass";
-  const active = () => ["queued", "running", "paused"].includes(props.job.status);
+  const passed = () => props.batch?.tone === "pass" || (!props.batch && outcome().tone === "pass");
+  const active = () =>
+    props.batch?.tone === "active" ||
+    (!props.batch && ["queued", "running", "paused"].includes(props.job.status));
+  const attention = () =>
+    props.batch?.tone === "attention" || (!props.batch && outcome().tone === "attention");
+  const duration = () =>
+    props.batch
+      ? fmtDur({ ...props.job, durationMs: props.batch.durationMs }, server.clock())
+      : fmtDur(props.job, server.clock());
   const frameThumbs = createMemo(() => {
     const job = props.job;
     const raw = [...(job.frames ?? []), ...(job.steps?.flatMap((step) => step.frames ?? []) ?? [])];
@@ -136,9 +152,9 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
   });
   const rowLabel = () =>
     [
-      props.job.title ?? recipe()?.title ?? titleize(props.job.action),
+      title(),
       status(),
-      fmtDur(props.job, server.clock()),
+      duration(),
       fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "just now",
     ]
       .filter(Boolean)
@@ -158,35 +174,42 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
         class={cn(
           "grid size-9 place-items-center rounded-[10px]",
           passed() && "bg-surface-success-weak text-icon-success-base",
-          outcome().tone === "attention" && "bg-surface-warning-weak text-icon-warning-base",
+          attention() && "bg-surface-warning-weak text-icon-warning-base",
           active() && "bg-surface-info-weak text-icon-info-base",
           !passed() &&
             !active() &&
-            outcome().tone !== "attention" &&
+            !attention() &&
             "bg-surface-critical-weak text-icon-critical-base",
         )}
         aria-hidden="true"
       >
         <Show
-          when={outcome().tone === "attention"}
+          when={attention()}
           fallback={<Icon name={passed() ? "check" : active() ? "play" : "alert"} size={16} />}
         >
-          <span class="text-[15px] font-semibold leading-none" aria-hidden="true">
-            ?
-          </span>
+          <Show
+            when={props.batch}
+            fallback={
+              <span class="text-[15px] font-semibold leading-none" aria-hidden="true">
+                ?
+              </span>
+            }
+          >
+            <Icon name="alert" size={16} />
+          </Show>
         </Show>
       </span>
       <span class="min-w-0">
         <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
-          {props.job.title ?? recipe()?.title ?? titleize(props.job.action)}
+          {title()}
         </strong>
         <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
           <span
             class={cn(
               "font-medium",
               passed() && "text-text-success-base",
-              outcome().tone === "attention" && "text-text-warning-base",
-              !passed() && !active() && outcome().tone !== "attention" && "text-text-critical-base",
+              attention() && "text-text-warning-base",
+              !passed() && !active() && !attention() && "text-text-critical-base",
             )}
           >
             {status()}
@@ -227,9 +250,7 @@ export function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => v
         </Show>
       </span>
       <span class="grid justify-items-end gap-1.5">
-        <span class="font-mono text-[11px] tabular-nums text-text-base">
-          {fmtDur(props.job, server.clock()) || "—"}
-        </span>
+        <span class="font-mono text-[11px] tabular-nums text-text-base">{duration() || "—"}</span>
         <span class="inline-flex items-center gap-1.5 text-[10.5px] text-text-weaker">
           <span class={cn(mono, "text-[10.5px]")}>
             {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
