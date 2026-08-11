@@ -46,7 +46,7 @@ export const SCREEN_FRAME_HEIGHT = 200;
 /** Keep very narrow phone previews legible without changing their media ratio. */
 export const SCREEN_FRAME_MIN_WIDTH = 112;
 export const MIN_CANVAS_SCALE = 0.3;
-export const MAX_CANVAS_SCALE = 1.25;
+export const MAX_CANVAS_SCALE = 2;
 const MIN_FIT_CANVAS_SCALE = 0.06;
 const BRANCH_COLUMN_GAP = 136;
 const BRANCH_ROW_GAP = 48;

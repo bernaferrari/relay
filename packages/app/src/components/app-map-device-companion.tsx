@@ -28,6 +28,14 @@ export function AppMapDeviceCompanion(props: {
   canRecord: boolean;
   mapName?: string;
   captureContextLabel: string | undefined;
+  liveRun?: {
+    title: string;
+    state: "queued" | "running" | "paused";
+    completedSteps: number;
+    totalSteps?: number;
+    caseLabel?: string;
+  };
+  onOpenRun?: () => void;
   onClose: () => void;
   onOpenTargets: () => void;
   onSaveScreen: () => void;
@@ -94,6 +102,60 @@ export function AppMapDeviceCompanion(props: {
           </Show>
         </div>
       </header>
+      <Show when={props.liveRun}>
+        {(run) => (
+          <button
+            type="button"
+            class="group relative flex min-h-11 shrink-0 items-center gap-2 border-b border-[var(--map-divider)] bg-[var(--surface-base)] px-3 text-left hover:bg-[var(--surface-base-hover)]"
+            aria-label={`Open run details for ${run().title}`}
+            onClick={props.onOpenRun}
+          >
+            <span
+              class={cn(
+                "size-2 shrink-0 rounded-full bg-[var(--border-selected)]",
+                run().state === "running" && "animate-pulse",
+              )}
+              aria-hidden="true"
+            />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[11px] font-medium text-[var(--text-strong)]">
+                {run().state === "queued"
+                  ? "Queued"
+                  : run().state === "paused"
+                    ? "Paused"
+                    : "Running"}
+                <span class="font-normal text-[var(--text-weak)]"> · {run().title}</span>
+              </span>
+              <Show when={run().caseLabel}>
+                {(label) => (
+                  <span class="block truncate text-[10px] text-[var(--text-weak)]">{label()}</span>
+                )}
+              </Show>
+            </span>
+            <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+              {run().totalSteps
+                ? `${Math.min(run().completedSteps, run().totalSteps!)} / ${run().totalSteps}`
+                : run().completedSteps
+                  ? `${run().completedSteps} done`
+                  : "Starting…"}
+            </span>
+            <Icon
+              name="chevron-right"
+              size={11}
+              class="shrink-0 text-[var(--icon-neutral-muted)] group-hover:text-[var(--icon-neutral-base)]"
+            />
+            <Show when={run().totalSteps && run().totalSteps! > 0}>
+              <span
+                class="absolute inset-x-0 bottom-0 h-px origin-left bg-[var(--border-selected)] transition-transform duration-200 ease-out"
+                style={{
+                  transform: `scaleX(${Math.min(1, run().completedSteps / run().totalSteps!)})`,
+                }}
+                aria-hidden="true"
+              />
+            </Show>
+          </button>
+        )}
+      </Show>
       <DeviceCompanionStage
         onOpenTargets={props.onOpenTargets}
         preparing={props.status.kind === "progress"}

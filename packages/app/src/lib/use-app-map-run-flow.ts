@@ -10,6 +10,7 @@ export function useAppMapRunFlow(options: {
   activeAppMap: Accessor<AppMap | undefined>;
   runnableFlow: Accessor<Flow | undefined>;
   transitionPath: Accessor<readonly string[] | null | undefined>;
+  onRunStarting?: () => void;
 }) {
   const server = useServer();
 
@@ -42,6 +43,7 @@ export function useAppMapRunFlow(options: {
       transitionPath?.length && transitionPath.length < flow.connectionIds.length
         ? transitionPath.at(-1)
         : undefined;
+    options.onRunStarting?.();
     await server.runAppMapFlowRemote(
       appMap.id,
       flow.id,

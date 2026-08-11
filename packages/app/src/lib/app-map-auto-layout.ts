@@ -15,6 +15,7 @@ type LayoutBlock = { id: string; screenIds: string[]; order: number };
 
 const CARD_GAP_X = 112;
 const CARD_GAP_Y = 48;
+const VIEWPORT_CHAIN_ROW_SPAN = 1.3;
 
 /**
  * Tidy-tree layout for the real screen graph.
@@ -70,6 +71,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
   const orderedLayers = orderLayers(layers, dagEdges, blockOrder);
   const blockById = new Map(blocks.map((block) => [block.id, block]));
   const edgeOrder = new Map<string, number>();
+  const edgeSourceOffset = new Map<string, number>();
   for (const edge of screenEdges) {
     const from = blockForScreen.get(edge.from);
     const to = blockForScreen.get(edge.to);
@@ -79,8 +81,21 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
       key,
       Math.min(edgeOrder.get(key) ?? Number.MAX_SAFE_INTEGER, screenOrder.get(edge.from) ?? 0),
     );
+    const sourceBlock = blockById.get(from);
+    const sourceOffset = sourceBlock?.screenIds.indexOf(edge.from) ?? -1;
+    if (sourceOffset >= 0) {
+      edgeSourceOffset.set(key, Math.min(edgeSourceOffset.get(key) ?? sourceOffset, sourceOffset));
+    }
   }
-  return layoutPrimaryForest(orderedLayers, blocks, blockById, dagEdges, entryBlocks, edgeOrder);
+  return layoutPrimaryForest(
+    orderedLayers,
+    blocks,
+    blockById,
+    dagEdges,
+    entryBlocks,
+    edgeOrder,
+    edgeSourceOffset,
+  );
 }
 
 function buildLayoutBlocks(
@@ -150,6 +165,7 @@ function layoutPrimaryForest(
   edges: readonly LayoutEdge[],
   entries: readonly string[],
   edgeOrder: ReadonlyMap<string, number>,
+  edgeSourceOffset: ReadonlyMap<string, number>,
 ): Record<string, CanvasPoint> {
   const rank = new Map<string, number>();
   const lane = new Map<string, number>();
@@ -191,11 +207,13 @@ function layoutPrimaryForest(
   const subtreeRows = (id: string): number => {
     const cached = rowsMemo.get(id);
     if (cached !== undefined) return cached;
-    const ownRows = blockById.get(id)?.screenIds.length ?? 1;
-    const childRows = (children.get(id) ?? []).reduce(
-      (total, childId) => total + subtreeRows(childId),
-      0,
-    );
+    const ownCount = blockById.get(id)?.screenIds.length ?? 1;
+    const ownRows = 1 + Math.max(0, ownCount - 1) * VIEWPORT_CHAIN_ROW_SPAN;
+    let childRows = 0;
+    for (const childId of children.get(id) ?? []) {
+      const sourceRow = (edgeSourceOffset.get(edgeKey(id, childId)) ?? 0) * VIEWPORT_CHAIN_ROW_SPAN;
+      childRows = Math.max(childRows, sourceRow) + subtreeRows(childId);
+    }
     const rows = Math.max(ownRows, childRows);
     rowsMemo.set(id, rows);
     return rows;
@@ -216,10 +234,15 @@ function layoutPrimaryForest(
     // creates huge empty bands before the first useful branch.
     const blockTop = topRow;
     block.screenIds.forEach((screenId, index) => {
-      positions[screenId] = { x: depth * pitchX, y: (blockTop + index) * pitchY };
+      positions[screenId] = {
+        x: depth * pitchX,
+        y: (blockTop + index * VIEWPORT_CHAIN_ROW_SPAN) * pitchY,
+      };
     });
     let childTop = topRow;
     for (const childId of children.get(id) ?? []) {
+      const sourceRow = (edgeSourceOffset.get(edgeKey(id, childId)) ?? 0) * VIEWPORT_CHAIN_ROW_SPAN;
+      childTop = Math.max(childTop, topRow + sourceRow);
       place(childId, depth + 1, childTop);
       childTop += subtreeRows(childId);
     }

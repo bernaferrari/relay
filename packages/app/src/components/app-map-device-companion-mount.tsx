@@ -13,6 +13,8 @@ export function AppMapDeviceCompanionMount(props: {
   canRecord: boolean;
   mapName?: string;
   captureContextLabel?: string;
+  liveRun?: Parameters<typeof AppMapDeviceCompanion>[0]["liveRun"];
+  onOpenRun?: () => void;
   onClose: () => void;
   onOpenTargets: () => void;
   onSaveScreen: () => void;
@@ -36,6 +38,8 @@ export function AppMapDeviceCompanionMount(props: {
       canRecord={props.canRecord}
       mapName={props.mapName}
       captureContextLabel={props.captureContextLabel}
+      liveRun={props.liveRun}
+      onOpenRun={props.onOpenRun}
       onClose={props.onClose}
       onOpenTargets={props.onOpenTargets}
       onSaveScreen={props.onSaveScreen}

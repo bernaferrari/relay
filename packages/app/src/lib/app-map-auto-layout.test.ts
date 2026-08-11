@@ -65,7 +65,40 @@ test("keeps viewport captures in one vertical block", () => {
   assert.equal(positions.settings?.x, positions["settings-about"]?.x);
   assert.ok((positions["settings-more"]?.y ?? 0) > (positions.settings?.y ?? 0));
   assert.ok((positions["settings-about"]?.y ?? 0) > (positions["settings-more"]?.y ?? 0));
+  assert.ok(
+    (positions["settings-more"]?.y ?? 0) - (positions.settings?.y ?? 0) > 278,
+    "scroll states should reserve extra routing space between previews",
+  );
   assert.ok((positions.privacy?.x ?? 0) > (positions["settings-about"]?.x ?? 0));
+});
+
+test("aligns branches with the scroll state that opened them", () => {
+  const graph = {
+    screens: ["settings", "more", "about", "appearance", "memory", "legal"].map((id) => ({
+      id,
+    })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "more" },
+        label: "Scroll",
+      },
+      {
+        fromScreenId: "more",
+        destination: { kind: "screen", screenId: "about" },
+        label: "Scroll",
+      },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "appearance" } },
+      { fromScreenId: "more", destination: { kind: "screen", screenId: "memory" } },
+      { fromScreenId: "about", destination: { kind: "screen", screenId: "legal" } },
+    ],
+  };
+  const positions = compactCanvasPositions(graph);
+
+  assert.equal(positions.appearance?.y, positions.settings?.y);
+  assert.equal(positions.memory?.y, positions.more?.y);
+  assert.equal(positions.legal?.y, positions.about?.y);
 });
 
 test("breaks cycles for ranking without producing giant coordinates", () => {

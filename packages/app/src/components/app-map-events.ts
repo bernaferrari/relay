@@ -76,6 +76,7 @@ export function createAppMapEventOrchestration(options: {
   renamingScreen: Accessor<boolean>;
   onDeviceSelected: () => void;
   onToggleDevicePanel: () => void;
+  onOpenDevicePanel: () => void;
   onCloseDevicePanel: () => void;
   onRunMap: () => void;
   onUndoRequest: (event: Event, redo: boolean) => void;
@@ -103,6 +104,7 @@ export function createAppMapEventOrchestration(options: {
   onMount(() => {
     let toolBeforeSpace: AppMapCanvasTool | null = null;
     const onToggleDevicePanel = () => options.onToggleDevicePanel();
+    const onOpenDevicePanel = () => options.onOpenDevicePanel();
     const onCloseDevicePanel = () => options.onCloseDevicePanel();
     const onRunMap = () => options.onRunMap();
     const onRecordPath = () => options.onRecord();
@@ -161,6 +163,7 @@ export function createAppMapEventOrchestration(options: {
 
     window.addEventListener("relay:device-selected", options.onDeviceSelected);
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
+    window.addEventListener("relay:open-device-panel", onOpenDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
     window.addEventListener("relay:run-app-map", onRunMap);
     window.addEventListener("relay:record-path", onRecordPath);
@@ -171,6 +174,7 @@ export function createAppMapEventOrchestration(options: {
     onCleanup(() => {
       window.removeEventListener("relay:device-selected", options.onDeviceSelected);
       window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
+      window.removeEventListener("relay:open-device-panel", onOpenDevicePanel);
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
       window.removeEventListener("relay:run-app-map", onRunMap);
       window.removeEventListener("relay:record-path", onRecordPath);

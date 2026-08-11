@@ -552,6 +552,7 @@ export function AppMapCombine(props: {
         });
       }
       props.onClose();
+      window.dispatchEvent(new CustomEvent("relay:open-device-panel"));
     } catch (error) {
       toast(humanError(error, "Could not start this run matrix"), "error");
     } finally {

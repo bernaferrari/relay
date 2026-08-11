@@ -184,6 +184,25 @@ export function AppMapWorkspace(props: {
     if (!appMapId) return null;
     return server.jobs().find((job) => job.action === appMapId) ?? null;
   });
+  const liveRunJob = createMemo(() => {
+    const jobId = server.selectedJobId();
+    if (!jobId) return null;
+    const job = server.jobs().find((candidate) => candidate.id === jobId);
+    if (!job || !["queued", "running", "paused"].includes(job.status)) return null;
+    const serial = server.selectedDevice();
+    return !job.serial || !serial || job.serial === serial ? job : null;
+  });
+  const liveRunPresentation = createMemo(() => {
+    const job = liveRunJob();
+    if (!job) return undefined;
+    return {
+      title: job.title?.trim() || "App map",
+      state: job.status as "queued" | "running" | "paused",
+      completedSteps: job.steps?.length ?? 0,
+      ...(job.recipeSnapshot?.steps.length ? { totalSteps: job.recipeSnapshot.steps.length } : {}),
+      ...(job.matrixCase?.world ? { caseLabel: job.matrixCase.world } : {}),
+    };
+  });
   const runProjection = createMemo(() => {
     const job = mapRunJob();
     return projectAppMapRun({
@@ -521,6 +540,7 @@ export function AppMapWorkspace(props: {
     activeAppMap,
     runnableFlow,
     transitionPath: () => graphRunReadiness().transitionPath,
+    onRunStarting: openLiveDevice,
   });
   const runTargetForScreen = (screenId: string) => {
     return appMapRunTarget({
@@ -1059,6 +1079,10 @@ export function AppMapWorkspace(props: {
       setHistoryOpen(false);
       if (captureOpen()) closeCapturePanel();
       else openLiveDevice();
+    },
+    onOpenDevicePanel: () => {
+      setHistoryOpen(false);
+      openLiveDevice();
     },
     onCloseDevicePanel: closeCapturePanel,
     onRunMap: runCanvasGraph,
@@ -1728,6 +1752,14 @@ export function AppMapWorkspace(props: {
           canRecord={canRecord()}
           mapName={activeAppMap()?.name}
           captureContextLabel={captureContextLabel()}
+          liveRun={liveRunPresentation()}
+          onOpenRun={() => {
+            const job = liveRunJob();
+            if (!job) return;
+            window.dispatchEvent(
+              new CustomEvent("relay:open-run-history", { detail: { jobId: job.id } }),
+            );
+          }}
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}
           onSaveScreen={() => void captureCurrentScreen()}

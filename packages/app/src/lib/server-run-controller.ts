@@ -99,15 +99,15 @@ export function createServerRunController(deps: RunControllerDependencies) {
     flowId: string,
     title: string,
     throughConnectionId?: string,
-  ): Promise<void> {
+  ): Promise<string | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
-      return;
+      return null;
     }
     const serial = deps.selectedDevice() ?? undefined;
     if (!serial) {
       toast("Choose a device before running this path", "info");
-      return;
+      return null;
     }
     const targetPlatform =
       deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
@@ -127,20 +127,17 @@ export function createServerRunController(deps: RunControllerDependencies) {
       deps.setSelectedAction(appMapId);
       deps.rememberJob(job);
       toast(
-        jobs.length > 1
-          ? `Running ${jobs.length} runs · open Run history for results`
-          : `Running “${title}” · open Run history for live results`,
+        jobs.length > 1 ? `Running ${jobs.length} runs` : `Running “${title}” on the device`,
         "success",
       );
-      window.dispatchEvent(
-        new CustomEvent("relay:open-run-history", { detail: { jobId: job.id } }),
-      );
       void deps.refreshJobs();
+      return job.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.appendLog(message, "error");
       toast(message, "warning");
       deps.setError(message);
+      return null;
     }
   }
 
@@ -252,15 +249,15 @@ export function createServerRunController(deps: RunControllerDependencies) {
     selected?: Record<string, string[]>;
     strategy?: "zip" | "cartesian" | "pairwise";
     title?: string;
-  }): Promise<void> {
+  }): Promise<string | null> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
-      return;
+      return null;
     }
     const serial = deps.selectedDevice() ?? undefined;
     if (!serial) {
       toast("Choose a ready device first", "warning");
-      return;
+      return null;
     }
     const targetPlatform =
       deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
@@ -289,15 +286,14 @@ export function createServerRunController(deps: RunControllerDependencies) {
           : `Running ${data.batch.title} · ${worlds} runs`,
         "success",
       );
-      window.dispatchEvent(
-        new CustomEvent("relay:open-run-history", { detail: { jobId: data.jobs[0]?.id } }),
-      );
       void deps.refreshJobs();
+      return data.jobs[0]?.id ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.appendLog(message, "error");
       toast(message, "error");
       deps.setError(message);
+      return null;
     }
   }
 
