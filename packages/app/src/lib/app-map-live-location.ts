@@ -14,6 +14,36 @@ export type LiveLocationScreen = {
   };
 };
 
+export type ApplicationIdentityVariant = {
+  observation?: {
+    nodes?: readonly { identifier?: string }[];
+  };
+};
+
+/** Existing Android evidence already carries package-qualified resource ids.
+ * Use the dominant package as the map's app boundary so the authoring UI does
+ * not offer to save Launcher, Settings, or another app into the current map. */
+export function expectedAndroidApplicationId(
+  variants: readonly ApplicationIdentityVariant[],
+): string | undefined {
+  const counts = new Map<string, number>();
+  for (const variant of variants) {
+    for (const node of variant.observation?.nodes ?? []) {
+      const packageId = node.identifier?.match(/^([a-z][a-z0-9_.]+):id\//i)?.[1];
+      if (!packageId || packageId === "android") continue;
+      counts.set(packageId, (counts.get(packageId) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort(
+    ([leftId, leftCount], [rightId, rightCount]) =>
+      rightCount - leftCount || leftId.localeCompare(rightId),
+  )[0]?.[0];
+}
+
+export function applicationIdsMatch(expected: string, actual: string): boolean {
+  return expected.trim().toLowerCase() === actual.trim().toLowerCase();
+}
+
 function fingerprintKey(value: string | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }

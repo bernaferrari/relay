@@ -6,9 +6,11 @@ import type {
   AppMapCanvasState,
   ScreenObservation,
   ConnectionTakeReview,
+  MapGroup,
   RecordingClip,
   RecipeStep,
 } from "@relay/protocol";
+import { compactGroupedCanvasPositions } from "./app-map-auto-layout";
 import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
@@ -489,7 +491,11 @@ export function reviewGraphTransition(
 }
 
 /** Adapt the explicit document to the existing canvas card primitives. */
-export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): MapTree {
+export function buildCanvasGraphTree(
+  graph: CanvasGraph,
+  steps: RecipeStep[],
+  groups: readonly MapGroup[] = [],
+): MapTree {
   const stepIndexById = new Map(steps.map((step, index) => [step.id, index]));
   const screenById = new Map(graph.screens.map((screen) => [screen.id, screen]));
   const startIds = graph.flows.map((flow) => flow.screenId).filter((id) => screenById.has(id));
@@ -524,6 +530,7 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
   for (const screensAtDepth of screensByDepth.values()) {
     screensAtDepth.forEach((screen, index) => rowById.set(screen.id, index));
   }
+  const groupedPositions = compactGroupedCanvasPositions(graph, groups);
   const nodes = graph.screens
     .map((screen) => {
       const representativeStepIndex =
@@ -542,10 +549,12 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           (value) => value >= 0 && value < steps.length,
         ),
         depth,
-        x: depth * (SCREEN_CARD_WIDTH + 136),
+        x: groupedPositions[screen.id]?.x ?? depth * (SCREEN_CARD_WIDTH + 136),
         // Balance branches around their source instead of growing one long
         // downward spine. Fit now keeps ordinary maps readable at a glance.
-        y: (row - (siblings.length - 1) / 2) * (SCREEN_CARD_HEIGHT + 48),
+        y:
+          groupedPositions[screen.id]?.y ??
+          (row - (siblings.length - 1) / 2) * (SCREEN_CARD_HEIGHT + 48),
       };
     })
     .sort((a, b) => a.depth - b.depth || a.y - b.y);

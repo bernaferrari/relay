@@ -665,10 +665,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </div>
           <div class={shellTopbarTitle}>
             <Show
-              when={area() === "tests" && selectedMap()}
+              when={area() === "tests"}
               fallback={
                 <strong class="max-w-full truncate text-center text-[13px] font-medium text-[var(--text-base)]">
-                  {area() === "runs" ? "Run history" : "My map"}
+                  Run history
                 </strong>
               }
             >

@@ -39,13 +39,14 @@ export function AppMapOverviewToolbar(props: {
   return (
     <header
       class={cn(
-        "absolute top-3 z-20 flex min-h-10 -translate-x-1/2 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] max-[900px]:left-1/2 max-[620px]:top-2",
-        props.shiftForDevice
-          ? props.wideDevice
-            ? "left-[calc((100%-620px)/2)]"
-            : "left-[calc((100%-480px)/2)]"
-          : "left-1/2",
+        "absolute top-3 left-1/2 z-20 flex min-h-10 items-center gap-0.5 rounded-[11px] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[14px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none max-[620px]:top-2",
       )}
+      style={{
+        transform:
+          props.shiftForDevice && window.innerWidth > 900
+            ? "translateX(calc(-50% - var(--app-map-side-panel-reserve) / 2 + 8px))"
+            : "translateX(-50%)",
+      }}
       aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "path" : "paths"}`}
     >
       <div class="flex items-center gap-0.5" role="tablist" aria-label="Map view">
@@ -102,13 +103,14 @@ export function AppMapToolbar(props: {
   return (
     <div
       class={cn(
-        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px]",
-        props.shiftForDevice
-          ? props.wideDevice
-            ? "left-[calc((100%-620px)/2)] max-[900px]:left-1/2"
-            : "left-[calc((100%-480px)/2)] max-[900px]:left-1/2"
-          : "left-1/2",
+        "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex items-center gap-0.5 rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] p-1 shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
       )}
+      style={{
+        transform:
+          props.shiftForDevice && window.innerWidth > 900
+            ? "translateX(calc(-50% - var(--app-map-side-panel-reserve) / 2 + 8px))"
+            : "translateX(-50%)",
+      }}
       role="toolbar"
       aria-label="Map editing tools"
     >

@@ -51,13 +51,13 @@ export function AppMapMinimap(props: {
     <>
       <aside
         class={cn(
-          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] min-[901px]:block",
-          props.shiftForSidePanel
-            ? props.wideDevice
-              ? "right-[652px]"
-              : "right-[512px]"
-            : "right-4",
+          "absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none min-[901px]:block",
         )}
+        style={{
+          transform: props.shiftForSidePanel
+            ? "translateX(calc(-1 * (var(--app-map-side-panel-reserve) - 16px)))"
+            : "translateX(0)",
+        }}
         aria-label="Map overview"
       >
         <header class="flex h-10 items-center justify-between border-b border-[var(--map-divider)] px-2 pl-3">

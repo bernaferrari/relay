@@ -7,6 +7,7 @@ export function AppMapDeviceCompanionMount(props: {
   deviceLabel?: string;
   status: Parameters<typeof AppMapDeviceCompanion>[0]["status"];
   unmapped: boolean;
+  outsideMapApp: boolean;
   mappedScreenName?: string;
   captureBusy: boolean;
   canRecord: boolean;
@@ -29,6 +30,7 @@ export function AppMapDeviceCompanionMount(props: {
       recording={recorder.recording()}
       take={recorder.take()}
       unmapped={props.unmapped}
+      outsideMapApp={props.outsideMapApp}
       mappedScreenName={props.mappedScreenName}
       captureBusy={props.captureBusy}
       canRecord={props.canRecord}

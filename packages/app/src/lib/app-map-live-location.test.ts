@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchLiveScreen } from "./app-map-live-location";
+import {
+  applicationIdsMatch,
+  expectedAndroidApplicationId,
+  matchLiveScreen,
+} from "./app-map-live-location";
 
 const settings = {
   id: "settings",
@@ -77,4 +81,23 @@ test("semantic and visual votes for the same screen stay here, not unknown", () 
     ),
     { kind: "here", screenId: "settings" },
   );
+});
+
+test("the dominant package-qualified resource id identifies the mapped Android app", () => {
+  assert.equal(
+    expectedAndroidApplicationId([
+      {
+        observation: {
+          nodes: [
+            { identifier: "ai.x.grok:id/action_bar_root" },
+            { identifier: "android:id/content" },
+            { identifier: "ai.x.grok:id/settings" },
+          ],
+        },
+      },
+      { observation: { nodes: [{ identifier: "com.android.settings:id/title" }] } },
+    ]),
+    "ai.x.grok",
+  );
+  assert.equal(applicationIdsMatch("AI.X.GROK", "ai.x.grok"), true);
 });

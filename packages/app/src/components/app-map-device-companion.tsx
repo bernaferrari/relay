@@ -12,7 +12,6 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./app-map-capture-review";
 import {
-  DeviceStatusIndicator,
   DeviceStatusLabel,
   type AppMapDeviceStatus,
 } from "./device-status-label";
@@ -26,6 +25,7 @@ export function AppMapDeviceCompanion(props: {
   recording: boolean;
   take: RecordingTake | null;
   unmapped: boolean;
+  outsideMapApp: boolean;
   mappedScreenName?: string;
   captureBusy: boolean;
   canRecord: boolean;
@@ -62,16 +62,17 @@ export function AppMapDeviceCompanion(props: {
           label={props.deviceLabel ?? "Device"}
           identityOnly
         />
-        <div class="flex items-center gap-1.5">
-          <DeviceStatusIndicator status={props.status} />
+        <div class="flex items-center gap-1">
           <label
-            class="relative inline-flex h-7 items-center rounded-md text-[11px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
+            class="relative inline-flex h-7 items-center rounded-md pl-2 text-[11px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
             data-tip={ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}
           >
-            <span class="sr-only">Accessibility overlay</span>
+            <span class="pointer-events-none font-medium text-[var(--text-base)]">Elements</span>
+            <span class="pointer-events-none px-1 text-[var(--text-weaker)]">·</span>
             <select
-              class="h-full max-w-[92px] cursor-pointer appearance-none bg-transparent pr-5 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--border-strong-focus)]"
-              aria-label="Accessibility overlay"
+              class="h-full max-w-[76px] cursor-pointer appearance-none rounded-md bg-transparent pr-5 outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--border-strong-focus)]"
+              aria-label="Elements overlay"
+              data-focus-contained
               value={server.accessibilityMode()}
               onChange={(event) =>
                 server.setAccessibilityMode(event.currentTarget.value as AccessibilityOverlayMode)
@@ -107,15 +108,17 @@ export function AppMapDeviceCompanion(props: {
       <Show
         when={props.recording ? props.take : null}
         fallback={
-          <Show when={props.unmapped || props.mappedScreenName}>
+          <Show when={props.outsideMapApp || props.unmapped || props.mappedScreenName}>
             <footer class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3">
               <span class="min-w-0 text-[11px] text-[var(--text-weak)]">
-                {props.unmapped
+                {props.outsideMapApp
+                  ? `Return to ${props.mapName?.trim() || "the mapped app"} to capture a screen`
+                  : props.unmapped
                   ? `Add this screen to ${props.mapName?.trim() || "the map"}`
                   : `Continue from ${props.mappedScreenName}`}
               </span>
               <Show
-                when={props.unmapped}
+                when={props.unmapped && !props.outsideMapApp}
                 fallback={
                   <div class="flex shrink-0 items-center gap-2">
                     <Button

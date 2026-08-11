@@ -140,6 +140,13 @@ export function DeviceStage(_props: {
     liveSurfaceSrc,
     liveCaption: () => frame()?.caption,
   });
+  const recordedAccessibilityHoverActive = () =>
+    recordedInspectionActive() && accessibilityHoverEnabled(server.accessibilityMode());
+  createEffect(() => {
+    if (recordedAccessibilityHoverActive()) return;
+    setRecordedScreenHovered(false);
+    clearRecordedNodeHover();
+  });
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const [frameRatio, setFrameRatio] = createSignal(9 / 19.5);
   const [liveImageRotation, setLiveImageRotation] = createSignal<"none" | "left" | "right">("none");
@@ -1009,7 +1016,7 @@ export function DeviceStage(_props: {
                         ? "cursor-crosshair"
                         : liveControlActive() && "cursor-pointer",
                       recordedCoordinateEditable() && "cursor-crosshair",
-                      recordedInspectionActive() && "cursor-pointer",
+                      recordedAccessibilityHoverActive() && "cursor-pointer",
                     )}
                     ref={(element) => {
                       deviceScreenEl = element;
@@ -1022,7 +1029,7 @@ export function DeviceStage(_props: {
                     draggable={false}
                     tabindex={0}
                     onClick={(e) => {
-                      chooseRecordedNode();
+                      if (recordedAccessibilityHoverActive()) chooseRecordedNode();
                       // Pointer capture is the best path for real drags, but
                       // assistive technology, browser automation, and some
                       // embedded Chromium input sources can emit a click
@@ -1232,8 +1239,10 @@ export function DeviceStage(_props: {
                     }}
                     onMouseMove={(e) => {
                       if (stageView() === "recorded") {
-                        setRecordedScreenHovered(recordedInspectionActive());
-                        if (recordedInspectionActive()) {
+                        setRecordedScreenHovered(
+                          recordedInspectionActive() && server.accessibilityMode() === "always",
+                        );
+                        if (recordedAccessibilityHoverActive()) {
                           updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
                         } else {
                           clearRecordedNodeHover();
@@ -1252,7 +1261,13 @@ export function DeviceStage(_props: {
                       clearHover();
                     }}
                   />
-                  <Show when={stageView() === "recorded" && recordedScreenHovered()}>
+                  <Show
+                    when={
+                      stageView() === "recorded" &&
+                      server.accessibilityMode() === "always" &&
+                      recordedScreenHovered()
+                    }
+                  >
                     <For each={recordedNodeOutlines()}>
                       {(highlight) => (
                         <i
@@ -1264,7 +1279,11 @@ export function DeviceStage(_props: {
                       )}
                     </For>
                   </Show>
-                  <Show when={recordedHoverHighlight()}>
+                  <Show
+                    when={
+                      recordedAccessibilityHoverActive() ? recordedHoverHighlight() : undefined
+                    }
+                  >
                     {(highlight) => (
                       <i
                         class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"

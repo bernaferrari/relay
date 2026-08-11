@@ -107,7 +107,11 @@ import {
   canvasCombineCards,
   type CanvasCombineSection,
 } from "../lib/app-map-combine-canvas";
-import { matchLiveScreen } from "../lib/app-map-live-location";
+import {
+  applicationIdsMatch,
+  expectedAndroidApplicationId,
+  matchLiveScreen,
+} from "../lib/app-map-live-location";
 import {
   screenshotOrientationEvidence,
   screenshotUrl,
@@ -158,6 +162,7 @@ export function AppMapWorkspace(props: {
   const setHistoryOpen = (open: boolean) => setSurfaceOpen("history", open);
   const setProposalReviewOpen = (open: boolean) => setSurfaceOpen("proposals", open);
   const graph = createMemo(() => ensureCanvasGraph(canvasState(), draft.steps()));
+  const groups = () => canvasState().groups ?? [];
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
   const activeAppMap = createMemo(() =>
     server.appMaps().find((candidate) => candidate.id === server.selectedAppMapId()),
@@ -171,7 +176,7 @@ export function AppMapWorkspace(props: {
       .filter((proposal) => proposal.status === "pending")
       .sort((left, right) => left.createdAt - right.createdAt),
   );
-  const tree = createMemo(() => buildCanvasGraphTree(graph(), draft.steps()));
+  const tree = createMemo(() => buildCanvasGraphTree(graph(), draft.steps(), groups()));
   const hasMap = () => tree().nodes.length > 0;
   const selectedDevice = createMemo(
     () => server.devices().find((device) => device.serial === server.selectedDevice()) ?? null,
@@ -393,7 +398,6 @@ export function AppMapWorkspace(props: {
     void recorder.enterRecordMode();
   });
   const positions = () => canvasState().positions;
-  const groups = () => canvasState().groups ?? [];
   const titleFor = (node: MapTreeNode) =>
     canvasState().screenTitles?.[node.id]?.trim() || node.title;
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
@@ -405,8 +409,20 @@ export function AppMapWorkspace(props: {
       server.liveFrame()?.fingerprint,
     ]),
   );
+  const expectedApplicationId = createMemo(() =>
+    expectedAndroidApplicationId(Object.values(activeAppMap()?.variants ?? {})),
+  );
+  const liveApplicationId = createMemo(
+    () => server.snapshot()?.foregroundApp ?? server.snapshot()?.treeApp,
+  );
+  const liveDeviceOutsideMapApp = createMemo(() => {
+    const expected = expectedApplicationId();
+    const actual = liveApplicationId();
+    return Boolean(expected && actual && !applicationIdsMatch(expected, actual));
+  });
   const liveDeviceUnmapped = createMemo(
     () =>
+      !liveDeviceOutsideMapApp() &&
       liveLocation().kind === "unknown" &&
       Boolean(selectedDevice()) &&
       Boolean(server.liveFrame()?.base64) &&
@@ -509,6 +525,21 @@ export function AppMapWorkspace(props: {
       })),
     ),
   );
+  const usableCanvasClientSize = createMemo(() => {
+    const client = canvasGestures.canvasClientSize();
+    // Read these signals so orientation/opening changes recompute even when
+    // the outer canvas itself did not resize.
+    deviceCompanionOrientation();
+    const reservesRightSide =
+      window.innerWidth > 900 && ((captureOpen() && Boolean(selectedDevice())) || agentOpen());
+    if (!reservesRightSide) return client;
+    const element = canvasGestures.canvasElement();
+    const panel = element
+      ?.closest(".app-map-canvas")
+      ?.querySelector<HTMLElement>(".ui-device-companion, [aria-label='Map with AI']");
+    const reservedWidth = (panel?.getBoundingClientRect().width ?? 376) + 32;
+    return { width: Math.max(320, client.width - reservedWidth), height: client.height };
+  });
   const minimapNodes = createMemo(() =>
     buildMinimapNodes({
       nodes: tree().nodes,
@@ -538,7 +569,7 @@ export function AppMapWorkspace(props: {
     }),
   );
   const minimapViewport = createMemo(() =>
-    minimapViewportBounds(view(), canvasGestures.canvasClientSize(), bounds()),
+    minimapViewportBounds(view(), usableCanvasClientSize(), bounds()),
   );
   const presenceGeometry = createMemo(() =>
     buildPresenceGeometry({
@@ -555,7 +586,7 @@ export function AppMapWorkspace(props: {
     const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
     setView(
-      fitCanvasViewport({ width: element.clientWidth, height: element.clientHeight }, bounds()),
+      fitCanvasViewport(usableCanvasClientSize(), bounds()),
     );
   };
 
@@ -563,7 +594,7 @@ export function AppMapWorkspace(props: {
     const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
     setView(
-      openCanvasViewport({ width: element.clientWidth, height: element.clientHeight }, bounds()),
+      openCanvasViewport(usableCanvasClientSize(), bounds()),
     );
   };
 
@@ -1099,7 +1130,13 @@ export function AppMapWorkspace(props: {
         "--app-map-device-panel-width":
           deviceCompanionOrientation() === "landscape"
             ? "clamp(420px, 36vw, 560px)"
-            : "clamp(360px, 31vw, 440px)",
+            : "clamp(340px, 28vw, 400px)",
+        "--app-map-side-panel-reserve":
+          captureOpen() && selectedDevice()
+            ? "calc(var(--app-map-device-panel-width) + 32px)"
+            : agentOpen()
+              ? "408px"
+              : "16px",
       }}
       aria-busy={appMapLoadState().status === "loading"}
     >
@@ -1710,7 +1747,7 @@ export function AppMapWorkspace(props: {
                   setView((current) =>
                     centerCanvasViewport(
                       current,
-                      { width: element.clientWidth, height: element.clientHeight },
+                      usableCanvasClientSize(),
                       minimapWorldPoint(ratio, bounds()),
                     ),
                   );
@@ -1751,7 +1788,13 @@ export function AppMapWorkspace(props: {
           deviceSelected={Boolean(selectedDevice())}
           deviceLabel={selectedDevice()?.name ?? selectedDevice()?.serial}
           status={
-            liveDeviceUnmapped() && livePanelStatus().kind === "ready"
+            liveDeviceOutsideMapApp()
+              ? {
+                  label: "Outside this map",
+                  kind: "attention",
+                  detail: `Return to ${activeAppMap()?.name ?? "the mapped app"} before capturing.`,
+                }
+              : liveDeviceUnmapped() && livePanelStatus().kind === "ready"
               ? {
                   label: "Not saved to map",
                   kind: "info",
@@ -1760,6 +1803,7 @@ export function AppMapWorkspace(props: {
               : livePanelStatus()
           }
           unmapped={liveDeviceUnmapped()}
+          outsideMapApp={liveDeviceOutsideMapApp()}
           mappedScreenName={hereScreenTitle()}
           captureBusy={startCaptureBusy()}
           canRecord={canRecord()}
