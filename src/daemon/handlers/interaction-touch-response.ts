@@ -1,3 +1,4 @@
+import type { CommandFlags } from '@agent-device/contracts/command';
 import type {
   FillCommandResult,
   GestureReferenceFrame,
@@ -7,8 +8,22 @@ import type {
   ResolutionDisclosure,
   SettleObservation,
 } from '@agent-device/contracts/interaction';
-import { successText } from '../../utils/success-text.ts';
+import { isApplePlatform } from '@agent-device/kernel/device';
+import {
+  transformInteractionResponseData,
+  type InteractionResponseDataTransformCommand,
+} from '../../core/interaction-response-data-transform.ts';
+import { normalizeAppleRunnerResultForResponse } from '../../platforms/apple/core/runner/runner-result-response-normalization.ts';
+import { issueSettleRefs } from '../session-snapshot.ts';
 import type { RecordedTargetCapture } from '../session-target-evidence.ts';
+import type { SessionState } from '../types.ts';
+import type { InteractionHandlerParams } from './interaction-common.ts';
+import type { CaptureSnapshotForSession } from './interaction-snapshot.ts';
+import {
+  readSnapshotNodesReferenceFrame,
+  resolveDirectTouchReferenceFrameSafely,
+} from './interaction-touch-reference-frame.ts';
+import { buildTouchPayload } from './interaction-touch-payload.ts';
 import { interactionResultExtra } from './interaction-touch-targets.ts';
 
 /**
@@ -259,78 +274,100 @@ function composeResponseWarning(
   return resultWarning ? `${resultWarning} ${staleRefsWarning}` : staleRefsWarning;
 }
 
-function buildTouchPayload(params: {
-  data: Record<string, unknown> | undefined;
-  fallbackX?: number;
-  fallbackY?: number;
-  referenceFrame?: GestureReferenceFrame;
-  extra?: Record<string, unknown>;
-}): Record<string, unknown> {
-  const { data, fallbackX, fallbackY, referenceFrame, extra } = params;
-  const message =
-    buildTouchMessage(extra, fallbackX, fallbackY) ??
-    (typeof data?.message === 'string' ? data.message : undefined);
-  return stripUndefinedFields({
-    ...(data ?? {}),
-    ...(fallbackX === undefined || fallbackY === undefined ? {} : { x: fallbackX, y: fallbackY }),
-    ...(referenceFrame ?? {}),
-    ...(extra ?? {}),
-    ...successText(message),
+/** What `press`/`click`/`longpress` resolve to; `fill` carries its own result. */
+export type TargetedTouchResult = PressCommandResult | LongPressCommandResult;
+
+export async function buildTargetedTouchResponsePayloads(params: {
+  params: InteractionHandlerParams & {
+    captureSnapshotForSession: CaptureSnapshotForSession;
+  };
+  session: SessionState;
+  result: TargetedTouchResult;
+  staleRefsWarning: string | undefined;
+  publicData?: Record<string, unknown>;
+  extra: Record<string, unknown>;
+}): Promise<InteractionResponsePayloads> {
+  const { params: handlerParams, session, result, publicData, extra } = params;
+  const referenceFrame =
+    result.kind === 'point'
+      ? await resolveDirectTouchReferenceFrameSafely({
+          session,
+          flags: handlerParams.req.flags,
+          sessionStore: handlerParams.sessionStore,
+          contextFromFlags: handlerParams.contextFromFlags,
+          captureSnapshotForSession: handlerParams.captureSnapshotForSession,
+        })
+      : readSnapshotNodesReferenceFrame(session.snapshot?.nodes ?? []);
+  return buildInteractionResponseData({
+    source: { kind: 'runtime', result, publicData },
+    referenceFrame,
+    extra,
+    staleRefsWarning: params.staleRefsWarning,
+    settleRefsGeneration: issueSettleRefs(session, result.settle),
   });
 }
 
-function stripUndefinedFields(data: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+export function transformTouchResponseData(params: {
+  session: SessionState;
+  command?: InteractionResponseDataTransformCommand;
+  flags: CommandFlags | undefined;
+  data: Record<string, unknown> | undefined;
+}): Record<string, unknown> | undefined {
+  const base = isApplePlatform(params.session.device.platform)
+    ? normalizeAppleRunnerResultForResponse(params.data)
+    : params.data;
+  if (!params.command) return base;
+  return transformInteractionResponseData({
+    command: params.command,
+    input: params.flags as Record<string, unknown> | undefined,
+    data: base,
+  });
 }
 
-function buildTouchMessage(
-  extra: Record<string, unknown> | undefined,
-  x: number | undefined,
-  y: number | undefined,
-): string | undefined {
-  const fillText = readString(extra, 'text');
-  if (fillText !== undefined) return `Filled ${Array.from(fillText).length} chars`;
-
-  const pointSuffix = buildPointSuffix(x, y);
-  const label = buildTouchTargetLabel(extra);
-  if (label) return buildTouchTargetMessage(label, extra ?? {}, pointSuffix);
-  if (!pointSuffix) return undefined;
-
-  return buildPointTouchMessage(extra, pointSuffix);
-}
-
-function readString(data: Record<string, unknown> | undefined, key: string): string | undefined {
-  const value = data?.[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
-function buildPointSuffix(x: number | undefined, y: number | undefined): string {
-  return x === undefined || y === undefined ? '' : ` (${x}, ${y})`;
-}
-
-function buildTouchTargetLabel(extra: Record<string, unknown> | undefined): string | undefined {
-  const ref = readString(extra, 'ref');
-  return ref === undefined ? readString(extra, 'selector') : `@${ref}`;
-}
-
-function buildPointTouchMessage(
-  extra: Record<string, unknown> | undefined,
-  pointSuffix: string,
-): string {
-  return extra?.gesture === 'longpress' ? `Long pressed${pointSuffix}` : `Tapped${pointSuffix}`;
-}
-
-function buildTouchTargetMessage(
-  label: string,
-  extra: Record<string, unknown>,
-  pointSuffix: string,
-): string {
-  const button = typeof extra.button === 'string' ? extra.button : undefined;
-  if (extra.gesture === 'longpress') {
-    return `Long pressed ${label}${pointSuffix}`;
+export function readInteractionResponseDataTransformCommand(
+  requestCommand: string,
+  dispatchCommand: 'press' | 'fill',
+): InteractionResponseDataTransformCommand {
+  if (requestCommand === 'click' || requestCommand === 'press' || requestCommand === 'fill') {
+    return requestCommand;
   }
-  if (button && button !== 'primary') {
-    return `Clicked ${button} ${label}${pointSuffix}`;
-  }
-  return `Tapped ${label}${pointSuffix}`;
+  return dispatchCommand;
+}
+
+/** The response fields disclosing the Maestro coordinate fallback's policy and outcome. */
+export type MaestroFallbackResponseFields = {
+  maestroNonHittableCoordinateFallbackAllowed?: true;
+  maestroNonHittableCoordinateFallbackUsed?: boolean;
+  maestroFallbackReason?: 'non-hittable-coordinate';
+};
+
+export type MaestroFallbackDisclosure = {
+  /**
+   * The runner EXECUTED the coordinate fallback. Separate from the response
+   * fields because it also selects the dispatch path the response builder
+   * discloses a resolution for (see {@link suppressesResolutionDisclosure}).
+   */
+  used: boolean;
+  extra: MaestroFallbackResponseFields;
+};
+
+export function maestroFallbackDisclosure(
+  allowed: boolean,
+  data: Record<string, unknown> | undefined,
+): MaestroFallbackDisclosure {
+  if (!allowed) return { used: false, extra: {} };
+  const used = data?.maestroNonHittableCoordinateFallbackUsed === true;
+  return {
+    used,
+    extra: {
+      maestroNonHittableCoordinateFallbackAllowed: true,
+      maestroNonHittableCoordinateFallbackUsed: used,
+      ...(used ? { maestroFallbackReason: 'non-hittable-coordinate' as const } : {}),
+    },
+  };
+}
+
+/** The coordinate a lazy outcome retry re-dispatches against (`finalizeTouchInteraction`). */
+export function pointPositionals(point: { x: number; y: number }): string[] {
+  return [String(point.x), String(point.y)];
 }
