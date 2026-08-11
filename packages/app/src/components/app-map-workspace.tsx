@@ -75,6 +75,7 @@ import {
   appMapCommitSummary,
   applyTargetSetToActiveFlow,
   buildMinimapEdges,
+  buildMinimapGroups,
   buildMinimapNodes,
   buildPresenceGeometry,
   clampGroupMenuPosition,
@@ -288,8 +289,7 @@ export function AppMapWorkspace(props: {
     // Marquee hit-testing must use the same resolved positions as the scene.
     // Newly authored and auto-laid-out screens are not necessarily persisted
     // in canvasState.positions yet.
-    positions: () =>
-      Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
+    positions: () => resolvedPositions(),
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
@@ -402,6 +402,9 @@ export function AppMapWorkspace(props: {
     canvasState().screenTitles?.[node.id]?.trim() || node.title;
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
+  const resolvedPositions = createMemo(() =>
+    Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
+  );
   const liveLocation = createMemo(() =>
     matchLiveScreen(Object.values(activeAppMap()?.screens ?? {}), [
       server.snapshot()?.screenIdentity?.fingerprint,
@@ -551,6 +554,14 @@ export function AppMapWorkspace(props: {
       screenStates: Object.fromEntries(
         Object.entries(runProjection().screens).map(([id, screen]) => [id, screen.state]),
       ),
+    }),
+  );
+  const minimapGroups = createMemo(() =>
+    buildMinimapGroups({
+      groups: groups(),
+      bounds: bounds(),
+      positions: resolvedPositions(),
+      selectedGroupId: selectedGroupId(),
     }),
   );
   const minimapEdges = createMemo(() =>
@@ -1732,6 +1743,7 @@ export function AppMapWorkspace(props: {
               />
               <AppMapMinimap
                 scale={view().scale}
+                groups={minimapGroups()}
                 nodes={minimapNodes()}
                 edges={minimapEdges()}
                 viewport={minimapViewport()}

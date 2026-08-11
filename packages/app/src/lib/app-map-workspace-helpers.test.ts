@@ -4,6 +4,7 @@ import type { AppMap, AppMapBatchChange } from "@relay/protocol";
 import {
   appMapLoadFailure,
   appMapCommitSummary,
+  buildMinimapGroups,
   buildMinimapNodes,
   orderCanvasChanges,
 } from "./app-map-workspace-helpers";
@@ -55,6 +56,19 @@ test("buildMinimapNodes includes visible run-matrix objects", () => {
 
   assert.equal(overview[0]?.id, "language-settings");
   assert.equal(overview[0]?.kind, "matrix");
+});
+
+test("buildMinimapGroups projects variable group regions behind their screens", () => {
+  const overview = buildMinimapGroups({
+    groups: [{ id: "settings", name: "Settings", screenIds: ["root", "advanced"] }] as never,
+    bounds: { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 },
+    positions: { root: { x: 100, y: 100 }, advanced: { x: 340, y: 100 } },
+    selectedGroupId: "settings",
+  });
+
+  assert.deepEqual(overview, [
+    { id: "settings", x: 9, y: 12, width: 67, height: 77.5, selected: true },
+  ]);
 });
 
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {

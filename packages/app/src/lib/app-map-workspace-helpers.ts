@@ -5,6 +5,7 @@ import type {
   AppMapCanvasState,
   CanvasNote,
   Flow,
+  MapGroup,
   RecipeStep,
 } from "@relay/protocol";
 import type { DeviceReadiness } from "./device-readiness";
@@ -19,6 +20,7 @@ import {
   type CanvasViewport,
 } from "./app-map-canvas-layout";
 import type { TakeDestination } from "./app-map-canvas-graph";
+import { mapGroupGeometry } from "./app-map-groups";
 import { minimapPoint } from "./app-map-minimap";
 
 export function appMapLoadFailure(error: unknown): {
@@ -278,6 +280,30 @@ export function buildMinimapNodes(input: {
       };
     }),
   ];
+}
+
+export function buildMinimapGroups(input: {
+  groups: readonly MapGroup[];
+  bounds: CanvasBounds;
+  positions: Readonly<Record<string, CanvasPoint>>;
+  selectedGroupId: string | null;
+}) {
+  return input.groups.flatMap((group) => {
+    const geometry = mapGroupGeometry(group, input.positions);
+    if (!geometry) return [];
+    const topLeft = minimapPoint({ x: geometry.left, y: geometry.top }, input.bounds);
+    const bottomRight = minimapPoint({ x: geometry.right, y: geometry.bottom }, input.bounds);
+    return [
+      {
+        id: group.id,
+        x: topLeft.x,
+        y: topLeft.y,
+        width: Math.max(0.8, bottomRight.x - topLeft.x),
+        height: Math.max(0.8, bottomRight.y - topLeft.y),
+        selected: group.id === input.selectedGroupId,
+      },
+    ];
+  });
 }
 
 export function buildMinimapEdges(input: {

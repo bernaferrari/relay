@@ -22,8 +22,18 @@ export type AppMapMinimapEdge = {
   state?: AppMapRunPresentationState;
 };
 
+export type AppMapMinimapGroup = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  selected: boolean;
+};
+
 export function AppMapMinimap(props: {
   scale: number;
+  groups: AppMapMinimapGroup[];
   nodes: AppMapMinimapNode[];
   edges: AppMapMinimapEdge[];
   viewport: AppMapMinimapBounds;
@@ -126,6 +136,23 @@ export function AppMapMinimap(props: {
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
+            <For each={props.groups}>
+              {(group) => (
+                <rect
+                  x={group.x}
+                  y={group.y}
+                  width={group.width}
+                  height={group.height}
+                  rx="2.2"
+                  fill="var(--text-interactive-base)"
+                  fill-opacity={group.selected ? 0.13 : 0.055}
+                  stroke={group.selected ? "var(--text-interactive-base)" : "var(--text-weak)"}
+                  stroke-opacity={group.selected ? 0.55 : 0.24}
+                  stroke-width={group.selected ? 1.15 : 0.65}
+                  vector-effect="non-scaling-stroke"
+                />
+              )}
+            </For>
             <For each={props.edges}>
               {(edge) => (
                 <line
