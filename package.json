@@ -13,6 +13,7 @@
     "dev:mcp": "pnpm --filter @relay/mcp start",
     "dev:app": "pnpm --filter @relay/app dev",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
+    "relay": "pnpm --filter @relay/cli exec tsx src/index.ts",
     "inspect:desktop": "pnpm --filter @relay/desktop inspect",
     "agent-device:install": "cd vendor/agent-device && pnpm install --frozen-lockfile --ignore-scripts",
     "agent-device:build": "node scripts/build-agent-device.mjs",
@@ -28,8 +29,9 @@
     "test:golden": "node scripts/golden-device.mjs",
     "test:golden:require": "GOLDEN_REQUIRE_DEVICE=1 node scripts/golden-device.mjs",
     "test:architecture": "node --test scripts/check-source-budgets.test.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
     "check:architecture": "node scripts/check-source-budgets.mjs",
-    "verify": "vp check && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
+    "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

@@ -73,8 +73,8 @@ export function combineSubhead(input: {
   hasTest: boolean;
   screenshotCount?: number;
 }): string {
-  if (!input.hasTest) return "Choose one or more paths to test.";
   if (!input.hasVariable) return "Choose a modifier such as language, account, or model.";
+  if (!input.hasTest) return "Choose one or more paths to test.";
   const worlds = input.worldCount ?? input.cellCount;
   const tests = input.testCount ?? 1;
   if (input.cellCount <= 1) return "One device run with one test.";

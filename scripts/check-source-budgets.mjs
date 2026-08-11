@@ -14,7 +14,6 @@ export const COMPONENT_SOURCE_LIMIT = 700;
  */
 export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/app-map-capture-review.tsx": 1004,
-  "packages/app/src/components/app-map-combine.tsx": 1121,
   "packages/app/src/components/app-map-inspector.tsx": 1067,
   "packages/app/src/components/app-map-workspace.tsx": 1845,
   "packages/app/src/components/corpus-workspace.tsx": 1088,

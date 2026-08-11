@@ -46,6 +46,17 @@ test("run matrix labels visible values and its group-to-group formula", () => {
   );
 });
 
+test("a new matrix asks for the first visible decision", () => {
+  assert.equal(
+    combineSubhead({ cellCount: 0, hasVariable: false, hasTest: false }),
+    "Choose a modifier such as language, account, or model.",
+  );
+  assert.equal(
+    combineSubhead({ cellCount: 0, hasVariable: true, hasTest: false }),
+    "Choose one or more paths to test.",
+  );
+});
+
 test("cartesian projection makes every state combination × every test visible", () => {
   const projection = projectCombine(variables, tests, "cartesian");
   assert.equal(projection.totalWorlds, 4);
