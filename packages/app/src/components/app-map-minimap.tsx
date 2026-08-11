@@ -163,9 +163,9 @@ export function AppMapMinimap(props: {
                   y2={edge.y2}
                   stroke="currentColor"
                   stroke-opacity={
-                    edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.38 : 0.68
+                    edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.28 : 0.68
                   }
-                  stroke-width={edge.selected ? 1.2 : 0.7}
+                  stroke-width={edge.selected ? 1.2 : 0.6}
                   vector-effect="non-scaling-stroke"
                 />
               )}

@@ -312,16 +312,11 @@ export function buildMinimapEdges(input: {
   bounds: CanvasBounds;
   positionFor: (node: MapTreeNode) => CanvasPoint;
   selectedConnectionId: string | null;
-  selectedNodeIds: readonly string[];
   transitionStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
   const nodes = new Map(input.nodes.map((node) => [node.id, node]));
   return input.connections.flatMap((connection) => {
     const selected = input.selectedConnectionId === connection.id;
-    const touchesSelectedScreen =
-      input.selectedNodeIds.includes(connection.fromScreenId) ||
-      input.selectedNodeIds.includes(connection.toScreenId);
-    if (!selected && !touchesSelectedScreen) return [];
     const from = nodes.get(connection.fromScreenId);
     const to = nodes.get(connection.toScreenId);
     if (!from || !to) return [];

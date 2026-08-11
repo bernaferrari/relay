@@ -4,6 +4,7 @@ import type { AppMap, AppMapBatchChange } from "@relay/protocol";
 import {
   appMapLoadFailure,
   appMapCommitSummary,
+  buildMinimapEdges,
   buildMinimapGroups,
   buildMinimapNodes,
   orderCanvasChanges,
@@ -69,6 +70,39 @@ test("buildMinimapGroups projects variable group regions behind their screens", 
   assert.deepEqual(overview, [
     { id: "settings", x: 9, y: 12, width: 67, height: 77.5, selected: true },
   ]);
+});
+
+test("buildMinimapEdges keeps the complete graph visible without a selection", () => {
+  const nodes = ["settings", "advanced", "paste"].map((id, index) => ({
+    id,
+    screenKey: id,
+    title: id,
+    representativeStepIndex: index,
+    stepIndexes: [index],
+    depth: index,
+    x: index * 280,
+    y: 0,
+  }));
+  const edges = buildMinimapEdges({
+    nodes,
+    connections: [
+      { id: "settings-advanced", fromScreenId: "settings", toScreenId: "advanced" },
+      { id: "advanced-paste", fromScreenId: "advanced", toScreenId: "paste" },
+    ] as never,
+    bounds: { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 },
+    positionFor: (node) => ({ x: node.x, y: node.y }),
+    selectedConnectionId: null,
+    transitionStates: {},
+  });
+
+  assert.deepEqual(
+    edges.map((edge) => edge.id),
+    ["settings-advanced", "advanced-paste"],
+  );
+  assert.equal(
+    edges.every((edge) => !edge.selected),
+    true,
+  );
 });
 
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {

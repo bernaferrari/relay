@@ -605,7 +605,6 @@ export function AppMapWorkspace(props: {
       bounds: bounds(),
       positionFor,
       selectedConnectionId: selectedConnectionId(),
-      selectedNodeIds: selectedNodeIds(),
       transitionStates: Object.fromEntries(
         Object.entries(runProjection().transitions).map(([id, transition]) => [
           id,
