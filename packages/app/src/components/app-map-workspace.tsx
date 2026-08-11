@@ -1410,11 +1410,15 @@ export function AppMapWorkspace(props: {
                     const vertical =
                       guide.kind === "alignment" ? guide.axis === "x" : guide.axis === "y";
                     const segments = guide.segments ?? [guide];
+                    const positions = guide.parallelPositions ?? [guide.position];
+                    const lines = positions.flatMap((position) =>
+                      segments.map((segment) => ({ position, segment })),
+                    );
                     const hairline = 1 / view().scale;
                     const capLength = 5 / view().scale;
                     return (
-                      <For each={segments}>
-                        {(segment) => {
+                      <For each={lines}>
+                        {({ position, segment }) => {
                           const length = Math.max(hairline, segment.end - segment.start);
                           const spacing = guide.kind === "spacing";
                           return (
@@ -1425,14 +1429,14 @@ export function AppMapWorkspace(props: {
                                 style={
                                   vertical
                                     ? {
-                                        left: `${guide.position}px`,
+                                        left: `${position}px`,
                                         top: `${segment.start}px`,
                                         width: `${hairline}px`,
                                         height: `${length}px`,
                                       }
                                     : {
                                         left: `${segment.start}px`,
-                                        top: `${guide.position}px`,
+                                        top: `${position}px`,
                                         width: `${length}px`,
                                         height: `${hairline}px`,
                                       }
@@ -1447,14 +1451,14 @@ export function AppMapWorkspace(props: {
                                       style={
                                         vertical
                                           ? {
-                                              left: `${guide.position - capLength / 2}px`,
+                                              left: `${position - capLength / 2}px`,
                                               top: `${endpoint}px`,
                                               width: `${capLength}px`,
                                               height: `${hairline}px`,
                                             }
                                           : {
                                               left: `${endpoint}px`,
-                                              top: `${guide.position - capLength / 2}px`,
+                                              top: `${position - capLength / 2}px`,
                                               width: `${hairline}px`,
                                               height: `${capLength}px`,
                                             }

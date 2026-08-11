@@ -13,6 +13,12 @@ export type CanvasSnapFrame = CanvasFrameGeometry;
 export type CanvasSnapGuide = {
   axis: "x" | "y";
   position: number;
+  /**
+   * Parallel lines rendered in place of `position` for a complete bounds
+   * match. Equal-size previews show both shared edges instead of an ambiguous
+   * center-only guide.
+   */
+  parallelPositions?: readonly number[];
   start: number;
   end: number;
   kind: "alignment" | "spacing";
@@ -78,11 +84,35 @@ const movedRect = (rect: SnapRect, delta: CanvasPoint): SnapRect => ({
 const overlaps = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
   aEnd >= bStart && aStart <= bEnd;
 
+const sameLength = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
+  Math.abs(aEnd - aStart - (bEnd - bStart)) < 0.001;
+
+/**
+ * Keep an equal-spacing ruler on a stationary lane. Anchoring it to the moving
+ * preview's center made the ruler drift while the snapped axis stayed locked.
+ */
+function referenceLane(references: readonly SnapRect[], perpendicularAxis: "x" | "y"): number {
+  const starts = references.map((rect) => (perpendicularAxis === "x" ? rect.left : rect.top));
+  const ends = references.map((rect) => (perpendicularAxis === "x" ? rect.right : rect.bottom));
+  const overlapStart = Math.max(...starts);
+  const overlapEnd = Math.min(...ends);
+  if (overlapStart <= overlapEnd) return (overlapStart + overlapEnd) / 2;
+
+  // References can have different rows or columns. Their average center is
+  // still deterministic and, crucially, does not follow the pointer.
+  const centers = references.map((rect) =>
+    perpendicularAxis === "x" ? rect.centerX : rect.centerY,
+  );
+  return centers.reduce((sum, center) => sum + center, 0) / centers.length;
+}
+
 function alignmentCandidates(
   candidate: SnapRect,
   target: SnapRect,
   targetIndex: number,
 ): SnapCandidate[] {
+  const sameWidth = sameLength(candidate.left, candidate.right, target.left, target.right);
+  const sameHeight = sameLength(candidate.top, candidate.bottom, target.top, target.bottom);
   const xPairs = [
     ["left", candidate.left, "left", target.left, 0],
     ["left", candidate.left, "right", target.right, 2],
@@ -107,6 +137,8 @@ function alignmentCandidates(
       guide: {
         axis: "x" as const,
         position: fixed,
+        parallelPositions:
+          sameWidth && movingName === fixedName ? [target.left, target.right] : undefined,
         start: Math.min(candidate.top, target.top),
         end: Math.max(candidate.bottom, target.bottom),
         kind: "alignment" as const,
@@ -121,6 +153,8 @@ function alignmentCandidates(
       guide: {
         axis: "y" as const,
         position: fixed,
+        parallelPositions:
+          sameHeight && movingName === fixedName ? [target.top, target.bottom] : undefined,
         start: Math.min(candidate.left, target.left),
         end: Math.max(candidate.right, target.right),
         kind: "alignment" as const,
@@ -149,7 +183,7 @@ function horizontalSpacingCandidates(candidate: SnapRect, others: SnapRect[]): S
       priority: -2,
       guide: {
         axis: "x",
-        position: candidate.centerY,
+        position: referenceLane([left, right], "y"),
         start: left.right,
         end: right.left,
         kind: "spacing",
@@ -195,7 +229,7 @@ function horizontalSpacingCandidates(candidate: SnapRect, others: SnapRect[]): S
         priority: -1,
         guide: {
           axis: "x",
-          position: candidate.centerY,
+          position: referenceLane([first, second], "y"),
           start: Math.min(...segments.map((segment) => segment.start)),
           end: Math.max(...segments.map((segment) => segment.end)),
           kind: "spacing",
@@ -228,7 +262,7 @@ function verticalSpacingCandidates(candidate: SnapRect, others: SnapRect[]): Sna
       priority: -2,
       guide: {
         axis: "y",
-        position: candidate.centerX,
+        position: referenceLane([above, below], "x"),
         start: above.bottom,
         end: below.top,
         kind: "spacing",
@@ -274,7 +308,7 @@ function verticalSpacingCandidates(candidate: SnapRect, others: SnapRect[]): Sna
         priority: -1,
         guide: {
           axis: "y",
-          position: candidate.centerX,
+          position: referenceLane([first, second], "x"),
           start: Math.min(...segments.map((segment) => segment.start)),
           end: Math.max(...segments.map((segment) => segment.end)),
           kind: "spacing",
@@ -352,25 +386,13 @@ export function snapDraggedScreens(input: {
   const x = bestCandidate(candidates, "x", input.threshold, previousLocks);
   const y = bestCandidate(candidates, "y", input.threshold, previousLocks);
   const selected = [x, y].filter((value): value is SnapCandidate => Boolean(value));
-  const guides = selected.map((candidate) => {
-    const guide = candidate.guide;
-    // Spacing measurements sit on the dragged preview's centerline. Keep that
-    // centerline attached when the other axis snaps in the same frame.
-    if (guide.kind === "spacing" && guide.axis === "x" && y) {
-      return { ...guide, position: guide.position + y.adjustment };
-    }
-    if (guide.kind === "spacing" && guide.axis === "y" && x) {
-      return { ...guide, position: guide.position + x.adjustment };
-    }
-    return guide;
-  });
 
   return {
     delta: {
       x: input.candidateDelta.x + (x?.adjustment ?? 0),
       y: input.candidateDelta.y + (y?.adjustment ?? 0),
     },
-    guides,
+    guides: selected.map(({ guide }) => guide),
     locks: selected.map(({ axis, key }) => ({ axis, key })),
   };
 }

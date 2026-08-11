@@ -69,6 +69,60 @@ test("snaps top and bottom preview edges without including the title", () => {
   assert.equal(result.guides.find((guide) => guide.axis === "y")?.position, 360);
 });
 
+test("shows both matching bounds instead of a center guide for equal-width previews", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 0 } },
+    positions: {
+      moving: { x: 0, y: 0 },
+      fixed: { x: 400, y: 260 },
+    },
+    geometries: { moving: phone, fixed: phone },
+    candidateDelta: { x: 400, y: 0 },
+    threshold: 8,
+  });
+
+  const guide = result.guides.find((candidate) => candidate.axis === "x");
+  assert.deepEqual(guide?.parallelPositions, [464, 576]);
+  assert.ok(!guide?.parallelPositions?.includes(520));
+});
+
+test("shows both matching bounds instead of a center guide for equal-height previews", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 0 } },
+    positions: {
+      moving: { x: 0, y: 0 },
+      fixed: { x: 300, y: 400 },
+    },
+    geometries: { moving: phone, fixed: phone },
+    candidateDelta: { x: 0, y: 400 },
+    threshold: 8,
+  });
+
+  const guide = result.guides.find((candidate) => candidate.axis === "y");
+  assert.deepEqual(guide?.parallelPositions, [430, 630]);
+  assert.ok(!guide?.parallelPositions?.includes(530));
+});
+
+test("keeps a single center guide when differently sized previews only share a center", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 0 } },
+    positions: {
+      moving: { x: 0, y: 0 },
+      fixed: { x: 356, y: 300 },
+    },
+    geometries: { moving: square, fixed: phone },
+    candidateDelta: { x: 426, y: 0 },
+    threshold: 8,
+  });
+
+  const guide = result.guides.find((candidate) => candidate.axis === "x");
+  assert.equal(guide?.position, 476);
+  assert.equal(guide?.parallelPositions, undefined);
+});
+
 test("snaps after an existing horizontal pair with the same preview gap", () => {
   const result = snapDraggedScreens({
     draggedIds: ["moving"],
@@ -89,6 +143,31 @@ test("snaps after an existing horizontal pair with the same preview gap", () => 
   );
   assert.equal(guide?.gap, 100);
   assert.equal(guide?.segments?.length, 2);
+});
+
+test("keeps a horizontal spacing ruler fixed while the pointer moves vertically", () => {
+  const common = {
+    draggedIds: ["moving"],
+    origins: { moving: { x: 404, y: 0 } },
+    positions: {
+      first: { x: 0, y: 0 },
+      second: { x: 200, y: 0 },
+      moving: { x: 404, y: 0 },
+    },
+    geometries: { first: square, second: square, moving: square },
+    threshold: 8,
+  } as const;
+  const initial = snapDraggedScreens({ ...common, candidateDelta: { x: -1, y: 12 } });
+  const moved = snapDraggedScreens({
+    ...common,
+    candidateDelta: { x: -1, y: 46 },
+    previousLocks: initial.locks,
+  });
+
+  const initialGuide = initial.guides.find((guide) => guide.kind === "spacing");
+  const movedGuide = moved.guides.find((guide) => guide.kind === "spacing");
+  assert.equal(initialGuide?.position, 50);
+  assert.equal(movedGuide?.position, initialGuide?.position);
 });
 
 test("snaps before an existing horizontal pair with the same preview gap", () => {
@@ -130,6 +209,31 @@ test("snaps between two previews with equal vertical spacing", () => {
     (candidate) => candidate.axis === "y" && candidate.kind === "spacing",
   );
   assert.equal(guide?.gap, 100);
+});
+
+test("keeps a vertical spacing ruler fixed while the pointer moves horizontally", () => {
+  const common = {
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 204 } },
+    positions: {
+      above: { x: 0, y: 0 },
+      moving: { x: 0, y: 204 },
+      below: { x: 0, y: 400 },
+    },
+    geometries: { above: square, moving: square, below: square },
+    threshold: 8,
+  } as const;
+  const initial = snapDraggedScreens({ ...common, candidateDelta: { x: 12, y: -1 } });
+  const moved = snapDraggedScreens({
+    ...common,
+    candidateDelta: { x: 46, y: -1 },
+    previousLocks: initial.locks,
+  });
+
+  const initialGuide = initial.guides.find((guide) => guide.kind === "spacing");
+  const movedGuide = moved.guides.find((guide) => guide.kind === "spacing");
+  assert.equal(initialGuide?.position, 50);
+  assert.equal(movedGuide?.position, initialGuide?.position);
 });
 
 test("keeps a magnetic relationship stable through small pointer noise", () => {
