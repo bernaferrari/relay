@@ -81,7 +81,7 @@ test("buildMinimapEdges keeps the complete graph visible without a selection", (
     stepIndexes: [index],
     depth: index,
     x: index * 280,
-    y: 0,
+    y: index * 100,
   }));
   const edges = buildMinimapEdges({
     nodes,
@@ -101,6 +101,14 @@ test("buildMinimapEdges keeps the complete graph visible without a selection", (
   );
   assert.equal(
     edges.every((edge) => !edge.selected),
+    true,
+  );
+  assert.equal(
+    edges.every((edge) => edge.path.startsWith("M ")),
+    true,
+  );
+  assert.equal(
+    edges.every((edge) => / H .* V .* H /.test(edge.path)),
     true,
   );
 });

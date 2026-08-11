@@ -101,6 +101,38 @@ test("aligns branches with the scroll state that opened them", () => {
   assert.equal(positions.legal?.y, positions.about?.y);
 });
 
+test("places each viewport state after the previous state's complete branch block", () => {
+  const graph = {
+    screens: ["settings", "more", "appearance", "haptics", "widget", "memory", "skills"].map(
+      (id) => ({ id }),
+    ),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "more" },
+        label: "Scroll",
+      },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "appearance" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "haptics" } },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "widget" } },
+      { fromScreenId: "more", destination: { kind: "screen", screenId: "memory" } },
+      { fromScreenId: "more", destination: { kind: "screen", screenId: "skills" } },
+    ],
+  };
+  const positions = compactCanvasPositions(graph);
+
+  assert.equal(positions.settings?.y, positions.appearance?.y);
+  assert.ok((positions.haptics?.y ?? 0) > (positions.appearance?.y ?? 0));
+  assert.ok((positions.widget?.y ?? 0) > (positions.haptics?.y ?? 0));
+  assert.ok(
+    (positions.more?.y ?? 0) > (positions.widget?.y ?? 0),
+    "the next scroll state starts below the complete preceding branch",
+  );
+  assert.equal(positions.more?.y, positions.memory?.y);
+  assert.ok((positions.skills?.y ?? 0) > (positions.memory?.y ?? 0));
+});
+
 test("breaks cycles for ranking without producing giant coordinates", () => {
   const graph = {
     screens: ["one", "two", "three", "four"].map((id) => ({ id })),

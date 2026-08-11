@@ -14,6 +14,7 @@ export type AppMapMinimapNode = {
 
 export type AppMapMinimapEdge = {
   id: string;
+  path: string;
   x1: number;
   y1: number;
   x2: number;
@@ -155,12 +156,10 @@ export function AppMapMinimap(props: {
             </For>
             <For each={props.edges}>
               {(edge) => (
-                <line
+                <path
                   class={edgeColor(edge.state, edge.selected)}
-                  x1={edge.x1}
-                  y1={edge.y1}
-                  x2={edge.x2}
-                  y2={edge.y2}
+                  d={edge.path}
+                  fill="none"
                   stroke="currentColor"
                   stroke-opacity={
                     edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.28 : 0.68

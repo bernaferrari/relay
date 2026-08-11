@@ -339,6 +339,7 @@ export function buildMinimapEdges(input: {
     return [
       {
         id: connection.id,
+        path: minimapEdgePath(start, end),
         x1: start.x,
         y1: start.y,
         x2: end.x,
@@ -348,6 +349,14 @@ export function buildMinimapEdges(input: {
       },
     ];
   });
+}
+
+function minimapEdgePath(start: CanvasPoint, end: CanvasPoint): string {
+  if (Math.abs(end.x - start.x) < 0.8 || Math.abs(end.y - start.y) < 0.8) {
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  }
+  const channelX = (start.x + end.x) / 2;
+  return `M ${start.x} ${start.y} H ${channelX} V ${end.y} H ${end.x}`;
 }
 
 export function buildPresenceGeometry(input: {

@@ -15,7 +15,7 @@ type LayoutBlock = { id: string; screenIds: string[]; order: number };
 
 const CARD_GAP_X = 112;
 const CARD_GAP_Y = 48;
-const VIEWPORT_CHAIN_ROW_SPAN = 1.3;
+const VIEWPORT_CHAIN_GAP_ROWS = 0.3;
 
 /**
  * Tidy-tree layout for the real screen graph.
@@ -196,6 +196,10 @@ function layoutPrimaryForest(
   }
   for (const [parentId, childIds] of children) {
     childIds.sort((left, right) => {
+      const sourceDelta =
+        (edgeSourceOffset.get(edgeKey(parentId, left)) ?? 0) -
+        (edgeSourceOffset.get(edgeKey(parentId, right)) ?? 0);
+      if (sourceDelta) return sourceDelta;
       const edgeDelta =
         (edgeOrder.get(edgeKey(parentId, left)) ?? Number.MAX_SAFE_INTEGER) -
         (edgeOrder.get(edgeKey(parentId, right)) ?? Number.MAX_SAFE_INTEGER);
@@ -208,13 +212,16 @@ function layoutPrimaryForest(
     const cached = rowsMemo.get(id);
     if (cached !== undefined) return cached;
     const ownCount = blockById.get(id)?.screenIds.length ?? 1;
-    const ownRows = 1 + Math.max(0, ownCount - 1) * VIEWPORT_CHAIN_ROW_SPAN;
-    let childRows = 0;
-    for (const childId of children.get(id) ?? []) {
-      const sourceRow = (edgeSourceOffset.get(edgeKey(id, childId)) ?? 0) * VIEWPORT_CHAIN_ROW_SPAN;
-      childRows = Math.max(childRows, sourceRow) + subtreeRows(childId);
+    const childrenBySource = layoutChildrenBySource(id, ownCount, children, edgeSourceOffset);
+    let rows = 0;
+    for (let sourceIndex = 0; sourceIndex < ownCount; sourceIndex += 1) {
+      const branchRows = (childrenBySource[sourceIndex] ?? []).reduce(
+        (sum, childId) => sum + subtreeRows(childId),
+        0,
+      );
+      rows += Math.max(1, branchRows);
+      if (sourceIndex < ownCount - 1) rows += VIEWPORT_CHAIN_GAP_ROWS;
     }
-    const rows = Math.max(ownRows, childRows);
     rowsMemo.set(id, rows);
     return rows;
   };
@@ -229,23 +236,26 @@ function layoutPrimaryForest(
   const pitchY = SCREEN_CARD_HEIGHT + CARD_GAP_Y;
   const place = (id: string, depth: number, topRow: number) => {
     const block = blockById.get(id)!;
-    // Anchor a branch at its first row. Centering a parent over a large
-    // descendant set makes the entry screen appear halfway down a tall map and
-    // creates huge empty bands before the first useful branch.
-    const blockTop = topRow;
-    block.screenIds.forEach((screenId, index) => {
+    const childrenBySource = layoutChildrenBySource(
+      id,
+      block.screenIds.length,
+      children,
+      edgeSourceOffset,
+    );
+    let sectionTop = topRow;
+    block.screenIds.forEach((screenId, sourceIndex) => {
       positions[screenId] = {
         x: depth * pitchX,
-        y: (blockTop + index * VIEWPORT_CHAIN_ROW_SPAN) * pitchY,
+        y: sectionTop * pitchY,
       };
+      let childTop = sectionTop;
+      for (const childId of childrenBySource[sourceIndex] ?? []) {
+        place(childId, depth + 1, childTop);
+        childTop += subtreeRows(childId);
+      }
+      sectionTop = Math.max(sectionTop + 1, childTop);
+      if (sourceIndex < block.screenIds.length - 1) sectionTop += VIEWPORT_CHAIN_GAP_ROWS;
     });
-    let childTop = topRow;
-    for (const childId of children.get(id) ?? []) {
-      const sourceRow = (edgeSourceOffset.get(edgeKey(id, childId)) ?? 0) * VIEWPORT_CHAIN_ROW_SPAN;
-      childTop = Math.max(childTop, topRow + sourceRow);
-      place(childId, depth + 1, childTop);
-      childTop += subtreeRows(childId);
-    }
   };
   let rootTop = 0;
   roots.forEach((root, index) => {
@@ -254,6 +264,23 @@ function layoutPrimaryForest(
     rootTop += subtreeRows(root);
   });
   return positions;
+}
+
+function layoutChildrenBySource(
+  blockId: string,
+  sourceCount: number,
+  children: ReadonlyMap<string, string[]>,
+  edgeSourceOffset: ReadonlyMap<string, number>,
+): string[][] {
+  const grouped = Array.from({ length: sourceCount }, () => [] as string[]);
+  for (const childId of children.get(blockId) ?? []) {
+    const sourceIndex = Math.max(
+      0,
+      Math.min(sourceCount - 1, edgeSourceOffset.get(edgeKey(blockId, childId)) ?? 0),
+    );
+    grouped[sourceIndex]!.push(childId);
+  }
+  return grouped;
 }
 
 /** DFS back edges are the only edges removed from ranking. This turns cycles
