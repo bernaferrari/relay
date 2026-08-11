@@ -313,99 +313,29 @@ function optimizeLayerAssignments(
     if (!target || !positions[transition.fromScreenId] || !positions[target]) return [];
     return [{ from: transition.fromScreenId, to: target }];
   });
-  const activeLayers = layers.filter((layer) => layer.length > 1);
-  const searchSize = activeLayers.reduce(
-    (size, layer) => (layer.length > 8 ? Number.POSITIVE_INFINITY : size * factorial(layer.length)),
-    1,
-  );
-  if (searchSize <= 60_000) {
-    optimizeLayerAssignmentsExactly(positions, activeLayers, edges);
-    return;
-  }
-
-  // Small layers are cheap enough to solve exactly. Re-evaluating every layer
-  // against the fixed card cells avoids the local-swap traps that can route a
-  // connector through a neighboring entry card.
-  for (let pass = 0; pass < 3; pass += 1) {
-    for (const layer of layers) {
+  let bestScore = renderedTopologyPenalty(positions, edges);
+  for (let pass = 0; pass < 8; pass += 1) {
+    let improved = false;
+    const orderedLayers = pass % 2 === 0 ? layers : [...layers].reverse();
+    for (const layer of orderedLayers) {
       if (layer.length <= 1) continue;
-      const cells = layer.map((screenId) => ({ ...positions[screenId]! }));
-      let bestIds = [...layer];
-      let bestScore = renderedTopologyPenalty(positions, edges);
-      const candidates = layer.length <= 8 ? permutations(layer) : adjacentVariants(layer);
-      for (const candidate of candidates) {
-        candidate.forEach((screenId, index) => {
-          positions[screenId] = cells[index]!;
-        });
-        const score = renderedTopologyPenalty(positions, edges);
-        if (score < bestScore) {
-          bestScore = score;
-          bestIds = [...candidate];
+      for (let left = 0; left < layer.length - 1; left += 1) {
+        for (let right = left + 1; right < layer.length; right += 1) {
+          const leftId = layer[left]!;
+          const rightId = layer[right]!;
+          [positions[leftId], positions[rightId]] = [positions[rightId]!, positions[leftId]!];
+          const score = renderedTopologyPenalty(positions, edges);
+          if (score < bestScore) {
+            bestScore = score;
+            improved = true;
+          } else {
+            [positions[leftId], positions[rightId]] = [positions[rightId]!, positions[leftId]!];
+          }
         }
       }
-      bestIds.forEach((screenId, index) => {
-        positions[screenId] = cells[index]!;
-      });
     }
+    if (!improved) break;
   }
-}
-
-function optimizeLayerAssignmentsExactly(
-  positions: Record<string, CanvasPoint>,
-  layers: readonly string[][],
-  edges: readonly { from: string; to: string }[],
-): void {
-  const cells = layers.map((layer) => layer.map((screenId) => ({ ...positions[screenId]! })));
-  let bestLayers = layers.map((layer) => [...layer]);
-  const currentLayers = layers.map((layer) => [...layer]);
-  let bestScore = renderedTopologyPenalty(positions, edges);
-
-  const visit = (layerIndex: number) => {
-    if (layerIndex >= layers.length) {
-      const score = renderedTopologyPenalty(positions, edges);
-      if (score < bestScore) {
-        bestScore = score;
-        bestLayers = currentLayers.map((layer) => [...layer]);
-      }
-      return;
-    }
-    const layer = layers[layerIndex]!;
-    for (const candidate of permutations(layer)) {
-      currentLayers[layerIndex] = [...candidate];
-      candidate.forEach((screenId, index) => {
-        positions[screenId] = cells[layerIndex]![index]!;
-      });
-      visit(layerIndex + 1);
-    }
-  };
-  visit(0);
-  bestLayers.forEach((layer, layerIndex) =>
-    layer.forEach((screenId, index) => {
-      positions[screenId] = cells[layerIndex]![index]!;
-    }),
-  );
-}
-
-function factorial(value: number): number {
-  let result = 1;
-  for (let next = 2; next <= value; next += 1) result *= next;
-  return result;
-}
-
-function permutations<T>(items: readonly T[]): T[][] {
-  if (items.length <= 1) return [items.slice()];
-  return items.flatMap((item, index) => {
-    const rest = [...items.slice(0, index), ...items.slice(index + 1)];
-    return permutations(rest).map((tail) => [item, ...tail]);
-  });
-}
-
-function adjacentVariants<T>(items: readonly T[]): T[][] {
-  return items.slice(0, -1).map((_, index) => {
-    const variant = items.slice();
-    [variant[index], variant[index + 1]] = [variant[index + 1]!, variant[index]!];
-    return variant;
-  });
 }
 
 function renderedTopologyPenalty(

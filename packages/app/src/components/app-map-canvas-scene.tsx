@@ -18,7 +18,6 @@ import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
-import { buildCrossGroupEdgeBundles } from "../lib/app-map-edge-bundles";
 
 export type AppMapCanvasSceneProps = {
   nodes: MapTreeNode[];
@@ -145,13 +144,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const screenPositions = createMemo(() =>
     Object.fromEntries(props.nodes.map((node) => [node.id, props.positionFor(node)])),
   );
-  const groupForScreen = createMemo(() => {
-    const index = new Map<string, string>();
-    for (const group of props.groups) {
-      for (const screenId of group.screenIds) index.set(screenId, group.id);
-    }
-    return index;
-  });
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
   const rotationForNode = (node: MapTreeNode): CanvasScreenRotation =>
@@ -222,57 +214,11 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   );
   const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
   const visibleConnections = createMemo(() =>
-    props.connections.filter((connection) => {
-      if (
+    props.connections.filter(
+      (connection) =>
         connection.id === props.selectedConnectionId ||
         visibleNodeIds().has(connection.fromScreenId) ||
-        visibleNodeIds().has(connection.toScreenId)
-      ) {
-        return true;
-      }
-      const from = nodeFor(connection.fromScreenId);
-      const to = nodeFor(connection.toScreenId);
-      if (!from || !to) return false;
-      const fromPoint = props.positionFor(from);
-      const toPoint = props.positionFor(to);
-      const left = Math.min(fromPoint.x, toPoint.x);
-      const right = Math.max(fromPoint.x, toPoint.x) + SCREEN_CARD_WIDTH;
-      const top = Math.min(fromPoint.y, toPoint.y);
-      const bottom = Math.max(fromPoint.y, toPoint.y) + SCREEN_CARD_HEIGHT;
-      return (
-        right >= props.visibleBounds.left &&
-        left <= props.visibleBounds.right &&
-        bottom >= props.visibleBounds.top &&
-        top <= props.visibleBounds.bottom
-      );
-    }),
-  );
-  const connectionIsFocused = (connection: CanvasConnection) => {
-    const fromGroupId = groupForScreen().get(connection.fromScreenId);
-    const toGroupId = groupForScreen().get(connection.toScreenId);
-    return (
-      connection.id === props.selectedConnectionId ||
-      connection.id === hoveredConnectionId() ||
-      selectedNodeIds().has(connection.fromScreenId) ||
-      selectedNodeIds().has(connection.toScreenId) ||
-      (props.selectedGroupId !== null &&
-        (props.selectedGroupId === fromGroupId || props.selectedGroupId === toGroupId))
-    );
-  };
-  const individualConnections = createMemo(() =>
-    visibleConnections().filter((connection) => {
-      const fromGroupId = groupForScreen().get(connection.fromScreenId);
-      const toGroupId = groupForScreen().get(connection.toScreenId);
-      return (
-        !fromGroupId || !toGroupId || fromGroupId === toGroupId || connectionIsFocused(connection)
-      );
-    }),
-  );
-  const edgeBundles = createMemo(() =>
-    buildCrossGroupEdgeBundles(
-      visibleConnections().filter((connection) => !connectionIsFocused(connection)),
-      props.groups,
-      screenPositions(),
+        visibleNodeIds().has(connection.toScreenId),
     ),
   );
   const visibleNotes = createMemo(() =>
@@ -360,19 +306,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             );
           }}
         </For>
-        <For each={edgeBundles()}>
-          {(bundle) => (
-            <path
-              d={bundle.path}
-              class="pointer-events-none fill-none stroke-[var(--text-weak)] opacity-35"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              marker-end="url(#app-map-arrow)"
-              aria-hidden="true"
-            />
-          )}
-        </For>
-        <For each={individualConnections()}>
+        <For each={visibleConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
             const runState = () => props.connectionRunState(connection.id);
@@ -439,7 +373,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         </For>
       </svg>
 
-      <For each={individualConnections()}>
+      <For each={visibleConnections()}>
         {(connection) => {
           const geometry = () => geometryFor(connection);
           const count = () => props.caseCountFor(connection);

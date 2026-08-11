@@ -7,6 +7,7 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
+import { shouldDisplayCanvasConnection } from "../lib/app-map-connection-visibility";
 import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
@@ -265,6 +266,20 @@ export function AppMapWorkspace(props: {
   };
   const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
+  const displayedConnections = createMemo(() => {
+    const groupForScreen = new Map<string, string>();
+    for (const group of groups()) {
+      for (const screenId of group.screenIds) groupForScreen.set(screenId, group.id);
+    }
+    const focus = {
+      selectedConnectionId: selectedConnectionId(),
+      selectedGroupId: selectedGroupId(),
+      selectedScreenIds: new Set(selectedNodeIds()),
+    };
+    return connections().filter((connection) =>
+      shouldDisplayCanvasConnection(connection, groupForScreen, focus),
+    );
+  });
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
 
@@ -567,7 +582,7 @@ export function AppMapWorkspace(props: {
   const minimapEdges = createMemo(() =>
     buildMinimapEdges({
       nodes: tree().nodes,
-      connections: connections(),
+      connections: displayedConnections(),
       bounds: bounds(),
       positionFor,
       selectedConnectionId: selectedConnectionId(),
@@ -1375,7 +1390,7 @@ export function AppMapWorkspace(props: {
                 </Show>
                 <AppMapCanvasScene
                   nodes={tree().nodes}
-                  connections={connections()}
+                  connections={displayedConnections()}
                   notes={canvasState().notes ?? []}
                   groups={groups()}
                   width={bounds().width}
