@@ -16,6 +16,7 @@ import {
 import type { DurableCaptureResourceStore } from './durable-capture-resource-store.ts';
 import { createNextDurableCaptureFence } from './durable-capture-start-preflight.ts';
 import {
+  recoverDurableCaptureResource,
   recoverDurableCaptureResourcesAfterDaemonLock,
   type DurableCaptureRecoveryParams,
 } from './durable-capture-resource-recovery.ts';
@@ -25,6 +26,7 @@ import {
 } from './durable-capture-resource-finish-recovered.ts';
 import type { SessionStore } from './session-store.ts';
 import type { SessionState } from './types.ts';
+import type { DurableSessionResourceKind } from './durable-session-resource-kinds.ts';
 
 export type DurableCaptureSessionResource<K extends string, H extends AsyncDisposable> = Readonly<{
   handle: H;
@@ -68,9 +70,11 @@ export type AdoptStartedDurableCaptureParams<K extends string, H extends AsyncDi
   throwIfCanceled(): void;
 };
 
-export function createDurableCaptureResource<K extends string, H extends LiveResourceHandle<C>, C>(
-  definition: DurableCaptureResourceDefinition<K, H, C>,
-) {
+export function createDurableCaptureResource<
+  K extends DurableSessionResourceKind,
+  H extends LiveResourceHandle<C>,
+  C,
+>(definition: DurableCaptureResourceDefinition<K, H, C>) {
   const resourcePath = (sessionStore: SessionStore, sessionName: string): string =>
     definition.store.resolvePath(sessionStore.resolveSessionDir(sessionName));
 
@@ -114,6 +118,12 @@ export function createDurableCaptureResource<K extends string, H extends LiveRes
     },
     recoverAll(params: Omit<DurableCaptureRecoveryParams<K, H, C>, 'definition'>) {
       return recoverDurableCaptureResourcesAfterDaemonLock({ definition, ...params });
+    },
+    recoverOne(
+      params: Omit<DurableCaptureRecoveryParams<K, H, C>, 'definition'>,
+      resourcePath: string,
+    ) {
+      return recoverDurableCaptureResource({ definition, ...params }, resourcePath);
     },
   });
 }

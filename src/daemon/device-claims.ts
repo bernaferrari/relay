@@ -1,27 +1,32 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
+import {
+  deviceIdentity,
+  isApplePlatform,
+  resolveDeviceAppleOs,
+  type DeviceIdentity,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
 import { acquireProcessLock } from '../utils/process-lock.ts';
 import { ownerIdentityMatches, readCurrentOwnerIdentity } from '../utils/owner-identity.ts';
 import { inspectDeviceClaimFile, type InspectedDeviceClaim } from './device-claim-inspection.ts';
-import { resolveDeviceClaimPath, resolveDeviceClaimRoot } from './device-claim-paths.ts';
+import {
+  canonicalLocalDeviceKey,
+  resolveDeviceClaimPath,
+  resolveDeviceClaimRoot,
+} from './device-claim-paths.ts';
 
-const DEVICE_CLAIM_SCHEMA_VERSION = 1;
+export { canonicalLocalDeviceKey } from './device-claim-paths.ts';
+
+const DEVICE_CLAIM_SCHEMA_VERSION = 2;
 const DEVICE_CLAIM_LOCK_TIMEOUT_MS = 30_000;
 
 export type DeviceClaim = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   deviceKey: string;
-  device: {
-    platform: ReturnType<typeof publicPlatformString>;
-    id: string;
-    name: string;
-    kind: DeviceInfo['kind'];
-    target?: DeviceInfo['target'];
-    appleOs?: DeviceInfo['appleOs'];
-  };
+  device: DeviceIdentity & { name: string };
   session: string;
   workspace: string;
   stateDir: string;
@@ -32,12 +37,24 @@ export type DeviceClaim = {
   updatedAtMs: number;
 };
 
+export type DeviceClaimReconciliationResult =
+  | { status: 'reconciled' }
+  | { status: 'retained'; reason: string };
+
+export type DeviceClaimReconciler = (
+  claim: DeviceClaim,
+) => Promise<DeviceClaimReconciliationResult>;
+
 export type DeviceClaimSessionOwnership = {
   deviceKey: string;
   ownerToken: string;
   ownerPid: number;
   ownerStartTime: string | null;
 };
+
+export type DeviceClaimAcquireResult =
+  | { status: 'acquired'; ownership: DeviceClaimSessionOwnership }
+  | { status: 'conflict'; conflict: InspectedDeviceClaim };
 
 export function isLocalDeviceClaimTarget(
   meta:
@@ -51,48 +68,33 @@ export function isLocalDeviceClaimTarget(
   return !providerOwned && !meta?.leaseProvider && !meta?.deviceKey;
 }
 
-export function canonicalLocalDeviceKey(device: DeviceInfo): string {
-  const appleOs = device.appleOs ?? 'none';
-  return `local:${device.platform}:${appleOs}:${device.id}`;
-}
-
-export async function acquireAdvisoryDeviceClaim(params: {
+export async function acquireDeviceClaim(params: {
   device: DeviceInfo;
   session: string;
   workspace: string;
   stateDir: string;
-}): Promise<{ ownership?: DeviceClaimSessionOwnership; conflict?: InspectedDeviceClaim }> {
-  const deviceKey = canonicalLocalDeviceKey(params.device);
+  reconcileOrphanedDeviceClaim: DeviceClaimReconciler;
+}): Promise<DeviceClaimAcquireResult> {
+  const identity = deviceClaimIdentity(params.device);
+  const deviceKey = canonicalLocalDeviceKey(identity);
   return await withDeviceClaimLock(deviceKey, async () => {
     const owner = readCurrentOwnerIdentity();
-    const existing = inspectDeviceClaimFile(resolveDeviceClaimPath(deviceKey));
-    if (existing) {
-      if (existing.claim && isCurrentClaimOwner(existing.claim, params, owner)) {
-        return { ownership: ownershipFromClaim(existing.claim) };
-      }
-      emitDiagnostic({
-        level: 'warn',
-        phase: 'device_claim_advisory_conflict',
-        data: {
-          deviceKey,
-          classification: existing.classification,
-          ownerSession: existing.claim?.session,
-          ownerStateDir: existing.claim?.stateDir,
-        },
-      });
-      return { conflict: existing };
-    }
+    const existingResult = await resolveExistingClaim({
+      deviceKey,
+      owner,
+      session: params.session,
+      workspace: params.workspace,
+      stateDir: params.stateDir,
+      reconcileOrphanedDeviceClaim: params.reconcileOrphanedDeviceClaim,
+    });
+    if (existingResult.status !== 'available') return existingResult;
     const now = Date.now();
     const claim: DeviceClaim = {
       schemaVersion: DEVICE_CLAIM_SCHEMA_VERSION,
       deviceKey,
       device: {
-        platform: publicPlatformString(params.device),
-        id: params.device.id,
+        ...identity,
         name: params.device.name,
-        kind: params.device.kind,
-        ...(params.device.target ? { target: params.device.target } : {}),
-        ...(params.device.appleOs ? { appleOs: params.device.appleOs } : {}),
       },
       session: params.session,
       workspace: params.workspace,
@@ -104,16 +106,48 @@ export async function acquireAdvisoryDeviceClaim(params: {
       updatedAtMs: now,
     };
     writeClaim(claim);
-    return { ownership: ownershipFromClaim(claim) };
+    return { status: 'acquired', ownership: ownershipFromClaim(claim) };
   });
+}
+
+function deviceClaimIdentity(device: DeviceInfo): DeviceIdentity {
+  return deviceIdentity({
+    ...device,
+    ...(isApplePlatform(device.platform) ? { appleOs: resolveDeviceAppleOs(device) } : {}),
+  });
+}
+
+async function resolveExistingClaim(params: {
+  deviceKey: string;
+  owner: ReturnType<typeof readCurrentOwnerIdentity>;
+  session: string;
+  workspace: string;
+  stateDir: string;
+  reconcileOrphanedDeviceClaim: DeviceClaimReconciler;
+}): Promise<DeviceClaimAcquireResult | { status: 'available' }> {
+  const existing = inspectDeviceClaimFile(resolveDeviceClaimPath(params.deviceKey));
+  if (!existing) return { status: 'available' };
+  if (existing.claim && isCurrentClaimOwner(existing.claim, params, params.owner)) {
+    return { status: 'acquired', ownership: ownershipFromClaim(existing.claim) };
+  }
+  if (existing.classification !== 'owner-process-dead' || !existing.claim) {
+    emitClaimConflict(params.deviceKey, existing);
+    return { status: 'conflict', conflict: existing };
+  }
+  const reconciliation = await settleVerifiedOrphanedClaim(
+    existing.claim,
+    params.reconcileOrphanedDeviceClaim,
+  );
+  if (reconciliation.status === 'retained') {
+    emitClaimConflict(params.deviceKey, existing, reconciliation.reason);
+    return { status: 'conflict', conflict: existing };
+  }
+  return { status: 'available' };
 }
 
 function isCurrentClaimOwner(
   claim: DeviceClaim,
-  params: Pick<
-    Parameters<typeof acquireAdvisoryDeviceClaim>[0],
-    'session' | 'workspace' | 'stateDir'
-  >,
+  params: Pick<Parameters<typeof acquireDeviceClaim>[0], 'session' | 'workspace' | 'stateDir'>,
   owner: ReturnType<typeof readCurrentOwnerIdentity>,
 ): boolean {
   return (
@@ -124,7 +158,7 @@ function isCurrentClaimOwner(
   );
 }
 
-export async function clearAdvisoryDeviceClaim(
+export async function clearDeviceClaim(
   ownership: DeviceClaimSessionOwnership | undefined,
 ): Promise<void> {
   if (!ownership) return;
@@ -150,52 +184,98 @@ export async function clearAdvisoryDeviceClaim(
 }
 
 /**
- * Deletes claim files whose owning process is provably gone.
+ * Reconciles claims whose owning process is provably gone and clears only
+ * claims whose attributable durable resources reached a safe terminal state.
  *
  * Claims are released on session close and daemon shutdown, but a process that
- * dies abruptly leaves its file behind forever and nothing else reaps them.
+ * dies abruptly leaves its file behind for proof-oriented recovery.
  *
  * The liveness check is repeated under the per-device lock immediately before
- * unlinking: claim paths are derived from the device key, so a concurrent
- * daemon can prune the same dead claim and a new session can write its live
- * successor to that exact path while this scan is still running. Deleting on
- * the first read would take the successor with it.
+ * reconciliation: claim paths are derived from the device key, so a concurrent
+ * daemon can replace the same dead claim while this scan is still running.
+ * Acting on the first read could clear the successor.
  *
  * Deliberately narrower than the CLI's stale filter: `owner-state-dir-gone`
  * describes a LIVE process whose state dir vanished, and deleting that claim
  * could hand its device to a second session.
  */
-export async function pruneDeadDeviceClaims(): Promise<{ pruned: number }> {
+export async function reconcileOrphanedDeviceClaims(
+  reconcile: DeviceClaimReconciler,
+): Promise<{ examined: number; reconciled: number; retained: number; changed: number }> {
   const root = resolveDeviceClaimRoot();
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {
-    return { pruned: 0 };
+    return { examined: 0, reconciled: 0, retained: 0, changed: 0 };
   }
-  let pruned = 0;
+  let examined = 0;
+  let reconciled = 0;
+  let retained = 0;
+  let changed = 0;
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     const filePath = path.join(root, entry.name);
     const scanned = inspectDeviceClaimFile(filePath);
     if (scanned?.classification !== 'owner-process-dead' || !scanned.claim) continue;
+    examined += 1;
     const { deviceKey, ownerToken } = scanned.claim;
     // A file whose name is not the hash of its own device key is not the file
     // the lock protects, so leave it rather than unlink something else.
-    if (resolveDeviceClaimPath(deviceKey) !== filePath) continue;
+    if (resolveDeviceClaimPath(deviceKey) !== filePath) {
+      retained += 1;
+      continue;
+    }
     await withDeviceClaimLock(deviceKey, async () => {
       const current = inspectDeviceClaimFile(filePath);
-      if (current?.classification !== 'owner-process-dead') return;
-      if (current.claim?.ownerToken !== ownerToken) return;
-      try {
-        fs.unlinkSync(filePath);
-        pruned += 1;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (
+        current?.classification !== 'owner-process-dead' ||
+        current.claim?.ownerToken !== ownerToken
+      ) {
+        changed += 1;
+        return;
       }
+      const result = await settleVerifiedOrphanedClaim(current.claim, reconcile);
+      if (result.status === 'retained') {
+        retained += 1;
+        return;
+      }
+      reconciled += 1;
     });
   }
-  return { pruned };
+  return { examined, reconciled, retained, changed };
+}
+
+function emitClaimConflict(
+  deviceKey: string,
+  existing: InspectedDeviceClaim,
+  reconciliationReason?: string,
+): void {
+  emitDiagnostic({
+    level: 'warn',
+    phase: 'device_claim_conflict',
+    data: {
+      deviceKey,
+      classification: existing.classification,
+      ownerSession: existing.claim?.session,
+      ownerStateDir: existing.claim?.stateDir,
+      ...(reconciliationReason ? { reconciliationReason } : {}),
+    },
+  });
+}
+
+async function settleVerifiedOrphanedClaim(
+  claim: DeviceClaim,
+  reconcile: DeviceClaimReconciler,
+): Promise<DeviceClaimReconciliationResult> {
+  const result = await reconcile(claim);
+  if (result.status === 'retained') return result;
+  try {
+    fs.unlinkSync(resolveDeviceClaimPath(claim.deviceKey));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  return { status: 'reconciled' };
 }
 
 function writeClaim(claim: DeviceClaim): void {
