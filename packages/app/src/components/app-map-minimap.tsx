@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import type { CanvasBounds } from "../lib/app-map-canvas-layout";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { AppMapMinimapBounds } from "../lib/app-map-minimap";
 import { cn } from "../lib/cn";
@@ -15,10 +16,7 @@ export type AppMapMinimapNode = {
 export type AppMapMinimapEdge = {
   id: string;
   path: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  arrowPath: string | null;
   selected: boolean;
   state?: AppMapRunPresentationState;
 };
@@ -37,6 +35,7 @@ export function AppMapMinimap(props: {
   groups: AppMapMinimapGroup[];
   nodes: AppMapMinimapNode[];
   edges: AppMapMinimapEdge[];
+  bounds: CanvasBounds;
   viewport: AppMapMinimapBounds;
   shiftForSidePanel: boolean;
   wideDevice: boolean;
@@ -56,6 +55,11 @@ export function AppMapMinimap(props: {
   };
   const stopDragging = () => {
     dragging = false;
+  };
+  const edgeProjection = () => {
+    const scaleX = 100 / Math.max(1, props.bounds.width);
+    const scaleY = 100 / Math.max(1, props.bounds.height);
+    return `matrix(${scaleX} 0 0 ${scaleY} ${-props.bounds.left * scaleX} ${-props.bounds.top * scaleY})`;
   };
 
   return (
@@ -154,21 +158,33 @@ export function AppMapMinimap(props: {
                 />
               )}
             </For>
-            <For each={props.edges}>
-              {(edge) => (
-                <path
-                  class={edgeColor(edge.state, edge.selected)}
-                  d={edge.path}
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-opacity={
-                    edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.28 : 0.68
-                  }
-                  stroke-width={edge.selected ? 1.2 : 0.6}
-                  vector-effect="non-scaling-stroke"
-                />
-              )}
-            </For>
+            <g transform={edgeProjection()}>
+              <For each={props.edges}>
+                {(edge) => (
+                  <g
+                    class={edgeColor(edge.state, edge.selected)}
+                    stroke="currentColor"
+                    stroke-opacity={
+                      edge.selected ? 0.95 : !edge.state || edge.state === "idle" ? 0.28 : 0.68
+                    }
+                    stroke-width={edge.selected ? 1.2 : 0.6}
+                    fill="none"
+                  >
+                    <path d={edge.path} vector-effect="non-scaling-stroke" />
+                    <Show when={edge.arrowPath}>
+                      {(arrowPath) => (
+                        <path
+                          d={arrowPath()}
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          vector-effect="non-scaling-stroke"
+                        />
+                      )}
+                    </Show>
+                  </g>
+                )}
+              </For>
+            </g>
             <For each={props.nodes}>
               {(node) => (
                 <rect

@@ -12,12 +12,14 @@ import type { DeviceReadiness } from "./device-readiness";
 import type { MapTreeNode } from "./app-map-tree";
 import type { CanvasConnection } from "./app-map-connection-draft";
 import {
+  canvasEdgeArrowPath,
   canvasEdgeGeometry,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   type CanvasBounds,
   type CanvasPoint,
   type CanvasViewport,
+  type ScreenCardGeometry,
 } from "./app-map-canvas-layout";
 import type { TakeDestination } from "./app-map-canvas-graph";
 import { mapGroupGeometry } from "./app-map-groups";
@@ -309,8 +311,8 @@ export function buildMinimapGroups(input: {
 export function buildMinimapEdges(input: {
   nodes: MapTreeNode[];
   connections: CanvasConnection[];
-  bounds: CanvasBounds;
   positionFor: (node: MapTreeNode) => CanvasPoint;
+  geometryForNode?: (node: MapTreeNode) => ScreenCardGeometry;
   selectedConnectionId: string | null;
   transitionStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
@@ -320,43 +322,30 @@ export function buildMinimapEdges(input: {
     const from = nodes.get(connection.fromScreenId);
     const to = nodes.get(connection.toScreenId);
     if (!from || !to) return [];
-    const fromPosition = input.positionFor(from);
-    const toPosition = input.positionFor(to);
-    const start = minimapPoint(
+    const geometry = canvasEdgeGeometry(
       {
-        x: fromPosition.x + SCREEN_CARD_WIDTH / 2,
-        y: fromPosition.y + SCREEN_CARD_HEIGHT / 2,
+        from: connection.fromScreenId,
+        to: connection.toScreenId,
+        kind: connection.kind,
+        sourceAnchor: connection.sourceAnchor,
+        presentation: connection.presentation,
       },
-      input.bounds,
-    );
-    const end = minimapPoint(
-      {
-        x: toPosition.x + SCREEN_CARD_WIDTH / 2,
-        y: toPosition.y + SCREEN_CARD_HEIGHT / 2,
-      },
-      input.bounds,
+      input.nodes,
+      input.positionFor,
+      nodes,
+      input.geometryForNode,
     );
     return [
       {
         id: connection.id,
-        path: minimapEdgePath(start, end),
-        x1: start.x,
-        y1: start.y,
-        x2: end.x,
-        y2: end.y,
+        path: geometry.path,
+        arrowPath:
+          connection.presentation?.arrow === "none" ? null : canvasEdgeArrowPath(geometry, 2),
         selected,
         state: input.transitionStates[connection.id],
       },
     ];
   });
-}
-
-function minimapEdgePath(start: CanvasPoint, end: CanvasPoint): string {
-  if (Math.abs(end.x - start.x) < 0.8 || Math.abs(end.y - start.y) < 0.8) {
-    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-  }
-  const channelX = (start.x + end.x) / 2;
-  return `M ${start.x} ${start.y} H ${channelX} V ${end.y} H ${end.x}`;
 }
 
 export function buildPresenceGeometry(input: {

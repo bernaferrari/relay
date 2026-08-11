@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapBatchChange } from "@relay/protocol";
+import { canvasEdgeArrowPath, canvasEdgeGeometry } from "./app-map-canvas-layout";
 import {
   appMapLoadFailure,
   appMapCommitSummary,
@@ -72,7 +73,7 @@ test("buildMinimapGroups projects variable group regions behind their screens", 
   ]);
 });
 
-test("buildMinimapEdges keeps the complete graph visible without a selection", () => {
+test("buildMinimapEdges reuses the editor's authoritative connector geometry", () => {
   const nodes = ["settings", "advanced", "paste"].map((id, index) => ({
     id,
     screenKey: id,
@@ -83,14 +84,27 @@ test("buildMinimapEdges keeps the complete graph visible without a selection", (
     x: index * 280,
     y: index * 100,
   }));
+  const connections = [
+    {
+      id: "settings-advanced",
+      fromScreenId: "settings",
+      toScreenId: "advanced",
+      kind: "forward",
+      presentation: {
+        route: "curve",
+        sourcePort: "right",
+        targetPort: "left",
+        controlOffset: { x: 32, y: -24 },
+        arrow: "end",
+      },
+    },
+    { id: "advanced-paste", fromScreenId: "advanced", toScreenId: "paste" },
+  ] as never;
+  const positionFor = (node: (typeof nodes)[number]) => ({ x: node.x, y: node.y });
   const edges = buildMinimapEdges({
     nodes,
-    connections: [
-      { id: "settings-advanced", fromScreenId: "settings", toScreenId: "advanced" },
-      { id: "advanced-paste", fromScreenId: "advanced", toScreenId: "paste" },
-    ] as never,
-    bounds: { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 },
-    positionFor: (node) => ({ x: node.x, y: node.y }),
+    connections,
+    positionFor,
     selectedConnectionId: null,
     transitionStates: {},
   });
@@ -103,14 +117,24 @@ test("buildMinimapEdges keeps the complete graph visible without a selection", (
     edges.every((edge) => !edge.selected),
     true,
   );
-  assert.equal(
-    edges.every((edge) => edge.path.startsWith("M ")),
-    true,
+  const expected = canvasEdgeGeometry(
+    {
+      from: "settings",
+      to: "advanced",
+      kind: "forward",
+      presentation: {
+        route: "curve",
+        sourcePort: "right",
+        targetPort: "left",
+        controlOffset: { x: 32, y: -24 },
+        arrow: "end",
+      },
+    },
+    nodes,
+    positionFor,
   );
-  assert.equal(
-    edges.every((edge) => / H .* V .* H /.test(edge.path)),
-    true,
-  );
+  assert.equal(edges[0]?.path, expected.path);
+  assert.equal(edges[0]?.arrowPath, canvasEdgeArrowPath(expected, 2));
 });
 
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {

@@ -36,7 +36,6 @@ export type AppMapCanvasSceneProps = {
   visibleBounds: { left: number; top: number; right: number; bottom: number };
   selectedNodeId: string | null;
   selectedNodeIds: readonly string[];
-  primaryConnectionIds: readonly string[];
   selectedConnectionId: string | null;
   renamingNodeId: string | null;
   awareness: readonly CollaborationAwareness[];
@@ -180,17 +179,9 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   );
   const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
   const visibleConnections = createMemo(() => {
-    const selectedNodes = selectedNodeIds();
-    const primary = new Set(props.primaryConnectionIds);
     return props.connections.filter((connection) => {
-      const touchesSelected =
-        selectedNodes.has(connection.fromScreenId) || selectedNodes.has(connection.toScreenId);
       return (
-        connection.id === props.selectedConnectionId ||
-        touchesSelected ||
-        (primary.has(connection.id) &&
-          (visibleNodeIds().has(connection.fromScreenId) ||
-            visibleNodeIds().has(connection.toScreenId)))
+        visibleNodeIds().has(connection.fromScreenId) || visibleNodeIds().has(connection.toScreenId)
       );
     });
   });

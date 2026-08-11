@@ -336,6 +336,7 @@ export function AppMapWorkspace(props: {
             to: connection.toScreenId,
             kind: connection.kind,
             sourceAnchor: connection.sourceAnchor,
+            presentation: connection.presentation,
           },
           tree().nodes,
           positionFor,
@@ -505,30 +506,6 @@ export function AppMapWorkspace(props: {
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
-  const primaryConnectionIds = createMemo(() => {
-    const bestByTarget = new Map<string, { id: string; score: number }>();
-    const nodeById = new Map(tree().nodes.map((node) => [node.id, node]));
-    for (const connection of connections()) {
-      const from = nodeById.get(connection.fromScreenId);
-      const to = nodeById.get(connection.toScreenId);
-      if (!from || !to) continue;
-      const source = positionFor(from);
-      const target = positionFor(to);
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const sameLaneForward = Math.abs(dx) < 1 && dy > 0;
-      const score = sameLaneForward
-        ? dy
-        : dx > 0
-          ? dx * 10 + Math.abs(dy)
-          : 1_000_000 + Math.abs(dx) * 10 + Math.abs(dy);
-      const current = bestByTarget.get(connection.toScreenId);
-      if (!current || score < current.score) {
-        bestByTarget.set(connection.toScreenId, { id: connection.id, score });
-      }
-    }
-    return [...bestByTarget.values()].map(({ id }) => id);
-  });
   const selectedEntryFlows = createMemo(() =>
     entryFlowsForScreen(activeAppMap(), selectedNodeId()),
   );
@@ -636,8 +613,8 @@ export function AppMapWorkspace(props: {
     buildMinimapEdges({
       nodes: tree().nodes,
       connections: connections(),
-      bounds: bounds(),
       positionFor,
+      geometryForNode,
       selectedConnectionId: selectedConnectionId(),
       transitionStates: Object.fromEntries(
         Object.entries(runProjection().transitions).map(([id, transition]) => [
@@ -1489,7 +1466,6 @@ export function AppMapWorkspace(props: {
                   visibleBounds={visibleCanvasBounds()}
                   selectedNodeId={selectedNodeId()}
                   selectedNodeIds={selectedNodeIds()}
-                  primaryConnectionIds={primaryConnectionIds()}
                   selectedConnectionId={selectedConnectionId()}
                   renamingNodeId={renamingNodeId()}
                   awareness={remoteAwareness()}
@@ -1788,6 +1764,7 @@ export function AppMapWorkspace(props: {
                 groups={[]}
                 nodes={minimapNodes()}
                 edges={minimapEdges()}
+                bounds={bounds()}
                 viewport={minimapViewport()}
                 shiftForSidePanel={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
                 wideDevice={deviceCompanionOrientation() === "landscape"}
