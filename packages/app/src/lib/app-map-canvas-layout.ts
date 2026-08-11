@@ -1,6 +1,8 @@
 import type {
   CanvasInteractionAnchor as ProtocolCanvasInteractionAnchor,
   CanvasNote,
+  ConnectionPort,
+  ConnectionPresentation,
 } from "@relay/protocol";
 import type { MapTreeNode } from "./app-map-tree";
 
@@ -43,6 +45,54 @@ export type CanvasEdgeGeometry = {
   /** A light-weight polyline approximation used for marquee hit-testing. */
   hitPoints: CanvasPoint[];
 };
+
+/**
+ * Draw the terminal as ordinary path geometry instead of an SVG marker.
+ *
+ * Markers have their own coordinate system and paint context, which makes
+ * their apparent size and color drift away from the connector at different
+ * zoom levels. Keeping the arrowhead in the scene means it inherits the same
+ * stroke, opacity, line cap, and selection state as the route itself.
+ */
+export function canvasEdgeArrowPath(
+  geometry: Pick<CanvasEdgeGeometry, "endPoint" | "hitPoints">,
+  strokeWidth = 2,
+): string {
+  const end = geometry.endPoint;
+  let tangentPoint: CanvasPoint | undefined;
+
+  for (let index = geometry.hitPoints.length - 2; index >= 0; index -= 1) {
+    const candidate = geometry.hitPoints[index]!;
+    if (Math.hypot(end.x - candidate.x, end.y - candidate.y) > 0.01) {
+      tangentPoint = candidate;
+      break;
+    }
+  }
+  if (!tangentPoint) return "";
+
+  const deltaX = end.x - tangentPoint.x;
+  const deltaY = end.y - tangentPoint.y;
+  const distance = Math.hypot(deltaX, deltaY);
+  const tangentX = deltaX / distance;
+  const tangentY = deltaY / distance;
+  const normalX = -tangentY;
+  const normalY = tangentX;
+  const extraWeight = Math.max(0, strokeWidth - 1);
+  const length = 8.5 + extraWeight * 0.75;
+  const halfWidth = 4.25 + extraWeight * 0.4;
+  const baseX = end.x - tangentX * length;
+  const baseY = end.y - tangentY * length;
+  const first = {
+    x: baseX + normalX * halfWidth,
+    y: baseY + normalY * halfWidth,
+  };
+  const second = {
+    x: baseX - normalX * halfWidth,
+    y: baseY - normalY * halfWidth,
+  };
+
+  return `M ${first.x} ${first.y} L ${end.x} ${end.y} L ${second.x} ${second.y}`;
+}
 
 /** Shared geometry for the App Map canvas and collaboration presence. */
 // Positions reserve one stable slot so mixed phone and tablet maps remain easy
@@ -270,6 +320,7 @@ export function canvasEdgeGeometry(
     kind: "forward" | "return";
     sourceAnchor?: CanvasInteractionAnchor;
     sourceRotation?: CanvasScreenRotation;
+    presentation?: ConnectionPresentation;
   },
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
@@ -298,15 +349,22 @@ export function canvasEdgeGeometry(
     : undefined;
   const fromFrame = screenFrameBounds(fromPosition, fromGeometry);
   const toFrame = screenFrameBounds(toPosition, toGeometry);
-  const direction = relativePortDirection(fromFrame, toFrame);
-  const defaultStart = portPoint(fromFrame, direction);
-  const start = sourcePoint
-    ? {
-        x: fromFrame.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth,
-        y: fromFrame.top + Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight,
-      }
-    : defaultStart;
-  const end = portPoint(toFrame, oppositePortDirection(direction));
+  const automaticDirection = relativePortDirection(fromFrame, toFrame);
+  const direction = explicitPort(edge.presentation?.sourcePort) ?? automaticDirection;
+  const targetDirection =
+    explicitPort(edge.presentation?.targetPort) ?? oppositePortDirection(automaticDirection);
+  const defaultStart = portPoint(fromFrame, direction, edge.presentation?.sourceOffset);
+  const start =
+    sourcePoint && !explicitPort(edge.presentation?.sourcePort)
+      ? {
+          x: fromFrame.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth,
+          y: fromFrame.top + Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight,
+        }
+      : defaultStart;
+  const end = portPoint(toFrame, targetDirection, edge.presentation?.targetOffset);
+  const route = edge.presentation?.route ?? "curve";
+  if (route === "straight") return straightEdge(start, end);
+  if (route === "elbow") return elbowEdge(start, end, direction, targetDirection);
   // Every ordinary connection uses the same curve model. Older routing
   // switched between orthogonal detours and cubics when a card crossed an
   // eight-pixel corridor; a one-pixel drag could therefore redraw the whole
@@ -327,10 +385,25 @@ export function canvasEdgeGeometry(
   const control2 = vertical
     ? { x: end.x, y: end.y - sign * pull }
     : { x: end.x - sign * pull, y: end.y };
-  return cubicEdge(start, end, control1, control2);
+  const offset = edge.presentation?.controlOffset;
+  if (!offset) return cubicEdge(start, end, control1, control2);
+  // Moving both controls by 4/3 of the requested offset moves the cubic's
+  // midpoint by exactly that offset, so the drag handle stays under the
+  // pointer instead of lagging behind it.
+  const adjustment = { x: (offset.x * 4) / 3, y: (offset.y * 4) / 3 };
+  return cubicEdge(
+    start,
+    end,
+    { x: control1.x + adjustment.x, y: control1.y + adjustment.y },
+    { x: control2.x + adjustment.x, y: control2.y + adjustment.y },
+  );
 }
 
 type EdgePortDirection = "left" | "right" | "top" | "bottom";
+
+function explicitPort(port: ConnectionPort | undefined): EdgePortDirection | undefined {
+  return port && port !== "auto" ? port : undefined;
+}
 
 function relativePortDirection(from: CanvasFrameBounds, to: CanvasFrameBounds): EdgePortDirection {
   if (to.left >= from.right) return "right";
@@ -351,11 +424,82 @@ function oppositePortDirection(direction: EdgePortDirection): EdgePortDirection 
   return "top";
 }
 
-function portPoint(frame: CanvasFrameBounds, direction: EdgePortDirection): CanvasPoint {
-  if (direction === "left") return { x: frame.left, y: frame.centerY };
-  if (direction === "right") return { x: frame.right, y: frame.centerY };
-  if (direction === "top") return { x: frame.centerX, y: frame.top };
-  return { x: frame.centerX, y: frame.bottom };
+function portPoint(
+  frame: CanvasFrameBounds,
+  direction: EdgePortDirection,
+  requestedOffset = 0.5,
+): CanvasPoint {
+  const offset = Math.max(0, Math.min(1, requestedOffset));
+  if (direction === "left") {
+    return { x: frame.left, y: frame.top + (frame.bottom - frame.top) * offset };
+  }
+  if (direction === "right") {
+    return { x: frame.right, y: frame.top + (frame.bottom - frame.top) * offset };
+  }
+  if (direction === "top") {
+    return { x: frame.left + (frame.right - frame.left) * offset, y: frame.top };
+  }
+  return { x: frame.left + (frame.right - frame.left) * offset, y: frame.bottom };
+}
+
+function straightEdge(start: CanvasPoint, end: CanvasPoint): CanvasEdgeGeometry {
+  return {
+    path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`,
+    labelPoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+    startPoint: start,
+    endPoint: end,
+    hitPoints: [start, end],
+  };
+}
+
+function elbowEdge(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): CanvasEdgeGeometry {
+  const horizontalSource = sourceDirection === "left" || sourceDirection === "right";
+  const horizontalTarget = targetDirection === "left" || targetDirection === "right";
+  const bend =
+    horizontalSource && horizontalTarget
+      ? { x: (start.x + end.x) / 2, y: start.y, x2: (start.x + end.x) / 2, y2: end.y }
+      : !horizontalSource && !horizontalTarget
+        ? { x: start.x, y: (start.y + end.y) / 2, x2: end.x, y2: (start.y + end.y) / 2 }
+        : horizontalSource
+          ? { x: end.x, y: start.y, x2: end.x, y2: end.y }
+          : { x: start.x, y: end.y, x2: end.x, y2: end.y };
+  const points = [start, { x: bend.x, y: bend.y }, { x: bend.x2, y: bend.y2 }, end].filter(
+    (point, index, all) =>
+      index === 0 || point.x !== all[index - 1]!.x || point.y !== all[index - 1]!.y,
+  );
+  const path = roundedOrthogonalPath(points, 14);
+  const middle = points[Math.floor((points.length - 1) / 2)] ?? start;
+  return { path, labelPoint: middle, startPoint: start, endPoint: end, hitPoints: points };
+}
+
+function roundedOrthogonalPath(points: readonly CanvasPoint[], radius: number): string {
+  if (points.length < 2) return "";
+  let path = `M ${points[0]!.x} ${points[0]!.y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1]!;
+    const corner = points[index]!;
+    const next = points[index + 1]!;
+    const beforeLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const afterLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const cornerRadius = Math.min(radius, beforeLength / 2, afterLength / 2);
+    if (cornerRadius <= 0) continue;
+    const enter = {
+      x: corner.x + ((previous.x - corner.x) / beforeLength) * cornerRadius,
+      y: corner.y + ((previous.y - corner.y) / beforeLength) * cornerRadius,
+    };
+    const exit = {
+      x: corner.x + ((next.x - corner.x) / afterLength) * cornerRadius,
+      y: corner.y + ((next.y - corner.y) / afterLength) * cornerRadius,
+    };
+    path += ` L ${enter.x} ${enter.y} Q ${corner.x} ${corner.y} ${exit.x} ${exit.y}`;
+  }
+  const end = points.at(-1)!;
+  return `${path} L ${end.x} ${end.y}`;
 }
 
 function framesAreSeparated(from: CanvasFrameBounds, to: CanvasFrameBounds): boolean {

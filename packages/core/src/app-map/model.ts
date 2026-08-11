@@ -26,6 +26,7 @@ export {
   type AppMapVariableKind,
   type Connection,
   type ConnectionDestination,
+  type ConnectionPresentation,
   type ConnectionPatch,
   type Flow,
   type GestureSpec,

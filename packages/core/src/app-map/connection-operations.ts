@@ -42,6 +42,9 @@ export function patchConnection(
   else if (patch.caseStackId !== undefined) connection.caseStackId = patch.caseStackId;
   if (patch.state !== undefined) connection.state = patch.state;
   if (patch.actions !== undefined) connection.actions = structuredClone(patch.actions);
+  if (patch.presentation === null) delete connection.presentation;
+  else if (patch.presentation !== undefined)
+    connection.presentation = structuredClone(patch.presentation);
   if (!passiveStateClaimHasEvidence(draft, connection)) {
     appMapFail(
       "invalid-map",

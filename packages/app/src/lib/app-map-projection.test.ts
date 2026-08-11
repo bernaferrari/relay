@@ -121,6 +121,47 @@ test("projects a canvas into ordered granular App Map changes", () => {
   assert.deepEqual(flow?.flow.connectionIds, ["continue"]);
 });
 
+test("round trips durable connector presentation", () => {
+  const styledGraph = structuredClone(graph);
+  const presentation = {
+    route: "curve" as const,
+    strokeWidth: 3 as const,
+    arrow: "end" as const,
+    sourcePort: "right" as const,
+    sourceOffset: 0.2,
+    targetPort: "left" as const,
+    targetOffset: 0.8,
+    controlOffset: { x: 12, y: -8 },
+  };
+  styledGraph.transitions[0]!.presentation = presentation;
+
+  const changes = planAppMapProjection({
+    appMap: map,
+    graph: styledGraph,
+    positions: {},
+    recipeSteps: [],
+  });
+  const create = changes.find((change) => change.kind === "connection.create");
+  assert.deepEqual(create?.connection.presentation, presentation);
+
+  const observed = structuredClone(map);
+  for (const change of changes) {
+    if (change.kind === "screen.add") {
+      observed.screens[change.input.screen.id] = change.input.screen;
+    } else if (change.kind === "connection.create") {
+      observed.connections[change.connection.id] = change.connection;
+    } else if (change.kind === "flow.save") {
+      observed.flows[change.flow.id] = change.flow;
+    }
+  }
+
+  const projected = mergeAppMapProjection(
+    { schemaVersion: 1, positions: {}, edgeLabels: {}, edgeKinds: {} },
+    observed,
+  );
+  assert.deepEqual(projected.graph?.transitions[0]?.presentation, presentation);
+});
+
 test("read projection follows observed order instead of opaque entity ids", () => {
   const observed = structuredClone(map);
   observed.screens["z-first"] = {

@@ -189,6 +189,7 @@ export function planAppMapProjection(input: {
       fromScreenId: item.fromScreenId,
       destination: structuredClone(item.destination),
       ...(item.label ? { label: item.label } : {}),
+      ...(item.presentation ? { presentation: structuredClone(item.presentation) } : {}),
       state:
         existing?.state ?? (item.state === "recorded" ? ("ready" as const) : ("draft" as const)),
       actions,
@@ -210,6 +211,7 @@ export function planAppMapProjection(input: {
           fromScreenId: existing.fromScreenId,
           destination: existing.destination,
           ...(existing.label ? { label: existing.label } : {}),
+          ...(existing.presentation ? { presentation: existing.presentation } : {}),
           state: existing.state,
           actions: existing.actions,
         },
@@ -219,7 +221,11 @@ export function planAppMapProjection(input: {
       changes.push({
         kind: "connection.update",
         connectionId: item.id,
-        patch: { ...value, ...(!item.label && existing.label ? { label: null } : {}) },
+        patch: {
+          ...value,
+          ...(!item.label && existing.label ? { label: null } : {}),
+          ...(!item.presentation && existing.presentation ? { presentation: null } : {}),
+        },
       });
     }
   }
@@ -286,6 +292,9 @@ export function mergeAppMapProjection(
         ...(sourceAnchor ? { sourceAnchor } : {}),
         mode,
         ...(connection.label ? { label: connection.label } : {}),
+        ...(connection.presentation
+          ? { presentation: structuredClone(connection.presentation) }
+          : {}),
         state: connection.state === "ready" ? ("recorded" as const) : ("needs-recording" as const),
         ...(connection.state === "ready"
           ? {

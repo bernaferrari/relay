@@ -17,6 +17,7 @@ import type {
   AppMapCombine,
   Connection,
   ConnectionPatch,
+  ConnectionPresentation,
   Flow,
   MapGroup,
   Proposal,
@@ -249,6 +250,65 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
   if (variant.baseline) assertBaseline(variant.baseline, `${label}.baseline`);
 }
 
+function assertConnectionPresentation(presentation: ConnectionPresentation, label: string): void {
+  objectValue(presentation, label);
+  if (
+    presentation.route !== undefined &&
+    presentation.route !== "elbow" &&
+    presentation.route !== "curve" &&
+    presentation.route !== "straight"
+  ) {
+    appMapFail("invalid-map", `${label}.route is unsupported`);
+  }
+  if (
+    presentation.strokeWidth !== undefined &&
+    presentation.strokeWidth !== 1 &&
+    presentation.strokeWidth !== 2 &&
+    presentation.strokeWidth !== 3
+  ) {
+    appMapFail("invalid-map", `${label}.strokeWidth must be 1, 2, or 3`);
+  }
+  if (
+    presentation.arrow !== undefined &&
+    presentation.arrow !== "end" &&
+    presentation.arrow !== "none"
+  ) {
+    appMapFail("invalid-map", `${label}.arrow is unsupported`);
+  }
+  for (const [key, port] of [
+    ["sourcePort", presentation.sourcePort],
+    ["targetPort", presentation.targetPort],
+  ] as const) {
+    if (
+      port !== undefined &&
+      port !== "auto" &&
+      port !== "left" &&
+      port !== "right" &&
+      port !== "top" &&
+      port !== "bottom"
+    ) {
+      appMapFail("invalid-map", `${label}.${key} is unsupported`);
+    }
+  }
+  for (const [key, offset] of [
+    ["sourceOffset", presentation.sourceOffset],
+    ["targetOffset", presentation.targetOffset],
+  ] as const) {
+    if (offset !== undefined && (!Number.isFinite(offset) || offset < 0 || offset > 1)) {
+      appMapFail("invalid-map", `${label}.${key} must be between 0 and 1`);
+    }
+  }
+  if (presentation.controlOffset !== undefined) {
+    objectValue(presentation.controlOffset, `${label}.controlOffset`);
+    if (
+      !Number.isFinite(presentation.controlOffset.x) ||
+      !Number.isFinite(presentation.controlOffset.y)
+    ) {
+      appMapFail("invalid-map", `${label}.controlOffset must contain finite coordinates`);
+    }
+  }
+}
+
 export function assertConnection(connection: Connection, scope: AppMapScope, label: string): void {
   assertEntity(connection, scope, label);
   identifier(connection.fromScreenId, `${label}.fromScreenId`);
@@ -263,6 +323,8 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   if (!(connection.state === "draft" || connection.state === "ready"))
     appMapFail("invalid-map", `${label}.state is unsupported`);
   assertActions(connection.actions, `${label}.actions`);
+  if (connection.presentation !== undefined)
+    assertConnectionPresentation(connection.presentation, `${label}.presentation`);
 }
 
 export function assertCaseStack(stack: CaseStack, scope: AppMapScope, label: string): void {
@@ -616,6 +678,8 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")
     appMapFail("invalid-map", `${label}.state is unsupported`);
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
+  if (patch.presentation !== undefined && patch.presentation !== null)
+    assertConnectionPresentation(patch.presentation, `${label}.presentation`);
 }
 
 export function assertAddScreenInput(

@@ -35,6 +35,7 @@ export type CanvasConnection = PrototypeConnection & {
   review?: ConnectionTakeReview;
   /** Derived from recorded evidence; absent for planned or non-targeted work. */
   sourceAnchor?: CanvasInteractionAnchor;
+  presentation?: CanvasTransition["presentation"];
 };
 
 function sourceAnchorForSteps(
@@ -79,6 +80,7 @@ export function canvasConnections(
           ...(transition.mode ? { mode: transition.mode } : {}),
           ...(transition.review ? { review: { ...transition.review } } : {}),
           ...(sourceAnchor ? { sourceAnchor } : {}),
+          ...(transition.presentation ? { presentation: { ...transition.presentation } } : {}),
           label: transition.label || (step ? transitionLabel(step) : "Record path"),
           state: transition.state,
           createdAt: transition.createdAt,

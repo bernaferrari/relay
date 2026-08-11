@@ -163,6 +163,26 @@ export type ActionSpec = ActionMetadata &
 
 export type ConnectionDestination = { kind: "screen"; screenId: string } | { kind: "end" };
 
+/** Visual presentation for a connection on the App Map canvas. These values
+ * never change execution; they are durable author overrides applied after the
+ * automatic layout has produced its baseline. */
+export type ConnectionRouteStyle = "elbow" | "curve" | "straight";
+export type ConnectionPort = "auto" | "left" | "right" | "top" | "bottom";
+export type ConnectionPresentation = {
+  route?: ConnectionRouteStyle;
+  strokeWidth?: 1 | 2 | 3;
+  arrow?: "end" | "none";
+  sourcePort?: ConnectionPort;
+  targetPort?: ConnectionPort;
+  /** Position along the selected source edge, from 0 to 1. */
+  sourceOffset?: number;
+  /** Position along the selected target edge, from 0 to 1. */
+  targetOffset?: number;
+  /** Canvas-space nudge from the automatic route. This keeps the default
+   * useful while letting a person pull a crowded wire out of the way. */
+  controlOffset?: AppMapPoint;
+};
+
 export type Connection = AppMapEntity & {
   fromScreenId: string;
   destination: ConnectionDestination;
@@ -170,6 +190,7 @@ export type Connection = AppMapEntity & {
   caseStackId?: string;
   state: "draft" | "ready";
   actions: ActionSpec[];
+  presentation?: ConnectionPresentation;
 };
 
 export type CaseExpansionStrategy = "zip" | "cartesian" | "pairwise";
@@ -456,6 +477,7 @@ export type ConnectionPatch = {
   caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
+  presentation?: ConnectionPresentation | null;
 };
 
 /** Public intent-level inputs. Relay owns scope and audit timestamps so a
@@ -464,7 +486,7 @@ export type CreateScreenInput = Pick<Screen, "id" | "title"> &
   Partial<Pick<Screen, "description" | "identity" | "position">>;
 
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
-  Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions">>;
+  Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions" | "presentation">>;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
   Partial<Pick<Routine, "description" | "parameters">>;

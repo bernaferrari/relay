@@ -1,5 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type { CanvasNote, AppMapCanvasState, ScreenVariant } from "@relay/protocol";
+import type {
+  CanvasNote,
+  AppMapCanvasState,
+  ConnectionPresentation,
+  ScreenVariant,
+} from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { useServer } from "../context/server";
@@ -1524,6 +1529,20 @@ export function AppMapWorkspace(props: {
                     setSelectedConnectionId(connection.id);
                     setSelectedNodeId(null);
                     setScreenInspectorOpen(false);
+                  }}
+                  onChangeConnectionPresentation={(connection, presentation) => {
+                    const next = structuredClone(graph());
+                    const transition = next.transitions.find((item) => item.id === connection.id);
+                    if (!transition) return;
+                    if (presentation && Object.keys(presentation).length) {
+                      transition.presentation = structuredClone(
+                        presentation as ConnectionPresentation,
+                      );
+                    } else {
+                      delete transition.presentation;
+                    }
+                    transition.updatedAt = Date.now();
+                    persistMetadata(withCanvasGraph(canvasState(), next));
                   }}
                   onRenameNode={(node) => setRenamingNodeId(node.id)}
                   onOpenNodeDetails={(node) => {

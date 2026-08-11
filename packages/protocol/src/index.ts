@@ -1234,6 +1234,9 @@ export type CanvasTransition = {
     sessionId?: string;
   };
   label?: string;
+  /** Durable canvas-only connector styling. It does not alter the actions the
+   * runner executes. */
+  presentation?: import("./app-map.js").ConnectionPresentation;
   state: "recorded" | "needs-recording";
   kind: "forward" | "return";
   createdAt: number;

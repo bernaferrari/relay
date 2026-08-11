@@ -3,6 +3,7 @@ import test from "node:test";
 import type { MapTreeNode } from "./app-map-tree";
 import {
   canvasBounds,
+  canvasEdgeArrowPath,
   canvasEdgeGeometry,
   fitCanvasViewport,
   nextBranchPosition,
@@ -46,6 +47,26 @@ test("canvas geometry is total while a graph is mid-edit", () => {
       (node) => node,
     ).path,
     new RegExp(`^M ${SCREEN_CARD_WIDTH} 117 C`),
+  );
+});
+
+test("connector arrows share scene geometry with the route", () => {
+  assert.equal(
+    canvasEdgeArrowPath(
+      {
+        endPoint: { x: 20, y: 10 },
+        hitPoints: [
+          { x: 0, y: 10 },
+          { x: 20, y: 10 },
+        ],
+      },
+      2,
+    ),
+    "M 10.75 14.65 L 20 10 L 10.75 5.35",
+  );
+  assert.equal(
+    canvasEdgeArrowPath({ endPoint: { x: 20, y: 10 }, hitPoints: [{ x: 20, y: 10 }] }),
+    "",
   );
 });
 
@@ -138,6 +159,65 @@ test("connections keep a stable cubic topology near intervening screens", () => 
   assert.match(after.path, /^M 240 117 C /);
   assert.doesNotMatch(before.path, /[LQ]/);
   assert.doesNotMatch(after.path, /[LQ]/);
+});
+
+test("people can pin connector endpoints to any card edge", () => {
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      presentation: {
+        sourcePort: "bottom",
+        sourceOffset: 0.25,
+        targetPort: "top",
+        targetOffset: 0.75,
+      },
+    },
+    [start, settings],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 60, y: 204 });
+  assert.deepEqual(geometry.endPoint, { x: 500, y: 114 });
+});
+
+test("elbow connectors use rounded corners instead of brittle sharp turns", () => {
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      presentation: { route: "elbow" },
+    },
+    [start, settings],
+    (node) => node,
+  );
+
+  assert.match(geometry.path, / Q /);
+});
+
+test("dragging a curve handle moves its visible midpoint exactly", () => {
+  const base = canvasEdgeGeometry(
+    { from: "start", to: "settings", kind: "forward" },
+    [start, settings],
+    (node) => node,
+  );
+  const adjusted = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      presentation: { controlOffset: { x: 30, y: -20 } },
+    },
+    [start, settings],
+    (node) => node,
+  );
+
+  assert.deepEqual(adjusted.labelPoint, {
+    x: base.labelPoint.x + 30,
+    y: base.labelPoint.y - 20,
+  });
 });
 
 test("recorded origins stay exact when another screen is near the connection", () => {
