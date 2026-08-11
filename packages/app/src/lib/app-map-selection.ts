@@ -1,4 +1,9 @@
-import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH, type CanvasPoint } from "./app-map-canvas-layout";
+import {
+  screenCardGeometry,
+  screenFrameBounds,
+  type CanvasPoint,
+  type ScreenCardGeometry,
+} from "./app-map-canvas-layout";
 
 export type CanvasSelectionRect = {
   left: number;
@@ -11,6 +16,7 @@ export type CanvasSelectionRect = {
 
 export const APP_MAP_MARQUEE_THRESHOLD = 4;
 export const APP_MAP_SELECTION_PADDING = 6;
+const FALLBACK_SCREEN_GEOMETRY = screenCardGeometry();
 
 export function canvasSelectionRect(start: CanvasPoint, end: CanvasPoint): CanvasSelectionRect {
   const left = Math.min(start.x, end.x);
@@ -24,15 +30,17 @@ export function screenIdsInSelection(
   screenIds: readonly string[],
   positions: Readonly<Record<string, CanvasPoint>>,
   selection: CanvasSelectionRect,
+  geometries?: Readonly<Record<string, ScreenCardGeometry>>,
 ): string[] {
   return screenIds.filter((id) => {
     const position = positions[id];
     if (!position) return false;
+    const frame = screenFrameBounds(position, geometries?.[id] ?? FALLBACK_SCREEN_GEOMETRY);
     return (
-      position.x <= selection.right &&
-      position.x + SCREEN_CARD_WIDTH >= selection.left &&
-      position.y <= selection.bottom &&
-      position.y + SCREEN_CARD_HEIGHT >= selection.top
+      frame.left <= selection.right &&
+      frame.right >= selection.left &&
+      frame.top <= selection.bottom &&
+      frame.bottom >= selection.top
     );
   });
 }
@@ -104,17 +112,27 @@ export function connectionIdsInSelection(
 export function selectedScreensRect(
   screenIds: readonly string[],
   positions: Readonly<Record<string, CanvasPoint>>,
+  geometries?: Readonly<Record<string, ScreenCardGeometry>>,
   padding = APP_MAP_SELECTION_PADDING,
 ): CanvasSelectionRect | null {
   const members = screenIds.flatMap((id) => {
     const position = positions[id];
-    return position ? [position] : [];
+    if (!position) return [];
+    const frame = screenFrameBounds(position, geometries?.[id] ?? FALLBACK_SCREEN_GEOMETRY);
+    return [
+      {
+        left: frame.left,
+        top: frame.top,
+        width: frame.right - frame.left,
+        height: frame.bottom - frame.top,
+      },
+    ];
   });
   if (!members.length) return null;
-  const left = Math.min(...members.map((point) => point.x)) - padding;
-  const top = Math.min(...members.map((point) => point.y)) - padding;
-  const right = Math.max(...members.map((point) => point.x + SCREEN_CARD_WIDTH)) + padding;
-  const bottom = Math.max(...members.map((point) => point.y + SCREEN_CARD_HEIGHT)) + padding;
+  const left = Math.min(...members.map((rect) => rect.left)) - padding;
+  const top = Math.min(...members.map((rect) => rect.top)) - padding;
+  const right = Math.max(...members.map((rect) => rect.left + rect.width)) + padding;
+  const bottom = Math.max(...members.map((rect) => rect.top + rect.height)) + padding;
   return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
 

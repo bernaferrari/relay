@@ -3,12 +3,13 @@ import type { MapGroup } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mapGroupGeometry } from "../lib/app-map-groups";
 import { selectedScreensRect } from "../lib/app-map-selection";
-import type { CanvasPoint } from "../lib/app-map-canvas-layout";
+import type { CanvasPoint, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
 import { Icon } from "./icon";
 
 export function AppMapGroupsLayer(props: {
   groups: readonly MapGroup[];
   positions: Readonly<Record<string, CanvasPoint>>;
+  geometries?: Readonly<Record<string, ScreenCardGeometry>>;
   selectedGroupId: string | null;
   renamingGroupId: string | null;
   selectedScreenIds: ReadonlySet<string>;
@@ -25,7 +26,7 @@ export function AppMapGroupsLayer(props: {
   onGroupSelection: () => void;
 }) {
   const selectionGeometry = createMemo(() =>
-    selectedScreensRect([...props.selectedScreenIds], props.positions),
+    selectedScreensRect([...props.selectedScreenIds], props.positions, props.geometries),
   );
   const selectedGroup = createMemo(
     () => props.groups.find((group) => group.id === props.selectedGroupId) ?? null,

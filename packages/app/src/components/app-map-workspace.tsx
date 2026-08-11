@@ -23,7 +23,9 @@ import {
   openCanvasViewport,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
+  screenCardGeometry,
   type CanvasPoint,
+  type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
 import {
@@ -293,6 +295,19 @@ export function AppMapWorkspace(props: {
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
   const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState>();
+  const positions = () => canvasState().positions;
+  const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
+  const resolvedPositions = createMemo(() =>
+    Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
+  );
+  const orientationEvidenceForNode = (node: MapTreeNode) =>
+    screenshotOrientationEvidence(server, draft.steps()[node.representativeStepIndex]) ||
+    variantOrientationEvidence(activeAppMap(), node.id);
+  const geometryForNode = (node: MapTreeNode): ScreenCardGeometry =>
+    screenCardGeometry(orientationEvidenceForNode(node));
+  const screenGeometries = createMemo<Record<string, ScreenCardGeometry>>(() =>
+    Object.fromEntries(tree().nodes.map((node) => [node.id, geometryForNode(node)] as const)),
+  );
   const canvasGestures = useAppMapCanvasGestures({
     view,
     setView,
@@ -303,6 +318,7 @@ export function AppMapWorkspace(props: {
     // Newly authored and auto-laid-out screens are not necessarily persisted
     // in canvasState.positions yet.
     positions: () => resolvedPositions(),
+    geometries: () => screenGeometries(),
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
@@ -318,6 +334,8 @@ export function AppMapWorkspace(props: {
           },
           tree().nodes,
           positionFor,
+          undefined,
+          geometryForNode,
         ),
       })),
     setSelectedConnectionId,
@@ -422,7 +440,6 @@ export function AppMapWorkspace(props: {
     openLiveDevice();
     void recorder.enterRecordMode();
   });
-  const positions = () => canvasState().positions;
   const titleFor = (node: MapTreeNode) =>
     canvasState().screenTitles?.[node.id]?.trim() || node.title;
   const titleForScreen = (screenId: string) => {
@@ -430,10 +447,6 @@ export function AppMapWorkspace(props: {
     return node ? titleFor(node) : "Untitled screen";
   };
   const hasCanvasContent = () => hasMap() || (canvasState().notes?.length ?? 0) > 0;
-  const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
-  const resolvedPositions = createMemo(() =>
-    Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
-  );
   const liveLocation = createMemo(() =>
     matchLiveScreen(Object.values(activeAppMap()?.screens ?? {}), [
       server.snapshot()?.screenIdentity?.fingerprint,
@@ -1397,30 +1410,62 @@ export function AppMapWorkspace(props: {
                     const vertical =
                       guide.kind === "alignment" ? guide.axis === "x" : guide.axis === "y";
                     const segments = guide.segments ?? [guide];
+                    const hairline = 1 / view().scale;
+                    const capLength = 5 / view().scale;
                     return (
                       <For each={segments}>
-                        {(segment) => (
-                          <div
-                            class="pointer-events-none absolute z-[49] bg-[var(--text-interactive-base)] shadow-[0_0_0_0.5px_color-mix(in_srgb,var(--background-base)_65%,transparent)]"
-                            data-app-map-snap-guide={guide.kind}
-                            aria-hidden="true"
-                            style={
-                              vertical
-                                ? {
-                                    left: `${guide.position}px`,
-                                    top: `${segment.start}px`,
-                                    width: `${1 / view().scale}px`,
-                                    height: `${Math.max(1, segment.end - segment.start)}px`,
-                                  }
-                                : {
-                                    left: `${segment.start}px`,
-                                    top: `${guide.position}px`,
-                                    width: `${Math.max(1, segment.end - segment.start)}px`,
-                                    height: `${1 / view().scale}px`,
-                                  }
-                            }
-                          />
-                        )}
+                        {(segment) => {
+                          const length = Math.max(hairline, segment.end - segment.start);
+                          const spacing = guide.kind === "spacing";
+                          return (
+                            <div class="contents" aria-hidden="true">
+                              <div
+                                class="pointer-events-none absolute z-[49] bg-[var(--text-interactive-base)]"
+                                data-app-map-snap-guide={guide.kind}
+                                style={
+                                  vertical
+                                    ? {
+                                        left: `${guide.position}px`,
+                                        top: `${segment.start}px`,
+                                        width: `${hairline}px`,
+                                        height: `${length}px`,
+                                      }
+                                    : {
+                                        left: `${segment.start}px`,
+                                        top: `${guide.position}px`,
+                                        width: `${length}px`,
+                                        height: `${hairline}px`,
+                                      }
+                                }
+                              />
+                              <Show when={spacing}>
+                                <For each={[segment.start, segment.end]}>
+                                  {(endpoint) => (
+                                    <div
+                                      class="pointer-events-none absolute z-[49] bg-[var(--text-interactive-base)]"
+                                      data-app-map-snap-cap
+                                      style={
+                                        vertical
+                                          ? {
+                                              left: `${guide.position - capLength / 2}px`,
+                                              top: `${endpoint}px`,
+                                              width: `${capLength}px`,
+                                              height: `${hairline}px`,
+                                            }
+                                          : {
+                                              left: `${endpoint}px`,
+                                              top: `${guide.position - capLength / 2}px`,
+                                              width: `${hairline}px`,
+                                              height: `${capLength}px`,
+                                            }
+                                      }
+                                    />
+                                  )}
+                                </For>
+                              </Show>
+                            </div>
+                          );
+                        }}
                       </For>
                     );
                   }}
@@ -1448,12 +1493,7 @@ export function AppMapWorkspace(props: {
                     variantScreenshotUrl(server, activeAppMap(), node.id) ||
                     ""
                   }
-                  orientationEvidenceFor={(node) =>
-                    screenshotOrientationEvidence(
-                      server,
-                      draft.steps()[node.representativeStepIndex],
-                    ) || variantOrientationEvidence(activeAppMap(), node.id)
-                  }
+                  orientationEvidenceFor={orientationEvidenceForNode}
                   isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
                   connectionRunState={(connectionId) =>

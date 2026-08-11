@@ -4,6 +4,7 @@ import {
   canvasPointFromClientRect,
   type CanvasEdgeGeometry,
   type CanvasPoint,
+  type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
 import {
@@ -14,7 +15,11 @@ import {
   screenIdsInSelection,
   type CanvasSelectionRect,
 } from "../lib/app-map-selection";
-import { snapDraggedScreens, type CanvasSnapGuide } from "../lib/app-map-snapping";
+import {
+  snapDraggedScreens,
+  type CanvasSnapGuide,
+  type CanvasSnapLock,
+} from "../lib/app-map-snapping";
 
 type Marquee = {
   pointerId: number;
@@ -35,6 +40,7 @@ type NodeDrag = {
   groupId?: string;
   moved: boolean;
   before: AppMapCanvasState;
+  snapLocks: CanvasSnapLock[];
 };
 
 type NoteDrag = {
@@ -53,6 +59,7 @@ export function useAppMapCanvasGestures(options: {
   setCanvasState: Setter<AppMapCanvasState>;
   screenIds: Accessor<string[]>;
   positions: Accessor<Record<string, CanvasPoint>>;
+  geometries: Accessor<Record<string, ScreenCardGeometry>>;
   selectedNodeIds: Accessor<string[]>;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedNodeId: (id: string | null) => void;
@@ -145,6 +152,7 @@ export function useAppMapCanvasGestures(options: {
         options.screenIds(),
         options.positions(),
         canvasSelectionRect(marquee.start, current),
+        options.geometries(),
       );
       const selected = mergeSelectedScreenIds(marquee.baseIds, hits, marquee.additive);
       options.setSelectedNodeIds(selected);
@@ -177,13 +185,16 @@ export function useAppMapCanvasGestures(options: {
       draggedIds: drag.ids,
       origins: drag.origins,
       positions: options.positions(),
+      geometries: options.geometries(),
       candidateDelta: {
         x: (clientX - drag.x) / scale,
         y: (clientY - drag.y) / scale,
       },
       // Keep the perceived capture radius constant at every zoom level.
       threshold: 7 / scale,
+      previousLocks: drag.snapLocks,
     });
+    drag.snapLocks = snap.locks;
     setSnapGuides(snap.guides);
     options.setCanvasState((current) => ({
       ...current,
@@ -257,8 +268,13 @@ export function useAppMapCanvasGestures(options: {
     });
   };
 
-  const beginNodeDrag = (drag: Omit<NodeDrag, "moved" | "before">) => {
-    nodeDrag = { ...drag, moved: false, before: structuredClone(options.canvasState()) };
+  const beginNodeDrag = (drag: Omit<NodeDrag, "moved" | "before" | "snapLocks">) => {
+    nodeDrag = {
+      ...drag,
+      moved: false,
+      before: structuredClone(options.canvasState()),
+      snapLocks: [],
+    };
   };
 
   const beginNoteDrag = (drag: Omit<NoteDrag, "moved" | "before">) => {

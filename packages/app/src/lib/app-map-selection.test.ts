@@ -15,6 +15,29 @@ const positions = {
   outside: { x: 800, y: 700 },
 };
 
+const geometries = {
+  account: {
+    width: 240,
+    height: 230,
+    frameLeft: 64,
+    frameTop: 30,
+    frameWidth: 112,
+    frameHeight: 200,
+    mediaWidth: 112,
+    mediaHeight: 200,
+  },
+  security: {
+    width: 240,
+    height: 230,
+    frameLeft: 64,
+    frameTop: 30,
+    frameWidth: 112,
+    frameHeight: 200,
+    mediaWidth: 112,
+    mediaHeight: 200,
+  },
+};
+
 test("marquee geometry is stable in every drag direction", () => {
   assert.deepEqual(canvasSelectionRect({ x: 540, y: 500 }, { x: 80, y: 60 }), {
     left: 80,
@@ -82,11 +105,24 @@ test("marquee does not select a collinear connection outside its bounds", () => 
 test("temporary multi-selection gets a close collective outline", () => {
   assert.deepEqual(selectedScreensRect(["account", "security"], positions), {
     left: 94,
-    top: 94,
+    top: 124,
     right: 586,
-    bottom: 356,
+    bottom: 330,
     width: 492,
-    height: 262,
+    height: 206,
+  });
+});
+
+test("marquee and collective outlines ignore screen titles and use preview frames", () => {
+  const titleOnly = canvasSelectionRect({ x: 100, y: 100 }, { x: 250, y: 124 });
+  assert.deepEqual(screenIdsInSelection(["account"], positions, titleOnly, geometries), []);
+  assert.deepEqual(selectedScreensRect(["account", "security"], positions, geometries), {
+    left: 158,
+    top: 124,
+    right: 522,
+    bottom: 356,
+    width: 364,
+    height: 232,
   });
 });
 

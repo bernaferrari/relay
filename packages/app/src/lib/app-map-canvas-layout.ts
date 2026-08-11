@@ -71,6 +71,40 @@ export type ScreenCardGeometry = {
   mediaHeight: number;
 };
 
+/** The screenshot/device rectangle rendered inside a screen's canvas slot.
+ * Titles and other metadata deliberately do not participate in this geometry. */
+export type CanvasFrameGeometry = Pick<
+  ScreenCardGeometry,
+  "frameLeft" | "frameTop" | "frameWidth" | "frameHeight"
+>;
+
+export type CanvasFrameBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+};
+
+export function screenFrameBounds(
+  position: CanvasPoint,
+  geometry: CanvasFrameGeometry,
+): CanvasFrameBounds {
+  const left = position.x + geometry.frameLeft;
+  const top = position.y + geometry.frameTop;
+  const right = left + geometry.frameWidth;
+  const bottom = top + geometry.frameHeight;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
 /** Preserve the target's real silhouette without allowing an extreme viewport
  * to destabilize the graph. Unknown screens keep the neutral preview used by
  * uncaptured states; known phones and tablets fit inside the same layout slot. */
@@ -262,8 +296,8 @@ export function canvasEdgeGeometry(
   const sourcePoint = sourceAnchor
     ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
     : undefined;
-  const fromFrame = frameBounds(fromPosition, fromGeometry);
-  const toFrame = frameBounds(toPosition, toGeometry);
+  const fromFrame = screenFrameBounds(fromPosition, fromGeometry);
+  const toFrame = screenFrameBounds(toPosition, toGeometry);
   const direction = relativePortDirection(fromFrame, toFrame);
   const defaultStart = portPoint(fromFrame, direction);
   const start = sourcePoint
@@ -298,31 +332,7 @@ export function canvasEdgeGeometry(
 
 type EdgePortDirection = "left" | "right" | "top" | "bottom";
 
-type FrameBounds = {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  centerX: number;
-  centerY: number;
-};
-
-function frameBounds(position: CanvasPoint, geometry: ScreenCardGeometry): FrameBounds {
-  const left = position.x + geometry.frameLeft;
-  const top = position.y + geometry.frameTop;
-  const right = left + geometry.frameWidth;
-  const bottom = top + geometry.frameHeight;
-  return {
-    left,
-    top,
-    right,
-    bottom,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2,
-  };
-}
-
-function relativePortDirection(from: FrameBounds, to: FrameBounds): EdgePortDirection {
+function relativePortDirection(from: CanvasFrameBounds, to: CanvasFrameBounds): EdgePortDirection {
   if (to.left >= from.right) return "right";
   if (to.right <= from.left) return "left";
   if (to.top >= from.bottom) return "bottom";
@@ -341,14 +351,14 @@ function oppositePortDirection(direction: EdgePortDirection): EdgePortDirection 
   return "top";
 }
 
-function portPoint(frame: FrameBounds, direction: EdgePortDirection): CanvasPoint {
+function portPoint(frame: CanvasFrameBounds, direction: EdgePortDirection): CanvasPoint {
   if (direction === "left") return { x: frame.left, y: frame.centerY };
   if (direction === "right") return { x: frame.right, y: frame.centerY };
   if (direction === "top") return { x: frame.centerX, y: frame.top };
   return { x: frame.centerX, y: frame.bottom };
 }
 
-function framesAreSeparated(from: FrameBounds, to: FrameBounds): boolean {
+function framesAreSeparated(from: CanvasFrameBounds, to: CanvasFrameBounds): boolean {
   return (
     from.right <= to.left || to.right <= from.left || from.bottom <= to.top || to.bottom <= from.top
   );
