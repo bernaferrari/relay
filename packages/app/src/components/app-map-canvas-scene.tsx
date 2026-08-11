@@ -60,26 +60,22 @@ export type AppMapCanvasSceneProps = {
   onOpenCombineResults?: (jobId: string) => void;
 };
 
-const markerClass = (
+type ConnectionVisualTone = "neutral" | "selected" | "failed" | "healed";
+
+const connectionVisualTone = (
   state: AppMapRunPresentationState | undefined,
   connection: CanvasConnection,
   selected: boolean,
-) =>
+): ConnectionVisualTone =>
   state === "failed"
     ? "failed"
-    : state === "healed"
-      ? "healed"
-      : state === "passed"
-        ? "verified"
-        : selected
-          ? "selected"
-          : connection.review?.status === "failed"
-            ? "failed"
-            : connection.review?.status === "verified"
-              ? "verified"
-              : connection.kind === "return"
-                ? "return"
-                : "arrow";
+    : state === "running" || selected
+      ? "selected"
+      : state === "healed"
+        ? "healed"
+        : connection.review?.status === "failed"
+          ? "failed"
+          : "neutral";
 
 const connectionStrokeClass = (
   state: AppMapRunPresentationState | undefined,
@@ -92,17 +88,15 @@ const connectionStrokeClass = (
       ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
       : state === "healed"
         ? "stroke-[var(--icon-warning-base)]"
-        : state === "passed"
-          ? "stroke-[var(--icon-success-base)]"
-          : selected
-            ? "stroke-[var(--text-interactive-base)]"
-            : connection.state === "needs-recording"
-              ? "stroke-[var(--text-weak)] [stroke-dasharray:5_5]"
-              : connection.review?.status === "failed"
-                ? "stroke-[var(--icon-critical-base)]"
-                : connection.kind === "return"
-                  ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                  : "stroke-[color-mix(in_srgb,var(--text-weak)_78%,transparent)]";
+        : selected
+          ? "stroke-[var(--text-interactive-base)]"
+          : connection.state === "needs-recording"
+            ? "stroke-[var(--text-weak)] [stroke-dasharray:5_5]"
+            : connection.review?.status === "failed"
+              ? "stroke-[var(--icon-critical-base)]"
+              : connection.kind === "return"
+                ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
+                : "stroke-[color-mix(in_srgb,var(--text-base)_68%,transparent)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const [screenRotations, setScreenRotations] = createSignal<Record<string, CanvasScreenRotation>>(
@@ -235,10 +229,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           <For
             each={
               [
-                ["arrow", "var(--text-weak)"],
-                ["return", "var(--text-weak)"],
+                ["neutral", "var(--text-base)"],
                 ["selected", "var(--text-interactive-base)"],
-                ["verified", "var(--icon-success-base)"],
                 ["failed", "var(--icon-critical-base)"],
                 ["healed", "var(--icon-warning-base)"],
               ] as const
@@ -247,16 +239,17 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             {([id, color]) => (
               <marker
                 id={`app-map-${id}`}
-                viewBox="0 0 10 10"
-                refX="8"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
+                viewBox="0 0 14 14"
+                refX="12"
+                refY="7"
+                markerWidth="14"
+                markerHeight="14"
+                markerUnits="userSpaceOnUse"
                 orient="auto"
               >
                 <path
-                  d="M 1 1 L 8 5 L 1 9"
-                  style={{ fill: "none", stroke: color, "stroke-width": 1.7 }}
+                  d="M 2 1.75 L 12 7 L 2 12.25"
+                  style={{ fill: "none", stroke: color, "stroke-width": 2.25 }}
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 />
@@ -301,15 +294,16 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                   )}
                   stroke-width={
                     props.selectedConnectionId === connection.id
-                      ? 2
+                      ? 2.5
                       : connection.state === "needs-recording"
-                        ? 1.5
+                        ? 1.75
                         : connection.kind === "return"
-                          ? 1.5
-                          : 1.5
+                          ? 1.75
+                          : 2
                   }
                   stroke-linecap="round"
-                  marker-end={`url(#app-map-${markerClass(
+                  stroke-linejoin="round"
+                  marker-end={`url(#app-map-${connectionVisualTone(
                     runState(),
                     connection,
                     props.selectedConnectionId === connection.id,
