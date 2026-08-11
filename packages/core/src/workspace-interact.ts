@@ -256,6 +256,24 @@ export async function interact(
   input: InteractInput,
   opts?: { serial?: string },
 ): Promise<InteractResult> {
+  if (input.kind === "swipe") {
+    const validPoint = (point: unknown): point is InteractPoint => {
+      if (!point || typeof point !== "object") return false;
+      const value = point as Partial<InteractPoint>;
+      return Number.isFinite(value.x) && Number.isFinite(value.y);
+    };
+    if (!validPoint(input.from) || !validPoint(input.to)) {
+      throw new Error(
+        'Swipe requires "from" and "to" points, for example {"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650}}.',
+      );
+    }
+    if (
+      input.durationMs !== undefined &&
+      (!Number.isFinite(input.durationMs) || input.durationMs < 50 || input.durationMs > 5_000)
+    ) {
+      throw new Error("Swipe durationMs must be between 50 and 5000.");
+    }
+  }
   const target = await resolveRuntimeTarget(opts?.serial);
   return runWithTargetContext(target.context, async () => {
     const context = currentTargetContext();

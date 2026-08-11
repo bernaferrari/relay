@@ -16,6 +16,8 @@ import type {
   CorpusControl,
   CorpusAnalysisReport,
   CorpusFinding,
+  CorpusJourney,
+  CorpusJourneyStep,
   CorpusCoverageReport,
   CorpusMapAction,
   CorpusMapPlan,
@@ -39,7 +41,9 @@ import {
   pressLabel,
   pressMatchingText,
   resetDeviceClient,
+  scrollUp,
   scrollDown,
+  setAndroidAppLocale,
   sleep,
   type Device,
 } from "./device.js";
@@ -125,6 +129,11 @@ function screenAssetPath(sessionId: string, screenId: string): string {
   return join(sessionDir(sessionId), "screens", `${screenId}.png`);
 }
 
+function screenAccessibilityAssetPath(sessionId: string, screenId: string): string {
+  if (!/^screen-[A-Za-z0-9-]+$/.test(screenId)) throw new Error("invalid corpus screen id");
+  return join(sessionDir(sessionId), "screens", `${screenId}.accessibility.json`);
+}
+
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -177,21 +186,84 @@ function normalizeNavSteps(value: unknown, label: string): CorpusNavStep[] | und
         `${label}[${index}].target.identifier`,
         240,
       );
+      const stableKey = optionalText(target.stableKey, `${label}[${index}].target.stableKey`, 500);
       const tapLabel = optionalText(target.label, `${label}[${index}].target.label`, 240);
       const text = optionalText(target.text, `${label}[${index}].target.text`, 240);
-      if (!identifier && !tapLabel && !text) {
-        throw new Error(`${label}[${index}] tap target requires identifier, label, or text`);
+      const point = target.point as Record<string, unknown> | undefined;
+      const x = point ? Number(point.x) : Number.NaN;
+      const y = point ? Number(point.y) : Number.NaN;
+      const validPoint = Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0;
+      if (!stableKey && !identifier && !tapLabel && !text && !validPoint) {
+        throw new Error(`${label}[${index}] tap target requires identifier, label, text, or point`);
       }
       return {
         kind: "tap",
         target: {
           ...(identifier ? { identifier } : {}),
+          ...(stableKey ? { stableKey } : {}),
           ...(tapLabel ? { label: tapLabel } : {}),
           ...(text ? { text } : {}),
+          ...(validPoint ? { point: { x, y } } : {}),
         },
       };
     }
     throw new Error(`${label}[${index}].kind is unsupported`);
+  });
+}
+
+function normalizeJourneys(value: unknown): CorpusJourney[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("journeys must be an array");
+  const seen = new Set<string>();
+  return value.map((journey, journeyIndex) => {
+    if (!journey || typeof journey !== "object") {
+      throw new Error(`journeys[${journeyIndex}] is invalid`);
+    }
+    const record = journey as Record<string, unknown>;
+    const id = requiredText(record.id, `journeys[${journeyIndex}].id`, 120);
+    if (seen.has(id)) throw new Error(`duplicate journey id: ${id}`);
+    seen.add(id);
+    const name = requiredText(record.name, `journeys[${journeyIndex}].name`, 160);
+    if (!Array.isArray(record.steps) || !record.steps.length) {
+      throw new Error(`journeys[${journeyIndex}].steps must not be empty`);
+    }
+    const steps = record.steps.map((step, stepIndex): CorpusJourneyStep => {
+      if (!step || typeof step !== "object") {
+        throw new Error(`journeys[${journeyIndex}].steps[${stepIndex}] is invalid`);
+      }
+      const stepRecord = step as Record<string, unknown>;
+      if (stepRecord.kind === "capture") {
+        return {
+          kind: "capture",
+          name: requiredText(
+            stepRecord.name,
+            `journeys[${journeyIndex}].steps[${stepIndex}].name`,
+            160,
+          ),
+          ...(optionalText(
+            stepRecord.key,
+            `journeys[${journeyIndex}].steps[${stepIndex}].key`,
+            120,
+          )
+            ? {
+                key: optionalText(
+                  stepRecord.key,
+                  `journeys[${journeyIndex}].steps[${stepIndex}].key`,
+                  120,
+                )!,
+              }
+            : {}),
+        };
+      }
+      return normalizeNavSteps(
+        [step],
+        `journeys[${journeyIndex}].steps[${stepIndex}]`,
+      )![0]!;
+    });
+    if (!steps.some((step) => step.kind === "capture")) {
+      throw new Error(`journey ${id} requires at least one capture step`);
+    }
+    return { id, name, steps };
   });
 }
 
@@ -266,6 +338,7 @@ function normalizeScope(scope?: Partial<CorpusScope>): CorpusScope {
       ? { languagePath: normalizeNavSteps(scope?.languagePath, "languagePath") }
       : {}),
     ...(languageOptions && Object.keys(languageOptions).length ? { languageOptions } : {}),
+    ...(normalizeJourneys(scope?.journeys) ? { journeys: normalizeJourneys(scope?.journeys) } : {}),
     allowSensitiveControls: scope?.allowSensitiveControls ?? false,
   };
 }
@@ -368,6 +441,58 @@ function isSettingsRoot(nodes: SnapshotNode[]): boolean {
   );
 }
 
+function structuralControlKey(
+  nodes: SnapshotNode[],
+  node: SnapshotNode,
+  fallbackIndex: number,
+): string {
+  const byIndex = new Map(
+    nodes.map((candidate, index) => [candidate.index ?? index, candidate] as const),
+  );
+  const segments: string[] = [];
+  let current: SnapshotNode | undefined = node;
+  let guard = 0;
+  while (current && guard < 14) {
+    const parentIndex = current.parentIndex;
+    const type = (current.role ?? current.type ?? "control").trim().toLocaleLowerCase();
+    const siblings = nodes.filter((candidate) => candidate.parentIndex === parentIndex);
+    const sameType = siblings.filter(
+      (candidate) =>
+        (candidate.role ?? candidate.type ?? "control").trim().toLocaleLowerCase() === type,
+    );
+    const ordinal = Math.max(0, sameType.indexOf(current));
+    segments.push(`${type}[${ordinal}]`);
+    if (parentIndex === undefined) break;
+    current = byIndex.get(parentIndex);
+    guard += 1;
+  }
+  return `structure:${segments.reverse().join("/") || `control[${fallbackIndex}]`}`;
+}
+
+function isSystemOrKeyboardNode(node: SnapshotNode): boolean {
+  const owner = `${node.bundleId ?? ""} ${node.identifier ?? ""}`;
+  return /(?:^|\s)(?:com\.android\.systemui|com\.touchtype\.swiftkey|com\.google\.android\.inputmethod\.latin|com\.samsung\.android\.honeyboard)(?::|\/|\.|\s|$)/i.test(
+    owner,
+  );
+}
+
+function actionableAnchor(nodes: SnapshotNode[], node: SnapshotNode): SnapshotNode | undefined {
+  if (node.hittable) return node;
+  const byIndex = new Map(
+    nodes.map((candidate, fallback) => [candidate.index ?? fallback, candidate] as const),
+  );
+  let parentIndex = node.parentIndex;
+  let guard = 0;
+  while (parentIndex !== undefined && guard < 16) {
+    const parent = byIndex.get(parentIndex);
+    if (!parent) return undefined;
+    if (parent.hittable) return parent;
+    parentIndex = parent.parentIndex;
+    guard += 1;
+  }
+  return undefined;
+}
+
 /** Interactive candidates for the corpus crawl. Prefer stable identifiers. */
 export function corpusControls(
   nodes: SnapshotNode[],
@@ -376,20 +501,27 @@ export function corpusControls(
   const seen = new Set<string>();
   const nested = isNestedSettingsPage(nodes);
   return nodes
-    .filter(
-      (node) =>
-        node.visibleToUser !== false &&
-        node.enabled !== false &&
-        (node.hittable || node.identifier || node.ref || node.type === "Cell"),
-    )
+    .filter((node) => node.visibleToUser !== false && node.enabled !== false)
     .flatMap((node, index) => {
-      const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
+      if (isSystemOrKeyboardNode(node)) return [];
+      const anchor = actionableAnchor(nodes, node);
+      if (anchor && isSystemOrKeyboardNode(anchor)) return [];
+      const visibleLabel = (node.label ?? node.value ?? "").trim();
+      const identifierOnlyControl =
+        !visibleLabel &&
+        Boolean(node.identifier) &&
+        Boolean(anchor) &&
+        !/framelayout|linearlayout|scrollview|content|root/i.test(
+          `${node.type ?? ""} ${node.identifier ?? ""}`,
+        );
+      const label = visibleLabel || (identifierOnlyControl ? node.identifier!.trim() : "");
       if (!label) return [];
       if (isCorpusChromeLabel(label)) return [];
       if (isToggleControl(node, label)) return [];
       if (!options?.allowSensitive && unsafeControlText(label)) return [];
+      if (!anchor && node.type !== "Cell" && !node.identifier) return [];
       // Nested pages often still expose the parent settings list in the AX tree.
-      if (nested && node.hittable === false && !node.identifier) return [];
+      if (nested && node.hittable === false && !node.identifier && !anchor) return [];
       const role = `${node.role ?? ""} ${node.type ?? ""}`.toLocaleLowerCase();
       if (
         /statictext|header|heading/.test(role) &&
@@ -398,18 +530,30 @@ export function corpusControls(
       ) {
         return [];
       }
-      const stableKey = corpusControlStableKey(node);
-      const target = node.identifier
-        ? { identifier: node.identifier }
-        : node.ref
-          ? { ref: node.ref }
-          : stableLabelKey(node.label)
-            ? { label: node.label! }
-            : node.label
-              ? { label: node.label }
-              : undefined;
+      const semanticKey =
+        stableLabelKey(anchor?.label) ??
+        stableLabelKey(anchor?.value) ??
+        stableLabelKey(node.label) ??
+        stableLabelKey(node.value);
+      const stableKey =
+        anchor?.identifier || node.identifier || semanticKey
+          ? corpusControlStableKey(anchor ?? node)
+          : structuralControlKey(nodes, anchor ?? node, index);
+      const target = anchor?.identifier
+        ? { identifier: anchor.identifier }
+        : anchor?.ref
+          ? { ref: anchor.ref }
+          : node.identifier
+            ? { identifier: node.identifier }
+            : node.ref
+              ? { ref: node.ref }
+              : stableLabelKey(node.label)
+                ? { label: node.label! }
+                : node.label
+                  ? { label: node.label }
+                  : undefined;
       if (!target) return [];
-      const key = `${stableKey}:${JSON.stringify(target)}`;
+      const key = stableKey;
       if (seen.has(key)) return [];
       seen.add(key);
       return [
@@ -641,6 +785,7 @@ export async function recordCorpusScreen(input: {
   pathKeys: string[];
   title?: string;
   screenshotPath?: string;
+  accessibility?: unknown;
   makeCurrent?: boolean;
 }): Promise<{ session: CorpusSession; screen: CorpusScreen; isNew: boolean }> {
   const session = await readCorpusSession(input.sessionId);
@@ -704,6 +849,14 @@ export async function recordCorpusScreen(input: {
     screen.snapshotDigest = createHash("sha256")
       .update(await readFile(destination))
       .digest("hex");
+  }
+  if (input.accessibility !== undefined) {
+    await mkdir(join(sessionDir(session.id), "screens"), { recursive: true });
+    const destination = screenAccessibilityAssetPath(session.id, screen.id);
+    const serialized = `${JSON.stringify(input.accessibility, null, 2)}\n`;
+    await writeFile(destination, serialized, "utf8");
+    screen.accessibilityPath = `screens/${screen.id}.accessibility.json`;
+    screen.accessibilityDigest = createHash("sha256").update(serialized).digest("hex");
   }
   session.screens.push(screen);
   if (input.makeCurrent) {
@@ -1004,6 +1157,20 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       createHash("sha256")
         .update(await readFile(absolute))
         .digest("hex");
+    const accessibilityRelative = screen.accessibilityPath
+      ? relative.replace(/\.png$/i, ".accessibility.json")
+      : undefined;
+    let accessibilityDigest: string | undefined;
+    if (accessibilityRelative) {
+      const accessibilityAbsolute = join(rootDir, accessibilityRelative);
+      await mkdir(join(accessibilityAbsolute, ".."), { recursive: true });
+      await copyFile(screenAccessibilityAssetPath(session.id, screen.id), accessibilityAbsolute);
+      accessibilityDigest =
+        screen.accessibilityDigest ??
+        createHash("sha256")
+          .update(await readFile(accessibilityAbsolute))
+          .digest("hex");
+    }
     screen.artifactPath = `pack/${relative}`;
     screens.push({
       id: screen.id,
@@ -1015,6 +1182,12 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       ...(screen.title ? { title: screen.title } : {}),
       file: relative,
       sha256: screenshotDigest,
+      ...(accessibilityRelative
+        ? {
+            accessibilityFile: accessibilityRelative,
+            accessibilitySha256: accessibilityDigest!,
+          }
+        : {}),
     });
     const bucket = byCanonicalKey[screen.canonicalKey] ?? {};
     bucket[screen.locale] = relative;
@@ -1058,7 +1231,7 @@ export async function exportCorpusPack(sessionId: string): Promise<{
       `Target: ${session.targetProfile?.name ?? session.targetId}`,
       `Strategy: ${session.scope.strategy} · baseline ${session.scope.mapLocale ?? session.scope.locales[0]}`,
       "",
-      "Each PNG path is `<locale>/<path>__<canonicalKey>.png`.",
+      "Each PNG path is `<locale>/<path>__<canonicalKey>.png`; its normalized accessibility snapshot uses the same path with `.accessibility.json`.",
       "`manifest.json` freezes execution provenance, SHA-256 digests, and groups the same logical screen across languages under `byCanonicalKey`.",
       `Findings: ${analysis.critical} critical · ${analysis.warnings} warnings across ${analysis.affectedScreens} screens.`,
       "`analysis.json` contains deterministic missing-screen, missing-control, unchanged-locale, and possible-untranslated-text findings.",
@@ -1144,18 +1317,7 @@ async function runNavSteps(
     }
     if (step.kind === "scroll") {
       if (step.direction === "down") await scrollDown(device, step.amount ?? 1);
-      else {
-        // scrollDown only — approximate up with a reverse swipe via interact
-        await interact(
-          {
-            kind: "swipe",
-            from: { x: 0.5, y: 0.35 },
-            to: { x: 0.5, y: 0.75 },
-            durationMs: 280,
-          },
-          undefined,
-        );
-      }
+      else await scrollUp(device, step.amount ?? 1);
       await sleep(350, device);
       continue;
     }
@@ -1174,6 +1336,11 @@ async function runNavSteps(
         } catch {
           await pressMatchingText(device, step.target.label);
         }
+      } else if (step.target.point) {
+        await interact(
+          { kind: "point", x: step.target.point.x, y: step.target.point.y },
+          undefined,
+        );
       }
     } catch (error) {
       if (!softIdentifier) throw error;
@@ -1192,6 +1359,37 @@ function controlToInteract(control: CorpusControl): InteractInput {
     return { kind: "point", x: control.target.point.x, y: control.target.point.y };
   }
   throw new Error(`control ${control.label} has no actionable target`);
+}
+
+/**
+ * Resolve a recorded structural control against the live viewport. Long lists
+ * expose only visible rows, so seek one viewport at a time and stop as soon as
+ * the requested control appears. The returned target is fresh (refs expire and
+ * labels may be localized); callers never tap the stale discovery target.
+ */
+async function interactCorpusControl(input: {
+  device: Device;
+  serial: string;
+  control: CorpusControl;
+  allowSensitive: boolean;
+  maxScrolls?: number;
+}): Promise<CorpusControl> {
+  const maxScrolls = Math.max(0, Math.min(8, input.maxScrolls ?? 6));
+  for (let scroll = 0; scroll <= maxScrolls; scroll += 1) {
+    const snapshot = await captureSnapshot({ serial: input.serial });
+    const visible = corpusControls(snapshot.nodes, {
+      allowSensitive: input.allowSensitive,
+    });
+    const live = visible.find((candidate) => candidate.stableKey === input.control.stableKey);
+    if (live) {
+      await interact(controlToInteract(live), { serial: input.serial });
+      return live;
+    }
+    if (scroll === maxScrolls) break;
+    await scrollDown(input.device, 0.55);
+    await sleep(300, input.device);
+  }
+  throw new Error(`Control “${input.control.label}” was not found after ${maxScrolls} scrolls`);
 }
 
 async function captureCurrent(input: {
@@ -1213,6 +1411,7 @@ async function captureCurrent(input: {
       path: input.path,
       pathKeys: input.pathKeys,
       screenshotPath: shot.path,
+      accessibility: snap,
       makeCurrent: true,
     });
   } finally {
@@ -1384,8 +1583,14 @@ async function crawlLocale(input: {
 
     const beforeId = frame.screenId;
     const beforeKey = frame.canonicalKey;
+    let liveControl = control;
     try {
-      await interact(controlToInteract(control), { serial });
+      liveControl = await interactCorpusControl({
+        device,
+        serial,
+        control,
+        allowSensitive: Boolean(session.scope.allowSensitiveControls),
+      });
       await sleep(550, device);
     } catch (error) {
       await updateProgress(session, {
@@ -1396,7 +1601,7 @@ async function crawlLocale(input: {
       continue;
     }
 
-    const nextPath = [...frame.path, control.label];
+    const nextPath = [...frame.path, liveControl.label];
     const nextPathKeys = [...frame.pathKeys, control.stableKey];
     const after = await captureCurrent({
       sessionId: session.id,
@@ -1414,9 +1619,9 @@ async function crawlLocale(input: {
       ...(after.screen.id !== beforeId ? { toScreenId: after.screen.id } : {}),
       locale,
       kind: "tap",
-      label: control.label,
-      stableKey: control.stableKey,
-      target: control.target,
+      label: liveControl.label,
+      stableKey: liveControl.stableKey,
+      target: liveControl.target,
       depth: frame.depth,
       changedScreen: after.screen.id !== beforeId,
     });
@@ -1425,9 +1630,9 @@ async function crawlLocale(input: {
     if (input.recordPlan && after.screen.id !== beforeId) {
       input.recordPlan.push({
         kind: "open",
-        stableKey: control.stableKey,
-        label: control.label,
-        target: control.target,
+        stableKey: liveControl.stableKey,
+        label: liveControl.label,
+        target: liveControl.target,
         depth: frame.depth,
         pathKeys: nextPathKeys,
         path: nextPath,
@@ -1593,8 +1798,14 @@ async function replayLocalePlan(input: {
     });
 
     const beforeId = currentScreenId;
+    let liveControl = control;
     try {
-      await interact(controlToInteract(control), { serial });
+      liveControl = await interactCorpusControl({
+        device,
+        serial,
+        control,
+        allowSensitive: Boolean(session.scope.allowSensitiveControls),
+      });
       await sleep(550, device);
     } catch (error) {
       await updateProgress(session, {
@@ -1628,9 +1839,9 @@ async function replayLocalePlan(input: {
       ...(after.screen.id !== beforeId ? { toScreenId: after.screen.id } : {}),
       locale,
       kind: "tap",
-      label: control.label,
-      stableKey: control.stableKey,
-      target: control.target,
+      label: liveControl.label,
+      stableKey: liveControl.stableKey,
+      target: liveControl.target,
       depth: action.depth,
       changedScreen: after.screen.id !== beforeId,
     });
@@ -1654,6 +1865,16 @@ async function switchToLocale(input: {
     locale,
     message: `Switching language to ${locale}`,
   });
+  const target = currentTargetContext();
+  if (target.kind === "device" && target.platform === "android" && app) {
+    await setAndroidAppLocale(app, locale);
+    await openApp(device, app, { relaunch: true });
+    await sleep(700, device);
+    if (session.scope.entryPath?.length) {
+      await runNavSteps(device, session.scope.entryPath, app);
+    }
+    return;
+  }
   if (app) await openApp(device, app, { relaunch: true });
   if (session.scope.entryPath?.length) {
     await runNavSteps(device, session.scope.entryPath, app);
@@ -1844,6 +2065,16 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
         }
       }
 
+      if (platform === "android" && app && otherLocales.length > 0) {
+        await updateProgress(session, {
+          phase: "switching-language",
+          locale: mapLocale,
+          message: `Restoring language to ${mapLocale}`,
+        });
+        await setAndroidAppLocale(app, mapLocale);
+        await openApp(device, app, { relaunch: true });
+      }
+
       session = (await readCorpusSession(sessionId))!;
       await updateProgress(session, { phase: "exporting", message: "Writing labeled pack" });
       const exported = await exportCorpusPack(sessionId);
@@ -1867,6 +2098,14 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
       const message = error instanceof Error ? error.message : String(error);
       session = (await readCorpusSession(sessionId)) ?? session;
       if (!session) return;
+      if (platform === "android" && session.scope.app && session.scope.mapLocale) {
+        try {
+          await setAndroidAppLocale(session.scope.app, session.scope.mapLocale);
+          await openApp(device, session.scope.app, { relaunch: true });
+        } catch {
+          // Preserve the original crawl error; locale restoration is best effort.
+        }
+      }
       const cancelled = /cancelled/i.test(message) || isCancelled(sessionId);
       session.status = cancelled ? "stopped" : "failed";
       session.error = message;

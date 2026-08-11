@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Device } from "./device.js";
 import { pressNamedControl } from "./device.js";
-import { interactOnDevice, resolveInteractPreview } from "./workspace.js";
+import { interact, interactOnDevice, resolveInteractPreview } from "./workspace.js";
 import { runWithTargetContext } from "./target-context.js";
 
 function stubDevice(nodes: unknown[]): Device {
@@ -42,6 +42,13 @@ test("mouse/CLI interactOnDevice records Home label method and bounds", async ()
   assert.equal(result.resolution?.method, "label");
   assert.deepEqual(result.resolution?.bounds, home.rect);
   assert.deepEqual(result.resolution?.point, { x: 50, y: 720 });
+});
+
+test("device swipe rejects missing coordinates with actionable syntax", async () => {
+  await assert.rejects(
+    interact({ kind: "swipe" } as never, { serial: "unused" }),
+    /Swipe requires "from" and "to" points/u,
+  );
 });
 
 test("mouse/CLI interactOnDevice uses explicit point when Home labels collide", async () => {

@@ -358,6 +358,10 @@ type SpecificOperationMap = {
       };
     };
   };
+  "target.app.locales": {
+    input: { serial: string; package: string };
+    output: { packageName: string; locales: string[] };
+  };
   "target.ui.describe": {
     input: { serial: string };
     output: {
@@ -1332,6 +1336,23 @@ const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.lau
       fail("launched app platform", "must be android or ios");
     }
     number(launched.launchedAt, "launched app timestamp");
+  },
+);
+
+const targetAppLocalesInputParser = objectParser<OperationInput<"target.app.locales">>(
+  "target app locales input",
+  (input) => {
+    string(input.serial, "target app locales serial");
+    string(input.package, "target app locales package");
+  },
+);
+
+const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.locales">>(
+  "target app locales response",
+  (input) => {
+    string(input.packageName, "target app locales package name");
+    if (!Array.isArray(input.locales)) fail("target app locales", "must be an array");
+    for (const locale of input.locales) string(locale, "target app locale");
   },
 );
 
@@ -2469,6 +2490,13 @@ export const operationDefinitions = [
     idempotency: "inherent",
     input: targetAppLaunchInputParser,
     output: targetAppLaunchOutputParser,
+  }),
+  query("target.app.locales", "List app-declared locales", "/device/app/locales", {
+    category: "target",
+    targetCapabilities: ["snapshot"],
+    lease: "shared",
+    input: targetAppLocalesInputParser,
+    output: targetAppLocalesOutputParser,
   }),
   command("target.recover", "Repair target connection", "POST", "/device/recover", {
     category: "target",

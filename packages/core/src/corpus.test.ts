@@ -216,6 +216,94 @@ test("corpusControls keep SwiftUI cells and drop sheet chrome", () => {
   assert.equal(controls[0]?.target.ref, "e17");
 });
 
+test("corpusControls use locale-independent structure when Compose omits identifiers", () => {
+  const rows = (label: string): SnapshotNode[] => [
+    {
+      index: 0,
+      type: "android.widget.ScrollView",
+      parentIndex: undefined,
+      visibleToUser: true,
+    },
+    {
+      index: 1,
+      type: "android.view.View",
+      parentIndex: 0,
+      label,
+      hittable: true,
+      visibleToUser: true,
+      ref: "e1",
+    },
+  ];
+  const english = corpusControls(rows("Usage"))[0];
+  const italian = corpusControls(rows("Utilizzo"))[0];
+  assert.ok(english?.stableKey.startsWith("structure:"));
+  assert.equal(english?.stableKey, italian?.stableKey);
+  assert.equal(english?.label, "Usage");
+  assert.equal(italian?.label, "Utilizzo");
+});
+
+test("corpusControls ignore Android system UI and collapse row subtitles into one action", () => {
+  const controls = corpusControls([
+    {
+      index: 0,
+      type: "android.widget.FrameLayout",
+      identifier: "com.android.systemui:id/navigation_bar_frame",
+      bundleId: "com.android.systemui",
+      visibleToUser: true,
+    },
+    {
+      index: 1,
+      type: "android.widget.ScrollView",
+      visibleToUser: true,
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: "android.view.View",
+      visibleToUser: true,
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      type: "android.view.View",
+      hittable: true,
+      visibleToUser: true,
+      ref: "row-appearance",
+    },
+    {
+      index: 4,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Appearance",
+      visibleToUser: true,
+      ref: "appearance-label",
+    },
+    {
+      index: 5,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Dark",
+      visibleToUser: true,
+      ref: "appearance-value",
+    },
+    {
+      index: 6,
+      type: "android.view.View",
+      identifier: "settings_button",
+      hittable: true,
+      visibleToUser: true,
+      ref: "settings",
+    },
+  ]);
+
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Appearance", "settings_button"],
+  );
+  assert.equal(controls[0]?.target.ref, "row-appearance");
+  assert.equal(controls[1]?.target.identifier, "settings_button");
+});
+
 test("titleFromNodes prefers page title over toolbar chrome", () => {
   const title = titleFromNodes(
     [
@@ -430,6 +518,11 @@ test("corpus pack freezes execution provenance and verifies every screenshot", a
     path: [],
     pathKeys: [],
     screenshotPath: screenshot,
+    accessibility: {
+      inspectable: true,
+      nodes: settingsNodes("en"),
+      screenIdentity: { fingerprint: "settings" },
+    },
   });
 
   const exported = await exportCorpusPack(session.id);
@@ -445,6 +538,13 @@ test("corpus pack freezes execution provenance and verifies every screenshot", a
   assert.equal(onDisk.execution.mapLocale, "en");
   assert.equal(onDisk.execution.app, "ai.x.GrokApp");
   assert.match(onDisk.screens[0]?.sha256 ?? "", /^[a-f0-9]{64}$/u);
+  assert.match(onDisk.screens[0]?.accessibilitySha256 ?? "", /^[a-f0-9]{64}$/u);
+  assert.match(onDisk.screens[0]?.accessibilityFile ?? "", /\.accessibility\.json$/u);
+  const accessibility = JSON.parse(
+    await readFile(join(exported.rootDir, onDisk.screens[0]!.accessibilityFile!), "utf8"),
+  ) as { inspectable: boolean; nodes: unknown[] };
+  assert.equal(accessibility.inspectable, true);
+  assert.equal(accessibility.nodes.length, settingsNodes("en").length);
 });
 
 test("normalizeScope defaults to map-once-replay and orders map locale first", async () => {
@@ -456,11 +556,19 @@ test("normalizeScope defaults to map-once-replay and orders map locale first", a
     const session = await createCorpusSession({
       name: "Map once",
       targetId: "ipad",
-      scope: { locales: ["pt-BR", "en", "es"], mapLocale: "en", maxDepth: 2 },
+      scope: {
+        locales: ["pt-BR", "en", "es"],
+        mapLocale: "en",
+        maxDepth: 2,
+        entryPath: [{ kind: "tap", target: { point: { x: 78, y: 190 } } }],
+      },
     });
     assert.equal(session.scope.strategy, "map-once-replay");
     assert.equal(session.scope.mapLocale, "en");
     assert.deepEqual(session.scope.locales, ["en", "pt-BR", "es"]);
+    assert.deepEqual(session.scope.entryPath, [
+      { kind: "tap", target: { point: { x: 78, y: 190 } } },
+    ]);
   } finally {
     process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(root, { recursive: true, force: true });

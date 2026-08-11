@@ -12,6 +12,7 @@ import {
   pressKey,
   pressLabel,
   scrollDown,
+  scrollUp,
   sleep,
   snapshot,
   type Device,
@@ -24,7 +25,7 @@ import { devicePlatformForSerial } from "./workspace.js";
 
 /** Destructive / external rows agents and crawls should skip by default. */
 export function isUnsafeExploreControlText(value: string): boolean {
-  return /(delete|remove|purchase|pay|subscribe|logout|sign out|password|permission|rate the app|terms of use|privacy policy|help & support|help and support|open in safari|open in browser|\bsafari\b)/i.test(
+  return /(delete|remove|purchase|pay|subscribe|logout|sign out|password|permission|\bupdate\b|rate the app|terms of use|privacy policy|help & support|help and support|open in safari|open in browser|\bsafari\b)/i.test(
     value,
   );
 }
@@ -231,6 +232,39 @@ export type ScrollCollectOptions<T extends { stableKey?: string; label: string }
 };
 
 /**
+ * Android exposes the visible bounds of a Compose ScrollView even when the
+ * `scrollable` flag is missing. A generous empty tail means the last row is
+ * already on screen, so probing further only creates noise and latency.
+ */
+export function scrollContentFitsViewport(nodes: SnapshotNode[]): boolean {
+  const indexed = new Map(nodes.map((node, fallback) => [node.index ?? fallback, node] as const));
+  const scrollViews = nodes.filter((node) =>
+    /scrollview|scrollarea|collectionview/i.test(`${node.type ?? ""} ${node.role ?? ""}`),
+  );
+  return scrollViews.some((scrollView) => {
+    const viewport = scrollView.rect;
+    const scrollIndex = scrollView.index;
+    if (!viewport || scrollIndex === undefined || viewport.height < 240) return false;
+    const descendantBottoms = nodes.flatMap((node) => {
+      if (!node.rect || node.visibleToUser === false || node.index === scrollIndex) return [];
+      let parentIndex = node.parentIndex;
+      let guard = 0;
+      while (parentIndex !== undefined && guard < 20) {
+        if (parentIndex === scrollIndex) return [node.rect.y + node.rect.height];
+        parentIndex = indexed.get(parentIndex)?.parentIndex;
+        guard += 1;
+      }
+      return [];
+    });
+    if (!descendantBottoms.length) return false;
+    const lastBottom = Math.max(...descendantBottoms);
+    const viewportBottom = viewport.y + viewport.height;
+    const emptyTail = Math.max(96, viewport.height * 0.12);
+    return lastBottom <= viewportBottom - emptyTail;
+  });
+}
+
+/**
  * Scroll a long list and merge extracted controls. Stops if locale-stable
  * screen identity changes (overscroll dismissed a sheet).
  */
@@ -269,11 +303,16 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
   merge(firstNodes);
   let latest = firstNodes;
   let stableEmpty = 0;
+  let completedScrolls = 0;
+  const contentAlreadyFits =
+    (options.platform ?? currentTargetContext().platform) === "android" &&
+    scrollContentFitsViewport(firstNodes);
 
-  for (let i = 0; i < maxScrolls; i += 1) {
+  for (let i = 0; i < (contentAlreadyFits ? 0 : maxScrolls); i += 1) {
     const before = byKey.size;
     try {
       await scrollDown(device, 0.55);
+      completedScrolls += 1;
     } catch {
       break;
     }
@@ -307,17 +346,11 @@ async function scrollCollectControlsInContext<T extends { stableKey?: string; la
     }
   }
 
-  for (let i = 0; i < Math.min(3, maxScrolls); i += 1) {
+  // Collection is observational: restore the exact number of successful
+  // scrolls so callers continue from the viewport they started on.
+  for (let i = 0; i < completedScrolls; i += 1) {
     try {
-      await interact(
-        {
-          kind: "swipe",
-          from: { x: 0.5, y: 0.32 },
-          to: { x: 0.5, y: 0.72 },
-          durationMs: 260,
-        },
-        { serial: options.serial },
-      );
+      await scrollUp(device, 0.55);
       await sleep(250, device);
     } catch {
       break;

@@ -206,6 +206,19 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.app.locales",
+    path("target app locales", ["serial", "package"]),
+    path("device app-locales", ["serial", "package"], undefined, {
+      summary: "List the locales declared by an installed Android app",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected Android device serial" },
+        { name: "package", type: "string", description: "Android package name" },
+      ],
+      examples: ["relay device app-locales emulator-5554 com.example.app --json"],
+      note: "Reads the installed app's locale configuration dynamically; the result is not a hard-coded language list.",
+    }),
+  ),
+  mapped(
     "target.recover",
     path("target recover", ["serial"]),
     path("device recover", ["serial"], undefined, {
@@ -274,6 +287,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         "relay lease create 00008110 --actor agent:mapper",
         'relay device interact 00008110 --actor agent:mapper --input \'{"kind":"label","label":"Continue"}\'',
         'relay device interact 00008110 --preview --file preview.png --input \'{"kind":"label","label":"Back"}\'',
+        'relay device interact emulator-5554 --input \'{"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650},"durationMs":300}\'',
       ],
       note: "Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap.",
     }),

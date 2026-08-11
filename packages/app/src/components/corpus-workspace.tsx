@@ -51,6 +51,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
   const [name, setName] = createSignal("Grok settings corpus");
   const [app, setApp] = createSignal("ai.x.GrokApp");
   const [profileId, setProfileId] = createSignal("grok-ios");
+  const [androidLocales, setAndroidLocales] = createSignal<string[]>([]);
   const [selectedOptions, setSelectedOptions] = createSignal<string[]>(["en", "pt-BR", "it"]);
   const [maxDepth, setMaxDepth] = createSignal(3);
   const [localeFilter, setLocaleFilter] = createSignal<string | "all">("all");
@@ -129,15 +130,51 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
   const activeProfile = createMemo(
     () => server.languageProfiles().find((profile) => profile.id === profileId()) ?? null,
   );
+  const isAndroid = createMemo(() => selectedDevice()?.platform === "android");
+  const optionRows = createMemo(() => {
+    if (!isAndroid()) return activeProfile()?.languages ?? [];
+    const displayNames = new Intl.DisplayNames(undefined, { type: "language" });
+    return androidLocales().map((tag) => ({ tag, label: displayNames.of(tag) ?? tag }));
+  });
   const visibleOptions = createMemo(() => {
     const query = optionQuery().trim().toLocaleLowerCase();
-    const rows = activeProfile()?.languages ?? [];
+    const rows = optionRows();
     if (!query) return rows;
     return rows.filter((row) => `${row.tag} ${row.label}`.toLocaleLowerCase().includes(query));
   });
 
   createEffect(() => {
     void server.refreshLanguageProfiles?.();
+  });
+
+  createEffect(() => {
+    if (!isAndroid()) return;
+    if (app() === "ai.x.GrokApp") setApp("ai.x.grok");
+  });
+
+  createEffect(() => {
+    const packageName = app().trim();
+    if (!isAndroid() || !packageName) return;
+    let cancelled = false;
+    void server
+      .loadAndroidAppLocales(packageName)
+      .then((locales) => {
+        if (cancelled) return;
+        const firstAndroidLoad = androidLocales().length === 0;
+        setAndroidLocales(locales);
+        if (
+          locales.length &&
+          (firstAndroidLoad || selectedOptions().every((tag) => !locales.includes(tag)))
+        ) {
+          setSelectedOptions(locales);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAndroidLocales([]);
+      });
+    onCleanup(() => {
+      cancelled = true;
+    });
   });
 
   createEffect(() => {
@@ -201,13 +238,15 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       toast("Select at least one option", "error");
       return;
     }
-    if (!profileId()) {
+    if (!isAndroid() && !profileId()) {
       toast("Choose a switcher profile", "error");
       return;
     }
     const depth = Math.max(0, Math.min(6, Number(maxDepth()) || 0));
     const baseline =
-      activeProfile()?.defaultLocale && locales.includes(activeProfile()!.defaultLocale!)
+      !isAndroid() &&
+      activeProfile()?.defaultLocale &&
+      locales.includes(activeProfile()!.defaultLocale!)
         ? activeProfile()!.defaultLocale!
         : locales.includes("en")
           ? "en"
@@ -225,8 +264,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       maxScreens: 800,
       maxTransitions: 2_400,
       maxDurationMs: 90 * 60_000,
-      languageProfileId: profileId(),
-      switcherProfileId: profileId(),
+      ...(!isAndroid() ? { languageProfileId: profileId(), switcherProfileId: profileId() } : {}),
     };
     setCreating(true);
     try {
@@ -243,8 +281,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       if (start) {
         setStarting(true);
         const started = await server.startCorpusSession(session.id);
-        if (started)
-          toast("Screenshot crawl started — keep the iPad unlocked and on the Ask tab", "success");
+        if (started) toast("Screenshot crawl started — keep the device unlocked", "success");
         else
           toast("Could not start screenshot crawl — check device readiness and signing", "error");
       }
@@ -261,7 +298,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
       toast("Connect an iPad or phone first", "error");
       return;
     }
-    if (!profile) {
+    if (!isAndroid() && !profile) {
       toast("Choose a switcher profile first", "error");
       return;
     }
@@ -269,11 +306,23 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
     try {
       // Selecting the device claims/refreshes the exclusive control lease.
       await server.setSelectedDevice?.(targetId);
+      if (isAndroid()) {
+        const packageName = app().trim();
+        if (!packageName) {
+          toast("Enter the Android app package first", "error");
+          return;
+        }
+        const locales = await server.loadAndroidAppLocales(packageName);
+        setAndroidLocales(locales);
+        setSelectedOptions(locales);
+        toast(`${locales.length} app languages found`, "success");
+        return;
+      }
       const scanned = await server.scanLanguageProfile?.({
         serial: targetId,
-        app: profile.app || app().trim() || "ai.x.GrokApp",
-        profileId: profile.id,
-        name: profile.name,
+        app: profile!.app || app().trim() || "ai.x.GrokApp",
+        profileId: profile!.id,
+        name: profile!.name,
       });
       if (!scanned) return;
       setProfileId(scanned.id);
@@ -362,42 +411,72 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                     onInput={(event) => setName(event.currentTarget.value)}
                   />
                 </label>
-                <label class="grid gap-1">
-                  <span class="text-[11px] font-medium text-text-weak">What changes?</span>
-                  <select
-                    class="h-9 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12.5px] text-text-strong outline-none focus-visible:border-border-strong-focus"
-                    value={profileId()}
-                    onChange={(event) => {
-                      const id = event.currentTarget.value;
-                      setProfileId(id);
-                      const profile = server.languageProfiles().find((item) => item.id === id);
-                      if (profile) {
-                        setApp(profile.app);
-                        setSelectedOptions(profile.languages.map((row) => row.tag));
-                        setName(`${profile.name} corpus`);
-                      }
-                    }}
-                  >
-                    <For
-                      each={server.languageProfiles()}
-                      fallback={<option value="grok-ios">Grok · App Language (seed)</option>}
+                <Show
+                  when={!isAndroid()}
+                  fallback={
+                    <div class="grid gap-2 rounded-[10px] border border-border-weak-base bg-surface-raised-stronger-non-alpha p-2.5">
+                      <div class="flex items-center justify-between gap-3">
+                        <div>
+                          <p class="text-[12px] font-medium text-text-strong">App language</p>
+                          <p class="mt-px text-[10.5px] text-text-weaker">
+                            Uses Android's installed per-app languages.
+                          </p>
+                        </div>
+                        <span class={cn(mono, "text-[10.5px] text-text-weak")}>
+                          {androidLocales().length || "—"}
+                        </span>
+                      </div>
+                      <label class="grid gap-1">
+                        <span class="text-[10.5px] font-medium text-text-weak">App package</span>
+                        <input
+                          class="h-8 rounded-[7px] border border-border-weak-base bg-[var(--surface-base)] px-2.5 text-[12px] text-text-strong outline-none focus-visible:border-border-strong-focus"
+                          value={app()}
+                          spellcheck={false}
+                          onInput={(event) => setApp(event.currentTarget.value)}
+                        />
+                      </label>
+                    </div>
+                  }
+                >
+                  <label class="grid gap-1">
+                    <span class="text-[11px] font-medium text-text-weak">What changes?</span>
+                    <select
+                      class="h-9 rounded-[9px] border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-[12.5px] text-text-strong outline-none focus-visible:border-border-strong-focus"
+                      value={profileId()}
+                      onChange={(event) => {
+                        const id = event.currentTarget.value;
+                        setProfileId(id);
+                        const profile = server.languageProfiles().find((item) => item.id === id);
+                        if (profile) {
+                          setApp(profile.app);
+                          setSelectedOptions(profile.languages.map((row) => row.tag));
+                          setName(`${profile.name} corpus`);
+                        }
+                      }}
                     >
-                      {(profile) => (
-                        <option value={profile.id}>
-                          {profile.name}
-                          {profile.scanned ? " · scanned" : ""}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </label>
+                      <For
+                        each={server.languageProfiles()}
+                        fallback={<option value="grok-ios">Grok · App Language (seed)</option>}
+                      >
+                        {(profile) => (
+                          <option value={profile.id}>
+                            {profile.name}
+                            {profile.scanned ? " · scanned" : ""}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
                 <div class="grid gap-1.5">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-[11px] font-medium text-text-weak">Values to capture</span>
                     <button
                       type="button"
                       class="text-[10.5px] font-medium text-text-interactive-base hover:underline disabled:text-text-disabled"
-                      disabled={scanning() || !selectedDeviceSerial() || !activeProfile()}
+                      disabled={
+                        scanning() || !selectedDeviceSerial() || (!isAndroid() && !activeProfile())
+                      }
                       onClick={() => void scanOptionsOnDevice()}
                     >
                       {scanning() ? "Reading device…" : "Refresh from device"}
@@ -409,8 +488,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                     onClick={() => setOptionsOpen((open) => !open)}
                   >
                     <span>
-                      {selectedOptions().length} of {activeProfile()?.languages.length ?? 0}{" "}
-                      selected
+                      {selectedOptions().length} of {optionRows().length} selected
                     </span>
                     <Icon name={optionsOpen() ? "chevron-up" : "chevron-down"} size={12} />
                   </button>
@@ -429,7 +507,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                           type="button"
                           class="h-8 px-1.5 text-[10.5px] font-medium text-text-interactive-base hover:underline"
                           onClick={() => {
-                            const rows = activeProfile()?.languages ?? [];
+                            const rows = optionRows();
                             setSelectedOptions(
                               selectedOptions().length === rows.length
                                 ? [rows[0]?.tag].filter((tag): tag is string => Boolean(tag))
@@ -437,7 +515,7 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                             );
                           }}
                         >
-                          {selectedOptions().length === (activeProfile()?.languages.length ?? 0)
+                          {selectedOptions().length === optionRows().length
                             ? "First only"
                             : "Select all"}
                         </button>
@@ -478,10 +556,13 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                       </div>
                     </div>
                   </Show>
-                  <Show when={activeProfile()?.scanned}>
+                  <Show when={isAndroid() || activeProfile()?.scanned}>
                     <p class="text-[10.5px] text-text-weaker">
-                      Live list from device
-                      {activeProfile()?.verifiedAt ? ` · ${activeProfile()!.verifiedAt}` : ""}.
+                      {isAndroid()
+                        ? "Installed languages reported by the selected app."
+                        : `Live list from device${
+                            activeProfile()?.verifiedAt ? ` · ${activeProfile()!.verifiedAt}` : ""
+                          }.`}
                     </p>
                   </Show>
                 </div>
@@ -505,6 +586,10 @@ export function CorpusWorkspace(props: { onBack?: () => void }) {
                 </label>
                 <p class="text-[10.5px] text-text-weaker">
                   Device: {selectedDevice()?.name ?? selectedDeviceSerial() ?? "None selected"}
+                </p>
+                <p class="text-[10.5px] leading-[1.4] text-text-weaker">
+                  Each checkpoint saves a screenshot and its accessibility tree. Relay maps the
+                  first language once, then replays the same branches in the others.
                 </p>
                 <Show when={crawlBlockedReason()}>
                   {(reason) => (

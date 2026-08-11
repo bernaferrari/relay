@@ -630,7 +630,10 @@ export type ObservedScreen = {
   title?: string;
   capturedAt: number;
   screenshotPath?: string;
+  /** Raw normalized accessibility snapshot captured beside the screenshot. */
+  accessibilityPath?: string;
   snapshotDigest?: string;
+  accessibilityDigest?: string;
   variantOf?: string;
   controls?: DiscoveryControl[];
 };
@@ -737,6 +740,12 @@ export type CorpusScope = {
    * from `locales` (e.g. "pt-BR"). Prefer accessibility identifiers over labels.
    */
   languageOptions?: Record<string, CorpusNavStep[]>;
+  /**
+   * Explicit stateful journeys recorded once in the map locale. Capture steps
+   * preserve dialogs, toggles, sheets, and scrolled viewports that a page-only
+   * crawl cannot infer safely.
+   */
+  journeys?: CorpusJourney[];
   allowSensitiveControls?: boolean;
 };
 
@@ -746,9 +755,11 @@ export type CorpusNavStep =
   | {
       kind: "tap";
       target: {
+        stableKey?: string;
         identifier?: string;
         label?: string;
         text?: string;
+        point?: { x: number; y: number };
       };
     }
   | { kind: "back" }
@@ -757,6 +768,23 @@ export type CorpusNavStep =
   | { kind: "relaunch" }
   /** Open/switch foreground app without requiring relaunch (deep-link handoff). */
   | { kind: "openApp"; app: string; relaunch?: boolean };
+
+export type CorpusJourneyStep =
+  | CorpusNavStep
+  | {
+      kind: "capture";
+      /** Human-readable evidence name, e.g. “Birth Year dialog”. */
+      name: string;
+      /** Locale-independent identity. Defaults to a slug of name. */
+      key?: string;
+    };
+
+export type CorpusJourney = {
+  id: string;
+  name: string;
+  /** Starts from app + entryPath; may contain multiple capture checkpoints. */
+  steps: CorpusJourneyStep[];
+};
 
 export type CorpusControl = {
   id: string;
@@ -792,6 +820,9 @@ export type CorpusScreen = {
   /** Relative pack path written at export time, e.g. pt-BR/settings/app-language.png */
   artifactPath?: string;
   snapshotDigest?: string;
+  /** Raw normalized accessibility snapshot captured beside the screenshot. */
+  accessibilityPath?: string;
+  accessibilityDigest?: string;
   controls?: CorpusControl[];
   /** Localized labels observed on this screen, keyed by stable control key. */
   localizedLabels?: Record<string, string>;
@@ -894,6 +925,8 @@ export type CorpusPackManifest = {
     title?: string;
     file: string;
     sha256: string;
+    accessibilityFile?: string;
+    accessibilitySha256?: string;
   }>;
   /** canonicalKey → locale → relative PNG path for side-by-side compare */
   byCanonicalKey: Record<string, Record<string, string>>;

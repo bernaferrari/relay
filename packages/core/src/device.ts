@@ -1329,6 +1329,17 @@ export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
   );
 }
 
+/** Scroll toward earlier content using the same SDK semantics as scrollDown. */
+export async function scrollUp(device: Device, amount = 0.5): Promise<void> {
+  await controlled(() =>
+    device.interactions.scroll({
+      ...base(),
+      direction: "up",
+      amount,
+    }),
+  );
+}
+
 export async function screenshot(device: Device, path: string): Promise<void> {
   await controlled(() => device.capture.screenshot({ path }));
 }
