@@ -188,3 +188,32 @@ test("aligns independent linear continuations on stable rows", () => {
   assert.equal(positions.storage?.y, positions.filter?.y);
   assert.notEqual(positions.filter?.y, positions.paste?.y);
 });
+
+test("preserves recorded sibling order while keeping each continuation on its branch row", () => {
+  const graph = {
+    // Deliberately scramble storage order. The path order is the user's UI order.
+    screens: ["root", "paste", "customize", "memory", "import", "data", "filter"].map((id) => ({
+      id,
+    })),
+    flows: [{ screenId: "root" }],
+    transitions: [
+      { fromScreenId: "root", destination: { kind: "screen", screenId: "data" } },
+      { fromScreenId: "data", destination: { kind: "screen", screenId: "filter" } },
+      { fromScreenId: "root", destination: { kind: "screen", screenId: "memory" } },
+      { fromScreenId: "memory", destination: { kind: "screen", screenId: "import" } },
+      { fromScreenId: "import", destination: { kind: "screen", screenId: "paste" } },
+      { fromScreenId: "root", destination: { kind: "screen", screenId: "customize" } },
+    ],
+  };
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok((positions.data?.y ?? 0) < (positions.memory?.y ?? 0));
+  assert.ok((positions.memory?.y ?? 0) < (positions.customize?.y ?? 0));
+  assert.equal(positions.data?.y, positions.filter?.y);
+  assert.equal(positions.memory?.y, positions.import?.y);
+  assert.equal(positions.import?.y, positions.paste?.y);
+  assert.ok(
+    (positions.memory?.y ?? 0) - (positions.data?.y ?? 0) > 278,
+    "separate branches should have a visible lane gap",
+  );
+});

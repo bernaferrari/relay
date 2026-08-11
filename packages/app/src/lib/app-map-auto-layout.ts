@@ -15,6 +15,7 @@ type LayoutBlock = { id: string; screenIds: string[]; order: number };
 
 const CARD_GAP_X = 112;
 const CARD_GAP_Y = 48;
+const SIBLING_BRANCH_GAP_ROWS = 0.2;
 const VIEWPORT_CHAIN_GAP_ROWS = 0.3;
 
 /**
@@ -32,12 +33,17 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
   const screenOrder = new Map(graph.screens.map((screen, index) => [screen.id, index]));
   const screenIds = new Set(screenOrder.keys());
   const entryIds = graph.flows.map((flow) => flow.screenId).filter((id) => screenIds.has(id));
-  const screenEdges = graph.transitions.flatMap((transition) => {
+  const screenEdges = graph.transitions.flatMap((transition, transitionIndex) => {
     const to =
       transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
     if (!to || !screenIds.has(transition.fromScreenId) || !screenIds.has(to)) return [];
     return [
-      { from: transition.fromScreenId, to, viewport: isViewportTransition(transition.label) },
+      {
+        from: transition.fromScreenId,
+        to,
+        viewport: isViewportTransition(transition.label),
+        order: transitionIndex,
+      },
     ];
   });
 
@@ -77,10 +83,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
     const to = blockForScreen.get(edge.to);
     if (!from || !to || from === to) continue;
     const key = edgeKey(from, to);
-    edgeOrder.set(
-      key,
-      Math.min(edgeOrder.get(key) ?? Number.MAX_SAFE_INTEGER, screenOrder.get(edge.from) ?? 0),
-    );
+    edgeOrder.set(key, Math.min(edgeOrder.get(key) ?? Number.MAX_SAFE_INTEGER, edge.order));
     const sourceBlock = blockById.get(from);
     const sourceOffset = sourceBlock?.screenIds.indexOf(edge.from) ?? -1;
     if (sourceOffset >= 0) {
@@ -219,7 +222,9 @@ function layoutPrimaryForest(
         (sum, childId) => sum + subtreeRows(childId),
         0,
       );
-      rows += Math.max(1, branchRows);
+      const siblingCount = childrenBySource[sourceIndex]?.length ?? 0;
+      const siblingGaps = Math.max(0, siblingCount - 1) * SIBLING_BRANCH_GAP_ROWS;
+      rows += Math.max(1, branchRows + siblingGaps);
       if (sourceIndex < ownCount - 1) rows += VIEWPORT_CHAIN_GAP_ROWS;
     }
     rowsMemo.set(id, rows);
@@ -249,10 +254,12 @@ function layoutPrimaryForest(
         y: sectionTop * pitchY,
       };
       let childTop = sectionTop;
-      for (const childId of childrenBySource[sourceIndex] ?? []) {
+      const sourceChildren = childrenBySource[sourceIndex] ?? [];
+      sourceChildren.forEach((childId, childIndex) => {
         place(childId, depth + 1, childTop);
         childTop += subtreeRows(childId);
-      }
+        if (childIndex < sourceChildren.length - 1) childTop += SIBLING_BRANCH_GAP_ROWS;
+      });
       sectionTop = Math.max(sectionTop + 1, childTop);
       if (sourceIndex < block.screenIds.length - 1) sectionTop += VIEWPORT_CHAIN_GAP_ROWS;
     });
