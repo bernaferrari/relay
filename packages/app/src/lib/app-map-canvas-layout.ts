@@ -245,50 +245,110 @@ export function canvasEdgeGeometry(
   const sourcePoint = sourceAnchor
     ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
     : undefined;
-  if (edge.kind === "return") {
-    const startX =
-      fromPosition.x +
-      fromGeometry.frameLeft +
-      (sourcePoint
-        ? Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth
-        : fromGeometry.frameWidth / 2);
-    const startY =
-      fromPosition.y +
-      fromGeometry.frameTop +
-      (sourcePoint ? Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight : 0);
-    const endX = toPosition.x + toGeometry.frameLeft + toGeometry.frameWidth / 2;
-    const endY = toPosition.y + toGeometry.frameTop;
-    const railY = Math.min(startY, endY) - 34;
-    return {
-      path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
-      labelPoint: {
-        x: (startX + endX) / 2,
-        y: (startY + 6 * railY + endY) / 8,
-      },
-      startPoint: { x: startX, y: startY },
-    };
+  const fromFrame = frameBounds(fromPosition, fromGeometry);
+  const toFrame = frameBounds(toPosition, toGeometry);
+  const direction = relativePortDirection(fromFrame, toFrame);
+  const defaultStart = portPoint(fromFrame, direction);
+  const start = sourcePoint
+    ? {
+        x: fromFrame.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth,
+        y: fromFrame.top + Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight,
+      }
+    : defaultStart;
+  const end = portPoint(toFrame, oppositePortDirection(direction));
+
+  // Return paths without a recorded origin used to share a small top rail.
+  // Relative ports are clearer for separated cards, while the rail remains a
+  // useful fallback for overlapping/cyclic states.
+  if (edge.kind === "return" && !framesAreSeparated(fromFrame, toFrame)) {
+    const railY = Math.min(start.y, end.y) - 34;
+    return cubicEdge(start, end, { x: start.x, y: railY }, { x: end.x, y: railY });
   }
-  const startX =
-    fromPosition.x +
-    fromGeometry.frameLeft +
-    (sourceAnchor
-      ? Math.max(0, Math.min(1, sourcePoint!.x)) * fromGeometry.frameWidth
-      : fromGeometry.frameWidth);
-  const startY =
-    fromPosition.y +
-    fromGeometry.frameTop +
-    (sourceAnchor
-      ? Math.max(0, Math.min(1, sourcePoint!.y)) * fromGeometry.frameHeight
-      : fromGeometry.frameHeight / 2);
-  const endX = toPosition.x + toGeometry.frameLeft;
-  const endY = toPosition.y + toGeometry.frameTop + toGeometry.frameHeight / 2;
+
+  const vertical = direction === "top" || direction === "bottom";
+  const distance = vertical ? Math.abs(end.y - start.y) : Math.abs(end.x - start.x);
+  const pull = Math.max(36, distance * 0.42);
+  const sign = direction === "right" || direction === "bottom" ? 1 : -1;
+  const control1 = vertical
+    ? { x: start.x, y: start.y + sign * pull }
+    : { x: start.x + sign * pull, y: start.y };
+  const control2 = vertical
+    ? { x: end.x, y: end.y - sign * pull }
+    : { x: end.x - sign * pull, y: end.y };
+  return cubicEdge(start, end, control1, control2);
+}
+
+type EdgePortDirection = "left" | "right" | "top" | "bottom";
+
+type FrameBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+};
+
+function frameBounds(position: CanvasPoint, geometry: ScreenCardGeometry): FrameBounds {
+  const left = position.x + geometry.frameLeft;
+  const top = position.y + geometry.frameTop;
+  const right = left + geometry.frameWidth;
+  const bottom = top + geometry.frameHeight;
   return {
-    path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}`,
+    left,
+    top,
+    right,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+function relativePortDirection(from: FrameBounds, to: FrameBounds): EdgePortDirection {
+  if (to.left >= from.right) return "right";
+  if (to.right <= from.left) return "left";
+  if (to.top >= from.bottom) return "bottom";
+  if (to.bottom <= from.top) return "top";
+
+  const dx = to.centerX - from.centerX;
+  const dy = to.centerY - from.centerY;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
+  return dy >= 0 ? "bottom" : "top";
+}
+
+function oppositePortDirection(direction: EdgePortDirection): EdgePortDirection {
+  if (direction === "left") return "right";
+  if (direction === "right") return "left";
+  if (direction === "top") return "bottom";
+  return "top";
+}
+
+function portPoint(frame: FrameBounds, direction: EdgePortDirection): CanvasPoint {
+  if (direction === "left") return { x: frame.left, y: frame.centerY };
+  if (direction === "right") return { x: frame.right, y: frame.centerY };
+  if (direction === "top") return { x: frame.centerX, y: frame.top };
+  return { x: frame.centerX, y: frame.bottom };
+}
+
+function framesAreSeparated(from: FrameBounds, to: FrameBounds): boolean {
+  return (
+    from.right <= to.left || to.right <= from.left || from.bottom <= to.top || to.bottom <= from.top
+  );
+}
+
+function cubicEdge(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  control1: CanvasPoint,
+  control2: CanvasPoint,
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
+  return {
+    path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
     labelPoint: {
-      x: (startX + 3 * (startX + 48) + 3 * (endX - 48) + endX) / 8,
-      y: (startY + endY) / 2,
+      x: (start.x + 3 * control1.x + 3 * control2.x + end.x) / 8,
+      y: (start.y + 3 * control1.y + 3 * control2.y + end.y) / 8,
     },
-    startPoint: { x: startX, y: startY },
+    startPoint: start,
   };
 }
 

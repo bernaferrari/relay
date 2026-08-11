@@ -410,7 +410,7 @@ export function AppMapWorkspace(props: {
     ]),
   );
   const expectedApplicationId = createMemo(() =>
-    expectedAndroidApplicationId(Object.values(activeAppMap()?.variants ?? {})),
+    expectedAndroidApplicationId(Object.values(activeAppMap()?.screenVariants ?? {})),
   );
   const liveApplicationId = createMemo(
     () => server.snapshot()?.foregroundApp ?? server.snapshot()?.treeApp,
@@ -585,17 +585,13 @@ export function AppMapWorkspace(props: {
   const fit = () => {
     const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
-    setView(
-      fitCanvasViewport(usableCanvasClientSize(), bounds()),
-    );
+    setView(fitCanvasViewport(usableCanvasClientSize(), bounds()));
   };
 
   const openAtReadableScale = () => {
     const element = canvasGestures.canvasElement();
     if (!element || !hasCanvasContent()) return;
-    setView(
-      openCanvasViewport(usableCanvasClientSize(), bounds()),
-    );
+    setView(openCanvasViewport(usableCanvasClientSize(), bounds()));
   };
 
   createEffect(() => {
@@ -648,10 +644,11 @@ export function AppMapWorkspace(props: {
     if (!element || !node) return;
     const position = positionFor(node);
     const scale = Math.max(view().scale, 0.72);
+    const client = usableCanvasClientSize();
     setView({
       scale,
-      x: element.clientWidth / 2 - (position.x + SCREEN_CARD_WIDTH / 2) * scale,
-      y: element.clientHeight / 2 - (position.y + SCREEN_CARD_HEIGHT / 2) * scale,
+      x: client.width / 2 - (position.x + SCREEN_CARD_WIDTH / 2) * scale,
+      y: client.height / 2 - (position.y + SCREEN_CARD_HEIGHT / 2) * scale,
     });
     requestAnimationFrame(() => {
       const card = Array.from(
@@ -823,9 +820,11 @@ export function AppMapWorkspace(props: {
           ),
         }));
       }
-      const node = buildCanvasGraphTree(next.graph ?? graph(), draft.steps()).nodes.find(
-        (candidate) => candidate.id === captured.screen.id,
-      );
+      const node = buildCanvasGraphTree(
+        next.graph ?? graph(),
+        draft.steps(),
+        next.groups ?? groups(),
+      ).nodes.find((candidate) => candidate.id === captured.screen.id);
       if (node) selectNode(node);
       toast(captured.created ? "Screen saved to the map" : "Screenshot refreshed", "success");
     } finally {
@@ -1795,12 +1794,12 @@ export function AppMapWorkspace(props: {
                   detail: `Return to ${activeAppMap()?.name ?? "the mapped app"} before capturing.`,
                 }
               : liveDeviceUnmapped() && livePanelStatus().kind === "ready"
-              ? {
-                  label: "Not saved to map",
-                  kind: "info",
-                  detail: `Choose Save screen to add it to ${activeAppMap()?.name ?? "this map"}.`,
-                }
-              : livePanelStatus()
+                ? {
+                    label: "Not saved to map",
+                    kind: "info",
+                    detail: `Choose Save screen to add it to ${activeAppMap()?.name ?? "this map"}.`,
+                  }
+                : livePanelStatus()
           }
           unmapped={liveDeviceUnmapped()}
           outsideMapApp={liveDeviceOutsideMapApp()}

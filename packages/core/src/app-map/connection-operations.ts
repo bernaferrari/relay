@@ -2,6 +2,7 @@ import { appMapFail } from "./errors.js";
 import type { AppMap, AppMapMutationContext, Connection, ConnectionPatch } from "./model.js";
 import { mutateAppMap } from "./mutation.js";
 import { assertConnection, assertConnectionPatch, identifier } from "./validation-shapes.js";
+import { passiveStateClaimHasEvidence } from "./connection-state-evidence.js";
 
 function scopeFor(map: AppMap) {
   return { organizationId: map.organizationId, projectId: map.projectId, appMapId: map.id };
@@ -11,6 +12,12 @@ export function putConnection(draft: AppMap, connection: Connection): void {
   assertConnection(connection, scopeFor(draft), "connection");
   if (draft.connections[connection.id]) {
     appMapFail("duplicate-id", `Connection ${connection.id} already exists`);
+  }
+  if (!passiveStateClaimHasEvidence(draft, connection)) {
+    appMapFail(
+      "invalid-map",
+      `Connection ${connection.id} claims a state without evidence that the control changed to it; record the interaction or use a neutral navigation label`,
+    );
   }
   draft.connections[connection.id] = structuredClone(connection);
 }
@@ -35,6 +42,12 @@ export function patchConnection(
   else if (patch.caseStackId !== undefined) connection.caseStackId = patch.caseStackId;
   if (patch.state !== undefined) connection.state = patch.state;
   if (patch.actions !== undefined) connection.actions = structuredClone(patch.actions);
+  if (!passiveStateClaimHasEvidence(draft, connection)) {
+    appMapFail(
+      "invalid-map",
+      `Connection ${connection.id} claims a state without evidence that the control changed to it; record the interaction or use a neutral navigation label`,
+    );
+  }
   connection.updatedAt = at;
 }
 

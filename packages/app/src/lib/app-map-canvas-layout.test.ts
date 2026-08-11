@@ -90,6 +90,49 @@ test("recorded connections can leave from the captured interaction point", () =>
   assert.match(path, /^M 60 151\.8 C/);
 });
 
+test("vertically stacked screens connect bottom to top", () => {
+  const below = { ...settings, id: "below", x: 0, y: 400 };
+  const geometry = canvasEdgeGeometry(
+    { from: "start", to: "below", kind: "forward" },
+    [start, below],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 120, y: 204 });
+  assert.match(geometry.path, /^M 120 204 C 120 /);
+  assert.match(geometry.path, /, 120 [\d.]+, 120 430$/);
+});
+
+test("connections can travel upward through top and bottom ports", () => {
+  const below = { ...settings, id: "below", x: 0, y: 400 };
+  const geometry = canvasEdgeGeometry(
+    { from: "below", to: "start", kind: "forward" },
+    [start, below],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 120, y: 430 });
+  assert.match(geometry.path, /^M 120 430 C 120 /);
+  assert.match(geometry.path, /, 120 [\d.]+, 120 204$/);
+});
+
+test("recorded tap origins stay exact on vertical connections", () => {
+  const below = { ...settings, id: "below", x: 0, y: 400 };
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "below",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.25, y: 0.7 } },
+    },
+    [start, below],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 60, y: 151.8 });
+  assert.match(geometry.path, /^M 60 151\.8 C 60 /);
+});
+
 test("recorded connection origins follow rotated screenshot presentation", () => {
   assert.deepEqual(pointInDisplayedFrame({ x: 0.25, y: 0.7 }, "left"), {
     x: 0.7,

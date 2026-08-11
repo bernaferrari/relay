@@ -108,7 +108,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   const selectedMap = createMemo(() => server.selectedAppMap());
   const [mapNameDraft, setMapNameDraft] = createSignal("");
-  createEffect(() => setMapNameDraft(selectedMap()?.name ?? ""));
+  createEffect(() => setMapNameDraft(selectedMap()?.name ?? (draft.title().trim() || "My map")));
   createEffect(() => {
     server.selectedAppMapId();
     setActiveTargetSetId();

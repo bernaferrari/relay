@@ -11,10 +11,7 @@ import {
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./app-map-capture-review";
-import {
-  DeviceStatusLabel,
-  type AppMapDeviceStatus,
-} from "./device-status-label";
+import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 
 export function AppMapDeviceCompanion(props: {
@@ -114,8 +111,8 @@ export function AppMapDeviceCompanion(props: {
                 {props.outsideMapApp
                   ? `Return to ${props.mapName?.trim() || "the mapped app"} to capture a screen`
                   : props.unmapped
-                  ? `Add this screen to ${props.mapName?.trim() || "the map"}`
-                  : `Continue from ${props.mappedScreenName}`}
+                    ? `Add this screen to ${props.mapName?.trim() || "the map"}`
+                    : `Continue from ${props.mappedScreenName}`}
               </span>
               <Show
                 when={props.unmapped && !props.outsideMapApp}

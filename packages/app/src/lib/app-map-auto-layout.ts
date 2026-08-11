@@ -1,20 +1,20 @@
 import type { MapGroup } from "@relay/protocol";
-import {
-  SCREEN_CARD_HEIGHT,
-  SCREEN_CARD_WIDTH,
-  type CanvasPoint,
-} from "./app-map-canvas-layout";
+import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH, type CanvasPoint } from "./app-map-canvas-layout";
+import { packSectionPositions } from "./app-map-section-packing";
 
 type LayoutGraph = {
   screens: readonly { id: string }[];
   flows: readonly { screenId: string }[];
+  transitions: readonly {
+    fromScreenId: string;
+    destination: { kind: string; screenId?: string };
+    label?: string;
+  }[];
 };
 
-const CARD_GAP_X = 72;
-const CARD_GAP_Y = 56;
-const SECTION_GAP_X = 128;
-const SECTION_GAP_Y = 128;
-const SECTION_COLUMNS = 2;
+const CARD_GAP_X = 40;
+const CARD_GAP_Y = 32;
+const MAX_LAYER_ROWS = 4;
 
 /**
  * Packs an established map by its visible sections instead of treating every
@@ -48,41 +48,140 @@ export function compactGroupedCanvasPositions(
     return Number(rightStarts) - Number(leftStarts);
   });
 
-  const metrics = sections.map((section) => {
-    const columns = sectionColumnCount(section.screenIds.length);
-    const rows = Math.ceil(section.screenIds.length / columns);
-    return {
-      ...section,
-      columns,
-      width: columns * SCREEN_CARD_WIDTH + Math.max(0, columns - 1) * CARD_GAP_X,
-      height: rows * SCREEN_CARD_HEIGHT + Math.max(0, rows - 1) * CARD_GAP_Y,
-    };
-  });
+  const metrics = sections.map((section) => ({
+    ...section,
+    ...layoutSection(section.screenIds, graph.transitions),
+  }));
+  const sectionOffsets = packSectionPositions(metrics, graph, startId);
 
   const positions: Record<string, CanvasPoint> = {};
-  let rowTop = 0;
-  for (let rowStart = 0; rowStart < metrics.length; rowStart += SECTION_COLUMNS) {
-    const row = metrics.slice(rowStart, rowStart + SECTION_COLUMNS);
-    let sectionLeft = 0;
-    let rowHeight = 0;
-    for (const section of row) {
-      section.screenIds.forEach((screenId, index) => {
-        positions[screenId] = {
-          x: sectionLeft + (index % section.columns) * (SCREEN_CARD_WIDTH + CARD_GAP_X),
-          y: rowTop + Math.floor(index / section.columns) * (SCREEN_CARD_HEIGHT + CARD_GAP_Y),
-        };
-      });
-      sectionLeft += section.width + SECTION_GAP_X;
-      rowHeight = Math.max(rowHeight, section.height);
+  for (const section of metrics) {
+    const offset = sectionOffsets[section.id] ?? { x: 0, y: 0 };
+    for (const [screenId, position] of Object.entries(section.positions)) {
+      positions[screenId] = { x: offset.x + position.x, y: offset.y + position.y };
     }
-    rowTop += rowHeight + SECTION_GAP_Y;
   }
 
   return positions;
 }
 
-function sectionColumnCount(screenCount: number): number {
-  if (screenCount <= 2) return screenCount;
-  if (screenCount <= 9) return 3;
-  return 4;
+function layoutSection(
+  screenIds: string[],
+  transitions: LayoutGraph["transitions"],
+): { positions: Record<string, CanvasPoint>; width: number; height: number } {
+  const memberIds = new Set(screenIds);
+  const scrollNext = new Map<string, string>();
+  const scrollTargets = new Set<string>();
+  for (const transition of transitions) {
+    const target =
+      transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
+    if (
+      !target ||
+      !memberIds.has(transition.fromScreenId) ||
+      !memberIds.has(target) ||
+      !isViewportTransition(transition.label)
+    ) {
+      continue;
+    }
+    scrollNext.set(transition.fromScreenId, target);
+    scrollTargets.add(target);
+  }
+
+  const chains: string[][] = [];
+  const chained = new Set<string>();
+  for (const screenId of screenIds) {
+    if (!scrollNext.has(screenId) || scrollTargets.has(screenId) || chained.has(screenId)) continue;
+    const chain: string[] = [];
+    const seen = new Set<string>();
+    let current: string | undefined = screenId;
+    while (current && !seen.has(current) && memberIds.has(current)) {
+      chain.push(current);
+      chained.add(current);
+      seen.add(current);
+      current = scrollNext.get(current);
+    }
+    if (chain.length > 1) chains.push(chain);
+  }
+
+  const positions: Record<string, CanvasPoint> = {};
+  chains.forEach((chain, column) => {
+    chain.forEach((screenId, row) => {
+      positions[screenId] = {
+        x: column * (SCREEN_CARD_WIDTH + CARD_GAP_X),
+        y: row * (SCREEN_CARD_HEIGHT + CARD_GAP_Y),
+      };
+    });
+  });
+
+  const remaining = screenIds.filter((screenId) => !chained.has(screenId));
+  const chainWidth = chains.length
+    ? chains.length * SCREEN_CARD_WIDTH + Math.max(0, chains.length - 1) * CARD_GAP_X
+    : 0;
+  const gridLeft = chainWidth ? chainWidth + CARD_GAP_X : 0;
+  const layers = topologyLayers(remaining, chained, transitions);
+  let layerLeft = gridLeft;
+  layers.forEach((layer) => {
+    const rowCount = Math.min(MAX_LAYER_ROWS, Math.ceil(Math.sqrt(layer.length)));
+    layer.forEach((screenId, index) => {
+      positions[screenId] = {
+        x: layerLeft + Math.floor(index / rowCount) * (SCREEN_CARD_WIDTH + CARD_GAP_X),
+        y: (index % rowCount) * (SCREEN_CARD_HEIGHT + CARD_GAP_Y),
+      };
+    });
+    layerLeft += Math.ceil(layer.length / rowCount) * (SCREEN_CARD_WIDTH + CARD_GAP_X);
+  });
+
+  const maxX = Math.max(0, ...Object.values(positions).map(({ x }) => x));
+  const maxY = Math.max(0, ...Object.values(positions).map(({ y }) => y));
+  return {
+    positions,
+    width: maxX + SCREEN_CARD_WIDTH,
+    height: maxY + SCREEN_CARD_HEIGHT,
+  };
+}
+
+function isViewportTransition(label: string | undefined): boolean {
+  return /\b(?:scroll|swipe)\b/i.test(label ?? "");
+}
+
+function topologyLayers(
+  screenIds: string[],
+  chained: ReadonlySet<string>,
+  transitions: LayoutGraph["transitions"],
+): string[][] {
+  if (!screenIds.length) return [];
+  const members = new Set(screenIds);
+  const originalIndex = new Map(screenIds.map((id, index) => [id, index]));
+  const rank = new Map(screenIds.map((id) => [id, 0]));
+  const edges = transitions.flatMap((transition) => {
+    const target =
+      transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
+    if (!target || !members.has(target) || isViewportTransition(transition.label)) return [];
+    if (!members.has(transition.fromScreenId) && !chained.has(transition.fromScreenId)) return [];
+    return [{ from: transition.fromScreenId, to: target }];
+  });
+
+  // Longest-path layering for ordinary DAGs. The iteration cap makes cycles
+  // harmless: they stay together instead of pushing the map outward forever.
+  for (let pass = 0; pass < screenIds.length; pass += 1) {
+    let changed = false;
+    for (const edge of edges) {
+      const next = members.has(edge.from) ? (rank.get(edge.from) ?? 0) + 1 : 0;
+      if (next <= (rank.get(edge.to) ?? 0) || next >= screenIds.length) continue;
+      rank.set(edge.to, next);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+
+  const maxRank = Math.max(0, ...rank.values());
+  const layers = Array.from({ length: maxRank + 1 }, () => [] as string[]);
+  for (const screenId of screenIds) layers[rank.get(screenId) ?? 0]!.push(screenId);
+
+  // Preserve deliberate map order inside a layer. This is stable and avoids
+  // the unpredictable reshuffling that makes auto-arrange feel destructive.
+  for (const layer of layers) {
+    layer.sort((left, right) => (originalIndex.get(left) ?? 0) - (originalIndex.get(right) ?? 0));
+  }
+  return layers.filter((layer) => layer.length > 0);
 }

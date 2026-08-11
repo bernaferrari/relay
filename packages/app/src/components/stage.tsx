@@ -1280,9 +1280,7 @@ export function DeviceStage(_props: {
                     </For>
                   </Show>
                   <Show
-                    when={
-                      recordedAccessibilityHoverActive() ? recordedHoverHighlight() : undefined
-                    }
+                    when={recordedAccessibilityHoverActive() ? recordedHoverHighlight() : undefined}
                   >
                     {(highlight) => (
                       <i
