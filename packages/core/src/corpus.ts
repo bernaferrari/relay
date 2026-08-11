@@ -240,11 +240,7 @@ function normalizeJourneys(value: unknown): CorpusJourney[] | undefined {
             `journeys[${journeyIndex}].steps[${stepIndex}].name`,
             160,
           ),
-          ...(optionalText(
-            stepRecord.key,
-            `journeys[${journeyIndex}].steps[${stepIndex}].key`,
-            120,
-          )
+          ...(optionalText(stepRecord.key, `journeys[${journeyIndex}].steps[${stepIndex}].key`, 120)
             ? {
                 key: optionalText(
                   stepRecord.key,
@@ -255,10 +251,7 @@ function normalizeJourneys(value: unknown): CorpusJourney[] | undefined {
             : {}),
         };
       }
-      return normalizeNavSteps(
-        [step],
-        `journeys[${journeyIndex}].steps[${stepIndex}]`,
-      )![0]!;
+      return normalizeNavSteps([step], `journeys[${journeyIndex}].steps[${stepIndex}]`)![0]!;
     });
     if (!steps.some((step) => step.kind === "capture")) {
       throw new Error(`journey ${id} requires at least one capture step`);
@@ -310,6 +303,9 @@ function normalizeScope(scope?: Partial<CorpusScope>): CorpusScope {
   }
   // Map locale first so UI/coverage order is natural.
   const orderedLocales = [mapLocale, ...locales.filter((locale) => locale !== mapLocale)];
+  const entryPath = normalizeNavSteps(scope?.entryPath, "entryPath");
+  const languagePath = normalizeNavSteps(scope?.languagePath, "languagePath");
+  const journeys = normalizeJourneys(scope?.journeys);
   return {
     maxDepth: bounded(scope?.maxDepth, DEFAULT_SCOPE.maxDepth, 0, 6, "maxDepth"),
     maxScreens: bounded(scope?.maxScreens, DEFAULT_SCOPE.maxScreens, 1, 2_000, "maxScreens"),
@@ -331,14 +327,10 @@ function normalizeScope(scope?: Partial<CorpusScope>): CorpusScope {
     strategy,
     mapLocale,
     ...(optionalText(scope?.app, "app", 240) ? { app: optionalText(scope?.app, "app", 240) } : {}),
-    ...(normalizeNavSteps(scope?.entryPath, "entryPath")
-      ? { entryPath: normalizeNavSteps(scope?.entryPath, "entryPath") }
-      : {}),
-    ...(normalizeNavSteps(scope?.languagePath, "languagePath")
-      ? { languagePath: normalizeNavSteps(scope?.languagePath, "languagePath") }
-      : {}),
+    ...(entryPath ? { entryPath } : {}),
+    ...(languagePath ? { languagePath } : {}),
     ...(languageOptions && Object.keys(languageOptions).length ? { languageOptions } : {}),
-    ...(normalizeJourneys(scope?.journeys) ? { journeys: normalizeJourneys(scope?.journeys) } : {}),
+    ...(journeys ? { journeys } : {}),
     allowSensitiveControls: scope?.allowSensitiveControls ?? false,
   };
 }
@@ -496,7 +488,7 @@ function actionableAnchor(nodes: SnapshotNode[], node: SnapshotNode): SnapshotNo
 /** Interactive candidates for the corpus crawl. Prefer stable identifiers. */
 export function corpusControls(
   nodes: SnapshotNode[],
-  options?: { allowSensitive?: boolean },
+  options?: { allowSensitive?: boolean; includeToggles?: boolean },
 ): CorpusControl[] {
   const seen = new Set<string>();
   const nested = isNestedSettingsPage(nodes);
@@ -517,7 +509,7 @@ export function corpusControls(
       const label = visibleLabel || (identifierOnlyControl ? node.identifier!.trim() : "");
       if (!label) return [];
       if (isCorpusChromeLabel(label)) return [];
-      if (isToggleControl(node, label)) return [];
+      if (!options?.includeToggles && isToggleControl(node, label)) return [];
       if (!options?.allowSensitive && unsafeControlText(label)) return [];
       if (!anchor && node.type !== "Cell" && !node.identifier) return [];
       // Nested pages often still expose the parent settings list in the AX tree.
@@ -911,6 +903,17 @@ export async function readCorpusScreenAsset(
   }
 }
 
+export async function readCorpusScreenAccessibilityAsset(
+  sessionId: string,
+  screenId: string,
+): Promise<Buffer | null> {
+  try {
+    return await readFile(screenAccessibilityAssetPath(sessionId, screenId));
+  } catch {
+    return null;
+  }
+}
+
 export function buildCorpusCoverage(session: CorpusSession): CorpusCoverageReport {
   const locales = session.scope.locales;
   const byKey = new Map<string, CorpusScreen[]>();
@@ -1286,6 +1289,7 @@ async function runNavSteps(
   device: Device,
   steps: CorpusNavStep[] | undefined,
   app: string | undefined,
+  options?: { allowSensitive?: boolean; includeToggles?: boolean },
 ): Promise<void> {
   if (!steps?.length) return;
   for (const step of steps) {
@@ -1326,7 +1330,27 @@ async function runNavSteps(
     const softIdentifier =
       Boolean(step.target.identifier) && !step.target.label && !step.target.text;
     try {
-      if (step.target.identifier) {
+      if (step.target.stableKey) {
+        const context = currentTargetContext();
+        if (context.kind !== "device") throw new Error("stable corpus controls require a device");
+        await interactCorpusControl({
+          device,
+          serial: context.serial,
+          control: {
+            id: step.target.stableKey,
+            stableKey: step.target.stableKey,
+            label: step.target.label ?? step.target.text ?? step.target.stableKey,
+            target: {
+              ...(step.target.identifier ? { identifier: step.target.identifier } : {}),
+              ...(step.target.label ? { label: step.target.label } : {}),
+              ...(step.target.text ? { text: step.target.text } : {}),
+              ...(step.target.point ? { point: step.target.point } : {}),
+            },
+          },
+          allowSensitive: options?.allowSensitive === true,
+          includeToggles: options?.includeToggles === true,
+        });
+      } else if (step.target.identifier) {
         await pressIdentifier(device, step.target.identifier);
       } else if (step.target.text) {
         await pressMatchingText(device, step.target.text);
@@ -1372,6 +1396,7 @@ async function interactCorpusControl(input: {
   serial: string;
   control: CorpusControl;
   allowSensitive: boolean;
+  includeToggles?: boolean;
   maxScrolls?: number;
 }): Promise<CorpusControl> {
   const maxScrolls = Math.max(0, Math.min(8, input.maxScrolls ?? 6));
@@ -1379,6 +1404,7 @@ async function interactCorpusControl(input: {
     const snapshot = await captureSnapshot({ serial: input.serial });
     const visible = corpusControls(snapshot.nodes, {
       allowSensitive: input.allowSensitive,
+      includeToggles: input.includeToggles,
     });
     const live = visible.find((candidate) => candidate.stableKey === input.control.stableKey);
     if (live) {
@@ -1852,6 +1878,84 @@ async function replayLocalePlan(input: {
   return (await readCorpusSession(session.id))!;
 }
 
+/**
+ * Replay deliberately recorded stateful flows after the navigable page map.
+ *
+ * A journey starts from the same app + entry path for every locale. Capture
+ * checkpoints are first-class evidence identities, so a dialog or toggled
+ * state remains distinct even when it shares its parent's title or bounds.
+ * Cleanup steps after the last checkpoint still run before the next journey.
+ */
+async function replayCorpusJourneys(input: {
+  session: CorpusSession;
+  locale: string;
+  serial: string;
+  device: Device;
+}): Promise<CorpusSession> {
+  const journeys = input.session.scope.journeys ?? [];
+  if (!journeys.length) return input.session;
+
+  let session = input.session;
+  const app = session.scope.app;
+
+  for (const journey of journeys) {
+    if (isCancelled(session.id)) throw new Error("corpus cancelled");
+    if (Date.now() - session.createdAt > session.scope.maxDurationMs) {
+      throw new Error("corpus time budget is exhausted");
+    }
+
+    await updateProgress(session, {
+      phase: "replaying",
+      locale: input.locale,
+      path: [journey.name],
+      message: `Replaying “${journey.name}”`,
+    });
+
+    if (app) {
+      await openApp(input.device, app, { relaunch: true });
+      await sleep(700, input.device);
+    }
+    await runNavSteps(input.device, session.scope.entryPath, app);
+
+    let checkpoint = 0;
+    for (const step of journey.steps) {
+      if (isCancelled(session.id)) throw new Error("corpus cancelled");
+      if (step.kind !== "capture") {
+        await runNavSteps(input.device, [step], app, {
+          // Journeys are explicit user-authored flows. They may intentionally
+          // open transactional dialogs or exercise a reversible toggle.
+          allowSensitive: true,
+          includeToggles: true,
+        });
+        continue;
+      }
+
+      checkpoint += 1;
+      await updateProgress(session, {
+        phase: "replaying",
+        locale: input.locale,
+        depth: checkpoint,
+        path: [journey.name, step.name],
+        message: `Capture “${step.name}”`,
+      });
+      const captured = await captureCurrent({
+        sessionId: session.id,
+        serial: input.serial,
+        locale: input.locale,
+        depth: checkpoint,
+        path: [journey.name, step.name],
+        pathKeys: [
+          `journey:${journey.id}`,
+          `checkpoint:${step.key ?? slugCorpusPathSegment(step.name)}`,
+        ],
+      });
+      session = captured.session;
+    }
+  }
+
+  return (await readCorpusSession(session.id))!;
+}
+
 async function switchToLocale(input: {
   session: CorpusSession;
   locale: string;
@@ -2032,6 +2136,12 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
           await writeSession(session);
           emitCorpus(session);
         }
+        session = await replayCorpusJourneys({
+          session,
+          locale: mapLocale,
+          serial,
+          device,
+        });
         session = await markCorpusLocaleComplete(session, mapLocale);
 
         for (const locale of otherLocales) {
@@ -2047,6 +2157,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             device,
             plan,
           });
+          session = await replayCorpusJourneys({ session, locale, serial, device });
           session = await markCorpusLocaleComplete(session, locale);
         }
       } else {
@@ -2061,6 +2172,7 @@ async function runCorpusCrawl(sessionId: string): Promise<void> {
             session = (await readCorpusSession(sessionId))!;
           }
           session = await crawlLocale({ session, locale, serial, device });
+          session = await replayCorpusJourneys({ session, locale, serial, device });
           session = await markCorpusLocaleComplete(session, locale);
         }
       }

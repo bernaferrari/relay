@@ -216,6 +216,74 @@ test("corpusControls keep SwiftUI cells and drop sheet chrome", () => {
   assert.equal(controls[0]?.target.ref, "e17");
 });
 
+test("corpusControls expose toggles only for explicit recorded journeys", () => {
+  const nodes: SnapshotNode[] = [
+    {
+      index: 0,
+      type: "Switch",
+      role: "switch",
+      label: "Enable Kids Mode",
+      hittable: true,
+      visibleToUser: true,
+      value: "0",
+      ref: "kids-toggle",
+    },
+  ];
+  assert.deepEqual(corpusControls(nodes), []);
+  assert.deepEqual(
+    corpusControls(nodes, { includeToggles: true }).map((control) => control.label),
+    ["Enable Kids Mode"],
+  );
+});
+
+test("corpus scope preserves explicit dialog and state checkpoints", async () => {
+  await workspace();
+  const session = await createCorpusSession({
+    name: "Stateful settings",
+    targetId: "android",
+    scope: {
+      locales: ["en", "it"],
+      journeys: [
+        {
+          id: "profile-birth-year",
+          name: "Profile",
+          steps: [
+            {
+              kind: "tap",
+              target: { stableKey: "structure:profile-row", label: "Profile" },
+            },
+            {
+              kind: "tap",
+              target: { stableKey: "structure:birth-year-row", label: "Birth Year" },
+            },
+            { kind: "capture", name: "Birth Year dialog", key: "birth-year-dialog" },
+            { kind: "back" },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(session.scope.journeys, [
+    {
+      id: "profile-birth-year",
+      name: "Profile",
+      steps: [
+        {
+          kind: "tap",
+          target: { stableKey: "structure:profile-row", label: "Profile" },
+        },
+        {
+          kind: "tap",
+          target: { stableKey: "structure:birth-year-row", label: "Birth Year" },
+        },
+        { kind: "capture", name: "Birth Year dialog", key: "birth-year-dialog" },
+        { kind: "back" },
+      ],
+    },
+  ]);
+});
+
 test("corpusControls use locale-independent structure when Compose omits identifiers", () => {
   const rows = (label: string): SnapshotNode[] => [
     {

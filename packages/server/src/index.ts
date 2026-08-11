@@ -5,6 +5,7 @@
 import http from "node:http";
 import { URL } from "node:url";
 import { readFile } from "node:fs/promises";
+import { optionalFiniteSearchNumber } from "./search-params.js";
 import {
   allowedBrowserOrigin,
   isLocalWorkspacePath,
@@ -1227,8 +1228,8 @@ async function handleRequest(
       const caption = url.searchParams.get("caption") ?? undefined;
       const jobId = url.searchParams.get("jobId") ?? undefined;
       const ephemeral = url.searchParams.get("ephemeral") === "1";
-      const previewX = Number(url.searchParams.get("previewX"));
-      const previewY = Number(url.searchParams.get("previewY"));
+      const previewX = optionalFiniteSearchNumber(url.searchParams, "previewX");
+      const previewY = optionalFiniteSearchNumber(url.searchParams, "previewY");
       assertTargetObservation(scope, serial);
       const shot = await captureTargetScreenshot({
         serial,
@@ -1238,7 +1239,7 @@ async function handleRequest(
         // Screenshots must not take an accessibility tree — that wedges XCTest
         // on physical iPads and blocks the next interact/snapshot.
         includeScreenMatch: false,
-        ...(Number.isFinite(previewX) && Number.isFinite(previewY)
+        ...(previewX !== undefined && previewY !== undefined
           ? { previewTap: { x: previewX, y: previewY } }
           : {}),
       });

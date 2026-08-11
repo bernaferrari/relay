@@ -18,6 +18,7 @@ import {
   saveSwitcherProfile,
   scanSwitcherPicker,
   readCorpusScreenAsset,
+  readCorpusScreenAccessibilityAsset,
   readCorpusSession,
   renameCorpusSession,
   setCorpusStatus,
@@ -303,6 +304,24 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         ? "text/markdown; charset=utf-8"
         : "application/json; charset=utf-8",
     );
+    return true;
+  }
+
+  const accessibilityMatch = matchPath(pathname, "/corpus/:id/screens/:screenId/accessibility");
+  if (method === "GET" && accessibilityMatch) {
+    await loadScopedSession(accessibilityMatch.id!, scope);
+    const asset = await readCorpusScreenAccessibilityAsset(
+      accessibilityMatch.id!,
+      accessibilityMatch.screenId!,
+    );
+    if (!asset) throw new HttpError(404, "Corpus accessibility snapshot not found");
+    response.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Length": asset.byteLength,
+      "Cache-Control": "private, max-age=31536000, immutable",
+      ...CORS_HEADERS,
+    });
+    response.end(asset);
     return true;
   }
 
