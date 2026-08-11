@@ -188,7 +188,7 @@ export function ScreenInspector(props: {
                     </span>
                     <span class="min-w-0 flex-1 truncate">
                       {connection.state === "needs-recording"
-                        ? "Not recorded yet"
+                        ? "Record on device"
                         : connection.label || "Open path"}
                     </span>
                     <Icon name="arrow-right" size={11} class="text-[var(--text-weak)]" />

@@ -79,7 +79,7 @@ export function canvasConnections(
           ...(transition.mode ? { mode: transition.mode } : {}),
           ...(transition.review ? { review: { ...transition.review } } : {}),
           ...(sourceAnchor ? { sourceAnchor } : {}),
-          label: transition.label || (step ? transitionLabel(step) : "Not recorded"),
+          label: transition.label || (step ? transitionLabel(step) : "Record path"),
           state: transition.state,
           createdAt: transition.createdAt,
           updatedAt: transition.updatedAt,

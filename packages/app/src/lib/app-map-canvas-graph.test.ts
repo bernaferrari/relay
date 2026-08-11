@@ -201,6 +201,19 @@ test("adding a next screen creates a planned destination that still needs record
   assert.deepEqual(added.position, { x: 640, y: 180 });
 });
 
+test("a planned destination has a clear default name", () => {
+  const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
+  const added = addGraphScreenConnection(
+    first.graph,
+    {
+      fromScreenId: first.destinationScreenId!,
+      position: { x: 640, y: 180 },
+    },
+    20,
+  );
+  assert.equal(added.screen.title, "New screen");
+});
+
 test("a reviewed take can explicitly return to an existing screen or end a flow", () => {
   const first = commitTakeToCanvasGraph(emptyCanvasGraph(), { steps: [steps[0]!], at: 10 });
   const start = first.graph.flows[0]!.screenId;

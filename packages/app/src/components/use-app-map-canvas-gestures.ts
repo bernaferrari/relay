@@ -54,7 +54,6 @@ export function useAppMapCanvasGestures(options: {
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedNodeId: (id: string | null) => void;
   clearSecondarySelection: () => void;
-  clearKeyboardConnection: () => boolean;
   onCommitNodeDrag: (before: AppMapCanvasState) => void;
   onCommitNoteDrag: (before: AppMapCanvasState) => void;
 }) {
@@ -240,10 +239,8 @@ export function useAppMapCanvasGestures(options: {
     const marquee = selectionMarquee();
     if (marquee?.pointerId === event.pointerId) {
       if (!marquee.moved && !marquee.additive) {
-        if (!options.clearKeyboardConnection()) {
-          options.setSelectedNodeIds([]);
-          options.setSelectedNodeId(null);
-        }
+        options.setSelectedNodeIds([]);
+        options.setSelectedNodeId(null);
       }
       setSelectionMarquee(null);
       return;

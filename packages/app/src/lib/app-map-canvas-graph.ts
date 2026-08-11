@@ -406,7 +406,7 @@ export function addGraphScreenConnection(
   }
   const screen: CanvasScreen = {
     id: id("screen", at),
-    title: input.title?.trim() || "Untitled screen",
+    title: input.title?.trim() || "New screen",
     createdAt: at,
     updatedAt: at,
   };
@@ -565,7 +565,7 @@ export function buildCanvasGraphTree(graph: CanvasGraph, steps: RecipeStep[]): M
           stepIndex: stepIndex ?? 0,
           label:
             transition.label ||
-            (stepIndex !== undefined ? transitionLabel(steps[stepIndex]!) : "Not recorded"),
+            (stepIndex !== undefined ? transitionLabel(steps[stepIndex]!) : "Record path"),
           kind:
             (depths.get(transition.destination.screenId) ?? 0) <=
             (depths.get(transition.fromScreenId) ?? 0)

@@ -1,12 +1,15 @@
 import { For, Show, createEffect, createSignal, on } from "solid-js";
 import type { CanvasNote } from "@relay/protocol";
-import { Button } from "@relay/ui/button";
 import { IconButton } from "@relay/ui/icon-button";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
+import {
+  screenCardActionsVisible,
+  screenCardStartMarkerVisible,
+} from "../lib/app-map-screen-presentation";
 import {
   companionLogicalPointToDisplayed,
   companionLogicalRectToDisplayed,
@@ -234,10 +237,7 @@ export function ScreenCard(props: {
   onOpenDetails: () => void;
   onRun?: () => void;
   onCommitRename: (title: string) => void;
-  onConnectKeyboard: () => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
-  /** This screen is the start of a click-to-connect path draft. */
-  pathDraft?: boolean;
   /** Live device is on this mapped screen. Distinct from selected. */
   here?: boolean;
 }) {
@@ -296,14 +296,12 @@ export function ScreenCard(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <Show
-        when={props.selected && props.showActions !== false && !props.editing && !props.detailsOpen}
-      >
+      <Show when={screenCardActionsVisible(props)}>
         <div
           role="toolbar"
           aria-label={`${props.title} screen actions`}
           data-app-map-screen-actions
-          class="absolute top-[30px] z-30 flex items-center gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-1 shadow-[0_6px_18px_rgb(0_0_0/10%)]"
+          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[9px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[0_4px_14px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
           <Show when={props.onRun}>
@@ -346,21 +344,6 @@ export function ScreenCard(props: {
           >
             <Icon name="info" size={13} />
           </IconButton>
-          <Button
-            variant="secondary"
-            size="md"
-            class="px-2.5 text-[11px]"
-            aria-label={`Path from ${props.title}`}
-            data-tip="Add a path to the next screen"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onConnectKeyboard();
-            }}
-          >
-            <Icon name="plus" size={11} />
-            Add path
-          </Button>
         </div>
       </Show>
       <header
@@ -416,7 +399,13 @@ export function ScreenCard(props: {
             Here
           </span>
         </Show>
-        <Show when={!props.editing && !props.here && props.isFlowStart}>
+        <Show
+          when={
+            !props.editing &&
+            !props.here &&
+            screenCardStartMarkerVisible(props.title, props.isFlowStart)
+          }
+        >
           <span class="absolute left-0 shrink-0 rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
             Start
           </span>
@@ -457,12 +446,7 @@ export function ScreenCard(props: {
               <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--surface-base-hover)]">
                 <Icon name="camera" size={14} />
               </span>
-              <span class="text-[10.5px] font-medium text-[var(--text-base)]">
-                Screen not saved
-              </span>
-              <span class="text-[9px]/[1.4]">
-                Open this screen on the device, then choose Save screen.
-              </span>
+              <span class="text-[10.5px] font-medium text-[var(--text-base)]">No screenshot</span>
             </div>
           </div>
         }
@@ -538,11 +522,6 @@ export function ScreenCard(props: {
             </div>
           </div>
         )}
-      </Show>
-      <Show when={props.pathDraft}>
-        <p class="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-[200px] -translate-x-1/2 text-center text-[10.5px] font-medium text-[var(--text-interactive-base)]">
-          Click the next screen, or add a new one
-        </p>
       </Show>
     </article>
   );

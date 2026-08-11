@@ -88,7 +88,7 @@ export function ConnectionInspector(props: {
                       : "bg-[var(--surface-base-hover)] text-[var(--text-base)]",
             )}
           >
-            {pending() ? "Not recorded" : connectionStatusLabel(props.connection)}
+            {pending() ? "Needs recording" : connectionStatusLabel(props.connection)}
           </span>
           <button
             type="button"
@@ -106,7 +106,7 @@ export function ConnectionInspector(props: {
         </strong>
         <p class={cn(copyDescription, "m-0 text-[11.5px]")}>
           {pending()
-            ? "This path has no actions yet. Open the device to record it, or choose another behavior below."
+            ? "Record this path on the device, or choose another behavior below."
             : describeConnectionPath({
                 sourceTitle: props.sourceTitle,
                 targetTitle: props.targetTitle,
@@ -323,7 +323,7 @@ export function ConnectionInspector(props: {
       >
         <div class="mt-3 grid gap-2">
           <Button variant="primary" size="lg" class="w-full" onClick={props.setup.onRecord}>
-            <Icon name="smartphone" size={12} /> Open device to record
+            <Icon name="smartphone" size={12} /> Record on device
           </Button>
           <button
             type="button"

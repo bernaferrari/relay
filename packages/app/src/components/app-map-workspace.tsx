@@ -100,7 +100,6 @@ import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay"
 import { useAppMapRunFlow } from "../lib/use-app-map-run-flow";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
 import { bindAppMapWorkspaceShellEvents } from "../lib/app-map-workspace-shell-events";
-import { pathDraftClick } from "../lib/app-map-path-draft";
 import {
   CANVAS_COMBINE_CARD_HEIGHT,
   CANVAS_COMBINE_CARD_WIDTH,
@@ -259,9 +258,6 @@ export function AppMapWorkspace(props: {
   };
   const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
-  const [keyboardConnectionSourceId, setKeyboardConnectionSourceId] = createSignal<string | null>(
-    null,
-  );
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
 
@@ -295,11 +291,6 @@ export function AppMapWorkspace(props: {
       setSelectedGroupId(null);
       setSelectedConnectionId(null);
       setScreenInspectorOpen(false);
-    },
-    clearKeyboardConnection: () => {
-      if (!keyboardConnectionSourceId()) return false;
-      setKeyboardConnectionSourceId(null);
-      return true;
     },
     onCommitNodeDrag: (before) =>
       persistMetadata(withCanvasGraph(canvasState(), graph()), { before }),
@@ -339,7 +330,6 @@ export function AppMapWorkspace(props: {
       setRenamingGroupId(null);
       setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
-      setKeyboardConnectionSourceId(null);
       setCapturedScreenUrls({});
       setRenamingNodeId(null);
       setContextSurface(null);
@@ -959,21 +949,11 @@ export function AppMapWorkspace(props: {
       connectionPathTitle(connection, tree().nodes, titleFor),
     );
   };
-  const {
-    chooseKeyboardConnection,
-    createKeyboardDestination,
-    removeConnection,
-    removeScreen,
-    renameScreen,
-  } = useAppMapGraphEdits({
+  const { removeConnection, removeScreen, renameScreen } = useAppMapGraphEdits({
     canvasState,
     graph,
-    treeNodes: () => tree().nodes,
-    draftSteps: () => draft.steps(),
-    positionFor,
     titleFor,
     persistMetadata,
-    setKeyboardConnectionSourceId,
     setSelectedConnectionId,
     setSelectedNodeId,
     setScreenInspectorOpen,
@@ -1057,13 +1037,6 @@ export function AppMapWorkspace(props: {
     onToolChange: setCanvasTool,
     onCaptureScreen: () => void captureCurrentScreen(),
     onAddNote: addNote,
-    onCreateConnection: () => {
-      const node = selectedNode();
-      if (node) {
-        setScreenInspectorOpen(false);
-        setKeyboardConnectionSourceId(node.id);
-      } else toast("Select a screen first, then add a path from it", "info");
-    },
     onRecord: () => {
       if (recorder.recording()) {
         void recorder.stopRecording();
@@ -1110,7 +1083,6 @@ export function AppMapWorkspace(props: {
       setGroupMenu(null);
       setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
-      setKeyboardConnectionSourceId(null);
       setHistoryOpen(false);
     },
   });
@@ -1206,7 +1178,6 @@ export function AppMapWorkspace(props: {
             onViewChange={(next) => {
               setWorkspaceView(next);
               setHistoryOpen(false);
-              setKeyboardConnectionSourceId(null);
             }}
             onOpenProposals={() => setProposalReviewOpen(true)}
           />
@@ -1370,7 +1341,6 @@ export function AppMapWorkspace(props: {
                   selectedConnectionId={selectedConnectionId()}
                   renamingNodeId={renamingNodeId()}
                   renamingGroupId={renamingGroupId()}
-                  keyboardConnectionSourceId={keyboardConnectionSourceId()}
                   awareness={remoteAwareness()}
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
@@ -1409,21 +1379,7 @@ export function AppMapWorkspace(props: {
                         : draft.steps(),
                     )
                   }
-                  onSelectNode={(node, event) => {
-                    const draft = pathDraftClick({
-                      sourceScreenId: keyboardConnectionSourceId(),
-                      clickedScreenId: node.id,
-                    });
-                    if (draft.kind === "connect") {
-                      chooseKeyboardConnection(draft.fromScreenId, draft.toScreenId);
-                      return;
-                    }
-                    if (draft.kind === "cancel") {
-                      setKeyboardConnectionSourceId(null);
-                      return;
-                    }
-                    selectNode(node, event);
-                  }}
+                  onSelectNode={selectNode}
                   onNodeContextMenu={(event, node) => {
                     if (!selectedNodeIds().includes(node.id)) setSelectedNodeId(node.id);
                     openGroupMenu(event, {
@@ -1454,17 +1410,8 @@ export function AppMapWorkspace(props: {
                     });
                   }}
                   onCommitNodeRename={renameScreen}
-                  onConnectKeyboard={(node) => {
-                    setSelectedNodeId(node.id);
-                    setScreenInspectorOpen(false);
-                    setKeyboardConnectionSourceId(node.id);
-                  }}
                   onNodePointerDown={(event, node) => {
                     if (event.button !== 0) return;
-                    if (keyboardConnectionSourceId()) {
-                      event.stopPropagation();
-                      return;
-                    }
                     if (canvasTool() === "hand") {
                       event.stopPropagation();
                       canvasGestures.beginPan(event.clientX, event.clientY);
@@ -1473,7 +1420,10 @@ export function AppMapWorkspace(props: {
                     }
                     event.stopPropagation();
                     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-                    const ids = selectedNodeIds().includes(node.id) ? selectedNodeIds() : [node.id];
+                    const alreadySelected = selectedNodeIds().includes(node.id);
+                    if (!alreadySelected) selectNode(node);
+                    else if (selectedNodeIds().length === 1) setScreenInspectorOpen(true);
+                    const ids = alreadySelected ? selectedNodeIds() : [node.id];
                     canvasGestures.beginNodeDrag({
                       id: node.id,
                       ids,
@@ -1518,9 +1468,6 @@ export function AppMapWorkspace(props: {
                   onCommitGroupRename={renameGroup}
                   onUngroup={ungroup}
                   onGroupSelection={groupSelection}
-                  onChooseKeyboardConnection={chooseKeyboardConnection}
-                  onCreateKeyboardDestination={createKeyboardDestination}
-                  onCancelKeyboardConnection={() => setKeyboardConnectionSourceId(null)}
                   onNotePointerDown={(event, note) => {
                     if (event.button !== 0) return;
                     event.preventDefault();
@@ -1740,13 +1687,6 @@ export function AppMapWorkspace(props: {
                 explorationState={agentExploration.state()}
                 explorationCount={agentExploration.workers().length}
                 onToolChange={setCanvasTool}
-                onCreateConnection={() => {
-                  const node = selectedNode();
-                  if (node) {
-                    setScreenInspectorOpen(false);
-                    setKeyboardConnectionSourceId(node.id);
-                  } else toast("Select a screen first, then add a path from it", "info");
-                }}
                 onAddNote={addNote}
                 onExplore={() => {
                   closeCapturePanel();

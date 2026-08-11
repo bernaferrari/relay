@@ -91,12 +91,9 @@ export function AppMapToolbar(props: {
   deviceOpen: boolean;
   shiftForDevice: boolean;
   wideDevice: boolean;
-  recordDisabled?: boolean;
-  recordDisabledReason?: string;
   explorationState: "idle" | "running" | "stopping" | "complete" | "error";
   explorationCount: number;
   onToolChange: (tool: AppMapCanvasTool) => void;
-  onCreateConnection: () => void;
   onAddNote: () => void;
   onExplore: () => void;
   onToggleDevice: () => void;
@@ -146,21 +143,6 @@ export function AppMapToolbar(props: {
         </button>
         <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       </Show>
-      <button
-        type="button"
-        class={mapControlButton}
-        aria-label="Add path"
-        data-tip={
-          props.recordDisabled
-            ? (props.recordDisabledReason ?? "Save a screen before adding a path")
-            : "Add a path from the selected screen · C"
-        }
-        disabled={props.recordDisabled}
-        onClick={props.onCreateConnection}
-      >
-        <Icon name="arrow-right" size={15} />
-      </button>
-      <span class="mx-0.5 h-6 w-px bg-[var(--border-weak-base)]" aria-hidden="true" />
       <button
         type="button"
         class={mapControlButton}

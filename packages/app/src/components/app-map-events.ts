@@ -82,7 +82,6 @@ export function createAppMapEventOrchestration(options: {
   onToolChange: (tool: AppMapCanvasTool) => void;
   onCaptureScreen: () => void;
   onAddNote: () => void;
-  onCreateConnection: () => void;
   onRecord: () => void;
   onGroupSelection: () => void;
   onUngroupSelection: () => void;
@@ -147,11 +146,6 @@ export function createAppMapEventOrchestration(options: {
       if (event.key === "n" || event.key === "N") {
         event.preventDefault();
         options.onAddNote();
-        return;
-      }
-      if (event.key === "c" || event.key === "C") {
-        event.preventDefault();
-        options.onCreateConnection();
         return;
       }
       if (event.key === "r" || event.key === "R") {

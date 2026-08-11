@@ -15,12 +15,7 @@ import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
 import type { CanvasCombineCardModel, CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
-import {
-  CanvasCombineCard,
-  CanvasNoteCard,
-  KeyboardConnectionChooser,
-  ScreenCard,
-} from "./app-map-canvas-primitives";
+import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
 
@@ -39,7 +34,6 @@ export type AppMapCanvasSceneProps = {
   selectedConnectionId: string | null;
   renamingNodeId: string | null;
   renamingGroupId: string | null;
-  keyboardConnectionSourceId: string | null;
   awareness: readonly CollaborationAwareness[];
   presenceGeometry: PresenceGeometry;
   positionFor: (node: MapTreeNode) => CanvasPoint;
@@ -60,7 +54,6 @@ export type AppMapCanvasSceneProps = {
   canRunToScreen: (screenId: string) => boolean;
   onRunToScreen: (node: MapTreeNode) => void;
   onCommitNodeRename: (node: MapTreeNode, title: string) => void;
-  onConnectKeyboard: (node: MapTreeNode) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
   onSelectGroup: (group: MapGroup) => void;
   onGroupPointerDown: (
@@ -72,9 +65,6 @@ export type AppMapCanvasSceneProps = {
   onCommitGroupRename: (group: MapGroup, name: string) => void;
   onUngroup: (group: MapGroup) => void;
   onGroupSelection: () => void;
-  onChooseKeyboardConnection: (sourceId: string, targetId: string) => void;
-  onCreateKeyboardDestination: (sourceId: string) => void;
-  onCancelKeyboardConnection: () => void;
   onNotePointerDown: (event: PointerEvent, note: CanvasNote) => void;
   onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: (note: CanvasNote, previousText: string) => void;
@@ -493,7 +483,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               onNaturalSize={(size) => rememberNaturalSize(node.id, size)}
               detailsOpen={props.detailsOpen && node.id === props.selectedNodeId}
               sourceAnchor={selectedConnectionAnchor()}
-              pathDraft={props.keyboardConnectionSourceId === node.id}
               onRotationChange={(rotation) => rememberRotation(node.id, rotation)}
               onSelect={(event) => props.onSelectNode(node, event)}
               onContextMenu={(event) => props.onNodeContextMenu(event, node)}
@@ -501,29 +490,11 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               onOpenDetails={() => props.onOpenNodeDetails(node)}
               onRun={props.canRunToScreen(node.id) ? () => props.onRunToScreen(node) : undefined}
               onCommitRename={(title) => props.onCommitNodeRename(node, title)}
-              onConnectKeyboard={() => props.onConnectKeyboard(node)}
               onPointerDown={(event) => props.onNodePointerDown(event, node)}
             />
           );
         }}
       </For>
-
-      <Show when={props.keyboardConnectionSourceId}>
-        {(sourceId) => {
-          const source = () => nodeFor(sourceId());
-          return (
-            <KeyboardConnectionChooser
-              sourceTitle={source() ? props.titleFor(source()!) : "Selected screen"}
-              destinations={props.nodes
-                .filter((node) => node.id !== sourceId())
-                .map((node) => ({ id: node.id, title: props.titleFor(node) }))}
-              onChoose={(targetId) => props.onChooseKeyboardConnection(sourceId(), targetId)}
-              onCreate={() => props.onCreateKeyboardDestination(sourceId())}
-              onCancel={props.onCancelKeyboardConnection}
-            />
-          );
-        }}
-      </Show>
 
       <For each={visibleNotes()}>
         {(note) => (

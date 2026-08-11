@@ -1,25 +1,14 @@
-import type { AppMapCanvasState, RecipeStep } from "@relay/protocol";
+import type { AppMapCanvasState } from "@relay/protocol";
 import type { Accessor } from "solid-js";
 import type { MapTreeNode } from "./app-map-tree";
-import {
-  addPlannedConnection,
-  addPlannedScreenConnection,
-  removeAuthoredConnection,
-  type CanvasConnection,
-} from "./app-map-connection-draft";
+import { removeAuthoredConnection, type CanvasConnection } from "./app-map-connection-draft";
 import { removeCanvasScreen, withCanvasGraph } from "./app-map-canvas-graph";
-import { nextBranchPosition, type CanvasPoint } from "./app-map-canvas-layout";
 import { applyScreenRemovalToCanvas, applyScreenRenameToCanvas } from "./app-map-workspace-helpers";
-import { NEXT_SCREEN_TOAST, PATH_ADDED_TOAST, PATH_REMOVED_TOAST } from "./app-map-path-draft";
-import { toast } from "../context/toast";
 
 /** Screen/connection mutations that only need canvas state + persist. */
 export function useAppMapGraphEdits(options: {
   canvasState: Accessor<AppMapCanvasState>;
   graph: Accessor<NonNullable<AppMapCanvasState["graph"]>>;
-  treeNodes: Accessor<MapTreeNode[]>;
-  draftSteps: Accessor<RecipeStep[]>;
-  positionFor: (node: MapTreeNode) => CanvasPoint;
   titleFor: (node: MapTreeNode) => string;
   persistMetadata: (
     value: AppMapCanvasState,
@@ -28,59 +17,16 @@ export function useAppMapGraphEdits(options: {
       recordHistory?: boolean;
     },
   ) => void;
-  setKeyboardConnectionSourceId: (id: string | null) => void;
   setSelectedConnectionId: (id: string | null) => void;
   setSelectedNodeId: (id: string | null) => void;
   setScreenInspectorOpen: (open: boolean) => void;
   setRenamingNodeId: (id: string | null) => void;
 }) {
-  const chooseKeyboardConnection = (fromScreenId: string, toScreenId: string) => {
-    const next = addPlannedConnection(
-      options.canvasState(),
-      { fromScreenId, toScreenId },
-      Date.now(),
-      options.draftSteps(),
-    );
-    const connection = next.graph?.transitions.at(-1);
-    options.persistMetadata(next);
-    options.setKeyboardConnectionSourceId(null);
-    options.setSelectedConnectionId(connection?.id ?? null);
-    options.setSelectedNodeId(null);
-    toast(PATH_ADDED_TOAST, "success");
-  };
-
-  const createKeyboardDestination = (fromScreenId: string) => {
-    const source = options.treeNodes().find((node) => node.id === fromScreenId);
-    if (!source) return;
-    const position = nextBranchPosition(
-      options.positionFor(source),
-      options.treeNodes().map((node) => options.positionFor(node)),
-    );
-    const next = addPlannedScreenConnection(
-      options.canvasState(),
-      {
-        fromScreenId,
-        position,
-      },
-      Date.now(),
-      options.draftSteps(),
-    );
-    const screenId = next.graph?.screens.at(-1)?.id;
-    options.persistMetadata(next);
-    options.setKeyboardConnectionSourceId(null);
-    options.setSelectedConnectionId(null);
-    options.setSelectedNodeId(screenId ?? null);
-    options.setScreenInspectorOpen(false);
-    options.setRenamingNodeId(screenId ?? null);
-    toast(NEXT_SCREEN_TOAST, "success");
-  };
-
   const removeConnection = (connection: CanvasConnection) => {
     if (connection.source !== "authored") return;
     const next = removeAuthoredConnection(options.canvasState(), connection.id);
     options.persistMetadata(next);
     options.setSelectedConnectionId(null);
-    toast(PATH_REMOVED_TOAST, "info");
   };
 
   const removeScreen = (node: MapTreeNode) => {
@@ -110,8 +56,6 @@ export function useAppMapGraphEdits(options: {
   };
 
   return {
-    chooseKeyboardConnection,
-    createKeyboardDestination,
     removeConnection,
     removeScreen,
     renameScreen,

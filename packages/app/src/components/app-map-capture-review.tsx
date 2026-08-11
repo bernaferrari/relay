@@ -989,12 +989,9 @@ export function AppMapEmptyState(props: {
         deviceOpen={props.deviceOpen}
         shiftForDevice={Boolean(props.deviceOpen && props.deviceSelected)}
         wideDevice={false}
-        recordDisabled={!props.deviceOpen || props.recordState !== "ready"}
-        recordDisabledReason="Show a ready device before recording a path"
         explorationState="idle"
         explorationCount={0}
         onToolChange={() => undefined}
-        onCreateConnection={props.onStartRecording}
         onAddNote={props.onAddNote}
         onExplore={() => undefined}
         onToggleDevice={props.onToggleDevice}
