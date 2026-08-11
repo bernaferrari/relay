@@ -169,6 +169,7 @@ export type {
   NetworkRuntimePlan,
   NetworkRuntimePlanInput,
 } from '../network-runtime-plan.ts';
+export { defineUse } from '../platform-runtime-operations.ts';
 export type {
   PlatformRuntimeHost,
   PlatformRuntimeModule,
