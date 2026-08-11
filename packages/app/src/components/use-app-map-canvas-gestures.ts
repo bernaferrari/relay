@@ -61,6 +61,7 @@ export function useAppMapCanvasGestures(options: {
   const [canvasElement, setCanvasElement] = createSignal<HTMLElement>();
   const [canvasClientSize, setCanvasClientSize] = createSignal({ width: 0, height: 0 });
   const [selectionMarquee, setSelectionMarquee] = createSignal<Marquee | null>(null);
+  const [draggedNodeIds, setDraggedNodeIds] = createSignal<string[]>([]);
   let canvasResizeObserver: ResizeObserver | undefined;
   let pan: { x: number; y: number; view: CanvasViewport } | undefined;
   let nodeDrag: NodeDrag | undefined;
@@ -229,6 +230,7 @@ export function useAppMapCanvasGestures(options: {
 
   const beginNodeDrag = (drag: Omit<NodeDrag, "moved" | "before">) => {
     nodeDrag = { ...drag, moved: false, before: structuredClone(options.canvasState()) };
+    setDraggedNodeIds(drag.ids);
   };
 
   const beginNoteDrag = (drag: Omit<NoteDrag, "moved" | "before">) => {
@@ -264,6 +266,7 @@ export function useAppMapCanvasGestures(options: {
     nodeDrag = undefined;
     noteDrag = undefined;
     pan = undefined;
+    setDraggedNodeIds([]);
   };
 
   const cancelPointer = () => {
@@ -297,6 +300,7 @@ export function useAppMapCanvasGestures(options: {
     cancelPointer,
     canvasClientSize,
     canvasElement,
+    draggedNodeIds,
     finishPointer,
     marqueeRect,
     nodeSelectionSuppressed: () => suppressNodeSelectionClick,

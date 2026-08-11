@@ -47,6 +47,7 @@ export const SCREEN_FRAME_HEIGHT = 200;
 export const SCREEN_FRAME_MIN_WIDTH = 112;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
+const MIN_FIT_CANVAS_SCALE = 0.06;
 const BRANCH_COLUMN_GAP = 136;
 const BRANCH_ROW_GAP = 48;
 
@@ -186,7 +187,8 @@ export function fitCanvasViewport(
   content: { width: number; height: number; left?: number; top?: number },
 ): CanvasViewport {
   const padding = 56;
-  const scale = clampCanvasScale(
+  const scale = Math.max(
+    MIN_FIT_CANVAS_SCALE,
     Math.min(
       1,
       (client.width - padding * 2) / content.width,

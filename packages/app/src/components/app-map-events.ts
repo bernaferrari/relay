@@ -83,8 +83,6 @@ export function createAppMapEventOrchestration(options: {
   onCaptureScreen: () => void;
   onAddNote: () => void;
   onRecord: () => void;
-  onGroupSelection: () => void;
-  onUngroupSelection: () => void;
   onDeleteSelection: () => void;
   onEscape: () => void;
 }) {
@@ -118,12 +116,6 @@ export function createAppMapEventOrchestration(options: {
       if (isCaptureScreenShortcut(event)) {
         event.preventDefault();
         options.onCaptureScreen();
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "g") {
-        event.preventDefault();
-        if (event.shiftKey) options.onUngroupSelection();
-        else options.onGroupSelection();
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;

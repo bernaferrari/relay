@@ -7,17 +7,13 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
-import {
-  canvasConnectionPresentation,
-  crossGroupConnectionRepresentatives,
-} from "../lib/app-map-connection-visibility";
 import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
   ensureCanvasGraph,
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
-import { compactGroupedCanvasPositions } from "../lib/app-map-auto-layout";
+import { compactCanvasPositions } from "../lib/app-map-auto-layout";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
 import {
   canvasBounds,
@@ -46,7 +42,7 @@ import {
 } from "../lib/app-map-run-readiness";
 import { toast } from "../context/toast";
 import { AppMapEmptyState } from "./app-map-capture-review";
-import { ConnectionInspector, GroupInspector, ScreenInspector } from "./app-map-canvas-primitives";
+import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
 import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { appMapDeviceStatus } from "./device-status-label";
 import { AppMapDeviceCompanionMount } from "./app-map-device-companion-mount";
@@ -73,17 +69,14 @@ import { useAppMapCapturePanel } from "../lib/use-app-map-capture-panel";
 import { useAppMapCaseStack } from "../lib/use-app-map-case-stack";
 import { useAppMapConnectionBehaviors } from "../lib/use-app-map-connection-behaviors";
 import { useAppMapFlowSetup } from "../lib/use-app-map-flow-setup";
-import { useAppMapGroupOps } from "../lib/use-app-map-group-ops";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import { targetIsReady } from "../lib/target-presentation";
 import {
   appMapCommitSummary,
   applyTargetSetToActiveFlow,
   buildMinimapEdges,
-  buildMinimapGroups,
   buildMinimapNodes,
   buildPresenceGeometry,
-  clampGroupMenuPosition,
   captureContextLabel as buildCaptureContextLabel,
   canonicalNotesFor,
   canvasRemovalChanges,
@@ -126,7 +119,6 @@ import {
 } from "../lib/app-map-workspace-media";
 import { AppMapLoadFeedback } from "./app-map-load-feedback";
 import { connectionActionSummaries } from "../lib/connection-action-presentation";
-import { AppMapGroupMenu, type AppMapGroupMenuState } from "./app-map-group-menu";
 import { useAppMapCanvasGestures } from "./use-app-map-canvas-gestures";
 
 type AppMapContextSurface = "agent" | "history" | "proposals" | null;
@@ -259,57 +251,13 @@ export function AppMapWorkspace(props: {
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
   const connections = createMemo(() => canvasConnections(tree(), draft.steps(), canvasState()));
   const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = createSignal<string | null>(null);
-  const [renamingGroupId, setRenamingGroupId] = createSignal<string | null>(null);
-  const [groupMenu, setGroupMenu] = createSignal<AppMapGroupMenuState | null>(null);
   const [selectedNodeId, setSelectedNodeIdValue] = createSignal<string | null>(null);
   const setSelectedNodeId = (id: string | null) => {
     setSelectedNodeIdValue(id);
     setSelectedNodeIds(id ? [id] : []);
-    setSelectedGroupId(null);
   };
   const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
-  const connectionPresentation = createMemo(() => {
-    const groupForScreen = new Map<string, string>();
-    for (const group of groups()) {
-      for (const screenId of group.screenIds) groupForScreen.set(screenId, group.id);
-    }
-    const focus = {
-      selectedConnectionId: selectedConnectionId(),
-      selectedGroupId: selectedGroupId(),
-      selectedScreenIds: new Set(selectedNodeIds()),
-    };
-    return new Map(
-      connections().map((connection) => [
-        connection.id,
-        canvasConnectionPresentation(connection, groupForScreen, focus),
-      ]),
-    );
-  });
-  const displayedConnections = createMemo(() =>
-    connections().filter((connection) => connectionPresentation().get(connection.id) !== "hidden"),
-  );
-  const summarizedConnectionIds = createMemo(
-    () =>
-      new Set(
-        [...connectionPresentation().entries()]
-          .filter(([, presentation]) => presentation === "summary")
-          .map(([connectionId]) => connectionId),
-      ),
-  );
-  const minimapConnections = createMemo(() => {
-    const groupForScreen = new Map<string, string>();
-    for (const group of groups()) {
-      for (const screenId of group.screenIds) groupForScreen.set(screenId, group.id);
-    }
-    const representatives = crossGroupConnectionRepresentatives(connections(), groupForScreen);
-    return displayedConnections().filter(
-      (connection) =>
-        connectionPresentation().get(connection.id) === "full" ||
-        representatives.has(connection.id),
-    );
-  });
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
 
@@ -339,7 +287,6 @@ export function AppMapWorkspace(props: {
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
     clearSecondarySelection: () => {
-      setSelectedGroupId(null);
       setSelectedConnectionId(null);
       setScreenInspectorOpen(false);
     },
@@ -378,8 +325,6 @@ export function AppMapWorkspace(props: {
     onDocumentReset: () => {
       deviceAutoOpenedForMap = "";
       setSelectedNodeId(null);
-      setSelectedGroupId(null);
-      setRenamingGroupId(null);
       setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
       setCapturedScreenUrls({});
@@ -504,12 +449,33 @@ export function AppMapWorkspace(props: {
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
   );
-  const selectedGroup = createMemo(
-    () => groups().find((group) => group.id === selectedGroupId()) ?? null,
-  );
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
+  const primaryConnectionIds = createMemo(() => {
+    const bestByTarget = new Map<string, { id: string; score: number }>();
+    const nodeById = new Map(tree().nodes.map((node) => [node.id, node]));
+    for (const connection of connections()) {
+      const from = nodeById.get(connection.fromScreenId);
+      const to = nodeById.get(connection.toScreenId);
+      if (!from || !to) continue;
+      const source = positionFor(from);
+      const target = positionFor(to);
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const sameLaneForward = Math.abs(dx) < 1 && dy > 0;
+      const score = sameLaneForward
+        ? dy
+        : dx > 0
+          ? dx * 10 + Math.abs(dy)
+          : 1_000_000 + Math.abs(dx) * 10 + Math.abs(dy);
+      const current = bestByTarget.get(connection.toScreenId);
+      if (!current || score < current.score) {
+        bestByTarget.set(connection.toScreenId, { id: connection.id, score });
+      }
+    }
+    return [...bestByTarget.values()].map(({ id }) => id);
+  });
   const selectedEntryFlows = createMemo(() =>
     entryFlowsForScreen(activeAppMap(), selectedNodeId()),
   );
@@ -577,21 +543,28 @@ export function AppMapWorkspace(props: {
       })),
     ),
   );
-  const usableCanvasClientSize = createMemo(() => {
-    const client = canvasGestures.canvasClientSize();
+  const usableCanvasClientSize = () => {
+    const observed = canvasGestures.canvasClientSize();
+    const element = canvasGestures.canvasElement();
+    // ResizeObserver can report the mount-time zero size before a hidden
+    // workspace becomes visible. Actions such as Fit must use the current DOM
+    // box rather than remaining pinned to that stale first observation.
+    const client = {
+      width: element?.clientWidth || observed.width,
+      height: element?.clientHeight || observed.height,
+    };
     // Read these signals so orientation/opening changes recompute even when
     // the outer canvas itself did not resize.
     deviceCompanionOrientation();
     const reservesRightSide =
       window.innerWidth > 900 && ((captureOpen() && Boolean(selectedDevice())) || agentOpen());
     if (!reservesRightSide) return client;
-    const element = canvasGestures.canvasElement();
     const panel = element
       ?.closest(".app-map-canvas")
       ?.querySelector<HTMLElement>(".ui-device-companion, [aria-label='Map with AI']");
     const reservedWidth = (panel?.getBoundingClientRect().width ?? 376) + 32;
     return { width: Math.max(320, client.width - reservedWidth), height: client.height };
-  });
+  };
   const minimapNodes = createMemo(() =>
     buildMinimapNodes({
       nodes: tree().nodes,
@@ -605,21 +578,14 @@ export function AppMapWorkspace(props: {
       ),
     }),
   );
-  const minimapGroups = createMemo(() =>
-    buildMinimapGroups({
-      groups: groups(),
-      bounds: bounds(),
-      positions: resolvedPositions(),
-      selectedGroupId: selectedGroupId(),
-    }),
-  );
   const minimapEdges = createMemo(() =>
     buildMinimapEdges({
       nodes: tree().nodes,
-      connections: minimapConnections(),
+      connections: connections(),
       bounds: bounds(),
       positionFor,
       selectedConnectionId: selectedConnectionId(),
+      selectedNodeIds: selectedNodeIds(),
       transitionStates: Object.fromEntries(
         Object.entries(runProjection().transitions).map(([id, transition]) => [
           id,
@@ -680,7 +646,6 @@ export function AppMapWorkspace(props: {
     } else {
       setSelectedNodeId(node.id);
     }
-    setSelectedGroupId(null);
     setSelectedConnectionId(null);
     // Selection is the entry point to object properties; closing Details keeps selection.
     setScreenInspectorOpen(!event?.shiftKey);
@@ -814,7 +779,7 @@ export function AppMapWorkspace(props: {
     );
   });
   const tidyMap = () => {
-    const arranged = compactGroupedCanvasPositions(graph(), groups());
+    const arranged = compactCanvasPositions(graph());
     if (!Object.keys(arranged).length) return;
     persistMetadata({ ...canvasState(), positions: arranged });
     requestAnimationFrame(fit);
@@ -1057,33 +1022,6 @@ export function AppMapWorkspace(props: {
     setScreenInspectorOpen,
     setRenamingNodeId,
   });
-  const { groupSelection, ungroup, ungroupSelection, renameGroup, selectGroup } = useAppMapGroupOps(
-    {
-      activeAppMap,
-      canvasState,
-      groups,
-      selectedNodeIds,
-      persistMetadata,
-      setSelectedNodeIdValue,
-      setSelectedNodeIds,
-      setSelectedConnectionId,
-      setSelectedGroupId,
-      setRenamingGroupId,
-      setScreenInspectorOpen,
-      setRenamingNodeId,
-      setGroupMenu: () => setGroupMenu(null),
-    },
-  );
-  const openGroupMenu = (event: MouseEvent, options: { groupId?: string; screenIds: string[] }) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = canvasGestures.canvasElement()?.getBoundingClientRect();
-    if (!rect) return;
-    setGroupMenu({
-      ...clampGroupMenuPosition({ clientX: event.clientX, clientY: event.clientY, rect }),
-      ...options,
-    });
-  };
   const undo = () => {
     const entry = canvasHistory.undo();
     if (!entry) {
@@ -1149,18 +1087,7 @@ export function AppMapWorkspace(props: {
       else if (hereScreenId() || selectedNode()) recordFromHere();
       else toast("Select a screen or path to record", "info");
     },
-    onGroupSelection: groupSelection,
-    onUngroupSelection: () => {
-      const group = selectedGroup();
-      if (group) ungroup(group);
-      else ungroupSelection();
-    },
     onDeleteSelection: () => {
-      const group = selectedGroup();
-      if (group) {
-        ungroup(group);
-        return;
-      }
       const connection = selectedConnection();
       if (connection) {
         removeConnection(connection);
@@ -1176,9 +1103,6 @@ export function AppMapWorkspace(props: {
         return;
       }
       setSelectedNodeId(null);
-      setSelectedGroupId(null);
-      setRenamingGroupId(null);
-      setGroupMenu(null);
       setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
       setHistoryOpen(false);
@@ -1252,9 +1176,8 @@ export function AppMapWorkspace(props: {
           onPointerDown={(event) => {
             const target = event.target as HTMLElement;
             const isCanvasBackground = !target.closest(
-              "[data-app-map-screen-id], [data-app-map-group-id], aside, button, input, textarea",
+              "[data-app-map-screen-id], aside, button, input, textarea",
             );
-            if (!target.closest("[data-app-map-group-menu]")) setGroupMenu(null);
             const wantsPan = canvasTool() === "hand" || event.button === 1;
             if (hasCanvasContent() && wantsPan && !target.closest("button")) {
               canvasGestures.beginPan(event.clientX, event.clientY);
@@ -1432,20 +1355,18 @@ export function AppMapWorkspace(props: {
                 </Show>
                 <AppMapCanvasScene
                   nodes={tree().nodes}
-                  connections={displayedConnections()}
-                  summarizedConnectionIds={summarizedConnectionIds()}
+                  connections={connections()}
                   notes={canvasState().notes ?? []}
-                  groups={groups()}
                   width={bounds().width}
                   height={bounds().height}
                   viewportScale={view().scale}
                   visibleBounds={visibleCanvasBounds()}
                   selectedNodeId={selectedNodeId()}
                   selectedNodeIds={selectedNodeIds()}
-                  selectedGroupId={selectedGroupId()}
+                  draggingNodeIds={canvasGestures.draggedNodeIds()}
+                  primaryConnectionIds={primaryConnectionIds()}
                   selectedConnectionId={selectedConnectionId()}
                   renamingNodeId={renamingNodeId()}
-                  renamingGroupId={renamingGroupId()}
                   awareness={remoteAwareness()}
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
@@ -1484,14 +1405,6 @@ export function AppMapWorkspace(props: {
                     )
                   }
                   onSelectNode={selectNode}
-                  onNodeContextMenu={(event, node) => {
-                    if (!selectedNodeIds().includes(node.id)) setSelectedNodeId(node.id);
-                    openGroupMenu(event, {
-                      screenIds: selectedNodeIds().includes(node.id)
-                        ? selectedNodeIds()
-                        : [node.id],
-                    });
-                  }}
                   onSelectConnection={(connection) => {
                     setSelectedConnectionId(connection.id);
                     setSelectedNodeId(null);
@@ -1541,37 +1454,6 @@ export function AppMapWorkspace(props: {
                       ),
                     });
                   }}
-                  onSelectGroup={selectGroup}
-                  onGroupPointerDown={(event, group) => {
-                    if (canvasTool() === "hand" || event.button !== 0) return;
-                    event.stopPropagation();
-                    selectGroup(group);
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    canvasGestures.beginNodeDrag({
-                      id: group.id,
-                      ids: [...group.screenIds],
-                      x: event.clientX,
-                      y: event.clientY,
-                      origins: Object.fromEntries(
-                        group.screenIds.flatMap((id) => {
-                          const member = tree().nodes.find((candidate) => candidate.id === id);
-                          return member ? [[id, { ...positionFor(member) }] as const] : [];
-                        }),
-                      ),
-                      groupId: group.id,
-                    });
-                  }}
-                  onGroupContextMenu={(event, group) => {
-                    selectGroup(group);
-                    openGroupMenu(event, { groupId: group.id, screenIds: [...group.screenIds] });
-                  }}
-                  onRenameGroup={(group) => {
-                    selectGroup(group);
-                    setRenamingGroupId(group.id);
-                  }}
-                  onCommitGroupRename={renameGroup}
-                  onUngroup={ungroup}
-                  onGroupSelection={groupSelection}
                   onNotePointerDown={(event, note) => {
                     if (event.button !== 0) return;
                     event.preventDefault();
@@ -1619,167 +1501,134 @@ export function AppMapWorkspace(props: {
                   }
                 />
               </div>
-              <AppMapGroupMenu
-                menu={groupMenu()}
-                groups={groups()}
-                onGroup={groupSelection}
-                onUngroupSelection={ungroupSelection}
-                onRename={(group) => {
-                  setGroupMenu(null);
-                  setRenamingGroupId(group.id);
-                }}
-                onUngroup={ungroup}
-              />
               <Show when={!captureOpen()}>
                 <Show
-                  when={selectedGroup()}
+                  when={selectedConnection()}
                   fallback={
-                    <Show
-                      when={selectedConnection()}
-                      fallback={
-                        <ScreenInspector
-                          node={screenInspectorOpen() ? selectedNode() : null}
-                          title={selectedNode() ? titleFor(selectedNode()!) : ""}
-                          image={
-                            selectedNode()
-                              ? screenshotUrl(
-                                  server,
-                                  draft.steps()[selectedNode()!.representativeStepIndex],
-                                ) ||
-                                capturedScreenUrls()[selectedNode()!.id] ||
-                                variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
-                                undefined
-                              : undefined
-                          }
-                          orientationEvidence={
-                            selectedNode()
-                              ? screenshotOrientationEvidence(
-                                  server,
-                                  draft.steps()[selectedNode()!.representativeStepIndex],
-                                ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
-                              : undefined
-                          }
-                          runState={
-                            selectedNode()
-                              ? runProjection().screens[selectedNode()!.id]?.state
-                              : undefined
-                          }
-                          isFlowStart={
-                            selectedNode()
-                              ? graph().flows.some((flow) => flow.screenId === selectedNode()!.id)
-                              : false
-                          }
-                          connections={connections().filter(
-                            (connection) => connection.fromScreenId === selectedNode()?.id,
-                          )}
-                          titleForScreen={titleForScreen}
-                          flowSetup={selectedFlowSetup()}
-                          onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
-                          onSelectConnection={(connection) => {
-                            setSelectedConnectionId(connection.id);
-                            setSelectedNodeId(null);
-                            setScreenInspectorOpen(false);
-                          }}
-                          onRename={() => {
-                            const node = selectedNode();
-                            if (!node) return;
-                            setScreenInspectorOpen(false);
-                            setRenamingNodeId(node.id);
-                          }}
-                          onRemove={() => {
-                            const node = selectedNode();
-                            if (node) removeScreen(node);
-                          }}
-                          onClose={() => setScreenInspectorOpen(false)}
-                        />
+                    <ScreenInspector
+                      node={screenInspectorOpen() ? selectedNode() : null}
+                      title={selectedNode() ? titleFor(selectedNode()!) : ""}
+                      image={
+                        selectedNode()
+                          ? screenshotUrl(
+                              server,
+                              draft.steps()[selectedNode()!.representativeStepIndex],
+                            ) ||
+                            capturedScreenUrls()[selectedNode()!.id] ||
+                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
+                            undefined
+                          : undefined
                       }
-                    >
-                      {(connection) => (
-                        <ConnectionInspector
-                          connection={connection()}
-                          actionCount={canonicalConnectionFor(connection())?.actions.reduce(
-                            (count, action) =>
-                              count +
-                              (action.kind === "recorded" || action.kind === "steps"
-                                ? action.steps.length
-                                : 1),
-                            0,
-                          )}
-                          actions={connectionActionSummaries(
-                            canonicalConnectionFor(connection())?.actions ?? [],
-                            activeAppMap(),
-                          )}
-                          onChangeWait={(actionId, stepId, waitMs) =>
-                            void updateConnectionWait(connection(), actionId, stepId, waitMs)
-                          }
-                          sourceTitle={titleFor(
-                            tree().nodes.find((node) => node.id === connection().fromScreenId)!,
-                          )}
-                          targetTitle={titleFor(
-                            tree().nodes.find((node) => node.id === connection().toScreenId)!,
-                          )}
-                          setup={{
-                            behaviors: reusableBehaviors(),
-                            onRecord: () => recordConnection(connection()),
-                            onBack: () => attachBackBehavior(connection()),
-                            onAutomatic: () => attachAutomaticBehavior(connection()),
-                            onAttachBehavior: (recipeId) =>
-                              attachReusableBehavior(connection(), recipeId),
-                          }}
-                          replay={{
-                            state: replayStateFor(connection()),
-                            canEditActions: draft
-                              .steps()
-                              .some((step) => step.id === connection().stepId),
-                            ...(replayErrorFor(connection())
-                              ? { error: replayErrorFor(connection()) }
-                              : {}),
-                            onRun: () => void replayConnection(connection()),
-                            onRewrite: () => recordConnection(connection()),
-                            onSaveReusable: () => void saveReusableBehavior(connection()),
-                            onSelectStep: () => {
-                              const index = draft
-                                .steps()
-                                .findIndex((step) => step.id === connection().stepId);
-                              if (index < 0) return;
-                              selectStep(index);
-                              props.onOpenActions();
-                            },
-                          }}
-                          cases={{
-                            ...(caseStackFor(connection())
-                              ? { stack: caseStackFor(connection()) }
-                              : {}),
-                            stacks: Object.values(activeAppMap()?.caseStacks ?? {}),
-                            variables: server.projectVariables().value,
-                            busy: caseStackBusy(),
-                            onSave: (value) => void saveConnectionCaseStack(connection(), value),
-                            onAttach: (caseStackId) =>
-                              void attachConnectionCaseStack(connection(), caseStackId),
-                            onDetach: () => void detachConnectionCaseStack(connection()),
-                            onOpenVariables: props.onOpenVariables,
-                          }}
-                          onRemove={() => removeConnection(connection())}
-                          onClose={() => setSelectedConnectionId(null)}
-                        />
+                      orientationEvidence={
+                        selectedNode()
+                          ? screenshotOrientationEvidence(
+                              server,
+                              draft.steps()[selectedNode()!.representativeStepIndex],
+                            ) || variantOrientationEvidence(activeAppMap(), selectedNode()!.id)
+                          : undefined
+                      }
+                      runState={
+                        selectedNode()
+                          ? runProjection().screens[selectedNode()!.id]?.state
+                          : undefined
+                      }
+                      isFlowStart={
+                        selectedNode()
+                          ? graph().flows.some((flow) => flow.screenId === selectedNode()!.id)
+                          : false
+                      }
+                      connections={connections().filter(
+                        (connection) => connection.fromScreenId === selectedNode()?.id,
                       )}
-                    </Show>
+                      titleForScreen={titleForScreen}
+                      flowSetup={selectedFlowSetup()}
+                      onFlowSetup={(routineId) => void setSelectedFlowSetup(routineId)}
+                      onSelectConnection={(connection) => {
+                        setSelectedConnectionId(connection.id);
+                        setSelectedNodeId(null);
+                        setScreenInspectorOpen(false);
+                      }}
+                      onRename={() => {
+                        const node = selectedNode();
+                        if (!node) return;
+                        setScreenInspectorOpen(false);
+                        setRenamingNodeId(node.id);
+                      }}
+                      onRemove={() => {
+                        const node = selectedNode();
+                        if (node) removeScreen(node);
+                      }}
+                      onClose={() => setScreenInspectorOpen(false)}
+                    />
                   }
                 >
-                  {(group) => (
-                    <GroupInspector
-                      group={group()}
-                      screens={group()
-                        .screenIds.map((id) => tree().nodes.find((node) => node.id === id))
-                        .flatMap((node) => (node ? [{ id: node.id, title: titleFor(node) }] : []))}
-                      onSelectScreen={(screenId) => {
-                        setSelectedGroupId(null);
-                        setSelectedNodeId(screenId);
-                        setScreenInspectorOpen(true);
+                  {(connection) => (
+                    <ConnectionInspector
+                      connection={connection()}
+                      actionCount={canonicalConnectionFor(connection())?.actions.reduce(
+                        (count, action) =>
+                          count +
+                          (action.kind === "recorded" || action.kind === "steps"
+                            ? action.steps.length
+                            : 1),
+                        0,
+                      )}
+                      actions={connectionActionSummaries(
+                        canonicalConnectionFor(connection())?.actions ?? [],
+                        activeAppMap(),
+                      )}
+                      onChangeWait={(actionId, stepId, waitMs) =>
+                        void updateConnectionWait(connection(), actionId, stepId, waitMs)
+                      }
+                      sourceTitle={titleFor(
+                        tree().nodes.find((node) => node.id === connection().fromScreenId)!,
+                      )}
+                      targetTitle={titleFor(
+                        tree().nodes.find((node) => node.id === connection().toScreenId)!,
+                      )}
+                      setup={{
+                        behaviors: reusableBehaviors(),
+                        onRecord: () => recordConnection(connection()),
+                        onBack: () => attachBackBehavior(connection()),
+                        onAutomatic: () => attachAutomaticBehavior(connection()),
+                        onAttachBehavior: (recipeId) =>
+                          attachReusableBehavior(connection(), recipeId),
                       }}
-                      onRename={() => setRenamingGroupId(group().id)}
-                      onUngroup={() => ungroup(group())}
-                      onClose={() => setSelectedGroupId(null)}
+                      replay={{
+                        state: replayStateFor(connection()),
+                        canEditActions: draft
+                          .steps()
+                          .some((step) => step.id === connection().stepId),
+                        ...(replayErrorFor(connection())
+                          ? { error: replayErrorFor(connection()) }
+                          : {}),
+                        onRun: () => void replayConnection(connection()),
+                        onRewrite: () => recordConnection(connection()),
+                        onSaveReusable: () => void saveReusableBehavior(connection()),
+                        onSelectStep: () => {
+                          const index = draft
+                            .steps()
+                            .findIndex((step) => step.id === connection().stepId);
+                          if (index < 0) return;
+                          selectStep(index);
+                          props.onOpenActions();
+                        },
+                      }}
+                      cases={{
+                        ...(caseStackFor(connection())
+                          ? { stack: caseStackFor(connection()) }
+                          : {}),
+                        stacks: Object.values(activeAppMap()?.caseStacks ?? {}),
+                        variables: server.projectVariables().value,
+                        busy: caseStackBusy(),
+                        onSave: (value) => void saveConnectionCaseStack(connection(), value),
+                        onAttach: (caseStackId) =>
+                          void attachConnectionCaseStack(connection(), caseStackId),
+                        onDetach: () => void detachConnectionCaseStack(connection()),
+                        onOpenVariables: props.onOpenVariables,
+                      }}
+                      onRemove={() => removeConnection(connection())}
+                      onClose={() => setSelectedConnectionId(null)}
                     />
                   )}
                 </Show>
@@ -1802,7 +1651,7 @@ export function AppMapWorkspace(props: {
               />
               <AppMapMinimap
                 scale={view().scale}
-                groups={minimapGroups()}
+                groups={[]}
                 nodes={minimapNodes()}
                 edges={minimapEdges()}
                 viewport={minimapViewport()}

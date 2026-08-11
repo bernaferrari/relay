@@ -231,7 +231,7 @@ export function ScreenCard(props: {
   onNaturalSize?: (size: { width: number; height: number }) => void;
   showActions?: boolean;
   onSelect: (event?: MouseEvent) => void;
-  onContextMenu: (event: MouseEvent) => void;
+  onContextMenu?: (event: MouseEvent) => void;
   onRename: () => void;
   onOpenDetails: () => void;
   onRun?: () => void;

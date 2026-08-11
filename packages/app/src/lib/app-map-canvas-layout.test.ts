@@ -12,6 +12,7 @@ import {
   SCREEN_FRAME_HEIGHT,
   SCREEN_FRAME_MIN_WIDTH,
   SCREEN_CARD_WIDTH,
+  MIN_CANVAS_SCALE,
 } from "./app-map-canvas-layout";
 
 const start: MapTreeNode = {
@@ -222,6 +223,12 @@ test("fit keeps a graph visible with stable canvas padding", () => {
   assert.ok(view.scale > 0 && view.scale <= 1);
   assert.ok(view.x >= 0);
   assert.ok(view.y >= 0);
+});
+
+test("Fit can show a complete tall map below the interactive zoom floor", () => {
+  const view = fitCanvasViewport({ width: 1400, height: 800 }, { width: 2200, height: 14_000 });
+  assert.ok(view.scale < MIN_CANVAS_SCALE);
+  assert.ok(view.scale > 0);
 });
 
 test("fit includes content positioned left and above the world origin", () => {

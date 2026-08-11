@@ -10,7 +10,7 @@ import type {
   RecordingClip,
   RecipeStep,
 } from "@relay/protocol";
-import { compactGroupedCanvasPositions } from "./app-map-auto-layout";
+import { compactCanvasPositions } from "./app-map-auto-layout";
 import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH } from "./app-map-canvas-layout";
 import { hasScreenIdentity, transitionLabel, type MapTree } from "./app-map-tree";
 
@@ -494,7 +494,7 @@ export function reviewGraphTransition(
 export function buildCanvasGraphTree(
   graph: CanvasGraph,
   steps: RecipeStep[],
-  groups: readonly MapGroup[] = [],
+  _groups: readonly MapGroup[] = [],
 ): MapTree {
   const stepIndexById = new Map(steps.map((step, index) => [step.id, index]));
   const screenById = new Map(graph.screens.map((screen) => [screen.id, screen]));
@@ -530,7 +530,7 @@ export function buildCanvasGraphTree(
   for (const screensAtDepth of screensByDepth.values()) {
     screensAtDepth.forEach((screen, index) => rowById.set(screen.id, index));
   }
-  const groupedPositions = compactGroupedCanvasPositions(graph, groups);
+  const flatPositions = compactCanvasPositions(graph);
   const nodes = graph.screens
     .map((screen) => {
       const representativeStepIndex =
@@ -549,11 +549,11 @@ export function buildCanvasGraphTree(
           (value) => value >= 0 && value < steps.length,
         ),
         depth,
-        x: groupedPositions[screen.id]?.x ?? depth * (SCREEN_CARD_WIDTH + 136),
+        x: flatPositions[screen.id]?.x ?? depth * (SCREEN_CARD_WIDTH + 136),
         // Balance branches around their source instead of growing one long
         // downward spine. Fit now keeps ordinary maps readable at a glance.
         y:
-          groupedPositions[screen.id]?.y ??
+          flatPositions[screen.id]?.y ??
           (row - (siblings.length - 1) / 2) * (SCREEN_CARD_HEIGHT + 48),
       };
     })

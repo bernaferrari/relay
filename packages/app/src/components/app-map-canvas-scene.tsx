@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import type { CollaborationAwareness, CanvasNote, MapGroup } from "@relay/protocol";
+import type { CollaborationAwareness, CanvasNote } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
@@ -16,27 +16,22 @@ import type { CanvasCombineCardModel, CanvasCombineSection } from "../lib/app-ma
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
-import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
-import { mapGroupGeometry } from "../lib/app-map-groups";
-import { groupBundleGeometry, groupBundleSpokePath } from "../lib/app-map-group-routing";
 
 export type AppMapCanvasSceneProps = {
   nodes: MapTreeNode[];
   connections: readonly CanvasConnection[];
-  summarizedConnectionIds: ReadonlySet<string>;
   notes: readonly CanvasNote[];
-  groups: readonly MapGroup[];
   width: number;
   height: number;
   viewportScale: number;
   visibleBounds: { left: number; top: number; right: number; bottom: number };
   selectedNodeId: string | null;
   selectedNodeIds: readonly string[];
-  selectedGroupId: string | null;
+  draggingNodeIds: readonly string[];
+  primaryConnectionIds: readonly string[];
   selectedConnectionId: string | null;
   renamingNodeId: string | null;
-  renamingGroupId: string | null;
   awareness: readonly CollaborationAwareness[];
   presenceGeometry: PresenceGeometry;
   positionFor: (node: MapTreeNode) => CanvasPoint;
@@ -49,7 +44,6 @@ export type AppMapCanvasSceneProps = {
   caseCountFor: (connection: CanvasConnection) => { count: number; exact: boolean } | undefined;
   connectionLabelMode: (connection: CanvasConnection) => "always" | "hidden";
   onSelectNode: (node: MapTreeNode, event?: MouseEvent) => void;
-  onNodeContextMenu: (event: MouseEvent, node: MapTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
   onRenameNode: (node: MapTreeNode) => void;
   onOpenNodeDetails: (node: MapTreeNode) => void;
@@ -57,16 +51,6 @@ export type AppMapCanvasSceneProps = {
   onRunToScreen: (node: MapTreeNode) => void;
   onCommitNodeRename: (node: MapTreeNode, title: string) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
-  onSelectGroup: (group: MapGroup) => void;
-  onGroupPointerDown: (
-    event: PointerEvent & { currentTarget: HTMLElement },
-    group: MapGroup,
-  ) => void;
-  onGroupContextMenu: (event: MouseEvent, group: MapGroup) => void;
-  onRenameGroup: (group: MapGroup) => void;
-  onCommitGroupRename: (group: MapGroup, name: string) => void;
-  onUngroup: (group: MapGroup) => void;
-  onGroupSelection: () => void;
   onNotePointerDown: (event: PointerEvent, note: CanvasNote) => void;
   onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: (note: CanvasNote, previousText: string) => void;
@@ -144,9 +128,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
   });
   const selectedNodeIds = createMemo(() => new Set(props.selectedNodeIds));
-  const screenPositions = createMemo(() =>
-    Object.fromEntries(props.nodes.map((node) => [node.id, props.positionFor(node)])),
-  );
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
   const rotationForNode = (node: MapTreeNode): CanvasScreenRotation =>
@@ -176,10 +157,42 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         : { ...current, [nodeId]: size };
     });
   };
+  const visibleNodes = createMemo(() =>
+    props.nodes.filter((node) => {
+      if (selectedNodeIds().has(node.id) || node.id === props.renamingNodeId) return true;
+      const point = props.positionFor(node);
+      return (
+        point.x + SCREEN_CARD_WIDTH >= props.visibleBounds.left &&
+        point.x <= props.visibleBounds.right &&
+        point.y + SCREEN_CARD_HEIGHT >= props.visibleBounds.top &&
+        point.y <= props.visibleBounds.bottom
+      );
+    }),
+  );
+  const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
+  const visibleConnections = createMemo(() => {
+    const dragging = new Set(props.draggingNodeIds);
+    const selectedNodes = selectedNodeIds();
+    const primary = new Set(props.primaryConnectionIds);
+    return props.connections.filter((connection) => {
+      if (dragging.size) {
+        return dragging.has(connection.fromScreenId) || dragging.has(connection.toScreenId);
+      }
+      const touchesSelected =
+        selectedNodes.has(connection.fromScreenId) || selectedNodes.has(connection.toScreenId);
+      return (
+        connection.id === props.selectedConnectionId ||
+        touchesSelected ||
+        (primary.has(connection.id) &&
+          (visibleNodeIds().has(connection.fromScreenId) ||
+            visibleNodeIds().has(connection.toScreenId)))
+      );
+    });
+  });
   const geometries = createMemo(
     () =>
       new Map(
-        props.connections.map((connection) => [
+        visibleConnections().map((connection) => [
           connection.id,
           canvasEdgeGeometry(
             {
@@ -204,65 +217,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 0, y: 0 },
     };
-  const visibleNodes = createMemo(() =>
-    props.nodes.filter((node) => {
-      if (selectedNodeIds().has(node.id) || node.id === props.renamingNodeId) return true;
-      const point = props.positionFor(node);
-      return (
-        point.x + SCREEN_CARD_WIDTH >= props.visibleBounds.left &&
-        point.x <= props.visibleBounds.right &&
-        point.y + SCREEN_CARD_HEIGHT >= props.visibleBounds.top &&
-        point.y <= props.visibleBounds.bottom
-      );
-    }),
-  );
-  const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
-  const visibleConnections = createMemo(() =>
-    props.connections.filter(
-      (connection) =>
-        connection.id === props.selectedConnectionId ||
-        visibleNodeIds().has(connection.fromScreenId) ||
-        visibleNodeIds().has(connection.toScreenId),
-    ),
-  );
-  const fullConnections = createMemo(() =>
-    visibleConnections().filter((connection) => !props.summarizedConnectionIds.has(connection.id)),
-  );
-  const summarizedBundles = createMemo(() => {
-    const groupForScreen = new Map<string, string>();
-    const boundsByGroup = new Map(
-      props.groups.flatMap((group) => {
-        group.screenIds.forEach((screenId) => groupForScreen.set(screenId, group.id));
-        const bounds = mapGroupGeometry(group, screenPositions());
-        return bounds ? [[group.id, bounds] as const] : [];
-      }),
-    );
-    const bundles = new Map<
-      string,
-      {
-        geometry: ReturnType<typeof groupBundleGeometry>;
-        connections: CanvasConnection[];
-      }
-    >();
-    for (const connection of props.connections) {
-      if (!props.summarizedConnectionIds.has(connection.id)) continue;
-      const fromGroupId = groupForScreen.get(connection.fromScreenId);
-      const toGroupId = groupForScreen.get(connection.toScreenId);
-      const fromBounds = fromGroupId ? boundsByGroup.get(fromGroupId) : undefined;
-      const toBounds = toGroupId ? boundsByGroup.get(toGroupId) : undefined;
-      if (!fromGroupId || !toGroupId || !fromBounds || !toBounds) continue;
-      const key = `${fromGroupId}\u0000${toGroupId}`;
-      const existing = bundles.get(key);
-      if (existing) existing.connections.push(connection);
-      else {
-        bundles.set(key, {
-          geometry: groupBundleGeometry(fromBounds, toBounds),
-          connections: [connection],
-        });
-      }
-    }
-    return [...bundles.values()];
-  });
   const visibleNotes = createMemo(() =>
     props.notes.filter(
       (note) =>
@@ -275,21 +229,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
 
   return (
     <>
-      <AppMapGroupsLayer
-        groups={props.groups}
-        positions={screenPositions()}
-        selectedGroupId={props.selectedGroupId}
-        renamingGroupId={props.renamingGroupId}
-        selectedScreenIds={selectedNodeIds()}
-        viewportScale={props.viewportScale}
-        onSelectGroup={props.onSelectGroup}
-        onGroupPointerDown={props.onGroupPointerDown}
-        onGroupContextMenu={props.onGroupContextMenu}
-        onRenameGroup={props.onRenameGroup}
-        onCommitGroupRename={props.onCommitGroupRename}
-        onUngroup={props.onUngroup}
-        onGroupSelection={props.onGroupSelection}
-      />
       <svg
         class="pointer-events-none absolute inset-0 overflow-visible"
         width={props.width}
@@ -348,70 +287,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             );
           }}
         </For>
-        <For each={summarizedBundles()}>
-          {(bundle) => {
-            const sourceConnections = () =>
-              bundle.connections.filter(
-                (connection, index, all) =>
-                  all.findIndex(
-                    (candidate) => candidate.fromScreenId === connection.fromScreenId,
-                  ) === index,
-              );
-            const targetConnections = () =>
-              bundle.connections.filter(
-                (connection, index, all) =>
-                  all.findIndex((candidate) => candidate.toScreenId === connection.toScreenId) ===
-                  index,
-              );
-            return (
-              <g
-                class="fill-none stroke-[color-mix(in_srgb,var(--text-weak)_58%,transparent)]"
-                stroke-width="1.25"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d={bundle.geometry.trunkPath} />
-                <For each={sourceConnections()}>
-                  {(connection) => (
-                    <path
-                      d={groupBundleSpokePath(
-                        geometryFor(connection).startPoint,
-                        bundle.geometry.sourcePort,
-                        bundle.geometry.axis,
-                      )}
-                    />
-                  )}
-                </For>
-                <For each={targetConnections()}>
-                  {(connection) => (
-                    <path
-                      d={groupBundleSpokePath(
-                        geometryFor(connection).endPoint,
-                        bundle.geometry.targetPort,
-                        bundle.geometry.axis,
-                      )}
-                      marker-end="url(#app-map-arrow)"
-                    />
-                  )}
-                </For>
-                <circle
-                  cx={bundle.geometry.sourcePort.x}
-                  cy={bundle.geometry.sourcePort.y}
-                  r="3"
-                  class="fill-[var(--map-canvas)]"
-                />
-                <circle
-                  cx={bundle.geometry.targetPort.x}
-                  cy={bundle.geometry.targetPort.y}
-                  r="3"
-                  class="fill-[var(--map-canvas)]"
-                />
-              </g>
-            );
-          }}
-        </For>
-        <For each={fullConnections()}>
+        <For each={visibleConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
             const runState = () => props.connectionRunState(connection.id);
@@ -478,7 +354,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         </For>
       </svg>
 
-      <For each={fullConnections()}>
+      <For each={visibleConnections()}>
         {(connection) => {
           const geometry = () => geometryFor(connection);
           const count = () => props.caseCountFor(connection);
@@ -562,7 +438,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               sourceAnchor={selectedConnectionAnchor()}
               onRotationChange={(rotation) => rememberRotation(node.id, rotation)}
               onSelect={(event) => props.onSelectNode(node, event)}
-              onContextMenu={(event) => props.onNodeContextMenu(event, node)}
               onRename={() => props.onRenameNode(node)}
               onOpenDetails={() => props.onOpenNodeDetails(node)}
               onRun={props.canRunToScreen(node.id) ? () => props.onRunToScreen(node) : undefined}

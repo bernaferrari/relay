@@ -1,200 +1,125 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactGroupedCanvasPositions } from "./app-map-auto-layout";
+import { compactCanvasPositions } from "./app-map-auto-layout";
 
-const screens = Array.from({ length: 43 }, (_, index) => ({ id: `screen-${index}` }));
-const transitions = [
-  {
-    fromScreenId: "screen-9",
-    destination: { kind: "screen", screenId: "screen-10" },
-    label: "Scroll",
-  },
-  {
-    fromScreenId: "screen-10",
-    destination: { kind: "screen", screenId: "screen-11" },
-    label: "Scroll to Kids Mode",
-  },
-];
-const groups = [
-  { id: "account", screenIds: screens.slice(0, 9).map(({ id }) => id) },
-  { id: "app", screenIds: screens.slice(9, 20).map(({ id }) => id) },
-  { id: "data", screenIds: screens.slice(20, 32).map(({ id }) => id) },
-  { id: "safety", screenIds: screens.slice(32, 39).map(({ id }) => id) },
-  { id: "help", screenIds: screens.slice(39).map(({ id }) => id) },
-];
+test("lays out every screen once in a tall left-to-right topology", () => {
+  const screens = Array.from({ length: 43 }, (_, index) => ({ id: `screen-${index}` }));
+  const transitions = screens.slice(1).map((screen, index) => ({
+    fromScreenId: index < 14 ? "screen-0" : `screen-${index}`,
+    destination: { kind: "screen", screenId: screen.id },
+  }));
+  const positions = compactCanvasPositions({
+    screens,
+    flows: [{ screenId: "screen-0" }],
+    transitions,
+  });
 
-test("large grouped maps are packed into readable sections", () => {
-  const positions = compactGroupedCanvasPositions(
-    { screens, flows: [{ screenId: "screen-9" }], transitions },
-    groups as never,
+  assert.equal(Object.keys(positions).length, screens.length);
+  assert.equal(
+    new Set(Object.values(positions).map(({ x, y }) => `${x}:${y}`)).size,
+    screens.length,
   );
-  assert.equal(Object.keys(positions).length, 43);
-  assert.equal(new Set(Object.values(positions).map(({ x, y }) => `${x}:${y}`)).size, 43);
-  assert.deepEqual(positions["screen-9"], { x: 0, y: 0 });
-  assert.equal(positions["screen-10"]?.x, positions["screen-9"]?.x);
-  assert.ok((positions["screen-10"]?.y ?? 0) > (positions["screen-9"]?.y ?? 0));
-  assert.ok(Math.max(...Object.values(positions).map(({ x }) => x)) < 2400);
-  assert.ok(Math.max(...Object.values(positions).map(({ y }) => y)) < 2700);
-});
-
-test("layout is deterministic and keeps ungrouped screens", () => {
-  const graph = {
-    screens: screens.slice(0, 5),
-    flows: [{ screenId: "screen-3" }],
-    transitions: [],
-  };
-  const inputGroups = [{ id: "main", screenIds: ["screen-3", "screen-4"] }] as never;
-  const first = compactGroupedCanvasPositions(graph, inputGroups);
-  const second = compactGroupedCanvasPositions(graph, inputGroups);
-  assert.deepEqual(first, second);
-  assert.deepEqual(Object.keys(first).sort(), graph.screens.map(({ id }) => id).sort());
-});
-
-test("cross-group dependencies form a compact non-overlapping island", () => {
-  const graph = {
-    screens: [{ id: "root" }, { id: "account" }, { id: "data" }, { id: "legal" }],
-    flows: [{ screenId: "root" }],
-    transitions: [
-      { fromScreenId: "root", destination: { kind: "screen", screenId: "account" } },
-      { fromScreenId: "root", destination: { kind: "screen", screenId: "data" } },
-      { fromScreenId: "root", destination: { kind: "screen", screenId: "legal" } },
-    ],
-  };
-  const positions = compactGroupedCanvasPositions(graph, [
-    { id: "root-group", screenIds: ["root"] },
-    { id: "account-group", screenIds: ["account"] },
-    { id: "data-group", screenIds: ["data"] },
-    { id: "legal-group", screenIds: ["legal"] },
-  ] as never);
-
-  const values = Object.values(positions);
-  assert.equal(new Set(values.map(({ x, y }) => `${x}:${y}`)).size, 4);
-  assert.ok(Math.max(...values.map(({ x }) => x)) <= 700);
-  assert.ok(Math.max(...values.map(({ y }) => y)) <= 338);
-  for (let left = 0; left < values.length; left += 1) {
-    for (let right = left + 1; right < values.length; right += 1) {
-      const a = values[left]!;
-      const b = values[right]!;
-      assert.ok(a.x + 240 <= b.x || b.x + 240 <= a.x || a.y + 230 <= b.y || b.y + 230 <= a.y);
+  assert.equal(positions["screen-0"]?.x, 0);
+  assert.ok(
+    new Set(Object.values(positions).map(({ y }) => y)).size >= 14,
+    "wide branches should spend vertical space before horizontal space",
+  );
+  const cards = Object.values(positions);
+  for (let left = 0; left < cards.length; left += 1) {
+    for (let right = left + 1; right < cards.length; right += 1) {
+      const a = cards[left]!;
+      const b = cards[right]!;
+      assert.ok(
+        a.x + 240 <= b.x || b.x + 240 <= a.x || a.y + 230 <= b.y || b.y + 230 <= a.y,
+        `cards ${left} and ${right} overlap`,
+      );
     }
   }
 });
 
-test("orders topology lanes to remove an avoidable crossing", () => {
+test("keeps viewport captures in one vertical block", () => {
   const graph = {
-    screens: [
-      { id: "left-top" },
-      { id: "left-bottom" },
-      { id: "right-bottom" },
-      { id: "right-top" },
+    screens: ["settings", "settings-more", "settings-about", "privacy"].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "settings-more" },
+        label: "Scroll",
+      },
+      {
+        fromScreenId: "settings-more",
+        destination: { kind: "screen", screenId: "settings-about" },
+        label: "Scroll to About",
+      },
+      {
+        fromScreenId: "settings-about",
+        destination: { kind: "screen", screenId: "privacy" },
+        label: "Privacy policy",
+      },
     ],
+  };
+  const positions = compactCanvasPositions(graph);
+
+  assert.equal(positions.settings?.x, positions["settings-more"]?.x);
+  assert.equal(positions.settings?.x, positions["settings-about"]?.x);
+  assert.ok((positions["settings-more"]?.y ?? 0) > (positions.settings?.y ?? 0));
+  assert.ok((positions["settings-about"]?.y ?? 0) > (positions["settings-more"]?.y ?? 0));
+  assert.ok((positions.privacy?.x ?? 0) > (positions["settings-about"]?.x ?? 0));
+});
+
+test("breaks cycles for ranking without producing giant coordinates", () => {
+  const graph = {
+    screens: ["one", "two", "three", "four"].map((id) => ({ id })),
+    flows: [{ screenId: "one" }],
+    transitions: [
+      { fromScreenId: "one", destination: { kind: "screen", screenId: "two" } },
+      { fromScreenId: "two", destination: { kind: "screen", screenId: "three" } },
+      { fromScreenId: "three", destination: { kind: "screen", screenId: "one" } },
+      { fromScreenId: "three", destination: { kind: "screen", screenId: "four" } },
+    ],
+  };
+  const first = compactCanvasPositions(graph);
+  const second = compactCanvasPositions(graph);
+
+  assert.deepEqual(first, second);
+  assert.ok(Math.max(...Object.values(first).map(({ x }) => x)) < 1_500);
+  assert.ok((first.two?.x ?? 0) > (first.one?.x ?? 0));
+  assert.ok((first.three?.x ?? 0) > (first.two?.x ?? 0));
+});
+
+test("barycentric ordering removes an avoidable crossing", () => {
+  const graph = {
+    screens: ["left-top", "left-bottom", "right-bottom", "right-top"].map((id) => ({ id })),
     flows: [{ screenId: "left-top" }, { screenId: "left-bottom" }],
     transitions: [
       { fromScreenId: "left-top", destination: { kind: "screen", screenId: "right-top" } },
-      { fromScreenId: "left-bottom", destination: { kind: "screen", screenId: "right-bottom" } },
+      {
+        fromScreenId: "left-bottom",
+        destination: { kind: "screen", screenId: "right-bottom" },
+      },
     ],
   };
-  const positions = compactGroupedCanvasPositions(graph, [
-    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
-  ] as never);
+  const positions = compactCanvasPositions(graph);
 
   assert.equal(positions["left-top"]?.y, positions["right-top"]?.y);
   assert.equal(positions["left-bottom"]?.y, positions["right-bottom"]?.y);
 });
 
-test("deep flows turn into a taller snake instead of an endless row", () => {
+test("aligns independent linear continuations on stable rows", () => {
   const graph = {
-    screens: [{ id: "one" }, { id: "two" }, { id: "three" }, { id: "four" }],
-    flows: [{ screenId: "one" }],
+    screens: ["memory", "storage", "import", "filter", "paste"].map((id) => ({ id })),
+    flows: [{ screenId: "memory" }, { screenId: "storage" }],
     transitions: [
-      { fromScreenId: "one", destination: { kind: "screen", screenId: "two" } },
-      { fromScreenId: "two", destination: { kind: "screen", screenId: "three" } },
-      { fromScreenId: "three", destination: { kind: "screen", screenId: "four" } },
+      { fromScreenId: "memory", destination: { kind: "screen", screenId: "import" } },
+      { fromScreenId: "import", destination: { kind: "screen", screenId: "paste" } },
+      { fromScreenId: "storage", destination: { kind: "screen", screenId: "filter" } },
     ],
   };
-  const positions = compactGroupedCanvasPositions(graph, [
-    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
-  ] as never);
+  const positions = compactCanvasPositions(graph);
 
-  assert.equal(positions.one?.y, positions.two?.y);
-  assert.equal(positions.two?.y, positions.three?.y);
-  assert.equal(positions.three?.x, positions.four?.x);
-  assert.ok((positions.four?.y ?? 0) > (positions.three?.y ?? 0));
-  assert.equal(new Set(Object.values(positions).map(({ x }) => x)).size, 3);
-});
-
-test("wide topology layers grow vertically before adding another column", () => {
-  const roots = Array.from({ length: 5 }, (_, index) => ({ id: `root-${index}` }));
-  const leaves = Array.from({ length: 5 }, (_, index) => ({ id: `leaf-${index}` }));
-  const graph = {
-    screens: [...roots, ...leaves],
-    flows: roots.map(({ id }) => ({ screenId: id })),
-    transitions: roots.map(({ id }, index) => ({
-      fromScreenId: id,
-      destination: { kind: "screen", screenId: leaves[index]!.id },
-    })),
-  };
-  const positions = compactGroupedCanvasPositions(graph, [
-    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
-  ] as never);
-
-  assert.equal(new Set(roots.map(({ id }) => positions[id]?.x)).size, 1);
-  assert.equal(new Set(leaves.map(({ id }) => positions[id]?.x)).size, 1);
-  assert.notEqual(positions[roots[0]!.id]?.x, positions[leaves[0]!.id]?.x);
-});
-
-test("sparse continuation lanes stay level with their direct parents", () => {
-  const graph = {
-    screens: [
-      { id: "customize-root" },
-      { id: "storage-root" },
-      { id: "connectors-root" },
-      { id: "memory-root" },
-      { id: "customize" },
-      { id: "manage-storage" },
-      { id: "import-memory" },
-      { id: "view-memory" },
-      { id: "storage-filter" },
-      { id: "paste-memory" },
-    ],
-    flows: [
-      { screenId: "customize-root" },
-      { screenId: "storage-root" },
-      { screenId: "connectors-root" },
-      { screenId: "memory-root" },
-    ],
-    transitions: [
-      {
-        fromScreenId: "customize-root",
-        destination: { kind: "screen", screenId: "customize" },
-      },
-      {
-        fromScreenId: "storage-root",
-        destination: { kind: "screen", screenId: "manage-storage" },
-      },
-      {
-        fromScreenId: "manage-storage",
-        destination: { kind: "screen", screenId: "storage-filter" },
-      },
-      {
-        fromScreenId: "memory-root",
-        destination: { kind: "screen", screenId: "import-memory" },
-      },
-      {
-        fromScreenId: "memory-root",
-        destination: { kind: "screen", screenId: "view-memory" },
-      },
-      {
-        fromScreenId: "import-memory",
-        destination: { kind: "screen", screenId: "paste-memory" },
-      },
-    ],
-  };
-  const positions = compactGroupedCanvasPositions(graph, [
-    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
-  ] as never);
-
-  assert.equal(positions["manage-storage"]?.y, positions["storage-filter"]?.y);
-  assert.equal(positions["import-memory"]?.y, positions["paste-memory"]?.y);
-  assert.notEqual(positions["storage-filter"]?.y, positions["paste-memory"]?.y);
+  assert.equal(positions.memory?.y, positions.import?.y);
+  assert.equal(positions.import?.y, positions.paste?.y);
+  assert.equal(positions.storage?.y, positions.filter?.y);
+  assert.notEqual(positions.filter?.y, positions.paste?.y);
 });
