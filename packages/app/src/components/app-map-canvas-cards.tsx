@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { CanvasNote } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
 import type { MapTreeNode } from "../lib/app-map-tree";
@@ -240,8 +240,21 @@ export function ScreenCard(props: {
   /** Live device is on this mapped screen. Distinct from selected. */
   here?: boolean;
 }) {
+  let titleInput: HTMLInputElement | undefined;
   const [imageFailed, setImageFailed] = createSignal(false);
   createEffect(on(props.src, () => setImageFailed(false)));
+  createEffect(() => {
+    if (!props.editing) return;
+
+    titleInput?.focus({ preventScroll: true });
+    titleInput?.select();
+    const finishEditing = (event: PointerEvent) => {
+      if (!titleInput || titleInput.contains(event.target as Node)) return;
+      titleInput.blur();
+    };
+    document.addEventListener("pointerdown", finishEditing, true);
+    onCleanup(() => document.removeEventListener("pointerdown", finishEditing, true));
+  });
   const visibleSrc = () => (props.src() && !imageFailed() ? props.src() : "");
   const frameStateClass = () =>
     props.runState === "failed"
@@ -354,10 +367,11 @@ export function ScreenCard(props: {
           }
         >
           <input
-            class="min-w-0 w-full rounded-[6px] bg-[var(--map-control-surface)] px-1.5 py-1 text-center text-[13px] font-medium text-[var(--text-strong)] outline-none ring-2 ring-[var(--text-interactive-base)]"
+            ref={(element) => (titleInput = element)}
+            class="box-border h-6 min-w-0 w-full rounded-[5px] border border-[var(--text-interactive-base)] bg-[var(--map-control-surface)] px-1.5 text-center text-[12px]/[1.4625] font-medium tracking-[-0.01em] text-[var(--text-strong)] outline-none shadow-[0_0_0_1px_var(--text-interactive-base)]"
             aria-label="Screen name"
+            data-focus-contained
             value={props.title}
-            autofocus
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             onBlur={(event) => props.onCommitRename(event.currentTarget.value)}
