@@ -51,7 +51,7 @@ export function AppMapGroupsLayer(props: {
                   data-app-map-group-id={group.id}
                   data-tip="Click to inspect group"
                   class={cn(
-                    "group/map-group absolute z-0 rounded-[14px] bg-transparent outline outline-1 outline-transparent transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_58%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_16%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
+                    "group/map-group absolute z-0 rounded-[14px] bg-[color-mix(in_srgb,var(--product-accent-soft)_7%,transparent)] outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_22%,transparent)] transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_14%,transparent)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_48%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_14%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                     selected() &&
                       "bg-[color-mix(in_srgb,var(--product-accent-soft)_18%,transparent)] outline-2 outline-[var(--text-interactive-base)]",
                   )}
@@ -82,9 +82,9 @@ export function AppMapGroupsLayer(props: {
                 >
                   <header
                     class={cn(
-                      "absolute top-2.5 left-1/2 flex h-7 max-w-[calc(100%-20px)] -translate-x-1/2 items-center justify-center gap-1.5 rounded-[7px] bg-[var(--map-control-surface)] px-2 opacity-95 shadow-[var(--map-elevation-control)] transition-[background-color,box-shadow,opacity] duration-150 hover:bg-[var(--surface-base-hover)] group-focus-within/map-group:opacity-100",
+                      "absolute top-2.5 left-3 flex h-7 max-w-[calc(100%-24px)] items-center justify-center gap-1.5 rounded-[7px] bg-[color-mix(in_srgb,var(--map-control-surface)_88%,transparent)] px-2 opacity-90 outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_20%,transparent)] backdrop-blur-[8px] transition-[background-color,outline-color,opacity] duration-150 hover:bg-[var(--surface-base-hover)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_40%,transparent)] group-focus-within/map-group:opacity-100",
                       selected() &&
-                        "bg-[var(--product-accent-soft)] opacity-100 shadow-[var(--map-elevation-panel)]",
+                        "bg-[var(--product-accent-soft)] opacity-100 outline-[color-mix(in_srgb,var(--text-interactive-base)_42%,transparent)]",
                     )}
                   >
                     <Icon name="group" size={13} class="shrink-0 text-[var(--text-weak)]" />

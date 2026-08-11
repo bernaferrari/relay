@@ -256,6 +256,19 @@ export function canvasEdgeGeometry(
       }
     : defaultStart;
   const end = portPoint(toFrame, oppositePortDirection(direction));
+  const obstacles = nodes.flatMap((node) => {
+    if (node.id === from.id || node.id === to.id) return [];
+    return [frameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry())];
+  });
+  const detour = obstacleAvoidingEdge(
+    start,
+    Boolean(sourcePoint),
+    fromFrame,
+    toFrame,
+    direction,
+    obstacles,
+  );
+  if (detour) return detour;
 
   // Return paths without a recorded origin used to share a small top rail.
   // Relative ports are clearer for separated cards, while the rail remains a
@@ -334,6 +347,89 @@ function framesAreSeparated(from: FrameBounds, to: FrameBounds): boolean {
   return (
     from.right <= to.left || to.right <= from.left || from.bottom <= to.top || to.bottom <= from.top
   );
+}
+
+function obstacleAvoidingEdge(
+  recordedStart: CanvasPoint,
+  hasRecordedStart: boolean,
+  from: FrameBounds,
+  to: FrameBounds,
+  direction: EdgePortDirection,
+  obstacles: readonly FrameBounds[],
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } | undefined {
+  // Leave enough room for the screen title above the visible frame and the
+  // next row below it. A 48px rail reads as intentional whitespace at Fit.
+  const margin = 48;
+  const horizontal = direction === "left" || direction === "right";
+  if (horizontal) {
+    const corridorLeft = Math.min(from.right, to.right);
+    const corridorRight = Math.max(from.left, to.left);
+    const corridorTop = Math.min(from.centerY, to.centerY) - 8;
+    const corridorBottom = Math.max(from.centerY, to.centerY) + 8;
+    const blockers = obstacles.filter(
+      (frame) =>
+        frame.right > corridorLeft &&
+        frame.left < corridorRight &&
+        frame.bottom > corridorTop &&
+        frame.top < corridorBottom,
+    );
+    if (!blockers.length) return undefined;
+    const topRail = Math.min(from.top, to.top, ...blockers.map((frame) => frame.top)) - margin;
+    const bottomRail =
+      Math.max(from.bottom, to.bottom, ...blockers.map((frame) => frame.bottom)) + margin;
+    const useTop =
+      Math.abs(recordedStart.y - topRail) + Math.abs(to.centerY - topRail) <=
+      Math.abs(recordedStart.y - bottomRail) + Math.abs(to.centerY - bottomRail);
+    const port = useTop ? "top" : "bottom";
+    const start = hasRecordedStart ? recordedStart : portPoint(from, port);
+    const end = portPoint(to, port);
+    return railEdge(start, end, useTop ? topRail : bottomRail, "horizontal");
+  }
+
+  const corridorTop = Math.min(from.bottom, to.bottom);
+  const corridorBottom = Math.max(from.top, to.top);
+  const corridorLeft = Math.min(from.centerX, to.centerX) - 8;
+  const corridorRight = Math.max(from.centerX, to.centerX) + 8;
+  const blockers = obstacles.filter(
+    (frame) =>
+      frame.bottom > corridorTop &&
+      frame.top < corridorBottom &&
+      frame.right > corridorLeft &&
+      frame.left < corridorRight,
+  );
+  if (!blockers.length) return undefined;
+  const leftRail = Math.min(from.left, to.left, ...blockers.map((frame) => frame.left)) - margin;
+  const rightRail =
+    Math.max(from.right, to.right, ...blockers.map((frame) => frame.right)) + margin;
+  const useLeft =
+    Math.abs(recordedStart.x - leftRail) + Math.abs(to.centerX - leftRail) <=
+    Math.abs(recordedStart.x - rightRail) + Math.abs(to.centerX - rightRail);
+  const port = useLeft ? "left" : "right";
+  const start = hasRecordedStart ? recordedStart : portPoint(from, port);
+  const end = portPoint(to, port);
+  return railEdge(start, end, useLeft ? leftRail : rightRail, "vertical");
+}
+
+function railEdge(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  rail: number,
+  orientation: "horizontal" | "vertical",
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
+  if (orientation === "horizontal") {
+    const middle = (start.x + end.x) / 2;
+    return {
+      path: `M ${start.x} ${start.y} C ${start.x} ${rail}, ${start.x} ${rail}, ${middle} ${rail} C ${end.x} ${rail}, ${end.x} ${rail}, ${end.x} ${end.y}`,
+      labelPoint: { x: middle, y: rail },
+      startPoint: start,
+    };
+  }
+  const middle = (start.y + end.y) / 2;
+  return {
+    path: `M ${start.x} ${start.y} C ${rail} ${start.y}, ${rail} ${start.y}, ${rail} ${middle} C ${rail} ${end.y}, ${rail} ${end.y}, ${end.x} ${end.y}`,
+    labelPoint: { x: rail, y: middle },
+    startPoint: start,
+  };
 }
 
 function cubicEdge(

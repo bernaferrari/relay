@@ -79,3 +79,25 @@ test("cross-group dependencies form a compact non-overlapping island", () => {
     }
   }
 });
+
+test("orders topology lanes to remove an avoidable crossing", () => {
+  const graph = {
+    screens: [
+      { id: "left-top" },
+      { id: "left-bottom" },
+      { id: "right-bottom" },
+      { id: "right-top" },
+    ],
+    flows: [{ screenId: "left-top" }, { screenId: "left-bottom" }],
+    transitions: [
+      { fromScreenId: "left-top", destination: { kind: "screen", screenId: "right-top" } },
+      { fromScreenId: "left-bottom", destination: { kind: "screen", screenId: "right-bottom" } },
+    ],
+  };
+  const positions = compactGroupedCanvasPositions(graph, [
+    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
+  ] as never);
+
+  assert.equal(positions["left-top"]?.y, positions["right-top"]?.y);
+  assert.equal(positions["left-bottom"]?.y, positions["right-bottom"]?.y);
+});

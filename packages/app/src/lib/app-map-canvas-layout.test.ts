@@ -116,6 +116,20 @@ test("connections can travel upward through top and bottom ports", () => {
   assert.match(geometry.path, /, 120 [\d.]+, 120 204$/);
 });
 
+test("connections route around an intervening screen instead of crossing it", () => {
+  const blocker = { ...settings, id: "blocker", x: 320, y: 0 };
+  const target = { ...settings, id: "target", x: 640, y: 0 };
+  const geometry = canvasEdgeGeometry(
+    { from: "start", to: "target", kind: "forward" },
+    [start, blocker, target],
+    (node) => node,
+  );
+
+  assert.deepEqual(geometry.startPoint, { x: 120, y: 30 });
+  assert.match(geometry.path, /^M 120 30 C 120 -18, 120 -18,/);
+  assert.match(geometry.path, /, 760 -18, 760 30$/);
+});
+
 test("recorded tap origins stay exact on vertical connections", () => {
   const below = { ...settings, id: "below", x: 0, y: 400 };
   const geometry = canvasEdgeGeometry(
