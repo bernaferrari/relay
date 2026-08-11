@@ -33,8 +33,8 @@ test("large grouped maps are packed into readable sections", () => {
   assert.deepEqual(positions["screen-9"], { x: 0, y: 0 });
   assert.equal(positions["screen-10"]?.x, positions["screen-9"]?.x);
   assert.ok((positions["screen-10"]?.y ?? 0) > (positions["screen-9"]?.y ?? 0));
-  assert.ok(Math.max(...Object.values(positions).map(({ x }) => x)) < 3600);
-  assert.ok(Math.max(...Object.values(positions).map(({ y }) => y)) < 1900);
+  assert.ok(Math.max(...Object.values(positions).map(({ x }) => x)) < 2400);
+  assert.ok(Math.max(...Object.values(positions).map(({ y }) => y)) < 2700);
 });
 
 test("layout is deterministic and keeps ungrouped screens", () => {
@@ -100,4 +100,45 @@ test("orders topology lanes to remove an avoidable crossing", () => {
 
   assert.equal(positions["left-top"]?.y, positions["right-top"]?.y);
   assert.equal(positions["left-bottom"]?.y, positions["right-bottom"]?.y);
+});
+
+test("deep flows turn into a taller snake instead of an endless row", () => {
+  const graph = {
+    screens: [{ id: "one" }, { id: "two" }, { id: "three" }, { id: "four" }],
+    flows: [{ screenId: "one" }],
+    transitions: [
+      { fromScreenId: "one", destination: { kind: "screen", screenId: "two" } },
+      { fromScreenId: "two", destination: { kind: "screen", screenId: "three" } },
+      { fromScreenId: "three", destination: { kind: "screen", screenId: "four" } },
+    ],
+  };
+  const positions = compactGroupedCanvasPositions(graph, [
+    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
+  ] as never);
+
+  assert.equal(positions.one?.y, positions.two?.y);
+  assert.equal(positions.two?.y, positions.three?.y);
+  assert.equal(positions.three?.x, positions.four?.x);
+  assert.ok((positions.four?.y ?? 0) > (positions.three?.y ?? 0));
+  assert.equal(new Set(Object.values(positions).map(({ x }) => x)).size, 3);
+});
+
+test("wide topology layers grow vertically before adding another column", () => {
+  const roots = Array.from({ length: 5 }, (_, index) => ({ id: `root-${index}` }));
+  const leaves = Array.from({ length: 5 }, (_, index) => ({ id: `leaf-${index}` }));
+  const graph = {
+    screens: [...roots, ...leaves],
+    flows: roots.map(({ id }) => ({ screenId: id })),
+    transitions: roots.map(({ id }, index) => ({
+      fromScreenId: id,
+      destination: { kind: "screen", screenId: leaves[index]!.id },
+    })),
+  };
+  const positions = compactGroupedCanvasPositions(graph, [
+    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
+  ] as never);
+
+  assert.equal(new Set(roots.map(({ id }) => positions[id]?.x)).size, 1);
+  assert.equal(new Set(leaves.map(({ id }) => positions[id]?.x)).size, 1);
+  assert.notEqual(positions[roots[0]!.id]?.x, positions[leaves[0]!.id]?.x);
 });

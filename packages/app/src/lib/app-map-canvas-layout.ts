@@ -260,7 +260,7 @@ export function canvasEdgeGeometry(
     if (node.id === from.id || node.id === to.id) return [];
     return [frameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry())];
   });
-  const detour = obstacleAvoidingEdge(
+  const routed = structuredEdge(
     start,
     Boolean(sourcePoint),
     fromFrame,
@@ -268,7 +268,7 @@ export function canvasEdgeGeometry(
     direction,
     obstacles,
   );
-  if (detour) return detour;
+  if (routed) return routed;
 
   // Return paths without a recorded origin used to share a small top rail.
   // Relative ports are clearer for separated cards, while the rail remains a
@@ -349,7 +349,7 @@ function framesAreSeparated(from: FrameBounds, to: FrameBounds): boolean {
   );
 }
 
-function obstacleAvoidingEdge(
+function structuredEdge(
   recordedStart: CanvasPoint,
   hasRecordedStart: boolean,
   from: FrameBounds,
@@ -365,6 +365,11 @@ function obstacleAvoidingEdge(
   const stub = 28;
   const horizontal = direction === "left" || direction === "right";
   if (horizontal) {
+    const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
+    const end = portPoint(to, oppositePortDirection(direction));
+    const directionSign = direction === "right" ? 1 : -1;
+    const sourceEdge = direction === "right" ? from.right : from.left;
+    const targetEdge = direction === "right" ? to.left : to.right;
     const corridorLeft = Math.min(from.right, to.right);
     const corridorRight = Math.max(from.left, to.left);
     const corridorTop = Math.min(from.centerY, to.centerY) - 8;
@@ -376,15 +381,33 @@ function obstacleAvoidingEdge(
         frame.bottom > corridorTop &&
         frame.top < corridorBottom,
     );
-    if (!blockers.length) return undefined;
+    const crossRow = Math.abs(from.centerY - to.centerY) > (from.bottom - from.top) * 0.75;
+    if (crossRow) {
+      const channels = [
+        (sourceEdge + targetEdge) / 2,
+        sourceEdge + directionSign * stub,
+        targetEdge - directionSign * stub,
+      ];
+      for (const channel of channels) {
+        const points = compactOrthogonalPoints([
+          start,
+          { x: sourceEdge, y: start.y },
+          { x: channel, y: start.y },
+          { x: channel, y: end.y },
+          end,
+        ]);
+        if (routeClearsObstacles(points, obstacles)) {
+          return orthogonalEdge(points, {
+            x: channel,
+            y: (start.y + end.y) / 2,
+          });
+        }
+      }
+    }
+    if (!blockers.length && !crossRow) return undefined;
     const topRail = Math.min(from.top, to.top, ...blockers.map((frame) => frame.top)) - margin;
     const bottomRail =
       Math.max(from.bottom, to.bottom, ...blockers.map((frame) => frame.bottom)) + margin;
-    const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
-    const end = portPoint(to, oppositePortDirection(direction));
-    const directionSign = direction === "right" ? 1 : -1;
-    const sourceEdge = direction === "right" ? from.right : from.left;
-    const targetEdge = direction === "right" ? to.left : to.right;
     const routeFor = (rail: number) =>
       compactOrthogonalPoints([
         start,
@@ -410,6 +433,11 @@ function obstacleAvoidingEdge(
     });
   }
 
+  const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
+  const end = portPoint(to, oppositePortDirection(direction));
+  const directionSign = direction === "bottom" ? 1 : -1;
+  const sourceEdge = direction === "bottom" ? from.bottom : from.top;
+  const targetEdge = direction === "bottom" ? to.top : to.bottom;
   const corridorTop = Math.min(from.bottom, to.bottom);
   const corridorBottom = Math.max(from.top, to.top);
   const corridorLeft = Math.min(from.centerX, to.centerX) - 8;
@@ -421,15 +449,33 @@ function obstacleAvoidingEdge(
       frame.right > corridorLeft &&
       frame.left < corridorRight,
   );
-  if (!blockers.length) return undefined;
+  const crossColumn = Math.abs(from.centerX - to.centerX) > (from.right - from.left) * 0.75;
+  if (crossColumn) {
+    const channels = [
+      (sourceEdge + targetEdge) / 2,
+      sourceEdge + directionSign * stub,
+      targetEdge - directionSign * stub,
+    ];
+    for (const channel of channels) {
+      const points = compactOrthogonalPoints([
+        start,
+        { x: start.x, y: sourceEdge },
+        { x: start.x, y: channel },
+        { x: end.x, y: channel },
+        end,
+      ]);
+      if (routeClearsObstacles(points, obstacles)) {
+        return orthogonalEdge(points, {
+          x: (start.x + end.x) / 2,
+          y: channel,
+        });
+      }
+    }
+  }
+  if (!blockers.length && !crossColumn) return undefined;
   const leftRail = Math.min(from.left, to.left, ...blockers.map((frame) => frame.left)) - margin;
   const rightRail =
     Math.max(from.right, to.right, ...blockers.map((frame) => frame.right)) + margin;
-  const start = hasRecordedStart ? recordedStart : portPoint(from, direction);
-  const end = portPoint(to, oppositePortDirection(direction));
-  const directionSign = direction === "bottom" ? 1 : -1;
-  const sourceEdge = direction === "bottom" ? from.bottom : from.top;
-  const targetEdge = direction === "bottom" ? to.top : to.bottom;
   const routeFor = (rail: number) =>
     compactOrthogonalPoints([
       start,

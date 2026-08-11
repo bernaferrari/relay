@@ -14,7 +14,8 @@ type LayoutGraph = {
 
 const CARD_GAP_X = 40;
 const CARD_GAP_Y = 32;
-const MAX_LAYER_ROWS = 4;
+const MAX_LAYER_ROWS = 6;
+const MAX_SECTION_COLUMNS = 3;
 
 /**
  * Packs an established map by its visible sections instead of treating every
@@ -119,17 +120,7 @@ function layoutSection(
     : 0;
   const gridLeft = chainWidth ? chainWidth + CARD_GAP_X : 0;
   const layers = topologyLayers(remaining, chained, transitions);
-  let layerLeft = gridLeft;
-  layers.forEach((layer) => {
-    const rowCount = Math.min(MAX_LAYER_ROWS, Math.ceil(Math.sqrt(layer.length)));
-    layer.forEach((screenId, index) => {
-      positions[screenId] = {
-        x: layerLeft + Math.floor(index / rowCount) * (SCREEN_CARD_WIDTH + CARD_GAP_X),
-        y: (index % rowCount) * (SCREEN_CARD_HEIGHT + CARD_GAP_Y),
-      };
-    });
-    layerLeft += Math.ceil(layer.length / rowCount) * (SCREEN_CARD_WIDTH + CARD_GAP_X);
-  });
+  layoutTopologyBands(positions, layers, gridLeft);
   optimizeLayerAssignments(positions, layers, transitions);
 
   const maxX = Math.max(0, ...Object.values(positions).map(({ x }) => x));
@@ -139,6 +130,55 @@ function layoutSection(
     width: maxX + SCREEN_CARD_WIDTH,
     height: maxY + SCREEN_CARD_HEIGHT,
   };
+}
+
+/**
+ * Keep a section narrow enough to scan without turning a deep flow into one
+ * endless horizontal strip. Each topology layer is a vertical lane. After
+ * three lanes, the flow drops into the next band and snakes back, so the turn
+ * between bands is a short vertical connection instead of a return arc.
+ */
+function layoutTopologyBands(
+  positions: Record<string, CanvasPoint>,
+  layers: readonly string[][],
+  gridLeft: number,
+): void {
+  const pitchX = SCREEN_CARD_WIDTH + CARD_GAP_X;
+  const pitchY = SCREEN_CARD_HEIGHT + CARD_GAP_Y;
+  const metrics = layers.map((layer) => {
+    const columns = Math.min(
+      MAX_SECTION_COLUMNS,
+      Math.max(1, Math.ceil(layer.length / MAX_LAYER_ROWS)),
+    );
+    return { layer, columns, rows: Math.ceil(layer.length / columns) };
+  });
+  const bands: Array<typeof metrics> = [];
+  for (const metric of metrics) {
+    const band = bands.at(-1);
+    const used = band?.reduce((count, item) => count + item.columns, 0) ?? 0;
+    if (!band || used + metric.columns > MAX_SECTION_COLUMNS) bands.push([metric]);
+    else band.push(metric);
+  }
+
+  let bandTop = 0;
+  bands.forEach((band, bandIndex) => {
+    const reversed = bandIndex % 2 === 1;
+    let slot = reversed ? MAX_SECTION_COLUMNS : 0;
+    for (const metric of band) {
+      if (reversed) slot -= metric.columns;
+      const layerLeft = slot;
+      metric.layer.forEach((screenId, index) => {
+        const column = Math.floor(index / metric.rows);
+        const row = index % metric.rows;
+        positions[screenId] = {
+          x: gridLeft + (layerLeft + column) * pitchX,
+          y: bandTop + row * pitchY,
+        };
+      });
+      if (!reversed) slot += metric.columns;
+    }
+    bandTop += Math.max(...band.map(({ rows }) => rows)) * pitchY;
+  });
 }
 
 function isViewportTransition(label: string | undefined): boolean {

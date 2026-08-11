@@ -841,6 +841,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
+                        window.dispatchEvent(new CustomEvent("relay:tidy-map"));
+                      }}
+                    >
+                      <Icon name="grid" size={14} /> Tidy map
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:toggle-map-history"));
                       }}
                     >

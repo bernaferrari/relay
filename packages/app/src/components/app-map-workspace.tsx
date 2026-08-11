@@ -14,6 +14,7 @@ import {
   ensureCanvasGraph,
   withCanvasGraph,
 } from "../lib/app-map-canvas-graph";
+import { compactGroupedCanvasPositions } from "../lib/app-map-auto-layout";
 import { EMPTY_APP_MAP_CANVAS_STATE } from "../lib/app-map-canvas-state";
 import {
   canvasBounds,
@@ -783,9 +784,17 @@ export function AppMapWorkspace(props: {
       }),
     );
   });
+  const tidyMap = () => {
+    const arranged = compactGroupedCanvasPositions(graph(), groups());
+    if (!Object.keys(arranged).length) return;
+    persistMetadata({ ...canvasState(), positions: arranged });
+    requestAnimationFrame(fit);
+    toast("Map tidied", "success");
+  };
   onMount(() => {
     const unbind = bindAppMapWorkspaceShellEvents({
       onChooseTargetSet: chooseTargetSet,
+      onTidyMap: tidyMap,
       onToggleHistory: () => {
         const opening = !historyOpen();
         if (opening) setCaptureOpen(false);

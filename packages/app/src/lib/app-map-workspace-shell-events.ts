@@ -2,6 +2,7 @@
 export function bindAppMapWorkspaceShellEvents(handlers: {
   onChooseTargetSet: (targetSetId?: string) => void;
   onToggleHistory: () => void;
+  onTidyMap: () => void;
   onRevealScreen: (detail: { appMapId?: string; screenId?: string }) => void;
 }): () => void {
   const chooseFromShell = (event: Event) => {
@@ -11,6 +12,9 @@ export function bindAppMapWorkspaceShellEvents(handlers: {
   const toggleHistoryFromShell = () => {
     handlers.onToggleHistory();
   };
+  const tidyMapFromShell = () => {
+    handlers.onTidyMap();
+  };
   const revealFromPalette = (
     event: Event & { detail?: { appMapId?: string; screenId?: string } },
   ) => {
@@ -18,10 +22,12 @@ export function bindAppMapWorkspaceShellEvents(handlers: {
   };
   window.addEventListener("relay:choose-target-set", chooseFromShell);
   window.addEventListener("relay:toggle-map-history", toggleHistoryFromShell);
+  window.addEventListener("relay:tidy-map", tidyMapFromShell);
   window.addEventListener("relay:reveal-app-map-screen", revealFromPalette as EventListener);
   return () => {
     window.removeEventListener("relay:choose-target-set", chooseFromShell);
     window.removeEventListener("relay:toggle-map-history", toggleHistoryFromShell);
+    window.removeEventListener("relay:tidy-map", tidyMapFromShell);
     window.removeEventListener("relay:reveal-app-map-screen", revealFromPalette as EventListener);
   };
 }
