@@ -391,7 +391,7 @@ function structuredEdge(
         frame.top < corridorBottom,
     );
     const crossRow = Math.abs(from.centerY - to.centerY) > (from.bottom - from.top) * 0.75;
-    if (crossRow) {
+    if (crossRow && blockers.length) {
       const channels = [
         (sourceEdge + targetEdge) / 2,
         sourceEdge + directionSign * stub,
@@ -413,7 +413,7 @@ function structuredEdge(
         }
       }
     }
-    if (!blockers.length && !crossRow) return undefined;
+    if (!blockers.length) return undefined;
     const topRail = Math.min(from.top, to.top, ...blockers.map((frame) => frame.top)) - margin;
     const bottomRail =
       Math.max(from.bottom, to.bottom, ...blockers.map((frame) => frame.bottom)) + margin;
@@ -459,7 +459,7 @@ function structuredEdge(
       frame.left < corridorRight,
   );
   const crossColumn = Math.abs(from.centerX - to.centerX) > (from.right - from.left) * 0.75;
-  if (crossColumn) {
+  if (crossColumn && blockers.length) {
     const channels = [
       (sourceEdge + targetEdge) / 2,
       sourceEdge + directionSign * stub,
@@ -481,7 +481,7 @@ function structuredEdge(
       }
     }
   }
-  if (!blockers.length && !crossColumn) return undefined;
+  if (!blockers.length) return undefined;
   const leftRail = Math.min(from.left, to.left, ...blockers.map((frame) => frame.left)) - margin;
   const rightRail =
     Math.max(from.right, to.right, ...blockers.map((frame) => frame.right)) + margin;

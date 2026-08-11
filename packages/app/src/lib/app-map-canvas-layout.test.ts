@@ -154,7 +154,7 @@ test("an obstacle detour preserves the recorded origin before entering the row g
   assert.match(geometry.path, /L 612 131 Q 612 117, 626 117 L 640 117$/);
 });
 
-test("long diagonal connections use a compact orthogonal dogleg", () => {
+test("unobstructed branches use one consistent cubic curve across rows", () => {
   const target = { ...settings, id: "target", x: 640, y: 400 };
   const geometry = canvasEdgeGeometry(
     { from: "start", to: "target", kind: "forward" },
@@ -163,9 +163,8 @@ test("long diagonal connections use a compact orthogonal dogleg", () => {
   );
 
   assert.deepEqual(geometry.startPoint, { x: 240, y: 117 });
-  assert.doesNotMatch(geometry.path, / C /);
-  assert.match(geometry.path, /^M 240 117 L 426 117 Q 440 117, 440 131/);
-  assert.match(geometry.path, /L 440 503 Q 440 517, 454 517 L 640 517$/);
+  assert.match(geometry.path, /^M 240 117 C /);
+  assert.match(geometry.path, /, 640 517$/);
 });
 
 test("recorded tap origins stay exact on vertical connections", () => {

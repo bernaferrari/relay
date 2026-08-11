@@ -1386,7 +1386,6 @@ export function AppMapWorkspace(props: {
                   visibleBounds={visibleCanvasBounds()}
                   selectedNodeId={selectedNodeId()}
                   selectedNodeIds={selectedNodeIds()}
-                  draggingNodeIds={canvasGestures.draggedNodeIds()}
                   primaryConnectionIds={primaryConnectionIds()}
                   selectedConnectionId={selectedConnectionId()}
                   renamingNodeId={renamingNodeId()}
