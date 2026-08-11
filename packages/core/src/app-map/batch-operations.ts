@@ -4,6 +4,7 @@ import { applyAppMapPatch, assertEntityScope } from "./entity-operations.js";
 import { appMapFail } from "./errors.js";
 import { dropMapGroup, putMapGroup } from "./group-operations.js";
 import { mutateAppMap } from "./mutation.js";
+import { removeAppMapNote, saveAppMapNote } from "./note-operations.js";
 import { dropScreen, patchScreen, putScreen } from "./screen-operations.js";
 
 /** Applies a complete human or agent authoring gesture as one revision. Every
@@ -34,6 +35,12 @@ export function commitAppMapChanges(
 
 function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void {
   switch (change.kind) {
+    case "note.save":
+      saveAppMapNote(draft, change.note);
+      return;
+    case "note.remove":
+      removeAppMapNote(draft, change.noteId);
+      return;
     case "screen.add":
       putScreen(draft, change.input);
       return;

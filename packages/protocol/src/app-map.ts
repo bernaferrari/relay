@@ -3,6 +3,12 @@ import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity, TargetProfile } from "./index.js";
 
 export const APP_MAP_SCHEMA_VERSION = 1 as const;
+/**
+ * Version of the provider-neutral, mutable App Map document. This is kept
+ * distinct from the persisted App Map schema so a Yjs, Automerge, or custom
+ * provider can evolve its transport without changing the domain document.
+ */
+export const APP_MAP_COLLABORATION_DOCUMENT_VERSION = 1 as const;
 
 export type VolatileSemanticKind =
   | "clock"
@@ -75,6 +81,11 @@ export type Screen = AppMapEntity & {
 export type AppMapPatch = {
   name?: string;
   description?: string | null;
+  /**
+   * Legacy whole-collection note replacement. New canvas writes use
+   * `note.save` and `note.remove`, which are safe to compose with a
+   * collaborative document provider.
+   */
   notes?: Record<string, AppMapNote>;
 };
 
@@ -167,11 +178,15 @@ export type ConnectionDestination = { kind: "screen"; screenId: string } | { kin
  * never change execution; they are durable author overrides applied after the
  * automatic layout has produced its baseline. */
 export type ConnectionRouteStyle = "elbow" | "curve" | "straight";
+/** Arrowheads are visual-only connector affordances. Keeping the two endpoints
+ * explicit makes a collaborative canvas merge their choice independently from
+ * route, port, and weight fields. */
+export type ConnectionArrowStyle = "none" | "start" | "end" | "both";
 export type ConnectionPort = "auto" | "left" | "right" | "top" | "bottom";
 export type ConnectionPresentation = {
   route?: ConnectionRouteStyle;
   strokeWidth?: 1 | 2 | 3;
-  arrow?: "end" | "none";
+  arrow?: ConnectionArrowStyle;
   sourcePort?: ConnectionPort;
   targetPort?: ConnectionPort;
   /** Position along the selected source edge, from 0 to 1. */
@@ -497,6 +512,8 @@ export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds
 /** One atomic, reviewable authoring change. The desktop, CLI, HTTP API, and
  * agents use this same vocabulary so a canvas gesture cannot partially save. */
 export type AppMapBatchChange =
+  | { kind: "note.save"; note: AppMapNote }
+  | { kind: "note.remove"; noteId: string }
   | { kind: "screen.add"; input: AddScreenInput }
   | { kind: "screen.update"; screenId: string; input: UpdateScreenInput }
   | { kind: "screen.remove"; screenId: string }
@@ -610,6 +627,84 @@ export type AppMap = {
   activity: Record<string, ActivityEvent>;
   createdAt: number;
   updatedAt: number;
+};
+
+/**
+ * CRDT-replicated canvas data. The execution graph itself stays authoritative
+ * on the server: a live document may move a card or restyle a wire, but it
+ * cannot silently alter device actions, evidence, flows, or run results.
+ */
+export type AppMapCanvasCollaborationEntities = {
+  notes: Record<string, { id: string; text: string; position: AppMapPoint }>;
+  groups: Record<string, { id: string; name: string; screenIds: string[] }>;
+  /** `null` means restore automatic layout / remove an explicit position. */
+  screenLayouts: Record<string, { id: string; position: AppMapPoint | null }>;
+  /** `null` means restore the automatic connector presentation. */
+  connectionPresentations: Record<
+    string,
+    { id: string; presentation: ConnectionPresentation | null }
+  >;
+};
+
+export type AppMapCollaborationCollection = keyof AppMapCanvasCollaborationEntities;
+
+/** Provider-neutral data shape for Yjs, Automerge, or a future Relay sync
+ * service. Every collection is a stable-id map. Providers should represent a
+ * connector presentation as a nested field map and x/y coordinates as atomic
+ * point registers, rather than serializing and replacing this whole object. */
+export type AppMapCollaborationDocument = {
+  format: "relay.app-map-authoring";
+  formatVersion: typeof APP_MAP_COLLABORATION_DOCUMENT_VERSION;
+  schemaVersion: typeof APP_MAP_SCHEMA_VERSION;
+  id: string;
+  organizationId: string;
+  projectId: string;
+  createdAt: number;
+  entities: AppMapCanvasCollaborationEntities;
+};
+
+/** `null` removes one visual override; omitted fields are left untouched. */
+export type ConnectionPresentationPatch = {
+  [Key in keyof ConnectionPresentation]?: ConnectionPresentation[Key] | null;
+};
+
+/**
+ * Typed, field-level changes emitted by a collaboration provider. They are
+ * intentionally narrower than `AppMapBatchChange`: the server converts them
+ * into a normal revisioned commit, assigns authoritative timestamps, and
+ * validates references before publishing a new canonical snapshot.
+ */
+export type AppMapCollaborationChange =
+  | { kind: "note.save"; id: string; text: string; position: AppMapPoint }
+  | { kind: "note.remove"; noteId: string }
+  | { kind: "group.save"; id: string; name: string; screenIds: string[] }
+  | { kind: "group.remove"; groupId: string }
+  | { kind: "screen.layout"; screenId: string; position: AppMapPoint | null }
+  | { kind: "connection.presentation"; connectionId: string; reset: true }
+  | {
+      kind: "connection.presentation";
+      connectionId: string;
+      patch: ConnectionPresentationPatch;
+    };
+
+/**
+ * The minimal document façade a collaboration provider must implement. Relay
+ * owns the document shape and validation; connection and awareness transport
+ * stay in separate adapters. `origin` lets a future Yjs UndoManager track
+ * local transactions without putting remote collaborator edits in Undo.
+ */
+export type AppMapCollaborationAdapter<TDocument = unknown> = {
+  readonly kind: string;
+  create(initial: AppMapCollaborationDocument): TDocument;
+  read(document: TDocument): AppMapCollaborationDocument;
+  /** Apply only the supplied entity fields inside one CRDT transaction. */
+  transact(
+    document: TDocument,
+    changes: readonly AppMapCollaborationChange[],
+    options?: { origin?: unknown },
+  ): void;
+  observe(document: TDocument, listener: () => void): () => void;
+  destroy(document: TDocument): void;
 };
 
 export type AppMapMutationContext = {

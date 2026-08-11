@@ -8,6 +8,11 @@ export {
   type AddScreenInput,
   type AppMap,
   type AppMapBatchChange,
+  type AppMapCollaborationAdapter,
+  type AppMapCollaborationChange,
+  type AppMapCollaborationCollection,
+  type AppMapCollaborationDocument,
+  type AppMapCanvasCollaborationEntities,
   type AppMapEntity,
   type AppMapErrorCode,
   type AppMapMutationContext,
@@ -27,6 +32,7 @@ export {
   type Connection,
   type ConnectionDestination,
   type ConnectionPresentation,
+  type ConnectionPresentationPatch,
   type ConnectionPatch,
   type Flow,
   type GestureSpec,
@@ -46,3 +52,4 @@ export {
   type TargetResultReference,
   type UpdateScreenInput,
 } from "@relay/protocol";
+export { APP_MAP_COLLABORATION_DOCUMENT_VERSION } from "@relay/protocol";

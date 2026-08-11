@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { compactCanvasPositions } from "./app-map-auto-layout";
+import { DEFAULT_CANVAS_GRID_SPACING } from "./app-map-grid";
 
 test("lays out every screen once in a tall left-to-right topology", () => {
   const screens = Array.from({ length: 43 }, (_, index) => ({ id: `screen-${index}` }));
@@ -34,6 +35,22 @@ test("lays out every screen once in a tall left-to-right topology", () => {
         `cards ${left} and ${right} overlap`,
       );
     }
+  }
+});
+
+test("auto-layout always places new cards on the fixed snap lattice", () => {
+  const positions = compactCanvasPositions({
+    screens: ["root", "left", "right"].map((id) => ({ id })),
+    flows: [{ screenId: "root" }],
+    transitions: [
+      { fromScreenId: "root", destination: { kind: "screen", screenId: "left" } },
+      { fromScreenId: "root", destination: { kind: "screen", screenId: "right" } },
+    ],
+  });
+
+  for (const point of Object.values(positions)) {
+    assert.equal(point.x % DEFAULT_CANVAS_GRID_SPACING, 0);
+    assert.equal(point.y % DEFAULT_CANVAS_GRID_SPACING, 0);
   }
 });
 

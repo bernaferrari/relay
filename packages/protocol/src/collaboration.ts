@@ -29,3 +29,21 @@ export type CollaborationAwareness = {
   viewport?: CollaborationViewport;
   activity: CollaborationActivity;
 };
+
+/**
+ * Provider-neutral ephemeral awareness seam. This never writes to an App Map
+ * document: a Yjs adapter can use Awareness, while the current local server
+ * can keep using its short-lived presence endpoint.
+ */
+export type CollaborationAwarenessAdapter<TSession = unknown> = {
+  readonly kind: string;
+  setLocal(
+    session: TSession,
+    awareness: Omit<CollaborationAwareness, "updatedAt" | "expiresAt">,
+  ): void;
+  observe(
+    session: TSession,
+    listener: (awareness: readonly CollaborationAwareness[]) => void,
+  ): () => void;
+  destroy(session: TSession): void;
+};

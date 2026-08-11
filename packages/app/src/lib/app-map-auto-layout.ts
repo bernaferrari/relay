@@ -1,4 +1,5 @@
 import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH, type CanvasPoint } from "./app-map-canvas-layout";
+import { DEFAULT_CANVAS_GRID_SPACING, snapCanvasPointToGrid } from "./app-map-grid";
 
 type LayoutGraph = {
   screens: readonly { id: string }[];
@@ -17,6 +18,7 @@ const CARD_GAP_X = 112;
 const CARD_GAP_Y = 48;
 const SIBLING_BRANCH_GAP_ROWS = 0.2;
 const VIEWPORT_CHAIN_GAP_ROWS = 0.3;
+const CANONICAL_LAYOUT_GRID = { spacing: DEFAULT_CANVAS_GRID_SPACING } as const;
 
 /**
  * Tidy-tree layout for the real screen graph.
@@ -90,7 +92,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
       edgeSourceOffset.set(key, Math.min(edgeSourceOffset.get(key) ?? sourceOffset, sourceOffset));
     }
   }
-  return layoutPrimaryForest(
+  const positions = layoutPrimaryForest(
     orderedLayers,
     blocks,
     blockById,
@@ -98,6 +100,15 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
     entryBlocks,
     edgeOrder,
     edgeSourceOffset,
+  );
+  // Auto-layout is a creation path too. It uses the fixed minor lattice—not
+  // the zoom-dependent major dots—so tidying a map never creates cards that
+  // jump on their first drag or after a zoom change.
+  return Object.fromEntries(
+    Object.entries(positions).map(([id, point]) => [
+      id,
+      snapCanvasPointToGrid(point, CANONICAL_LAYOUT_GRID),
+    ]),
   );
 }
 

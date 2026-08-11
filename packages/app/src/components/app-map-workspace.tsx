@@ -12,6 +12,10 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
+import {
+  connectorAutoLanes,
+  connectorPresentationWithAutoLane,
+} from "../lib/app-map-connector-lanes";
 import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
@@ -33,6 +37,7 @@ import {
   type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
+import { canvasGridForScale, canvasGridPresentation } from "../lib/app-map-grid";
 import {
   centerCanvasViewport,
   minimapViewportBounds,
@@ -86,13 +91,13 @@ import {
   buildMinimapNodes,
   buildPresenceGeometry,
   captureContextLabel as buildCaptureContextLabel,
-  canonicalNotesFor,
   canvasRemovalChanges,
   connectionPathTitle,
   createCanvasNote,
   recordedActionFromConnection,
   entryFlowsForScreen,
   listReusableBehaviors,
+  noteChangesFor,
   orderCanvasChanges,
   recipeStepsForRunReadiness,
   recordStateFromReadiness,
@@ -276,6 +281,8 @@ export function AppMapWorkspace(props: {
       : undefined;
   });
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
+  const canvasGrid = createMemo(() => canvasGridForScale(view().scale));
+  const canvasGridVisual = createMemo(() => canvasGridPresentation(view(), canvasGrid()));
   const connections = createMemo(() => canvasConnections(tree(), draft.steps(), canvasState()));
   const [selectedNodeIds, setSelectedNodeIds] = createSignal<string[]>([]);
   const [selectedNodeId, setSelectedNodeIdValue] = createSignal<string | null>(null);
@@ -302,6 +309,12 @@ export function AppMapWorkspace(props: {
   const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState>();
   const positions = () => canvasState().positions;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
+  const autoConnectionLanes = createMemo(() =>
+    connectorAutoLanes(connections(), (screenId) => {
+      const node = tree().nodes.find((candidate) => candidate.id === screenId);
+      return node ? positionFor(node) : undefined;
+    }),
+  );
   const resolvedPositions = createMemo(() =>
     Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
   );
@@ -324,6 +337,7 @@ export function AppMapWorkspace(props: {
     // in canvasState.positions yet.
     positions: () => resolvedPositions(),
     geometries: () => screenGeometries(),
+    grid: canvasGrid,
     selectedNodeIds,
     setSelectedNodeIds,
     setSelectedNodeId: setSelectedNodeIdValue,
@@ -336,7 +350,7 @@ export function AppMapWorkspace(props: {
             to: connection.toScreenId,
             kind: connection.kind,
             sourceAnchor: connection.sourceAnchor,
-            presentation: connection.presentation,
+            presentation: connectorPresentationWithAutoLane(connection, autoConnectionLanes()),
           },
           tree().nodes,
           positionFor,
@@ -738,17 +752,15 @@ export function AppMapWorkspace(props: {
           ...(variantsByScreen ? { variantsByScreen } : {}),
         });
         const removals = previous ? canvasRemovalChanges(previous, value, appMap) : [];
-        const changes = orderCanvasChanges([...projectedChanges, ...removals]);
-        const canonicalNotes = canonicalNotesFor(value.notes ?? [], appMap);
-        const notesChanged = JSON.stringify(appMap.notes) !== JSON.stringify(canonicalNotes);
-        if (!changes.length && !notesChanged) return;
+        const noteChanges = noteChangesFor(value.notes ?? [], appMap, previous?.notes ?? []);
+        const changes = orderCanvasChanges([...projectedChanges, ...removals, ...noteChanges]);
+        if (!changes.length) return;
         appMap = (
           await server.runAction("app-map.commit", {
             appMapId,
             expectedRevision: appMap.revision,
-            summary: appMapCommitSummary({ appMap, changes, notesChanged }),
+            summary: appMapCommitSummary({ appMap, changes }),
             changes,
-            ...(notesChanged ? { patch: { notes: canonicalNotes } } : {}),
           })
         ).appMap;
         await server.refreshAppMaps();
@@ -900,6 +912,7 @@ export function AppMapWorkspace(props: {
       viewport: view(),
       clientWidth: element?.clientWidth,
       clientHeight: element?.clientHeight,
+      grid: canvasGrid(),
     });
     persistNotes([...(canvasState().notes ?? []), note]);
   };
@@ -1228,7 +1241,15 @@ export function AppMapWorkspace(props: {
           onPointerUp={canvasGestures.finishPointer}
           onPointerCancel={canvasGestures.cancelPointer}
         >
-          <div class="app-map-grid pointer-events-none absolute inset-0" aria-hidden="true" />
+          <div
+            class="app-map-grid pointer-events-none absolute inset-0"
+            aria-hidden="true"
+            style={{
+              "--app-map-grid-size": `${canvasGridVisual().screenSpacing}px`,
+              "--app-map-grid-offset-x": `${canvasGridVisual().offset.x}px`,
+              "--app-map-grid-offset-y": `${canvasGridVisual().offset.y}px`,
+            }}
+          />
           <AppMapOverviewToolbar
             screenCount={tree().nodes.length}
             connectionCount={connections().length}

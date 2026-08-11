@@ -270,7 +270,9 @@ function assertConnectionPresentation(presentation: ConnectionPresentation, labe
   }
   if (
     presentation.arrow !== undefined &&
+    presentation.arrow !== "start" &&
     presentation.arrow !== "end" &&
+    presentation.arrow !== "both" &&
     presentation.arrow !== "none"
   ) {
     appMapFail("invalid-map", `${label}.arrow is unsupported`);

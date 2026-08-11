@@ -20,6 +20,7 @@ import {
   type CanvasSnapGuide,
   type CanvasSnapLock,
 } from "../lib/app-map-snapping";
+import { snapCanvasDeltaToGrid, type CanvasGrid } from "../lib/app-map-grid";
 
 type Marquee = {
   pointerId: number;
@@ -60,6 +61,8 @@ export function useAppMapCanvasGestures(options: {
   screenIds: Accessor<string[]>;
   positions: Accessor<Record<string, CanvasPoint>>;
   geometries: Accessor<Record<string, ScreenCardGeometry>>;
+  /** Pure, serializable grid geometry shared by drag and visual presentation. */
+  grid: Accessor<CanvasGrid>;
   selectedNodeIds: Accessor<string[]>;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedNodeId: (id: string | null) => void;
@@ -186,6 +189,7 @@ export function useAppMapCanvasGestures(options: {
       origins: drag.origins,
       positions: options.positions(),
       geometries: options.geometries(),
+      grid: options.grid(),
       candidateDelta: {
         x: (clientX - drag.x) / scale,
         y: (clientY - drag.y) / scale,
@@ -217,14 +221,22 @@ export function useAppMapCanvasGestures(options: {
   };
 
   const setNotePosition = (drag: NoteDrag, clientX: number, clientY: number, scale: number) => {
+    const delta = snapCanvasDeltaToGrid(
+      drag.origin,
+      {
+        x: (clientX - drag.x) / scale,
+        y: (clientY - drag.y) / scale,
+      },
+      options.grid(),
+    );
     options.setCanvasState((current) => ({
       ...current,
       notes: (current.notes ?? []).map((note) =>
         note.id === drag.id
           ? {
               ...note,
-              x: drag.origin.x + (clientX - drag.x) / scale,
-              y: drag.origin.y + (clientY - drag.y) / scale,
+              x: drag.origin.x + delta.x,
+              y: drag.origin.y + delta.y,
               updatedAt: Date.now(),
             }
           : note,

@@ -21,9 +21,15 @@ import {
   type CanvasViewport,
   type ScreenCardGeometry,
 } from "./app-map-canvas-layout";
+import {
+  DEFAULT_CANVAS_GRID_SPACING,
+  snapCanvasPointToGrid,
+  type CanvasGrid,
+} from "./app-map-grid";
 import type { TakeDestination } from "./app-map-canvas-graph";
 import { mapGroupGeometry } from "./app-map-groups";
 import { minimapPoint } from "./app-map-minimap";
+import { connectorAutoLanes, connectorPresentationWithAutoLane } from "./app-map-connector-lanes";
 
 export function appMapLoadFailure(error: unknown): {
   title: string;
@@ -89,14 +95,44 @@ export function canonicalNotesFor(notes: CanvasNote[], appMap: AppMap): AppMap["
   );
 }
 
+/**
+ * Turn canvas note edits into independent entity writes. Replacing the full
+ * notes record meant a delayed drag could erase a collaborator's new sticky;
+ * one mutation per note keeps the write path aligned with the normalized App
+ * Map and with a future CRDT map keyed by note id.
+ */
+export function noteChangesFor(
+  notes: CanvasNote[],
+  appMap: AppMap,
+  previousNotes: CanvasNote[] = [],
+): AppMapBatchChange[] {
+  const desired = canonicalNotesFor(notes, appMap);
+  const previous = canonicalNotesFor(previousNotes, appMap);
+  const saves = Object.values(desired)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .flatMap((note): AppMapBatchChange[] => {
+      // Only write entities this local gesture changed. A note that merely
+      // exists in a stale renderer projection must never overwrite a newer
+      // remote note on the server while CRDT sync is not attached yet.
+      if (JSON.stringify(previous[note.id]) === JSON.stringify(note)) return [];
+      return [{ kind: "note.save", note }];
+    });
+  const removals = Object.keys(previous)
+    .filter((id) => !desired[id] && Boolean(appMap.notes[id]))
+    .sort()
+    .map((noteId): AppMapBatchChange => ({ kind: "note.remove", noteId }));
+  return [...saves, ...removals];
+}
+
 /** Describe the authoring gesture instead of recording every atomic canvas
  * persistence operation as the meaningless "Updated map". */
 export function appMapCommitSummary(input: {
   appMap: AppMap;
   changes: readonly AppMapBatchChange[];
-  notesChanged: boolean;
+  /** Kept for legacy callers that still use a whole-note patch. */
+  notesChanged?: boolean;
 }): string {
-  const { appMap, changes, notesChanged } = input;
+  const { appMap, changes, notesChanged = false } = input;
   const screenTitle = (screenId: string) => appMap.screens[screenId]?.title ?? "screen";
   const destinationTitle = (destination: { kind: "screen"; screenId: string } | { kind: "end" }) =>
     destination.kind === "screen" ? screenTitle(destination.screenId) : "End";
@@ -122,6 +158,10 @@ export function appMapCommitSummary(input: {
   const change = changes[0];
   if (!change) return "Edited a note";
   switch (change.kind) {
+    case "note.save":
+      return appMap.notes[change.note.id] ? "Edited a note" : "Added a note";
+    case "note.remove":
+      return "Removed a note";
     case "screen.add":
       return `Added ${change.input.screen.title}`;
     case "screen.update": {
@@ -190,6 +230,7 @@ export function canvasRemovalChanges(
 
 export function orderCanvasChanges(changes: AppMapBatchChange[]): AppMapBatchChange[] {
   const priority = (change: AppMapBatchChange): number => {
+    if (change.kind === "note.save") return 0;
     if (change.kind === "screen.add" || change.kind === "screen.update") return 0;
     if (change.kind === "group.remove") return 1;
     if (change.kind === "group.save") return 2;
@@ -317,18 +358,23 @@ export function buildMinimapEdges(input: {
   transitionStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
   const nodes = new Map(input.nodes.map((node) => [node.id, node]));
+  const lanes = connectorAutoLanes(input.connections, (screenId) => {
+    const node = nodes.get(screenId);
+    return node ? input.positionFor(node) : undefined;
+  });
   return input.connections.flatMap((connection) => {
     const selected = input.selectedConnectionId === connection.id;
     const from = nodes.get(connection.fromScreenId);
     const to = nodes.get(connection.toScreenId);
     if (!from || !to) return [];
+    const presentation = connectorPresentationWithAutoLane(connection, lanes);
     const geometry = canvasEdgeGeometry(
       {
         from: connection.fromScreenId,
         to: connection.toScreenId,
         kind: connection.kind,
         sourceAnchor: connection.sourceAnchor,
-        presentation: connection.presentation,
+        presentation,
       },
       input.nodes,
       input.positionFor,
@@ -339,8 +385,7 @@ export function buildMinimapEdges(input: {
       {
         id: connection.id,
         path: geometry.path,
-        arrowPath:
-          connection.presentation?.arrow === "none" ? null : canvasEdgeArrowPath(geometry, 2),
+        arrowPath: presentation?.arrow === "none" ? null : canvasEdgeArrowPath(geometry, 2),
         selected,
         state: input.transitionStates[connection.id],
       },
@@ -353,6 +398,11 @@ export function buildPresenceGeometry(input: {
   connections: CanvasConnection[];
   positionFor: (node: MapTreeNode) => CanvasPoint;
 }) {
+  const nodes = new Map(input.nodes.map((node) => [node.id, node]));
+  const lanes = connectorAutoLanes(input.connections, (screenId) => {
+    const node = nodes.get(screenId);
+    return node ? input.positionFor(node) : undefined;
+  });
   return {
     screenPositions: Object.fromEntries(
       input.nodes.map((node) => [node.id, { ...input.positionFor(node) }]),
@@ -365,6 +415,8 @@ export function buildPresenceGeometry(input: {
             from: connection.fromScreenId,
             to: connection.toScreenId,
             kind: connection.kind,
+            sourceAnchor: connection.sourceAnchor,
+            presentation: connectorPresentationWithAutoLane(connection, lanes),
           },
           input.nodes,
           input.positionFor,
@@ -614,6 +666,8 @@ export function createCanvasNote(input: {
   viewport: CanvasViewport;
   clientWidth?: number;
   clientHeight?: number;
+  /** The fixed minor lattice; optional for callers outside the canvas. */
+  grid?: CanvasGrid;
   at?: number;
 }): NotePlacement {
   const at = input.at ?? Date.now();
@@ -623,12 +677,16 @@ export function createCanvasNote(input: {
   const y = input.clientHeight
     ? (input.clientHeight * 0.42 - input.viewport.y) / input.viewport.scale
     : 180;
+  const position = snapCanvasPointToGrid(
+    { x, y },
+    input.grid ?? { spacing: DEFAULT_CANVAS_GRID_SPACING },
+  );
   const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
   return {
     id,
     text: "Add context for this part of the map",
-    x,
-    y,
+    x: position.x,
+    y: position.y,
     createdAt: at,
     updatedAt: at,
   };

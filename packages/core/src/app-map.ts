@@ -2,6 +2,12 @@ export * from "./app-map/model.js";
 export { AppMapDomainError } from "./app-map/errors.js";
 export { validateAppMap } from "./app-map/validation.js";
 export { commitAppMapChanges } from "./app-map/batch-operations.js";
+export {
+  appMapToCollaborationDocument,
+  collaborationEntitiesFor,
+  collaborationChangesToBatchChanges,
+} from "./app-map/collaboration-document.js";
+export { removeAppMapNote, saveAppMapNote } from "./app-map/note-operations.js";
 export { removeAppMapGroup, saveAppMapGroup } from "./app-map/group-operations.js";
 export {
   addAppMapScreen,

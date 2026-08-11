@@ -278,3 +278,55 @@ test("multi-selection snaps as one visible-preview block", () => {
 
   assert.deepEqual(result.delta, { x: 500, y: 3 });
 });
+
+test("builds alignment guides from the final two-axis position", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 0 } },
+    positions: {
+      moving: { x: 0, y: 0 },
+      fixed: { x: 400, y: 100 },
+    },
+    geometries: { moving: square, fixed: square },
+    candidateDelta: { x: 400, y: 95 },
+    threshold: 8,
+  });
+
+  assert.deepEqual(result.delta, { x: 400, y: 100 });
+  const verticalGuide = result.guides.find((guide) => guide.axis === "x");
+  assert.equal(verticalGuide?.start, 100);
+  assert.equal(verticalGuide?.end, 200);
+});
+
+test("quantizes the committed drag delta to the same world grid as the dots", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 3, y: 7 } },
+    positions: { moving: { x: 3, y: 7 } },
+    geometries: { moving: square },
+    candidateDelta: { x: 18, y: 12 },
+    threshold: 8,
+    grid: { spacing: 20 },
+  });
+
+  assert.deepEqual(result.delta, { x: 17, y: 13 });
+});
+
+test("does not retain a guide when grid quantization wins a competing relationship", () => {
+  const result = snapDraggedScreens({
+    draggedIds: ["moving"],
+    origins: { moving: { x: 0, y: 0 } },
+    positions: {
+      moving: { x: 0, y: 0 },
+      fixed: { x: 25, y: 300 },
+    },
+    geometries: { moving: square, fixed: square },
+    candidateDelta: { x: 20, y: 0 },
+    threshold: 8,
+    grid: { spacing: 20 },
+  });
+
+  assert.deepEqual(result.delta, { x: 20, y: 0 });
+  assert.deepEqual(result.guides, []);
+  assert.deepEqual(result.locks, []);
+});

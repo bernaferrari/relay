@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap } from "@relay/protocol";
+import type { AppMap, Connection } from "@relay/protocol";
 import { validateAppMap } from "./validation.js";
+import { assertConnection } from "./validation-shapes.js";
 
 function emptyMap(): AppMap {
   return {
@@ -37,4 +38,21 @@ test("normalizes the additive groups collection for pre-release local maps", () 
 
   assert.deepEqual(map.groups, {});
   assert.equal(map.name, "Settings demo");
+});
+
+test("connector presentation accepts explicit arrowheads at either endpoint", () => {
+  const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+  const connection: Connection = {
+    ...scope,
+    id: "connection-1",
+    createdAt: 1,
+    updatedAt: 1,
+    fromScreenId: "screen-a",
+    destination: { kind: "screen", screenId: "screen-b" },
+    state: "draft",
+    actions: [],
+    presentation: { arrow: "both", route: "curve" },
+  };
+
+  assert.doesNotThrow(() => assertConnection(connection, scope, "connection"));
 });

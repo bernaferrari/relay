@@ -4,6 +4,7 @@ import type { MapTreeNode } from "./app-map-tree";
 import {
   canvasBounds,
   canvasEdgeArrowPath,
+  canvasEdgeStartArrowPath,
   canvasEdgeGeometry,
   fitCanvasViewport,
   nextBranchPosition,
@@ -67,6 +68,19 @@ test("connector arrows share scene geometry with the route", () => {
   assert.equal(
     canvasEdgeArrowPath({ endPoint: { x: 20, y: 10 }, hitPoints: [{ x: 20, y: 10 }] }),
     "",
+  );
+  assert.equal(
+    canvasEdgeStartArrowPath(
+      {
+        startPoint: { x: 0, y: 10 },
+        hitPoints: [
+          { x: 0, y: 10 },
+          { x: 20, y: 10 },
+        ],
+      },
+      2,
+    ),
+    "M 9.25 5.35 L 0 10 L 9.25 14.65",
   );
 });
 

@@ -59,19 +59,41 @@ export function canvasEdgeArrowPath(
   strokeWidth = 2,
 ): string {
   const end = geometry.endPoint;
-  let tangentPoint: CanvasPoint | undefined;
+  const tangentPoint = previousDistinctPoint(geometry.hitPoints, end);
+  return tangentPoint ? arrowPathAt(end, tangentPoint, strokeWidth) : "";
+}
 
-  for (let index = geometry.hitPoints.length - 2; index >= 0; index -= 1) {
-    const candidate = geometry.hitPoints[index]!;
-    if (Math.hypot(end.x - candidate.x, end.y - candidate.y) > 0.01) {
-      tangentPoint = candidate;
-      break;
-    }
+/** Same geometry as the terminal arrow, mirrored onto the source endpoint.
+ * Separating it from rendering means adding or removing arrowheads does not
+ * alter the route, its hit path, or any persisted endpoint attachment. */
+export function canvasEdgeStartArrowPath(
+  geometry: Pick<CanvasEdgeGeometry, "startPoint" | "hitPoints">,
+  strokeWidth = 2,
+): string {
+  const start = geometry.startPoint;
+  const nextPoint = nextDistinctPoint(geometry.hitPoints, start);
+  return nextPoint ? arrowPathAt(start, nextPoint, strokeWidth) : "";
+}
+
+function previousDistinctPoint(points: readonly CanvasPoint[], endpoint: CanvasPoint) {
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const candidate = points[index]!;
+    if (Math.hypot(endpoint.x - candidate.x, endpoint.y - candidate.y) > 0.01) return candidate;
   }
-  if (!tangentPoint) return "";
+  return undefined;
+}
 
-  const deltaX = end.x - tangentPoint.x;
-  const deltaY = end.y - tangentPoint.y;
+function nextDistinctPoint(points: readonly CanvasPoint[], endpoint: CanvasPoint) {
+  for (let index = 1; index < points.length; index += 1) {
+    const candidate = points[index]!;
+    if (Math.hypot(endpoint.x - candidate.x, endpoint.y - candidate.y) > 0.01) return candidate;
+  }
+  return undefined;
+}
+
+function arrowPathAt(tip: CanvasPoint, tangentPoint: CanvasPoint, strokeWidth: number): string {
+  const deltaX = tip.x - tangentPoint.x;
+  const deltaY = tip.y - tangentPoint.y;
   const distance = Math.hypot(deltaX, deltaY);
   const tangentX = deltaX / distance;
   const tangentY = deltaY / distance;
@@ -80,8 +102,8 @@ export function canvasEdgeArrowPath(
   const extraWeight = Math.max(0, strokeWidth - 1);
   const length = 8.5 + extraWeight * 0.75;
   const halfWidth = 4.25 + extraWeight * 0.4;
-  const baseX = end.x - tangentX * length;
-  const baseY = end.y - tangentY * length;
+  const baseX = tip.x - tangentX * length;
+  const baseY = tip.y - tangentY * length;
   const first = {
     x: baseX + normalX * halfWidth,
     y: baseY + normalY * halfWidth,
@@ -91,7 +113,7 @@ export function canvasEdgeArrowPath(
     y: baseY - normalY * halfWidth,
   };
 
-  return `M ${first.x} ${first.y} L ${end.x} ${end.y} L ${second.x} ${second.y}`;
+  return `M ${first.x} ${first.y} L ${tip.x} ${tip.y} L ${second.x} ${second.y}`;
 }
 
 /** Shared geometry for the App Map canvas and collaboration presence. */

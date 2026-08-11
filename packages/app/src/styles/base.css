@@ -233,9 +233,14 @@
 }
 
 .app-map-grid {
-  background-image: radial-gradient(circle, var(--map-grid-dot) 1px, transparent 1.15px);
-  background-position: 0 0;
-  background-size: 20px 20px;
+  /* The dot itself is positioned at the world-grid coordinate. The one-pixel
+   * phase correction keeps its visual center aligned with the drag lattice. */
+  background-image: radial-gradient(circle at 1px 1px, var(--map-grid-dot) 1px, transparent 1.15px);
+  /* Workspace supplies these from its world-space grid. Other map surfaces
+   * intentionally retain the compact default when they have no viewport. */
+  background-position: calc(var(--app-map-grid-offset-x, 0px) - 1px)
+    calc(var(--app-map-grid-offset-y, 0px) - 1px);
+  background-size: var(--app-map-grid-size, 20px) var(--app-map-grid-size, 20px);
 }
 
 /* Empty canvases expose only commands that can act on the current state. The

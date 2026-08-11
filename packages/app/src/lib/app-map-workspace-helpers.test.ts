@@ -8,6 +8,8 @@ import {
   buildMinimapEdges,
   buildMinimapGroups,
   buildMinimapNodes,
+  createCanvasNote,
+  noteChangesFor,
   orderCanvasChanges,
 } from "./app-map-workspace-helpers";
 
@@ -17,6 +19,19 @@ test("appMapLoadFailure maps auth, missing, client, and transport failures", () 
   assert.equal(appMapLoadFailure({ status: 422 }).title, "Relay couldn’t read this map");
   assert.equal(appMapLoadFailure(new Error("offline")).title, "Relay couldn’t reach this map");
   assert.equal(appMapLoadFailure(new Error("  boom  ")).detail, "boom");
+});
+
+test("new notes use the fixed canvas snap lattice", () => {
+  const note = createCanvasNote({
+    viewport: { x: 13, y: -7, scale: 0.78 },
+    clientWidth: 801,
+    clientHeight: 601,
+    grid: { spacing: 20 },
+    at: 1,
+  });
+
+  assert.equal(note.x % 20, 0);
+  assert.equal(note.y % 20, 0);
 });
 
 test("buildMinimapNodes carries every marquee-selected screen into the overview", () => {
@@ -206,4 +221,42 @@ test("appMapCommitSummary describes the actual canvas gesture", () => {
     "Connected Settings to Wi-Fi",
   );
   assert.equal(appMapCommitSummary({ appMap, changes: [], notesChanged: true }), "Edited a note");
+});
+
+test("note persistence emits only the local note delta, preserving remote siblings", () => {
+  const appMap = {
+    id: "map",
+    organizationId: "org",
+    projectId: "project",
+    notes: {
+      remote: {
+        id: "remote",
+        organizationId: "org",
+        projectId: "project",
+        appMapId: "map",
+        text: "Remote note",
+        position: { x: 40, y: 80 },
+        createdAt: 10,
+        updatedAt: 12,
+      },
+    },
+  } as unknown as AppMap;
+  const before = [{ id: "local", text: "Local", x: 0, y: 0, createdAt: 10, updatedAt: 10 }];
+  const after = [{ id: "local", text: "Local", x: 24, y: 16, createdAt: 10, updatedAt: 14 }];
+
+  assert.deepEqual(noteChangesFor(after, appMap, before), [
+    {
+      kind: "note.save",
+      note: {
+        id: "local",
+        organizationId: "org",
+        projectId: "project",
+        appMapId: "map",
+        text: "Local",
+        position: { x: 24, y: 16 },
+        createdAt: 10,
+        updatedAt: 14,
+      },
+    },
+  ]);
 });

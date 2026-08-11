@@ -88,10 +88,14 @@ revisions and idempotency keys; stale writes return the current resource. Stable
 field-level operations allow a hosted collaboration provider to be added without changing domain
 entities.
 
-Relay does not currently depend on Yjs. A future Yjs adapter may project the normalized entity maps
-and field-level operations into shared types while keeping run artifacts immutable and outside the
-live document. Large screenshot matrices remain evidence references, not replicated binary arrays;
-presence and cursors use the provider's awareness channel rather than persisted map state.
+Relay does not currently depend on Yjs. The domain now exposes a provider-neutral
+`AppMapCollaborationDocument` and typed field-level canvas changes so a future Yjs, Automerge, or
+hosted adapter can share notes, groups, screen layout, and connector presentation without changing
+the runner. Core stays provider-free: adapters publish granular changes through normal, server-stamped
+App Map commits rather than replacing a whole map from a stale CRDT snapshot. Execution graph data,
+run artifacts, evidence, and approvals remain authoritative server state and sit outside the live
+document. Large screenshot matrices remain evidence references, not replicated binary arrays;
+presence and cursors use a separate ephemeral awareness channel rather than persisted map state.
 
 Presence, cursors, viewport, and transient activity are ephemeral awareness data. They are never
 execution authority and are not persisted in App Maps. Device input and recording require explicit,
