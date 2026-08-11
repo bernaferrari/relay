@@ -12,10 +12,10 @@ export type CliCommandAlias = {
 
 const CLI_COMMAND_ALIASES: readonly CliCommandAlias[] = [
   { alias: 'long-press', command: 'longpress' },
-  { alias: 'metrics', command: 'perf' },
   { alias: 'tap', command: 'press' },
   { alias: 'launch', command: 'open' },
   { alias: 'relaunch', command: 'open', impliedFlags: ['relaunch'] },
+  { alias: 'metrics', command: 'perf' },
 ];
 
 const aliasByToken: ReadonlyMap<string, CliCommandAlias> = new Map(

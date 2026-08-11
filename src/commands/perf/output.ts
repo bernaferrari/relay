@@ -13,29 +13,105 @@ export const perfCliOutputFormatters = {
 } as const satisfies Record<string, CliOutputFormatter>;
 
 function formatPerfCliOutput(data: Record<string, unknown>): string {
-  const nativeOutput = formatNativePerfOutput(data);
-  if (nativeOutput) return nativeOutput;
+  return formatNativePerfOutput(data) ?? formatObservationPerfOutput(data);
+}
+
+function formatObservationPerfOutput(data: Record<string, unknown>): string {
   const artifact = isRecord(data.artifact) ? data.artifact : undefined;
-  if (artifact) {
-    return formatMemoryArtifactSummary(artifact);
-  }
+  if (artifact) return formatMemoryArtifactSummary(artifact);
   const metrics = isRecord(data.metrics) ? data.metrics : undefined;
-  return formatFramePerfOutput(metrics);
+  return formatObservedMetrics(data, metrics);
+}
+
+function formatObservedMetrics(
+  data: Record<string, unknown>,
+  metrics: Record<string, unknown> | undefined,
+): string {
+  if (hasLegacyPerfWarning(data) && isRecord(metrics?.fps) && isRecord(metrics?.memory)) {
+    return formatLegacyMetricsOutput(data, metrics);
+  }
+  return formatFocusedMetrics(metrics);
+}
+
+function formatFocusedMetrics(metrics: Record<string, unknown> | undefined): string {
+  return isRecord(metrics?.fps)
+    ? formatFramePerfOutput(metrics)
+    : (formatMemoryPerfOutput(metrics) ?? 'Memory: unavailable - missing memory metric');
+}
+
+function hasLegacyPerfWarning(data: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(data.warnings) &&
+    data.warnings.some(
+      (entry) => typeof entry === 'string' && entry.includes('deprecated compatibility forms'),
+    )
+  );
+}
+
+function formatLegacyMetricsOutput(
+  data: Record<string, unknown>,
+  metrics: Record<string, unknown>,
+): string {
+  const warning = Array.isArray(data.warnings)
+    ? data.warnings.find((entry): entry is string => typeof entry === 'string')
+    : undefined;
+  const summary = formatLegacyAggregateMetrics(metrics);
+  return warning ? `${summary}\nDeprecated: ${warning}` : summary;
+}
+
+function formatLegacyAggregateMetrics(metrics: Record<string, unknown>): string {
+  const fps = isRecord(metrics.fps) ? metrics.fps : undefined;
+  const resourceSummary = buildLegacyResourceSummary(metrics);
+  if (!fps) return formatLegacyUnavailable(resourceSummary, 'missing frame metric');
+  if (fps.available === false) {
+    return formatLegacyUnavailable(resourceSummary, readUnavailableReason(fps));
+  }
+  const frameSummary = formatFrameHealthSummary(fps);
+  return frameSummary
+    ? formatFrameHealthOutput(fps, frameSummary)
+    : formatLegacyUnavailable(resourceSummary, 'missing dropped-frame summary');
+}
+
+function buildLegacyResourceSummary(metrics: Record<string, unknown>): string | undefined {
+  const parts = [
+    formatCpuPerfSummary(isRecord(metrics.cpu) ? metrics.cpu : undefined),
+    formatMemoryPerfSummary(isRecord(metrics.memory) ? metrics.memory : undefined),
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function formatLegacyUnavailable(resourceSummary: string | undefined, reason: string): string {
+  return resourceSummary ? `Performance: ${resourceSummary}` : formatPerfUnavailable(reason);
+}
+
+function formatCpuPerfSummary(cpu: Record<string, unknown> | undefined): string | undefined {
+  if (cpu?.available !== true) return undefined;
+  const usagePercent = readFiniteNumber(cpu.usagePercent);
+  return usagePercent === undefined ? undefined : `CPU ${formatPercent(usagePercent)}`;
+}
+
+function formatMemoryPerfOutput(metrics: Record<string, unknown> | undefined): string | undefined {
+  const memory = isRecord(metrics?.memory) ? metrics.memory : undefined;
+  if (!memory) return undefined;
+  if (memory.available === false) {
+    return `Memory: unavailable - ${readUnavailableReason(memory)}`;
+  }
+  const summary = formatMemoryPerfSummary(memory);
+  return summary ? `Performance: ${summary}` : 'Memory: unavailable - missing memory metric';
 }
 
 function formatFramePerfOutput(metrics: Record<string, unknown> | undefined): string {
   const fps = isRecord(metrics?.fps) ? metrics.fps : undefined;
-  const resourceSummary = buildResourcePerfSummary(metrics);
   if (!fps) {
-    return formatPerfUnavailable(resourceSummary, 'missing frame metric');
+    return formatPerfUnavailable('missing frame metric');
   }
 
   if (fps.available === false) {
-    return formatPerfUnavailable(resourceSummary, readUnavailableReason(fps));
+    return formatPerfUnavailable(readUnavailableReason(fps));
   }
 
   const frameSummary = formatFrameHealthSummary(fps);
-  if (!frameSummary) return formatPerfUnavailable(resourceSummary, 'missing dropped-frame summary');
+  if (!frameSummary) return formatPerfUnavailable('missing dropped-frame summary');
 
   return formatFrameHealthOutput(fps, frameSummary);
 }
@@ -76,7 +152,26 @@ function formatAppleNativePerfOutput(data: Record<string, unknown>): string | un
   const outPath = readNativePerfArtifactPath(data);
   if (!state || !outPath || data.kind !== 'xctrace') return undefined;
   const mode = typeof data.mode === 'string' ? data.mode : 'capture';
-  return formatNativePerfLines(outPath, mode, state, data.template);
+  const lines = formatNativePerfLines(outPath, mode, state, data.template);
+  const topFunctions = formatNativeTopFunctions(data);
+  return topFunctions.length > 0
+    ? `${lines}\nTop CPU self time:\n${topFunctions.join('\n')}`
+    : lines;
+}
+
+const PERF_CLI_TOP_FUNCTION_LIMIT = 5;
+
+function formatNativeTopFunctions(data: Record<string, unknown>): string[] {
+  const summary = isRecord(data.summary) ? data.summary : undefined;
+  if (!Array.isArray(summary?.topFunctions)) return [];
+  return summary.topFunctions.slice(0, PERF_CLI_TOP_FUNCTION_LIMIT).flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const symbol = readString(entry.symbol);
+    const percent = readFiniteNumber(entry.selfSamplePercent);
+    if (!symbol || percent === undefined) return [];
+    const binary = readString(entry.binary);
+    return [`- ${formatPercent(percent)} ${symbol}${binary ? ` (${binary})` : ''}`];
+  });
 }
 
 function readNativePerfArtifactPath(data: Record<string, unknown>): string | undefined {
@@ -98,9 +193,13 @@ function formatNativePerfLines(
 function formatAndroidNativePerfOutput(data: Record<string, unknown>): string | undefined {
   const summary = readNativePerfSummary(data);
   if (!summary) return undefined;
-  return `Perf ${summary.action}: ${summary.kind} ${summary.type}${formatNativePerfState(
+  const lines = `Perf ${summary.action}: ${summary.kind} ${summary.type}${formatNativePerfState(
     data,
   )}${formatNativePerfArtifact(data)}${formatNativePerfFrameHealth(data)}`;
+  const topFunctions = formatNativeTopFunctions(data);
+  return topFunctions.length > 0
+    ? `${lines}\nTop CPU self time:\n${topFunctions.join('\n')}`
+    : lines;
 }
 
 function readNativePerfSummary(
@@ -147,10 +246,8 @@ function formatNativePerfFrameHealth(data: Record<string, unknown>): string {
   )}/${Math.round(totalFrameCount)} frames)`;
 }
 
-function formatPerfUnavailable(resourceSummary: string | undefined, reason: string): string {
-  return resourceSummary
-    ? `Performance: ${resourceSummary}`
-    : `Frame health: unavailable - ${reason}`;
+function formatPerfUnavailable(reason: string): string {
+  return `Frame health: unavailable - ${reason}`;
 }
 
 function readUnavailableReason(fps: Record<string, unknown>): string {
@@ -200,23 +297,6 @@ function formatWorstFrameWindow(window: Record<string, unknown>): string | undef
   const worstFrameText =
     worstFrameMs === undefined ? '' : `, worst ${formatDurationMs(worstFrameMs)}`;
   return `- +${formatDurationMs(startOffsetMs)}-+${formatDurationMs(endOffsetMs)}: ${Math.round(count)} missed-deadline frames${worstFrameText}`;
-}
-
-function buildResourcePerfSummary(
-  metrics: Record<string, unknown> | undefined,
-): string | undefined {
-  const cpu = isRecord(metrics?.cpu) ? metrics.cpu : undefined;
-  const memory = isRecord(metrics?.memory) ? metrics.memory : undefined;
-  const parts = [formatCpuPerfSummary(cpu), formatMemoryPerfSummary(memory)].filter(
-    (part): part is string => Boolean(part),
-  );
-  return parts.length > 0 ? parts.join(', ') : undefined;
-}
-
-function formatCpuPerfSummary(cpu: Record<string, unknown> | undefined): string | undefined {
-  if (cpu?.available !== true) return undefined;
-  const usagePercent = readFiniteNumber(cpu.usagePercent);
-  return usagePercent !== undefined ? `CPU ${formatPercent(usagePercent)}` : undefined;
 }
 
 function formatMemoryPerfSummary(memory: Record<string, unknown> | undefined): string | undefined {

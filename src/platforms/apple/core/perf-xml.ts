@@ -55,3 +55,20 @@ export function resolveXmlNumber(
   if (element.attributes.ref) return references.get(element.attributes.ref)?.numberValue ?? null;
   return parseDirectXmlNumber(element);
 }
+
+export function indexXmlNodesById(document: XmlNode[]): Map<string, XmlNode> {
+  return new Map(
+    findAllXmlNodes(document, (node) => Boolean(node.attributes.id)).flatMap((node) => {
+      const id = node.attributes.id;
+      return id ? [[id, node] as const] : [];
+    }),
+  );
+}
+
+export function resolveXmlReference(
+  node: XmlNode | undefined,
+  nodesById: Map<string, XmlNode>,
+): XmlNode | undefined {
+  if (!node) return undefined;
+  return node.attributes.ref ? nodesById.get(node.attributes.ref) : node;
+}

@@ -30,7 +30,7 @@ import { perfCliOutputFormatters } from './output.ts';
 const PERF_COMMAND_NAME = 'perf';
 
 const perfCommandDescription =
-  'Collect session performance metrics, frame health, memory diagnostics, and platform profiling artifacts. Prefer structured metrics for a first-pass diagnosis; raw profiles and traces remain session artifacts.';
+  'Collect frame health, memory diagnostics, and platform profiling artifacts with compact agent-readable summaries.';
 
 export const perfCommandMetadata = defineFieldCommandMetadata(
   PERF_COMMAND_NAME,
@@ -52,7 +52,7 @@ export const perfCommandDefinition = defineExecutableCommand(perfCommandMetadata
 
 const perfCliSchema = {
   usageOverride:
-    'perf metrics --json\n  agent-device perf frames --json\n  agent-device perf memory sample --json\n  agent-device perf memory snapshot [--kind android-hprof|memgraph] [--out <path>]\n  agent-device perf cpu profile start --kind xctrace [--template <name>] --out <profile.trace>\n  agent-device perf cpu profile stop --kind xctrace --out <profile.trace>\n  agent-device perf cpu profile report --kind xctrace --out <report.json>\n  agent-device perf trace start|stop --kind xctrace [--template <name>] --out <path>\n  agent-device perf cpu profile start --kind simpleperf --out <cpu.perf.data>\n  agent-device perf cpu profile stop --kind simpleperf\n  agent-device perf cpu profile report --kind simpleperf --out <cpu-report.json>\n  agent-device perf trace start|stop --kind perfetto [--out <path>]',
+    'perf frames --json\n  agent-device perf memory sample --json\n  agent-device perf memory snapshot [--kind android-hprof|memgraph] [--out <path>]\n  agent-device perf cpu profile start --kind xctrace [--template <name>] --out <profile.trace>\n  agent-device perf cpu profile stop --kind xctrace --out <profile.trace>\n  agent-device perf cpu profile report --kind xctrace --out <report.json>\n  agent-device perf trace start|stop --kind xctrace [--template <name>] --out <path>\n  agent-device perf cpu profile start --kind simpleperf --out <cpu.perf.data>\n  agent-device perf cpu profile stop --kind simpleperf\n  agent-device perf cpu profile report --kind simpleperf --out <cpu-report.json>\n  agent-device perf trace start|stop --kind perfetto [--out <path>]\n\n  Deprecated compatibility: perf, perf sample, perf metrics, and metrics return aggregate evidence. Prefer an explicit area.',
   listUsageOverride: 'perf',
   positionalArgs: ['area?', 'subjectOrAction?', 'action?'],
   allowedFlags: ['kind', 'perfTemplate', 'out'],
@@ -74,9 +74,9 @@ export const perfDaemonWriter: DaemonWriter = direct(PERF_COMMAND_NAME, (input) 
 const perfCommandFacet = defineCommandFacet({
   name: PERF_COMMAND_NAME,
   text: {
-    summary: 'Check metrics, frames, memory, or profiles',
+    summary: 'Check frames, memory, or native profiles',
     cliDetail:
-      'Covers Apple xctrace and Android native Simpleperf/Perfetto artifacts. Prefer explicit perf metrics --json for first-pass startup/CPU/memory data. For CPU profiles, start/stop write the raw artifact and report writes a compact .json summary; include report after simpleperf stop when the task needs agent-readable native CPU evidence. Bare perf and metrics remain aliases. Native perf output is agent evidence: compact state, artifact path, and size only; raw profiles/traces stay on disk.',
+      'Use perf frames for bounded frame-health evidence and perf memory sample for a compact process-memory reading. Apple xctrace and Android Simpleperf/Perfetto captures keep raw artifacts on disk; report produces bounded agent-readable evidence. For React render internals, use agent-device react-devtools.',
     mcpDetail:
       'For CPU profiles, start and stop write the raw artifact while report writes a compact summary; request the report when the task needs readable native CPU evidence. Profiling output is evidence only: compact state, artifact path, and size.',
   },
@@ -134,8 +134,10 @@ function readPerfPositionals(
   flags: Pick<PerfOptions, 'kind' | 'template' | 'out'> = {},
 ): Pick<PerfOptions, 'area' | 'subject' | 'action' | 'kind' | 'template' | 'out'> {
   if (positionals[0] !== undefined && positionals[1] === undefined) {
-    const action = readPerfAction(positionals[0], { allowUndefined: true });
-    if (action) return { action, kind: readPerfKind(flags.kind), out: flags.out };
+    const normalized = positionals[0].toLowerCase();
+    if (isPerfAction(normalized)) {
+      return { action: normalized, kind: readPerfKind(flags.kind), out: flags.out };
+    }
   }
   const area = readPerfArea(positionals[0]);
   if (area === 'cpu') {
@@ -166,20 +168,15 @@ function readPerfPositionals(
 }
 
 function readPerfArea(value: string | undefined): PerfArea | undefined {
-  if (value === undefined) return undefined;
-  const normalized = value.toLowerCase();
-  if (isPerfArea(normalized)) return normalized;
+  const normalized = value?.toLowerCase();
+  if (normalized === undefined || isPerfArea(normalized)) return normalized;
   throw new AppError('INVALID_ARGS', PERF_AREA_ERROR_MESSAGE);
 }
 
-function readPerfAction(
-  value: string | undefined,
-  options: { allowUndefined?: boolean } = {},
-): PerfAction | undefined {
+function readPerfAction(value: string | undefined): PerfAction | undefined {
   if (value === undefined) return undefined;
   const normalized = value.toLowerCase();
   if (isPerfAction(normalized)) return normalized;
-  if (options.allowUndefined) return undefined;
   throw new AppError('INVALID_ARGS', PERF_ACTION_ERROR_MESSAGE);
 }
 

@@ -18,7 +18,7 @@ import {
   captureAppleMemorySnapshot,
   parseApplePsOutput,
   sampleAppleFramePerf,
-  sampleApplePerfMetrics,
+  sampleAppleMemoryPerf,
 } from '../perf.ts';
 import {
   startAppleXctracePerfCapture,
@@ -158,7 +158,7 @@ test('parseAppleFramePerfSample summarizes app hitches and worst windows', () =>
   ]);
 });
 
-test('sampleApplePerfMetrics aggregates host ps metrics for macOS app bundle', async () => {
+test('sampleAppleMemoryPerf aggregates host ps memory for macOS app bundle', async () => {
   const tmpDir = await mkdtempForTest('agent-device-macos-perf-');
   const bundlePath = path.join(tmpDir, 'Example.app');
   await fs.mkdir(path.join(bundlePath, 'Contents'), { recursive: true });
@@ -195,17 +195,15 @@ test('sampleApplePerfMetrics aggregates host ps metrics for macOS app bundle', a
   });
 
   try {
-    const metrics = await sampleApplePerfMetrics(MACOS_DEVICE, 'com.example.app');
-    assert.equal(metrics.cpu.usagePercent, 10);
-    assert.equal(metrics.memory.residentMemoryKb, 17000);
-    assert.deepEqual(metrics.cpu.matchedProcesses, ['ExampleExec']);
-    assert.deepEqual(metrics.memory.matchedProcesses, ['ExampleExec']);
+    const memory = await sampleAppleMemoryPerf(MACOS_DEVICE, 'com.example.app');
+    assert.equal(memory.residentMemoryKb, 17000);
+    assert.deepEqual(memory.matchedProcesses, ['ExampleExec']);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
 
-test('sampleApplePerfMetrics uses simctl spawn ps for iOS simulators', async () => {
+test('sampleAppleMemoryPerf uses simctl spawn ps for iOS simulators', async () => {
   const tmpDir = await mkdtempForTest('agent-device-ios-sim-perf-');
   const appPath = path.join(tmpDir, 'Example.app');
   await fs.mkdir(appPath, { recursive: true });
@@ -241,10 +239,9 @@ test('sampleApplePerfMetrics uses simctl spawn ps for iOS simulators', async () 
   });
 
   try {
-    const metrics = await sampleApplePerfMetrics(IOS_SIMULATOR, 'com.example.sim');
-    assert.equal(metrics.cpu.usagePercent, 12);
-    assert.equal(metrics.memory.residentMemoryKb, 8192);
-    assert.deepEqual(metrics.cpu.matchedProcesses, ['Example Sim Exec']);
+    const memory = await sampleAppleMemoryPerf(IOS_SIMULATOR, 'com.example.sim');
+    assert.equal(memory.residentMemoryKb, 8192);
+    assert.deepEqual(memory.matchedProcesses, ['Example Sim Exec']);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
@@ -539,7 +536,7 @@ test('captureAppleMemorySnapshot reports iOS simulator without process tools as 
   }
 });
 
-test('sampleApplePerfMetrics falls back to host ps when simulator ps is unavailable', async () => {
+test('sampleAppleMemoryPerf falls back to host ps when simulator ps is unavailable', async () => {
   const tmpDir = await mkdtempForTest('agent-device-ios-sim-perf-');
   const appPath = path.join(tmpDir, 'Example.app');
   await fs.mkdir(appPath, { recursive: true });
@@ -578,34 +575,38 @@ test('sampleApplePerfMetrics falls back to host ps when simulator ps is unavaila
   });
 
   try {
-    const metrics = await sampleApplePerfMetrics(IOS_SIMULATOR, 'com.example.sim');
-    assert.equal(metrics.cpu.usagePercent, 12);
-    assert.equal(metrics.memory.residentMemoryKb, 8192);
-    assert.deepEqual(metrics.cpu.matchedProcesses, ['Example Sim Exec']);
+    const memory = await sampleAppleMemoryPerf(IOS_SIMULATOR, 'com.example.sim');
+    assert.equal(memory.residentMemoryKb, 8192);
+    assert.deepEqual(memory.matchedProcesses, ['Example Sim Exec']);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
 
-test('sampleApplePerfMetrics uses xctrace Activity Monitor for iOS devices', async () => {
+test('sampleAppleMemoryPerf uses one Activity Monitor capture and ignores missing CPU data', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-04-01T10:00:00.000Z'));
 
-  const captures = makeActivityMonitorCaptureXmls();
+  const memoryOnlyCapture = makeActivityMonitorCaptureXml()
+    .replace('<col><mnemonic>cpu-total</mnemonic></col>', '')
+    .replaceAll(/<duration-on-core[^>]*>[^<]*<\/duration-on-core>/g, '');
   mockXcrunCommands([
     mockIosDeviceApps,
     mockIosDeviceProcesses,
     mockXctraceRecord(() => vi.setSystemTime(new Date(Date.now() + 1000))),
-    mockSequentialExports(captures),
+    mockSequentialExports([memoryOnlyCapture]),
   ]);
 
-  const metrics = await sampleApplePerfMetrics(IOS_DEVICE, 'com.example.device');
-  assert.equal(metrics.cpu.usagePercent, 25);
-  assert.equal(metrics.memory.residentMemoryKb, 8192);
-  assert.equal(metrics.cpu.method, 'xctrace-activity-monitor');
-  assert.deepEqual(metrics.cpu.matchedProcesses, ['ExampleDeviceApp']);
-  assert.equal(metrics.cpu.measuredAt, '2026-04-01T10:00:02.000Z');
-  assert.equal(metrics.memory.measuredAt, '2026-04-01T10:00:02.000Z');
+  const memory = await sampleAppleMemoryPerf(IOS_DEVICE, 'com.example.device');
+  assert.equal(memory.residentMemoryKb, 8192);
+  assert.equal(memory.method, 'xctrace-activity-monitor');
+  assert.deepEqual(memory.matchedProcesses, ['ExampleDeviceApp']);
+  assert.equal(memory.measuredAt, '2026-04-01T10:00:01.000Z');
+  assert.equal(
+    mockRunCmd.mock.calls.filter(([, args]) => args[0] === 'xctrace' && args[1] === 'record')
+      .length,
+    1,
+  );
 });
 
 test('sampleAppleFramePerf records Animation Hitches for connected iOS devices', async () => {
@@ -870,7 +871,7 @@ test('stopAppleXctracePerfCapture reports confirmed cleanup after forced kill ex
   }
 });
 
-test('writeAppleXctracePerfReport writes compact trace metadata JSON', async () => {
+test('writeAppleXctracePerfReport writes compact weighted CPU evidence', async () => {
   const tmpDir = await mkdtempForTest('agent-device-xctrace-report-');
   const tracePath = path.join(tmpDir, 'app.trace');
   const reportPath = path.join(tmpDir, 'app-profile.json');
@@ -879,8 +880,19 @@ test('writeAppleXctracePerfReport writes compact trace metadata JSON', async () 
     async (args) => {
       if (args[0] !== 'xctrace' || args[1] !== 'export') return null;
       assert.equal(args[args.indexOf('--input') + 1], tracePath);
-      assert.equal(args[args.indexOf('--xpath') + 1], '/trace-toc');
-      await fs.writeFile(readOutputPath(args), makeTraceTocXml(), 'utf8');
+      if (args.includes('--toc')) {
+        await fs.writeFile(readOutputPath(args), makeTraceTocXml(), 'utf8');
+        return emptyRunResult();
+      }
+      assert.equal(
+        args[args.indexOf('--xpath') + 1],
+        '/trace-toc/run/data/table[@schema="time-profile"]',
+      );
+      await fs.writeFile(
+        readOutputPath(args),
+        '<trace-query-result><node><row><weight>2000000</weight><backtrace><frame name="hot"><binary name="Example"/></frame></backtrace></row></node></trace-query-result>',
+        'utf8',
+      );
       return emptyRunResult();
     },
   ]);
@@ -889,12 +901,20 @@ test('writeAppleXctracePerfReport writes compact trace metadata JSON', async () 
     const report = await writeAppleXctracePerfReport({
       tracePath,
       outPath: reportPath,
-      mode: 'cpu-profile',
       template: 'Time Profiler',
       appBundleId: 'com.example.app',
     });
     assert.equal(report.reportPath, reportPath);
     assert.deepEqual(report.summary.tableSchemas, ['cpu-profile', 'time-profile']);
+    assert.equal(report.summary.sampleCount, 1);
+    assert.deepEqual(report.summary.topFunctions, [
+      {
+        symbol: 'hot',
+        binary: 'Example',
+        selfSampleMs: 2,
+        selfSamplePercent: 100,
+      },
+    ]);
     const written = JSON.parse(await fs.readFile(reportPath, 'utf8')) as typeof report;
     assert.equal(written.tracePath, tracePath);
     assert.deepEqual(written.summary.tableSchemas, ['cpu-profile', 'time-profile']);
@@ -1081,26 +1101,6 @@ function makeTraceTocXml(): string {
   ].join('');
 }
 
-function makeActivityMonitorCaptureXmls(): string[] {
-  const firstCaptureXml = makeActivityMonitorCaptureXml();
-  const secondCaptureXml = firstCaptureXml
-    .replace(
-      '<duration-on-core fmt="100.00 ms">100000000</duration-on-core>',
-      '<duration-on-core id="cpu-ref" fmt="350.00 ms">350000000</duration-on-core>',
-    )
-    .replace(
-      '<size-in-bytes fmt="8.00 MiB">8388608</size-in-bytes>',
-      '<size-in-bytes id="mem-ref" fmt="8.00 MiB">8388608</size-in-bytes>',
-    )
-    .replace('<pid fmt="4001">4001</pid>', '<pid id="pid-ref" fmt="4001">4001</pid>')
-    .replace(
-      '<process fmt="ExampleDeviceApp (4001)"><pid fmt="4001">4001</pid></process>',
-      '<process id="proc-ref" fmt="ExampleDeviceApp (4001)"><pid fmt="4001">4001</pid></process>',
-    )
-    .replace('</row><row><start-time fmt="00:00.124">124</start-time>', makeReferenceRow());
-  return [firstCaptureXml, secondCaptureXml];
-}
-
 function makeActivityMonitorCaptureXml(): string {
   return [
     '<?xml version="1.0"?>',
@@ -1135,22 +1135,6 @@ function makeActivityMonitorRow(
     `<pid fmt="${pid}">${pid}</pid>`,
     pid === 4001 ? '<process ref="background-process"/>' : '',
     '</row>',
-  ].join('');
-}
-
-function makeReferenceRow(): string {
-  return [
-    '</row>',
-    '<row>',
-    '<start-time fmt="00:00.123">123</start-time>',
-    '<process ref="proc-ref"/>',
-    '<duration-on-core ref="cpu-ref"/>',
-    '<size-in-bytes ref="mem-ref"/>',
-    '<pid ref="pid-ref"/>',
-    '<process ref="background-process"/>',
-    '</row>',
-    '<row>',
-    '<start-time fmt="00:00.124">124</start-time>',
   ].join('');
 }
 
