@@ -7,7 +7,10 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
-import { shouldDisplayCanvasConnection } from "../lib/app-map-connection-visibility";
+import {
+  canvasConnectionPresentation,
+  crossGroupConnectionRepresentatives,
+} from "../lib/app-map-connection-visibility";
 import { connectionLabelMode } from "../lib/connection-presentation";
 import {
   buildCanvasGraphTree,
@@ -267,7 +270,7 @@ export function AppMapWorkspace(props: {
   };
   const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
-  const displayedConnections = createMemo(() => {
+  const connectionPresentation = createMemo(() => {
     const groupForScreen = new Map<string, string>();
     for (const group of groups()) {
       for (const screenId of group.screenIds) groupForScreen.set(screenId, group.id);
@@ -277,8 +280,34 @@ export function AppMapWorkspace(props: {
       selectedGroupId: selectedGroupId(),
       selectedScreenIds: new Set(selectedNodeIds()),
     };
-    return connections().filter((connection) =>
-      shouldDisplayCanvasConnection(connection, groupForScreen, focus),
+    return new Map(
+      connections().map((connection) => [
+        connection.id,
+        canvasConnectionPresentation(connection, groupForScreen, focus),
+      ]),
+    );
+  });
+  const displayedConnections = createMemo(() =>
+    connections().filter((connection) => connectionPresentation().get(connection.id) !== "hidden"),
+  );
+  const summarizedConnectionIds = createMemo(
+    () =>
+      new Set(
+        [...connectionPresentation().entries()]
+          .filter(([, presentation]) => presentation === "summary")
+          .map(([connectionId]) => connectionId),
+      ),
+  );
+  const minimapConnections = createMemo(() => {
+    const groupForScreen = new Map<string, string>();
+    for (const group of groups()) {
+      for (const screenId of group.screenIds) groupForScreen.set(screenId, group.id);
+    }
+    const representatives = crossGroupConnectionRepresentatives(connections(), groupForScreen);
+    return displayedConnections().filter(
+      (connection) =>
+        connectionPresentation().get(connection.id) === "full" ||
+        representatives.has(connection.id),
     );
   });
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
@@ -587,7 +616,7 @@ export function AppMapWorkspace(props: {
   const minimapEdges = createMemo(() =>
     buildMinimapEdges({
       nodes: tree().nodes,
-      connections: displayedConnections(),
+      connections: minimapConnections(),
       bounds: bounds(),
       positionFor,
       selectedConnectionId: selectedConnectionId(),
@@ -1404,6 +1433,7 @@ export function AppMapWorkspace(props: {
                 <AppMapCanvasScene
                   nodes={tree().nodes}
                   connections={displayedConnections()}
+                  summarizedConnectionIds={summarizedConnectionIds()}
                   notes={canvasState().notes ?? []}
                   groups={groups()}
                   width={bounds().width}

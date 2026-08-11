@@ -18,10 +18,13 @@ import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapGroupsLayer } from "./app-map-groups-layer";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
+import { mapGroupGeometry } from "../lib/app-map-groups";
+import { groupBundleGeometry, groupBundleSpokePath } from "../lib/app-map-group-routing";
 
 export type AppMapCanvasSceneProps = {
   nodes: MapTreeNode[];
   connections: readonly CanvasConnection[];
+  summarizedConnectionIds: ReadonlySet<string>;
   notes: readonly CanvasNote[];
   groups: readonly MapGroup[];
   width: number;
@@ -199,6 +202,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       path: "",
       labelPoint: { x: 0, y: 0 },
       startPoint: { x: 0, y: 0 },
+      endPoint: { x: 0, y: 0 },
     };
   const visibleNodes = createMemo(() =>
     props.nodes.filter((node) => {
@@ -221,6 +225,44 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         visibleNodeIds().has(connection.toScreenId),
     ),
   );
+  const fullConnections = createMemo(() =>
+    visibleConnections().filter((connection) => !props.summarizedConnectionIds.has(connection.id)),
+  );
+  const summarizedBundles = createMemo(() => {
+    const groupForScreen = new Map<string, string>();
+    const boundsByGroup = new Map(
+      props.groups.flatMap((group) => {
+        group.screenIds.forEach((screenId) => groupForScreen.set(screenId, group.id));
+        const bounds = mapGroupGeometry(group, screenPositions());
+        return bounds ? [[group.id, bounds] as const] : [];
+      }),
+    );
+    const bundles = new Map<
+      string,
+      {
+        geometry: ReturnType<typeof groupBundleGeometry>;
+        connections: CanvasConnection[];
+      }
+    >();
+    for (const connection of props.connections) {
+      if (!props.summarizedConnectionIds.has(connection.id)) continue;
+      const fromGroupId = groupForScreen.get(connection.fromScreenId);
+      const toGroupId = groupForScreen.get(connection.toScreenId);
+      const fromBounds = fromGroupId ? boundsByGroup.get(fromGroupId) : undefined;
+      const toBounds = toGroupId ? boundsByGroup.get(toGroupId) : undefined;
+      if (!fromGroupId || !toGroupId || !fromBounds || !toBounds) continue;
+      const key = `${fromGroupId}\u0000${toGroupId}`;
+      const existing = bundles.get(key);
+      if (existing) existing.connections.push(connection);
+      else {
+        bundles.set(key, {
+          geometry: groupBundleGeometry(fromBounds, toBounds),
+          connections: [connection],
+        });
+      }
+    }
+    return [...bundles.values()];
+  });
   const visibleNotes = createMemo(() =>
     props.notes.filter(
       (note) =>
@@ -306,7 +348,70 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             );
           }}
         </For>
-        <For each={visibleConnections()}>
+        <For each={summarizedBundles()}>
+          {(bundle) => {
+            const sourceConnections = () =>
+              bundle.connections.filter(
+                (connection, index, all) =>
+                  all.findIndex(
+                    (candidate) => candidate.fromScreenId === connection.fromScreenId,
+                  ) === index,
+              );
+            const targetConnections = () =>
+              bundle.connections.filter(
+                (connection, index, all) =>
+                  all.findIndex((candidate) => candidate.toScreenId === connection.toScreenId) ===
+                  index,
+              );
+            return (
+              <g
+                class="fill-none stroke-[color-mix(in_srgb,var(--text-weak)_58%,transparent)]"
+                stroke-width="1.25"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d={bundle.geometry.trunkPath} />
+                <For each={sourceConnections()}>
+                  {(connection) => (
+                    <path
+                      d={groupBundleSpokePath(
+                        geometryFor(connection).startPoint,
+                        bundle.geometry.sourcePort,
+                        bundle.geometry.axis,
+                      )}
+                    />
+                  )}
+                </For>
+                <For each={targetConnections()}>
+                  {(connection) => (
+                    <path
+                      d={groupBundleSpokePath(
+                        geometryFor(connection).endPoint,
+                        bundle.geometry.targetPort,
+                        bundle.geometry.axis,
+                      )}
+                      marker-end="url(#app-map-arrow)"
+                    />
+                  )}
+                </For>
+                <circle
+                  cx={bundle.geometry.sourcePort.x}
+                  cy={bundle.geometry.sourcePort.y}
+                  r="3"
+                  class="fill-[var(--map-canvas)]"
+                />
+                <circle
+                  cx={bundle.geometry.targetPort.x}
+                  cy={bundle.geometry.targetPort.y}
+                  r="3"
+                  class="fill-[var(--map-canvas)]"
+                />
+              </g>
+            );
+          }}
+        </For>
+        <For each={fullConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
             const runState = () => props.connectionRunState(connection.id);
@@ -373,7 +478,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         </For>
       </svg>
 
-      <For each={visibleConnections()}>
+      <For each={fullConnections()}>
         {(connection) => {
           const geometry = () => geometryFor(connection);
           const count = () => props.caseCountFor(connection);

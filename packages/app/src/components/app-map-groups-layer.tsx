@@ -51,7 +51,7 @@ export function AppMapGroupsLayer(props: {
                   data-app-map-group-id={group.id}
                   data-tip="Click to inspect group"
                   class={cn(
-                    "group/map-group absolute z-0 rounded-[14px] bg-[color-mix(in_srgb,var(--product-accent-soft)_7%,transparent)] outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_22%,transparent)] transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_14%,transparent)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_48%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_14%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
+                    "group/map-group absolute z-0 rounded-[14px] bg-[color-mix(in_srgb,var(--product-accent-soft)_11%,transparent)] outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_34%,transparent)] transition-[background-color,outline-color,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_15%,transparent)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_52%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--product-accent-soft)_15%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                     selected() &&
                       "bg-[color-mix(in_srgb,var(--product-accent-soft)_18%,transparent)] outline-2 outline-[var(--text-interactive-base)]",
                   )}
@@ -82,7 +82,7 @@ export function AppMapGroupsLayer(props: {
                 >
                   <header
                     class={cn(
-                      "absolute top-2.5 left-3 flex h-7 max-w-[calc(100%-24px)] items-center justify-center gap-1.5 rounded-[7px] bg-[color-mix(in_srgb,var(--map-control-surface)_88%,transparent)] px-2 opacity-90 outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_20%,transparent)] backdrop-blur-[8px] transition-[background-color,outline-color,opacity] duration-150 hover:bg-[var(--surface-base-hover)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_40%,transparent)] group-focus-within/map-group:opacity-100",
+                      "absolute top-2.5 left-3 flex h-7 max-w-[calc(100%-24px)] items-center justify-center gap-1.5 rounded-[7px] bg-[color-mix(in_srgb,var(--map-control-surface)_94%,transparent)] px-2 outline outline-1 outline-[color-mix(in_srgb,var(--border-strong-base)_30%,transparent)] backdrop-blur-[8px] transition-[background-color,outline-color] duration-150 hover:bg-[var(--surface-base-hover)] hover:outline-[color-mix(in_srgb,var(--border-strong-base)_46%,transparent)]",
                       selected() &&
                         "bg-[var(--product-accent-soft)] opacity-100 outline-[color-mix(in_srgb,var(--text-interactive-base)_42%,transparent)]",
                     )}

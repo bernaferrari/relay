@@ -142,3 +142,59 @@ test("wide topology layers grow vertically before adding another column", () => 
   assert.equal(new Set(leaves.map(({ id }) => positions[id]?.x)).size, 1);
   assert.notEqual(positions[roots[0]!.id]?.x, positions[leaves[0]!.id]?.x);
 });
+
+test("sparse continuation lanes stay level with their direct parents", () => {
+  const graph = {
+    screens: [
+      { id: "customize-root" },
+      { id: "storage-root" },
+      { id: "connectors-root" },
+      { id: "memory-root" },
+      { id: "customize" },
+      { id: "manage-storage" },
+      { id: "import-memory" },
+      { id: "view-memory" },
+      { id: "storage-filter" },
+      { id: "paste-memory" },
+    ],
+    flows: [
+      { screenId: "customize-root" },
+      { screenId: "storage-root" },
+      { screenId: "connectors-root" },
+      { screenId: "memory-root" },
+    ],
+    transitions: [
+      {
+        fromScreenId: "customize-root",
+        destination: { kind: "screen", screenId: "customize" },
+      },
+      {
+        fromScreenId: "storage-root",
+        destination: { kind: "screen", screenId: "manage-storage" },
+      },
+      {
+        fromScreenId: "manage-storage",
+        destination: { kind: "screen", screenId: "storage-filter" },
+      },
+      {
+        fromScreenId: "memory-root",
+        destination: { kind: "screen", screenId: "import-memory" },
+      },
+      {
+        fromScreenId: "memory-root",
+        destination: { kind: "screen", screenId: "view-memory" },
+      },
+      {
+        fromScreenId: "import-memory",
+        destination: { kind: "screen", screenId: "paste-memory" },
+      },
+    ],
+  };
+  const positions = compactGroupedCanvasPositions(graph, [
+    { id: "main", screenIds: graph.screens.map(({ id }) => id) },
+  ] as never);
+
+  assert.equal(positions["manage-storage"]?.y, positions["storage-filter"]?.y);
+  assert.equal(positions["import-memory"]?.y, positions["paste-memory"]?.y);
+  assert.notEqual(positions["storage-filter"]?.y, positions["paste-memory"]?.y);
+});

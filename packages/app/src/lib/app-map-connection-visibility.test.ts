@@ -1,59 +1,73 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldDisplayCanvasConnection } from "./app-map-connection-visibility";
+import {
+  canvasConnectionPresentation,
+  crossGroupConnectionRepresentatives,
+} from "./app-map-connection-visibility";
 
-const connection = { id: "settings-account", fromScreenId: "settings", toScreenId: "account" };
+const connections = [
+  { id: "settings-account", fromScreenId: "settings", toScreenId: "account" },
+  { id: "settings-profile", fromScreenId: "settings", toScreenId: "profile" },
+  { id: "account-profile", fromScreenId: "account", toScreenId: "profile" },
+];
 const groups = new Map([
   ["settings", "app"],
   ["appearance", "app"],
   ["account", "account"],
+  ["profile", "account"],
 ]);
 const idle = {
   selectedConnectionId: null,
   selectedGroupId: null,
   selectedScreenIds: new Set<string>(),
 };
+const representatives = crossGroupConnectionRepresentatives(connections, groups);
 
-test("local and ungrouped paths remain visible in the overview", () => {
+test("local and ungrouped paths remain fully visible", () => {
   assert.equal(
-    shouldDisplayCanvasConnection(
+    canvasConnectionPresentation(
       { id: "local", fromScreenId: "settings", toScreenId: "appearance" },
       groups,
       idle,
     ),
-    true,
+    "full",
   );
   assert.equal(
-    shouldDisplayCanvasConnection(
+    canvasConnectionPresentation(
       { id: "ungrouped", fromScreenId: "settings", toScreenId: "new" },
       groups,
       idle,
     ),
-    true,
+    "full",
   );
 });
 
-test("cross-section paths use contextual progressive disclosure", () => {
-  assert.equal(shouldDisplayCanvasConnection(connection, groups, idle), false);
+test("one canonical connection identifies every connected group pair", () => {
+  assert.deepEqual([...representatives], ["settings-account"]);
+});
+
+test("cross-group paths collapse into a compound summary at rest", () => {
+  assert.equal(canvasConnectionPresentation(connections[0]!, groups, idle), "summary");
+  assert.equal(canvasConnectionPresentation(connections[1]!, groups, idle), "summary");
+});
+
+test("screen and path focus reveal exact cross-group routes without group wire explosions", () => {
   assert.equal(
-    shouldDisplayCanvasConnection(connection, groups, {
+    canvasConnectionPresentation(connections[1]!, groups, {
       ...idle,
-      selectedScreenIds: new Set(["settings"]),
+      selectedScreenIds: new Set(["profile"]),
     }),
-    true,
+    "full",
   );
   assert.equal(
-    shouldDisplayCanvasConnection(connection, groups, {
-      ...idle,
-      selectedGroupId: "account",
-    }),
-    true,
+    canvasConnectionPresentation(connections[1]!, groups, { ...idle, selectedGroupId: "account" }),
+    "summary",
   );
   assert.equal(
-    shouldDisplayCanvasConnection(connection, groups, {
+    canvasConnectionPresentation(connections[1]!, groups, {
       ...idle,
-      selectedConnectionId: connection.id,
+      selectedConnectionId: connections[1]!.id,
     }),
-    true,
+    "full",
   );
 });

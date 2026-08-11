@@ -122,6 +122,7 @@ function layoutSection(
   const layers = topologyLayers(remaining, chained, transitions);
   layoutTopologyBands(positions, layers, gridLeft);
   optimizeLayerAssignments(positions, layers, transitions);
+  alignLinearSuccessors(positions, layers, transitions);
 
   const maxX = Math.max(0, ...Object.values(positions).map(({ x }) => x));
   const maxY = Math.max(0, ...Object.values(positions).map(({ y }) => y));
@@ -376,6 +377,98 @@ function optimizeLayerAssignments(
     }
     if (!improved) break;
   }
+}
+
+/**
+ * Sparse destination lanes should preserve the row of an unambiguous linear
+ * continuation. The ordinary layer optimizer can swap occupied slots, but it
+ * cannot use an empty row inherited from a denser parent lane. Assigning over
+ * both current and desired rows turns A → B into a straight scan line without
+ * special-casing product screens or disturbing true branches.
+ */
+function alignLinearSuccessors(
+  positions: Record<string, CanvasPoint>,
+  layers: readonly string[][],
+  transitions: LayoutGraph["transitions"],
+): void {
+  const edges = transitions.flatMap((transition) => {
+    const target =
+      transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
+    if (
+      !target ||
+      !positions[transition.fromScreenId] ||
+      !positions[target] ||
+      isViewportTransition(transition.label)
+    ) {
+      return [];
+    }
+    return [{ from: transition.fromScreenId, to: target }];
+  });
+  const incoming = new Map<string, typeof edges>();
+  const outgoing = new Map<string, typeof edges>();
+  for (const edge of edges) {
+    incoming.set(edge.to, [...(incoming.get(edge.to) ?? []), edge]);
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
+  }
+
+  const desiredRow = new Map<string, number>();
+  for (const edge of edges) {
+    if ((incoming.get(edge.to)?.length ?? 0) !== 1) continue;
+    if ((outgoing.get(edge.from)?.length ?? 0) !== 1) continue;
+    if (positions[edge.from]!.x === positions[edge.to]!.x) continue;
+    desiredRow.set(edge.to, positions[edge.from]!.y);
+  }
+
+  for (const layer of layers) {
+    const lanes = Map.groupBy(layer, (screenId) => positions[screenId]!.x);
+    for (const screenIds of lanes.values()) {
+      if (!screenIds.some((screenId) => desiredRow.has(screenId))) continue;
+      assignRows(screenIds, positions, desiredRow);
+    }
+  }
+}
+
+function assignRows(
+  screenIds: readonly string[],
+  positions: Record<string, CanvasPoint>,
+  desiredRow: ReadonlyMap<string, number>,
+): void {
+  const slots = [
+    ...new Set([
+      ...screenIds.map((screenId) => positions[screenId]!.y),
+      ...screenIds.flatMap((screenId) => {
+        const desired = desiredRow.get(screenId);
+        return desired === undefined ? [] : [desired];
+      }),
+    ]),
+  ].sort((left, right) => left - right);
+  const memo = new Map<string, { cost: number; rows: number[] }>();
+  const visit = (index: number, used: number): { cost: number; rows: number[] } => {
+    if (index === screenIds.length) return { cost: 0, rows: [] };
+    const key = `${index}:${used}`;
+    const cached = memo.get(key);
+    if (cached) return cached;
+
+    const screenId = screenIds[index]!;
+    const current = positions[screenId]!.y;
+    const desired = desiredRow.get(screenId);
+    let best = { cost: Number.POSITIVE_INFINITY, rows: [] as number[] };
+    slots.forEach((row, slotIndex) => {
+      if (used & (1 << slotIndex)) return;
+      const rest = visit(index + 1, used | (1 << slotIndex));
+      const movement = Math.abs(row - current);
+      const alignment = desired === undefined ? 0 : Math.abs(row - desired);
+      const cost = rest.cost + movement + alignment * 100;
+      if (cost < best.cost) best = { cost, rows: [row, ...rest.rows] };
+    });
+    memo.set(key, best);
+    return best;
+  };
+
+  const assignment = visit(0, 0).rows;
+  screenIds.forEach((screenId, index) => {
+    positions[screenId] = { ...positions[screenId]!, y: assignment[index]! };
+  });
 }
 
 function renderedTopologyPenalty(

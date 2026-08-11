@@ -230,12 +230,17 @@ export function canvasEdgeGeometry(
   positionFor: (node: MapTreeNode) => CanvasPoint,
   nodeIndex?: ReadonlyMap<string, MapTreeNode>,
   geometryFor?: (node: MapTreeNode) => ScreenCardGeometry,
-): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint; endPoint: CanvasPoint } {
   const byId = nodeIndex ?? new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
   const to = byId.get(edge.to);
   if (!from || !to) {
-    return { path: "", labelPoint: { x: 0, y: 0 }, startPoint: { x: 0, y: 0 } };
+    return {
+      path: "",
+      labelPoint: { x: 0, y: 0 },
+      startPoint: { x: 0, y: 0 },
+      endPoint: { x: 0, y: 0 },
+    };
   }
   const fromPosition = positionFor(from);
   const toPosition = positionFor(to);
@@ -356,7 +361,9 @@ function structuredEdge(
   to: FrameBounds,
   direction: EdgePortDirection,
   obstacles: readonly FrameBounds[],
-): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } | undefined {
+):
+  | { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint; endPoint: CanvasPoint }
+  | undefined {
   // Long connections keep the same reading direction as their endpoints:
   // leave through the natural side, use a row/column gutter, then enter the
   // destination through its natural side. This avoids decorative arcs that
@@ -548,7 +555,7 @@ function routeClearsObstacles(
 function orthogonalEdge(
   points: readonly CanvasPoint[],
   labelPoint: CanvasPoint,
-): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint; endPoint: CanvasPoint } {
   const start = points[0]!;
   let path = `M ${start.x} ${start.y}`;
   for (let index = 1; index < points.length; index += 1) {
@@ -570,6 +577,7 @@ function orthogonalEdge(
     path,
     labelPoint,
     startPoint: start,
+    endPoint: points.at(-1)!,
   };
 }
 
@@ -588,7 +596,7 @@ function cubicEdge(
   end: CanvasPoint,
   control1: CanvasPoint,
   control2: CanvasPoint,
-): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint } {
+): { path: string; labelPoint: CanvasPoint; startPoint: CanvasPoint; endPoint: CanvasPoint } {
   return {
     path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`,
     labelPoint: {
@@ -596,6 +604,7 @@ function cubicEdge(
       y: (start.y + 3 * control1.y + 3 * control2.y + end.y) / 8,
     },
     startPoint: start,
+    endPoint: end,
   };
 }
 
