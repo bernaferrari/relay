@@ -2,8 +2,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { runCliCapture } from './cli-capture.ts';
 
-test('perf prints compact platform-independent frame health summary by default', async () => {
-  const result = await runCliCapture(['perf'], async () => ({
+test('perf frames prints compact platform-independent frame health summary by default', async () => {
+  const result = await runCliCapture(['perf', 'frames'], async () => ({
     ok: true,
     data: {
       session: 'android-perf',
@@ -47,22 +47,41 @@ test('perf prints compact platform-independent frame health summary by default',
   assert.doesNotMatch(result.stdout, /android|Pixel|memory|cpu|gfxinfo/i);
 });
 
-test('perf metrics forwards explicit metrics area to daemon', async () => {
+test('perf metrics retains the released aggregate compatibility route', async () => {
   const result = await runCliCapture(['perf', 'metrics', '--json'], async () => ({
+    ok: true,
+    data: { warnings: ['deprecated compatibility forms'] },
+  }));
+
+  assert.equal(result.code, null);
+  assert.deepEqual(result.calls[0]?.positionals, ['metrics']);
+});
+
+test('deprecated aggregate perf output retains released CPU summary semantics', async () => {
+  const warning =
+    'perf metrics, bare perf, and perf sample are deprecated compatibility forms and will be removed in the next major release.';
+  const result = await runCliCapture(['perf', 'metrics'], async () => ({
     ok: true,
     data: {
       metrics: {
-        fps: {
-          available: false,
-          reason: 'No frame data.',
-        },
+        cpu: { available: true, usagePercent: 16 },
+        memory: { available: true, totalPssKb: 2048 },
+        fps: { available: false, reason: 'No frame data.' },
       },
+      warnings: [warning],
     },
   }));
 
   assert.equal(result.code, null);
+  assert.equal(result.stdout, `Performance: CPU 16%, memory 2.0MB\nDeprecated: ${warning}\n`);
+});
+
+test('metrics alias retains the released aggregate compatibility route', async () => {
+  const result = await runCliCapture(['metrics', '--json'], async () => ({ ok: true, data: {} }));
+
+  assert.equal(result.code, null);
   assert.equal(result.calls[0]?.command, 'perf');
-  assert.deepEqual(result.calls[0]?.positionals, ['metrics']);
+  assert.deepEqual(result.calls[0]?.positionals, []);
 });
 
 test('perf frames forwards frames area and prints focused frame summary', async () => {
@@ -263,7 +282,7 @@ test('perf cpu profile report preserves the report out path when template is omi
   ]);
 });
 
-test('perf xctrace output prints only compact artifact metadata by default', async () => {
+test('perf xctrace output prints bounded top CPU self-time evidence', async () => {
   const result = await runCliCapture(
     ['perf', 'cpu', 'profile', 'report', '--kind', 'xctrace', '--out', 'app-profile.json'],
     async () => ({
@@ -276,32 +295,52 @@ test('perf xctrace output prints only compact artifact metadata by default', asy
         tracePath: '/tmp/app.trace',
         summary: {
           tableSchemas: ['time-profile'],
+          topFunctions: [
+            { symbol: 'hotFunction', binary: 'App', selfSamplePercent: 42.5 },
+            { symbol: 'coolFunction', binary: 'Framework', selfSamplePercent: 7 },
+          ],
         },
       },
     }),
   );
 
   assert.equal(result.code, null);
-  assert.equal(result.stdout, '/tmp/app-profile.json\nPerf cpu-profile: reported\n');
+  assert.equal(
+    result.stdout,
+    '/tmp/app-profile.json\nPerf cpu-profile: reported\nTop CPU self time:\n- 42.5% hotFunction (App)\n- 7% coolFunction (Framework)\n',
+  );
   assert.doesNotMatch(result.stdout, /time-profile|app\.trace/);
 });
 
-test('perf sample defaults to metrics sample', async () => {
-  const result = await runCliCapture(['perf', 'sample', '--json'], async () => ({
-    ok: true,
-    data: {
-      metrics: {
-        fps: {
-          available: false,
-          reason: 'No frame data.',
+test('perf simpleperf output prints the shared bounded top CPU evidence', async () => {
+  const result = await runCliCapture(
+    ['perf', 'cpu', 'profile', 'report', '--kind', 'simpleperf', '--out', 'cpu-report.json'],
+    async () => ({
+      ok: true,
+      data: {
+        action: 'report',
+        kind: 'simpleperf',
+        type: 'cpu-profile-report',
+        outPath: '/tmp/cpu-report.json',
+        sizeBytes: 256,
+        summary: {
+          topFunctions: [
+            { symbol: 'Java_com_example_Foo', binary: 'libapp.so', selfSamplePercent: 31.2 },
+          ],
         },
       },
-    },
-  }));
+    }),
+  );
 
   assert.equal(result.code, null);
-  assert.equal(result.calls[0]?.command, 'perf');
-  assert.deepEqual(result.calls[0]?.positionals, ['metrics', 'sample']);
+  assert.match(result.stdout, /Top CPU self time:\n- 31.2% Java_com_example_Foo \(libapp\.so\)/);
+});
+
+test('bare perf retains the released aggregate compatibility route', async () => {
+  const result = await runCliCapture(['perf', '--json'], async () => ({ ok: true, data: {} }));
+
+  assert.equal(result.code, null);
+  assert.deepEqual(result.calls[0]?.positionals, []);
 });
 
 test('perf area and action positionals are case-insensitive', async () => {
@@ -418,7 +457,7 @@ test('perf trace stop forwards perfetto kind and prints compact artifact summary
 });
 
 test('perf prints unavailable frame health reason by default', async () => {
-  const result = await runCliCapture(['perf'], async () => ({
+  const result = await runCliCapture(['perf', 'frames'], async () => ({
     ok: true,
     data: {
       metrics: {
@@ -438,28 +477,19 @@ test('perf prints unavailable frame health reason by default', async () => {
   );
 });
 
-test('perf prints compact CPU and memory summary when frame health is unavailable', async () => {
-  const result = await runCliCapture(['perf'], async () => ({
+test('perf memory prints a compact memory summary', async () => {
+  const result = await runCliCapture(['perf', 'memory', 'sample'], async () => ({
     ok: true,
     data: {
       metrics: {
-        fps: {
-          available: false,
-          reason:
-            'Dropped-frame sampling is currently available only on Android app sessions and connected iOS device app sessions.',
-        },
         memory: {
           available: true,
           residentMemoryKb: 250000,
-        },
-        cpu: {
-          available: true,
-          usagePercent: 12.5,
         },
       },
     },
   }));
 
   assert.equal(result.code, null);
-  assert.equal(result.stdout, 'Performance: CPU 12.5%, memory 244MB\n');
+  assert.equal(result.stdout, 'Performance: memory 244MB\n');
 });

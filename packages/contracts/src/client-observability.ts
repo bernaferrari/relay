@@ -8,6 +8,10 @@ import type { NetworkIncludeMode } from '@agent-device/kernel/contracts';
 import type { AgentDeviceRequestOverrides, DeviceCommandBaseOptions } from './client-connection.ts';
 
 export type PerfOptions = DeviceCommandBaseOptions & {
+  /**
+   * Select focused performance evidence. Omitted values retain the deprecated aggregate
+   * metrics response for compatibility; prefer an explicit area.
+   */
   area?: PerfArea;
   subject?: PerfSubject;
   action?: PerfAction;

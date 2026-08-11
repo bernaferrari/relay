@@ -38,15 +38,11 @@ describe('perf command interface', () => {
     });
   });
 
-  test('treats a single perf action as metrics action', () => {
-    expect(perfCliReader(['sample'], NO_FLAGS)).toEqual({
-      action: 'sample',
-      kind: undefined,
-      out: undefined,
-    });
-    expect(perfDaemonWriter({ action: 'sample' })).toMatchObject({
+  test('retains optional aggregate compatibility and writes focused areas', () => {
+    expect(perfCliReader([], NO_FLAGS)).toEqual({});
+    expect(perfDaemonWriter({ area: 'frames' })).toMatchObject({
       command: 'perf',
-      positionals: ['metrics', 'sample'],
+      positionals: ['frames'],
     });
   });
 
