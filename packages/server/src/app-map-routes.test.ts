@@ -12,6 +12,10 @@ import {
 } from "@relay/core";
 import { startServer } from "./index.js";
 import { explicitTargetAvailability } from "./app-map-run-routes.js";
+import {
+  findEquivalentTeachConnection,
+  sourceAnchorForTeachInteraction,
+} from "./app-map-routes.js";
 
 test("explicit target preflight distinguishes disconnected and not-ready devices", () => {
   assert.equal(explicitTargetAvailability("phone-1", []), "missing");
@@ -38,6 +42,81 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
       { serial: "ipad-1", booted: true, developerServicesAvailable: false },
     ]),
     "not-ready",
+  );
+});
+
+test("teaching the same action to the same screen reuses the existing connection", () => {
+  const map = {
+    connections: {
+      "open-customize": {
+        id: "open-customize",
+        fromScreenId: "settings-middle",
+        destination: { kind: "screen", screenId: "customize" },
+        actions: [{ id: "tap-old", kind: "tap", target: { label: "Customize Grok" } }],
+      },
+      "open-customize-from-another-row": {
+        id: "open-customize-from-another-row",
+        fromScreenId: "settings-middle",
+        destination: { kind: "screen", screenId: "customize" },
+        actions: [
+          {
+            id: "tap-other",
+            kind: "tap",
+            target: { label: "Customize Grok", point: { x: 540, y: 840 } },
+          },
+        ],
+      },
+    },
+  } as never;
+
+  assert.equal(
+    findEquivalentTeachConnection(map, {
+      fromScreenId: "settings-middle",
+      destinationScreenId: "customize",
+      action: { id: "tap-new", kind: "tap", target: { label: "Customize Grok" } },
+    }),
+    "open-customize",
+  );
+  assert.equal(
+    findEquivalentTeachConnection(map, {
+      fromScreenId: "settings-middle",
+      destinationScreenId: "customize",
+      action: {
+        id: "tap-new",
+        kind: "tap",
+        target: { label: "Customize Grok", point: { x: 540, y: 920 } },
+      },
+    }),
+    undefined,
+  );
+});
+
+test("teaching preserves the resolved source control point as canvas evidence", () => {
+  const map = {
+    screens: {
+      settings: { variantIds: ["settings-portrait"] },
+    },
+    screenVariants: {
+      "settings-portrait": { targetProfile: { viewport: { width: 1080, height: 2400 } } },
+    },
+  } as never;
+
+  assert.deepEqual(
+    sourceAnchorForTeachInteraction(
+      map,
+      "settings",
+      { kind: "label", label: "Customize Grok" },
+      { x: 540, y: 1800 },
+    ),
+    { point: { x: 0.5, y: 0.75 } },
+  );
+  assert.deepEqual(
+    sourceAnchorForTeachInteraction(map, "settings", {
+      kind: "swipe",
+      from: { x: 540, y: 2050 },
+      to: { x: 540, y: 700 },
+    }),
+    { point: { x: 0.5, y: 2050 / 2400 } },
   );
 });
 

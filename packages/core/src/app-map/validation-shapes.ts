@@ -713,6 +713,8 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")
     appMapFail("invalid-map", `${label}.state is unsupported`);
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
+  if (patch.sourceAnchor !== undefined && patch.sourceAnchor !== null)
+    assertConnectionSourceAnchor(patch.sourceAnchor, `${label}.sourceAnchor`);
   if (patch.presentation !== undefined && patch.presentation !== null)
     assertConnectionPresentation(patch.presentation, `${label}.presentation`);
 }

@@ -4,6 +4,7 @@ import {
   dismissTowardParent,
   exploreControls,
   isExploreChromeLabel,
+  isExploreStateChangingNode,
   isUnsafeExploreControlText,
   scrollContentFitsViewport,
   scrollCollectControls,
@@ -24,6 +25,12 @@ test("unsafe explore text catches destructive rows", () => {
   assert.equal(isUnsafeExploreControlText("Sign Out"), true);
   assert.equal(isUnsafeExploreControlText("Update"), true);
   assert.equal(isUnsafeExploreControlText("Storage"), false);
+});
+
+test("automatic exploration excludes state-changing accessibility controls", () => {
+  assert.equal(isExploreStateChangingNode({ role: "switch", label: "Dark mode" }), true);
+  assert.equal(isExploreStateChangingNode({ type: "android.widget.SeekBar" }), true);
+  assert.equal(isExploreStateChangingNode({ role: "button", label: "Appearance" }), false);
 });
 
 test("exploreControls keeps SwiftUI cells via ref", () => {

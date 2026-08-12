@@ -15,7 +15,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
-import { isUnsafeExploreControlText } from "./explore.js";
+import { isExploreStateChangingNode, isUnsafeExploreControlText } from "./explore.js";
 import { readRecipe, saveRecipe, type Recipe, type RecipeStep } from "./recipes.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { observeScreenIdentity } from "./screen-identity.js";
@@ -180,11 +180,12 @@ function unsafeControlText(value: string): boolean {
 /** Safe, semantic candidates for assisted exploration. These are suggestions, never commands. */
 export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
   const seen = new Set<string>();
-  return nodes
+  const controls = nodes
     .filter(
       (node) =>
         node.visibleToUser !== false &&
         node.enabled !== false &&
+        !isExploreStateChangingNode(node) &&
         (node.hittable || node.identifier || node.ref),
     )
     .flatMap((node, index) => {
@@ -204,6 +205,28 @@ export function discoveryControls(nodes: SnapshotNode[]): DiscoveryControl[] {
       return [
         { id: `${index}-${digest(key).slice(0, 8)}`, label, role: node.role ?? node.type, target },
       ];
+    });
+
+  // The deterministic planner consumes this order. Prefer semantic settings
+  // rows (Cell/ListItem) over generic buttons, then stable identifiers/refs
+  // over display labels. That maps ordinary navigation first without a model
+  // call and makes an accessibility-rich settings screen much faster to cover.
+  return controls
+    .sort((left, right) => {
+      const priority = (control: DiscoveryControl) => {
+        const role = control.role?.toLocaleLowerCase() ?? "";
+        const row = /cell|listitem|row|menuitem|preference/.test(role) ? 0 : 1;
+        const semantic = control.target.identifier || control.target.ref ? 0 : 1;
+        return [row, semantic] as const;
+      };
+      const leftPriority = priority(left);
+      const rightPriority = priority(right);
+      return (
+        leftPriority[0] - rightPriority[0] ||
+        leftPriority[1] - rightPriority[1] ||
+        left.label.localeCompare(right.label) ||
+        left.id.localeCompare(right.id)
+      );
     })
     .slice(0, 40);
 }

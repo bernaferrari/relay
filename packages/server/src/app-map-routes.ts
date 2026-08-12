@@ -50,7 +50,13 @@ import {
   type AppMap,
   type AppMapMutationContext,
 } from "@relay/core";
-import type { AuthoringSession, OperationInput, TargetProfile } from "@relay/protocol";
+import type {
+  ActionSpec,
+  AuthoringSession,
+  ConnectionSourceAnchor,
+  OperationInput,
+  TargetProfile,
+} from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
 import { createAuthoringRuntime } from "./authoring-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -63,6 +69,84 @@ type AppMapRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
+
+/** A repeated teach request can have a new event id after a UI retry. Reuse
+ * the already-recorded edge when its executable meaning is identical, but do
+ * not collapse distinct controls that happen to lead to the same screen. */
+function teachActionSemantics(action: ActionSpec): unknown {
+  if (action.kind === "tap") return { kind: "tap", target: action.target };
+  if (action.kind === "gesture" && action.gesture.kind === "swipe") {
+    return { kind: "swipe", from: action.gesture.from, to: action.gesture.to };
+  }
+  return undefined;
+}
+
+export function findEquivalentTeachConnection(
+  map: AppMap,
+  input: { fromScreenId: string; destinationScreenId: string; action: ActionSpec },
+): string | undefined {
+  const action = teachActionSemantics(input.action);
+  if (!action) return undefined;
+  return Object.values(map.connections).find(
+    (connection) =>
+      connection.fromScreenId === input.fromScreenId &&
+      connection.destination.kind === "screen" &&
+      connection.destination.screenId === input.destinationScreenId &&
+      connection.actions.length === 1 &&
+      JSON.stringify(teachActionSemantics(connection.actions[0]!)) === JSON.stringify(action),
+  )?.id;
+}
+
+type TeachInteraction = NonNullable<OperationInput<"app-map.teach">["interaction"]>;
+type InteractionPoint = { x: number; y: number };
+
+function finiteInteractionPoint(value: unknown): InteractionPoint | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const point = value as Partial<InteractionPoint>;
+  return Number.isFinite(point.x) && Number.isFinite(point.y)
+    ? { x: point.x!, y: point.y! }
+    : undefined;
+}
+
+/**
+ * Preserve the actual interaction origin independently of the executable
+ * action. A label/identifier remains stable when accessibility identifiers
+ * shift, while its resolved control centre is retained as immutable visual
+ * evidence for the canvas. Connections without a trustworthy point simply
+ * use the source-edge centre at render time.
+ */
+export function sourceAnchorForTeachInteraction(
+  map: AppMap,
+  fromScreenId: string,
+  interaction: TeachInteraction,
+  resolvedPoint?: InteractionPoint,
+  fallbackProfile?: TargetProfile,
+): ConnectionSourceAnchor | undefined {
+  const screen = map.screens[fromScreenId];
+  const viewport =
+    screen?.variantIds
+      .slice()
+      .reverse()
+      .map((variantId) => map.screenVariants[variantId]?.targetProfile.viewport)
+      .find((candidate) => candidate?.width && candidate.height) ?? fallbackProfile?.viewport;
+  if (!viewport?.width || !viewport.height) return undefined;
+
+  const rawPoint =
+    resolvedPoint ??
+    (interaction.kind === "swipe"
+      ? interaction.from
+      : interaction.kind === "point"
+        ? { x: interaction.x, y: interaction.y }
+        : interaction.point);
+  const point = finiteInteractionPoint(rawPoint);
+  if (!point) return undefined;
+  return {
+    point: {
+      x: Math.max(0, Math.min(1, point.x / viewport.width)),
+      y: Math.max(0, Math.min(1, point.y / viewport.height)),
+    },
+  };
+}
 
 function domainStatus(error: AppMapDomainError): number {
   if (error.code === "missing-reference") return 404;
@@ -456,18 +540,23 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     if (!existing) throw new HttpError(404, `App Map ${appMapId} not found`);
     let current = existing;
     if (body.interaction && !body.fromScreenId?.trim()) {
-      throw new HttpError(400, "fromScreenId is required when tapping a destination");
+      throw new HttpError(400, "fromScreenId is required when teaching a destination");
     }
     if (body.fromScreenId && !current.screens[body.fromScreenId]) {
       throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
     }
+    let resolvedInteractionPoint: InteractionPoint | undefined;
     if (body.interaction) {
       const serial = body.target.targetId;
       const interaction = body.interaction;
       if (interaction.kind === "point") {
-        await interact({ kind: "point", x: interaction.x, y: interaction.y }, { serial });
+        const result = await interact(
+          { kind: "point", x: interaction.x, y: interaction.y },
+          { serial },
+        );
+        resolvedInteractionPoint = result.resolution?.point;
       } else if (interaction.kind === "label") {
-        await interact(
+        const result = await interact(
           {
             kind: "label",
             label: interaction.label,
@@ -475,12 +564,24 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
           },
           { serial },
         );
-      } else {
-        await interact(
+        resolvedInteractionPoint = result.resolution?.point;
+      } else if (interaction.kind === "identifier") {
+        const result = await interact(
           {
             kind: "identifier",
             identifier: interaction.identifier,
             ...(interaction.point ? { point: interaction.point } : {}),
+          },
+          { serial },
+        );
+        resolvedInteractionPoint = result.resolution?.point;
+      } else {
+        await interact(
+          {
+            kind: "swipe",
+            from: interaction.from,
+            to: interaction.to,
+            ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
           },
           { serial },
         );
@@ -558,6 +659,13 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
 
       let connectionId: string | undefined;
       if (body.fromScreenId && body.interaction && capturedScreenId !== body.fromScreenId) {
+        const sourceAnchor = sourceAnchorForTeachInteraction(
+          current,
+          body.fromScreenId,
+          body.interaction,
+          resolvedInteractionPoint,
+          profile,
+        );
         const label =
           body.label?.trim() ||
           body.title?.trim() ||
@@ -572,56 +680,79 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         if (appMap.connections[connectionId]) {
           connectionId = `${connectionId}-${appMap.revision}`;
         }
-        const target =
-          body.interaction.kind === "point"
-            ? { point: { x: body.interaction.x, y: body.interaction.y }, label }
-            : body.interaction.kind === "label"
-              ? {
-                  label: body.interaction.label,
-                  ...(body.interaction.point ? { point: body.interaction.point } : {}),
-                }
-              : {
-                  identifier: body.interaction.identifier,
-                  ...(body.interaction.point ? { point: body.interaction.point } : {}),
-                };
-        const persistConnection = (mapRevision: number) =>
-          applyMutation(
-            scope,
-            mapId,
-            mapRevision,
-            `${body.eventId?.trim() || currentOperationContext()?.requestId || "teach"}-connect`,
-            (map, context) =>
-              connectAppMapScreens(
-                map,
-                {
-                  id: connectionId!,
-                  organizationId: map.organizationId,
-                  projectId: map.projectId,
-                  appMapId: map.id,
-                  fromScreenId: body.fromScreenId!,
-                  destination: { kind: "screen", screenId: capturedScreenId },
-                  label,
-                  state: "ready",
-                  actions: [
-                    {
-                      id: `tap-${connectionId}`,
-                      kind: "tap",
-                      target,
-                    },
-                  ],
-                  createdAt: context.at,
-                  updatedAt: context.at,
+        const action =
+          body.interaction.kind === "swipe"
+            ? {
+                id: `swipe-${connectionId}`,
+                kind: "gesture" as const,
+                label,
+                gesture: {
+                  kind: "swipe" as const,
+                  from: body.interaction.from,
+                  to: body.interaction.to,
+                  ...(body.interaction.durationMs !== undefined
+                    ? { durationMs: body.interaction.durationMs }
+                    : {}),
                 },
-                context,
-              ),
-          );
-        try {
-          appMap = await persistConnection(appMap.revision);
-        } catch (error) {
-          if (!(error instanceof HttpError) || error.status !== 409) throw error;
-          const latest = await readAppMap(scope.projectId, mapId);
-          if (!latest) throw error;
-          appMap = await persistConnection(latest.revision);
+              }
+            : {
+                id: `tap-${connectionId}`,
+                kind: "tap" as const,
+                target:
+                  body.interaction.kind === "point"
+                    ? { point: { x: body.interaction.x, y: body.interaction.y }, label }
+                    : body.interaction.kind === "label"
+                      ? {
+                          label: body.interaction.label,
+                          ...(body.interaction.point ? { point: body.interaction.point } : {}),
+                        }
+                      : {
+                          identifier: body.interaction.identifier,
+                          ...(body.interaction.point ? { point: body.interaction.point } : {}),
+                        },
+              };
+        const equivalentConnectionId = findEquivalentTeachConnection(appMap, {
+          fromScreenId: body.fromScreenId,
+          destinationScreenId: capturedScreenId,
+          action,
+        });
+        if (equivalentConnectionId) {
+          connectionId = equivalentConnectionId;
+        } else {
+          const persistConnection = (mapRevision: number) =>
+            applyMutation(
+              scope,
+              mapId,
+              mapRevision,
+              `${body.eventId?.trim() || currentOperationContext()?.requestId || "teach"}-connect`,
+              (map, context) =>
+                connectAppMapScreens(
+                  map,
+                  {
+                    id: connectionId!,
+                    organizationId: map.organizationId,
+                    projectId: map.projectId,
+                    appMapId: map.id,
+                    fromScreenId: body.fromScreenId!,
+                    destination: { kind: "screen", screenId: capturedScreenId },
+                    label,
+                    state: "ready",
+                    actions: [action],
+                    ...(sourceAnchor ? { sourceAnchor } : {}),
+                    createdAt: context.at,
+                    updatedAt: context.at,
+                  },
+                  context,
+                ),
+            );
+          try {
+            appMap = await persistConnection(appMap.revision);
+          } catch (error) {
+            if (!(error instanceof HttpError) || error.status !== 409) throw error;
+            const latest = await readAppMap(scope.projectId, mapId);
+            if (!latest) throw error;
+            appMap = await persistConnection(latest.revision);
+          }
         }
       }
 

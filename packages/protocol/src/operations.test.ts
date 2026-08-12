@@ -60,6 +60,29 @@ test("map teach accepts a point tap without expectedRevision", () => {
   assert.equal(parsed.fromScreenId, "settings");
 });
 
+test("map teach accepts a swipe as a replayable scroll gesture", () => {
+  const parsed = operationDefinition("app-map.teach").input.parse({
+    appMapId: "android-settings-now",
+    leaseId: "lease-1",
+    target: { kind: "device", platform: "android", targetId: "RQCY104BG8X" },
+    fromScreenId: "settings-top",
+    title: "Settings · Middle",
+    label: "Scroll settings",
+    interaction: {
+      kind: "swipe",
+      from: { x: 540, y: 1720 },
+      to: { x: 540, y: 620 },
+      durationMs: 280,
+    },
+  });
+  assert.deepEqual(parsed.interaction, {
+    kind: "swipe",
+    from: { x: 540, y: 1720 },
+    to: { x: 540, y: 620 },
+    durationMs: 280,
+  });
+});
+
 test("App Map flow runs accept an explicit replay boundary", () => {
   const input = {
     appMapId: "map-1",

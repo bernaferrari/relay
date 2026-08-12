@@ -554,7 +554,13 @@ type SpecificOperationMap = {
       interaction?:
         | { kind: "point"; x: number; y: number }
         | { kind: "label"; label: string; point?: { x: number; y: number } }
-        | { kind: "identifier"; identifier: string; point?: { x: number; y: number } };
+        | { kind: "identifier"; identifier: string; point?: { x: number; y: number } }
+        | {
+            kind: "swipe";
+            from: { x: number; y: number };
+            to: { x: number; y: number };
+            durationMs?: number;
+          };
     };
     output: {
       appMapId: string;
@@ -1805,8 +1811,18 @@ const appMapTeachParser = objectParser<OperationInput<"app-map.teach">>(
           number(point.x, "App Map teach interaction point x");
           number(point.y, "App Map teach interaction point y");
         }
+      } else if (kind === "swipe") {
+        const from = record(interaction.from, "App Map teach swipe from");
+        number(from.x, "App Map teach swipe from x");
+        number(from.y, "App Map teach swipe from y");
+        const to = record(interaction.to, "App Map teach swipe to");
+        number(to.x, "App Map teach swipe to x");
+        number(to.y, "App Map teach swipe to y");
+        if (interaction.durationMs !== undefined) {
+          number(interaction.durationMs, "App Map teach swipe durationMs");
+        }
       } else {
-        fail("App Map teach interaction kind", "must be point, label, or identifier");
+        fail("App Map teach interaction kind", "must be point, label, identifier, or swipe");
       }
     }
   },

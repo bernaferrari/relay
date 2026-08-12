@@ -366,13 +366,17 @@ export function buildMinimapEdges(input: {
   transitionStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
   const nodes = new Map(input.nodes.map((node) => [node.id, node]));
-  const lanes = connectorAutoLanes(input.connections, (screenId) => {
-    const node = nodes.get(screenId);
-    return node ? input.positionFor(node) : undefined;
-  }, (screenId) => {
-    const node = nodes.get(screenId);
-    return node ? input.geometryForNode?.(node) : undefined;
-  });
+  const lanes = connectorAutoLanes(
+    input.connections,
+    (screenId) => {
+      const node = nodes.get(screenId);
+      return node ? input.positionFor(node) : undefined;
+    },
+    (screenId) => {
+      const node = nodes.get(screenId);
+      return node ? input.geometryForNode?.(node) : undefined;
+    },
+  );
   return input.connections.flatMap((connection) => {
     const selected = input.selectedConnectionId === connection.id;
     const from = nodes.get(connection.fromScreenId);
@@ -416,13 +420,17 @@ export function buildPresenceGeometry(input: {
   viewportScale?: number;
 }) {
   const nodes = new Map(input.nodes.map((node) => [node.id, node]));
-  const lanes = connectorAutoLanes(input.connections, (screenId) => {
-    const node = nodes.get(screenId);
-    return node ? input.positionFor(node) : undefined;
-  }, (screenId) => {
-    const node = nodes.get(screenId);
-    return node ? input.geometryForNode?.(node) : undefined;
-  });
+  const lanes = connectorAutoLanes(
+    input.connections,
+    (screenId) => {
+      const node = nodes.get(screenId);
+      return node ? input.positionFor(node) : undefined;
+    },
+    (screenId) => {
+      const node = nodes.get(screenId);
+      return node ? input.geometryForNode?.(node) : undefined;
+    },
+  );
   return {
     screenPositions: Object.fromEntries(
       input.nodes.map((node) => [node.id, { ...input.positionFor(node) }]),
@@ -735,8 +743,27 @@ export function canvasProjectionUnchanged(
   value: AppMapCanvasState,
   current: AppMapCanvasState,
 ): boolean {
+  // A local canvas gesture intentionally stamps its transition before the
+  // server commits it. The canonical projection then arrives with the
+  // server's `updatedAt`, even though its visible graph is identical. Treat
+  // that acknowledgement as unchanged: otherwise every connector appearance
+  // edit clears local canvas history before Cmd/Ctrl+Z can restore it.
+  const comparableGraph = (graph: AppMapCanvasState["graph"]): unknown => {
+    const visit = (item: unknown): unknown => {
+      if (Array.isArray(item)) return item.map(visit);
+      if (!item || typeof item !== "object") return item;
+      return Object.fromEntries(
+        Object.entries(item as Record<string, unknown>)
+          .filter(([key]) => key !== "updatedAt")
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, value]) => [key, visit(value)]),
+      );
+    };
+    return visit(graph);
+  };
   return (
-    JSON.stringify(value.graph) === JSON.stringify(current.graph) &&
+    JSON.stringify(comparableGraph(value.graph)) ===
+      JSON.stringify(comparableGraph(current.graph)) &&
     JSON.stringify(value.positions) === JSON.stringify(current.positions) &&
     JSON.stringify(value.groups) === JSON.stringify(current.groups) &&
     JSON.stringify(value.screenTitles) === JSON.stringify(current.screenTitles) &&

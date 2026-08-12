@@ -30,6 +30,19 @@ export function isUnsafeExploreControlText(value: string): boolean {
   );
 }
 
+/**
+ * Discovery maps should learn navigation before they exercise app state. A
+ * stateful control can be perfectly safe for an intentional recording, but a
+ * background explorer cannot know the user wants to change a setting. Keep
+ * those controls out of its automatic queue while leaving them available to
+ * the explicit recorder.
+ */
+export function isExploreStateChangingNode(node: SnapshotNode): boolean {
+  return /switch|toggle|checkbox|radio(?:button)?|slider|seekbar|stepper|edit(?:able)?text|text(?:field|box)|input/i.test(
+    `${node.role ?? ""} ${node.type ?? ""}`,
+  );
+}
+
 export type ExploreChromeOptions = {
   /** When true, also treat app-language switcher rows as chrome (out-of-band only). */
   excludeLanguageSwitcher?: boolean;

@@ -258,10 +258,9 @@ export function screenFrameBounds(
   };
 }
 
-/** The actual screenshot rectangle inside a screen frame. Portrait previews
- * may reserve a small horizontal gutter so a very narrow device remains
- * legible; interaction anchors must use this media box rather than the wider
- * card frame or the highlighted action and its connector will drift apart. */
+/** The actual screenshot rectangle inside a screen frame. Interaction anchors
+ * use this media box so a highlighted action and its connector always align
+ * with the recorded pixels. */
 export function screenMediaBounds(
   position: CanvasPoint,
   geometry: Pick<
@@ -285,7 +284,12 @@ export function screenMediaBounds(
 
 /** Preserve the target's real silhouette without allowing an extreme viewport
  * to destabilize the graph. Unknown screens keep the neutral preview used by
- * uncaptured states; known phones and tablets fit inside the same layout slot. */
+ * uncaptured states; known phones and tablets fit inside the same layout slot.
+ *
+ * The frame intentionally follows the media width exactly. A previous minimum
+ * frame width added black side gutters around narrow phone screenshots; on a
+ * dark capture those gutters visually merged with the bitmap and made the
+ * device look wider than the captured screen. */
 export function screenCardGeometry(evidence?: {
   logicalViewport?: { width: number; height: number };
 }): ScreenCardGeometry {
@@ -312,7 +316,7 @@ export function screenCardGeometry(evidence?: {
     boundedRatio >= SCREEN_CARD_WIDTH / SCREEN_FRAME_HEIGHT
       ? SCREEN_CARD_WIDTH / boundedRatio
       : SCREEN_FRAME_HEIGHT;
-  const frameWidth = Math.max(SCREEN_FRAME_MIN_WIDTH, mediaWidth);
+  const frameWidth = mediaWidth;
   return {
     width: SCREEN_CARD_WIDTH,
     height: SCREEN_FRAME_TOP + mediaHeight,
@@ -486,7 +490,13 @@ export function canvasEdgeGeometry(
   const automaticPorts = autoConnectorPortPair(fromFrame, toFrame);
   const direction = explicitPort(edge.presentation?.sourcePort) ?? automaticPorts.source;
   const targetDirection = explicitPort(edge.presentation?.targetPort) ?? automaticPorts.target;
-  const defaultStart = portPoint(fromFrame, direction, edge.presentation?.sourceOffset);
+  // Source attachment is an interaction contract, not a routing convenience:
+  // recorded evidence leaves from its real control; every other connection
+  // leaves from the exact centre of the chosen source edge. Computed fan
+  // lanes are still passed into `smartElbowPoints` below, where they choose
+  // an exterior rail without making an unrecorded arrow appear to start from
+  // an arbitrary spot on the card.
+  const defaultStart = portPoint(fromFrame, direction);
   const start = sourcePoint
     ? {
         x: fromMedia.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.mediaWidth,

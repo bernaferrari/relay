@@ -648,12 +648,26 @@ test("connects and updates an edge while preserving immutable input", () => {
   const updated = updateAppMapConnection(
     connected,
     "finish",
-    { label: null, state: "draft", actions: [{ id: "go-home", kind: "home" }] },
+    {
+      label: null,
+      state: "draft",
+      actions: [{ id: "go-home", kind: "home" }],
+      sourceAnchor: { point: { x: 0.25, y: 0.75 } },
+    },
     context(connected, "update-finish"),
   );
   assert.equal(updated.connections.finish?.label, undefined);
   assert.equal(updated.connections.finish?.state, "draft");
   assert.deepEqual(updated.connections.finish?.actions, [{ id: "go-home", kind: "home" }]);
+  assert.deepEqual(updated.connections.finish?.sourceAnchor, { point: { x: 0.25, y: 0.75 } });
+
+  const cleared = updateAppMapConnection(
+    updated,
+    "finish",
+    { sourceAnchor: null },
+    context(updated, "clear-finish-origin"),
+  );
+  assert.equal(cleared.connections.finish?.sourceAnchor, undefined);
 });
 
 test("connection removal rejects flow and immutable result references", () => {

@@ -21,7 +21,6 @@ import {
   screenFrameBounds,
   screenMediaBounds,
   SCREEN_FRAME_HEIGHT,
-  SCREEN_FRAME_MIN_WIDTH,
   SCREEN_CARD_WIDTH,
   clampCanvasScale,
   MAX_CANVAS_SCALE,
@@ -225,8 +224,7 @@ test("screen previews preserve phone and tablet viewport silhouettes", () => {
   const tablet = screenCardGeometry({ logicalViewport: { width: 1112, height: 834 } });
 
   assert.ok(phone.frameHeight > phone.frameWidth);
-  assert.equal(phone.frameWidth, SCREEN_FRAME_MIN_WIDTH);
-  assert.ok(phone.mediaWidth < phone.frameWidth);
+  assert.equal(phone.frameWidth, phone.mediaWidth);
   assert.equal(phone.mediaHeight, phone.frameHeight);
   assert.ok(tablet.frameWidth > tablet.frameHeight);
   assert.equal(phone.frameHeight, SCREEN_FRAME_HEIGHT);
@@ -301,7 +299,7 @@ test("recorded origins stay on the actual portrait screenshot and survive a port
     phoneGeometry,
   );
 
-  assert.ok(media.left > phoneGeometry().frameLeft);
+  assert.equal(media.left, phoneGeometry().frameLeft);
   assert.ok(
     Math.abs(geometry.startPoint.x - (media.left + (media.right - media.left) * 0.25)) < 0.001,
   );
@@ -426,10 +424,28 @@ test("connector targets stay centred on their chosen edge", () => {
     (node) => node,
   );
 
-  assert.deepEqual(geometry.startPoint, { x: 60, y: 204 });
+  assert.deepEqual(geometry.startPoint, { x: 120, y: 204 });
   // `targetOffset` may exist in older map data, but it is no longer an
   // interaction affordance. The arrow must make its destination unambiguous.
   assert.deepEqual(geometry.endPoint, { x: 440, y: 102 });
+});
+
+test("computed fan lanes never move an unrecorded source attachment", () => {
+  const geometry = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "settings",
+      kind: "forward",
+      presentation: { sourcePort: "right", sourceOffset: 0.2 },
+      automaticSourceLane: true,
+    },
+    [start, settings],
+    (node) => node,
+  );
+
+  // The lane remains an internal routing hint; a connection with no recorded
+  // interaction origin visibly leaves the middle of the right edge.
+  assert.deepEqual(geometry.startPoint, { x: 240, y: 117 });
 });
 
 test("connector arrowheads stop before the target frame on every side", () => {

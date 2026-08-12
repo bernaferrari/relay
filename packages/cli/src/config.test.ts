@@ -379,6 +379,35 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     assert.equal(teach.operationId, "app-map.teach");
     assert.equal(teach.input.appMapId, "settings");
   }
+  const teachScroll = parseCli(
+    [
+      "map",
+      "teach",
+      "settings",
+      "--input",
+      JSON.stringify({
+        target: { kind: "device", platform: "android", targetId: "pixel-9" },
+        leaseId: "lease-1",
+        fromScreenId: "settings-top",
+        interaction: {
+          kind: "swipe",
+          from: { x: 540, y: 1720 },
+          to: { x: 540, y: 620 },
+          durationMs: 280,
+        },
+      }),
+    ],
+    {},
+  );
+  assert.equal(teachScroll.command, "invoke");
+  if (teachScroll.command === "invoke") {
+    assert.deepEqual(teachScroll.input.interaction, {
+      kind: "swipe",
+      from: { x: 540, y: 1720 },
+      to: { x: 540, y: 620 },
+      durationMs: 280,
+    });
+  }
   assert.throws(
     () => parseCli(["device", "launch", "pixel-9", "Grok", "--mark", "1,2"], {}),
     /only valid/,

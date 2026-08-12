@@ -501,6 +501,9 @@ export type ConnectionPatch = {
   caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
+  /** Capture-derived origin evidence. `null` deliberately removes stale or
+   * disproven evidence; normal canvas styling must never modify this field. */
+  sourceAnchor?: ConnectionSourceAnchor | null;
   presentation?: ConnectionPresentation | null;
 };
 

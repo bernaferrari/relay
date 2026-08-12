@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapBatchChange } from "@relay/protocol";
+import type { AppMap, AppMapBatchChange, AppMapCanvasState } from "@relay/protocol";
 import { canvasEdgeArrowPath, canvasEdgeGeometry } from "./app-map-canvas-layout";
 import {
   appMapLoadFailure,
@@ -8,6 +8,7 @@ import {
   buildMinimapEdges,
   buildMinimapGroups,
   buildMinimapNodes,
+  canvasProjectionUnchanged,
   buildPresenceGeometry,
   createCanvasNote,
   noteChangesFor,
@@ -323,4 +324,49 @@ test("note persistence emits only the local note delta, preserving remote siblin
       },
     },
   ]);
+});
+
+test("canonical connector acknowledgements preserve local appearance undo history", () => {
+  const local: AppMapCanvasState = {
+    schemaVersion: 1,
+    positions: {},
+    edgeLabels: {},
+    edgeKinds: {},
+    graph: {
+      schemaVersion: 1,
+      screens: [
+        { id: "settings", title: "Settings", createdAt: 1, updatedAt: 10 },
+        { id: "advanced", title: "Advanced", createdAt: 2, updatedAt: 10 },
+      ],
+      transitions: [
+        {
+          id: "settings-advanced",
+          fromScreenId: "settings",
+          destination: { kind: "screen", screenId: "advanced" },
+          stepIds: [],
+          presentation: { sourcePort: "right", targetPort: "left", route: "elbow" },
+          state: "recorded",
+          kind: "forward",
+          createdAt: 3,
+          // This is Date.now() at the local gesture boundary.
+          updatedAt: 100,
+        },
+      ],
+      flows: [],
+    },
+  };
+  const canonicalAcknowledgement = structuredClone(local);
+  canonicalAcknowledgement.graph!.transitions[0]!.updatedAt = 101;
+
+  // The server commit must not make a locally recorded connector appearance
+  // edit look like an unrelated remote projection change.
+  assert.equal(canvasProjectionUnchanged(canonicalAcknowledgement, local), true);
+
+  const remotePortChange = structuredClone(canonicalAcknowledgement);
+  remotePortChange.graph!.transitions[0]!.presentation = {
+    sourcePort: "bottom",
+    targetPort: "left",
+    route: "elbow",
+  };
+  assert.equal(canvasProjectionUnchanged(remotePortChange, local), false);
 });

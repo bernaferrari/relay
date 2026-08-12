@@ -1581,6 +1581,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (health() === "online") {
           void refreshDevices();
           void refreshJobs();
+          // Desktop development owns an isolated local server, while the CLI
+          // can intentionally write to the standard local Relay server. Both
+          // share persisted maps but not their in-memory SSE buses. Reconcile
+          // the compact map index here so a fresh capture appears in the app
+          // without a manual reload in either topology.
+          void refreshAppMaps().catch(() => undefined);
           // re-attach bus when we come back online
           if (prev !== "online") {
             void refreshActions();

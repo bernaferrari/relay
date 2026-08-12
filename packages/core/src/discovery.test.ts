@@ -285,6 +285,28 @@ test("discovery suggests only safe unexplored semantic controls", async () => {
   assert.equal(suggestDiscoveryControl(currentFirst)?.screenId, "screen-a");
 });
 
+test("discovery prioritizes semantic navigation rows and skips toggles", () => {
+  const controls = discoveryControls([
+    { role: "switch", label: "Use dark mode", visibleToUser: true, hittable: true },
+    { role: "button", label: "Help", visibleToUser: true, hittable: true },
+    {
+      type: "android.widget.LinearLayout",
+      role: "listitem",
+      label: "Appearance",
+      identifier: "settings-appearance",
+      visibleToUser: true,
+      hittable: true,
+    },
+    { role: "button", label: "Advanced", visibleToUser: true, hittable: true },
+  ]);
+
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Appearance", "Advanced", "Help"],
+  );
+  assert.deepEqual(controls[0]?.target, { identifier: "settings-appearance" });
+});
+
 test("discovery tracks the screen currently visible on the target", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-discovery-current-"));
   const previous = process.env.RELAY_WORKSPACE_ROOT;

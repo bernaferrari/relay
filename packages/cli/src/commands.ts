@@ -651,7 +651,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "app-map.teach",
     path("map teach", ["appMapId"], undefined, {
-      summary: "Tap a control, capture the destination, and connect it",
+      summary: "Perform one tap or swipe, capture the destination, and connect it",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
       inputHelp: [
         {
@@ -669,13 +669,14 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "fromScreenId",
           type: "string",
-          description: "Source screen when tapping into a destination",
+          description: "Source screen when teaching a destination",
         },
         { name: "title", type: "string", description: "Destination screen title" },
         {
           name: "interaction",
           type: "object",
-          description: "point, label, or identifier tap. Omit to capture the current screen only.",
+          description:
+            "point, label, or identifier tap; or swipe {from,to,durationMs}. Omit to capture the current screen only.",
         },
         {
           name: "expectedRevision",
@@ -685,8 +686,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       examples: [
         'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"settings","title":"Connections","interaction":{"kind":"point","x":540,"y":1275}}\'',
+        'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"settings-top","title":"Settings · Middle","label":"Scroll settings","interaction":{"kind":"swipe","from":{"x":540,"y":1720},"to":{"x":540,"y":620},"durationMs":280}}\'',
       ],
-      note: "One gesture: tap → capture destination → connect. expectedRevision is optional.",
+      note: "One gesture: tap or swipe → capture destination → connect. expectedRevision is optional.",
     }),
   ),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),

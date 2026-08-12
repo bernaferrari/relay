@@ -42,6 +42,9 @@ export function patchConnection(
   else if (patch.caseStackId !== undefined) connection.caseStackId = patch.caseStackId;
   if (patch.state !== undefined) connection.state = patch.state;
   if (patch.actions !== undefined) connection.actions = structuredClone(patch.actions);
+  if (patch.sourceAnchor === null) delete connection.sourceAnchor;
+  else if (patch.sourceAnchor !== undefined)
+    connection.sourceAnchor = structuredClone(patch.sourceAnchor);
   if (patch.presentation === null) delete connection.presentation;
   else if (patch.presentation !== undefined)
     connection.presentation = structuredClone(patch.presentation);
