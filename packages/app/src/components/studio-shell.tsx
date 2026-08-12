@@ -158,6 +158,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   let libraryTrigger: HTMLButtonElement | undefined;
   let studioActionsTrigger: HTMLButtonElement | undefined;
   let studioActionsMenu: HTMLDivElement | undefined;
+  const visibleStudioActionItems = () =>
+    studioActionsMenu
+      ? [...studioActionsMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].filter(
+          (item) => !item.disabled && item.offsetParent !== null,
+        )
+      : [];
   const closeLibrary = (restoreFocus = true) => {
     setNavOpen(false);
     if (restoreFocus) queueMicrotask(() => libraryTrigger?.focus());
@@ -242,9 +248,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   createEffect(() => {
     if (!studioActionsOpen()) return;
-    queueMicrotask(() =>
-      studioActionsMenu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus(),
-    );
+    queueMicrotask(() => visibleStudioActionItems()[0]?.focus());
   });
   onMount(() => {
     const closeNavigator = (event: KeyboardEvent) => {
@@ -756,7 +760,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   class={productIconButton}
                   type="button"
                   aria-label="More map options"
+                  aria-haspopup="menu"
                   aria-expanded={studioActionsOpen()}
+                  aria-controls="app-map-options-menu"
+                  data-tip="More map options"
                   onClick={() => setStudioActionsOpen((open) => !open)}
                 >
                   <Icon name="more" size={16} />
@@ -764,6 +771,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <Show when={studioActionsOpen()}>
                   <div
                     ref={(element) => (studioActionsMenu = element)}
+                    id="app-map-options-menu"
                     class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
                     role="menu"
                     aria-label="Map options"
@@ -774,11 +782,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     }}
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                      const items = [
-                        ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                          '[role="menuitem"]:not([disabled])',
-                        ),
-                      ];
+                      const items = visibleStudioActionItems();
                       if (!items.length) return;
                       event.preventDefault();
                       const current = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -838,13 +842,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] transition-[background-color,color] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
+                      aria-label="Re-layout map"
+                      data-tip="Arrange screens to reduce connector crossings"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:tidy-map"));
+                        queueMicrotask(() => studioActionsTrigger?.focus());
                       }}
                     >
-                      <Icon name="grid" size={14} /> Tidy map
+                      <Icon name="grid" size={14} /> Re-layout map
                     </button>
                     <button
                       type="button"

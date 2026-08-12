@@ -22,10 +22,10 @@ const SCREEN_MARGIN = 12;
 const SCREEN_GAP = 12;
 
 const controlClass =
-  "grid size-11 shrink-0 cursor-pointer place-items-center rounded-[8px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--background-interactive-subtle)] hover:text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)] active:scale-[0.96] motion-reduce:active:scale-100";
+  "grid size-11 shrink-0 cursor-pointer place-items-center rounded-[8px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] hover:text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)] active:scale-[0.96] motion-reduce:active:scale-100";
 
 const selectedControlClass =
-  "bg-[var(--background-interactive-subtle)] text-[var(--text-interactive-base)]";
+  "bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] text-[var(--text-interactive-base)]";
 
 /**
  * The presentation toolbar is deliberately its own component: it emits one
