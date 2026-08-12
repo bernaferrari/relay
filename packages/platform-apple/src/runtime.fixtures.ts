@@ -14,6 +14,15 @@ export function platformRuntimeHostFixture(): PlatformRuntimeHost {
       readProcessMarker: async () => ({ status: 'missing' }),
     },
     networkTransports: { resolve: async () => ({ mode: 'local' }) },
+    deviceReadiness: {
+      applePhysical: { ensureConnected: async () => {} },
+      appleAutomation: { keepHot: () => {} },
+      androidEmulator: {
+        discover: async () => [],
+        launch: () => 1,
+        terminate: async () => {},
+      },
+    },
     screenRecording: {
       apple: {
         availability: async () => ({ available: true }),

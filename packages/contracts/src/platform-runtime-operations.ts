@@ -2,6 +2,10 @@ import type { AppLogRuntimeHost, AppLogRuntimeOperations } from './app-log-runti
 import type { NetworkRuntimeHost, NetworkRuntimeOperations } from './network-runtime.ts';
 import type { ScreenRecordingRuntimeHost } from './screen-recording-runtime-host.ts';
 import type { ScreenRecordingRuntimeOperations } from './screen-recording-runtime.ts';
+import type {
+  DeviceReadinessRuntimeHost,
+  DeviceReadinessRuntimeOperations,
+} from './device-readiness-runtime.ts';
 import {
   runtimeUse,
   type DeviceRuntimeOwner,
@@ -11,7 +15,8 @@ import {
 
 export type PlatformRuntimeOperations = AppLogRuntimeOperations &
   NetworkRuntimeOperations &
-  ScreenRecordingRuntimeOperations;
+  ScreenRecordingRuntimeOperations &
+  DeviceReadinessRuntimeOperations;
 
 /**
  * The one neutral runtime-use declaration every command domain shares (ADR 0019 §9): no
@@ -21,9 +26,50 @@ export type PlatformRuntimeOperations = AppLogRuntimeOperations &
  */
 export const defineUse = runtimeUse<PlatformRuntimeOperations>();
 
+export const bootTargetUse = defineUse({ required: ['bootTarget'] });
+export const bootTargetHeadlessUse = defineUse({
+  required: ['bootTargetHeadless'],
+});
+export const deviceBootRuntimeUses = Object.freeze([bootTargetUse, bootTargetHeadlessUse] as const);
+
+export type DeviceReadinessRuntimePlan =
+  | Readonly<{
+      kind: 'boot-target';
+      operation: 'bootTarget';
+      use: typeof bootTargetUse;
+    }>
+  | Readonly<{
+      kind: 'boot-target-headless';
+      operation: 'bootTargetHeadless';
+      use: typeof bootTargetHeadlessUse;
+    }>;
+
+const bootTargetPlan = Object.freeze({
+  kind: 'boot-target',
+  operation: 'bootTarget',
+  use: bootTargetUse,
+} as const satisfies DeviceReadinessRuntimePlan);
+
+const bootTargetHeadlessPlan = Object.freeze({
+  kind: 'boot-target-headless',
+  operation: 'bootTargetHeadless',
+  use: bootTargetHeadlessUse,
+} as const satisfies DeviceReadinessRuntimePlan);
+
+export function resolveDeviceReadinessRuntimePlan(
+  input: Readonly<{
+    headless: boolean;
+  }>,
+): DeviceReadinessRuntimePlan {
+  return input.headless ? bootTargetHeadlessPlan : bootTargetPlan;
+}
+
 export type PlatformRuntimeHost = AppLogRuntimeHost &
   NetworkRuntimeHost &
-  Readonly<{ screenRecording: ScreenRecordingRuntimeHost }>;
+  Readonly<{
+    screenRecording: ScreenRecordingRuntimeHost;
+    deviceReadiness: DeviceReadinessRuntimeHost;
+  }>;
 
 export type PlatformRuntimeOwner = DeviceRuntimeOwner<PlatformRuntimeOperations>;
 

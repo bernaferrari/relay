@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { AppleOS, DeviceInfo } from '@agent-device/kernel/device';
 import { createApplePlatformRuntime } from './runtime.ts';
 import { platformRuntimeHostFixture } from './runtime.fixtures.ts';
@@ -79,4 +79,78 @@ test.each([
       hint: 'watchOS recording is not supported.',
     });
   }
+  expect(facts.operations.ensureReady.available).toBe(device.appleOs !== 'watchos');
+  expect(facts.operations.bootTarget.available).toBe(
+    device.appleOs !== 'macos' && device.appleOs !== 'watchos',
+  );
+  expect(facts.operations.bootTargetHeadless.available).toBe(false);
+});
+
+test('readiness and boot keep the Apple automation helper warm inside the platform runtime', async () => {
+  const host = platformRuntimeHostFixture();
+  const keepHot = vi.fn();
+  let state = 'Shutdown';
+  const runtime = createApplePlatformRuntime({
+    ...host,
+    appleTools: {
+      ...host.appleTools,
+      run: vi.fn(async (request) => {
+        if (request.args.includes('list')) {
+          return {
+            stdout: JSON.stringify({ devices: { ios: [{ udid: 'apple-fact', state }] } }),
+            stderr: '',
+            exitCode: 0,
+          };
+        }
+        if (request.args.includes('boot')) state = 'Booted';
+        return { stdout: '', stderr: '', exitCode: 0 };
+      }),
+    },
+    deviceReadiness: {
+      ...host.deviceReadiness,
+      appleAutomation: { keepHot },
+    },
+  });
+  const device = appleDevice({ booted: false });
+  const binding = await runtime.bind({
+    device,
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+
+  await binding.operations.ensureReady?.({});
+  await binding.operations.bootTarget?.({});
+
+  expect(keepHot).toHaveBeenCalledTimes(3);
+  expect(keepHot).toHaveBeenNthCalledWith(1, device);
+  expect(keepHot).toHaveBeenNthCalledWith(2, device);
+  expect(keepHot).toHaveBeenNthCalledWith(3, device);
+});
+
+test('macOS readiness is a no-op while boot remains unavailable', async () => {
+  const host = platformRuntimeHostFixture();
+  const ensureConnected = vi.fn(host.deviceReadiness.applePhysical.ensureConnected);
+  const binding = await createApplePlatformRuntime({
+    ...host,
+    deviceReadiness: {
+      ...host.deviceReadiness,
+      applePhysical: { ensureConnected },
+    },
+  }).bind({
+    device: leaves.macos,
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+
+  await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({ booted: true });
+  expect(ensureConnected).not.toHaveBeenCalled();
+  expect(binding.operations.bootTarget).toBeUndefined();
 });

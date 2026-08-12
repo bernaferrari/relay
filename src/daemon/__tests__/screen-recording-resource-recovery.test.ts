@@ -49,6 +49,9 @@ test('recovery cleans a recording through its exact runtime owner', async () => 
         screenRecordingStart: unavailable,
         screenRecordingReattach: { available: true as const },
         screenRecordingCleanup: { available: true as const },
+        ensureReady: unavailable,
+        bootTarget: unavailable,
+        bootTargetHeadless: unavailable,
       },
     },
     operations: {
@@ -58,6 +61,9 @@ test('recovery cleans a recording through its exact runtime owner', async () => 
     [Symbol.asyncDispose]: async () => {},
   }));
   const gateway: DeviceRuntimeGateway<PlatformRuntimeOperations> = {
+    inspectFacts: async () => {
+      throw new Error('unused');
+    },
     bind,
     shutdown: async () => {},
   };

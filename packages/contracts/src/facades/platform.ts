@@ -178,6 +178,18 @@ export type {
   PlatformRuntimeProviderModule,
 } from '../platform-runtime-operations.ts';
 export {
+  bootTargetHeadlessUse,
+  bootTargetUse,
+  deviceBootRuntimeUses,
+  resolveDeviceReadinessRuntimePlan,
+} from '../platform-runtime-operations.ts';
+export type { DeviceReadinessRuntimePlan } from '../platform-runtime-operations.ts';
+export type {
+  DeviceReadinessRuntimeHost,
+  DeviceReadinessRuntimeOperations,
+  EnsureReadyInput,
+} from '../device-readiness-runtime.ts';
+export {
   appLogAdmissionUse,
   appLogRuntimePlanUses,
   resolveLogsRuntimePlan,

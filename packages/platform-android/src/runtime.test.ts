@@ -5,7 +5,7 @@ import { createAndroidPlatformRuntime } from './runtime.ts';
 
 const device: DeviceInfo = {
   platform: 'android',
-  id: 'android-fact',
+  id: 'emulator-5554',
   name: 'Android',
   kind: 'emulator',
   target: 'mobile',
@@ -17,7 +17,18 @@ test.each([
   ['device', { ...device, kind: 'device' as const }],
 ])('classifies the Android %s runtime denominator', async (_name, runtimeDevice) => {
   const host = {
+    commands: {
+      which: async () => 'tool',
+      run: async () => ({ stdout: '1', stderr: '', exitCode: 0 }),
+    },
+    toolchains: { prepare: async () => {} },
+    clock: { now: () => 1, sleep: async () => {} },
     processTransports: { resolve: async () => ({ mode: 'local' as const }) },
+    deviceReadiness: {
+      applePhysical: { ensureConnected: async () => {} },
+      appleAutomation: { keepHot: () => {} },
+      androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
+    },
     screenRecording: {
       android: {
         resolve: async () => ({
@@ -52,4 +63,26 @@ test.each([
   expect(facts.operations.screenRecordingStart).toEqual({ available: true });
   expect(facts.operations.screenRecordingReattach).toEqual({ available: true });
   expect(facts.operations.screenRecordingCleanup).toEqual({ available: true });
+  expect(facts.operations.ensureReady).toEqual({ available: true });
+  expect(facts.operations.bootTarget).toEqual({ available: true });
+  expect(facts.operations.bootTargetHeadless.available).toBe(runtimeDevice.kind === 'emulator');
+
+  await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
+
+  await expect(binding.operations.bootTarget?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
+
+  if (runtimeDevice.kind === 'emulator') {
+    await expect(binding.operations.bootTargetHeadless?.({})).resolves.toMatchObject({
+      id: runtimeDevice.id,
+      booted: true,
+    });
+  } else {
+    expect(binding.operations.bootTargetHeadless).toBeUndefined();
+  }
 });
