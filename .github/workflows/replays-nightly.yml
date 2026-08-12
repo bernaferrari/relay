@@ -42,7 +42,13 @@ jobs:
       # A lane whose classifier or watchdog regressed would pass forever. This runs the
       # broken-on-purpose targets first and fails unless each violation is caught.
       - name: Self-check the harness
-        run: pnpm fuzz:parsers --self-check --artifact-dir .tmp/fuzz/self-check
+        uses: ./.github/actions/run-gate
+        with:
+          gate: fuzz-parsers
+          args: |
+            --self-check
+            --artifact-dir
+            .tmp/fuzz/self-check
 
       # Runs even when the self-check fails, so the lane always produces a fuzz envelope too
       # (a step that never runs writes no envelope, and monitoring cannot tell that apart from
@@ -52,11 +58,16 @@ jobs:
         env:
           FUZZ_ITERATIONS: ${{ github.event.inputs.fuzz-iterations || '50000' }}
           FUZZ_SEED: ${{ github.event.inputs.fuzz-seed || github.run_number }}
-        run: |
-          pnpm fuzz:parsers \
-            --iterations "$FUZZ_ITERATIONS" \
-            --seed "$FUZZ_SEED" \
-            --artifact-dir .tmp/fuzz/run
+        uses: ./.github/actions/run-gate
+        with:
+          gate: fuzz-parsers
+          args: |
+            --iterations
+            ${{ env.FUZZ_ITERATIONS }}
+            --seed
+            ${{ env.FUZZ_SEED }}
+            --artifact-dir
+            .tmp/fuzz/run
 
       # Uploaded on pass as well as failure: each subdirectory of .tmp/fuzz holds a
       # run-envelope.json on #1430's shared lane contract (scripts/lib/lane-envelope.ts) —
@@ -136,7 +147,7 @@ jobs:
             ANDROID_SERIAL="$(adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')"
             test -n "$ANDROID_SERIAL"
             BOOT_FINISHED_AT="$(date +%s)"
-            pnpm build
+            pnpm gate build
             pnpm clean:daemon
             adb -s "$ANDROID_SERIAL" install -r "${{ steps.fixture-app.outputs.apk-path }}"
             node --experimental-strip-types src/bin.ts replay examples/test-app/replays/drag-android.ad --platform android --serial "$ANDROID_SERIAL" --session nightly-android-target-drag --json
@@ -146,8 +157,7 @@ jobs:
             FULL_FINISHED_AT="$(date +%s)"
             echo "Android setup before emulator: $((BOOT_FINISHED_AT - ${{ steps.android-setup.outputs.seconds }}))s"
             echo "Android full scenario wall time: $((FULL_FINISHED_AT - FULL_STARTED_AT))s"
-            node --experimental-strip-types src/bin.ts test test/integration/replays/android/01-settings.ad --retries 2 --artifacts-dir test/artifacts/replays-android-settings --report-junit test/artifacts/replays-android-settings.junit.xml
-            node --experimental-strip-types src/bin.ts test test/integration/replays/android/02-deep-navigation.ad test/integration/replays/android/03-scroll-discovery.ad test/integration/replays/android/04-text-input-keyboard.ad test/integration/replays/android/05-app-lifecycle.ad test/integration/replays/android/06-swipe-gestures.ad --artifacts-dir test/artifacts/replays-android --report-junit test/artifacts/replays-android.junit.xml
+            pnpm gate replay-android --retries 2 --artifacts-dir test/artifacts/replays-android --report-junit test/artifacts/replays-android.junit.xml
 
       - name: Upload Android artifacts
         if: always()
@@ -183,7 +193,7 @@ jobs:
           derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
           cache-key-prefix: ios-runner-prebuilt
           cache-key-suffix: -ios-${{ env.IOS_RUNTIME_VERSION }}
-          build-command: sh ./scripts/build-xcuitest-apple.sh
+          gate: swift-runner-ios
           xcuitest-platform: ios
           xcuitest-destination: generic/platform=iOS Simulator
 
@@ -201,7 +211,18 @@ jobs:
           pnpm clean:daemon
 
       - name: Run iOS simulator replay suite
-        run: pnpm test:replay:ios --udid "${{ steps.ios-simulator.outputs.simulator-udid }}" --retries 2 --artifacts-dir test/artifacts/replays-ios-simulator --report-junit test/artifacts/replays-ios-simulator.junit.xml
+        uses: ./.github/actions/run-gate
+        with:
+          gate: replay-ios
+          args: |
+            --udid
+            ${{ steps.ios-simulator.outputs.simulator-udid }}
+            --retries
+            2
+            --artifacts-dir
+            test/artifacts/replays-ios-simulator
+            --report-junit
+            test/artifacts/replays-ios-simulator.junit.xml
 
       - name: Fetch current fixture app
         id: fixture-app
@@ -228,14 +249,25 @@ jobs:
           AGENT_DEVICE_IOS_E2E_TIER: full
           AGENT_DEVICE_IOS_UDID: ${{ steps.ios-simulator.outputs.simulator-udid }}
         run: |
-          pnpm build
+          pnpm gate build
           node --experimental-strip-types scripts/node-test-tmpdir.ts --test test/integration/smoke-ios-simulator-coverage.test.ts test/integration/smoke-ios-simulator.test.ts
 
       - name: Run iOS physical device replay suite
         if: env.IOS_UDID != ''
         env:
           IOS_UDID: ${{ vars.IOS_UDID }}
-        run: pnpm test:replay:ios-device --udid "$IOS_UDID" --retries 2 --artifacts-dir test/artifacts/replays-ios-device --report-junit test/artifacts/replays-ios-device.junit.xml
+        uses: ./.github/actions/run-gate
+        with:
+          gate: replay-ios-device
+          args: |
+            --udid
+            ${{ env.IOS_UDID }}
+            --retries
+            2
+            --artifacts-dir
+            test/artifacts/replays-ios-device
+            --report-junit
+            test/artifacts/replays-ios-device.junit.xml
 
       - name: Upload iOS artifacts
         if: always()
@@ -264,15 +296,23 @@ jobs:
         with:
           derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
           cache-key-prefix: macos-runner-prebuilt
-          build-command: pnpm build:xcuitest:macos
+          gate: swift-runner-macos
           xcuitest-platform: macos
           xcuitest-destination: platform=macOS,arch=arm64
 
       - name: Build macOS helper
-        run: pnpm build:macos-helper
+        uses: ./.github/actions/run-gate
+        with: { gate: macos-helper }
 
       - name: Run macOS replay suite
-        run: pnpm test:replay:macos --retries 2 --report-junit test/artifacts/replays-macos.junit.xml
+        uses: ./.github/actions/run-gate
+        with:
+          gate: replay-macos
+          args: |
+            --retries
+            2
+            --report-junit
+            test/artifacts/replays-macos.junit.xml
 
       - name: Upload macOS artifacts
         if: always()
