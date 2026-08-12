@@ -760,6 +760,70 @@ test("tour stops keep duplicate labels when their mapped tap targets differ", ()
   ]);
 });
 
+test("mapped tour rows follow their recorded on-screen order, not exploration order", () => {
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      settings: screen("settings", "Settings"),
+      first: screen("first", "First"),
+      second: screen("second", "Second"),
+    },
+    screenVariants: {},
+    connections: {
+      exploredSecond: {
+        ...scope,
+        id: "exploredSecond",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "second" },
+        label: "Second",
+        state: "ready",
+        actions: [
+          { id: "tap-second", kind: "tap", target: { label: "Second", point: { x: 300, y: 800 } } },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+      exploredFirst: {
+        ...scope,
+        id: "exploredFirst",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "first" },
+        label: "First",
+        state: "ready",
+        actions: [
+          { id: "tap-first", kind: "tap", target: { label: "First", point: { x: 300, y: 420 } } },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(fallbackTourStopsFromMap(map, "settings"), [
+    { label: "First", point: { x: 300, y: 420 } },
+    { label: "Second", point: { x: 300, y: 800 } },
+  ]);
+});
+
 test("an exact screen tour compiles one capture per named screen", () => {
   const work: AppMapTest = {
     ...scope,

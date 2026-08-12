@@ -247,6 +247,19 @@ export function fallbackTourStopsFromMap(
         : {}),
     });
   }
+  // A recorded action sequence is often created in exploration order rather
+  // than the order controls appear on screen. When every selected row has an
+  // approved point, its Y position is a stronger, user-visible order for a
+  // depth-0 tour and for the canvas fan-out. Preserve the authored order when
+  // even one row has no point rather than fabricating an ordering signal.
+  if (stops.every((stop) => Boolean(stop.point))) {
+    stops.sort(
+      (left, right) =>
+        left.point!.y - right.point!.y ||
+        left.point!.x - right.point!.x ||
+        left.label.localeCompare(right.label),
+    );
+  }
   return stops;
 }
 

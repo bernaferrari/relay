@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { foregroundApplicationBundle, mergeMappedTourStops } from "./recipe-runner-tour.js";
+import {
+  foregroundApplicationBundle,
+  mappedTourStopPointPairs,
+  mergeMappedTourStops,
+} from "./recipe-runner-tour.js";
 
 test("foreground app ranking ignores a smaller keyboard accessibility window", () => {
   assert.equal(
@@ -64,7 +68,41 @@ test("exact tours pair fully translated rows by current screen order", () => {
     { alignByOrder: true },
   );
   assert.deepEqual(merged, [
-    { label: "Edit Profile", point: { x: 540, y: 420 } },
-    { label: "Usage", point: { x: 540, y: 810 } },
+    { label: "الملف الشخصي", point: { x: 540, y: 420 } },
+    { label: "الاستخدام", point: { x: 540, y: 810 } },
   ]);
+});
+
+test("exact localized tours select a recorded subset by nearby live row points", () => {
+  const live = [
+    { label: "Modalità Per Bambini", point: { x: 540, y: 488 } },
+    { label: "Preferenze NSFW", point: { x: 540, y: 652 } },
+    { label: "Voce", point: { x: 540, y: 972 } },
+    { label: "Conversazioni Condivise", point: { x: 540, y: 1291 } },
+    { label: "Controllo Dati", point: { x: 540, y: 1455 } },
+    { label: "Licenze Open Source", point: { x: 540, y: 1734 } },
+  ];
+  const mapped = [
+    { label: "NSFW Preferences", point: { x: 540, y: 650 } },
+    { label: "Voice", point: { x: 540, y: 970 } },
+    { label: "Shared Conversations", point: { x: 540, y: 1290 } },
+    { label: "Data Controls", point: { x: 540, y: 1450 } },
+  ];
+  assert.deepEqual(mappedTourStopPointPairs(live, mapped), [live[1], live[2], live[3], live[4]]);
+  assert.deepEqual(mergeMappedTourStops(live, mapped, { alignByPoint: true }), [
+    live[1],
+    live[2],
+    live[3],
+    live[4],
+  ]);
+});
+
+test("localized point pairing refuses a stale coordinate instead of guessing", () => {
+  assert.equal(
+    mappedTourStopPointPairs(
+      [{ label: "Live", point: { x: 540, y: 300 } }],
+      [{ label: "Mapped", point: { x: 540, y: 800 } }],
+    ),
+    undefined,
+  );
 });

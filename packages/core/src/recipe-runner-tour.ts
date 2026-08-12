@@ -338,8 +338,18 @@ export function foregroundApplicationBundle(nodes: SnapshotNode[]): string | und
 export function mergeMappedTourStops(
   live: TourStop[],
   mapped: TourStop[],
-  options: { alignByOrder?: boolean } = {},
+  options: { alignByOrder?: boolean; alignByPoint?: boolean } = {},
 ): TourStop[] {
+  const pointPairs = options.alignByPoint ? mappedTourStopPointPairs(live, mapped) : undefined;
+  if (pointPairs) {
+    return mapped.map((mappedStop, index) => {
+      const liveStop = pointPairs[index]!;
+      return {
+        ...liveStop,
+        ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
+      };
+    });
+  }
   const labelMatches = tourFallbackOverlap(live, mapped);
   if (
     options.alignByOrder &&
@@ -348,9 +358,8 @@ export function mergeMappedTourStops(
   ) {
     return mapped.map((mappedStop, index) => ({
       ...live[index]!,
-      // Keep canonical map labels in evidence while using the current
-      // localized row's actual hit point.
-      label: mappedStop.label,
+      // Use the live localized label for semantic interaction. The captured
+      // map point remains a final fallback, never the primary selector.
       ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
     }));
   }
@@ -375,6 +384,46 @@ export function mergeMappedTourStops(
       ...(fallback.capture === undefined ? {} : { capture: fallback.capture }),
     };
   });
+}
+
+const LOCALIZED_POINT_MATCH_DISTANCE = 220;
+
+/**
+ * Match a deliberate subset of translated rows to their recorded tap areas.
+ *
+ * A localized list can contain more visible rows than the mapped test (for
+ * example an exact four-row coverage tour inside a longer Settings viewport),
+ * so whole-list index alignment is unsafe. A captured point belongs to a
+ * specific row, however; pair it only with one nearby live accessible row and
+ * keep that row's current label/identifier for the eventual interaction.
+ */
+export function mappedTourStopPointPairs(
+  live: ReadonlyArray<TourStop>,
+  mapped: ReadonlyArray<TourStop>,
+): TourStop[] | undefined {
+  if (!mapped.length || mapped.some((stop) => !stop.point)) return undefined;
+  const remaining = new Set(live.map((_, index) => index));
+  const pairs: TourStop[] = [];
+  for (const mappedStop of mapped) {
+    const target = mappedStop.point!;
+    let closestIndex: number | undefined;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (const index of remaining) {
+      const candidate = live[index];
+      if (!candidate?.point) continue;
+      const distance = Math.hypot(candidate.point.x - target.x, candidate.point.y - target.y);
+      if (distance < closestDistance) {
+        closestIndex = index;
+        closestDistance = distance;
+      }
+    }
+    if (closestIndex === undefined || closestDistance > LOCALIZED_POINT_MATCH_DISTANCE) {
+      return undefined;
+    }
+    remaining.delete(closestIndex);
+    pairs.push(live[closestIndex]!);
+  }
+  return pairs;
 }
 
 async function restoreRememberedApp(
@@ -495,9 +544,13 @@ export async function runTourStep(
   if (originReached && step.mappedStopsOnly && !step.fallbackStops?.length) return;
   if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
     const liveStops = stops;
-    const alignedLocalizedRows = isLocalizedJob(job) && stops.length === step.fallbackStops.length;
+    const alignedLocalizedRows =
+      isLocalizedJob(job) &&
+      (Boolean(mappedTourStopPointPairs(stops, step.fallbackStops)) ||
+        stops.length === step.fallbackStops.length);
     const merged = mergeMappedTourStops(stops, step.fallbackStops, {
       alignByOrder: isLocalizedJob(job),
+      alignByPoint: isLocalizedJob(job),
     });
     const fallbackCount = alignedLocalizedRows
       ? 0
