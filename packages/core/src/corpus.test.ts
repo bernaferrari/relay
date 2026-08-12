@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import type { SnapshotNode } from "./device.js";
 import {
   analyzeCorpus,
   buildCorpusCoverage,
+  createCorpusReplaySession,
   createCorpusSession,
   exportCorpusPack,
   formatCorpusExport,
@@ -613,6 +615,67 @@ test("corpus pack freezes execution provenance and verifies every screenshot", a
   ) as { inspectable: boolean; nodes: unknown[] };
   assert.equal(accessibility.inspectable, true);
   assert.equal(accessibility.nodes.length, settingsNodes("en").length);
+});
+
+test("locale replay reuses English screenshots, accessibility, and the recorded map", async () => {
+  const root = await workspace();
+  const screenshot = join(root, "baseline.png");
+  await writeFile(screenshot, Buffer.from("baseline evidence"));
+  const source = await createCorpusSession({
+    name: "English baseline",
+    targetId: "android",
+    scope: { locales: ["en"], mapLocale: "en", strategy: "map-once-replay", maxDepth: 1 },
+  });
+  const recorded = await recordCorpusScreen({
+    sessionId: source.id,
+    nodes: settingsNodes("en"),
+    locale: "en",
+    depth: 0,
+    path: [],
+    pathKeys: [],
+    screenshotPath: screenshot,
+    accessibility: { inspectable: true, nodes: settingsNodes("en") },
+  });
+  const sourceWithPlan = (await readCorpusSession(source.id))!;
+  sourceWithPlan.mapPlan = { mappedLocale: "en", mappedAt: Date.now(), actions: [] };
+  sourceWithPlan.mapPlan.actions.push({
+    kind: "open",
+    depth: 0,
+    label: "Settings",
+    stableKey: "id:settings",
+    target: { identifier: "settings" },
+    path: [],
+    pathKeys: [],
+    fromCanonicalKey: recorded.screen.canonicalKey,
+    toCanonicalKey: recorded.screen.canonicalKey,
+  });
+  await writeFile(
+    join(root, ".relay", "corpus", `${source.id}.json`),
+    `${JSON.stringify(sourceWithPlan, null, 2)}\n`,
+    "utf8",
+  );
+
+  const replay = await createCorpusReplaySession({
+    sourceSessionId: source.id,
+    name: "Italian and Spanish",
+    targetId: "android",
+    locales: ["it", "es"],
+  });
+
+  assert.deepEqual(replay.scope.locales, ["en", "it", "es"]);
+  assert.equal(replay.screens.length, 1);
+  assert.equal(replay.progress.completedLocales?.[0], "en");
+  assert.equal(replay.mapPlan?.actions.length, 1);
+  assert.equal(
+    existsSync(join(root, ".relay", "corpus", replay.id, "screens", `${recorded.screen.id}.png`)),
+    true,
+  );
+  assert.equal(
+    existsSync(
+      join(root, ".relay", "corpus", replay.id, "screens", `${recorded.screen.id}.accessibility.json`),
+    ),
+    true,
+  );
 });
 
 test("normalizeScope defaults to map-once-replay and orders map locale first", async () => {

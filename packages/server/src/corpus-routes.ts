@@ -5,6 +5,7 @@ import {
   buildTargetProfiles,
   cancelCorpusSession,
   createCorpusSession,
+  createCorpusReplaySession,
   exportCorpusPack,
   formatCorpusExport,
   corpusScopeFromLanguageProfile,
@@ -60,6 +61,7 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
     const body = (await parseJsonBody(request)) as {
       name?: string;
       targetId?: string;
+      baselineSessionId?: string;
       scope?: Partial<CorpusScope> & { languageProfileId?: string; switcherProfileId?: string };
     };
     if (!body.name || !body.targetId) throw new HttpError(400, "name and targetId are required");
@@ -83,14 +85,24 @@ export async function handleCorpusRoute(input: CorpusRouteInput): Promise<boolea
         locales,
       };
     }
-    const session = await createCorpusSession({
-      name: body.name,
-      targetId: body.targetId,
-      targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
-      scope: corpusScope,
-      projectId: scope.projectId,
-      organizationId: scope.organizationId,
-    });
+    const session = body.baselineSessionId
+      ? await createCorpusReplaySession({
+          sourceSessionId: body.baselineSessionId,
+          name: body.name,
+          targetId: body.targetId,
+          targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
+          locales: corpusScope?.locales ?? ["en"],
+          projectId: scope.projectId,
+          organizationId: scope.organizationId,
+        })
+      : await createCorpusSession({
+          name: body.name,
+          targetId: body.targetId,
+          targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
+          scope: corpusScope,
+          projectId: scope.projectId,
+          organizationId: scope.organizationId,
+        });
     json(response, 201, { session });
     return true;
   }

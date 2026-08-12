@@ -657,6 +657,104 @@ export async function createCorpusSession(input: {
   return session;
 }
 
+/**
+ * Start additional locale replays from completed, auditable baseline evidence.
+ *
+ * A corpus map is expensive to discover but its recorded controls are locale
+ * stable.  Copying the baseline means a locale comparison never has to crawl
+ * English again, while the resulting pack remains self-contained: English,
+ * screenshots, and accessibility sidecars all live beside the new locales.
+ */
+export async function createCorpusReplaySession(input: {
+  sourceSessionId: string;
+  name: string;
+  targetId: string;
+  targetProfile?: TargetProfile;
+  locales: string[];
+  projectId?: string;
+  organizationId?: string;
+}): Promise<CorpusSession> {
+  const source = await readCorpusSession(input.sourceSessionId, {
+    projectId: input.projectId,
+  });
+  if (!source) throw new Error("baseline corpus session not found");
+  assertCorpusAccess(source);
+  const mapLocale = source.scope.mapLocale ?? source.scope.locales[0]!;
+  if (!source.mapPlan?.actions.length) {
+    throw new Error("baseline corpus has no reusable screen map");
+  }
+  const baselineScreens = source.screens.filter((screen) => screen.locale === mapLocale);
+  if (!baselineScreens.length) {
+    throw new Error(`baseline corpus has no ${mapLocale} screenshots`);
+  }
+
+  const locales = [mapLocale, ...input.locales.filter((locale) => locale !== mapLocale)];
+  const created = await createCorpusSession({
+    name: input.name,
+    targetId: input.targetId,
+    targetProfile: input.targetProfile,
+    projectId: input.projectId,
+    organizationId: input.organizationId,
+    scope: {
+      ...source.scope,
+      locales,
+      mapLocale,
+      strategy: "map-once-replay",
+    },
+  });
+
+  const copiedScreens: CorpusScreen[] = [];
+  for (const sourceScreen of baselineScreens) {
+    const screen: CorpusScreen = { ...sourceScreen };
+    delete screen.artifactPath;
+    const sourcePng = screenAssetPath(source.id, sourceScreen.id);
+    if (sourceScreen.screenshotPath && existsSync(sourcePng)) {
+      await mkdir(join(sessionDir(created.id), "screens"), { recursive: true });
+      await copyFile(sourcePng, screenAssetPath(created.id, sourceScreen.id));
+    } else {
+      delete screen.screenshotPath;
+      delete screen.snapshotDigest;
+    }
+    const sourceAccessibility = screenAccessibilityAssetPath(source.id, sourceScreen.id);
+    if (sourceScreen.accessibilityPath && existsSync(sourceAccessibility)) {
+      await mkdir(join(sessionDir(created.id), "screens"), { recursive: true });
+      await copyFile(
+        sourceAccessibility,
+        screenAccessibilityAssetPath(created.id, sourceScreen.id),
+      );
+    } else {
+      delete screen.accessibilityPath;
+      delete screen.accessibilityDigest;
+    }
+    copiedScreens.push(screen);
+  }
+
+  const now = Date.now();
+  const replay: CorpusSession = {
+    ...created,
+    screens: copiedScreens,
+    transitions: source.transitions
+      .filter((transition) => transition.locale === mapLocale)
+      .map((transition) => ({ ...transition })),
+    mapPlan: JSON.parse(JSON.stringify(source.mapPlan)) as CorpusMapPlan,
+    currentScreenId: source.currentScreenId,
+    currentLocale: mapLocale,
+    progress: {
+      phase: "idle",
+      screensCaptured: copiedScreens.length,
+      transitionsCaptured: source.transitions.filter((transition) => transition.locale === mapLocale)
+        .length,
+      completedLocales: [mapLocale],
+      message: `Reusing ${mapLocale} baseline (${copiedScreens.length} checkpoints)`,
+      updatedAt: now,
+    },
+    updatedAt: now,
+  };
+  await writeSession(replay);
+  emitCorpus(replay, true);
+  return replay;
+}
+
 export async function readCorpusSession(
   id: string,
   filter?: { projectId?: string },

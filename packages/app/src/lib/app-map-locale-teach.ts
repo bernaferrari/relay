@@ -44,6 +44,27 @@ export function teachableLocaleRows(
   return rows;
 }
 
+const LANGUAGE_ROW_RE =
+  /\b(?:arabic|bengali|chinese|dutch|english|french|german|greek|hebrew|hindi|indonesian|italian|japanese|korean|polish|portuguese|russian|spanish|swedish|thai|turkish|ukrainian|vietnamese)\b|(?:中文|日本語|한국어|العربية|हिन्दी|বাংলা|français|deutsch|italiano|português|русский|español|türkçe|ไทย|nederlands)/iu;
+
+/** Avoid teaching a language variable from an arbitrary system picker or
+ * document list. Identifiers from a genuine locale picker are also accepted
+ * because some platforms localize every visible label. */
+export function looksLikeLanguagePicker(
+  rows: readonly { identifier?: string; label?: string; value?: string }[],
+): boolean {
+  return (
+    rows.filter((row) => {
+      const identifier = row.identifier ?? "";
+      const label = row.label ?? row.value ?? "";
+      return (
+        /(?:^|[._:/-])(?:locale|language|lang)(?:$|[._:/-])/iu.test(identifier) ||
+        LANGUAGE_ROW_RE.test(label)
+      );
+    }).length >= 2
+  );
+}
+
 export type LocaleNavStep = {
   kind: "tap" | "back" | "wait" | "scroll" | "relaunch" | "openApp";
   target?: { identifier?: string; label?: string; text?: string };

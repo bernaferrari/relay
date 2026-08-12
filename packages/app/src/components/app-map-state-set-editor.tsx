@@ -6,9 +6,11 @@ import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
 import {
   assignableSwitcherConnections,
+  looksLikeLanguagePicker,
   taughtExampleFromSnapshotNode,
   teachableLocaleRows,
 } from "../lib/app-map-locale-teach";
+import { suggestedAndroidAppPackage } from "../lib/app-map-android-package";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
@@ -55,10 +57,18 @@ export function AppMapStateSetEditor(props: {
   onOpenDevice: () => void;
 }) {
   const server = useServer();
+  const map = createMemo(() => server.selectedAppMap());
+  const suggestedPackage = createMemo(() => suggestedAndroidAppPackage(map()));
   const existingListApply = () =>
     props.variable?.apply.kind === "list" ? props.variable.apply : undefined;
   const [sourceMode, setSourceMode] = createSignal<SourceMode>(
-    props.variable?.apply.kind === "appLocale" ? "android" : props.variable ? "manual" : "device",
+    props.variable?.apply.kind === "appLocale"
+      ? "android"
+      : props.variable
+        ? "manual"
+        : suggestedPackage()
+          ? "android"
+          : "device",
   );
   const [kind, setKind] = createSignal<AppMapVariableKind>(props.variable?.kind ?? "language");
   const [name, setName] = createSignal(props.variable?.name ?? "");
@@ -67,7 +77,9 @@ export function AppMapStateSetEditor(props: {
       "",
   );
   const [androidPackage, setAndroidPackage] = createSignal(
-    props.variable?.apply.kind === "appLocale" ? props.variable.apply.app : "",
+    props.variable?.apply.kind === "appLocale"
+      ? props.variable.apply.app
+      : (suggestedPackage() ?? ""),
   );
   const [localeText, setLocaleText] = createSignal(
     props.variable?.apply.kind === "appLocale"
@@ -90,7 +102,6 @@ export function AppMapStateSetEditor(props: {
   const [discoveringLocales, setDiscoveringLocales] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [pathsOpen, setPathsOpen] = createSignal(true);
-  const map = createMemo(() => server.selectedAppMap());
   const connections = createMemo(() => {
     const current = map();
     return current ? assignableSwitcherConnections(current) : [];
@@ -142,9 +153,18 @@ export function AppMapStateSetEditor(props: {
     try {
       const snapshot = await server.captureUiSnapshot();
       const next = teachableLocaleRows(snapshot?.nodes ?? [], 24);
+      if (kind() === "language" && !looksLikeLanguagePicker(next)) {
+        setRows([]);
+        setSelectedKeys([]);
+        toast(
+          "This is not a language list. Open the language picker, or use App languages.",
+          "warning",
+        );
+        return;
+      }
       setRows(next);
       setSelectedKeys([]);
-      if (!next.length) toast("Open the list on the device, then read it again", "warning");
+      if (!next.length) toast("Open a value list on the device, then read it again", "warning");
     } catch (error) {
       toast(humanError(error, "Could not read the current screen"), "error");
     } finally {
@@ -304,9 +324,9 @@ export function AppMapStateSetEditor(props: {
       >
         <For
           each={[
-            { id: "device" as const, label: "Read an open list" },
+            { id: "android" as const, label: "App languages" },
+            { id: "device" as const, label: "Visible list" },
             { id: "manual" as const, label: "Enter labels" },
-            { id: "android" as const, label: "Android app" },
           ]}
         >
           {(source) => (
@@ -378,7 +398,7 @@ export function AppMapStateSetEditor(props: {
           >
             <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
               <label class="grid gap-1.5">
-                <span class="text-[10.5px] font-medium text-[var(--text-base)]">App package</span>
+                <span class="text-[10.5px] font-medium text-[var(--text-base)]">Android app</span>
                 <input
                   class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px]"
                   value={androidPackage()}
@@ -400,7 +420,7 @@ export function AppMapStateSetEditor(props: {
                     discoveringLocales() ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
                   }
                 />
-                {discoveringLocales() ? "Reading app languages…" : "Read languages from app"}
+                {discoveringLocales() ? "Reading app languages…" : "Read supported languages"}
               </Button>
               <label class="grid gap-1.5">
                 <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
@@ -414,8 +434,7 @@ export function AppMapStateSetEditor(props: {
                   onInput={(event) => setLocaleText(event.currentTarget.value)}
                 />
                 <span class="text-[10.5px]/[1.4] text-[var(--text-weak)]">
-                  All declared languages stay available here. A run matrix can select only the
-                  subset it needs.
+                  Reads the installed app’s declared languages. No device navigation is needed.
                 </span>
               </label>
             </div>
@@ -425,7 +444,7 @@ export function AppMapStateSetEditor(props: {
         <div class="grid gap-2">
           <div class="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={props.onOpenDevice}>
-              <Icon name="smartphone" size={12} /> Show device
+              <Icon name="smartphone" size={12} /> Open device
             </Button>
             <Button
               variant="secondary"
@@ -438,7 +457,7 @@ export function AppMapStateSetEditor(props: {
                 size={12}
                 class={reading() ? "ui-refresh-spin motion-reduce:opacity-70" : undefined}
               />
-              {reading() ? "Reading…" : "Read current list"}
+              {reading() ? "Reading…" : "Read visible list"}
             </Button>
           </div>
 
@@ -447,10 +466,10 @@ export function AppMapStateSetEditor(props: {
             fallback={
               <div class="rounded-[9px] bg-[var(--surface-base)] px-3 py-4 text-center">
                 <strong class="block text-[12px] text-[var(--text-strong)]">
-                  Open the list on your device
+                  Open a value list on your device
                 </strong>
                 <span class="mt-1 block text-[11px] text-[var(--text-weak)]">
-                  Then choose Read current list and mark one or two examples.
+                  Then choose Read visible list and mark one or two examples.
                 </span>
               </div>
             }

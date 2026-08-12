@@ -288,6 +288,40 @@ test("uses local connector geometry to promote the branch that removes a cross-l
   );
 });
 
+test("never promotes a later recorded action above an earlier one to improve routing", () => {
+  const graph = {
+    screens: ["settings", "usage", "data-controls", "help", "advanced", "usage-detail", "end"].map(
+      (id) => ({ id }),
+    ),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "usage" },
+        sourceAnchor: { point: { x: 0.5, y: 0.18 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "data-controls" },
+        sourceAnchor: { point: { x: 0.5, y: 0.48 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "help" },
+        sourceAnchor: { point: { x: 0.5, y: 0.78 } },
+      },
+      { fromScreenId: "usage", destination: { kind: "screen", screenId: "usage-detail" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "help" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "advanced" } },
+      { fromScreenId: "usage-detail", destination: { kind: "screen", screenId: "end" } },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok((positions.usage?.y ?? 0) < (positions["data-controls"]?.y ?? 0));
+});
+
 test("preserves recorded sibling order while keeping each continuation on its branch row", () => {
   const graph = {
     // Deliberately scramble storage order. The path order is the user's UI order.

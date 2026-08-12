@@ -531,16 +531,21 @@ function layoutCost(
   const routeDistance = drawableEdges.reduce(
     (total, edge) =>
       total +
-      edge.points.slice(1).reduce(
-        (distance, point, index) =>
-          distance +
-          Math.abs(point.x - edge.points[index]!.x) +
-          Math.abs(point.y - edge.points[index]!.y),
-        0,
-      ),
+      edge.points
+        .slice(1)
+        .reduce(
+          (distance, point, index) =>
+            distance +
+            Math.abs(point.x - edge.points[index]!.x) +
+            Math.abs(point.y - edge.points[index]!.y),
+          0,
+        ),
     0,
   );
-  const bends = drawableEdges.reduce((total, edge) => total + Math.max(0, edge.points.length - 2), 0);
+  const bends = drawableEdges.reduce(
+    (total, edge) => total + Math.max(0, edge.points.length - 2),
+    0,
+  );
   let siblingMovement = 0;
   for (const [parentId, childIds] of children) {
     const original = originalChildren.get(parentId) ?? [];
@@ -591,15 +596,13 @@ function segmentsProperlyCross(
   d: CanvasPoint,
 ): boolean {
   const orientation = (first: CanvasPoint, second: CanvasPoint, third: CanvasPoint) =>
-    (second.x - first.x) * (third.y - first.y) -
-    (second.y - first.y) * (third.x - first.x);
+    (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x);
   const abC = orientation(a, b, c);
   const abD = orientation(a, b, d);
   const cdA = orientation(c, d, a);
   const cdB = orientation(c, d, b);
   return (
-    ((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) &&
-    ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))
+    ((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))
   );
 }
 

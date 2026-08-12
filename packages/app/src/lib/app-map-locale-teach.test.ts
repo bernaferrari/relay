@@ -3,6 +3,7 @@ import test from "node:test";
 import type { AppMap, AppMapEntity, Connection, Screen } from "@relay/protocol";
 import {
   assignableSwitcherConnections,
+  looksLikeLanguagePicker,
   localeLoopBodyFlowId,
   recordedLocalePreludeFromMap,
   taughtExampleFromSnapshotNode,
@@ -43,6 +44,24 @@ test("teachable rows never present Android system chrome as list values", () => 
     { identifier: "model.high", label: "High" },
   ]);
   assert.deepEqual(rows, [{ identifier: "model.high", label: "High" }]);
+});
+
+test("language picker check accepts language rows and rejects a document picker", () => {
+  assert.equal(
+    looksLikeLanguagePicker([
+      { identifier: "locale.en", label: "English" },
+      { identifier: "locale.pt-BR", label: "Português (Brasil)" },
+    ]),
+    true,
+  );
+  assert.equal(
+    looksLikeLanguagePicker([
+      { label: "Do not disturb turned on" },
+      { label: "edited-image.jpg" },
+      { label: "366 kB · 5 hr. ago · image/jpeg" },
+    ]),
+    false,
+  );
 });
 
 const at = 1;

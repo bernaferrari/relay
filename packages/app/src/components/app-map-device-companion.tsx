@@ -168,13 +168,30 @@ export function AppMapDeviceCompanion(props: {
         when={props.recording ? props.take : null}
         fallback={
           <Show when={props.outsideMapApp || props.unmapped || props.mappedScreenName}>
-            <footer class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3">
-              <span class="min-w-0 text-[11px] text-[var(--text-weak)]">
-                {props.outsideMapApp
-                  ? `Return to ${props.mapName?.trim() || "the mapped app"} to capture a screen`
-                  : props.unmapped
-                    ? `Add this screen to ${props.mapName?.trim() || "the map"}`
-                    : `Continue from ${props.mappedScreenName}`}
+            <footer class="flex min-h-14 shrink-0 items-center gap-3 border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3">
+              <span
+                class="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-[var(--text-weak)]"
+                data-tip={
+                  props.outsideMapApp
+                    ? `Return to ${props.mapName?.trim() || "the mapped app"} before capturing.`
+                    : props.unmapped
+                      ? `Add this screen to ${props.mapName?.trim() || "the map"}.`
+                      : `Continue from ${props.mappedScreenName}.`
+                }
+              >
+                <Icon
+                  name={props.outsideMapApp ? "map" : props.unmapped ? "plus" : "arrow-right"}
+                  size={13}
+                  class="shrink-0 text-[var(--icon-neutral-muted)]"
+                  aria-hidden={true}
+                />
+                <span class="truncate">
+                  {props.outsideMapApp
+                    ? "Return to map"
+                    : props.unmapped
+                      ? "New screen"
+                      : `From ${props.mappedScreenName}`}
+                </span>
               </span>
               <Show
                 when={props.unmapped && !props.outsideMapApp}
