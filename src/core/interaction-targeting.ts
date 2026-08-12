@@ -1,8 +1,11 @@
 import type { Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
 import { centerOfRect } from '@agent-device/kernel/snapshot';
 import { containsPoint, pickLargestRect } from '@agent-device/kernel/rect';
-import { normalizeType, isViewportRootNode } from '@agent-device/contracts/snapshot';
-import { findNearestHittableAncestor } from '../snapshot/snapshot-processing.ts';
+import {
+  findNearestAncestor,
+  normalizeType,
+  isViewportRootNode,
+} from '@agent-device/contracts/snapshot';
 import { isSnapshotNodeInteractionBlocked } from '../snapshot/snapshot-occlusion.ts';
 import {
   areRectsApproximatelyEqual,
@@ -121,11 +124,7 @@ export function isRootInteractionContainer(
   );
 }
 
-/**
- * The retarget itself. Runtime callers reach it through the promotion stage of
- * `selector-pipeline-policy.ts`, which is what decides whether a given caller
- * promotes at all; this stays exported for that runner and for focused tests.
- */
+/** @internal Exposed for focused policy tests. */
 export function resolveActionableTouchResolution(
   nodes: SnapshotNode[],
   node: SnapshotNode,
@@ -152,6 +151,14 @@ export function resolveActionableTouchResolution(
     return { node: ancestor, reason: 'hittable-ancestor' };
   }
   return { node, reason: 'original' };
+}
+
+function findNearestHittableAncestor(
+  nodes: SnapshotNode[],
+  node: SnapshotNode,
+): SnapshotNode | null {
+  if (node.hittable) return node;
+  return findNearestAncestor(nodes, node, (parent) => parent.hittable === true);
 }
 
 function findPreferredActionableDescendant(
