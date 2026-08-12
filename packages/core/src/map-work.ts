@@ -45,11 +45,43 @@ function navigationStepsFromActions(actions: ActionSpec[] | undefined): RecipeSt
       steps.push({ kind: "key", key: "back" });
       continue;
     }
+    if (action.kind === "gesture") {
+      steps.push(
+        action.gesture.kind === "swipe"
+          ? {
+              kind: "swipe",
+              from: { ...action.gesture.from },
+              to: { ...action.gesture.to },
+              ...(action.gesture.durationMs === undefined
+                ? {}
+                : { durationMs: action.gesture.durationMs }),
+            }
+          : {
+              kind: "scroll",
+              direction: action.gesture.direction,
+              ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
+            },
+      );
+      continue;
+    }
     for (const step of recordedOrAuthoredSteps(action)) {
       if (step.kind === "tap" && step.target) {
         steps.push({ kind: "tap", target: step.target });
       } else if (step.kind === "key") {
         steps.push({ kind: "key", key: step.key });
+      } else if (step.kind === "swipe") {
+        steps.push({
+          kind: "swipe",
+          from: { ...step.from },
+          to: { ...step.to },
+          ...(step.durationMs === undefined ? {} : { durationMs: step.durationMs }),
+        });
+      } else if (step.kind === "scroll") {
+        steps.push({
+          kind: "scroll",
+          direction: step.direction,
+          ...(step.amount === undefined ? {} : { amount: step.amount }),
+        });
       }
     }
   }
@@ -67,10 +99,16 @@ export function fallbackTourStopsFromMap(
     if (connection.fromScreenId !== rootScreenId) continue;
     const label = connection.label?.trim();
     if (!label || LANGUAGE_ROW.test(label)) continue;
-    const key = label.toLocaleLowerCase();
+    // Gestures are navigation to a scroll checkpoint, not a row a depth-0
+    // tour can press. They remain part of a prelude to that checkpoint.
+    const target = firstTapTarget(connection.actions);
+    if (!target) continue;
+    // A screen can expose two rows with the same localized label (for
+    // example, a setting and its library picker). Preserve distinct stable
+    // targets instead of silently dropping one from coverage.
+    const key = tourStopTargetKey(target, label);
     if (seen.has(key)) continue;
     seen.add(key);
-    const target = firstTapTarget(connection.actions);
     const identifier = target?.identifier?.trim();
     const labelTarget = target?.label?.trim();
     const point =
@@ -95,7 +133,7 @@ function fallbackTourStopsForScreens(
   screenIds: Set<string>,
   captureScreenIds?: ReadonlySet<string>,
 ): TourStop[] {
-  const allowedLabels = new Set(
+  const allowedTargetKeys = new Set(
     (Object.values(map.connections ?? {}) as Connection[])
       .filter(
         (connection) =>
@@ -103,12 +141,26 @@ function fallbackTourStopsForScreens(
           connection.destination.kind === "screen" &&
           screenIds.has(connection.destination.screenId),
       )
-      .map((connection) => connection.label?.trim().toLocaleLowerCase())
-      .filter((label): label is string => Boolean(label)),
+      .map((connection) => {
+        const label = connection.label?.trim();
+        const target = firstTapTarget(connection.actions);
+        return label && target ? tourStopTargetKey(target, label) : undefined;
+      })
+      .filter((key): key is string => Boolean(key)),
   );
   return fallbackTourStopsFromMap(map, rootScreenId, captureScreenIds).filter((stop) =>
-    allowedLabels.has(stop.label.trim().toLocaleLowerCase()),
+    allowedTargetKeys.has(tourStopTargetKey(stop, stop.label)),
   );
+}
+
+function tourStopTargetKey(
+  target: Pick<StepTarget, "identifier" | "label" | "point">,
+  fallbackLabel: string,
+): string {
+  if (target.identifier?.trim())
+    return `identifier:${target.identifier.trim().toLocaleLowerCase()}`;
+  if (target.point) return `point:${Math.round(target.point.x)}:${Math.round(target.point.y)}`;
+  return `label:${(target.label ?? fallbackLabel).toLocaleLowerCase()}`;
 }
 
 function captureMode(work: AppMapTest): NonNullable<AppMapTest["capture"]>["mode"] {

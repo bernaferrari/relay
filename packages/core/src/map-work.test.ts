@@ -289,6 +289,194 @@ test("a tour prepends mapped prelude taps from the start screen", () => {
   }
 });
 
+test("tour preludes preserve mapped scroll gestures", () => {
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      home: screen("home", "Home"),
+      settings: screen("settings", "Settings"),
+      middle: screen("middle", "Settings middle"),
+    },
+    screenVariants: {},
+    connections: {
+      settings: {
+        ...scope,
+        id: "settings",
+        fromScreenId: "home",
+        destination: { kind: "screen", screenId: "settings" },
+        label: "Settings",
+        state: "ready",
+        actions: [{ id: "open-settings", kind: "tap", target: { identifier: "settings" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+      scroll: {
+        ...scope,
+        id: "scroll",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "middle" },
+        label: "Scroll settings",
+        state: "ready",
+        actions: [
+          {
+            id: "scroll-settings",
+            kind: "gesture",
+            gesture: { kind: "swipe", from: { x: 500, y: 1600 }, to: { x: 500, y: 600 } },
+          },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {
+      main: {
+        ...scope,
+        id: "main",
+        name: "Main",
+        startScreenId: "home",
+        connectionIds: ["settings", "scroll"],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(preludeStepsToScreen(map, "middle"), [
+    { kind: "tap", target: { identifier: "settings" } },
+    { kind: "swipe", from: { x: 500, y: 1600 }, to: { x: 500, y: 600 } },
+  ]);
+});
+
+test("tour stops exclude mapped scroll checkpoints", () => {
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: { settings: screen("settings", "Settings"), middle: screen("middle", "Middle") },
+    screenVariants: {},
+    connections: {
+      scroll: {
+        ...scope,
+        id: "scroll",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "middle" },
+        label: "Scroll settings",
+        state: "ready",
+        actions: [
+          {
+            id: "scroll-settings",
+            kind: "gesture",
+            gesture: { kind: "scroll", direction: "down", amount: 0.7 },
+          },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(fallbackTourStopsFromMap(map, "settings"), []);
+});
+
+test("tour stops keep duplicate labels when their mapped tap targets differ", () => {
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      settings: screen("settings", "Settings"),
+      voicePicker: screen("voice-picker", "Voice picker"),
+      voiceLibrary: screen("voice-library", "Voice library"),
+    },
+    screenVariants: {},
+    connections: {
+      picker: {
+        ...scope,
+        id: "picker",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "voice-picker" },
+        label: "Voice",
+        state: "ready",
+        actions: [
+          { id: "picker-tap", kind: "tap", target: { label: "Voice", point: { x: 220, y: 420 } } },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+      library: {
+        ...scope,
+        id: "library",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "voice-library" },
+        label: "Voice",
+        state: "ready",
+        actions: [
+          { id: "library-tap", kind: "tap", target: { label: "Voice", point: { x: 220, y: 680 } } },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(fallbackTourStopsFromMap(map, "settings"), [
+    { label: "Voice", point: { x: 220, y: 420 } },
+    { label: "Voice", point: { x: 220, y: 680 } },
+  ]);
+});
+
 test("an exact screen tour compiles one capture per named screen", () => {
   const work: AppMapTest = {
     ...scope,

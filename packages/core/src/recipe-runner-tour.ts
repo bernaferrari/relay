@@ -8,7 +8,10 @@ import {
   pressNamedControl,
   pressPoint,
   rememberedTargetApplication,
+  scrollDown,
+  scrollUp,
   sleep,
+  swipeGesture,
   snapshot,
 } from "./device.js";
 import { captureScreenshot } from "./workspace.js";
@@ -151,6 +154,13 @@ async function runTourPrelude(
     } else if (step.kind === "key") {
       log(`tour: prelude ${step.key}`);
       await pressKey(device, step.key);
+    } else if (step.kind === "swipe") {
+      log("tour: prelude swipe");
+      await swipeGesture(device, step.from, step.to, step.durationMs);
+    } else if (step.kind === "scroll") {
+      log(`tour: prelude scroll ${step.direction}`);
+      if (step.direction === "down") await scrollDown(device, step.amount);
+      else await scrollUp(device, step.amount);
     }
     await sleep(350, device);
   }
@@ -161,6 +171,10 @@ function firstPreludeTargetVisible(
   steps: NonNullable<Extract<RecipeStep, { kind: "tour" }>["preludeSteps"]>,
 ): boolean {
   const first = steps[0];
+  // A mapped scroll/swipe is the route to a known scroll checkpoint. Unlike a
+  // tap it has no label to discover, so it should be attempted immediately on
+  // the current app surface rather than spending three Back retries first.
+  if (first?.kind === "swipe" || first?.kind === "scroll") return true;
   if (first?.kind !== "tap" || !first.target) return false;
   const identifier = first.target.identifier?.trim().toLowerCase();
   const label = (first.target.label ?? first.target.text)?.trim().toLowerCase();

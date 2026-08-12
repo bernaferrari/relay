@@ -273,7 +273,9 @@ export type RecipeStep = RecipeStepMetadata &
         originFingerprint?: string;
         originAliases?: string[];
         /** Recorded In-path, run only when the device is not already on origin. */
-        preludeSteps?: Array<Extract<RecipeStep, { kind: "tap" | "key" }>>;
+        /** Navigation needed to reach the mapped tour origin. Gestures are
+         * preserved so scroll-state checkpoints are reproducible too. */
+        preludeSteps?: Array<Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>>;
         /** Used when the live tree is missing. Mapped exits + optional points. */
         fallbackStops?: Array<{
           label: string;
