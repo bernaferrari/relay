@@ -24,6 +24,8 @@ type ScreenLayoutEdge = LayoutEdge & {
   sourceScreenId: string;
   /** Normalized ordering coordinate on the source screen. */
   sourceOrder?: number;
+  /** A recorded control position is an authored visual ordering constraint. */
+  hasRecordedSourceOrder: boolean;
 };
 type OrderedScreenLayoutEdge = ScreenLayoutEdge & { sourceOrder: number };
 
@@ -61,6 +63,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
         order: transitionIndex,
         sourceScreenId: transition.fromScreenId,
         sourceOrder: sourceAnchorCoordinate(transition),
+        hasRecordedSourceOrder: sourceAnchorCoordinate(transition) !== undefined,
       },
     ];
   });
@@ -98,6 +101,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
   const edgeOrder = new Map<string, number>();
   const edgeSourceOffset = new Map<string, number>();
   const edgeSourceOrder = new Map<string, number>();
+  const edgeHasRecordedSourceOrder = new Map<string, boolean>();
   const sourceOrderingChoice = new Map<
     string,
     { sourceOffset: number; transitionOrder: number; sourceOrder: number }
@@ -108,6 +112,10 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
     if (!from || !to || from === to) continue;
     const key = edgeKey(from, to);
     edgeOrder.set(key, Math.min(edgeOrder.get(key) ?? Number.MAX_SAFE_INTEGER, edge.order));
+    edgeHasRecordedSourceOrder.set(
+      key,
+      Boolean(edgeHasRecordedSourceOrder.get(key) || edge.hasRecordedSourceOrder),
+    );
     const sourceBlock = blockById.get(from);
     const sourceOffset = sourceBlock?.screenIds.indexOf(edge.sourceScreenId) ?? -1;
     if (sourceOffset >= 0) {
@@ -137,6 +145,7 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
     edgeOrder,
     edgeSourceOffset,
     edgeSourceOrder,
+    edgeHasRecordedSourceOrder,
   );
   // Auto-layout is a creation path too. It uses the fixed minor lattice—not
   // the zoom-dependent major dots—so tidying a map never creates cards that
@@ -255,6 +264,7 @@ function layoutPrimaryForest(
   edgeOrder: ReadonlyMap<string, number>,
   edgeSourceOffset: ReadonlyMap<string, number>,
   edgeSourceOrder: ReadonlyMap<string, number>,
+  edgeHasRecordedSourceOrder: ReadonlyMap<string, boolean>,
 ): Record<string, CanvasPoint> {
   const rank = new Map<string, number>();
   const lane = new Map<string, number>();
@@ -342,6 +352,12 @@ function layoutPrimaryForest(
     for (const parentId of parentIds) {
       const childIds = selectedChildren.get(parentId) ?? [];
       if (childIds.length < 2) continue;
+      // A captured control position is the user's reading order. Route
+      // optimization may improve the placement of older, unanchored graphs,
+      // but it must never make a later tap appear before an earlier one.
+      if (childIds.some((childId) => edgeHasRecordedSourceOrder.get(edgeKey(parentId, childId)))) {
+        continue;
+      }
       let candidateChildren = selectedChildren;
       let candidatePositions = positions;
       let candidateCost = bestCost;
