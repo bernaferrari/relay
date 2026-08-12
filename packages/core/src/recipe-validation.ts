@@ -1012,6 +1012,21 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "tour.originAliases must be SHA-256 fingerprints");
         }
         if (
+          raw.originObservations !== undefined &&
+          (!Array.isArray(raw.originObservations) ||
+            raw.originObservations.length > 256 ||
+            !raw.originObservations.every(
+              (observation) =>
+                isObject(observation) &&
+                isString(observation.fingerprint) &&
+                /^[a-f0-9]{64}$/u.test(observation.fingerprint) &&
+                Array.isArray(observation.nodes) &&
+                Array.isArray(observation.volatileSignals),
+            ))
+        ) {
+          throw stepErr(index, "tour.originObservations must be semantic observations");
+        }
+        if (
           raw.preludeStartFingerprint !== undefined &&
           (!isString(raw.preludeStartFingerprint) ||
             !/^[a-f0-9]{64}$/u.test(raw.preludeStartFingerprint))
@@ -1067,6 +1082,14 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(isString(raw.originFingerprint) ? { originFingerprint: raw.originFingerprint } : {}),
           ...(Array.isArray(raw.originAliases) && raw.originAliases.length
             ? { originAliases: raw.originAliases }
+            : {}),
+          ...(raw.originObservations?.length
+            ? {
+                originObservations: structuredClone(raw.originObservations) as Extract<
+                  RecipeStep,
+                  { kind: "tour" }
+                >["originObservations"],
+              }
             : {}),
           ...(isString(raw.preludeStartFingerprint)
             ? { preludeStartFingerprint: raw.preludeStartFingerprint }

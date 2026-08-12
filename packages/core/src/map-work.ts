@@ -379,6 +379,9 @@ export function compileAppMapTest(
     : undefined;
   const fingerprint = screen?.identity?.fingerprint?.trim();
   const aliases = screen?.identity?.aliases?.filter((alias) => alias.trim()) ?? [];
+  const originObservations = (screen?.variantIds ?? [])
+    .map((variantId) => map.screenVariants[variantId]?.observation)
+    .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
   const exactScreenIds = work.screenIds?.length ? new Set(work.screenIds) : undefined;
   const evidenceMode = captureMode(work);
   const checkpointIds =
@@ -493,6 +496,7 @@ export function compileAppMapTest(
       originTitle: screen?.title ?? work.name,
       ...(fingerprint ? { originFingerprint: fingerprint } : {}),
       ...(aliases.length ? { originAliases: aliases } : {}),
+      ...(originObservations.length ? { originObservations } : {}),
       ...(prelude.length && (!exactScreenIds || runPreludeInTour) ? { preludeSteps: prelude } : {}),
       ...(prelude.length && preludeStartFingerprint ? { preludeStartFingerprint } : {}),
       ...(prelude.length && preludeStartAliases.length ? { preludeStartAliases } : {}),

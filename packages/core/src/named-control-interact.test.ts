@@ -140,6 +140,34 @@ test("a uniquely resolved Android label falls back to its exact point", async ()
   ]);
 });
 
+test("a mapped Android row uses the current accessibility point, not its saved fallback", async () => {
+  const presses: unknown[] = [];
+  const skills = {
+    type: "android.widget.TextView",
+    label: "Skills",
+    enabled: true,
+    rect: { x: 203, y: 943, width: 110, height: 53 },
+  };
+  const device = {
+    interactions: {
+      press: (options: unknown) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    },
+    capture: { snapshot: () => Promise.resolve({ nodes: [skills] }) },
+  } as unknown as Device;
+
+  await runWithTargetContext(
+    { kind: "device", platform: "android", serial: "android-live-map-row" },
+    () => pressNamedControl(device, { label: "Skills", point: { x: 253, y: 773 } }),
+  );
+
+  assert.deepEqual(presses, [
+    { platform: "android", serial: "android-live-map-row", x: 258, y: 970 },
+  ]);
+});
+
 test("point-only pressNamedControl does not snapshot", async () => {
   const presses: unknown[] = [];
   const device = {

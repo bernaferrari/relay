@@ -274,6 +274,10 @@ export type RecipeStep = RecipeStepMetadata &
         originTitle?: string;
         originFingerprint?: string;
         originAliases?: string[];
+        /** Approved semantics for localized runs. Labels may translate, but
+         * stable accessibility identifiers and visible structure must still
+         * prove that this is the recorded tour origin. */
+        originObservations?: ScreenIdentityObservation[];
         /** Recorded In-path, run only when the device is not already on origin. */
         /** Navigation needed to reach the mapped tour origin. Gestures are
          * preserved so scroll-state checkpoints are reproducible too. */

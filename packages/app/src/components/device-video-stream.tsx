@@ -28,7 +28,6 @@ export function DeviceVideoStream(props: {
     let reportedReady = false;
     let decoder: WebCodecsVideoDecoder | undefined;
     let removeSizeListener: (() => void) | undefined;
-    let objectUrl = "";
 
     const markReady = () => {
       if (reportedReady || disposed) return;
@@ -38,10 +37,13 @@ export function DeviceVideoStream(props: {
 
     const drawJpeg = async (data: Uint8Array) => {
       if (!canvas) return;
-      const copy = data.slice();
-      const blob = new Blob([copy], { type: "image/jpeg" });
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-      objectUrl = URL.createObjectURL(blob);
+      // This frame is decoded directly; assigning it an object URL only keeps
+      // an additional native-backed URL allocation alive until the next frame.
+      // Long MJPEG sessions can otherwise accumulate substantial renderer
+      // memory without the URL ever being used by an element.
+      const bytes = new Uint8Array(data.byteLength);
+      bytes.set(data);
+      const blob = new Blob([bytes.buffer], { type: "image/jpeg" });
       const image = await createImageBitmap(blob);
       try {
         if (canvas.width !== image.width || canvas.height !== image.height) {
@@ -120,7 +122,6 @@ export function DeviceVideoStream(props: {
       cancelAnimationFrame(readyFrame);
       removeSizeListener?.();
       decoder?.dispose();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
       const gl =
         canvas?.getContext("webgl2") ??
         (canvas?.getContext("webgl") as WebGLRenderingContext | null | undefined);

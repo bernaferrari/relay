@@ -118,6 +118,38 @@ test("a status-bar-only label is not a usable tap target", () => {
   );
 });
 
+test("prefers a Compose row over an identically named section heading", () => {
+  assert.deepEqual(
+    resolveSnapshotTargetPoint(
+      [
+        {
+          index: 1,
+          type: "android.widget.TextView",
+          label: "Voice",
+          enabled: true,
+          rect: { x: 90, y: 804, width: 102, height: 49 },
+        },
+        {
+          index: 2,
+          type: "android.view.View",
+          hittable: true,
+          rect: { x: 45, y: 922, width: 990, height: 158 },
+        },
+        {
+          index: 3,
+          parentIndex: 2,
+          type: "android.widget.TextView",
+          label: "Voice",
+          enabled: true,
+          rect: { x: 203, y: 943, width: 110, height: 53 },
+        },
+      ],
+      { label: "Voice" },
+    ),
+    { x: 540, y: 1001 },
+  );
+});
+
 test("refuses to guess between distinct controls with the same semantic label", () => {
   assert.equal(
     resolveSnapshotTargetPoint(

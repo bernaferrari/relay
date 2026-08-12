@@ -1512,6 +1512,19 @@ export function resolveSnapshotTargetPoint(
     label: target.label?.trim().toLocaleLowerCase(),
     text: target.text?.trim().toLocaleLowerCase(),
   };
+  const nodesByIndex = new Map(
+    nodes.flatMap((node) => (typeof node.index === "number" ? [[node.index, node] as const] : [])),
+  );
+  const closestHittableAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
+    let parentIndex = node.parentIndex;
+    while (typeof parentIndex === "number") {
+      const parent = nodesByIndex.get(parentIndex);
+      if (!parent) return undefined;
+      if (parent.hittable && isUsableTapTarget(parent)) return parent;
+      parentIndex = parent.parentIndex;
+    }
+    return undefined;
+  };
   const viewport = region
     ? (nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")
         ?.rect ??
@@ -1552,12 +1565,20 @@ export function resolveSnapshotTargetPoint(
     })
     .map((node) => {
       const role = (node.role ?? node.type ?? "").toLocaleLowerCase();
-      const point = center(node.rect!);
+      const activationNode = closestHittableAncestor(node);
+      const activationRect = activationNode?.rect ?? node.rect!;
+      const point = center(activationRect);
       return {
         node,
         point,
-        rank: (INTERACTIVE_SNAPSHOT_ROLES.has(role) ? 4 : 0) + (node.hittable ? 2 : 0),
-        area: node.rect!.width * node.rect!.height,
+        // Compose often places the title inside an unlabeled tappable row.
+        // Prefer that row over an identically named section heading or
+        // caption, while retaining the child label for semantic matching.
+        rank:
+          (INTERACTIVE_SNAPSHOT_ROLES.has(role) ? 4 : 0) +
+          (node.hittable ? 2 : 0) +
+          (activationNode ? 3 : 0),
+        area: activationRect.width * activationRect.height,
       };
     });
   if (candidates.length === 0) return undefined;
@@ -1665,6 +1686,17 @@ export async function pressResolvedControl(
   target: NamedControlTarget,
   repeated?: RepeatedPress,
 ): Promise<NamedControlResolution> {
+  // Map recordings keep a saved point only as an inspection fallback. Once
+  // the current Android accessibility tree has uniquely resolved a named
+  // row, click that *live* row coordinate instead of delegating to the
+  // platform label selector. Compose can expose the same label in an old or
+  // hidden semantic node, and the native selector then has no geometry to
+  // distinguish it. This remains semantic-first: the point is derived from
+  // the successful identifier/label/text match above.
+  if (selectedPlatform() === "android" && target.point && resolution.method !== "point") {
+    await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
+    return resolution;
+  }
   if (resolution.method === "identifier" && target.identifier?.trim()) {
     try {
       await pressIdentifier(device, target.identifier, repeated);

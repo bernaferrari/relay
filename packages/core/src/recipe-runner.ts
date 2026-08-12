@@ -88,6 +88,38 @@ import {
   labelsForIdentifierPrefix,
   labelsForScope,
 } from "./recipe-target-match.js";
+
+function isLocalizedRecipeJob(job?: TestJob): boolean {
+  const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")
+    .trim()
+    .toLocaleLowerCase();
+  return Boolean(locale && !/^en(?:-|$)/.test(locale));
+}
+
+/**
+ * App-locale runs intentionally change visible text, so an English semantic
+ * fingerprint cannot be the only screen proof.  Stable platform identifiers
+ * plus near-identical accessibility structure are a strict, language-neutral
+ * substitute.  Labels alone never qualify: that would make an unrelated
+ * translated surface look like the recorded screen.
+ */
+function localizedScreenIdentityMatch(
+  observed: ReturnType<typeof observeScreenIdentity>,
+  observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
+  job?: TestJob,
+): boolean {
+  if (!isLocalizedRecipeJob(job)) return false;
+  return observations.some((observation) => {
+    const comparison = compareScreenIdentity(observed, observation);
+    const stableIdentifiers = comparison.signals.find(
+      (signal) => signal.kind === "stable-identifier-overlap" && signal.impact === "positive",
+    )?.strength;
+    const structure = comparison.signals.find(
+      (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
+    )?.strength;
+    return (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95;
+  });
+}
 import { runTourStep } from "./recipe-runner-tour.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
@@ -987,7 +1019,16 @@ async function runRequiredRecipeStep(
         const semanticMatch = (step.observations ?? []).some(
           (observation) => compareScreenIdentity(observed, observation).decision === "match",
         );
-        if (screenIdentityMatches(expected, observed.fingerprint) || semanticMatch) {
+        const localizedMatch = localizedScreenIdentityMatch(
+          observed,
+          step.observations ?? [],
+          ctx.job,
+        );
+        if (
+          screenIdentityMatches(expected, observed.fingerprint) ||
+          semanticMatch ||
+          localizedMatch
+        ) {
           reached = true;
           break;
         }

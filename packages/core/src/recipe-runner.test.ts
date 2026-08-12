@@ -954,6 +954,35 @@ describe("runRecipeStep expect-screen", () => {
 
     assert.deepEqual(lines, ["screen: reached Conversation"]);
   });
+
+  it("accepts a translated screen only when stable identifiers and structure agree", async () => {
+    const english = [
+      { role: "button", identifier: "menu", label: "Menu" },
+      { role: "tab", identifier: "ask", label: "Ask", selected: true },
+      { role: "tab", identifier: "imagine", label: "Imagine" },
+    ];
+    const italian = [
+      { role: "button", identifier: "menu", label: "Menu" },
+      { role: "tab", identifier: "ask", label: "Chiedi", selected: true },
+      { role: "tab", identifier: "imagine", label: "Immagine" },
+    ];
+    const lines: string[] = [];
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: italian }) }),
+      {
+        kind: "expect-screen",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint: "a".repeat(64),
+        observations: [observeScreenIdentity(english)],
+      },
+      {
+        log: (line) => lines.push(line),
+        job: { resolvedInputs: { language: "it" }, artifacts: [] } as unknown as TestJob,
+      },
+    );
+    assert.deepEqual(lines, ["screen: reached Home"]);
+  });
 });
 
 describe("runRecipeStep conversational evidence", () => {
@@ -1746,6 +1775,81 @@ describe("runRecipeStep tour", () => {
     assert.ok(presses.some((selector) => selector.includes("Back")));
     assert.ok(presses.some((selector) => selector.includes("Appearance")));
     assert.ok(!presses.some((selector) => selector.includes("Automations")));
+  });
+
+  it("recognizes a translated tour origin from stable native identity and structure", async () => {
+    const englishOrigin = [
+      {
+        type: "Application",
+        identifier: "ai.x.grok",
+        label: "Grok",
+        rect: { x: 0, y: 0, width: 412, height: 915 },
+      },
+      {
+        type: "Button",
+        identifier: "settings.close",
+        label: "Close",
+        hittable: true,
+        rect: { x: 24, y: 48, width: 48, height: 48 },
+      },
+      {
+        type: "TextView",
+        identifier: "settings.shared",
+        label: "Shared Conversations",
+        hittable: true,
+        rect: { x: 24, y: 250, width: 360, height: 56 },
+      },
+    ];
+    const italianOrigin = [
+      {
+        type: "Application",
+        identifier: "ai.x.grok",
+        label: "Grok",
+        rect: { x: 0, y: 0, width: 412, height: 915 },
+      },
+      {
+        type: "Button",
+        identifier: "settings.close",
+        label: "Chiudi",
+        hittable: true,
+        rect: { x: 24, y: 48, width: 48, height: 48 },
+      },
+      {
+        type: "TextView",
+        identifier: "settings.shared",
+        label: "Conversazioni condivise",
+        hittable: true,
+        rect: { x: 24, y: 250, width: 360, height: 56 },
+      },
+    ];
+    const presses: string[] = [];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: italianOrigin }),
+      press: (options) => {
+        presses.push(
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "",
+        );
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        originTitle: "Settings",
+        originObservations: [observeScreenIdentity(englishOrigin)],
+        fallbackStops: [{ label: "Shared Conversations", identifier: "settings.shared" }],
+      },
+      { log: () => {}, job: { resolvedInputs: { language: "it" } } as never },
+    );
+
+    assert.ok(presses.length > 0);
+    assert.ok(!presses.some((selector) => selector.includes("Back")));
   });
 
   it("runs a mapped prelude only when the device is not already on origin", async () => {

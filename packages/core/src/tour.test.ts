@@ -133,6 +133,241 @@ test("Compose TextViews inherit their hittable row and suppress row subtitles", 
   assert.deepEqual(stops[0]?.point, { x: 540, y: 1228.5 });
 });
 
+test("a tappable Voice row is not mistaken for a Voice section heading", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.widget.TextView",
+      label: "Voice",
+      rect: { x: 90, y: 804, width: 102, height: 49 },
+    },
+    {
+      index: 2,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 922, width: 990, height: 158 },
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      type: "android.widget.TextView",
+      label: "Voice",
+      rect: { x: 203, y: 943, width: 110, height: 53 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Voice"],
+  );
+  assert.deepEqual(stops[0]?.point, { x: 540, y: 1001 });
+});
+
+test("Compose list labels remain available when unrelated chrome is the only hittable cell", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.widget.Button",
+      label: "Close",
+      hittable: true,
+      rect: { x: 40, y: 70, width: 80, height: 48 },
+    },
+    {
+      index: 2,
+      type: "android.widget.TextView",
+      label: "Kids Mode",
+      rect: { x: 180, y: 460, width: 220, height: 53 },
+    },
+    {
+      index: 3,
+      type: "android.widget.TextView",
+      label: "Data Controls",
+      rect: { x: 180, y: 1428, width: 280, height: 53 },
+    },
+  ]);
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Kids Mode", "Data Controls"],
+  );
+});
+
+test("dynamic Compose subtitles do not become extra localized tour rows", () => {
+  const stops = extractTourStops([
+    {
+      type: "android.widget.TextView",
+      label: "Utilizzo",
+      rect: { x: 203, y: 900, width: 150, height: 53 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Ripristino disponibile",
+      rect: { x: 203, y: 962, width: 240, height: 49 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Aspetto",
+      rect: { x: 203, y: 1240, width: 150, height: 53 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Scuro",
+      rect: { x: 203, y: 1302, width: 100, height: 49 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Utilizzo", "Aspetto"],
+  );
+});
+
+test("Compose headers and clipped rows below Android navigation are not tour stops", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 0, y: 300, width: 700, height: 1800 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "App",
+      rect: { x: 48, y: 980, width: 60, height: 40 },
+    },
+    {
+      index: 3,
+      parentIndex: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 1060, width: 610, height: 150 },
+    },
+    {
+      index: 4,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Appearance",
+      rect: { x: 180, y: 1100, width: 180, height: 48 },
+    },
+    {
+      index: 5,
+      parentIndex: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 2100, width: 610, height: 150 },
+    },
+    {
+      index: 6,
+      parentIndex: 5,
+      type: "android.widget.TextView",
+      label: "Customize Grok",
+      rect: { x: 180, y: 2140, width: 180, height: 48 },
+    },
+    {
+      identifier: "com.android.systemui:id/navigation_bar_frame",
+      rect: { x: 0, y: 2200, width: 700, height: 120 },
+    },
+  ]);
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Appearance"],
+  );
+});
+
+test("Compose rows hidden underneath a fixed app bar cannot become tour stops", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.widget.ImageView",
+      label: "Close",
+      hittable: true,
+      rect: { x: 45, y: 159, width: 68, height: 68 },
+    },
+    {
+      index: 2,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 97, width: 990, height: 158 },
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      type: "android.widget.TextView",
+      label: "Skills",
+      rect: { x: 203, y: 150, width: 99, height: 13 },
+    },
+    {
+      index: 4,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 261, width: 990, height: 158 },
+    },
+    {
+      index: 5,
+      parentIndex: 4,
+      type: "android.widget.TextView",
+      label: "Memory",
+      rect: { x: 203, y: 314, width: 166, height: 53 },
+    },
+    { type: "android.view.View", rect: { x: 0, y: 0, width: 1080, height: 2340 } },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Memory"],
+  );
+});
+
+test("translated app bars and system chrome do not become localized tour rows", () => {
+  const stops = extractTourStops([
+    {
+      identifier: "com.android.systemui:id/clock",
+      bundleId: "com.android.systemui",
+      type: "android.widget.TextView",
+      label: "16:51",
+      rect: { x: 55, y: 19, width: 96, height: 72 },
+    },
+    {
+      index: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 11, y: 125, width: 135, height: 135 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "Chiudi",
+      rect: { x: 45, y: 159, width: 68, height: 68 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Impostazioni",
+      rect: { x: 157, y: 163, width: 291, height: 60 },
+    },
+    {
+      index: 3,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 328, width: 990, height: 158 },
+    },
+    {
+      index: 4,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Utilizzo",
+      rect: { x: 203, y: 380, width: 144, height: 53 },
+    },
+    { type: "android.view.View", rect: { x: 0, y: 0, width: 1080, height: 2340 } },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Utilizzo"],
+  );
+});
+
 test("tour origin uses child rows, not a shared nav title", () => {
   const settings = [
     {
@@ -207,6 +442,31 @@ test("tour origin prefers fingerprint over a shared Settings header", () => {
       originFingerprint: "a".repeat(64),
       stops: [{ label: "Shortcuts" }, { label: "Automations" }],
       fallbackStops: [{ label: "Appearance" }, { label: "Haptics" }],
+    }),
+    false,
+  );
+});
+
+test("tour origin does not confuse adjacent scroll positions with two shared rows", () => {
+  assert.equal(
+    onTourOrigin({
+      liveFingerprint: "upper".repeat(16),
+      originFingerprint: "lower".repeat(16),
+      stops: [
+        { label: "Customize Grok" },
+        { label: "Connectors" },
+        { label: "Skills" },
+        { label: "Memory" },
+      ],
+      fallbackStops: [
+        { label: "Skills" },
+        { label: "Memory" },
+        { label: "NSFW Preferences" },
+        { label: "Voice" },
+        { label: "Data Controls" },
+        { label: "Shared Conversations" },
+        { label: "Voice library" },
+      ],
     }),
     false,
   );

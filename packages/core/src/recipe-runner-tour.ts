@@ -18,24 +18,24 @@ import { captureScreenshot } from "./workspace.js";
 import {
   extractTourStops,
   onTourOrigin,
-  sameTourScreen,
   tourFallbackOverlap,
   tourOriginFingerprintMatch,
-  tourScreenSignature,
 } from "./tour.js";
 import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
-import { observeScreenIdentity } from "./screen-identity.js";
+import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 import { nodeMatchesTarget } from "./recipe-target-match.js";
 
 async function returnToTourOrigin(
   device: Device,
-  origin: ReturnType<typeof tourScreenSignature>,
+  step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
   stopLabel: string,
+  rightToLeft = false,
+  job?: TestJob,
 ): Promise<void> {
-  if (!origin.labels.length) {
+  if (!step.fallbackStops?.length && !step.originFingerprint) {
     try {
       await pressPoint(device, 78, 88);
     } catch {
@@ -45,7 +45,6 @@ async function returnToTourOrigin(
     return;
   }
   const attempts: Array<{ name: string; run: () => Promise<void> }> = [
-    { name: "key-back", run: () => pressKey(device, "back") },
     {
       name: "label-back",
       run: async () => {
@@ -58,6 +57,10 @@ async function returnToTourOrigin(
         await pressNamedControl(device, { label: "Close" });
       },
     },
+    // Prefer the page's semantic/system Back control. On Android this returns
+    // a Settings child to the same scrolled list, whereas a hardware Back can
+    // dismiss the whole settings surface or an intervening sheet.
+    { name: "key-back", run: () => pressKey(device, "back") },
     {
       name: "leading-nav",
       run: async () => {
@@ -80,12 +83,56 @@ async function returnToTourOrigin(
       );
     }
     await sleep(350, device);
-    const current = tourScreenSignature(await snapshot(device));
-    if (sameTourScreen(origin, current)) return;
-    log(`tour: still on “${current.labels[0] ?? "child"}” after ${attempt.name} from ${stopLabel}`);
+    const surface = await readTourSurface(device, step);
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return;
+    if (await restoreTourViewport(device, step, log, rightToLeft, job)) return;
+    log(
+      `tour: still on “${surface.stops[0]?.label ?? "child"}” after ${attempt.name} from ${stopLabel}`,
+    );
   }
-  const after = tourScreenSignature(await snapshot(device));
-  throw new Error(`tour: could not return from ${stopLabel} (now “${after.labels[0] ?? "child"}”)`);
+  const after = await readTourSurface(device, step);
+  throw new Error(
+    `tour: could not return from ${stopLabel} (now “${after.stops[0]?.label ?? "child"}”)`,
+  );
+}
+
+/**
+ * Android Settings child pages can return to the right parent list but reset
+ * its scroll offset. Recover the recorded viewport before trying another
+ * back action; otherwise an exact tour can tap a correct label in the wrong
+ * scroll state on its next row.
+ */
+async function restoreTourViewport(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "tour" }>,
+  log: (line: string) => void,
+  rightToLeft: boolean,
+  job?: TestJob,
+): Promise<boolean> {
+  if (!step.fallbackStops?.length) return false;
+  // Do not require an overlapping row before scanning. Several Android
+  // settings surfaces reset all the way to a profile/header block after a
+  // child returns, so the intended rows are temporarily all off-screen.
+  // This is only a bounded, non-mutating scroll recovery; a later exact
+  // origin check still decides whether it is safe to continue.
+  const moves: Array<{ name: string; run: () => Promise<void> }> = [
+    { name: "down", run: () => scrollDown(device, 0.6) },
+    { name: "down", run: () => scrollDown(device, 0.6) },
+    { name: "up", run: () => scrollUp(device, 0.6) },
+    { name: "up", run: () => scrollUp(device, 0.6) },
+  ];
+  for (const move of moves) {
+    await move.run();
+    await sleep(350, device);
+    const surface = await readTourSurface(device, step);
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) {
+      log(
+        `tour: restored mapped scroll position (${move.name}) after ${step.originTitle ?? "child"}`,
+      );
+      return true;
+    }
+  }
+  return false;
 }
 
 function liveTourOrigin(
@@ -93,9 +140,30 @@ function liveTourOrigin(
   stops: ReturnType<typeof extractTourStops>,
   step: Extract<RecipeStep, { kind: "tour" }>,
   rightToLeft = false,
+  job?: TestJob,
 ): boolean {
+  const liveObservation = nodes.length ? observeScreenIdentity(nodes) : undefined;
+  if (
+    isLocalizedJob(job) &&
+    liveObservation &&
+    step.originObservations?.some((origin) => {
+      const comparison = compareScreenIdentity(liveObservation, origin);
+      const stableIdentifiers = comparison.signals.find(
+        (signal) => signal.kind === "stable-identifier-overlap" && signal.impact === "positive",
+      )?.strength;
+      const structure = comparison.signals.find(
+        (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
+      )?.strength;
+      // Locale changes intentionally invalidate English labels. Only accept an
+      // origin when its non-localized native identity and visible structure
+      // independently prove it is the same surface.
+      return (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95;
+    })
+  ) {
+    return true;
+  }
   return onTourOrigin({
-    liveFingerprint: nodes.length ? observeScreenIdentity(nodes).fingerprint : undefined,
+    liveFingerprint: liveObservation?.fingerprint,
     originFingerprint: step.originFingerprint,
     originAliases: step.originAliases,
     stops,
@@ -346,20 +414,21 @@ async function seekTourOrigin(
   step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
   rightToLeft = false,
+  job?: TestJob,
 ): Promise<{ nodes: SnapshotNode[]; stops: ReturnType<typeof extractTourStops> }> {
   let surface = await readTourSurface(device, step);
-  if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
+  if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return surface;
   const directPrelude = await tryTourPrelude(device, surface, step, log);
   if (directPrelude) {
     surface = directPrelude;
-    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return surface;
   }
   for (let attempt = 0; attempt < 3; attempt++) {
     if (await restoreRememberedApp(device, surface.nodes, log)) {
       surface = await readTourSurface(device, step);
       const restoredPrelude = await tryTourPrelude(device, surface, step, log);
       if (restoredPrelude) surface = restoredPrelude;
-      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
+      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return surface;
     }
     log(
       step.originTitle
@@ -379,11 +448,11 @@ async function seekTourOrigin(
     }
     await sleep(350, device);
     surface = await readTourSurface(device, step);
-    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
+    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return surface;
     const reachedPrelude = await tryTourPrelude(device, surface, step, log);
     if (reachedPrelude) {
       surface = reachedPrelude;
-      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft)) return surface;
+      if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return surface;
     }
   }
   if (step.preludeSteps?.length) {
@@ -412,13 +481,10 @@ export async function runTourStep(
   job?: TestJob,
 ): Promise<void> {
   const rightToLeft = isRightToLeftJob(job);
-  const sought = await seekTourOrigin(device, step, log, rightToLeft);
+  const sought = await seekTourOrigin(device, step, log, rightToLeft, job);
   let nodes = sought.nodes;
   let stops = sought.stops;
-  const originReached = liveTourOrigin(nodes, stops, step, rightToLeft);
-  const origin = tourScreenSignature(nodes, {
-    excludeLanguageRows: step.excludeLanguageRows,
-  });
+  const originReached = liveTourOrigin(nodes, stops, step, rightToLeft, job);
   if (originReached && step.captureOrigin && step.screenshot !== false) {
     await captureScreenshot({
       jobId: job?.id,
@@ -428,17 +494,44 @@ export async function runTourStep(
   }
   if (originReached && step.mappedStopsOnly && !step.fallbackStops?.length) return;
   if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
+    const liveStops = stops;
     const alignedLocalizedRows = isLocalizedJob(job) && stops.length === step.fallbackStops.length;
     const merged = mergeMappedTourStops(stops, step.fallbackStops, {
       alignByOrder: isLocalizedJob(job),
     });
     const fallbackCount = alignedLocalizedRows
       ? 0
-      : merged.filter((stop) => !stops.includes(stop)).length;
-    stops = merged;
+      : step.fallbackStops.filter(
+          (fallback) =>
+            !liveStops.some(
+              (live) =>
+                live.label.trim().toLocaleLowerCase() ===
+                  fallback.label.trim().toLocaleLowerCase() ||
+                (Boolean(fallback.identifier) && live.identifier === fallback.identifier),
+            ),
+        ).length;
     if (fallbackCount) {
       log(`tour: using mapped point fallback for ${fallbackCount} missing row(s)`);
     }
+    // An exact coverage tour must never turn a missing semantic row into a
+    // stale coordinate tap. That can capture Kids Mode under a label such as
+    // “Customize Grok” and make a run look healthy while corrupting evidence.
+    // Localized lists are intentionally paired by their visible order above.
+    if (!alignedLocalizedRows && fallbackCount) {
+      const liveLabels = new Set(
+        liveStops.map((candidate) => candidate.label.trim().toLocaleLowerCase()),
+      );
+      const missing = step.fallbackStops
+        .filter((candidate) => !liveLabels.has(candidate.label.trim().toLocaleLowerCase()))
+        .map((candidate) => candidate.label)
+        .filter((label, index, labels) => labels.indexOf(label) === index);
+      if (missing.length) {
+        throw new Error(
+          `tour: mapped row(s) are not visible on “${step.originTitle ?? "the mapped list"}”: ${missing.join(", ")}`,
+        );
+      }
+    }
+    stops = merged;
   }
   if (!stops.length && step.fallbackStops?.length) {
     stops = step.fallbackStops
@@ -494,6 +587,6 @@ export async function runTourStep(
         device,
       });
     }
-    await returnToTourOrigin(device, origin, log, stop.label);
+    await returnToTourOrigin(device, step, log, stop.label, rightToLeft, job);
   }
 }
