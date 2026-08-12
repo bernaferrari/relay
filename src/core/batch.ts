@@ -7,7 +7,7 @@ import {
   type ResponseLevel,
   isNonDefaultResponseLevel,
 } from '@agent-device/kernel/contracts';
-import { AppError, asAppError } from '@agent-device/kernel/errors';
+import { AppError, asAppError, type DaemonError } from '@agent-device/kernel/errors';
 import { isRecord } from '../utils/parsing.ts';
 import {
   DEFAULT_BATCH_MAX_STEPS,
@@ -105,6 +105,12 @@ export async function runBatch(
             hint: stepResponse.error.hint,
             diagnosticId: stepResponse.error.diagnosticId,
             logPath: stepResponse.error.logPath,
+            ...(stepResponse.error.retriable === undefined
+              ? {}
+              : { retriable: stepResponse.error.retriable }),
+            ...(stepResponse.error.supportedOn === undefined
+              ? {}
+              : { supportedOn: stepResponse.error.supportedOn }),
             details: {
               ...(stepResponse.error.details ?? {}),
               step: stepResponse.step,
@@ -250,14 +256,7 @@ async function runBatchStep(
   | {
       ok: false;
       step: number;
-      error: {
-        code: string;
-        message: string;
-        hint?: string;
-        diagnosticId?: string;
-        logPath?: string;
-        details?: Record<string, unknown>;
-      };
+      error: DaemonError;
     }
 > {
   const stepStartedAt = Date.now();
