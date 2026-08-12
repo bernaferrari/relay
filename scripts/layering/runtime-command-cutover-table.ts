@@ -12,7 +12,7 @@ import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechani
  * every row, and `cutoverRowDefects` rejects a row that leaves its claims unstated.
  *
  * Rule ids are per row: the layering report groups violations under R20 boot,
- * R17 devices, R14 logs, R15 network, R16 record.
+ * R21 apps, R17 devices, R14 logs, R15 network, R16 record.
  */
 export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
   {
@@ -38,6 +38,36 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
       operationOwners: {
         bootTarget: ['handleSessionStateCommands'],
         bootTargetHeadless: ['handleSessionStateCommands'],
+      },
+    },
+  },
+  {
+    rule: 'R21 apps-runtime-cutover',
+    command: 'apps',
+    subject: 'app inventory',
+    tier: 'request-scoped',
+    execution: 'device-runtime',
+    legacyRetirement: {
+      daemonOnlyRouteNames: [
+        'listAndroidApps',
+        'listIosApps',
+        'listHarmonyApps',
+        'resolveInstalledAppForDoctor',
+      ],
+    },
+    admissionMember: {
+      forms: ['computed-property'],
+      files: ['src/platforms/apple/plugin.ts'],
+      message: 'Apple plugin retains legacy apps support or hint closure',
+    },
+    runtimeTypeNames: ['AppInventoryRuntimeOperations'],
+    operations: { names: ['ensureReady', 'listApps'] },
+    singularExecution: {
+      routes: ['handleAppsInventory'],
+      operations: ['ensureReady', 'listApps'],
+      operationOwners: {
+        ensureReady: ['ensureAppsRuntimeReady'],
+        listApps: ['listAppsFromRuntime'],
       },
     },
   },

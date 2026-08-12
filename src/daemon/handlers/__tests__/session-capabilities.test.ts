@@ -1,8 +1,14 @@
-import { test, expect } from 'vitest';
+import { test, expect, vi } from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
 import { PUBLIC_COMMANDS } from '../../../command-catalog.ts';
-import { makeAndroidSession, makeSessionStore } from '../../../__tests__/test-utils/index.ts';
+import {
+  LINUX_DEVICE,
+  WEB_DESKTOP_DEVICE,
+  makeAndroidSession,
+  makeSession,
+  makeSessionStore,
+} from '../../../__tests__/test-utils/index.ts';
 import { withTestDeviceInventoryProvider as withTargetDeviceResolutionScope } from '../../../__tests__/test-utils/device-inventory-gateways.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
@@ -13,7 +19,10 @@ import {
   type PlatformRuntimeOperations,
   type RuntimeProviderMode,
 } from '@agent-device/contracts/platform';
-import type { BindDeviceRuntime } from '../../request-runtime-binding.ts';
+import type {
+  BindDeviceRuntime,
+  InspectDeviceRuntimeFacts,
+} from '../../request-runtime-binding.ts';
 import { handleSessionCommands } from './session-command-harness.ts';
 
 function assertAndroidCapabilityHonesty(availableCommands: unknown): void {
@@ -28,6 +37,7 @@ test('capabilities reports supported commands for the selected session device', 
   const runtime = createAdmissionRuntime({
     appLogAvailable: true,
     networkAvailable: true,
+    appsAvailable: true,
     providerMode: 'local',
   });
 
@@ -43,6 +53,7 @@ test('capabilities reports supported commands for the selected session device', 
     logPath: path.join(os.tmpdir(), 'daemon.log'),
     sessionStore,
     bindDevice: runtime.bindDevice,
+    inspectFacts: runtime.inspectFacts,
     invoke: async () => ({ ok: true, data: {} }),
   });
 
@@ -62,6 +73,7 @@ test('capabilities reports supported commands for the selected session device', 
       'press',
       'fill',
       'network',
+      PUBLIC_COMMANDS.apps,
       'perf',
       PUBLIC_COMMANDS.logs,
       PUBLIC_COMMANDS.gesture,
@@ -96,6 +108,7 @@ test('capabilities excludes logs from an unavailable provider-mode XCTest runtim
   const runtime = createAdmissionRuntime({
     appLogAvailable: false,
     networkAvailable: true,
+    appsAvailable: false,
     providerMode: 'provider-runtime',
   });
 
@@ -111,12 +124,14 @@ test('capabilities excludes logs from an unavailable provider-mode XCTest runtim
     logPath: path.join(os.tmpdir(), 'daemon.log'),
     sessionStore,
     bindDevice: runtime.bindDevice,
+    inspectFacts: runtime.inspectFacts,
     invoke: async () => ({ ok: true, data: {} }),
   });
 
   expect(response?.ok).toBe(true);
   if (!response?.ok) return;
   expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.logs);
+  expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.apps);
   expect(response.data?.availableCommands).toContain(PUBLIC_COMMANDS.network);
   expect(runtime.uses).toEqual([
     { required: [], preferred: ['appLogInspect'] },
@@ -132,6 +147,7 @@ test('capabilities excludes network when the runtime fact is unavailable', async
   const runtime = createAdmissionRuntime({
     appLogAvailable: true,
     networkAvailable: false,
+    appsAvailable: false,
     providerMode: 'local',
   });
 
@@ -147,6 +163,7 @@ test('capabilities excludes network when the runtime fact is unavailable', async
     logPath: path.join(os.tmpdir(), 'daemon.log'),
     sessionStore,
     bindDevice: runtime.bindDevice,
+    inspectFacts: runtime.inspectFacts,
     invoke: async () => ({ ok: true, data: {} }),
   });
 
@@ -155,6 +172,129 @@ test('capabilities excludes network when the runtime fact is unavailable', async
   expect(response.data?.availableCommands).toContain(PUBLIC_COMMANDS.logs);
   expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.network);
 });
+
+test('capabilities includes apps for the available HarmonyOS runtime fact', async () => {
+  const sessionName = 'harmony-capabilities';
+  const sessionStore = makeSessionStore('agent-device-capabilities-harmony-');
+  const harmonyDevice = {
+    platform: 'harmonyos',
+    id: 'harmony-capabilities',
+    name: 'HarmonyOS device',
+    kind: 'device',
+    target: 'mobile',
+    booted: true,
+  } as const;
+  sessionStore.set(sessionName, makeSession(sessionName, { device: harmonyDevice }));
+  const runtime = createAdmissionRuntime({
+    appLogAvailable: true,
+    networkAvailable: false,
+    appsAvailable: true,
+    providerMode: 'local',
+  });
+
+  const response = await withTargetDeviceResolutionScope(
+    async (request) => (request.platform === 'harmonyos' ? [harmonyDevice] : []),
+    async () =>
+      await handleSessionCommands({
+        req: {
+          token: 't',
+          session: sessionName,
+          command: PUBLIC_COMMANDS.capabilities,
+          positionals: [],
+          flags: {},
+        },
+        sessionName,
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        bindDevice: runtime.bindDevice,
+        inspectFacts: runtime.inspectFacts,
+        invoke: async () => ({ ok: true, data: {} }),
+      }),
+  );
+
+  expect(response?.ok).toBe(true);
+  if (!response?.ok) return;
+  expect(response.data?.availableCommands).toContain(PUBLIC_COMMANDS.apps);
+  expect(runtime.inspectFacts).toHaveBeenCalledOnce();
+});
+
+const APPS_UNAVAILABLE_CAPABILITY_CASES = [
+  { label: 'Linux', device: LINUX_DEVICE, providerMode: 'local' },
+  { label: 'Web', device: WEB_DESKTOP_DEVICE, providerMode: 'local' },
+  {
+    label: 'watchOS',
+    device: {
+      platform: 'apple',
+      appleOs: 'watchos',
+      id: 'watchos-capabilities',
+      name: 'Apple Watch',
+      kind: 'device',
+      target: 'mobile',
+    } satisfies DeviceInfo,
+    providerMode: 'local',
+  },
+  {
+    label: 'XCTest physical iOS',
+    device: {
+      platform: 'apple',
+      appleOs: 'ios',
+      id: 'xctest-capabilities',
+      name: 'XCTest iPhone',
+      kind: 'device',
+      iosPhysicalDeviceBackend: 'xctest',
+    } satisfies DeviceInfo,
+    providerMode: 'provider-runtime',
+  },
+  {
+    label: 'WebDriver',
+    device: {
+      ...WEB_DESKTOP_DEVICE,
+      id: 'webdriver-capabilities',
+      name: 'WebDriver browser',
+    } satisfies DeviceInfo,
+    providerMode: 'provider-runtime',
+  },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  device: DeviceInfo;
+  providerMode: RuntimeProviderMode;
+}>;
+
+test.each(APPS_UNAVAILABLE_CAPABILITY_CASES)(
+  'capabilities omits apps when $label runtime facts deny the operation',
+  async ({ label, device, providerMode }) => {
+    const sessionName = `capabilities-${label.toLowerCase().replaceAll(' ', '-')}`;
+    const sessionStore = makeSessionStore(`agent-device-capabilities-${label}-`);
+    sessionStore.set(sessionName, makeSession(sessionName, { device }));
+    const runtime = createAdmissionRuntime({
+      appLogAvailable: false,
+      networkAvailable: false,
+      appsAvailable: false,
+      providerMode,
+    });
+
+    const response = await handleSessionCommands({
+      req: {
+        token: 't',
+        session: sessionName,
+        command: PUBLIC_COMMANDS.capabilities,
+        positionals: [],
+        flags: {},
+      },
+      sessionName,
+      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      sessionStore,
+      bindDevice: runtime.bindDevice,
+      inspectFacts: runtime.inspectFacts,
+      invoke: async () => ({ ok: true, data: {} }),
+    });
+
+    expect(response?.ok).toBe(true);
+    if (!response?.ok) return;
+    expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.apps);
+    expect(runtime.inspectFacts).toHaveBeenCalledOnce();
+  },
+);
 
 test('capabilities accepts a stopped Android AVD placeholder for explicit platform discovery', async () => {
   const stoppedAvd: DeviceInfo = {
@@ -201,6 +341,7 @@ test('capabilities accepts a stopped Android AVD placeholder for explicit platfo
 function createAdmissionRuntime(options: {
   appLogAvailable: boolean;
   networkAvailable: boolean;
+  appsAvailable: boolean;
   providerMode: RuntimeProviderMode;
 }) {
   const uses: Array<{ required: readonly string[]; preferred: readonly string[] }> = [];
@@ -208,12 +349,16 @@ function createAdmissionRuntime(options: {
     uses.push({ required: [...use.required], preferred: [...use.preferred] });
     return narrowDeviceBinding(createAdmissionBinding(device, options), use);
   };
-  return { bindDevice, uses };
+  const inspectFacts: InspectDeviceRuntimeFacts = vi.fn(
+    async (device) => createAdmissionBinding(device, options).facts,
+  );
+  return { bindDevice, inspectFacts, uses };
 }
 
 type AdmissionRuntimeOptions = Readonly<{
   appLogAvailable: boolean;
   networkAvailable: boolean;
+  appsAvailable: boolean;
   providerMode: RuntimeProviderMode;
 }>;
 
@@ -222,6 +367,7 @@ function createAdmissionBinding(
   options: AdmissionRuntimeOptions,
 ): DeviceBinding<PlatformRuntimeOperations> {
   const unavailable = unavailableOperationFact(options.providerMode);
+  const appsFact = appsOperationFact(options);
   return {
     device,
     owner:
@@ -249,9 +395,10 @@ function createAdmissionBinding(
         screenRecordingStart: unavailable,
         screenRecordingReattach: unavailable,
         screenRecordingCleanup: unavailable,
-        ensureReady: unavailable,
+        ensureReady: appsFact,
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
+        listApps: appsFact,
       },
     },
     operations: {
@@ -270,6 +417,12 @@ function unavailableOperationFact(providerMode: RuntimeProviderMode) {
         ? ('unsupported-provider-mode' as const)
         : ('owner-capability-missing' as const),
   };
+}
+
+function appsOperationFact(options: AdmissionRuntimeOptions) {
+  return options.appsAvailable
+    ? ({ available: true } as const)
+    : unavailableOperationFact(options.providerMode);
 }
 
 const inspectAndroidAppLog: PlatformRuntimeOperations['appLogInspect'] = async () => ({

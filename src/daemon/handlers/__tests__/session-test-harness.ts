@@ -62,19 +62,10 @@ vi.mock('../../materialized-path-registry.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../materialized-path-registry.ts')>();
   return { ...actual, cleanupRetainedMaterializedPathsForSession: vi.fn(async () => {}) };
 });
-vi.mock('../../../platforms/android/emulator-lifecycle.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../platforms/android/emulator-lifecycle.ts')>();
-  return {
-    ...actual,
-    ensureAndroidEmulatorBooted: vi.fn(),
-  };
-});
 vi.mock('../../../platforms/apple/core/apps.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../platforms/apple/core/apps.ts')>();
   return {
     ...actual,
-    listIosApps: vi.fn(async () => []),
     resolveIosApp: vi.fn(async () => undefined),
     resolveIosSimulatorDeepLinkBundleId: vi.fn(async () => undefined),
   };
@@ -108,7 +99,6 @@ import { settleIosSimulator } from '../session-device-utils.ts';
 import { resolveAndroidPackageForOpen } from '../session-open-target.ts';
 import { runCmd } from '../../../utils/exec.ts';
 import { shutdownSimulator } from '../../../platforms/apple/core/simulator.ts';
-import { ensureAndroidEmulatorBooted } from '../../../platforms/android/emulator-lifecycle.ts';
 import {
   resolveIosApp,
   resolveIosSimulatorDeepLinkBundleId,
@@ -138,7 +128,6 @@ export const mockResolveIosApp = vi.mocked(resolveIosApp);
 export const mockResolveIosSimulatorDeepLinkBundleId = vi.mocked(
   resolveIosSimulatorDeepLinkBundleId,
 );
-export const mockEnsureAndroidEmulatorBooted = vi.mocked(ensureAndroidEmulatorBooted);
 const mockDefaultInstallOpsIos = vi.mocked(defaultInstallOps.ios);
 const mockDefaultInstallOpsAndroid = vi.mocked(defaultInstallOps.android);
 const mockDefaultReinstallOpsIos = vi.mocked(defaultReinstallOps.ios);
@@ -193,7 +182,6 @@ beforeEach(() => {
   });
   mockResolveIosSimulatorDeepLinkBundleId.mockReset();
   mockResolveIosSimulatorDeepLinkBundleId.mockResolvedValue(undefined);
-  mockEnsureAndroidEmulatorBooted.mockReset();
   mockDefaultInstallOpsIos.mockReset();
   mockDefaultInstallOpsAndroid.mockReset();
   mockDefaultReinstallOpsIos.mockReset();

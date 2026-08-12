@@ -67,7 +67,6 @@ const coreDeviceOnlyPhysicalOperationHint = (device: DeviceInfo): string | undef
     ? undefined
     : 'This command requires a CoreDevice-backed physical iOS device. The selected XCTest backend supports open, close, interactions, snapshots, and screenshots.';
 const SUPPORTS_REF: Record<string, (device: DeviceInfo) => boolean> = {
-  apps: supportsCoreDevicePhysicalOperation,
   install: supportsAppInstallation,
   reinstall: supportsAppInstallation,
   'install-from-source': supportsAppInstallation,
@@ -98,7 +97,6 @@ const HINT_REF: Record<string, (device: DeviceInfo) => string | undefined> = {
     device.platform === 'apple'
       ? 'viewport resizes web targets only (--platform web). Apple screen geometry is fixed by the selected simulator or device type — open a different simulator to test another screen size.'
       : undefined,
-  apps: coreDeviceOnlyPhysicalOperationHint,
   install: coreDeviceOnlyPhysicalOperationHint,
   reinstall: coreDeviceOnlyPhysicalOperationHint,
   'install-from-source': coreDeviceOnlyPhysicalOperationHint,
