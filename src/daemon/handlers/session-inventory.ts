@@ -4,6 +4,7 @@ import { assertResolvedAppsFilter } from '@agent-device/contracts/device';
 import { AppError, asAppError } from '@agent-device/kernel/errors';
 import {
   isApplePlatform,
+  isIosFamily,
   isMacOs,
   matchesPlatformSelector,
   publicPlatformString,
@@ -17,7 +18,11 @@ import {
 } from '../../utils/device-isolation.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { resolveSessionRunnerLogPath, SessionStore } from '../session-store.ts';
-import { requireSessionOrExplicitSelector, resolveCommandDevice } from './session-device-utils.ts';
+import {
+  requireSessionOrExplicitSelector,
+  resolveCommandDevice,
+  selectorTargetsSessionDevice,
+} from './session-device-utils.ts';
 import { errorResponse } from './response.ts';
 import { resolveImplicitSessionScope, sessionMatchesScope } from '../session-routing.ts';
 import {
@@ -186,7 +191,16 @@ async function capabilitiesInventoryResponse(params: {
   });
   if ('response' in resolution) return resolution.response;
   const { device } = resolution;
-  const appsAvailable = await isAppsRuntimeAvailable(device, params.inspectFacts);
+  const session = params.sessionStore.get(params.sessionName);
+  const sessionOwnedAppStateAvailable = isSessionOwnedAppStateAvailable(
+    device,
+    session,
+    params.req.flags,
+  );
+  const facts =
+    sessionOwnedAppStateAvailable || params.inspectFacts === undefined
+      ? undefined
+      : await inspectRuntimeFacts(device, params.inspectFacts);
   const [logsAvailable, networkAvailable, recordingAvailable] = params.bindDevice
     ? await Promise.all([
         params
@@ -205,18 +219,81 @@ async function capabilitiesInventoryResponse(params: {
     data: {
       device: publicDeviceInfo(device),
       availableCommands: listCapabilityCommands().filter((command) =>
-        command === 'logs'
-          ? logsAvailable
-          : command === 'network'
-            ? networkAvailable
-            : command === 'record'
-              ? recordingAvailable
-              : command === 'apps'
-                ? appsAvailable
-                : isCommandSupportedOnDevice(command, device),
+        isCapabilityCommandAvailable(command, device, {
+          apps: hasRuntimeOperation(facts, 'listApps'),
+          appstate: sessionOwnedAppStateAvailable || hasRuntimeOperation(facts, 'appState'),
+          logs: logsAvailable,
+          network: networkAvailable,
+          record: recordingAvailable,
+        }),
       ),
     },
   };
+}
+
+type CapabilityAvailability = Readonly<{
+  apps: boolean;
+  appstate: boolean;
+  logs: boolean;
+  network: boolean;
+  record: boolean;
+}>;
+
+type RuntimeFacts = Awaited<ReturnType<InspectDeviceRuntimeFacts>>;
+
+function isSessionOwnedAppStateAvailable(
+  device: DeviceInfo,
+  session: ReturnType<SessionStore['get']>,
+  flags: DaemonRequest['flags'],
+): boolean {
+  if (!session) return false;
+  if (!isIosFamily(device) && !isMacOs(device)) return false;
+  if (!selectorTargetsSessionDevice(flags, session)) return false;
+  return hasSessionAppIdentity(session) || hasMacSessionSurface(device, session);
+}
+
+function hasSessionAppIdentity(session: NonNullable<ReturnType<SessionStore['get']>>): boolean {
+  return Boolean(session.appName || session.appBundleId);
+}
+
+function hasMacSessionSurface(
+  device: DeviceInfo,
+  session: NonNullable<ReturnType<SessionStore['get']>>,
+): boolean {
+  return Boolean(
+    isMacOs(device) &&
+    session.surface !== undefined &&
+    session.surface !== 'app' &&
+    session.surface !== 'frontmost-app',
+  );
+}
+
+function hasRuntimeOperation(
+  facts: RuntimeFacts | undefined,
+  operation: 'listApps' | 'appState',
+): boolean {
+  return facts?.operations.ensureReady.available === true && facts.operations[operation].available;
+}
+
+function isCapabilityCommandAvailable(
+  command: string,
+  device: DeviceInfo,
+  availability: CapabilityAvailability,
+): boolean {
+  switch (command) {
+    case 'logs':
+      return availability.logs;
+    case 'network':
+      return availability.network;
+    case 'record':
+      return availability.record;
+    case 'apps':
+      return availability.apps;
+    case 'appstate':
+      return availability.appstate;
+    default:
+      return isCommandSupportedOnDevice(command, device);
+  }
 }
 
 async function handleAppsInventory(params: {
@@ -254,18 +331,17 @@ async function handleAppsInventory(params: {
   return appsInventoryResponse(apps);
 }
 
-async function isAppsRuntimeAvailable(
+async function inspectRuntimeFacts(
   device: DeviceInfo,
   inspectFacts: InspectDeviceRuntimeFacts | undefined,
-): Promise<boolean> {
-  if (!inspectFacts) return false;
+): Promise<Awaited<ReturnType<InspectDeviceRuntimeFacts>> | undefined> {
+  if (!inspectFacts) return undefined;
   try {
-    const facts = await inspectFacts(device);
-    return facts.operations.ensureReady.available && facts.operations.listApps.available;
+    return await inspectFacts(device);
   } catch {
     // Capability projection is advisory. A provider facts failure must fail closed rather than
     // reconstructing apps support from the retired capability matrix.
-    return false;
+    return undefined;
   }
 }
 

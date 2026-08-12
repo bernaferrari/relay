@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveFileOverridePath, runCmd, whichCmd } from '../../utils/exec.ts';
 import { AppError } from '@agent-device/kernel/errors';
+import type { AppStateRuntimeResult } from '@agent-device/contracts/platform';
 import { sleep } from '../../utils/timeouts.ts';
 import type { AppsFilter } from '@agent-device/contracts/device';
 import type { DeviceInfo } from '@agent-device/kernel/device';
@@ -21,15 +22,13 @@ import {
 import { classifyAndroidAppTarget } from './open-target.ts';
 import { prepareAndroidInstallArtifact } from './install-artifact.ts';
 import {
-  parseAndroidForegroundApp,
   parseAndroidBlockingDialogFocus,
   parseAndroidLaunchablePackages,
   parseAndroidUserInstalledPackages,
   type AndroidBlockingDialogFocus,
-  type AndroidForegroundApp,
 } from './app-parsers.ts';
 
-export type { AndroidBlockingDialogFocus, AndroidForegroundApp } from './app-parsers.ts';
+export type { AndroidBlockingDialogFocus } from './app-parsers.ts';
 
 const ALIASES: Record<string, { type: 'intent' | 'package'; value: string }> = {
   settings: { type: 'intent', value: 'android.settings.SETTINGS' },
@@ -47,6 +46,14 @@ const ANDROID_CLOSE_FOCUS_POLL_MS = 50;
 const ANDROID_CLOSE_PROCESS_TIMEOUT_MS = 2_000;
 const ANDROID_CLOSE_PROCESS_POLL_MS = 50;
 const ANDROID_CLOSE_PROCESS_GONE_STABLE_MS = 150;
+const ANDROID_FOREGROUND_COMMANDS = [
+  ['shell', 'dumpsys', 'window', 'windows'],
+  ['shell', 'dumpsys', 'window'],
+  ['shell', 'dumpsys', 'activity', 'activities'],
+  ['shell', 'dumpsys', 'activity'],
+] as const;
+const ANDROID_FOCUS_LINE =
+  /(?:(mCurrentFocus=Window\{)|(mFocusedApp=AppWindowToken\{)|(mResumedActivity:)|(ResumedActivity:))(.*)$/gm;
 
 type AndroidAppResolution = { type: 'intent' | 'package'; value: string };
 
@@ -201,18 +208,12 @@ export function inferAndroidAppName(packageName: string): string {
     .join(' ');
 }
 
-export async function getAndroidAppState(device: DeviceInfo): Promise<AndroidForegroundApp> {
-  const windowFocus = await readAndroidFocus(device, [
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'dumpsys', 'window'],
-  ]);
-  if (windowFocus) return windowFocus;
-
-  const activityFocus = await readAndroidFocus(device, [
-    ['shell', 'dumpsys', 'activity', 'activities'],
-    ['shell', 'dumpsys', 'activity'],
-  ]);
-  if (activityFocus) return activityFocus;
+export async function getAndroidAppState(device: DeviceInfo): Promise<AppStateRuntimeResult> {
+  for (const args of ANDROID_FOREGROUND_COMMANDS) {
+    const result = await runAndroidAdb(device, [...args], { allowFailure: true });
+    const state = parseLegacyAndroidForegroundApp(result.stdout ?? '');
+    if (state) return state;
+  }
   return {};
 }
 
@@ -223,19 +224,6 @@ export async function getAndroidBlockingDialogFocus(
     ['shell', 'dumpsys', 'window', 'windows'],
     ['shell', 'dumpsys', 'window'],
   ]);
-}
-
-async function readAndroidFocus(
-  device: DeviceInfo,
-  commands: string[][],
-): Promise<AndroidForegroundApp | null> {
-  for (const args of commands) {
-    const result = await runAndroidAdb(device, args, { allowFailure: true });
-    const text = result.stdout ?? '';
-    const parsed = parseAndroidForegroundApp(text);
-    if (parsed) return parsed;
-  }
-  return null;
 }
 
 async function readAndroidBlockingDialogFocus(
@@ -666,16 +654,20 @@ async function waitForAndroidPackageNotForeground(
   }
 }
 
-async function readAndroidForegroundApp(device: DeviceInfo): Promise<AndroidForegroundApp | null> {
-  for (const args of [
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'dumpsys', 'window'],
-    ['shell', 'dumpsys', 'activity', 'activities'],
-    ['shell', 'dumpsys', 'activity'],
-  ]) {
-    const result = await runAndroidAdb(device, args, { allowFailure: true });
-    const parsed = parseAndroidForegroundApp(result.stdout ?? '');
-    if (parsed) return parsed;
+async function readAndroidForegroundApp(device: DeviceInfo): Promise<AppStateRuntimeResult | null> {
+  const foreground = await getAndroidAppState(device);
+  return foreground.package ? foreground : null;
+}
+
+function parseLegacyAndroidForegroundApp(text: string): AppStateRuntimeResult | null {
+  for (const match of text.matchAll(ANDROID_FOCUS_LINE)) {
+    const segment = match[5];
+    const component = segment?.match(
+      /\b([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\/([A-Za-z0-9_.$]+)/,
+    );
+    if (component?.[1] && component[2]) {
+      return { package: component[1], activity: component[2] };
+    }
   }
   return null;
 }

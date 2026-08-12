@@ -190,7 +190,6 @@ const HARMONYOS_SUPPORTED_COMMANDS_REF = new Set([
   'perf',
   'close',
   'back',
-  'appstate',
   'app-switcher',
   'click',
   'fill',
@@ -276,14 +275,13 @@ test('(b.1) isCommandSupportedOnDevice is unchanged across the command x device 
   }
 });
 
-test('HarmonyOS advertises only the current HDC-backed command subset', () => {
+test('HarmonyOS static capabilities omit runtime-backed command admissions', () => {
   const availableCommands = Object.keys(BASE_COMMAND_CAPABILITY_MATRIX)
     .filter((command) => isCommandSupportedOnDevice(command, HARMONYOS_EMULATOR))
     .sort();
 
   assert.deepEqual(availableCommands, [
     'app-switcher',
-    'appstate',
     'back',
     'click',
     'close',

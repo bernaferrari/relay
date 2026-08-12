@@ -48,7 +48,6 @@ export {
   narrowDeviceBinding,
   providerRuntimeOwner,
   runtimeOwnerKey,
-  runtimeUse,
   sameRuntimeOwner,
 } from '../platform-runtime.ts';
 export type {
@@ -70,6 +69,12 @@ export type {
   RuntimeUse,
   RuntimeUseDeclaration,
 } from '../platform-runtime.ts';
+export {
+  createUnavailablePlatformRuntimeBinding,
+  createUnavailablePlatformRuntimeFacts,
+  createUnavailablePlatformRuntimeOwner,
+} from '../platform-runtime-unavailable.ts';
+export type { UnavailablePlatformRuntimeFacts } from '../platform-runtime-unavailable.ts';
 export type {
   DurableDescriptorBodyDecodeOutcome,
   DurableDescriptorCodec,
@@ -195,8 +200,17 @@ export {
   bootTargetUse,
   deviceBootRuntimeUses,
   resolveDeviceReadinessRuntimePlan,
+  appStateRuntimeUses,
+  appStateUse,
 } from '../platform-runtime-operations.ts';
 export type { DeviceReadinessRuntimePlan } from '../platform-runtime-operations.ts';
+export type {
+  AppStateRuntimeCommand,
+  AppStateRuntimeCommandResult,
+  AppStateRuntimeHost,
+  AppStateRuntimeOperations,
+  AppStateRuntimeResult,
+} from '../app-state-runtime.ts';
 export type {
   DeviceReadinessRuntimeHost,
   DeviceReadinessRuntimeOperations,

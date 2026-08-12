@@ -1,16 +1,14 @@
-import type {
-  DeviceBinding,
-  PlatformRuntimeHost,
-  PlatformRuntimeOperations,
-  PlatformRuntimeOwner,
-  RuntimeFacts,
-  RuntimeOwnerRef,
-} from '@agent-device/contracts/platform';
 import {
   createUnavailablePlatformRuntimeFacts,
-  readRecentNetworkTrafficFromText,
-} from '@agent-device/capture-kit';
-import { sameRuntimeOwner } from '@agent-device/contracts/platform';
+  sameRuntimeOwner,
+  type DeviceBinding,
+  type PlatformRuntimeHost,
+  type PlatformRuntimeOperations,
+  type PlatformRuntimeOwner,
+  type RuntimeFacts,
+  type RuntimeOwnerRef,
+} from '@agent-device/contracts/platform';
+import { readRecentNetworkTrafficFromText } from '@agent-device/capture-kit';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 
@@ -34,6 +32,11 @@ const appsUnavailable = Object.freeze({
   reason: 'owner-capability-missing' as const,
   hint: 'WebDriver provider runtimes do not expose app inventory.',
 });
+const appStateUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'WebDriver provider runtimes do not expose a foreground app-state operation.',
+} as const);
 
 export function createWebDriverPlatformRuntimeOwner(
   options: Readonly<{
@@ -122,6 +125,7 @@ function webDriverFacts(
       appLogStart: appLogUnavailable,
       appLogReattach: appLogUnavailable,
       appLogCleanup: appLogUnavailable,
+      appState: appStateUnavailable,
       networkDump: available,
       screenRecordingStart: recordingUnavailable,
       screenRecordingReattach: recordingUnavailable,

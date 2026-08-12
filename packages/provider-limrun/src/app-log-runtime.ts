@@ -3,6 +3,7 @@ import type { AppsFilter } from '@agent-device/contracts/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { parseLimrunDeviceId } from './device.ts';
 import type {
+  AppStateRuntimeResult,
   DeviceBinding,
   PlatformRuntimeHost,
   PlatformRuntimeOperations,
@@ -16,7 +17,11 @@ import {
   createAppLogStartResult,
   readRecentNetworkTrafficFromText,
 } from '@agent-device/capture-kit';
-import { providerRuntimeOwner, sameRuntimeOwner } from '@agent-device/contracts/platform';
+import {
+  createUnavailablePlatformRuntimeFacts,
+  providerRuntimeOwner,
+  sameRuntimeOwner,
+} from '@agent-device/contracts/platform';
 import {
   createLimrunAppLogEnvelope,
   limrunAppLogDescriptorCodec,
@@ -34,6 +39,7 @@ export type LimrunPlatformRuntimeOwnerOptions = Readonly<{
   runtimeInstance: string;
   ownsDevice(device: DeviceInfo): boolean;
   openCurrent(device: DeviceInfo): Promise<LimrunAppLogReader | undefined>;
+  hasLiveSession(device: DeviceInfo): boolean;
   reconnect(
     descriptor: LimrunAppLogDescriptor,
     signal?: AbortSignal,
@@ -43,6 +49,7 @@ export type LimrunPlatformRuntimeOwnerOptions = Readonly<{
     filter: AppsFilter,
     signal: AbortSignal,
   ): Promise<readonly { id: string; name: string }[]>;
+  getAppState(device: DeviceInfo, signal: AbortSignal): Promise<AppStateRuntimeResult>;
 }>;
 
 const available = Object.freeze({ available: true } as const);
@@ -56,15 +63,32 @@ const headlessUnavailable = Object.freeze({
   reason: 'unsupported-provider-mode',
   hint: 'Headless boot is unavailable for provider-owned devices.',
 } as const);
+const liveSessionUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'Limrun requires a matching live provider session for this device.',
+} as const);
 
 export function createLimrunPlatformRuntimeOwner(
   options: LimrunPlatformRuntimeOwnerOptions,
 ): PlatformRuntimeOwner {
   const owner = providerRuntimeOwner('limrun', options.runtimeInstance);
+  const ownsDevice = (device: DeviceInfo) =>
+    isSupportedLimrunAppLogDevice(device) && options.ownsDevice(device);
+  const hasLiveSession = (device: DeviceInfo) =>
+    ownsDevice(device) && options.hasLiveSession(device);
   return Object.freeze({
     owner,
-    ownsDevice: (device) => isSupportedLimrunAppLogDevice(device) && options.ownsDevice(device),
-    inspectFacts: async (device) => facts(device),
+    ownsDevice,
+    inspectFacts: async (device) =>
+      hasLiveSession(device)
+        ? facts(device)
+        : createUnavailablePlatformRuntimeFacts(device, owner, {
+            appLog: liveSessionUnavailable,
+            appState: liveSessionUnavailable,
+            network: liveSessionUnavailable,
+            readiness: liveSessionUnavailable,
+          }),
     bind: async (request) => {
       if (request.intent.kind === 'exact-owner' && !sameRuntimeOwner(request.intent.owner, owner)) {
         throw new AppError('UNSUPPORTED_OPERATION', 'Limrun app-log owner identity does not match');
@@ -75,7 +99,21 @@ export function createLimrunPlatformRuntimeOwner(
           'Limrun app logs require an iOS simulator or Android emulator device identity',
         );
       }
-      return bindLimrunAppLogs(options, owner, request.device, request.scope.signal);
+      const hasMatchingLiveSession = hasLiveSession(request.device);
+      if (request.intent.kind !== 'exact-owner' && !hasMatchingLiveSession) {
+        throw new AppError(
+          'UNSUPPORTED_OPERATION',
+          'Limrun provider session is no longer live for the selected device',
+          { reason: 'provider-session-unavailable' },
+        );
+      }
+      return bindLimrunAppLogs(
+        options,
+        owner,
+        request.device,
+        request.scope.signal,
+        !hasMatchingLiveSession,
+      );
     },
     shutdown: async () => undefined,
   });
@@ -86,6 +124,7 @@ function bindLimrunAppLogs(
   owner: ReturnType<typeof providerRuntimeOwner>,
   device: DeviceInfo,
   signal: AbortSignal,
+  recoveryOnly: boolean,
 ): DeviceBinding<PlatformRuntimeOperations> {
   const recovery = createAppLogRecoveryOperations({
     codec: limrunAppLogDescriptorCodec,
@@ -190,12 +229,21 @@ function bindLimrunAppLogs(
     ensureReady: async () => ({ ...device, booted: true }),
     bootTarget: async () => ({ ...device, booted: true }),
     listApps: async (input) => await options.listApps(input.device, input.filter, signal),
+    ...(device.platform === 'android'
+      ? {
+          appState: async () => await options.getAppState(device, signal),
+        }
+      : {}),
   } satisfies DeviceBinding<PlatformRuntimeOperations>['operations'];
   return Object.freeze({
     device,
     owner,
-    facts: facts(device),
-    operations: Object.freeze(operations),
+    facts: recoveryOnly ? recoveryFacts(device) : facts(device),
+    operations: Object.freeze(
+      recoveryOnly
+        ? { appLogReattach: recovery.appLogReattach, appLogCleanup: recovery.appLogCleanup }
+        : operations,
+    ),
     [Symbol.asyncDispose]: async () => undefined,
   });
 }
@@ -234,6 +282,14 @@ function facts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations> {
       appLogStart: available,
       appLogReattach: available,
       appLogCleanup: available,
+      appState:
+        device.platform === 'android'
+          ? available
+          : {
+              available: false,
+              reason: 'unsupported-provider-mode',
+              hint: 'Limrun iOS appstate is session-owned; no sessionless provider foreground probe is exposed.',
+            },
       networkDump: available,
       screenRecordingStart: recordingUnavailable,
       screenRecordingReattach: recordingUnavailable,
@@ -242,6 +298,30 @@ function facts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations> {
       bootTarget: available,
       bootTargetHeadless: headlessUnavailable,
       listApps: available,
+    },
+  });
+}
+
+function recoveryFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperations> {
+  const normalFacts = facts(device);
+  return Object.freeze({
+    device: normalFacts.device,
+    operations: {
+      ...normalFacts.operations,
+      appLogInspect: liveSessionUnavailable,
+      appLogDoctor: liveSessionUnavailable,
+      appLogStart: liveSessionUnavailable,
+      appLogReattach: available,
+      appLogCleanup: available,
+      appState: liveSessionUnavailable,
+      networkDump: liveSessionUnavailable,
+      screenRecordingStart: liveSessionUnavailable,
+      screenRecordingReattach: liveSessionUnavailable,
+      screenRecordingCleanup: liveSessionUnavailable,
+      ensureReady: liveSessionUnavailable,
+      bootTarget: liveSessionUnavailable,
+      bootTargetHeadless: liveSessionUnavailable,
+      listApps: liveSessionUnavailable,
     },
   });
 }
