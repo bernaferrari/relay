@@ -5,6 +5,7 @@ import {
   connectionStepsFromActions,
   mergeAppMapProjection,
   planAppMapProjection,
+  screenRestoreSnapshotFor,
 } from "./app-map-projection.js";
 
 test("canonical taps remain simple canvas interactions", () => {
@@ -454,6 +455,54 @@ test("persists captured evidence with a new screen and refreshes an existing scr
       input: { patch: {}, upsertVariants: [refreshed] },
     },
   ]);
+});
+
+test("undoing a screen removal restores its canonical screenshot variant", () => {
+  const beforeDelete = structuredClone(map);
+  const capturedVariant = {
+    ...startVariant,
+    screenshotUri: "relay-evidence://captures/start.png",
+  };
+  beforeDelete.screens.start = {
+    id: "start",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    title: "Welcome",
+    description: "The captured landing screen",
+    identity: { schemaVersion: 1, fingerprint: "welcome-fingerprint" },
+    position: { x: 40, y: 80 },
+    variantIds: [capturedVariant.id],
+    createdAt: 1,
+    updatedAt: 4,
+  };
+  beforeDelete.screenVariants[capturedVariant.id] = capturedVariant;
+
+  const restore = screenRestoreSnapshotFor(beforeDelete, ["start"]);
+  assert.ok(restore);
+  if (!restore) return;
+
+  // This mirrors the canonical state after screen.remove: variants are gone
+  // too, so a canvas-only undo would otherwise recreate a blank card.
+  const afterDelete = structuredClone(map);
+  const changes = planAppMapProjection({
+    appMap: afterDelete,
+    graph: {
+      schemaVersion: 1,
+      screens: [graph.screens[0]!],
+      transitions: [],
+      flows: [],
+    },
+    positions: { start: { x: 40, y: 80 } },
+    recipeSteps: [],
+    restore,
+  });
+  const add = changes.find((change) => change.kind === "screen.add");
+  assert.equal(add?.kind, "screen.add");
+  if (add?.kind !== "screen.add") return;
+  assert.equal(add.input.screen.description, "The captured landing screen");
+  assert.deepEqual(add.input.screen.variantIds, [capturedVariant.id]);
+  assert.deepEqual(add.input.variants, [capturedVariant]);
 });
 
 test("projects canonical ready connections as runnable canvas paths", () => {

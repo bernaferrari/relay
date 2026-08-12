@@ -13,6 +13,7 @@ import {
   type CanvasScreenRotation,
   type CanvasPoint,
 } from "../lib/app-map-canvas-layout";
+import { canvasEdgeIntersectsVisibleBounds } from "../lib/app-map-canvas-visibility";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import {
@@ -63,6 +64,7 @@ export type AppMapCanvasSceneProps = {
   onRunToScreen: (node: MapTreeNode) => void;
   onCommitNodeRename: (node: MapTreeNode, title: string) => void;
   onNodePointerDown: (event: PointerEvent, node: MapTreeNode) => void;
+  onNudgeNode: (node: MapTreeNode, direction: CanvasPoint, coarse: boolean) => void;
   onNotePointerDown: (event: PointerEvent, note: CanvasNote) => void;
   onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: (note: CanvasNote, previousText: string) => void;
@@ -185,13 +187,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     }),
   );
   const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
-  const visibleConnections = createMemo(() => {
-    return props.connections.filter((connection) => {
-      return (
-        visibleNodeIds().has(connection.fromScreenId) || visibleNodeIds().has(connection.toScreenId)
-      );
-    });
-  });
   const effectivePresentation = (connection: CanvasConnection) => {
     const controlDrag = connectionControlDrag();
     return controlDrag?.connectionId === connection.id
@@ -208,10 +203,13 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       { id: connection.id, presentation: effectivePresentation(connection) },
       autoConnectionLanes(),
     );
+  // Geometry deliberately has no camera dependency. Zooming only filters the
+  // precomputed routes, so a visible connection label cannot disappear while
+  // the two screens at either end are virtualized outside the close viewport.
   const geometries = createMemo(
     () =>
       new Map(
-        visibleConnections().map((connection) => [
+        props.connections.map((connection) => [
           connection.id,
           canvasEdgeGeometry(
             {
@@ -222,7 +220,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               sourceRotation: rotationForNodeId(connection.fromScreenId),
               presentation: displayedPresentation(connection),
               automaticSourceLane: hasAutomaticSourceLane(connection),
-              targetGap: connectorTargetGapForViewport(props.viewportScale),
+              targetGap: connectorTargetGapForViewport(),
             },
             props.nodes,
             props.positionFor,
@@ -232,12 +230,25 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         ]),
       ),
   );
+  const visibleConnections = createMemo(() =>
+    props.connections.filter((connection) => {
+      if (
+        visibleNodeIds().has(connection.fromScreenId) ||
+        visibleNodeIds().has(connection.toScreenId)
+      ) {
+        return true;
+      }
+      const geometry = geometries().get(connection.id);
+      return geometry ? canvasEdgeIntersectsVisibleBounds(geometry, props.visibleBounds) : false;
+    }),
+  );
   const geometryFor = (connection: CanvasConnection) =>
     geometries().get(connection.id) ?? {
       path: "",
       labelPoint: { x: 0, y: 0 },
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 0, y: 0 },
+      isEditableCurve: false,
       hitPoints: [],
     };
   const selectedConnection = createMemo(() =>
@@ -247,7 +258,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     const connection = selectedConnection();
     return connection &&
       visibleConnections().some((candidate) => candidate.id === connection.id) &&
-      (displayedPresentation(connection)?.route ?? "elbow") === "curve"
+      geometryFor(connection).isEditableCurve
       ? connection
       : undefined;
   });
@@ -606,6 +617,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               onRun={props.canRunToScreen(node.id) ? () => props.onRunToScreen(node) : undefined}
               onCommitRename={(title) => props.onCommitNodeRename(node, title)}
               onPointerDown={(event) => props.onNodePointerDown(event, node)}
+              onNudge={(direction, coarse) => props.onNudgeNode(node, direction, coarse)}
             />
           );
         }}
@@ -711,7 +723,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 role="button"
                 tabindex="0"
                 ref={(element) => element.setAttribute("focusable", "true")}
-                aria-label="Adjust cubic curve. Drag to reshape it, or use arrow keys to move it; hold Shift for larger steps."
+                aria-label="Adjust curve"
                 aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
                 data-tip="Drag to reshape curve · Arrow keys nudge"
                 onPointerDown={(event) => beginControlDrag(event, connection())}

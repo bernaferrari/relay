@@ -8,11 +8,45 @@ import type {
   AppMapCanvasState,
   RecipeStep,
   CanvasInteractionAnchor,
+  Screen,
   ScreenVariant,
 } from "@relay/protocol";
 import { normalizedAnchorForStep } from "./app-map-interaction-anchor";
 
 export type AppMapProjectionChange = AppMapBatchChange;
+
+/**
+ * Canonical screen data retained only by a local undo transaction. The canvas
+ * is deliberately a lightweight projection, so screenshot variants cannot be
+ * reconstructed from it after a screen removal has deleted them server-side.
+ */
+export type AppMapScreenRestoreSnapshot = {
+  screensById: Readonly<Record<string, Screen>>;
+  variantsByScreen: Readonly<Record<string, readonly ScreenVariant[]>>;
+};
+
+/**
+ * Capture the small canonical pre-image needed to undo a screen deletion.
+ * Values are cloned at the history boundary so an asynchronous canonical
+ * refresh cannot mutate an already-recorded undo step.
+ */
+export function screenRestoreSnapshotFor(
+  appMap: AppMap,
+  screenIds: readonly string[],
+): AppMapScreenRestoreSnapshot | undefined {
+  const screensById: Record<string, Screen> = {};
+  const variantsByScreen: Record<string, ScreenVariant[]> = {};
+  for (const screenId of [...new Set(screenIds)].sort()) {
+    const screen = appMap.screens[screenId];
+    if (!screen) continue;
+    screensById[screenId] = structuredClone(screen);
+    variantsByScreen[screenId] = screen.variantIds.flatMap((variantId) => {
+      const variant = appMap.screenVariants[variantId];
+      return variant ? [structuredClone(variant)] : [];
+    });
+  }
+  return Object.keys(screensById).length ? { screensById, variantsByScreen } : undefined;
+}
 
 /** Reduce canonical connection actions to the recipe steps the canvas needs
  * for interaction labels and source anchors. Deterministic taps are real
@@ -122,6 +156,10 @@ export function planAppMapProjection(input: {
   groups?: readonly MapGroup[];
   recipeSteps: readonly RecipeStep[];
   variantsByScreen?: Readonly<Record<string, readonly ScreenVariant[]>>;
+  /** Canonical pre-image from a local delete undo. It is not persisted canvas
+   * state and is used only when the current canonical map no longer has the
+   * screen that the restored graph reintroduces. */
+  restore?: AppMapScreenRestoreSnapshot;
 }): AppMapProjectionChange[] {
   const { appMap, graph, positions } = input;
   const changes: AppMapProjectionChange[] = [];
@@ -137,20 +175,32 @@ export function planAppMapProjection(input: {
   for (const item of graph.screens) {
     const position = positions[item.id];
     const existing = appMap.screens[item.id];
-    const variants = input.variantsByScreen?.[item.id]?.map((variant) => structuredClone(variant));
+    const restored = input.restore?.screensById[item.id];
+    const variants = (
+      input.variantsByScreen?.[item.id] ?? input.restore?.variantsByScreen[item.id]
+    )?.map((variant) => structuredClone(variant));
     if (!existing) {
       changes.push({
         kind: "screen.add",
         input: {
           screen: {
+            ...(restored ? structuredClone(restored) : {}),
             ...scope,
             id: item.id,
             title: item.title,
-            ...(item.identity ? { identity: structuredClone(item.identity) } : {}),
-            ...(position ? { position: structuredClone(position) } : {}),
-            variantIds: variants?.map((variant) => variant.id).sort() ?? [],
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
+            ...(item.identity
+              ? { identity: structuredClone(item.identity) }
+              : restored?.identity
+                ? { identity: structuredClone(restored.identity) }
+                : {}),
+            ...(position
+              ? { position: structuredClone(position) }
+              : restored?.position
+                ? { position: structuredClone(restored.position) }
+                : {}),
+            variantIds: variants?.map((variant) => variant.id).sort() ?? restored?.variantIds ?? [],
+            createdAt: restored?.createdAt ?? item.createdAt,
+            updatedAt: restored?.updatedAt ?? item.updatedAt,
           },
           ...(variants?.length ? { variants } : {}),
         },

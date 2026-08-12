@@ -93,6 +93,35 @@ function pathsHaveProperCrossing(
   return false;
 }
 
+type CubicSegment = {
+  control1: { x: number; y: number };
+  control2: { x: number; y: number };
+  end: { x: number; y: number };
+};
+
+function cubicSegments(path: string): CubicSegment[] {
+  return [
+    ...path.matchAll(/ C ([-\d.]+) ([-\d.]+), ([-\d.]+) ([-\d.]+), ([-\d.]+) ([-\d.]+)/g),
+  ].map((match) => ({
+    control1: { x: Number(match[1]), y: Number(match[2]) },
+    control2: { x: Number(match[3]), y: Number(match[4]) },
+    end: { x: Number(match[5]), y: Number(match[6]) },
+  }));
+}
+
+function sampledPathEntersFrame(
+  points: ReadonlyArray<{ x: number; y: number }>,
+  frame: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  return points.some(
+    (point) =>
+      point.x > frame.left &&
+      point.x < frame.right &&
+      point.y > frame.top &&
+      point.y < frame.bottom,
+  );
+}
+
 test("canvas geometry is total while a graph is mid-edit", () => {
   assert.equal(
     canvasEdgeGeometry(
@@ -129,6 +158,19 @@ test("connector arrows share scene geometry with the route as 45-degree line arr
   assert.equal(
     canvasEdgeArrowPath({ endPoint: { x: 20, y: 10 }, hitPoints: [{ x: 20, y: 10 }] }),
     "",
+  );
+  // An invalid future analytic tangent still falls back to hit geometry rather
+  // than producing a NaN arrowhead.
+  assert.equal(
+    canvasEdgeArrowPath({
+      endPoint: { x: 20, y: 10 },
+      endTangentPoint: { x: 20, y: 10 },
+      hitPoints: [
+        { x: 0, y: 10 },
+        { x: 20, y: 10 },
+      ],
+    }),
+    "M 12.25 17.75 L 20 10 L 12.25 2.25",
   );
   assert.equal(
     canvasEdgeStartArrowPath(
@@ -175,7 +217,7 @@ test("connector arrows share scene geometry with the route as 45-degree line arr
   assert.equal(diagonal?.length, 6);
   assert.ok(Math.abs(diagonal![1]! - 20) < 0.0001);
   assert.ok(Math.abs(diagonal![4]! - 20) < 0.0001);
-  assert.ok(Math.abs((20 - diagonal![0]!) - (20 - diagonal![5]!)) < 0.0001);
+  assert.ok(Math.abs(20 - diagonal![0]! - (20 - diagonal![5]!)) < 0.0001);
 });
 
 test("screen previews preserve phone and tablet viewport silhouettes", () => {
@@ -413,24 +455,53 @@ test("connector arrowheads stop before the target frame on every side", () => {
   }
 });
 
-test("terminal arrow clearance stays visibly constant while zooming", () => {
-  assert.equal(connectorTargetGapForViewport(0.5), 16);
-  assert.equal(connectorTargetGapForViewport(1), 8);
-  assert.equal(connectorTargetGapForViewport(2), 4);
+test("connector routes and arrowheads are world-invariant while canvas zooms", () => {
+  const scales = [0.5, 1, 2];
+  assert.deepEqual(scales.map(connectorTargetGapForViewport), [12, 12, 12]);
 
-  const target = { ...settings, id: "target", x: 640, y: 84 };
-  const geometry = canvasEdgeGeometry(
+  const curveTarget = { ...settings, id: "zoom-curve-target", x: 640, y: 720 };
+  const elbowTarget = { ...settings, id: "zoom-elbow-target", x: 640, y: 420 };
+  const cases = [
     {
-      from: start.id,
-      to: target.id,
-      kind: "forward",
-      targetGap: connectorTargetGapForViewport(0.5),
+      target: curveTarget,
+      presentation: { route: "curve" as const },
     },
-    [start, target],
-    (node) => node,
-  );
+    {
+      target: elbowTarget,
+      presentation: { route: "elbow" as const },
+    },
+  ];
 
-  assert.deepEqual(geometry.endPoint, { x: 624, y: 201 });
+  for (const { target, presentation } of cases) {
+    const geometries = scales.map((scale) =>
+      canvasEdgeGeometry(
+        {
+          from: start.id,
+          to: target.id,
+          kind: "forward",
+          presentation,
+          targetGap: connectorTargetGapForViewport(scale),
+        },
+        [start, target],
+        (node) => node,
+      ),
+    );
+    const baseline = geometries[0]!;
+    const geometrySnapshot = (geometry: (typeof geometries)[number]) => ({
+      path: geometry.path,
+      labelPoint: geometry.labelPoint,
+      startPoint: geometry.startPoint,
+      endPoint: geometry.endPoint,
+      endTangentPoint: geometry.endTangentPoint,
+      hitPoints: geometry.hitPoints,
+    });
+    const baselineArrow = canvasEdgeArrowPath(baseline, 2);
+
+    for (const geometry of geometries.slice(1)) {
+      assert.deepEqual(geometrySnapshot(geometry), geometrySnapshot(baseline));
+      assert.equal(canvasEdgeArrowPath(geometry, 2), baselineArrow);
+    }
+  }
 });
 
 test("elbow connectors use rounded corners instead of brittle sharp turns", () => {
@@ -466,10 +537,174 @@ test("dragging a curve handle moves its visible midpoint exactly", () => {
     (node) => node,
   );
 
+  assert.equal(base.isEditableCurve, true);
+  assert.equal(adjusted.isEditableCurve, true);
   assert.deepEqual(adjusted.labelPoint, {
     x: base.labelPoint.x + 30,
     y: base.labelPoint.y - 20,
   });
+});
+
+test("free curves preserve both endpoint normals when a midpoint is dragged", () => {
+  const curveTarget = { ...settings, id: "normal-target", x: 640, y: 720 };
+  const geometryFor = (presentation: {
+    route: "curve";
+    controlOffset?: { x: number; y: number };
+  }) =>
+    canvasEdgeGeometry(
+      { from: start.id, to: curveTarget.id, kind: "forward", presentation },
+      [start, curveTarget],
+      (node) => node,
+    );
+
+  const untouched = geometryFor({ route: "curve" });
+  const untouchedSegments = cubicSegments(untouched.path);
+  // Right → left: the untouched cubic starts and ends horizontally, so both
+  // screen attachments read as deliberate normal connectors.
+  assert.equal(untouchedSegments.length, 1);
+  assert.equal(untouchedSegments[0]!.control1.y, untouched.startPoint.y);
+  assert.equal(untouchedSegments[0]!.control2.y, untouched.endPoint.y);
+  assert.ok(untouchedSegments[0]!.control1.x > untouched.startPoint.x);
+  assert.ok(untouchedSegments[0]!.control2.x < untouched.endPoint.x);
+
+  const shaped = geometryFor({ route: "curve", controlOffset: { x: -16, y: 94 } });
+  const shapedSegments = cubicSegments(shaped.path);
+  // The draggable center is a C² join. It keeps its requested center while
+  // the outer handles remain cardinally normal to both screen ports.
+  assert.equal(shapedSegments.length, 2);
+  assert.equal(shapedSegments[0]!.control1.y, shaped.startPoint.y);
+  assert.equal(shapedSegments[1]!.control2.y, shaped.endPoint.y);
+  assert.deepEqual(shaped.endTangentPoint, shapedSegments[1]!.control2);
+  assert.deepEqual(shaped.labelPoint, {
+    x: untouched.labelPoint.x - 16,
+    y: untouched.labelPoint.y + 94,
+  });
+  assert.ok(
+    Math.abs(
+      shaped.labelPoint.x -
+        shapedSegments[0]!.control2.x -
+        (shapedSegments[1]!.control1.x - shaped.labelPoint.x),
+    ) < 0.000_001,
+  );
+  assert.ok(
+    Math.abs(
+      shaped.labelPoint.y -
+        shapedSegments[0]!.control2.y -
+        (shapedSegments[1]!.control1.y - shaped.labelPoint.y),
+    ) < 0.000_001,
+  );
+});
+
+test("normal cubic solver handles perpendicular turns and separated same-side U routes", () => {
+  const perpendicularTargets = [
+    { ...settings, id: "perpendicular-close", x: 288, y: 260 },
+    { ...settings, id: "perpendicular-far", x: 960, y: 860 },
+  ];
+
+  for (const target of perpendicularTargets) {
+    const geometry = canvasEdgeGeometry(
+      {
+        from: start.id,
+        to: target.id,
+        kind: "forward",
+        presentation: { route: "curve", sourcePort: "right", targetPort: "top" },
+      },
+      [start, target],
+      (node) => node,
+    );
+    const [segment] = cubicSegments(geometry.path);
+    assert.equal(geometry.isEditableCurve, true);
+    assert.equal(cubicSegments(geometry.path).length, 1);
+    assert.equal(segment!.control1.y, geometry.startPoint.y);
+    assert.equal(segment!.control2.x, geometry.endPoint.x);
+    assert.ok(segment!.control1.x > geometry.startPoint.x);
+    assert.ok(segment!.control2.y < geometry.endPoint.y);
+    for (let index = 1; index < geometry.hitPoints.length; index += 1) {
+      assert.ok(geometry.hitPoints[index]!.x >= geometry.hitPoints[index - 1]!.x);
+      assert.ok(geometry.hitPoints[index]!.y >= geometry.hitPoints[index - 1]!.y);
+    }
+  }
+
+  const sameSideTarget = { ...settings, id: "same-side-separated", x: 460, y: 360 };
+  const sameSide = canvasEdgeGeometry(
+    {
+      from: start.id,
+      to: sameSideTarget.id,
+      kind: "forward",
+      presentation: { route: "curve", sourcePort: "right", targetPort: "right" },
+    },
+    [start, sameSideTarget],
+    (node) => node,
+  );
+  const [sameSideSegment] = cubicSegments(sameSide.path);
+  assert.equal(sameSide.isEditableCurve, true);
+  assert.equal(cubicSegments(sameSide.path).length, 1);
+  assert.equal(sameSideSegment!.control1.y, sameSide.startPoint.y);
+  assert.equal(sameSideSegment!.control2.y, sameSide.endPoint.y);
+  assert.ok(sameSideSegment!.control1.x > Math.max(sameSide.startPoint.x, sameSide.endPoint.x));
+  assert.ok(sameSideSegment!.control2.x > Math.max(sameSide.startPoint.x, sameSide.endPoint.x));
+  assert.ok(sameSide.endTangentPoint!.x > sameSide.endPoint.x);
+  assert.equal(sameSide.endTangentPoint!.y, sameSide.endPoint.y);
+  for (let index = 1; index < sameSide.hitPoints.length; index += 1) {
+    assert.ok(sameSide.hitPoints[index]!.y >= sameSide.hitPoints[index - 1]!.y);
+  }
+  assert.equal(
+    sampledPathEntersFrame(sameSide.hitPoints, { left: 460, top: 390, right: 700, bottom: 564 }),
+    false,
+  );
+});
+
+test("a free curve falls back before it enters an unrelated screen frame", () => {
+  const blocker = { ...settings, id: "curve-blocker", x: 480, y: 130 };
+  const target = { ...settings, id: "curve-target", x: 640, y: 400 };
+  const geometry = canvasEdgeGeometry(
+    {
+      from: start.id,
+      to: target.id,
+      kind: "forward",
+      presentation: { route: "curve", sourcePort: "right", targetPort: "top" },
+    },
+    [start, blocker, target],
+    (node) => node,
+  );
+
+  // The direct normal cubic would sweep the blocker. The router preserves a
+  // safe exterior backbone instead, without advertising a nonsensical anchor.
+  assert.equal(geometry.isEditableCurve, false);
+  assert.match(geometry.path, / C /);
+  const blockerFrame = { left: 480, top: 160, right: 720, bottom: 334 };
+  assert.equal(sampledPathEntersFrame(geometry.hitPoints, blockerFrame), false);
+  assert.equal(pathEntersFrame(geometry.hitPoints, blockerFrame), false);
+});
+
+test("analytic curve collision safety catches a narrow frame corner missed by marquee samples", () => {
+  const blocker = { ...settings, id: "thin-corner-blocker", x: 957, y: 621 };
+  const target = { ...settings, id: "thin-corner-target", x: 860, y: 893 };
+  const geometry = canvasEdgeGeometry(
+    {
+      from: start.id,
+      to: target.id,
+      kind: "forward",
+      presentation: { route: "curve", sourcePort: "bottom", targetPort: "top" },
+    },
+    [start, blocker, target],
+    (node) => node,
+  );
+
+  // The direct curve reaches the blocker only in a narrow t interval around
+  // .9024; 33 lightweight marquee samples jump over it. Recursive Bézier
+  // collision detection must choose the exterior backbone instead.
+  assert.equal(geometry.isEditableCurve, false);
+  assert.match(geometry.path, / C /);
+  assert.equal(
+    sampledPathEntersFrame(geometry.hitPoints, {
+      left: 957,
+      top: 651,
+      right: 1197,
+      bottom: 825,
+    }),
+    false,
+  );
 });
 
 test("explicit facing curves never fold back across their source-to-target axis", () => {
@@ -489,6 +724,10 @@ test("explicit facing curves never fold back across their source-to-target axis"
   for (let index = 1; index < shaped.hitPoints.length; index += 1) {
     assert.ok(shaped.hitPoints[index]!.x >= shaped.hitPoints[index - 1]!.x);
   }
+  // A huge forward drag cannot collapse C2 into the endpoint: that would
+  // make the otherwise horizontal tangent visually turn at the very end.
+  assert.ok(shaped.endPoint.x - shaped.endTangentPoint!.x >= 7.999);
+  assert.equal(shaped.endTangentPoint!.y, shaped.endPoint.y);
   // The final tangent remains forward into the target's left edge, so the
   // arrowhead does not point back through the connector.
   assert.ok(shaped.hitPoints.at(-2)!.x < shaped.endPoint.x);
@@ -525,12 +764,15 @@ test("explicit facing curves never fold back across their source-to-target axis"
     (node) => node,
   );
 
-  // A 12-world-unit forward gap cannot host two safe cubic handles. It takes
-  // the normal obstacle-safe backbone rather than reversing into an S-loop.
-  assert.doesNotMatch(safeFallback.path, / C /);
+  // A 12-world-unit forward gap cannot host two safe free-cubic handles. It
+  // still honors Curve visually through the exterior cubic backbone, but does
+  // not expose a misleading single-curve drag anchor.
+  assert.match(safeFallback.path, / C /);
+  assert.doesNotMatch(safeFallback.path, / Q /);
+  assert.equal(safeFallback.isEditableCurve, false);
 });
 
-test("free curves visibly straighten into the selected target port", () => {
+test("free curves arrive fluidly on the selected target port", () => {
   const target = { ...settings, id: "terminal-target", x: 640, y: 84 };
   const geometry = canvasEdgeGeometry(
     {
@@ -542,16 +784,144 @@ test("free curves visibly straighten into the selected target port", () => {
     [start, target],
     (node) => node,
   );
-  const leadStart = geometry.hitPoints.at(-2)!;
-  const beforeLead = geometry.hitPoints.at(-3)!;
+  const controls = geometry.path.match(
+    /^M [-\d.]+ [-\d.]+ C ([-\d.]+) ([-\d.]+), ([-\d.]+) ([-\d.]+),/,
+  );
+  assert.ok(controls);
 
-  assert.match(geometry.path, / C .* L 628 201$/);
-  // The last 32 world units are a real horizontal arrival run into the
-  // target's left port—not merely a mathematically horizontal tangent at the
-  // final infinitesimal Bézier sample.
-  assert.equal(geometry.endPoint.x - leadStart.x, 32);
-  assert.equal(geometry.endPoint.y, leadStart.y);
-  assert.ok(leadStart.x > beforeLead.x);
+  // One continuous cubic, rather than a visible terminal rail, reaches the
+  // port. Its target-side handle stays on the target's horizontal axis, so
+  // the derivative at the arrow is exactly horizontal and has a material
+  // distance in which to flatten naturally.
+  assert.match(geometry.path, / C /);
+  assert.doesNotMatch(geometry.path, / C .* C /);
+  assert.doesNotMatch(geometry.path, / L /);
+  const targetControl = { x: Number(controls[3]), y: Number(controls[4]) };
+  assert.equal(targetControl.y, geometry.endPoint.y);
+  assert.ok(geometry.endPoint.x - targetControl.x >= 32);
+  // The head follows the analytic cubic tangent (C2 → end), not a coarse
+  // marquee sample that would still be slightly diagonal near the endpoint.
+  assert.equal(
+    canvasEdgeArrowPath(geometry, 2),
+    `M ${geometry.endPoint.x - 7.75} ${geometry.endPoint.y + 7.75} L ${geometry.endPoint.x} ${geometry.endPoint.y} L ${geometry.endPoint.x - 7.75} ${geometry.endPoint.y - 7.75}`,
+  );
+
+  const terminalSamples = geometry.hitPoints.slice(-5);
+  for (let index = 1; index < geometry.hitPoints.length; index += 1) {
+    assert.ok(geometry.hitPoints[index]!.y >= geometry.hitPoints[index - 1]!.y);
+  }
+  const terminalRise = terminalSamples
+    .slice(1)
+    .map((point, index) => point.y - terminalSamples[index]!.y);
+  assert.ok(terminalRise[0]! > terminalRise[1]!);
+  assert.ok(terminalRise[1]! > terminalRise[2]!);
+  assert.ok(terminalRise[2]! > terminalRise[3]!);
+  assert.ok(geometry.hitPoints.at(-2)!.x < geometry.endPoint.x);
+
+  const farBelow = { ...settings, id: "shaped-terminal-target", x: 640, y: 720 };
+  const shaped = canvasEdgeGeometry(
+    {
+      from: start.id,
+      to: farBelow.id,
+      kind: "forward",
+      presentation: { route: "curve", controlOffset: { x: -16, y: 94 } },
+    },
+    [start, farBelow],
+    (node) => node,
+  );
+  const shapedSegments = cubicSegments(shaped.path);
+  assert.equal(shapedSegments.length, 2);
+  assert.doesNotMatch(shaped.path, / L /);
+  assert.equal(shapedSegments[0]!.control1.y, shaped.startPoint.y);
+  assert.equal(shaped.endTangentPoint!.y, shaped.endPoint.y);
+  assert.deepEqual(shaped.endTangentPoint, shapedSegments[1]!.control2);
+  for (let index = 1; index < shaped.hitPoints.length; index += 1) {
+    assert.ok(shaped.hitPoints[index]!.y >= shaped.hitPoints[index - 1]!.y);
+  }
+});
+
+test("a very tall left-side curve uses a generated, steeper exterior arrival", () => {
+  const target = { ...settings, id: "very-tall-left-arrival", x: 400, y: 2_000 };
+  const edge = {
+    from: start.id,
+    to: target.id,
+    kind: "forward" as const,
+  };
+  const untouched = canvasEdgeGeometry(
+    {
+      ...edge,
+      presentation: {
+        route: "curve",
+        sourcePort: "right",
+        targetPort: "left",
+      },
+    },
+    [start, target],
+    (node) => node,
+  );
+  const geometry = canvasEdgeGeometry(
+    {
+      ...edge,
+      presentation: {
+        route: "curve",
+        sourcePort: "right",
+        targetPort: "left",
+        // This is the same kind of authored centre adjustment that exposed
+        // the bad last-moment turn in the live map.
+        controlOffset: { x: -16, y: 94 },
+      },
+    },
+    [start, target],
+    (node) => node,
+  );
+
+  // The narrow horizontal gap cannot contain a useful free midpoint drag.
+  // Use one generated exterior spline for both variants rather than expose a
+  // misleading anchor which would recreate the terminal hook.
+  assert.equal(geometry.isEditableCurve, false);
+  assert.equal(untouched.isEditableCurve, false);
+  assert.equal(geometry.path, untouched.path);
+  assert.equal(cubicSegments(geometry.path).length, 3);
+  const segments = geometry.cubicSegments;
+  assert.ok(segments);
+  assert.equal(segments.length, 3);
+  const entry = segments[0]!;
+  const trunk = segments[1]!;
+  const terminal = segments[2]!;
+
+  // The two joins are C¹, not just visually adjacent segments. The first
+  // exits horizontally, the middle is a genuine exterior vertical trunk,
+  // and the terminal does all of its horizontal arrival before the arrow.
+  assert.deepEqual(
+    {
+      x: entry.end.x - entry.control2.x,
+      y: entry.end.y - entry.control2.y,
+    },
+    {
+      x: trunk.control1.x - trunk.start.x,
+      y: trunk.control1.y - trunk.start.y,
+    },
+  );
+  assert.deepEqual(
+    {
+      x: trunk.end.x - trunk.control2.x,
+      y: trunk.end.y - trunk.control2.y,
+    },
+    {
+      x: terminal.control1.x - terminal.start.x,
+      y: terminal.control1.y - terminal.start.y,
+    },
+  );
+  assert.equal(entry.control1.y, geometry.startPoint.y);
+  assert.equal(trunk.start.x, trunk.end.x);
+  assert.ok(trunk.end.y > trunk.start.y);
+  assert.ok(trunk.control1.y <= trunk.control2.y);
+  assert.equal(terminal.control2.y, geometry.endPoint.y);
+  assert.deepEqual(geometry.endTangentPoint, terminal.control2);
+  assert.ok(geometry.endPoint.x - terminal.start.x >= 56);
+  assert.ok(geometry.endPoint.x - geometry.endTangentPoint!.x >= 30);
+  assert.doesNotMatch(geometry.path, / L /);
+  assert.doesNotMatch(geometry.path, / Q /);
 });
 
 test("recorded origins stay exact when another screen is near the connection", () => {
@@ -875,7 +1245,7 @@ test("an unanchored curved fan link follows the safe backbone until it is shaped
   assert.match(shaped.path, / C /);
 });
 
-test("same-side endpoints take an exterior bent route and curves respect the target tangent", () => {
+test("non-viable Curve paths use an exterior cubic backbone without a fake drag anchor", () => {
   const target = { ...settings, id: "target", x: 460, y: 0 };
   const elbow = canvasEdgeGeometry(
     {
@@ -903,7 +1273,34 @@ test("same-side endpoints take an exterior bent route and curves respect the tar
     false,
   );
   assert.ok(elbow.hitPoints.at(-2)!.x > elbow.endPoint.x);
+  assert.match(elbow.path, / Q /);
+  assert.equal(elbow.isEditableCurve, false);
+
+  // Adjacent ports cannot form one monotonic free cubic. Curve remains
+  // visibly curved through the collision-safe cubic backbone, but reports no
+  // editable handle because a drag would not have one coherent control point.
+  assert.match(curve.path, / C /);
+  assert.doesNotMatch(curve.path, / Q /);
+  assert.equal(curve.isEditableCurve, false);
   assert.ok(curve.hitPoints.at(-2)!.y < curve.endPoint.y);
+
+  const sameSideCurve = canvasEdgeGeometry(
+    {
+      from: "start",
+      to: "target",
+      kind: "forward",
+      presentation: { route: "curve", sourcePort: "right", targetPort: "right" },
+    },
+    [start, target],
+    (node) => node,
+  );
+  assert.match(sameSideCurve.path, / C /);
+  assert.doesNotMatch(sameSideCurve.path, / Q /);
+  assert.equal(sameSideCurve.isEditableCurve, false);
+  assert.equal(
+    pathEntersFrame(sameSideCurve.hitPoints, { left: 460, top: 30, right: 700, bottom: 204 }),
+    false,
+  );
 });
 
 test("fit keeps a graph visible with stable canvas padding", () => {

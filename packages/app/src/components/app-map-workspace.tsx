@@ -39,7 +39,11 @@ import {
   type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
-import { canvasGridForScale, canvasGridPresentation } from "../lib/app-map-grid";
+import {
+  canvasGridForScale,
+  canvasGridPresentation,
+  snapCanvasPointToGrid,
+} from "../lib/app-map-grid";
 import {
   centerCanvasViewport,
   minimapViewportBounds,
@@ -74,6 +78,8 @@ import {
   connectionStepsFromActions,
   mergeAppMapProjection,
   planAppMapProjection,
+  screenRestoreSnapshotFor,
+  type AppMapScreenRestoreSnapshot,
 } from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
@@ -311,7 +317,7 @@ export function AppMapWorkspace(props: {
   let recordRequestedAfterDeviceSelection = false;
   let deviceAutoOpenedForMap = "";
   let initiallyFittedAppMapId = "";
-  const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState>();
+  const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState, AppMapScreenRestoreSnapshot>();
   const positions = () => canvasState().positions;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
   const resolvedPositions = createMemo(() =>
@@ -361,10 +367,7 @@ export function AppMapWorkspace(props: {
             sourceAnchor: connection.sourceAnchor,
             sourceRotation: canvasScreenRotations()[connection.fromScreenId],
             presentation: connectorPresentationWithAutoLane(connection, autoConnectionLanes()),
-            automaticSourceLane: connectorHasAutomaticSourceLane(
-              connection,
-              autoConnectionLanes(),
-            ),
+            automaticSourceLane: connectorHasAutomaticSourceLane(connection, autoConnectionLanes()),
           },
           tree().nodes,
           positionFor,
@@ -756,6 +759,7 @@ export function AppMapWorkspace(props: {
     value: AppMapCanvasState,
     previous?: AppMapCanvasState,
     variantsByScreen?: Readonly<Record<string, readonly ScreenVariant[]>>,
+    restore?: AppMapScreenRestoreSnapshot,
   ): void {
     const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
@@ -770,6 +774,7 @@ export function AppMapWorkspace(props: {
           groups: value.groups ?? [],
           recipeSteps: draft.steps(),
           ...(variantsByScreen ? { variantsByScreen } : {}),
+          ...(restore ? { restore } : {}),
         });
         const removals = previous ? canvasRemovalChanges(previous, value, appMap) : [];
         const noteChanges = noteChangesFor(value.notes ?? [], appMap, previous?.notes ?? []);
@@ -805,6 +810,7 @@ export function AppMapWorkspace(props: {
       before?: AppMapCanvasState;
       recordHistory?: boolean;
       variantsByScreen?: Readonly<Record<string, readonly ScreenVariant[]>>;
+      restore?: AppMapScreenRestoreSnapshot;
     } = {},
   ) => {
     if (!server.selectedAppMapId()) return;
@@ -814,15 +820,26 @@ export function AppMapWorkspace(props: {
       (variants) => variants.length > 0,
     );
     if (!canvasChanged && !hasVariantEvidence) return;
+    const restore =
+      options.restore ??
+      (() => {
+        const appMap = activeAppMap();
+        if (!appMap) return undefined;
+        const removedScreenIds = canvasRemovalChanges(before, value, appMap).flatMap((change) =>
+          change.kind === "screen.remove" ? [change.screenId] : [],
+        );
+        return screenRestoreSnapshotFor(appMap, removedScreenIds);
+      })();
     if (canvasChanged && options.recordHistory !== false) {
       canvasHistory.record({
         before,
         after: structuredClone(value),
         at: Date.now(),
+        ...(restore ? { restore } : {}),
       });
     }
     if (canvasChanged) setCanvasState(value);
-    persistAppMapCanvas(value, before, options.variantsByScreen);
+    persistAppMapCanvas(value, before, options.variantsByScreen, options.restore);
   };
   const persistNotes = (notes: CanvasNote[], before?: AppMapCanvasState) => {
     persistMetadata(withCanvasGraph({ ...canvasState(), notes }, graph()), { before });
@@ -1094,6 +1111,7 @@ export function AppMapWorkspace(props: {
     persistMetadata(structuredClone(entry.before), {
       before: canvasState(),
       recordHistory: false,
+      ...(entry.restore ? { restore: entry.restore } : {}),
     });
   };
   const redo = () => {
@@ -1609,6 +1627,44 @@ export function AppMapWorkspace(props: {
                         }),
                       ),
                     });
+                  }}
+                  onNudgeNode={(node, direction, coarse) => {
+                    const ids = selectedNodeIds().includes(node.id) ? selectedNodeIds() : [node.id];
+                    const before = structuredClone(canvasState());
+                    const step = canvasGrid().spacing * (coarse ? 5 : 1);
+                    const nextPositions = Object.fromEntries(
+                      ids.flatMap((id) => {
+                        const member = tree().nodes.find((candidate) => candidate.id === id);
+                        if (!member) return [];
+                        const position = positionFor(member);
+                        return [
+                          [
+                            id,
+                            snapCanvasPointToGrid(
+                              {
+                                x: position.x + direction.x * step,
+                                y: position.y + direction.y * step,
+                              },
+                              canvasGrid(),
+                            ),
+                          ] as const,
+                        ];
+                      }),
+                    );
+                    if (!Object.keys(nextPositions).length) return;
+                    setSelectedNodeIds(ids);
+                    setSelectedNodeIdValue(node.id);
+                    setSelectedConnectionId(null);
+                    persistMetadata(
+                      withCanvasGraph(
+                        {
+                          ...canvasState(),
+                          positions: { ...canvasState().positions, ...nextPositions },
+                        },
+                        graph(),
+                      ),
+                      { before },
+                    );
                   }}
                   onNotePointerDown={(event, note) => {
                     if (event.button !== 0) return;

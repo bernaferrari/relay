@@ -239,6 +239,7 @@ export function ScreenCard(props: {
   onRun?: () => void;
   onCommitRename: (title: string) => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
+  onNudge: (direction: { x: number; y: number }, coarse: boolean) => void;
   /** Live device is on this mapped screen. Distinct from selected. */
   here?: boolean;
 }) {
@@ -294,6 +295,22 @@ export function ScreenCard(props: {
       onClick={props.onSelect}
       onContextMenu={props.onContextMenu}
       onKeyDown={(event) => {
+        const direction =
+          event.key === "ArrowLeft"
+            ? { x: -1, y: 0 }
+            : event.key === "ArrowRight"
+              ? { x: 1, y: 0 }
+              : event.key === "ArrowUp"
+                ? { x: 0, y: -1 }
+                : event.key === "ArrowDown"
+                  ? { x: 0, y: 1 }
+                  : undefined;
+        if (direction) {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onNudge(direction, event.shiftKey);
+          return;
+        }
         if (event.key === "F2") {
           event.preventDefault();
           props.onRename();
@@ -352,9 +369,8 @@ export function ScreenCard(props: {
           when={props.editing}
           fallback={
             <strong
-              class="min-w-0 max-w-full truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)]"
-              data-tip="Double-click to rename · F2"
-              onPointerDown={(event) => event.stopPropagation()}
+              class="min-w-0 max-w-full cursor-grab truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing"
+              data-tip="Drag to move · Double-click to rename · F2"
               onClick={(event) => {
                 event.stopPropagation();
                 props.onSelect(event);

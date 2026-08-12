@@ -38,11 +38,25 @@ export type CanvasBounds = {
   height: number;
 };
 
+type CanvasCubicSegment = {
+  start: CanvasPoint;
+  control1: CanvasPoint;
+  control2: CanvasPoint;
+  end: CanvasPoint;
+};
+
 export type CanvasEdgeGeometry = {
   path: string;
   labelPoint: CanvasPoint;
   startPoint: CanvasPoint;
   endPoint: CanvasPoint;
+  /** Whether this is one free cubic that supports the visible drag anchor. */
+  isEditableCurve: boolean;
+  /** Exact analytic terminal tangent for a cubic; polylines use hit points. */
+  endTangentPoint?: CanvasPoint;
+  /** Analytic curve pieces retained for collision safety; hit points remain
+   * intentionally light-weight so selection work stays inexpensive. */
+  cubicSegments?: readonly CanvasCubicSegment[];
   /** A light-weight polyline approximation used for marquee hit-testing. */
   hitPoints: CanvasPoint[];
 };
@@ -56,11 +70,15 @@ export type CanvasEdgeGeometry = {
  * stroke, opacity, line cap, and selection state as the route itself.
  */
 export function canvasEdgeArrowPath(
-  geometry: Pick<CanvasEdgeGeometry, "endPoint" | "hitPoints">,
+  geometry: Pick<CanvasEdgeGeometry, "endPoint" | "endTangentPoint" | "hitPoints">,
   strokeWidth = 2,
 ): string {
   const end = geometry.endPoint;
-  const tangentPoint = previousDistinctPoint(geometry.hitPoints, end);
+  const exactTangent = geometry.endTangentPoint;
+  const tangentPoint =
+    exactTangent && Math.hypot(end.x - exactTangent.x, end.y - exactTangent.y) > 0.01
+      ? exactTangent
+      : previousDistinctPoint(geometry.hitPoints, end);
   return tangentPoint ? arrowPathAt(end, tangentPoint, strokeWidth) : "";
 }
 
@@ -137,7 +155,6 @@ const BRANCH_ROW_GAP = 48;
 /** Keep the terminal arrow visually associated with its destination without
  * making it look like it pierces the screen/device frame. */
 const CONNECTOR_TARGET_GAP = 12;
-const CONNECTOR_TARGET_GAP_SCREEN_PIXELS = 8;
 /** A nearly facing automatic pair should look like the single intentional
  * gesture it is, not a two-corner dogleg. Keep this in world space so the
  * decision does not flicker while the person zooms. */
@@ -145,26 +162,55 @@ const DIRECT_FACING_ALIGNMENT = 20;
 const DIRECT_PATH_EPSILON = 0.01;
 const DIRECT_FACING_MIN_FORWARD_DISTANCE = 16;
 const MIN_CUBIC_PULL = 8;
-const MAX_CUBIC_PULL_FRACTION = 0.42;
-/** A curve needs a visibly straight arrival, not only an infinitesimal Bézier
- * tangent at the arrowhead. This stays world-space so it reads consistently
- * as the canvas zooms. */
-const CURVE_TERMINAL_LEAD_IN = 32;
+const FACING_CUBIC_HANDLE_FRACTION = 0.45;
+/**
+ * A very tall facing connection needs more than a mathematically horizontal
+ * tangent at its destination. If its target handle stays proportional only
+ * to the narrow horizontal gap, the last few pixels have to make the entire
+ * turn and read as a J-hook. Let the terminal handle grow past that gap for
+ * an extreme cross-axis span, while keeping the cubic monotone along the
+ * selected port axis (0.45 / 1.2 is safely inside that bound).
+ */
+const FACING_TERMINAL_HANDLE_MAX_FRACTION = 1.2;
+// Below 4:1 a regular facing cubic already turns naturally. This adjustment
+// is deliberately reserved for the extreme near-column case that otherwise
+// creates a tall J-hook.
+const FACING_TERMINAL_BIAS_START_RATIO = 4;
+const FACING_TERMINAL_BIAS_FULL_RATIO = 8;
+/** The threshold at which the small facing gap cannot visually host a smooth
+ * terminal turn. Beyond this ratio, use the exterior three-cubic arrival. */
+const EXTREME_FACING_CROSS_AXIS_RATIO = 4;
+const EXTREME_FACING_CORNER_MIN = 56;
+// Keep the extreme fallback broad enough to avoid a terminal hook, but a
+// moderately tighter than the initial 120px radius so its final turn reads
+// as a deliberate, slightly steeper arrival rather than a wide U.
+const EXTREME_FACING_CORNER_MAX = 112;
+const QUARTER_ELLIPSE_HANDLE = 0.5522847498;
+// The source must get beyond its own displayed frame before an exterior rail
+// can come back across the narrow forward gap. Keep a small actual trunk too,
+// rather than merging both quarter turns into another long S-shaped cubic.
+const EXTREME_FACING_ENTRY_CLEARANCE = SCREEN_FRAME_HEIGHT + 16;
+const EXTREME_FACING_MIN_TRUNK = 24;
+const PERPENDICULAR_HANDLE_FRACTION = 0.5522847498;
+const SAME_SIDE_CURVE_RAIL_CLEARANCE = 32;
+const CUBIC_HIT_POINT_COUNT = 33;
+const CURVE_OFFSET_EPSILON = 0.01;
 /** Ignore sub-pixel-to-a-few-pixel pointer noise on a computed source fan.
  * This is presentation behavior, never a migration or persistence rewrite. */
 const AUTOMATIC_FAN_CURVE_JITTER_RADIUS = 8;
 
 /**
- * Resolve the FigJam-style terminal clearance in world coordinates. Keeping
- * its rendered size constant means the deliberate air gap remains visible at
- * both the readable zoom floor and close inspection zoom, rather than
- * disappearing when a dense map is zoomed out.
+ * Resolve the terminal clearance in canvas/world coordinates.
+ *
+ * Connector paths, endpoint tangents, and arrowheads are all canvas
+ * geometry, so their inputs must not depend on the current camera zoom. A
+ * screen-pixel gap used to move the endpoint whenever the viewport scale
+ * changed, which made an otherwise stationary arrow visibly redraw into a
+ * different shape. Keep this exported compatibility boundary because scene,
+ * minimap, and presence all call it, but deliberately ignore its scale.
  */
-export function connectorTargetGapForViewport(viewportScale?: number): number {
-  if (viewportScale === undefined || !Number.isFinite(viewportScale) || viewportScale <= 0) {
-    return CONNECTOR_TARGET_GAP;
-  }
-  return CONNECTOR_TARGET_GAP_SCREEN_PIXELS / viewportScale;
+export function connectorTargetGapForViewport(_viewportScale?: number): number {
+  return CONNECTOR_TARGET_GAP;
 }
 
 export type ScreenCardGeometry = {
@@ -422,6 +468,7 @@ export function canvasEdgeGeometry(
       labelPoint: { x: 0, y: 0 },
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 0, y: 0 },
+      isEditableCurve: false,
       hitPoints: [],
     };
   }
@@ -463,6 +510,10 @@ export function canvasEdgeGeometry(
     y: targetAttachment.y + targetVector.y * targetGap,
   };
   const route = edge.presentation?.route ?? "elbow";
+  const framedNodes = nodes.map((node) => ({
+    id: node.id,
+    frame: screenFrameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry()),
+  }));
   const elbowPoints = () =>
     smartElbowPoints({
       start,
@@ -471,9 +522,7 @@ export function canvasEdgeGeometry(
       targetDirection,
       sourceFrame: fromFrame,
       targetFrame: toFrame,
-      obstacleFrames: nodes.map((node) =>
-        screenFrameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry()),
-      ),
+      obstacleFrames: framedNodes.map((node) => node.frame),
       sourceOffset: edge.presentation?.sourceOffset,
       // Target offsets are internal rail hints only. The visible terminal
       // above remains centred regardless of legacy or computed lane data.
@@ -489,21 +538,23 @@ export function canvasEdgeGeometry(
     route === "elbow" &&
     edge.presentation?.sourceOffset === undefined &&
     !edge.automaticSourceLane &&
-    directFacingPathIsClear(start, end, direction, targetDirection, from.id, to.id, nodes, positionFor, geometryFor)
+    directFacingPathIsClear(
+      start,
+      end,
+      direction,
+      targetDirection,
+      from.id,
+      to.id,
+      nodes,
+      positionFor,
+      geometryFor,
+    )
   ) {
     return straightEdge(start, end);
   }
   if (route === "elbow") return elbowEdge(elbowPoints());
 
   const offset = edge.presentation?.controlOffset;
-  const sourceVector = portDirectionVector(direction);
-  const forwardDistance = cubicForwardDistance(start, end, direction, targetDirection);
-  // A curve still needs a viable opposing exit/entry pair. Same-side and
-  // near-zero spans would fold a free cubic back on itself, so retain the
-  // obstacle-safe backbone for only those impossible geometries.
-  if (forwardDistance === undefined || forwardDistance < DIRECT_FACING_MIN_FORWARD_DISTANCE) {
-    return elbowEdge(elbowPoints());
-  }
   // Curve is an explicit selected route. On an automatic fan, a default or
   // tiny pointer-jitter offset becomes a visibly smoother compound cubic
   // along the reserved no-crossing backbone—not a Bent/Q route that appears
@@ -512,55 +563,53 @@ export function canvasEdgeGeometry(
   if (edge.automaticSourceLane && !hasMeaningfulAutomaticFanCurveOffset(offset)) {
     return cubicBackboneEdge(elbowPoints());
   }
-  // Reserve the final part of a free curve for a real straight run into the
-  // selected target port. The cubic ends at `leadStart` with a matching
-  // target-direction derivative, then the line continues G1-smoothly into
-  // the arrow tip. Very short viable spans simply reserve what they can.
-  const terminalLead = Math.min(
-    CURVE_TERMINAL_LEAD_IN,
-    Math.max(0, forwardDistance - DIRECT_FACING_MIN_FORWARD_DISTANCE),
-  );
-  const leadStart = {
-    x: end.x + targetVector.x * terminalLead,
-    y: end.y + targetVector.y * terminalLead,
-  };
-  const curveForwardDistance = forwardDistance - terminalLead;
-  const naturalPull = Math.hypot(leadStart.x - start.x, leadStart.y - start.y) * 0.35;
-  const pull = Math.min(
-    Math.max(MIN_CUBIC_PULL, naturalPull),
-    curveForwardDistance * MAX_CUBIC_PULL_FRACTION,
-  );
-  const baseControl1 = {
-    x: start.x + sourceVector.x * pull,
-    y: start.y + sourceVector.y * pull,
-  };
-  const baseControl2 = {
-    x: leadStart.x + targetVector.x * pull,
-    y: leadStart.y + targetVector.y * pull,
-  };
-  if (!offset) return cubicEdgeWithTerminalLeadIn(start, leadStart, end, baseControl1, baseControl2);
-  // Moving both controls by 4/3 of the requested offset moves the cubic's
-  // midpoint by exactly that offset. Clamp only the forward component so the
-  // two controls retain their source→target order; perpendicular shaping is
-  // still completely free and cannot create a loop along the connection.
-  const requested = { x: (offset.x * 4) / 3, y: (offset.y * 4) / 3 };
-  const forwardAdjustment = requested.x * sourceVector.x + requested.y * sourceVector.y;
-  const safeForwardAdjustment = Math.min(Math.max(forwardAdjustment, -pull), pull);
-  const perpendicularAdjustment = {
-    x: requested.x - sourceVector.x * forwardAdjustment,
-    y: requested.y - sourceVector.y * forwardAdjustment,
-  };
-  const adjustment = {
-    x: perpendicularAdjustment.x + sourceVector.x * safeForwardAdjustment,
-    y: perpendicularAdjustment.y + sourceVector.y * safeForwardAdjustment,
-  };
-  return cubicEdgeWithTerminalLeadIn(
-    start,
-    leadStart,
-    end,
-    { x: baseControl1.x + adjustment.x, y: baseControl1.y + adjustment.y },
-    { x: baseControl2.x + adjustment.x, y: baseControl2.y + adjustment.y },
-  );
+  // With an extreme cross-axis span and only a sliver of forward clearance,
+  // a single facing cubic has no room to both turn naturally and arrive on
+  // the chosen target normal. That is the classic last-moment J-hook: the
+  // arrow tangent is technically right, but the curve has to make its entire
+  // turn in a handful of pixels. Use a generated three-cubic spline instead:
+  // horizontal exit → vertical trunk → wide horizontal arrival. Its outer
+  // joins are C¹-continuous, so the terminal never becomes a last-moment
+  // J-hook or a hidden straight rail.
+  const extremeFacing = extremeFacingCurve(start, end, direction, targetDirection);
+  if (extremeFacing && cubicRouteAvoidsFrames(extremeFacing, from.id, to.id, framedNodes)) {
+    return extremeFacing;
+  }
+  const controls = normalCubicControls(start, end, direction, targetDirection);
+  if (!controls) return cubicBackboneEdge(elbowPoints());
+  const baseCurve = cubicEdge(start, end, controls.control1, controls.control2);
+  const isSafe = (candidate: CanvasEdgeGeometry) =>
+    cubicRouteIsSafe(candidate, from.id, to.id, framedNodes, direction, targetDirection);
+  if (!isSafe(baseCurve)) return cubicBackboneEdge(elbowPoints());
+
+  // A center-anchor drag cannot move either normal handle independently
+  // without breaking a cardinal departure or arrival. Split the normal cubic
+  // at its midpoint and move only the C2-continuous join instead. A strongly
+  // cross-axis facing pair deliberately starts at its geometric centre rather
+  // than the biased cubic's parametric midpoint: the stored offset is a
+  // person-facing canvas displacement, so changing the terminal pull must
+  // never make an existing draggable anchor jump sideways.
+  const anchorOrigin = controls.usesStableMidpoint ? midpoint(start, end) : baseCurve.labelPoint;
+  const requestedOffset = offset ?? { x: 0, y: 0 };
+  const needsShapedMidpoint =
+    controls.usesStableMidpoint ||
+    Math.hypot(requestedOffset.x, requestedOffset.y) > CURVE_OFFSET_EPSILON;
+  if (!needsShapedMidpoint) return baseCurve;
+  const shapedAt = (fraction: number) =>
+    cubicEdgeThroughMidpoint(start, end, controls.control1, controls.control2, {
+      x: anchorOrigin.x + requestedOffset.x * fraction,
+      y: anchorOrigin.y + requestedOffset.y * fraction,
+    });
+  const requested = shapedAt(1);
+  if (isSafe(requested)) return requested;
+  let minimum = 0;
+  let maximum = 1;
+  for (let iteration = 0; iteration < 24; iteration += 1) {
+    const middle = (minimum + maximum) / 2;
+    if (isSafe(shapedAt(middle))) minimum = middle;
+    else maximum = middle;
+  }
+  return minimum > CURVE_OFFSET_EPSILON ? shapedAt(minimum) : baseCurve;
 }
 
 type EdgePortDirection = ConnectorPortDirection;
@@ -586,10 +635,10 @@ function fallbackAutoPortDirection(
 
 /**
  * Pick the semantic automatic port pair from the real visible frames. A card
- * arranged to the right is a right→left connection even when it sits lower on
- * the canvas: changing it to bottom→top makes the endpoint look unrelated to
- * the diagram's reading direction. Vertical ports take over only when the
- * frames overlap horizontally. Explicit endpoint ports bypass this chooser.
+ * arranged to the right remains a right→left connection even when it sits
+ * lower on the canvas: that preserves the diagram's reading direction and
+ * keeps a left-side target attachment when the user expects it. Explicit
+ * endpoint ports bypass this chooser.
  */
 export function autoConnectorPortPair(
   from: CanvasFrameBounds,
@@ -649,7 +698,8 @@ function overlappingFramePortPair(
         score:
           clearancePenalty * 100_000 +
           bends * 1_000 +
-          Math.abs(targetPoint.x - sourcePoint.x) + Math.abs(targetPoint.y - sourcePoint.y),
+          Math.abs(targetPoint.x - sourcePoint.x) +
+          Math.abs(targetPoint.y - sourcePoint.y),
       });
     }
   }
@@ -745,10 +795,246 @@ function cubicForwardDistance(
 }
 
 function hasMeaningfulAutomaticFanCurveOffset(offset: CanvasPoint | undefined): boolean {
-  return (
-    offset !== undefined &&
-    Math.hypot(offset.x, offset.y) > AUTOMATIC_FAN_CURVE_JITTER_RADIUS
+  return offset !== undefined && Math.hypot(offset.x, offset.y) > AUTOMATIC_FAN_CURVE_JITTER_RADIUS;
+}
+
+type NormalCubicControls = {
+  control1: CanvasPoint;
+  control2: CanvasPoint;
+  /** Preserve the logical centre anchor while a target-side pull is biased. */
+  usesStableMidpoint?: boolean;
+};
+
+function dot(left: CanvasPoint, right: CanvasPoint): number {
+  return left.x * right.x + left.y * right.y;
+}
+
+function subtract(left: CanvasPoint, right: CanvasPoint): CanvasPoint {
+  return { x: left.x - right.x, y: left.y - right.y };
+}
+
+function moveAlong(point: CanvasPoint, direction: CanvasPoint, distance: number): CanvasPoint {
+  return { x: point.x + direction.x * distance, y: point.y + direction.y * distance };
+}
+
+function leftNormal(direction: CanvasPoint): CanvasPoint {
+  return { x: -direction.y, y: direction.x };
+}
+
+/**
+ * Solve a one-cubic connector only when both endpoint tangents can stay on
+ * their selected port normals. Facing handles are ordered strictly along the
+ * shared forward axis; perpendicular handles use the corresponding source
+ * and target projections, producing the familiar quarter-turn proportions.
+ * Same-side pairs use one shared exterior rail when they have real cross-axis
+ * separation; backwards and cramped pairs deliberately use the router's
+ * backbone instead of creating an S-loop or a diagonal screen departure.
+ */
+function normalCubicControls(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): NormalCubicControls | undefined {
+  const sourceVector = portDirectionVector(sourceDirection);
+  const targetVector = portDirectionVector(targetDirection);
+  const chord = subtract(end, start);
+  if (targetDirection === oppositePortDirection(sourceDirection)) {
+    const forwardDistance = dot(chord, sourceVector);
+    if (forwardDistance < DIRECT_FACING_MIN_FORWARD_DISTANCE) return undefined;
+    // Keep the source pull compact so an anchored origin leaves its screen
+    // decisively. The target pull is allowed to grow for an overwhelmingly
+    // cross-axis connection: this starts the final turn early enough that a
+    // left-side arrival remains one continuous fluid curve instead of a long
+    // vertical stroke followed by a last-moment J-hook. The chosen 1.2× cap
+    // remains monotone with the source's 0.375–0.45× pull range, so the route
+    // never doubles back through its selected facing ports.
+    const minimumHandle = Math.min(MIN_CUBIC_PULL, forwardDistance / 4);
+    const maximumHandle = Math.max(0, (forwardDistance - minimumHandle) / 2);
+    const sourceHandle = Math.min(
+      Math.max(minimumHandle, forwardDistance * FACING_CUBIC_HANDLE_FRACTION),
+      maximumHandle,
+    );
+    const crossAxisDistance = Math.abs(dot(chord, leftNormal(sourceVector)));
+    const crossAxisRatio = crossAxisDistance / Math.max(forwardDistance, DIRECT_PATH_EPSILON);
+    const terminalBias = Math.max(
+      0,
+      Math.min(
+        1,
+        (crossAxisRatio - FACING_TERMINAL_BIAS_START_RATIO) /
+          (FACING_TERMINAL_BIAS_FULL_RATIO - FACING_TERMINAL_BIAS_START_RATIO),
+      ),
+    );
+    const targetHandle =
+      forwardDistance *
+      (FACING_CUBIC_HANDLE_FRACTION +
+        (FACING_TERMINAL_HANDLE_MAX_FRACTION - FACING_CUBIC_HANDLE_FRACTION) * terminalBias);
+    return {
+      control1: moveAlong(start, sourceVector, sourceHandle),
+      control2: moveAlong(end, targetVector, targetHandle),
+      usesStableMidpoint: terminalBias > CURVE_OFFSET_EPSILON,
+    };
+  }
+  if (targetDirection === sourceDirection) {
+    const perpendicular = leftNormal(sourceVector);
+    const forwardDistance = dot(chord, sourceVector);
+    const crossDistance = dot(chord, perpendicular);
+    // A same-side connector with no meaningful cross-axis separation would
+    // retrace itself through one cubic. Use the router's rounded exterior U
+    // in that case; otherwise the common outside rail produces a clean,
+    // normal-constrained loop without touching either screen.
+    if (Math.abs(crossDistance) < DIRECT_FACING_MIN_FORWARD_DISTANCE) return undefined;
+    const sourceHandle =
+      Math.max(0, forwardDistance) +
+      SAME_SIDE_CURVE_RAIL_CLEARANCE +
+      PERPENDICULAR_HANDLE_FRACTION * Math.abs(crossDistance);
+    const targetHandle = sourceHandle - forwardDistance;
+    return {
+      control1: moveAlong(start, sourceVector, sourceHandle),
+      control2: moveAlong(end, targetVector, targetHandle),
+    };
+  }
+
+  // Perpendicular ports have two independent forward distances: the chord
+  // must be in front of the source normal and the source must sit outward of
+  // the target normal. Otherwise a one-cubic turn would reverse or curl back
+  // through a screen.
+  const sourceProjection = dot(chord, sourceVector);
+  const targetProjection = dot(subtract(start, end), targetVector);
+  if (
+    sourceProjection < DIRECT_FACING_MIN_FORWARD_DISTANCE ||
+    targetProjection < DIRECT_FACING_MIN_FORWARD_DISTANCE
+  ) {
+    return undefined;
+  }
+  return {
+    control1: moveAlong(start, sourceVector, sourceProjection * PERPENDICULAR_HANDLE_FRACTION),
+    control2: moveAlong(end, targetVector, targetProjection * PERPENDICULAR_HANDLE_FRACTION),
+  };
+}
+
+/**
+ * Build the fluid fallback for a very tall (or very wide) facing connector.
+ *
+ * A normal single cubic has only the narrow source→target clearance in which
+ * to turn. When that clearance is dwarfed by the cross-axis distance, its
+ * tangent may be mathematically correct but it still reads as a sharp hook.
+ * This construction gives the terminal a real quarter-ellipse: its final
+ * control is materially behind the arrow on the selected incoming axis. A
+ * first horizontal-to-cross-axis turn, a genuinely vertical middle cubic,
+ * and a final cross-axis-to-horizontal turn are C¹-continuous at both joins.
+ * It is the same visual grammar as a FigJam curved connector, expressed with
+ * plain SVG cubics so selection, arrows, and collision safety share one
+ * geometry.
+ */
+function extremeFacingCurve(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): CanvasEdgeGeometry | undefined {
+  if (targetDirection !== oppositePortDirection(sourceDirection)) return undefined;
+  const sourceVector = portDirectionVector(sourceDirection);
+  const crossAxis = leftNormal(sourceVector);
+  const chord = subtract(end, start);
+  const forwardDistance = dot(chord, sourceVector);
+  const signedCrossDistance = dot(chord, crossAxis);
+  const crossDistance = Math.abs(signedCrossDistance);
+  if (
+    forwardDistance < DIRECT_FACING_MIN_FORWARD_DISTANCE ||
+    crossDistance / Math.max(forwardDistance, DIRECT_PATH_EPSILON) < EXTREME_FACING_CROSS_AXIS_RATIO
+  ) {
+    return undefined;
+  }
+
+  const travelVector = moveAlong({ x: 0, y: 0 }, crossAxis, signedCrossDistance >= 0 ? 1 : -1);
+  // A fixed bounded terminal width is intentional. It produces a visible,
+  // stable curve at every placement without letting an enormous vertical gap
+  // balloon the last corner across unrelated cards. It can exceed the tiny
+  // forward gap: that is the exterior rail which gives the arrow a material
+  // horizontal arrival instead of an unavoidable compressed hook.
+  const desiredTerminalWidth = Math.min(
+    EXTREME_FACING_CORNER_MAX,
+    Math.max(EXTREME_FACING_CORNER_MIN, crossDistance * 0.12),
   );
+  // Reserve enough vertical trunk that its two matching join handles never
+  // reverse through each other. Otherwise a medium-height route could turn
+  // the supposedly straight middle section into a second small S-curve.
+  // On cramped geometry this scales both corners down together; if that
+  // makes the terminal imperceptible, the collision-safe router is the
+  // honest fallback.
+  const minimumTrunk = Math.min(EXTREME_FACING_MIN_TRUNK, crossDistance / 3);
+  const desiredEntryTurn = Math.max(desiredTerminalWidth, EXTREME_FACING_ENTRY_CLEARANCE);
+  const availableTurnDistance = Math.max(
+    0,
+    (crossDistance - minimumTrunk) / (1 + QUARTER_ELLIPSE_HANDLE),
+  );
+  const turnScale = Math.min(1, availableTurnDistance / (desiredEntryTurn + desiredTerminalWidth));
+  const terminalWidth = desiredTerminalWidth * turnScale;
+  const terminalTurn = terminalWidth;
+  const entryTurn = desiredEntryTurn * turnScale;
+  const trunkLength = crossDistance - entryTurn - terminalTurn;
+  if (
+    terminalWidth <= MIN_CUBIC_PULL ||
+    terminalTurn <= DIRECT_PATH_EPSILON ||
+    entryTurn <= DIRECT_PATH_EPSILON ||
+    trunkLength <= DIRECT_PATH_EPSILON
+  ) {
+    return undefined;
+  }
+
+  // `rail` deliberately sits behind the target by terminalWidth. For a very
+  // narrow forward gap it can be outside the start/end x interval; that is
+  // required to make a broad rightward arrival while preserving both chosen
+  // horizontal port normals.
+  const rail = moveAlong(end, sourceVector, -terminalWidth);
+  const entryEnd = moveAlong(rail, travelVector, -(crossDistance - entryTurn));
+  const terminalStart = moveAlong(rail, travelVector, -terminalTurn);
+  const sourceLead = terminalWidth;
+  const entryControl1 = moveAlong(start, sourceVector, sourceLead);
+  const entryControl2 = moveAlong(entryEnd, travelVector, -QUARTER_ELLIPSE_HANDLE * entryTurn);
+  const trunkControl1 = moveAlong(entryEnd, travelVector, QUARTER_ELLIPSE_HANDLE * entryTurn);
+  const trunkControl2 = moveAlong(
+    terminalStart,
+    travelVector,
+    -QUARTER_ELLIPSE_HANDLE * terminalTurn,
+  );
+  const terminalControl1 = moveAlong(
+    terminalStart,
+    travelVector,
+    QUARTER_ELLIPSE_HANDLE * terminalTurn,
+  );
+  const terminalControl2 = moveAlong(end, sourceVector, -QUARTER_ELLIPSE_HANDLE * terminalWidth);
+  const entrySamples = sampleCubic(start, entryControl1, entryControl2, entryEnd);
+  const trunkSamples = sampleCubic(entryEnd, trunkControl1, trunkControl2, terminalStart);
+  const terminalSamples = sampleCubic(terminalStart, terminalControl1, terminalControl2, end);
+  const hitPoints = [...entrySamples, ...trunkSamples.slice(1), ...terminalSamples.slice(1)];
+  return {
+    path: `M ${start.x} ${start.y} C ${entryControl1.x} ${entryControl1.y}, ${entryControl2.x} ${entryControl2.y}, ${entryEnd.x} ${entryEnd.y} C ${trunkControl1.x} ${trunkControl1.y}, ${trunkControl2.x} ${trunkControl2.y}, ${terminalStart.x} ${terminalStart.y} C ${terminalControl1.x} ${terminalControl1.y}, ${terminalControl2.x} ${terminalControl2.y}, ${end.x} ${end.y}`,
+    labelPoint: pointAlongPolyline(hitPoints, 0.5),
+    startPoint: start,
+    endPoint: end,
+    // This is a generated safety route. Exposing a midpoint handle would
+    // misleadingly imply that a person must fix the terminal curve manually.
+    isEditableCurve: false,
+    endTangentPoint: terminalControl2,
+    cubicSegments: [
+      { start, control1: entryControl1, control2: entryControl2, end: entryEnd },
+      {
+        start: entryEnd,
+        control1: trunkControl1,
+        control2: trunkControl2,
+        end: terminalStart,
+      },
+      {
+        start: terminalStart,
+        control1: terminalControl1,
+        control2: terminalControl2,
+        end,
+      },
+    ],
+    hitPoints,
+  };
 }
 
 /**
@@ -822,12 +1108,263 @@ function lineCrossesFrameInterior(
   return entersAt < exitsAt - DIRECT_PATH_EPSILON;
 }
 
+function polylineEntersFrame(points: readonly CanvasPoint[], frame: CanvasFrameBounds): boolean {
+  return points.some(
+    (point, index) => index > 0 && lineCrossesFrameInterior(points[index - 1]!, point, frame),
+  );
+}
+
+function leavesSourceWithoutReturning(
+  points: readonly CanvasPoint[],
+  frame: CanvasFrameBounds,
+): boolean {
+  let hasLeftSource = !pointIsInsideFrame(points[0] ?? { x: 0, y: 0 }, frame);
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const point = points[index]!;
+    if (!hasLeftSource) {
+      if (!pointIsInsideFrame(point, frame)) hasLeftSource = true;
+      continue;
+    }
+    if (lineCrossesFrameInterior(previous, point, frame)) return false;
+  }
+  return true;
+}
+
+function crossProduct(origin: CanvasPoint, first: CanvasPoint, second: CanvasPoint): number {
+  return (
+    (first.x - origin.x) * (second.y - origin.y) - (first.y - origin.y) * (second.x - origin.x)
+  );
+}
+
+function segmentsProperlyIntersect(
+  firstStart: CanvasPoint,
+  firstEnd: CanvasPoint,
+  secondStart: CanvasPoint,
+  secondEnd: CanvasPoint,
+): boolean {
+  const first = crossProduct(firstStart, firstEnd, secondStart);
+  const second = crossProduct(firstStart, firstEnd, secondEnd);
+  const third = crossProduct(secondStart, secondEnd, firstStart);
+  const fourth = crossProduct(secondStart, secondEnd, firstEnd);
+  return (
+    Math.abs(first) > DIRECT_PATH_EPSILON &&
+    Math.abs(second) > DIRECT_PATH_EPSILON &&
+    Math.abs(third) > DIRECT_PATH_EPSILON &&
+    Math.abs(fourth) > DIRECT_PATH_EPSILON &&
+    first > 0 !== second > 0 &&
+    third > 0 !== fourth > 0
+  );
+}
+
+function polylineHasProperSelfIntersection(points: readonly CanvasPoint[]): boolean {
+  for (let firstIndex = 1; firstIndex < points.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 2; secondIndex < points.length; secondIndex += 1) {
+      if (
+        segmentsProperlyIntersect(
+          points[firstIndex - 1]!,
+          points[firstIndex]!,
+          points[secondIndex - 1]!,
+          points[secondIndex]!,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+const CUBIC_FRAME_FLATNESS = 0.25;
+const CUBIC_FRAME_MAX_SUBDIVISION_DEPTH = 20;
+
+function expandedFrame(frame: CanvasFrameBounds, amount: number): CanvasFrameBounds {
+  return {
+    left: frame.left - amount,
+    top: frame.top - amount,
+    right: frame.right + amount,
+    bottom: frame.bottom + amount,
+    centerX: frame.centerX,
+    centerY: frame.centerY,
+  };
+}
+
+function cubicControlBounds(segment: CanvasCubicSegment): CanvasBounds {
+  const points = [segment.start, segment.control1, segment.control2, segment.end];
+  const left = Math.min(...points.map((point) => point.x));
+  const top = Math.min(...points.map((point) => point.y));
+  const right = Math.max(...points.map((point) => point.x));
+  const bottom = Math.max(...points.map((point) => point.y));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function boundsOverlapFrame(bounds: CanvasBounds, frame: CanvasFrameBounds): boolean {
+  return (
+    bounds.right >= frame.left &&
+    bounds.left <= frame.right &&
+    bounds.bottom >= frame.top &&
+    bounds.top <= frame.bottom
+  );
+}
+
+function pointToLineDistance(point: CanvasPoint, start: CanvasPoint, end: CanvasPoint): number {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const length = Math.hypot(deltaX, deltaY);
+  if (length < DIRECT_PATH_EPSILON) return Math.hypot(point.x - start.x, point.y - start.y);
+  return Math.abs(deltaX * (start.y - point.y) - (start.x - point.x) * deltaY) / length;
+}
+
+function cubicFlatness(segment: CanvasCubicSegment): number {
+  return Math.max(
+    pointToLineDistance(segment.control1, segment.start, segment.end),
+    pointToLineDistance(segment.control2, segment.start, segment.end),
+  );
+}
+
+function midpoint(left: CanvasPoint, right: CanvasPoint): CanvasPoint {
+  return { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+}
+
+function splitCubic(segment: CanvasCubicSegment): [CanvasCubicSegment, CanvasCubicSegment] {
+  const startControl = midpoint(segment.start, segment.control1);
+  const controls = midpoint(segment.control1, segment.control2);
+  const controlEnd = midpoint(segment.control2, segment.end);
+  const leftMiddle = midpoint(startControl, controls);
+  const rightMiddle = midpoint(controls, controlEnd);
+  const join = midpoint(leftMiddle, rightMiddle);
+  return [
+    { start: segment.start, control1: startControl, control2: leftMiddle, end: join },
+    { start: join, control1: rightMiddle, control2: controlEnd, end: segment.end },
+  ];
+}
+
+/**
+ * Conservative analytic curve-vs-frame test. A cubic stays inside its
+ * control hull, so a non-overlapping hull proves it cannot hit the screen.
+ * Potential hits are recursively de Casteljau-split until their departure
+ * from the chord is sub-pixel; only then does a line-vs-expanded-frame test
+ * decide it. This avoids the narrow corner crossings a coarse marquee sample
+ * can skip while keeping that sample cheap for hit testing.
+ */
+function cubicEntersFrameInterior(
+  segment: CanvasCubicSegment,
+  frame: CanvasFrameBounds,
+  depth = 0,
+): boolean {
+  if (!boundsOverlapFrame(cubicControlBounds(segment), frame)) return false;
+  const flatness = cubicFlatness(segment);
+  if (flatness <= CUBIC_FRAME_FLATNESS) {
+    return lineCrossesFrameInterior(
+      segment.start,
+      segment.end,
+      expandedFrame(frame, flatness + DIRECT_PATH_EPSILON),
+    );
+  }
+  // A finite cap keeps malformed persisted geometry bounded. Returning a
+  // collision here is intentionally conservative: route to the safe
+  // backbone rather than risk drawing through a screen.
+  if (depth >= CUBIC_FRAME_MAX_SUBDIVISION_DEPTH) return true;
+  const [left, right] = splitCubic(segment);
+  return (
+    cubicEntersFrameInterior(left, frame, depth + 1) ||
+    cubicEntersFrameInterior(right, frame, depth + 1)
+  );
+}
+
+function curveEntersFrameInterior(geometry: CanvasEdgeGeometry, frame: CanvasFrameBounds): boolean {
+  if (geometry.cubicSegments?.length) {
+    return geometry.cubicSegments.some((segment) => cubicEntersFrameInterior(segment, frame));
+  }
+  return polylineEntersFrame(geometry.hitPoints, frame);
+}
+
+/** Reject a free curve whenever its sampled outline crosses itself or any
+ * screen after it has intentionally exited its recorded source anchor. This
+ * is deliberately conservative: a rejected candidate falls back to the
+ * deterministic exterior backbone rather than appearing to clip a card. */
+function cubicRouteIsSafe(
+  geometry: CanvasEdgeGeometry,
+  sourceId: string,
+  targetId: string,
+  frames: readonly { id: string; frame: CanvasFrameBounds }[],
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): boolean {
+  if (polylineHasProperSelfIntersection(geometry.hitPoints)) return false;
+  if (!cubicRouteKeepsPortProgress(geometry, sourceDirection, targetDirection)) return false;
+  return frames.every(({ id, frame }) => {
+    if (id === sourceId) return leavesSourceWithoutReturning(geometry.hitPoints, frame);
+    if (id === targetId) return !curveEntersFrameInterior(geometry, frame);
+    return !curveEntersFrameInterior(geometry, frame);
+  });
+}
+
+/**
+ * The extreme facing spline deliberately leaves the narrow source→target
+ * axis to make room for its terminal arc. It cannot satisfy the usual
+ * monotonic-port test, but it still must never cross itself or a screen.
+ */
+function cubicRouteAvoidsFrames(
+  geometry: CanvasEdgeGeometry,
+  sourceId: string,
+  targetId: string,
+  frames: readonly { id: string; frame: CanvasFrameBounds }[],
+): boolean {
+  if (polylineHasProperSelfIntersection(geometry.hitPoints)) return false;
+  return frames.every(({ id, frame }) => {
+    if (id === sourceId) return leavesSourceWithoutReturning(geometry.hitPoints, frame);
+    if (id === targetId) return !curveEntersFrameInterior(geometry, frame);
+    return !curveEntersFrameInterior(geometry, frame);
+  });
+}
+
+/**
+ * A center-anchor drag may reshape a curve, but it may not turn its progress
+ * back through a selected port. Sampling this invariant alongside the frame
+ * test makes arbitrary persisted offsets safely clamp instead of producing a
+ * folded S-curve. Each relationship has a different meaningful monotonic
+ * axis: facing pairs share the source axis, adjacent pairs must advance away
+ * from both endpoint normals, and same-side exterior loops advance only along
+ * their cross-axis separation.
+ */
+function cubicRouteKeepsPortProgress(
+  geometry: CanvasEdgeGeometry,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): boolean {
+  const sourceVector = portDirectionVector(sourceDirection);
+  const targetVector = portDirectionVector(targetDirection);
+  const progresses = (axis: CanvasPoint, sign = 1) =>
+    geometry.hitPoints.every(
+      (point, index) =>
+        index === 0 || sign * dot(point, axis) >= sign * dot(geometry.hitPoints[index - 1]!, axis),
+    );
+
+  if (targetDirection === oppositePortDirection(sourceDirection)) {
+    return progresses(sourceVector);
+  }
+  if (dot(sourceVector, targetVector) === 0) {
+    return progresses(sourceVector) && progresses({ x: -targetVector.x, y: -targetVector.y });
+  }
+  if (targetDirection === sourceDirection) {
+    const crossAxis = leftNormal(sourceVector);
+    const crossDistance = dot(subtract(geometry.endPoint, geometry.startPoint), crossAxis);
+    return (
+      Math.abs(crossDistance) > DIRECT_PATH_EPSILON &&
+      progresses(crossAxis, crossDistance >= 0 ? 1 : -1)
+    );
+  }
+  return true;
+}
+
 function straightEdge(start: CanvasPoint, end: CanvasPoint): CanvasEdgeGeometry {
   return {
     path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`,
     labelPoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
     startPoint: start,
     endPoint: end,
+    isEditableCurve: false,
     hitPoints: [start, end],
   };
 }
@@ -841,6 +1378,7 @@ function elbowEdge(points: CanvasPoint[]): CanvasEdgeGeometry {
     labelPoint: pointAlongPolyline(points, 0.5),
     startPoint: start,
     endPoint: end,
+    isEditableCurve: false,
     hitPoints: points,
   };
 }
@@ -861,13 +1399,17 @@ function cubicBackboneEdge(points: CanvasPoint[]): CanvasEdgeGeometry {
       x: start.x + ((end.x - start.x) * 2) / 3,
       y: start.y + ((end.y - start.y) * 2) / 3,
     };
-    return cubicEdge(start, end, control1, control2);
+    // This is a generated presentation backbone, not the free normal cubic
+    // whose midpoint the person can author. It may happen to contain one C,
+    // but must not surface a fake editable anchor.
+    return { ...cubicEdge(start, end, control1, control2), isEditableCurve: false };
   }
   return {
     path: roundedOrthogonalCubicPath(points, 28),
     labelPoint: pointAlongPolyline(points, 0.5),
     startPoint: start,
     endPoint: end,
+    isEditableCurve: false,
     hitPoints: points,
   };
 }
@@ -973,66 +1515,96 @@ function cubicEdge(
     },
     startPoint: start,
     endPoint: end,
-    hitPoints: Array.from({ length: 17 }, (_, index) => {
-      const t = index / 16;
-      const inverse = 1 - t;
-      return {
-        x:
-          inverse ** 3 * start.x +
-          3 * inverse ** 2 * t * control1.x +
-          3 * inverse * t ** 2 * control2.x +
-          t ** 3 * end.x,
-        y:
-          inverse ** 3 * start.y +
-          3 * inverse ** 2 * t * control1.y +
-          3 * inverse * t ** 2 * control2.y +
-          t ** 3 * end.y,
-      };
-    }),
+    isEditableCurve: true,
+    endTangentPoint: control2,
+    cubicSegments: [{ start, control1, control2, end }],
+    hitPoints: sampleCubic(start, control1, control2, end),
   };
 }
 
-/** A free cubic with a perceptible final run into its selected port. The
- * final line is intentionally part of hit geometry so arrow orientation,
- * marquee selection, and the visible terminal always agree. */
-function cubicEdgeWithTerminalLeadIn(
+function sampleCubic(
   start: CanvasPoint,
-  leadStart: CanvasPoint,
-  end: CanvasPoint,
   control1: CanvasPoint,
   control2: CanvasPoint,
-): CanvasEdgeGeometry {
-  if (Math.hypot(end.x - leadStart.x, end.y - leadStart.y) < DIRECT_PATH_EPSILON) {
-    return cubicEdge(start, end, control1, control2);
-  }
-  const cubicPoints = Array.from({ length: 17 }, (_, index) => {
-    const t = index / 16;
+  end: CanvasPoint,
+): CanvasPoint[] {
+  return Array.from({ length: CUBIC_HIT_POINT_COUNT }, (_, index) => {
+    const t = index / (CUBIC_HIT_POINT_COUNT - 1);
     const inverse = 1 - t;
     return {
       x:
         inverse ** 3 * start.x +
         3 * inverse ** 2 * t * control1.x +
         3 * inverse * t ** 2 * control2.x +
-        t ** 3 * leadStart.x,
+        t ** 3 * end.x,
       y:
         inverse ** 3 * start.y +
         3 * inverse ** 2 * t * control1.y +
         3 * inverse * t ** 2 * control2.y +
-        t ** 3 * leadStart.y,
+        t ** 3 * end.y,
     };
   });
+}
+
+/**
+ * Move the central curve anchor without sacrificing either port normal. This
+ * is a C2-continuous subdivision of the base cubic: at the original midpoint
+ * it exactly reproduces the single-C curve, while a moved midpoint bends the
+ * interior only. The two outer controls remain on the source and target
+ * normals, so neither end develops the diagonal/J-shaped departure that a
+ * direct control-point offset would create.
+ */
+function cubicEdgeThroughMidpoint(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  control1: CanvasPoint,
+  control2: CanvasPoint,
+  midpoint: CanvasPoint,
+): CanvasEdgeGeometry {
+  const firstControl1 = {
+    x: (start.x + control1.x) / 2,
+    y: (start.y + control1.y) / 2,
+  };
+  const secondControl2 = {
+    x: (control2.x + end.x) / 2,
+    y: (control2.y + end.y) / 2,
+  };
+  const joinTangent = {
+    x: (secondControl2.x - firstControl1.x) / 4,
+    y: (secondControl2.y - firstControl1.y) / 4,
+  };
+  const firstControl2 = {
+    x: midpoint.x - joinTangent.x,
+    y: midpoint.y - joinTangent.y,
+  };
+  const secondControl1 = {
+    x: midpoint.x + joinTangent.x,
+    y: midpoint.y + joinTangent.y,
+  };
+  const firstSamples = sampleCubic(start, firstControl1, firstControl2, midpoint);
+  const secondSamples = sampleCubic(midpoint, secondControl1, secondControl2, end);
   return {
-    path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${leadStart.x} ${leadStart.y} L ${end.x} ${end.y}`,
-    // Keep the curve's existing editable midpoint convention. Moving both
-    // handles by 4/3 of an offset therefore still moves this point exactly
-    // by the requested amount, independent of terminal clearance.
-    labelPoint: {
-      x: (start.x + 3 * control1.x + 3 * control2.x + leadStart.x) / 8,
-      y: (start.y + 3 * control1.y + 3 * control2.y + leadStart.y) / 8,
-    },
+    path: `M ${start.x} ${start.y} C ${firstControl1.x} ${firstControl1.y}, ${firstControl2.x} ${firstControl2.y}, ${midpoint.x} ${midpoint.y} C ${secondControl1.x} ${secondControl1.y}, ${secondControl2.x} ${secondControl2.y}, ${end.x} ${end.y}`,
+    labelPoint: midpoint,
     startPoint: start,
     endPoint: end,
-    hitPoints: [...cubicPoints, end],
+    isEditableCurve: true,
+    endTangentPoint: secondControl2,
+    cubicSegments: [
+      {
+        start,
+        control1: firstControl1,
+        control2: firstControl2,
+        end: midpoint,
+      },
+      {
+        start: midpoint,
+        control1: secondControl1,
+        control2: secondControl2,
+        end,
+      },
+    ],
+    hitPoints: [...firstSamples, ...secondSamples.slice(1)],
   };
 }
 

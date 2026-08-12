@@ -34,8 +34,8 @@
     "verify": "vp check && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
-    "tsx": "^4.23.6",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",
