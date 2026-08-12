@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import {
-  SELECTOR_RESOLUTION_POLICIES,
-  resolveSelectorChainWithPolicy,
-} from '@agent-device/selectors';
+import { SELECTOR_RESOLUTION_POLICIES } from '@agent-device/selectors';
+// The engine's own subpath (#1656): this file pins what a ROW means to the
+// engine, so it is the one consumer that legitimately holds it directly. R19
+// governs shipped routes — the layering scan reads production sources only.
+import { resolveSelectorChainWithPolicy } from '@agent-device/selectors/engine';
 
 /**
  * The matrix is exercised through the interface callers actually use
@@ -166,8 +167,10 @@ test('rect-requiring rows skip rectless nodes; read and wait rows accept them', 
  * The matrix may only declare what it can enforce (#1649 review). An earlier
  * revision carried occlusion / off-screen / promotion / poll columns that no
  * code consumed, so changing them left both behavior and the suite green —
- * an unverifiable claim reading as truth. This fails if such a field returns
- * without behavioral coverage.
+ * an unverifiable claim reading as truth. Those four stages belong to the
+ * structural table (`src/core/selector-pipeline-policy.ts`, #1656), where
+ * runners consume them; this still fails if such a field appears HERE, where
+ * the selectors package has nothing to enforce it with.
  */
 test('policy rows declare only the fields this matrix actually enforces', () => {
   for (const [name, policy] of Object.entries(SELECTOR_RESOLUTION_POLICIES)) {
