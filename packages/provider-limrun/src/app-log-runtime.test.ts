@@ -208,6 +208,17 @@ test.each([
   const binding = await owner.bind({ device: runtimeDevice, intent: { kind: 'ordinary' }, scope });
   expect(binding.facts.device.providerMode).toBe('provider-runtime');
   expect(binding.facts.operations.networkDump).toEqual({ available: true });
+  expect(binding.facts.operations.ensureReady).toEqual({ available: true });
+  expect(binding.facts.operations.bootTarget).toEqual({ available: true });
+  expect(binding.facts.operations.bootTargetHeadless).toMatchObject({ available: false });
+  await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
+  await expect(binding.operations.bootTarget?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
 });
 
 function unusedHost(): PlatformRuntimeHost {
@@ -258,6 +269,11 @@ function unusedHost(): PlatformRuntimeHost {
       readProcessMarker: async () => ({ status: 'missing' }),
     },
     networkTransports: { resolve: async () => ({ mode: 'local' }) },
+    deviceReadiness: {
+      applePhysical: { ensureConnected: async () => {} },
+      appleAutomation: { keepHot: () => {} },
+      androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
+    },
     screenRecording: unusedScreenRecordingHost(),
   };
 }

@@ -78,6 +78,17 @@ test.each([
   });
   expect(binding.facts.device.providerMode).toBe('provider-runtime');
   expect(binding.facts.operations.networkDump).toEqual({ available: true });
+  expect(binding.facts.operations.ensureReady).toEqual({ available: true });
+  expect(binding.facts.operations.bootTarget).toEqual({ available: true });
+  expect(binding.facts.operations.bootTargetHeadless).toMatchObject({ available: false });
+  await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
+  await expect(binding.operations.bootTarget?.({})).resolves.toMatchObject({
+    id: runtimeDevice.id,
+    booted: true,
+  });
   await expect(
     binding.operations.networkDump?.({
       sessionId: 'one',
@@ -91,6 +102,11 @@ test.each([
 
 function host(run: PlatformRuntimeHost['commands']['run']): PlatformRuntimeHost {
   return {
+    deviceReadiness: {
+      applePhysical: { ensureConnected: async () => {} },
+      appleAutomation: { keepHot: () => {} },
+      androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
+    },
     appleTools: {
       isXcrunAvailable: async () => false,
       run: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
