@@ -84,7 +84,10 @@ export function AutomationLabScreen(props: {
     };
   }, []);
 
-  function showAutomationAlert() {
+  useEffect(() => {
+    if (alertResult !== 'opened') return;
+
+    // The opened canary is committed before this effect; the smoke step separately waits for native presentation.
     Alert.alert('Automation confirmation', 'Choose either result to update the visible canary.', [
       {
         style: 'cancel',
@@ -96,6 +99,10 @@ export function AutomationLabScreen(props: {
         onPress: () => setAlertResult('accepted'),
       },
     ]);
+  }, [alertResult]);
+
+  function showAutomationAlert() {
+    setAlertResult('opened');
   }
 
   async function requestMicrophonePermission() {
