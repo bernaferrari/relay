@@ -1852,6 +1852,48 @@ describe("runRecipeStep tour", () => {
     assert.ok(!presses.some((selector) => selector.includes("Back")));
   });
 
+  it("does not seek backwards after a setup flow has verified a localized origin", async () => {
+    const presses: string[] = [];
+    const device = stubDevice({
+      // Deliberately does not overlap the saved English origin identity. The
+      // preceding setup flow—not these localized labels—establishes origin.
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            { type: "Application", identifier: "ai.x.grok", label: "Grok" },
+            { type: "TextView", label: "Personalizza Grok", hittable: true },
+          ],
+        }),
+      press: (options) => {
+        presses.push(
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "",
+        );
+        return Promise.resolve({});
+      },
+      back: () => {
+        presses.push("hardware-back");
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        originTitle: "Settings · Middle upper",
+        originVerifiedBySetup: true,
+        mappedStopsOnly: true,
+      },
+      { log: () => {}, job: { resolvedInputs: { language: "it" } } as never },
+    );
+
+    assert.deepEqual(presses, []);
+  });
+
   it("runs a mapped prelude only when the device is not already on origin", async () => {
     let screen: "home" | "settings" = "home";
     const presses: string[] = [];

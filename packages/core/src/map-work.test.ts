@@ -150,7 +150,85 @@ test("a screen tour runs its explicit setup Flow once before starting at its roo
   assert.ok(graph[setupRecipeId]);
   const tour = root.steps[1];
   assert.ok(tour?.kind === "tour");
-  if (tour?.kind === "tour") assert.equal(tour.preludeSteps, undefined);
+  if (tour?.kind === "tour") {
+    assert.equal(tour.preludeSteps, undefined);
+    assert.equal(tour.originVerifiedBySetup, true);
+  }
+});
+
+test("a path test captures every verified screen in its reusable flow", () => {
+  const work: AppMapTest = {
+    ...scope,
+    id: "settings-path",
+    name: "Open settings",
+    kind: "path",
+    flowId: "open-settings",
+    capture: { mode: "every-screen" },
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...screen("home", "Home"),
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+      settings: {
+        ...screen("settings", "Settings"),
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+      },
+    },
+    screenVariants: {},
+    connections: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        fromScreenId: "home",
+        destination: { kind: "screen", screenId: "settings" },
+        label: "Settings",
+        state: "ready",
+        actions: [{ id: "tap-settings", kind: "tap", target: { identifier: "settings" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [work.id]: work },
+    combines: {},
+    routines: {},
+    flows: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        name: "Open settings",
+        startScreenId: "home",
+        connectionIds: ["open-settings"],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  const { root } = compileAppMapTest(map, work);
+  assert.deepEqual(
+    root.steps.filter((step) => step.kind === "screenshot").map((step) => step.caption),
+    ["screen:Home", "screen:Settings"],
+  );
 });
 
 test("a tour compiles mapped exits as pixels-only fallback stops", () => {
@@ -787,6 +865,7 @@ test("mapped tour rows follow their recorded on-screen order, not exploration or
         actions: [
           { id: "tap-second", kind: "tap", target: { label: "Second", point: { x: 300, y: 800 } } },
         ],
+        sourceAnchor: { point: { x: 0.3, y: 0.8 } },
         createdAt: at,
         updatedAt: at,
       },
@@ -800,6 +879,7 @@ test("mapped tour rows follow their recorded on-screen order, not exploration or
         actions: [
           { id: "tap-first", kind: "tap", target: { label: "First", point: { x: 300, y: 420 } } },
         ],
+        sourceAnchor: { point: { x: 0.3, y: 0.42 } },
         createdAt: at,
         updatedAt: at,
       },

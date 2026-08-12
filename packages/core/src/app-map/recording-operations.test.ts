@@ -714,6 +714,72 @@ test("omitted destination still merges a recording into the observed screen", ()
   assert.equal(Object.keys(result.appMap.screens).length, 1);
 });
 
+test("keeps a tour setup flow at its root when recording a new root branch", () => {
+  const map = mapFixture();
+  for (const id of ["start", "middle", "branch"]) {
+    map.screens[id] = {
+      ...mapScope(map),
+      id,
+      title: id,
+      variantIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  }
+  map.connections.enter = {
+    ...mapScope(map),
+    id: "enter",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "middle" },
+    state: "ready",
+    actions: [{ id: "enter-action", kind: "back" }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.flows.setup = {
+    ...mapScope(map),
+    id: "setup",
+    name: "Reach middle",
+    startScreenId: "start",
+    connectionIds: ["enter"],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  map.tests.middleTour = {
+    ...mapScope(map),
+    id: "middleTour",
+    name: "Middle tour",
+    kind: "tour",
+    rootScreenId: "middle",
+    setupFlowId: "setup",
+    screenIds: ["middle"],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const result = commitAppMapRecording(
+    map,
+    {
+      sessionId: "record-branch-from-tour-root",
+      sourceScreenId: "middle",
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      takeId: "take-branch-from-tour-root",
+      takeRevision: 1,
+      actions: [action("open-branch")],
+      before: observation("middle-before", beforeFingerprint, "middle-evidence"),
+      after: observation("branch-after", afterFingerprint, "branch-evidence"),
+      destination: { kind: "screen", screenId: "branch" },
+      evidenceIds: ["middle-evidence", "branch-evidence"],
+    },
+    context("record-branch-from-tour-root"),
+  );
+
+  assert.deepEqual(result.appMap.flows.setup?.connectionIds, ["enter"]);
+  const branch = Object.values(result.appMap.flows).find((flow) => flow.id !== "setup");
+  assert.equal(branch?.startScreenId, "start");
+  assert.deepEqual(branch?.connectionIds, ["enter", result.connectionId]);
+});
+
 test("fills an existing pending connection and preserves its flow position", () => {
   const map = mapFixture();
   map.screens.start = {

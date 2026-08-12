@@ -79,20 +79,71 @@ export function extractTourStops(
   const nodesByIndex = new Map(
     nodes.flatMap((node) => (typeof node.index === "number" ? [[node.index, node] as const] : [])),
   );
+  const screenBottom = Math.max(
+    0,
+    ...nodes.map((node) => (node.rect ? node.rect.y + node.rect.height : 0)),
+  );
+  /** Compose makes whole sections and scroll containers hittable as well as
+   * the actual cards. A section container is not a row: treating it as one
+   * turns its heading into a tappable destination and shifts every later
+   * localized stop. Keep only compact, row-sized ancestors. */
+  const isRowLike = (candidate: SnapshotNode, child: SnapshotNode): boolean => {
+    if (!candidate.rect || !child.rect) return false;
+    const maximumRowHeight = Math.min(360, Math.max(220, screenBottom * 0.22));
+    return (
+      candidate.rect.height <= maximumRowHeight &&
+      candidate.rect.height <= child.rect.height * 5 + 64 &&
+      candidate.rect.width >= child.rect.width
+    );
+  };
   const closestHittableAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
     let parentIndex = node.parentIndex;
     while (typeof parentIndex === "number") {
       const parent = nodesByIndex.get(parentIndex);
       if (!parent) return undefined;
-      if (parent.hittable && parent.rect) return parent;
+      if (parent.hittable && isRowLike(parent, node)) return parent;
       parentIndex = parent.parentIndex;
     }
     return undefined;
+  };
+  /** Some Compose snapshots lose parent indexes for text nested in a tappable
+   * card. Recover that card geometrically so the title remains the semantic
+   * row and a subtitle/value (for example the selected voice “Ara”) cannot
+   * become the thing a tour presses. */
+  const enclosingHittableRow = (node: SnapshotNode): SnapshotNode | undefined => {
+    if (!node.rect) return undefined;
+    const right = node.rect.x + node.rect.width;
+    const bottom = node.rect.y + node.rect.height;
+    return nodes
+      .filter((candidate) => {
+        if (
+          !candidate.hittable ||
+          !candidate.rect ||
+          candidate === node ||
+          !isRowLike(candidate, node)
+        ) {
+          return false;
+        }
+        const candidateRight = candidate.rect.x + candidate.rect.width;
+        const candidateBottom = candidate.rect.y + candidate.rect.height;
+        return (
+          candidate.rect.x <= node.rect!.x &&
+          candidate.rect.y <= node.rect!.y &&
+          candidateRight >= right &&
+          candidateBottom >= bottom
+        );
+      })
+      .sort(
+        (left, rightCandidate) =>
+          left.rect!.width * left.rect!.height -
+          rightCandidate.rect!.width * rightCandidate.rect!.height,
+      )[0];
   };
   const candidates: Array<
     TourStop & {
       y: number;
       labelY: number;
+      labelX: number;
       area: number;
       isCell: boolean;
       rowKey?: string;
@@ -120,7 +171,7 @@ export function extractTourStops(
     // Jetpack Compose often exposes an unlabeled hittable row containing one
     // or more TextViews. Treat that ancestor as the cell so the title becomes
     // a stable tour stop and subtitles in the same row are ignored.
-    const row = isNativeCell ? node : closestHittableAncestor(node);
+    const row = isNativeCell ? node : (closestHittableAncestor(node) ?? enclosingHittableRow(node));
     // “Voice” is both a section heading and a real Grok Settings row. Only
     // ignore it as chrome when it has no tappable row behind it; otherwise a
     // valid recorded stop disappears and an exact tour cannot safely run.
@@ -144,6 +195,7 @@ export function extractTourStops(
       point: { x: rowRect.x + rowRect.width / 2, y: rowRect.y + rowRect.height / 2 },
       y: rowRect.y,
       labelY: rect.y,
+      labelX: rect.x,
       area: rowRect.width * rowRect.height,
       isCell: isNativeCell || Boolean(row),
       ...(typeof row?.index === "number" ? { rowKey: `index:${row.index}` } : {}),
@@ -157,12 +209,29 @@ export function extractTourStops(
   candidates.sort(
     (left, right) => left.y - right.y || left.labelY - right.labelY || right.area - left.area,
   );
+  const isSectionHeading = (item: (typeof candidates)[number], index: number): boolean => {
+    if (item.isCell) return false;
+    // A localized section title is normally an unbound, visually indented
+    // label immediately above a compact bound card. This works independently
+    // of its translated text and does not discard genuine unbound rows, whose
+    // labels share the card indentation or have no subsequent card.
+    const nextRow = candidates
+      .slice(index + 1)
+      .find(
+        (candidate) =>
+          candidate.isCell &&
+          candidate.labelY > item.labelY &&
+          candidate.labelY - item.labelY <= 224,
+      );
+    return Boolean(nextRow && item.labelX + 28 <= nextRow.labelX);
+  };
   const seen = new Set<string>();
   const seenRows = new Set<string>();
   const stops: TourStop[] = [];
   let previousLabelY = Number.NEGATIVE_INFINITY;
-  for (const item of candidates) {
+  for (const [index, item] of candidates.entries()) {
     if (item.rowKey && seenRows.has(item.rowKey)) continue;
+    if (isSectionHeading(item, index)) continue;
     // Some Compose cards expose a status/subtitle as an independent TextView
     // (for example “Reset available” under “Usage”) without exposing the
     // shared tappable row as its parent. It is not another destination. Keep

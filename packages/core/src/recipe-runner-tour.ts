@@ -338,8 +338,21 @@ export function foregroundApplicationBundle(nodes: SnapshotNode[]): string | und
 export function mergeMappedTourStops(
   live: TourStop[],
   mapped: TourStop[],
-  options: { alignByOrder?: boolean; alignByPoint?: boolean } = {},
+  options: {
+    alignByOrder?: boolean;
+    alignByPoint?: boolean;
+    landmarkStops?: ReadonlyArray<TourStop>;
+  } = {},
 ): TourStop[] {
+  const landmarkPairs = options.landmarkStops
+    ? mappedTourStopLandmarkPairs(live, mapped, options.landmarkStops)
+    : undefined;
+  if (landmarkPairs) {
+    return mapped.map((mappedStop, index) => ({
+      ...landmarkPairs[index]!,
+      ...(mappedStop.capture === undefined ? {} : { capture: mappedStop.capture }),
+    }));
+  }
   const pointPairs = options.alignByPoint ? mappedTourStopPointPairs(live, mapped) : undefined;
   if (pointPairs) {
     return mapped.map((mappedStop, index) => {
@@ -384,6 +397,49 @@ export function mergeMappedTourStops(
       ...(fallback.capture === undefined ? {} : { capture: fallback.capture }),
     };
   });
+}
+
+function tourStopMapKey(stop: Pick<TourStop, "label" | "identifier" | "point">): string {
+  const identifier = stop.identifier?.trim().toLocaleLowerCase();
+  if (identifier) return `identifier:${identifier}`;
+  if (stop.point) return `point:${Math.round(stop.point.x)}:${Math.round(stop.point.y)}`;
+  return `label:${stop.label.trim().toLocaleLowerCase()}`;
+}
+
+/**
+ * Localized exact tours may select a subset of a longer settings list. Pair
+ * each selected row through the complete recorded row order, then use the
+ * live row at that rank. This is intentionally fail-closed: if a landmark is
+ * absent or ambiguous we do not turn a nearby row into a stale tap.
+ */
+export function mappedTourStopLandmarkPairs(
+  live: ReadonlyArray<TourStop>,
+  mapped: ReadonlyArray<TourStop>,
+  landmarks: ReadonlyArray<TourStop>,
+): TourStop[] | undefined {
+  if (!mapped.length || !landmarks.length) return undefined;
+  const landmarkIndexes = new Map<string, number[]>();
+  for (const [index, landmark] of landmarks.entries()) {
+    const key = tourStopMapKey(landmark);
+    const indexes = landmarkIndexes.get(key) ?? [];
+    indexes.push(index);
+    landmarkIndexes.set(key, indexes);
+  }
+  const used = new Set<number>();
+  const pairs: TourStop[] = [];
+  for (const mappedStop of mapped) {
+    const candidates = (landmarkIndexes.get(tourStopMapKey(mappedStop)) ?? []).filter(
+      (index) => !used.has(index),
+    );
+    if (candidates.length !== 1) return undefined;
+    const index = candidates[0]!;
+    // Require every preceding landmark to be present before trusting a visual
+    // rank. An inserted/deleted row is an authoring change, not a guess.
+    if (live.length <= index) return undefined;
+    used.add(index);
+    pairs.push(live[index]!);
+  }
+  return pairs;
 }
 
 const LOCALIZED_POINT_MATCH_DISTANCE = 220;
@@ -530,10 +586,22 @@ export async function runTourStep(
   job?: TestJob,
 ): Promise<void> {
   const rightToLeft = isRightToLeftJob(job);
-  const sought = await seekTourOrigin(device, step, log, rightToLeft, job);
+  // A setup Flow reaches this exact root through verified expect-screen steps.
+  // Do not immediately run the generic back-seeking loop again: localized
+  // labels can make the English map identity appear unmatched and the loop can
+  // leave the just-verified list before the tour starts.
+  const sought = step.originVerifiedBySetup
+    ? await readTourSurface(device, step)
+    : await seekTourOrigin(device, step, log, rightToLeft, job);
   let nodes = sought.nodes;
   let stops = sought.stops;
-  const originReached = liveTourOrigin(nodes, stops, step, rightToLeft, job);
+  // A setup Flow is compiled only when it terminates at this exact root, and
+  // its own expect-screen verification has already completed. This is the
+  // one safe point at which localized labels may not yet overlap the saved
+  // English identity. Once we leave the root, normal live identity checks
+  // remain mandatory for every return from a child page.
+  const originReached =
+    step.originVerifiedBySetup || liveTourOrigin(nodes, stops, step, rightToLeft, job);
   if (originReached && step.captureOrigin && step.screenshot !== false) {
     await captureScreenshot({
       jobId: job?.id,
@@ -544,13 +612,21 @@ export async function runTourStep(
   if (originReached && step.mappedStopsOnly && !step.fallbackStops?.length) return;
   if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
     const liveStops = stops;
+    const landmarkPairs =
+      isLocalizedJob(job) && step.landmarkStops?.length
+        ? mappedTourStopLandmarkPairs(stops, step.fallbackStops, step.landmarkStops)
+        : undefined;
     const alignedLocalizedRows =
       isLocalizedJob(job) &&
-      (Boolean(mappedTourStopPointPairs(stops, step.fallbackStops)) ||
+      (Boolean(landmarkPairs) ||
+        Boolean(mappedTourStopPointPairs(stops, step.fallbackStops)) ||
         stops.length === step.fallbackStops.length);
     const merged = mergeMappedTourStops(stops, step.fallbackStops, {
       alignByOrder: isLocalizedJob(job),
       alignByPoint: isLocalizedJob(job),
+      ...(isLocalizedJob(job) && step.landmarkStops?.length
+        ? { landmarkStops: step.landmarkStops }
+        : {}),
     });
     const fallbackCount = alignedLocalizedRows
       ? 0

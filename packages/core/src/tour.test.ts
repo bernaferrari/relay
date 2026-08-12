@@ -163,6 +163,102 @@ test("a tappable Voice row is not mistaken for a Voice section heading", () => {
   assert.deepEqual(stops[0]?.point, { x: 540, y: 1001 });
 });
 
+test("a Compose row without parent indexes keeps its title over the selected value", () => {
+  const stops = extractTourStops([
+    {
+      type: "android.widget.TextView",
+      label: "Voice",
+      rect: { x: 90, y: 804, width: 102, height: 49 },
+    },
+    {
+      index: 2,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 922, width: 990, height: 158 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Voice",
+      rect: { x: 203, y: 943, width: 110, height: 53 },
+    },
+    {
+      type: "android.widget.TextView",
+      label: "Ara",
+      rect: { x: 203, y: 1007, width: 60, height: 49 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Voice"],
+  );
+  assert.deepEqual(stops[0]?.point, { x: 540, y: 1001 });
+});
+
+test("localized Compose section containers do not shift card landmarks", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 760, width: 990, height: 900 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "Voce",
+      rect: { x: 136, y: 872, width: 110, height: 49 },
+    },
+    {
+      index: 3,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 940, width: 990, height: 158 },
+    },
+    {
+      index: 4,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Voce",
+      rect: { x: 203, y: 964, width: 110, height: 53 },
+    },
+    {
+      index: 5,
+      parentIndex: 3,
+      type: "android.widget.TextView",
+      label: "Ara",
+      rect: { x: 203, y: 1028, width: 60, height: 49 },
+    },
+    {
+      index: 6,
+      parentIndex: 1,
+      type: "android.widget.TextView",
+      label: "Dati e informazioni",
+      rect: { x: 136, y: 1214, width: 260, height: 49 },
+    },
+    {
+      index: 7,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 1330, width: 990, height: 158 },
+    },
+    {
+      index: 8,
+      parentIndex: 7,
+      type: "android.widget.TextView",
+      label: "Conversazioni condivise",
+      rect: { x: 203, y: 1354, width: 360, height: 53 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Voce", "Conversazioni condivise"],
+  );
+  assert.deepEqual(stops[0]?.point, { x: 540, y: 1019 });
+});
+
 test("Compose list labels remain available when unrelated chrome is the only hittable cell", () => {
   const stops = extractTourStops([
     {

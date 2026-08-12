@@ -267,6 +267,10 @@ export type RecipeStep = RecipeStepMetadata &
         screenshot?: boolean;
         /** Capture the recovered tour origin before walking its child rows. */
         captureOrigin?: boolean;
+        /** An immediately preceding compiled setup Flow already verified this
+         * origin. This is compiler-owned: it bridges localized labels without
+         * weakening identity checks after a child page returns. */
+        originVerifiedBySetup?: boolean;
         maxStops?: number;
         excludeLanguageRows?: boolean;
         /** Mapped list this tour must reach before walking rows. */
@@ -292,6 +296,17 @@ export type RecipeStep = RecipeStepMetadata &
           point?: { x: number; y: number };
           /** A mapped checkpoint may be visited without becoming evidence. */
           capture?: boolean;
+        }>;
+        /**
+         * Complete recorded row order for the current surface. These are
+         * calibration landmarks only: a mapped subset still taps only
+         * `fallbackStops`. They let a translated list preserve the selected
+         * row's visual rank without guessing from stale coordinates.
+         */
+        landmarkStops?: Array<{
+          label: string;
+          identifier?: string;
+          point?: { x: number; y: number };
         }>;
         /** Restrict a deterministic screen test to its mapped fallback stops. */
         mappedStopsOnly?: boolean;

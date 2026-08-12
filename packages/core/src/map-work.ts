@@ -215,7 +215,7 @@ export function fallbackTourStopsFromMap(
   rootScreenId: string,
   captureScreenIds?: ReadonlySet<string>,
 ): TourStop[] {
-  const stops: TourStop[] = [];
+  const orderedStops: Array<{ stop: TourStop; sourceOrder?: number }> = [];
   const seen = new Set<string>();
   for (const connection of Object.values(map.connections ?? {}) as Connection[]) {
     if (connection.fromScreenId !== rootScreenId) continue;
@@ -238,13 +238,20 @@ export function fallbackTourStopsFromMap(
     seen.add(key);
     const identifier = target?.identifier?.trim();
     const labelTarget = target?.label?.trim();
-    stops.push({
-      label: labelTarget || label,
-      ...(identifier ? { identifier } : {}),
-      ...(point ? { point } : {}),
-      ...(captureScreenIds && connection.destination.kind === "screen"
-        ? { capture: captureScreenIds.has(connection.destination.screenId) }
-        : {}),
+    const sourceRect = connection.sourceAnchor?.rect;
+    const sourceOrder = sourceRect
+      ? sourceRect.y + sourceRect.height / 2
+      : connection.sourceAnchor?.point?.y;
+    orderedStops.push({
+      stop: {
+        label: labelTarget || label,
+        ...(identifier ? { identifier } : {}),
+        ...(point ? { point } : {}),
+        ...(captureScreenIds && connection.destination.kind === "screen"
+          ? { capture: captureScreenIds.has(connection.destination.screenId) }
+          : {}),
+      },
+      ...(Number.isFinite(sourceOrder) ? { sourceOrder } : {}),
     });
   }
   // A recorded action sequence is often created in exploration order rather
@@ -252,15 +259,20 @@ export function fallbackTourStopsFromMap(
   // approved point, its Y position is a stronger, user-visible order for a
   // depth-0 tour and for the canvas fan-out. Preserve the authored order when
   // even one row has no point rather than fabricating an ordering signal.
-  if (stops.every((stop) => Boolean(stop.point))) {
-    stops.sort(
+  if (orderedStops.every((item) => item.sourceOrder !== undefined)) {
+    orderedStops.sort(
       (left, right) =>
-        left.point!.y - right.point!.y ||
-        left.point!.x - right.point!.x ||
-        left.label.localeCompare(right.label),
+        left.sourceOrder! - right.sourceOrder! || left.stop.label.localeCompare(right.stop.label),
+    );
+  } else if (orderedStops.every((item) => Boolean(item.stop.point))) {
+    orderedStops.sort(
+      (left, right) =>
+        left.stop.point!.y - right.stop.point!.y ||
+        left.stop.point!.x - right.stop.point!.x ||
+        left.stop.label.localeCompare(right.stop.label),
     );
   }
-  return stops;
+  return orderedStops.map((item) => item.stop);
 }
 
 function fallbackTourStopsForScreens(
@@ -289,6 +301,18 @@ function fallbackTourStopsForScreens(
   return fallbackTourStopsFromMap(map, rootScreenId, captureScreenIds).filter((stop) =>
     allowedTargetKeys.has(tourStopTargetKey(stop, stop.label)),
   );
+}
+
+/** The complete ordered row set is only a calibration aid for localized exact
+ * tours. It never broadens the selected/captured rows. */
+function landmarkTourStopsForExactTour(
+  map: AppMap,
+  rootScreenId: string,
+  fallbackStops: ReadonlyArray<TourStop>,
+): TourStop[] {
+  if (!fallbackStops.length) return [];
+  const landmarks = fallbackTourStopsFromMap(map, rootScreenId);
+  return landmarks.length ? landmarks : [];
 }
 
 function tourStopTargetKey(
@@ -363,7 +387,28 @@ export function compileAppMapTest(
     let root = graph[plan.rootRecipeId];
     if (!root) throw new Error(`Test “${work.name}” compiled without a root recipe`);
     const evidenceMode = captureMode(work);
-    if (evidenceMode !== "every-screen") {
+    if (evidenceMode === "every-screen") {
+      // A reusable Flow already verifies every recorded destination. Preserve
+      // that useful progress in a Path test as inspectable visual evidence,
+      // rather than leaving a full replay with only a before/after frame.
+      for (const [id, recipe] of Object.entries(graph)) {
+        graph[id] = {
+          ...recipe,
+          steps: recipe.steps.flatMap((step) => [
+            step,
+            ...(step.kind === "expect-screen"
+              ? [
+                  {
+                    kind: "screenshot" as const,
+                    caption: `screen:${step.screenTitle ?? step.screenId ?? "destination"}`,
+                  },
+                ]
+              : []),
+          ]),
+        };
+      }
+      root = graph[plan.rootRecipeId]!;
+    } else {
       for (const [id, recipe] of Object.entries(graph)) {
         graph[id] = {
           ...recipe,
@@ -421,6 +466,9 @@ export function compileAppMapTest(
   const fallbackStops = exactScreenIds
     ? fallbackTourStopsForScreens(map, work.rootScreenId, exactScreenIds, checkpointIds)
     : fallbackTourStopsFromMap(map, work.rootScreenId, checkpointIds);
+  const landmarkStops = exactScreenIds
+    ? landmarkTourStopsForExactTour(map, work.rootScreenId, fallbackStops)
+    : [];
   const childScreenIds = new Set(
     (Object.values(map.connections ?? {}) as Connection[])
       .filter(
@@ -514,7 +562,9 @@ export function compileAppMapTest(
       ...(prelude.length && preludeStartFingerprint ? { preludeStartFingerprint } : {}),
       ...(prelude.length && preludeStartAliases.length ? { preludeStartAliases } : {}),
       ...(captureOrigin ? { captureOrigin: true } : {}),
+      ...(setupPlan ? { originVerifiedBySetup: true } : {}),
       ...(fallbackStops.length ? { fallbackStops } : {}),
+      ...(landmarkStops.length ? { landmarkStops } : {}),
       ...(exactScreenIds ? { mappedStopsOnly: true } : {}),
     });
   }

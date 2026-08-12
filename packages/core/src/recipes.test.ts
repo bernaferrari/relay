@@ -304,20 +304,24 @@ describe("validateRecipeSteps", () => {
       validateRecipeSteps([
         {
           kind: "tour",
+          originVerifiedBySetup: true,
           originTitle: "Settings",
           originFingerprint,
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
           fallbackStops: [{ label: "Appearance" }],
+          landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
           excludeLanguageRows: true,
         },
       ]),
       [
         {
           kind: "tour",
+          originVerifiedBySetup: true,
           originTitle: "Settings",
           originFingerprint,
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
           fallbackStops: [{ label: "Appearance" }],
+          landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
           excludeLanguageRows: true,
         },
       ],

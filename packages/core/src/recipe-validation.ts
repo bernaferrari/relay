@@ -967,30 +967,35 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (raw.maxStops !== undefined && (!isNumber(raw.maxStops) || raw.maxStops < 1)) {
           throw stepErr(index, "tour.maxStops must be a positive number");
         }
-        const fallbackStops = Array.isArray(raw.fallbackStops)
-          ? raw.fallbackStops.flatMap((item) => {
-              if (!item || typeof item !== "object") return [];
-              const row = item as {
-                label?: unknown;
-                identifier?: unknown;
-                point?: { x?: unknown; y?: unknown };
-              };
-              const label = typeof row.label === "string" ? row.label.trim() : "";
-              if (!label) return [];
-              const identifier = typeof row.identifier === "string" ? row.identifier.trim() : "";
-              const point =
-                row.point && isNumber(row.point.x) && isNumber(row.point.y)
-                  ? { x: row.point.x, y: row.point.y }
-                  : undefined;
-              return [
-                {
-                  label,
-                  ...(identifier ? { identifier } : {}),
-                  ...(point ? { point } : {}),
-                },
-              ];
-            })
-          : [];
+        const parseTourStops = (value: unknown, includeCapture: boolean) =>
+          Array.isArray(value)
+            ? value.flatMap((item) => {
+                if (!item || typeof item !== "object") return [];
+                const row = item as {
+                  label?: unknown;
+                  identifier?: unknown;
+                  point?: { x?: unknown; y?: unknown };
+                  capture?: unknown;
+                };
+                const label = typeof row.label === "string" ? row.label.trim() : "";
+                if (!label) return [];
+                const identifier = typeof row.identifier === "string" ? row.identifier.trim() : "";
+                const point =
+                  row.point && isNumber(row.point.x) && isNumber(row.point.y)
+                    ? { x: row.point.x, y: row.point.y }
+                    : undefined;
+                return [
+                  {
+                    label,
+                    ...(identifier ? { identifier } : {}),
+                    ...(point ? { point } : {}),
+                    ...(includeCapture && row.capture === true ? { capture: true } : {}),
+                  },
+                ];
+              })
+            : [];
+        const fallbackStops = parseTourStops(raw.fallbackStops, true);
+        const landmarkStops = parseTourStops(raw.landmarkStops, false);
         const originScreenId =
           isString(raw.originScreenId) && raw.originScreenId.trim()
             ? raw.originScreenId.trim()
@@ -1075,6 +1080,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(raw.screenshot === false ? { screenshot: false } : {}),
           ...(raw.screenshot === true ? { screenshot: true } : {}),
           ...(raw.captureOrigin === true ? { captureOrigin: true } : {}),
+          ...(raw.originVerifiedBySetup === true ? { originVerifiedBySetup: true } : {}),
           ...(isNumber(raw.maxStops) ? { maxStops: raw.maxStops } : {}),
           ...(raw.excludeLanguageRows === true ? { excludeLanguageRows: true } : {}),
           ...(originScreenId ? { originScreenId } : {}),
@@ -1099,6 +1105,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             : {}),
           ...(preludeSteps?.length ? { preludeSteps } : {}),
           ...(fallbackStops.length ? { fallbackStops } : {}),
+          ...(landmarkStops.length ? { landmarkStops } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);

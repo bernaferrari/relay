@@ -398,8 +398,17 @@ function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string,
     flow.connectionIds.includes(connectionId),
   );
   if (existing) return;
+  // A Flow referenced by a screen tour is its verified route to that tour's
+  // root. Recording a new branch from the root must not extend that route:
+  // doing so changes the setup terminal and makes the tour invalid. Keep the
+  // setup Flow as an immutable checkpoint and create a sibling Flow below.
+  const tourSetupFlowIds = new Set(
+    Object.values(map.tests ?? {})
+      .filter((work) => work.kind === "tour" && work.setupFlowId)
+      .map((work) => work.setupFlowId!),
+  );
   const continuable = Object.values(map.flows).filter(
-    (flow) => flowTerminal(map, flow) === sourceScreenId,
+    (flow) => flowTerminal(map, flow) === sourceScreenId && !tourSetupFlowIds.has(flow.id),
   );
   const flow = continuable.length === 1 ? continuable[0] : undefined;
   if (flow) {

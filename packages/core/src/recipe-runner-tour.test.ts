@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   foregroundApplicationBundle,
+  mappedTourStopLandmarkPairs,
   mappedTourStopPointPairs,
   mergeMappedTourStops,
 } from "./recipe-runner-tour.js";
@@ -104,5 +105,28 @@ test("localized point pairing refuses a stale coordinate instead of guessing", (
       [{ label: "Mapped", point: { x: 540, y: 800 } }],
     ),
     undefined,
+  );
+});
+
+test("localized exact subsets use complete recorded row order as calibration", () => {
+  const live = [
+    { label: "Modalità Per Bambini", point: { x: 540, y: 488 } },
+    { label: "Preferenze NSFW", point: { x: 540, y: 652 } },
+    { label: "Voce", point: { x: 540, y: 972 } },
+    { label: "Conversazioni Condivise", point: { x: 540, y: 1291 } },
+    { label: "Controllo Dati", point: { x: 540, y: 1455 } },
+  ];
+  const landmarks = [
+    { label: "Kids Mode", point: { x: 540, y: 500 } },
+    { label: "NSFW Preferences", point: { x: 540, y: 650 } },
+    { label: "Voice", point: { x: 540, y: 800 } },
+    { label: "Shared Conversations", point: { x: 540, y: 960 } },
+    { label: "Data Controls", point: { x: 540, y: 1120 } },
+  ];
+  const selected = [landmarks[1]!, landmarks[2]!, landmarks[3]!, landmarks[4]!];
+  assert.deepEqual(mappedTourStopLandmarkPairs(live, selected, landmarks), live.slice(1));
+  assert.deepEqual(
+    mergeMappedTourStops(live, selected, { landmarkStops: landmarks }),
+    live.slice(1),
   );
 });
