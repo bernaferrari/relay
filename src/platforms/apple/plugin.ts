@@ -76,7 +76,6 @@ const supportsTvRemote = (device: DeviceInfo): boolean => {
 // Per-command support gates the Apple family applies by default, keyed exactly as in
 // the command-descriptor registry (a command absent here has no Apple gate).
 const APPLE_SUPPORTS_BY_DEFAULT: Record<string, (device: DeviceInfo) => boolean> = {
-  [PUBLIC_COMMANDS.apps]: supportsCoreDevicePhysicalOperation,
   [PUBLIC_COMMANDS.install]: supportsAppInstallation,
   [PUBLIC_COMMANDS.reinstall]: supportsAppInstallation,
   [PUBLIC_COMMANDS.installFromSource]: supportsAppInstallation,
@@ -101,7 +100,6 @@ const APPLE_UNSUPPORTED_HINT_BY_DEFAULT: Record<
   string,
   (device: DeviceInfo) => string | undefined
 > = {
-  [PUBLIC_COMMANDS.apps]: coreDeviceOnlyPhysicalOperationHint,
   [PUBLIC_COMMANDS.install]: coreDeviceOnlyPhysicalOperationHint,
   [PUBLIC_COMMANDS.reinstall]: coreDeviceOnlyPhysicalOperationHint,
   [PUBLIC_COMMANDS.installFromSource]: coreDeviceOnlyPhysicalOperationHint,

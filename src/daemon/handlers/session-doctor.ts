@@ -8,7 +8,7 @@ import { readVersion } from '../../utils/version.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { appendAndroidChecks } from './session-doctor-android.ts';
-import { appendAppChecks } from './session-doctor-app.ts';
+import { appendAppChecks, type DoctorAppInventory } from './session-doctor-app.ts';
 import {
   appendDeviceInventoryCheck,
   type DoctorDeviceInventory,
@@ -35,14 +35,24 @@ import {
   prewarmAppleRunnerCache,
 } from '../../platforms/apple/core/runner/runner-client.ts';
 import { appendWebBrowserLifecycleCheck } from './session-doctor-web.ts';
+import { resolveAndroidSerialAllowlist } from '../../utils/device-isolation.ts';
+import {
+  appsRuntimeUse,
+  type BoundDeviceRuntime,
+  type InstalledAppInfo,
+} from '@agent-device/contracts/platform';
+import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
+import { ensureAppsRuntimeReady, listAppsFromRuntime } from '../apps-runtime.ts';
 
 export async function handleDoctorCommand(params: {
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
   androidAdbExecutor?: AndroidAdbExecutor;
+  inspectFacts?: InspectDeviceRuntimeFacts;
+  bindDevice?: BindDeviceRuntime;
 }): Promise<DaemonResponse | null> {
-  const { req, sessionName, sessionStore, androidAdbExecutor } = params;
+  const { req, sessionName, sessionStore, androidAdbExecutor, inspectFacts, bindDevice } = params;
   if (req.command !== PUBLIC_COMMANDS.doctor) return null;
 
   const session = sessionStore.get(sessionName);
@@ -74,6 +84,9 @@ export async function handleDoctorCommand(params: {
     options,
     session,
     stateDir,
+    inspectFacts,
+    bindDevice,
+    req,
   });
   await appendIosRunnerWarmupCheck(checks, appCheckDevice ?? resolveWarmupSimulator(inventory));
   return doctorResponse(checks, options, { device: appCheckDevice, includeMetro: true, inventory });
@@ -143,8 +156,21 @@ async function appendLocalDoctorChecks(params: {
   options: DoctorOptions;
   session: SessionState | undefined;
   stateDir: string;
+  inspectFacts?: InspectDeviceRuntimeFacts;
+  bindDevice?: BindDeviceRuntime;
+  req: DaemonRequest;
 }): Promise<DeviceInfo | undefined> {
-  const { checks, inventory, options, session, androidAdbExecutor, stateDir } = params;
+  const {
+    checks,
+    inventory,
+    options,
+    session,
+    androidAdbExecutor,
+    stateDir,
+    inspectFacts,
+    bindDevice,
+    req,
+  } = params;
   const appCheckDevice =
     session?.device ?? resolveDoctorDeviceForAppCheck(checks, inventory, options.targetApp);
   if (appCheckDevice) {
@@ -153,6 +179,9 @@ async function appendLocalDoctorChecks(params: {
       device: appCheckDevice,
       options,
       session,
+      inspectFacts,
+      bindDevice,
+      req,
     });
   }
   if (options.shouldProbeMetro) {
@@ -169,16 +198,78 @@ async function appendDeviceScopedDoctorChecks(
     device: DeviceInfo;
     options: DoctorOptions;
     session: SessionState | undefined;
+    inspectFacts?: InspectDeviceRuntimeFacts;
+    bindDevice?: BindDeviceRuntime;
+    req: DaemonRequest;
   },
 ): Promise<void> {
-  const { androidAdbExecutor, device, options, session } = params;
-  await appendAppChecks(checks, { device, session, targetApp: options.targetApp });
+  const { androidAdbExecutor, device, options, session, inspectFacts, bindDevice, req } = params;
+  let listInstalledApps: DoctorAppInventory | undefined;
+  try {
+    listInstalledApps = await resolveDoctorAppInventoryForDoctor({
+      device,
+      req,
+      targetApp: options.targetApp,
+      inspectFacts,
+      bindDevice,
+    });
+  } catch (error) {
+    // Keep facts/bind/readiness failures inside appendAppChecks' accumulator path so doctor
+    // reports a failed target-app check and still runs the remaining device checks.
+    listInstalledApps = async () => {
+      throw error;
+    };
+  }
+  await appendAppChecks(checks, {
+    device,
+    session,
+    targetApp: options.targetApp,
+    listInstalledApps,
+  });
   await appendAndroidChecks(checks, {
     androidAdbExecutor,
     device,
     metroPort: options.metroPort,
     shouldProbeMetro: options.shouldProbeMetro,
   });
+}
+
+async function resolveDoctorAppInventoryForDoctor(
+  params: Parameters<typeof resolveDoctorAppInventory>[0],
+): ReturnType<typeof resolveDoctorAppInventory> {
+  // Doctor's target-app check preserves its legacy HarmonyOS informational cell; this does not
+  // alter the apps command's facts or runtime binding, which remain available independently.
+  if (params.device.platform === 'harmonyos') return undefined;
+  return resolveDoctorAppInventory(params);
+}
+
+async function resolveDoctorAppInventory(params: {
+  device: DeviceInfo;
+  req: DaemonRequest;
+  targetApp?: string;
+  inspectFacts?: InspectDeviceRuntimeFacts;
+  bindDevice?: BindDeviceRuntime;
+}): Promise<
+  ((filter: 'all' | 'user-installed') => Promise<readonly InstalledAppInfo[]>) | undefined
+> {
+  const { device, req, targetApp, inspectFacts, bindDevice } = params;
+  if (!targetApp || !inspectFacts || !bindDevice) {
+    return undefined;
+  }
+  const facts = await inspectFacts(device);
+  const appFact = facts.operations.listApps;
+  const readyFact = facts.operations.ensureReady;
+  if (!appFact.available || !readyFact.available) return undefined;
+  const runtime: BoundDeviceRuntime<typeof appsRuntimeUse> = await bindDevice(
+    device,
+    appsRuntimeUse,
+  );
+  const androidSerialAllowlist = resolveAndroidSerialAllowlist(req.flags?.androidDeviceAllowlist);
+  const readyDevice = await ensureAppsRuntimeReady(runtime, {
+    serial: req.flags?.serial,
+    androidSerialAllowlist: androidSerialAllowlist ? [...androidSerialAllowlist].sort() : undefined,
+  });
+  return async (filter) => await listAppsFromRuntime(runtime, readyDevice, filter);
 }
 
 function doctorResponse(

@@ -5,6 +5,7 @@ import type {
   PlatformRuntimeOwner,
 } from '@agent-device/contracts/platform';
 import { localRuntimeOwner } from '@agent-device/contracts/platform';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { createHarmonyAppLogRuntime } from './logs/runtime.ts';
 import {
   createHarmonyScreenRecordingOperations,
@@ -12,11 +13,11 @@ import {
 } from './recording/runtime.ts';
 
 const owner = localRuntimeOwner('harmonyos');
+const available = Object.freeze({ available: true } as const);
 const unavailable = Object.freeze({
   available: false,
   reason: 'unsupported-platform-leaf',
 } as const);
-const available = Object.freeze({ available: true } as const);
 
 export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   const appLogs = createHarmonyAppLogRuntime(host);
@@ -34,6 +35,7 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
         ensureReady: available,
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
+        listApps: available,
       },
     });
   };
@@ -60,6 +62,12 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
               })
             : {}),
           ensureReady: async () => ({ ...request.device, booted: true }),
+          listApps: async (input: { device: DeviceInfo; filter: 'all' | 'user-installed' }) =>
+            await host.appInventory.harmonyos.listApps(
+              input.device,
+              input.filter,
+              request.scope.signal,
+            ),
         }),
         [Symbol.asyncDispose]: async () => await logs[Symbol.asyncDispose](),
       }) satisfies DeviceBinding<PlatformRuntimeOperations>;

@@ -14,6 +14,7 @@ import { resolvePostActionObservationSupport } from './post-action-observation.t
 import type { PostActionObservationSupport } from './post-action-observation.ts';
 import {
   appLogRuntimePlanUses,
+  appsRuntimeUse,
   assertRecordRuntimeExecution,
   deviceBootRuntimeUses,
   inventoryUse,
@@ -215,11 +216,6 @@ const APP_RUNTIME_CAPABILITY = ALL_DEVICE_COMMAND_CAPABILITY;
 const VEGA_APP_RUNTIME_CAPABILITY = {
   ...APP_RUNTIME_CAPABILITY,
   vega: VEGA_VVD,
-} satisfies CommandCapability;
-const APP_INVENTORY_CAPABILITY = {
-  apple: APPLE_SIM_AND_DEVICE,
-  android: ANDROID_ALL,
-  linux: LINUX_NONE,
 } satisfies CommandCapability;
 const APP_INSTALL_CAPABILITY = {
   apple: APPLE_SIM_AND_DEVICE,
@@ -499,10 +495,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
       lockPolicySelectorOverride: true,
       preferExplicitDeviceOverExistingSession: true,
     },
-    capability: APP_INVENTORY_CAPABILITY,
+    platformExecution: { kind: 'device-runtime', uses: [appsRuntimeUse] as const },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
   },
   {
     name: 'boot',

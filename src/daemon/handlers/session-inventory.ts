@@ -1,7 +1,7 @@
 import { isCommandSupportedOnDevice, listCapabilityCommands } from '../../core/capabilities.ts';
 import { listDeviceInventory } from '../../core/device-inventory-context.ts';
 import { assertResolvedAppsFilter } from '@agent-device/contracts/device';
-import { asAppError } from '@agent-device/kernel/errors';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
 import {
   isApplePlatform,
   isMacOs,
@@ -17,25 +17,25 @@ import {
 } from '../../utils/device-isolation.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { resolveSessionRunnerLogPath, SessionStore } from '../session-store.ts';
-import { listAndroidApps } from '../../platforms/android/app-lifecycle.ts';
-import { listIosApps } from '../../platforms/apple/core/apps.ts';
-import { listHarmonyApps } from '../../platforms/harmonyos/app-lifecycle.ts';
-import { getRequestSignal } from '../../request/cancel.ts';
 import { requireSessionOrExplicitSelector, resolveCommandDevice } from './session-device-utils.ts';
-import { errorResponse, requireCommandSupported } from './response.ts';
+import { errorResponse } from './response.ts';
 import { resolveImplicitSessionScope, sessionMatchesScope } from '../session-routing.ts';
 import {
   appLogAdmissionUse,
+  appsRuntimeUse,
   networkAdmissionUse,
   screenRecordingAdmissionUse,
 } from '@agent-device/contracts/platform';
-import type { BindDeviceRuntime } from '../request-runtime-binding.ts';
+import type { BoundDeviceRuntime } from '@agent-device/contracts/platform';
+import { ensureAppsRuntimeReady, listAppsFromRuntime } from '../apps-runtime.ts';
+import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
 
 export async function handleSessionInventoryCommands(params: {
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
   bindDevice?: BindDeviceRuntime;
+  inspectFacts?: InspectDeviceRuntimeFacts;
 }): Promise<DaemonResponse | null> {
   const { req, sessionName, sessionStore } = params;
   switch (req.command) {
@@ -49,9 +49,16 @@ export async function handleSessionInventoryCommands(params: {
         sessionName,
         sessionStore,
         bindDevice: params.bindDevice,
+        inspectFacts: params.inspectFacts,
       });
     case 'apps':
-      return await handleAppsInventory({ req, sessionName, sessionStore });
+      return await handleAppsInventory({
+        req,
+        sessionName,
+        sessionStore,
+        bindDevice: params.bindDevice,
+        inspectFacts: params.inspectFacts,
+      });
     default:
       return null;
   }
@@ -170,6 +177,7 @@ async function capabilitiesInventoryResponse(params: {
   sessionName: string;
   sessionStore: SessionStore;
   bindDevice?: BindDeviceRuntime;
+  inspectFacts?: InspectDeviceRuntimeFacts;
 }): Promise<DaemonResponse> {
   const resolution = await resolveInventoryCommandDevice({
     ...params,
@@ -178,6 +186,7 @@ async function capabilitiesInventoryResponse(params: {
   });
   if ('response' in resolution) return resolution.response;
   const { device } = resolution;
+  const appsAvailable = await isAppsRuntimeAvailable(device, params.inspectFacts);
   const [logsAvailable, networkAvailable, recordingAvailable] = params.bindDevice
     ? await Promise.all([
         params
@@ -202,7 +211,9 @@ async function capabilitiesInventoryResponse(params: {
             ? networkAvailable
             : command === 'record'
               ? recordingAvailable
-              : isCommandSupportedOnDevice(command, device),
+              : command === 'apps'
+                ? appsAvailable
+                : isCommandSupportedOnDevice(command, device),
       ),
     },
   };
@@ -212,34 +223,85 @@ async function handleAppsInventory(params: {
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
+  bindDevice?: BindDeviceRuntime;
+  inspectFacts?: InspectDeviceRuntimeFacts;
 }): Promise<DaemonResponse> {
-  const { req, sessionName, sessionStore } = params;
+  const { req, sessionName, sessionStore, bindDevice, inspectFacts } = params;
   const resolution = await resolveInventoryCommandDevice({
     req,
     sessionName,
     sessionStore,
-    ensureReady: true,
+    ensureReady: false,
+    androidAvdSelection: 'include-stopped',
   });
   if ('response' in resolution) return resolution.response;
   const { device } = resolution;
-  const unsupported = requireCommandSupported('apps', device);
-  if (unsupported) return unsupported;
   const appsFilter = assertResolvedAppsFilter(req.flags?.appsFilter);
-  if (isApplePlatform(device.platform)) {
-    const apps = await listIosApps(device, appsFilter);
-    return appsInventoryResponse(apps.map((app) => ({ id: app.bundleId, name: app.name })));
-  }
-  if (device.platform === 'harmonyos') {
-    const apps = await listHarmonyApps(device, appsFilter, {
-      signal: getRequestSignal(req.meta?.requestId),
-    });
-    return appsInventoryResponse(apps.map((app) => ({ id: app.package, name: app.name })));
-  }
-  const apps = await listAndroidApps(device, appsFilter);
-  return appsInventoryResponse(apps.map((app) => ({ id: app.package, name: app.name })));
+
+  const resolvedAndroidSerialAllowlist = resolveAndroidSerialAllowlist(
+    req.flags?.androidDeviceAllowlist,
+  );
+  const runtimeResolution = await resolveAppsRuntime({ device, inspectFacts, bindDevice });
+  if ('response' in runtimeResolution) return runtimeResolution.response;
+  const runtime = runtimeResolution.runtime;
+  const readyDevice = await ensureAppsRuntimeReady(runtime, {
+    serial: req.flags?.serial,
+    androidSerialAllowlist: resolvedAndroidSerialAllowlist
+      ? [...resolvedAndroidSerialAllowlist].sort()
+      : undefined,
+  });
+  const apps = await listAppsFromRuntime(runtime, readyDevice, appsFilter);
+  return appsInventoryResponse(apps);
 }
 
-function appsInventoryResponse(apps: Array<{ id: string; name: string }>): DaemonResponse {
+async function isAppsRuntimeAvailable(
+  device: DeviceInfo,
+  inspectFacts: InspectDeviceRuntimeFacts | undefined,
+): Promise<boolean> {
+  if (!inspectFacts) return false;
+  try {
+    const facts = await inspectFacts(device);
+    return facts.operations.ensureReady.available && facts.operations.listApps.available;
+  } catch {
+    // Capability projection is advisory. A provider facts failure must fail closed rather than
+    // reconstructing apps support from the retired capability matrix.
+    return false;
+  }
+}
+
+async function resolveAppsRuntime(params: {
+  device: DeviceInfo;
+  inspectFacts: InspectDeviceRuntimeFacts | undefined;
+  bindDevice: BindDeviceRuntime | undefined;
+}): Promise<{ response: DaemonResponse } | { runtime: BoundDeviceRuntime<typeof appsRuntimeUse> }> {
+  if (!params.inspectFacts) {
+    throw new AppError('COMMAND_FAILED', 'Device runtime facts inspection is unavailable.', {
+      reason: 'runtime-gateway-missing',
+    });
+  }
+  const facts = await params.inspectFacts(params.device);
+  const unavailable = [facts.operations.ensureReady, facts.operations.listApps].find(
+    (fact) => !fact.available,
+  );
+  if (unavailable && !unavailable.available) {
+    return {
+      response: errorResponse(
+        'UNSUPPORTED_OPERATION',
+        'apps is not supported on this device',
+        undefined,
+        unavailable.hint ? { hint: unavailable.hint } : undefined,
+      ),
+    };
+  }
+  if (!params.bindDevice) {
+    throw new AppError('COMMAND_FAILED', 'Device runtime binding is unavailable.', {
+      reason: 'runtime-gateway-missing',
+    });
+  }
+  return { runtime: await params.bindDevice(params.device, appsRuntimeUse) };
+}
+
+function appsInventoryResponse(apps: readonly { id: string; name: string }[]): DaemonResponse {
   return {
     ok: true,
     data: {

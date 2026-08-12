@@ -1,7 +1,17 @@
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import type { DaemonRequest, DaemonResponse } from '../../types.ts';
-import { makeSession, makeSessionStore, mockRunCmd } from './session-test-harness.ts';
+import { makeSession, makeSessionStore } from './session-test-harness.ts';
 import { handleSessionInventoryCommands } from '../session-inventory.ts';
+import {
+  localRuntimeOwner,
+  narrowDeviceBinding,
+  type PlatformRuntimeOperations,
+  type RuntimeFacts,
+} from '@agent-device/contracts/platform';
+import type {
+  BindDeviceRuntime,
+  InspectDeviceRuntimeFacts,
+} from '../../request-runtime-binding.ts';
 
 const HARMONY_DEVICE = {
   platform: 'harmonyos' as const,
@@ -11,9 +21,67 @@ const HARMONY_DEVICE = {
   target: 'mobile' as const,
   booted: true,
 };
+const available = { available: true } as const;
+const unavailable = { available: false, reason: 'unsupported-platform-leaf' } as const;
+const listAppsOperation: PlatformRuntimeOperations['listApps'] = vi.fn(async ({ filter }) =>
+  filter === 'all'
+    ? [
+        { id: 'com.example.application', name: 'application' },
+        { id: 'com.ohos.settings', name: 'settings' },
+      ]
+    : [{ id: 'com.example.application', name: 'application' }],
+);
+const ensureReady = vi.fn(async () => ({
+  ...HARMONY_DEVICE,
+  booted: true,
+}));
+
+function runtimeFacts(): RuntimeFacts<PlatformRuntimeOperations> {
+  return {
+    device: { family: 'harmonyos', kind: 'device', target: 'mobile', providerMode: 'local' },
+    operations: {
+      appLogInspect: available,
+      appLogDoctor: available,
+      appLogStart: available,
+      appLogReattach: available,
+      appLogCleanup: available,
+      listApps: { available: true },
+      networkDump: unavailable,
+      screenRecordingStart: unavailable,
+      screenRecordingReattach: unavailable,
+      screenRecordingCleanup: unavailable,
+      ensureReady: available,
+      bootTarget: unavailable,
+      bootTargetHeadless: unavailable,
+    },
+  };
+}
+
+const inspectFacts: InspectDeviceRuntimeFacts = vi.fn(async () => runtimeFacts());
+let bindCount = 0;
+const bindDevice: BindDeviceRuntime = async (device, use) => {
+  bindCount += 1;
+  return narrowDeviceBinding(
+    {
+      device,
+      owner: localRuntimeOwner('harmonyos'),
+      facts: runtimeFacts(),
+      operations: { ensureReady, listApps: listAppsOperation },
+      [Symbol.asyncDispose]: async () => {},
+    },
+    use,
+  );
+};
+
+beforeEach(() => {
+  vi.mocked(inspectFacts).mockClear();
+  vi.mocked(listAppsOperation).mockClear();
+  vi.mocked(ensureReady).mockClear();
+  bindCount = 0;
+});
 
 async function listApps(appsFilter: 'all' | 'user-installed'): Promise<DaemonResponse | null> {
-  const sessionName = `harmony-apps-${appsFilter}`;
+  const sessionName = 'harmony-apps';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName, HARMONY_DEVICE));
   const req: DaemonRequest = {
@@ -23,56 +91,34 @@ async function listApps(appsFilter: 'all' | 'user-installed'): Promise<DaemonRes
     positionals: [],
     flags: { appsFilter },
   };
-  return await handleSessionInventoryCommands({ req, sessionName, sessionStore });
+  return await handleSessionInventoryCommands({
+    req,
+    sessionName,
+    sessionStore,
+    inspectFacts,
+    bindDevice,
+  });
 }
 
-test('HarmonyOS apps routes user-installed filtering through Bundle Manager metadata', async () => {
-  mockRunCmd
-    .mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: 'com.example.application\ncom.ohos.settings\n',
-      stderr: '',
-    })
-    .mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: JSON.stringify({ applicationInfo: { isSystemApp: false } }),
-      stderr: '',
-    })
-    .mockResolvedValueOnce({
-      exitCode: 0,
-      stdout: JSON.stringify({ applicationInfo: { isSystemApp: true } }),
-      stderr: '',
-    });
-
-  const response = await listApps('user-installed');
-
-  expect(response).toMatchObject({
+test.each([
+  {
+    appsFilter: 'user-installed' as const,
+    expected: ['application (com.example.application)'],
+  },
+  {
+    appsFilter: 'all' as const,
+    expected: ['application (com.example.application)', 'settings (com.ohos.settings)'],
+  },
+])('HarmonyOS apps preserves the $appsFilter response parity', async ({ appsFilter, expected }) => {
+  await expect(listApps(appsFilter)).resolves.toMatchObject({
     ok: true,
-    data: { apps: ['application (com.example.application)'] },
+    data: { apps: expected },
   });
-  expect(mockRunCmd.mock.calls.map(([, args]) => args)).toEqual([
-    ['-t', 'harmony-1', 'shell', 'bm', 'dump', '-a'],
-    ['-t', 'harmony-1', 'shell', 'bm', 'dump', '-n', 'com.example.application'],
-    ['-t', 'harmony-1', 'shell', 'bm', 'dump', '-n', 'com.ohos.settings'],
-  ]);
-});
-
-test('HarmonyOS apps routes all filtering to the complete Bundle Manager inventory', async () => {
-  mockRunCmd.mockResolvedValueOnce({
-    exitCode: 0,
-    stdout: 'com.example.application\ncom.ohos.settings\n',
-    stderr: '',
+  expect(inspectFacts).toHaveBeenCalledOnce();
+  expect(bindCount).toBe(1);
+  expect(ensureReady).toHaveBeenCalledOnce();
+  expect(listAppsOperation).toHaveBeenCalledWith({
+    device: expect.any(Object),
+    filter: appsFilter,
   });
-
-  const response = await listApps('all');
-
-  expect(response).toMatchObject({
-    ok: true,
-    data: {
-      apps: ['application (com.example.application)', 'settings (com.ohos.settings)'],
-    },
-  });
-  expect(mockRunCmd.mock.calls.map(([, args]) => args)).toEqual([
-    ['-t', 'harmony-1', 'shell', 'bm', 'dump', '-a'],
-  ]);
 });
