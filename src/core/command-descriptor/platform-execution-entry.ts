@@ -1,0 +1,46 @@
+import {
+  assertCommandPlatformExecution,
+  type CommandPlatformExecution,
+} from '@agent-device/contracts/platform';
+
+/**
+ * Structural on purpose: the gate must see an *absent* discriminator, and the
+ * registry's raw descriptor type — which forbids that — lives in this module's
+ * consumer.
+ */
+type PlatformExecutionDeclarationSite = {
+  readonly name: string;
+  readonly capability?: unknown;
+  readonly platformExecution?: unknown;
+};
+
+/**
+ * ADR 0019 §6: every descriptor declares its platform-execution mode explicitly.
+ * A default cannot distinguish a command with *no* platform execution (`none`)
+ * from an unmigrated one (`legacy`), so an undeclared discriminator is a
+ * registry-load error and the migration denominator stays machine-readable.
+ *
+ * `none` with a capability bucket is also rejected: a capability bucket is
+ * platform admission, so the command executes platform behavior.
+ *
+ * This gate sees one descriptor at a time. Platform execution delegated to
+ * another command is covered by the CLI-route dominance gate in
+ * `__tests__/platform-execution-cli-route.test.ts`.
+ */
+export function readDeclaredPlatformExecution(
+  descriptor: PlatformExecutionDeclarationSite,
+): CommandPlatformExecution {
+  const declared = descriptor.platformExecution;
+  if (declared === undefined) {
+    throw new TypeError(
+      `Command descriptor "${descriptor.name}" must declare platformExecution (none, legacy, inventory, or device-runtime); there is no registry-entry default`,
+    );
+  }
+  assertCommandPlatformExecution(declared);
+  if (declared.kind === 'none' && descriptor.capability !== undefined) {
+    throw new TypeError(
+      `Command descriptor "${descriptor.name}" declares platformExecution none but keeps a capability bucket; a command with platform admission is not platform-free`,
+    );
+  }
+  return declared;
+}
