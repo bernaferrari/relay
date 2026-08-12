@@ -28,11 +28,12 @@ import type { SelectorResolutionOptions } from './public-resolution-types.ts';
  * documented semantics fails a test.
  *
  * The surrounding pipeline stages — occlusion, the off-screen guard,
- * hittable-ancestor promotion, and the wait poll budget — still live in the
- * callers and are NOT declared here. An earlier revision listed them as
- * columns; nothing consumed them, so they were unverifiable claims that read
- * as truth while being free to drift (#1649 review). Routing them into typed
- * behavior is tracked in #1656.
+ * hittable-ancestor promotion, and the wait poll budget — are declared in the
+ * companion structural table, `src/core/selector-pipeline-policy.ts` (#1656),
+ * whose rows each name one row of this matrix. They live there rather than
+ * here because this package is deliberately blind to snapshot occlusion
+ * annotations, backend visibility probes, and the wait clock: a column here
+ * would be a claim nothing in this package could enforce (#1649 review).
  */
 
 export type KnobBackedSelectorAmbiguity = 'disambiguate' | 'fail-closed' | 'first-match';
@@ -79,6 +80,14 @@ export const SELECTOR_RESOLUTION_POLICIES = {
   findAct: {
     ambiguity: 'reject-candidates',
     requireRect: true,
+  },
+  /**
+   * `find <q> list` — the inspection surface: every match is the ANSWER, so the
+   * candidate set stays whole and nothing needs a tap point.
+   */
+  readList: {
+    ambiguity: 'reject-candidates',
+    requireRect: false,
   },
 } as const satisfies Record<string, SelectorResolutionPolicy>;
 

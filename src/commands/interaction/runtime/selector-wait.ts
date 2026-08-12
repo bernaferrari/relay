@@ -13,13 +13,12 @@ import {
   filterIdentitySet,
 } from '../../../replay/target-evidence-tree.ts';
 import type { PublicPlatform } from '@agent-device/kernel/device';
+import { checkWaitText, type SelectorChainMatchList } from '@agent-device/selectors';
 import {
-  checkWaitText,
-  type SelectorChainMatchList,
-  SELECTOR_RESOLUTION_POLICIES,
-  resolveSelectorChainWithPolicy,
-  type PolicyResolutionOutcome,
-} from '@agent-device/selectors';
+  resolveSelectorPipeline,
+  type SelectorPipelineOutcome,
+} from '../../../core/selector-pipeline.ts';
+import { SELECTOR_PIPELINE_POLICIES } from '../../../core/selector-pipeline-policy.ts';
 import { deriveSelectorCapturePolicy } from './selector-capture-policy.ts';
 import { findNodeByLabel, resolveRefLabel } from './selector-read-utils.ts';
 import {
@@ -31,12 +30,11 @@ import {
 } from './wait-polling.ts';
 
 /**
- * The landmark check (#1349) needs the full candidate set, which the policy
- * outcome carries in either shape: a `first-match` resolution exposes the
- * winner, and the ambiguous branch exposes all candidates. Wait's row never
- * refuses, so this only ever adapts — it does not re-decide anything.
+ * The landmark check (#1349) needs the full candidate set, which the pipeline
+ * outcome carries in either shape. Wait's row never refuses, so this only ever
+ * adapts — it does not re-decide anything.
  */
-function policyMatchList(outcome: PolicyResolutionOutcome): SelectorChainMatchList | undefined {
+function policyMatchList(outcome: SelectorPipelineOutcome): SelectorChainMatchList | undefined {
   if (outcome.kind === 'ambiguous') {
     return {
       selector: outcome.selector,
@@ -44,10 +42,10 @@ function policyMatchList(outcome: PolicyResolutionOutcome): SelectorChainMatchLi
       matchedNodes: outcome.matchedNodes,
     };
   }
-  if (outcome.kind === 'resolved') {
+  if (outcome.kind === 'target') {
     return {
-      selector: outcome.resolution.selector,
-      selectorIndex: outcome.resolution.selectorIndex,
+      selector: outcome.selector,
+      selectorIndex: outcome.selectorIndex,
       // Every candidate, not just the winner: the landmark check is satisfied
       // when SOME match carries the recorded identity, so a first impostor
       // must not hide a later genuine landmark (#1349).
@@ -248,7 +246,7 @@ async function waitForSelector<Runtime extends SelectorWaitRuntime>(
   timeoutMs: number | null | undefined,
   recordedLandmark: TargetAnnotationV1 | undefined,
 ): Promise<WaitCommandResult> {
-  const polling = createWaitPolling(runtime, options, timeoutMs);
+  const polling = createWaitPolling(runtime, options, timeoutMs, SELECTOR_PIPELINE_POLICIES.wait);
   const capturePolicy = deriveSelectorCapturePolicy();
   // ADR 0012 / #1349: the LAST poll whose capture matched the recorded
   // selector without any match carrying the recorded landmark identity. A
@@ -278,10 +276,12 @@ async function waitForSelector<Runtime extends SelectorWaitRuntime>(
     const capture = poll.value;
     if (capture) {
       const nodes = capture.snapshot.nodes;
-      const outcome = resolveSelectorChainWithPolicy(
+      // The wait row ignores occlusion and off-screen: a covered or scrolled-out
+      // element is present, and presence is the question this loop asks.
+      const outcome = await resolveSelectorPipeline(
+        SELECTOR_PIPELINE_POLICIES.wait,
         nodes,
         selectorExpression,
-        SELECTOR_RESOLUTION_POLICIES.wait,
         { platform: runtime.backend.platform },
       );
       // The wait row is `first-match`, so a multi-match screen resolves rather
@@ -361,7 +361,7 @@ async function waitForText<Runtime extends SelectorWaitRuntime>(
   text: string,
   timeoutMs: number | null | undefined,
 ): Promise<WaitCommandResult> {
-  const polling = createWaitPolling(runtime, options, timeoutMs);
+  const polling = createWaitPolling(runtime, options, timeoutMs, SELECTOR_PIPELINE_POLICIES.wait);
   let deadline: WaitPollDeadline | undefined;
   while (polling.hasTimeRemaining()) {
     const poll = await polling.capture(async (signal) =>
