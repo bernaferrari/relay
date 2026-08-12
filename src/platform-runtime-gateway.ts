@@ -1,23 +1,19 @@
 import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
-import type {
-  DeviceBinding,
-  DeviceBindingRequest,
-  DeviceRuntimeGateway,
-  PlatformRuntimeHost,
-  PlatformRuntimeModule,
-  PlatformRuntimeOperations,
-  PlatformRuntimeOwner,
-  PlatformRuntimeProviderModule,
-  RuntimeOwnerRef,
-} from '@agent-device/contracts/platform';
 import {
   createUnavailablePlatformRuntimeBinding,
   createUnavailablePlatformRuntimeFacts,
-} from '@agent-device/capture-kit';
-import {
   providerRuntimeOwner,
   runtimeOwnerKey,
   sameRuntimeOwner,
+  type DeviceBinding,
+  type DeviceBindingRequest,
+  type DeviceRuntimeGateway,
+  type PlatformRuntimeHost,
+  type PlatformRuntimeModule,
+  type PlatformRuntimeOperations,
+  type PlatformRuntimeOwner,
+  type PlatformRuntimeProviderModule,
+  type RuntimeOwnerRef,
 } from '@agent-device/contracts/platform';
 import {
   deviceIdentity,
@@ -279,6 +275,7 @@ function unavailableProviderBinding(
   });
   return createUnavailablePlatformRuntimeBinding(device, owner, {
     appLog: unavailable,
+    appState: unavailable,
     network: unavailable,
   });
 }
@@ -291,7 +288,7 @@ function unavailableProviderFacts(runtime: ProviderDeviceRuntime, device: Device
   return createUnavailablePlatformRuntimeFacts(
     device,
     providerRuntimeOwner(runtime.provider, 'default'),
-    { appLog: unavailable, network: unavailable, readiness: unavailable },
+    { appLog: unavailable, appState: unavailable, network: unavailable, readiness: unavailable },
   );
 }
 

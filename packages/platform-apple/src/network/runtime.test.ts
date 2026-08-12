@@ -164,6 +164,10 @@ function unusedAppLogHost(): Omit<
       harmonyos: { listApps: async () => [] },
     },
     clock: { now: () => 1, sleep: async () => {} },
+    appState: {
+      android: { run: async () => ({ stdout: '' }) },
+      harmonyos: { run: async () => ({ stdout: '' }) },
+    },
     deviceReadiness: {
       applePhysical: { ensureConnected: async () => {} },
       appleAutomation: { keepHot: () => {} },

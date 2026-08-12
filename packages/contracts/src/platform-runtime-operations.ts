@@ -3,6 +3,7 @@ import type {
   AppInventoryRuntimeHost,
   AppInventoryRuntimeOperations,
 } from './app-inventory-runtime.ts';
+import type { AppStateRuntimeHost, AppStateRuntimeOperations } from './app-state-runtime.ts';
 import type { NetworkRuntimeHost, NetworkRuntimeOperations } from './network-runtime.ts';
 import type { ScreenRecordingRuntimeHost } from './screen-recording-runtime-host.ts';
 import type { ScreenRecordingRuntimeOperations } from './screen-recording-runtime.ts';
@@ -10,15 +11,16 @@ import type {
   DeviceReadinessRuntimeHost,
   DeviceReadinessRuntimeOperations,
 } from './device-readiness-runtime.ts';
-import {
-  runtimeUse,
-  type DeviceRuntimeOwner,
-  type RuntimeOwnerRef,
-  type RuntimePlatformModule,
+import type {
+  DeviceRuntimeOwner,
+  RuntimeOwnerRef,
+  RuntimePlatformModule,
 } from './platform-runtime.ts';
+import { runtimeUse } from './platform-runtime-use.ts';
 
 export type PlatformRuntimeOperations = AppLogRuntimeOperations &
   AppInventoryRuntimeOperations &
+  AppStateRuntimeOperations &
   NetworkRuntimeOperations &
   ScreenRecordingRuntimeOperations &
   DeviceReadinessRuntimeOperations;
@@ -26,8 +28,8 @@ export type PlatformRuntimeOperations = AppLogRuntimeOperations &
 /**
  * The one neutral runtime-use declaration every command domain shares (ADR 0019 §9): no
  * per-domain currying wrappers. Lives here, next to the concrete `PlatformRuntimeOperations`
- * catalog it closes over, so the generic `runtimeUse` primitive in `platform-runtime.ts`
- * never depends on it.
+ * catalog it closes over. The generic `runtimeUse` primitive stays internal to contracts and
+ * never depends on this catalog.
  */
 export const defineUse = runtimeUse<PlatformRuntimeOperations>();
 
@@ -69,11 +71,14 @@ export function resolveDeviceReadinessRuntimePlan(
 ): DeviceReadinessRuntimePlan {
   return input.headless ? bootTargetHeadlessPlan : bootTargetPlan;
 }
+export const appStateUse = defineUse({ required: ['ensureReady', 'appState'] });
+export const appStateRuntimeUses = Object.freeze([appStateUse] as const);
 
 export type PlatformRuntimeHost = AppLogRuntimeHost &
   NetworkRuntimeHost &
   Readonly<{
     appInventory: AppInventoryRuntimeHost;
+    appState: AppStateRuntimeHost;
     screenRecording: ScreenRecordingRuntimeHost;
     deviceReadiness: DeviceReadinessRuntimeHost;
   }>;

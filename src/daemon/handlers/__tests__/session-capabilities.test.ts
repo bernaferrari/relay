@@ -36,6 +36,7 @@ test('capabilities reports supported commands for the selected session device', 
   sessionStore.set(sessionName, makeAndroidSession(sessionName));
   const runtime = createAdmissionRuntime({
     appLogAvailable: true,
+    ensureReadyAvailable: true,
     networkAvailable: true,
     appsAvailable: true,
     providerMode: 'local',
@@ -296,6 +297,139 @@ test.each(APPS_UNAVAILABLE_CAPABILITY_CASES)(
   },
 );
 
+test('capabilities excludes appstate when its runtime fact is unavailable', async () => {
+  const sessionName = 'android-capabilities-no-appstate';
+  const sessionStore = makeSessionStore('agent-device-capabilities-no-appstate-');
+  sessionStore.set(sessionName, makeAndroidSession(sessionName));
+  const runtime = createAdmissionRuntime({
+    appLogAvailable: true,
+    appStateAvailable: false,
+    networkAvailable: true,
+    providerMode: 'local',
+  });
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: PUBLIC_COMMANDS.capabilities,
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    bindDevice: runtime.bindDevice,
+    inspectFacts: runtime.inspectFacts,
+    invoke: async () => ({ ok: true, data: {} }),
+  });
+
+  expect(response?.ok).toBe(true);
+  if (!response?.ok) return;
+  expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.appState);
+});
+
+test('capabilities excludes appstate when its readiness fact is unavailable', async () => {
+  const sessionName = 'android-capabilities-no-readiness';
+  const sessionStore = makeSessionStore('agent-device-capabilities-no-readiness-');
+  sessionStore.set(sessionName, makeAndroidSession(sessionName));
+  const runtime = createAdmissionRuntime({
+    appLogAvailable: true,
+    appStateAvailable: true,
+    ensureReadyAvailable: false,
+    networkAvailable: true,
+    providerMode: 'local',
+  });
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: PUBLIC_COMMANDS.capabilities,
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    bindDevice: runtime.bindDevice,
+    inspectFacts: runtime.inspectFacts,
+    invoke: async () => ({ ok: true, data: {} }),
+  });
+
+  expect(response?.ok).toBe(true);
+  if (!response?.ok) return;
+  expect(response.data?.availableCommands).not.toContain(PUBLIC_COMMANDS.appState);
+});
+
+test.each([
+  [
+    'iOS',
+    {
+      platform: 'apple' as const,
+      appleOs: 'ios' as const,
+      id: 'ios-capabilities',
+      name: 'iPhone',
+      kind: 'simulator' as const,
+      target: 'mobile' as const,
+      booted: true,
+    },
+  ],
+  [
+    'macOS',
+    {
+      platform: 'apple' as const,
+      appleOs: 'macos' as const,
+      id: 'macos-capabilities',
+      name: 'Mac',
+      kind: 'device' as const,
+      target: 'desktop' as const,
+      booted: true,
+    },
+  ],
+])(
+  'capabilities preserves session-owned appstate for an active %s session',
+  async (_name, device) => {
+    const sessionName = device.id + '-session';
+    const sessionStore = makeSessionStore('agent-device-capabilities-' + device.id + '-');
+    sessionStore.set(sessionName, {
+      name: sessionName,
+      device,
+      createdAt: Date.now(),
+      actions: [],
+      appName: 'Settings',
+      appBundleId: 'com.example.settings',
+    });
+    const inspectFacts = vi.fn(async () => {
+      throw new Error('session-owned Apple appstate must not inspect sessionless facts');
+    });
+
+    const response = await withTargetDeviceResolutionScope(
+      async () => [device],
+      async () =>
+        await handleSessionCommands({
+          req: {
+            token: 't',
+            session: sessionName,
+            command: PUBLIC_COMMANDS.capabilities,
+            positionals: [],
+            flags: {},
+          },
+          sessionName,
+          logPath: path.join(os.tmpdir(), 'daemon.log'),
+          sessionStore,
+          inspectFacts,
+          invoke: async () => ({ ok: true, data: {} }),
+        }),
+    );
+
+    expect(response?.ok).toBe(true);
+    if (!response?.ok) return;
+    expect(response.data?.availableCommands).toContain(PUBLIC_COMMANDS.appState);
+    expect(inspectFacts).not.toHaveBeenCalled();
+  },
+);
+
 test('capabilities accepts a stopped Android AVD placeholder for explicit platform discovery', async () => {
   const stoppedAvd: DeviceInfo = {
     platform: 'android',
@@ -340,8 +474,10 @@ test('capabilities accepts a stopped Android AVD placeholder for explicit platfo
 
 function createAdmissionRuntime(options: {
   appLogAvailable: boolean;
+  appStateAvailable?: boolean;
+  ensureReadyAvailable?: boolean;
   networkAvailable: boolean;
-  appsAvailable: boolean;
+  appsAvailable?: boolean;
   providerMode: RuntimeProviderMode;
 }) {
   const uses: Array<{ required: readonly string[]; preferred: readonly string[] }> = [];
@@ -357,8 +493,10 @@ function createAdmissionRuntime(options: {
 
 type AdmissionRuntimeOptions = Readonly<{
   appLogAvailable: boolean;
+  appStateAvailable?: boolean;
+  ensureReadyAvailable?: boolean;
   networkAvailable: boolean;
-  appsAvailable: boolean;
+  appsAvailable?: boolean;
   providerMode: RuntimeProviderMode;
 }>;
 
@@ -370,42 +508,75 @@ function createAdmissionBinding(
   const appsFact = appsOperationFact(options);
   return {
     device,
-    owner:
-      options.providerMode === 'provider-runtime'
-        ? providerRuntimeOwner('test', 'capabilities')
-        : localRuntimeOwner(device.platform),
-    facts: {
-      device: {
-        family: device.platform,
-        ...(device.appleOs === undefined ? {} : { appleOs: device.appleOs }),
-        kind: device.kind,
-        ...(device.target === undefined ? {} : { target: device.target }),
-        ...(device.iosPhysicalDeviceBackend === undefined
-          ? {}
-          : { iosPhysicalDeviceBackend: device.iosPhysicalDeviceBackend }),
-        providerMode: options.providerMode,
-      },
-      operations: {
-        appLogInspect: options.appLogAvailable ? { available: true } : unavailable,
-        appLogDoctor: unavailable,
-        appLogStart: unavailable,
-        appLogReattach: unavailable,
-        appLogCleanup: unavailable,
-        networkDump: options.networkAvailable ? { available: true } : unavailable,
-        screenRecordingStart: unavailable,
-        screenRecordingReattach: unavailable,
-        screenRecordingCleanup: unavailable,
-        ensureReady: appsFact,
-        bootTarget: unavailable,
-        bootTargetHeadless: unavailable,
-        listApps: appsFact,
-      },
-    },
-    operations: {
-      ...(options.appLogAvailable ? { appLogInspect: inspectAndroidAppLog } : {}),
-      ...(options.networkAvailable ? { networkDump: dumpEmptyAndroidNetwork } : {}),
-    },
+    owner: createAdmissionOwner(device, options.providerMode),
+    facts: createAdmissionFacts(device, options, unavailable, appsFact),
+    operations: createAdmissionOperations(options),
     [Symbol.asyncDispose]: async () => {},
+  };
+}
+
+function createAdmissionOwner(device: DeviceInfo, providerMode: RuntimeProviderMode) {
+  return providerMode === 'provider-runtime'
+    ? providerRuntimeOwner('test', 'capabilities')
+    : localRuntimeOwner(device.platform);
+}
+
+function createAdmissionFacts(
+  device: DeviceInfo,
+  options: AdmissionRuntimeOptions,
+  unavailable: ReturnType<typeof unavailableOperationFact>,
+  appsFact: ReturnType<typeof appsOperationFact>,
+) {
+  return {
+    device: {
+      family: device.platform,
+      ...(device.appleOs === undefined ? {} : { appleOs: device.appleOs }),
+      kind: device.kind,
+      ...(device.target === undefined ? {} : { target: device.target }),
+      ...(device.iosPhysicalDeviceBackend === undefined
+        ? {}
+        : { iosPhysicalDeviceBackend: device.iosPhysicalDeviceBackend }),
+      providerMode: options.providerMode,
+    },
+    operations: createAdmissionOperationFacts(options, unavailable, appsFact),
+  };
+}
+
+function createAdmissionOperationFacts(
+  options: AdmissionRuntimeOptions,
+  unavailable: ReturnType<typeof unavailableOperationFact>,
+  appsFact: ReturnType<typeof appsOperationFact>,
+) {
+  return {
+    appLogInspect: options.appLogAvailable ? { available: true as const } : unavailable,
+    appLogDoctor: unavailable,
+    appLogStart: unavailable,
+    appLogReattach: unavailable,
+    appLogCleanup: unavailable,
+    appState:
+      (options.appStateAvailable ?? options.appLogAvailable)
+        ? { available: true as const }
+        : unavailable,
+    networkDump: options.networkAvailable ? { available: true as const } : unavailable,
+    screenRecordingStart: unavailable,
+    screenRecordingReattach: unavailable,
+    screenRecordingCleanup: unavailable,
+    ensureReady:
+      options.ensureReadyAvailable === undefined
+        ? appsFact
+        : options.ensureReadyAvailable
+          ? { available: true as const }
+          : unavailable,
+    bootTarget: unavailable,
+    bootTargetHeadless: unavailable,
+    listApps: appsFact,
+  };
+}
+
+function createAdmissionOperations(options: AdmissionRuntimeOptions) {
+  return {
+    ...(options.appLogAvailable ? { appLogInspect: inspectAndroidAppLog } : {}),
+    ...(options.networkAvailable ? { networkDump: dumpEmptyAndroidNetwork } : {}),
   };
 }
 

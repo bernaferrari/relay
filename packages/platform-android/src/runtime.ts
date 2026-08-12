@@ -12,6 +12,7 @@ import { createAndroidAppLogRuntime } from './logs/runtime.ts';
 import { dumpAndroidNetworkTraffic } from './network/runtime.ts';
 import { bindAndroidScreenRecordingRuntime } from './recording/runtime.ts';
 import { ensureAndroidReady } from './readiness/runtime.ts';
+import { readAndroidAppState } from './app-state.ts';
 
 const owner = localRuntimeOwner('android');
 const available = Object.freeze({ available: true } as const);
@@ -19,6 +20,11 @@ const headlessUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-device-kind',
   hint: 'Headless boot is supported only for Android emulators.',
+} as const);
+const appStateUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-device-kind',
+  hint: 'Android appstate is supported only for Android emulators and devices.',
 } as const);
 
 export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
@@ -29,6 +35,7 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
       device: logs.device,
       operations: {
         ...logs.operations,
+        appState: device.kind === 'simulator' ? appStateUnavailable : available,
         networkDump: available,
         screenRecordingStart: available,
         screenRecordingReattach: available,
@@ -59,6 +66,16 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         facts,
         operations: Object.freeze({
           ...logs.operations,
+          ...(facts.operations.appState.available
+            ? {
+                appState: async () =>
+                  await readAndroidAppState(
+                    host.appState.android,
+                    request.device,
+                    request.scope.signal,
+                  ),
+              }
+            : {}),
           networkDump: async (input: NetworkDumpInput) =>
             await dumpAndroidNetworkTraffic(host, request.device, input, request.scope.signal),
           ...recording,

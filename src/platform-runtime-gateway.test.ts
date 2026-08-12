@@ -1,4 +1,5 @@
 import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
+import type { Interactor } from '@agent-device/contracts/interaction';
 import type {
   DeviceBinding,
   PlatformRuntimeHost,
@@ -9,7 +10,12 @@ import type {
 } from '@agent-device/contracts/platform';
 import { providerRuntimeOwner } from '@agent-device/contracts/platform';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { createLimrunRuntime, type LimrunRuntimeDependencies } from '@agent-device/provider-limrun';
 import { describe, expect, test, vi } from 'vitest';
+import { handleSessionStateCommands } from './daemon/handlers/session-state.ts';
+import { createRequestRuntimeBindings } from './daemon/request-runtime-binding.ts';
+import { makeSessionStore } from './__tests__/test-utils/store-factory.ts';
+import { withTestDeviceInventory } from './__tests__/test-utils/device-inventory-gateways.ts';
 import {
   createComposedPlatformRuntimeGateway,
   type PlatformRuntimeProviderRegistration,
@@ -55,6 +61,84 @@ describe('composed platform runtime gateway', () => {
     expect(inspectFacts).toHaveBeenCalledOnce();
     expect(bind).not.toHaveBeenCalled();
     expect(unrelatedLoad).not.toHaveBeenCalled();
+  });
+
+  test('keeps a stale Limrun Android id unavailable through the production handler without binding or local fallback', async () => {
+    const registration = createLimrunRuntime(
+      { apiKey: 'test-key', runtimeInstance: 'test-instance' },
+      limrunTestDependencies,
+      { includePlatformModule: true },
+    );
+    const staleDevice: DeviceInfo = {
+      platform: 'android',
+      id: 'limrun:android:released-lease',
+      name: 'Released Limrun Android',
+      kind: 'emulator',
+      target: 'mobile',
+      booted: true,
+    };
+    let inspectCount = 0;
+    let bindCount = 0;
+    const providerModule = {
+      ...registration.platformModule,
+      loadRuntime: async (host: PlatformRuntimeHost) => {
+        const owner = await registration.platformModule.loadRuntime(host);
+        return {
+          ...owner,
+          inspectFacts: async (device: DeviceInfo) => {
+            inspectCount += 1;
+            return await owner.inspectFacts(device);
+          },
+          bind: async (request: Parameters<PlatformRuntimeOwner['bind']>[0]) => {
+            bindCount += 1;
+            return await owner.bind(request);
+          },
+        };
+      },
+    };
+    const localLoad = vi.fn(async () => {
+      throw new Error('stale Limrun identity must not fall back to local Android');
+    });
+    const runtimeGateway = createComposedPlatformRuntimeGateway({
+      modules: new Map([['android', { family: 'android', loadRuntime: localLoad }]]),
+      loadHost: async () => ({}) as PlatformRuntimeHost,
+      providerRuntimes: [registration.runtime],
+      providerModules: [{ runtime: registration.runtime, module: providerModule }],
+    });
+
+    const bindings = createRequestRuntimeBindings({ gateway: runtimeGateway, scope });
+    try {
+      const response = await withTestDeviceInventory(
+        { local: async () => [staleDevice] },
+        async () =>
+          await handleSessionStateCommands({
+            req: {
+              token: 't',
+              session: 'default',
+              command: 'appstate',
+              positionals: [],
+              flags: { platform: 'android', device: staleDevice.name },
+            },
+            sessionName: 'default',
+            sessionStore: makeSessionStore('agent-device-stale-limrun-'),
+            inspectFacts: bindings.inspectFacts,
+            bindDevice: bindings.bindDevice,
+          }),
+      );
+
+      expect(response?.ok).toBe(false);
+      if (response && !response.ok) {
+        expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
+        expect(response.error.hint).toMatch(/matching live provider session/i);
+      }
+      expect(inspectCount).toBe(1);
+      expect(bindCount).toBe(0);
+      expect(localLoad).not.toHaveBeenCalled();
+    } finally {
+      await bindings[Symbol.asyncDispose]();
+      await runtimeGateway.shutdown();
+      await registration.runtime.shutdown();
+    }
   });
 
   test('rejects inspected facts with a provider-mode mismatch', async () => {
@@ -146,6 +230,10 @@ describe('composed platform runtime gateway', () => {
       reason: 'unsupported-provider-mode',
     });
     expect(binding.facts.operations.listApps).toMatchObject({
+      available: false,
+      reason: 'unsupported-provider-mode',
+    });
+    expect(binding.facts.operations.appState).toMatchObject({
       available: false,
       reason: 'unsupported-provider-mode',
     });
@@ -303,6 +391,7 @@ function unavailableFacts() {
     appLogStart: unavailable,
     appLogReattach: unavailable,
     appLogCleanup: unavailable,
+    appState: unavailable,
     networkDump: unavailable,
     screenRecordingStart: unavailable,
     screenRecordingReattach: unavailable,
@@ -313,3 +402,38 @@ function unavailableFacts() {
     listApps: unavailable,
   };
 }
+
+const limrunTestDependencies = {
+  clientVersion: 'test',
+  android: {
+    createInteractor: () => ({}) as Interactor,
+    createPortReverse: async () => ({
+      ensure: async () => {},
+      remove: async () => {},
+      removeAllOwned: async () => {},
+    }),
+    inferAppName: async () => 'unused',
+    listApps: async () => [],
+    getForegroundApp: async () => undefined,
+    getKeyboardState: async () => ({ visible: false, inputOwner: 'unknown' as const }),
+    dismissKeyboard: async () => ({
+      visible: false,
+      inputOwner: 'unknown' as const,
+      attempts: 0,
+      wasVisible: false,
+      dismissed: false,
+    }),
+    readLogs: async () => '',
+    adbError: async () => {
+      throw new Error('unused');
+    },
+  },
+  host: {
+    runAdb: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+    archiveDirectory: async () => {},
+  },
+  ios: {
+    resolveAppAlias: async (app: string) => app,
+    readBundleAppName: async () => undefined,
+  },
+} satisfies LimrunRuntimeDependencies;

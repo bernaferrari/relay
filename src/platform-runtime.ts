@@ -5,6 +5,8 @@ import type {
 import {
   createPlatformModuleRegistry,
   type AppLogSessionArtifacts,
+  type AppStateRuntimeHost,
+  type AppStateRuntimeResult,
   type ComposedDeviceInventoryGateways,
   type DeviceRuntimeGateway,
   type PlatformRuntimeModule,
@@ -16,6 +18,8 @@ import {
 } from '@agent-device/platform-apple';
 import {
   createAndroidInventoryModule,
+  parseAndroidForegroundApp as parseAndroidPackageForegroundApp,
+  readAndroidAppState as readAndroidPackageAppState,
   runtimeModule as androidRuntimeModule,
 } from '@agent-device/platform-android';
 import {
@@ -37,6 +41,20 @@ import {
 import { createComposedPlatformRuntimeGateway } from './platform-runtime-gateway.ts';
 import type { PlatformRuntimeProviderRegistration } from './platform-runtime-gateway.ts';
 import { createComposedDeviceInventoryGateways } from './platform-runtime-device-inventory.ts';
+
+export async function readAndroidAppStateWithHost(
+  host: AppStateRuntimeHost['android'],
+  device: Parameters<AppStateRuntimeHost['android']['run']>[0],
+  signal: AbortSignal,
+): Promise<AppStateRuntimeResult> {
+  return await readAndroidPackageAppState(host, device, signal);
+}
+
+export async function parseAndroidForegroundApp(
+  text: string,
+): Promise<Readonly<{ package?: string; activity?: string }> | null> {
+  return await parseAndroidPackageForegroundApp(text);
+}
 
 const androidInventoryModule = createAndroidInventoryModule({
   sdkRoots: configuredValues(process.env.ANDROID_SDK_ROOT, process.env.ANDROID_HOME),

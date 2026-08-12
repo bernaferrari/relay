@@ -19,6 +19,10 @@ export function platformRuntimeHostFixture(): PlatformRuntimeHost {
       android: { listApps: async () => [] },
       harmonyos: { listApps: async () => [] },
     },
+    appState: {
+      android: { run: async () => ({ stdout: '' }) },
+      harmonyos: { run: async () => ({ stdout: '' }) },
+    },
     deviceReadiness: {
       applePhysical: { ensureConnected: async () => {} },
       appleAutomation: { keepHot: () => {} },
