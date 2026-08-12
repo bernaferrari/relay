@@ -226,6 +226,7 @@ test("orderCanvasChanges keeps stable priority and original order within a tier"
     { kind: "flow.remove", flowId: "f1" },
     { kind: "group.save", group: { id: "g2" } },
     { kind: "connection.create", connection: { id: "c2" } },
+    { kind: "test.save", test: { id: "t1" } },
     { kind: "screen.add", input: { id: "s2" } },
   ] as AppMapBatchChange[];
 
@@ -238,6 +239,7 @@ test("orderCanvasChanges keeps stable priority and original order within a tier"
       "group.save",
       "connection.create",
       "flow.remove",
+      "test.save",
       "connection.remove",
     ],
   );
@@ -286,6 +288,15 @@ test("appMapCommitSummary describes the actual canvas gesture", () => {
     "Connected Settings to Wi-Fi",
   );
   assert.equal(appMapCommitSummary({ appMap, changes: [], notesChanged: true }), "Edited a note");
+  assert.equal(
+    appMapCommitSummary({
+      appMap,
+      changes: [
+        { kind: "test.save", test: { id: "visit-wifi", name: "Visit Wi-Fi" } } as AppMapBatchChange,
+      ],
+    }),
+    "Created reusable test Visit Wi-Fi",
+  );
 });
 
 test("note persistence emits only the local note delta, preserving remote siblings", () => {

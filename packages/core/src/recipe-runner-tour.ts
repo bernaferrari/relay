@@ -20,12 +20,14 @@ import {
   onTourOrigin,
   sameTourScreen,
   tourFallbackOverlap,
+  tourOriginFingerprintMatch,
   tourScreenSignature,
 } from "./tour.js";
 import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { observeScreenIdentity } from "./screen-identity.js";
+import { nodeMatchesTarget } from "./recipe-target-match.js";
 
 async function returnToTourOrigin(
   device: Device,
@@ -141,35 +143,94 @@ async function runTourPrelude(
   log: (line: string) => void,
 ): Promise<void> {
   for (const step of steps) {
-    if (step.kind === "tap" && step.target) {
+    try {
+      if (step.when) {
+        const nodes = await snapshot(device);
+        const present = conditionalPreludeTargetPresent(nodes, step.when);
+        const shouldRun = step.when.condition === "present" ? present : !present;
+        if (!shouldRun) {
+          log(
+            `tour: conditional prelude ${step.kind} skipped — ${describePreludeTarget(step.when.target)} is ${present ? "present" : "absent"}`,
+          );
+          continue;
+        }
+      }
+      if (step.kind === "tap" && step.target) {
+        log(
+          `tour: prelude tap ${step.target.label ?? step.target.identifier ?? step.target.text ?? "control"}`,
+        );
+        await pressNamedControl(device, {
+          ...(step.target.identifier ? { identifier: step.target.identifier } : {}),
+          ...(step.target.label ? { label: step.target.label } : {}),
+          ...(step.target.text ? { text: step.target.text } : {}),
+          ...(step.target.point ? { point: step.target.point } : {}),
+        });
+      } else if (step.kind === "key") {
+        log(`tour: prelude ${step.key}`);
+        await pressKey(device, step.key);
+      } else if (step.kind === "swipe") {
+        log("tour: prelude swipe");
+        await swipeGesture(device, step.from, step.to, step.durationMs);
+      } else if (step.kind === "scroll") {
+        log(`tour: prelude scroll ${step.direction}`);
+        if (step.direction === "down") await scrollDown(device, step.amount);
+        else await scrollUp(device, step.amount);
+      }
+      await sleep(350, device);
+    } catch (error) {
+      if (!step.optional) throw error;
       log(
-        `tour: prelude tap ${step.target.label ?? step.target.identifier ?? step.target.text ?? "control"}`,
+        `tour: optional prelude ${step.kind} skipped — ${error instanceof Error ? error.message : String(error)}`,
       );
-      await pressNamedControl(device, {
-        ...(step.target.identifier ? { identifier: step.target.identifier } : {}),
-        ...(step.target.label ? { label: step.target.label } : {}),
-        ...(step.target.text ? { text: step.target.text } : {}),
-        ...(step.target.point ? { point: step.target.point } : {}),
-      });
-    } else if (step.kind === "key") {
-      log(`tour: prelude ${step.key}`);
-      await pressKey(device, step.key);
-    } else if (step.kind === "swipe") {
-      log("tour: prelude swipe");
-      await swipeGesture(device, step.from, step.to, step.durationMs);
-    } else if (step.kind === "scroll") {
-      log(`tour: prelude scroll ${step.direction}`);
-      if (step.direction === "down") await scrollDown(device, step.amount);
-      else await scrollUp(device, step.amount);
     }
-    await sleep(350, device);
   }
+}
+
+function describePreludeTarget(target: NonNullable<RecipeStep["when"]>["target"]): string {
+  return target.label ?? target.identifier ?? target.text ?? target.ref ?? "control";
+}
+
+function conditionalPreludeTargetPresent(
+  nodes: SnapshotNode[],
+  condition: NonNullable<RecipeStep["when"]>,
+): boolean {
+  const region = condition.region;
+  if (!region) return nodes.some((node) => nodeMatchesTarget(node, condition.target));
+  const viewport =
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "application")?.rect ??
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "window")?.rect;
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
+    throw new Error("tour: conditional prelude could not read viewport bounds");
+  }
+  return nodes.some((node) => {
+    if (!nodeMatchesTarget(node, condition.target) || !node.rect) return false;
+    const x = (node.rect.x + node.rect.width / 2 - viewport.x) / viewport.width;
+    const y = (node.rect.y + node.rect.height / 2 - viewport.y) / viewport.height;
+    return (
+      (region.minX === undefined || x >= region.minX) &&
+      (region.maxX === undefined || x <= region.maxX) &&
+      (region.minY === undefined || y >= region.minY) &&
+      (region.maxY === undefined || y <= region.maxY)
+    );
+  });
 }
 
 function firstPreludeTargetVisible(
   nodes: SnapshotNode[],
-  steps: NonNullable<Extract<RecipeStep, { kind: "tour" }>["preludeSteps"]>,
+  step: Extract<RecipeStep, { kind: "tour" }>,
 ): boolean {
+  const steps = step.preludeSteps;
+  if (!steps?.length) return false;
+  if (
+    step.preludeStartFingerprint &&
+    !tourOriginFingerprintMatch(
+      nodes.length ? observeScreenIdentity(nodes).fingerprint : undefined,
+      step.preludeStartFingerprint,
+      step.preludeStartAliases,
+    )
+  ) {
+    return false;
+  }
   const first = steps[0];
   // A mapped scroll/swipe is the route to a known scroll checkpoint. Unlike a
   // tap it has no label to discover, so it should be attempted immediately on
@@ -268,7 +329,7 @@ async function tryTourPrelude(
   step: Extract<RecipeStep, { kind: "tour" }>,
   log: (line: string) => void,
 ): Promise<Awaited<ReturnType<typeof readTourSurface>> | null> {
-  if (!step.preludeSteps?.length || !firstPreludeTargetVisible(surface.nodes, step.preludeSteps)) {
+  if (!step.preludeSteps?.length || !firstPreludeTargetVisible(surface.nodes, step)) {
     return null;
   }
   log(
@@ -334,8 +395,12 @@ async function seekTourOrigin(
     if (await restoreRememberedApp(device, surface.nodes, log)) {
       surface = await readTourSurface(device, step);
     }
-    await runTourPrelude(device, step.preludeSteps, log);
-    surface = await readTourSurface(device, step);
+    if (firstPreludeTargetVisible(surface.nodes, step)) {
+      await runTourPrelude(device, step.preludeSteps, log);
+      surface = await readTourSurface(device, step);
+    } else {
+      log("tour: mapped prelude start is not verified; refusing to replay it off-origin");
+    }
   }
   return surface;
 }
@@ -354,6 +419,14 @@ export async function runTourStep(
   const origin = tourScreenSignature(nodes, {
     excludeLanguageRows: step.excludeLanguageRows,
   });
+  if (originReached && step.captureOrigin && step.screenshot !== false) {
+    await captureScreenshot({
+      jobId: job?.id,
+      caption: `screen:${step.originTitle ?? "tour origin"}`,
+      device,
+    });
+  }
+  if (originReached && step.mappedStopsOnly && !step.fallbackStops?.length) return;
   if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
     const alignedLocalizedRows = isLocalizedJob(job) && stops.length === step.fallbackStops.length;
     const merged = mergeMappedTourStops(stops, step.fallbackStops, {

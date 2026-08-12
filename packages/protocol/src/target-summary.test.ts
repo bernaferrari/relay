@@ -198,6 +198,31 @@ test("uninspectable snapshots surface visual fingerprint and proposed rows", () 
   assert.match(result.note ?? "", /device recover/i);
 });
 
+test("uninspectable snapshots preserve a bounded, safe inspection error", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    inspectionError:
+      "iPad automation is unavailable because the developer disk image is not mounted. Keep the iPad unlocked and reconnect after Xcode finishes preparing it.",
+  }) as { inspectionError?: string; note?: string };
+
+  assert.match(result.inspectionError ?? "", /developer disk image/i);
+  assert.equal(result.note, result.inspectionError);
+});
+
+test("snapshot summaries bound an inspection error", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    inspectionError: "x".repeat(600),
+  }) as { inspectionError?: string };
+  assert.equal(result.inspectionError?.length, 480);
+});
+
 test("non-device and malformed results remain unchanged", () => {
   const value = { devices: [{ id: "bad" }] };
   assert.equal(summarizeTargetOperationResult("target.devices.list", value), value);

@@ -8,6 +8,7 @@ import {
   createDevice,
   describeRecipeStep,
   getBrowserDevice,
+  isBlankScreenshot,
   listDevices,
   observeVisualScreenFingerprint,
   runRecipeStep,
@@ -111,6 +112,11 @@ export async function captureAuthoringObservation(
     // captureScreenshot already bakes iOS orientation; do not normalize again
     // (a second 180° would flip upright frames back).
     const screenshotBytes = Buffer.from(screenshot.base64, "base64");
+    if (isBlankScreenshot(screenshotBytes)) {
+      throw new Error(
+        "The device returned a blank screenshot. Recover or relaunch the app, then retry capture; no map screen was saved.",
+      );
+    }
     // Authoring always has a screenshot, while native semantics can disappear
     // between two captures on real devices (notably Samsung Settings and
     // custom-rendered apps). Keep one identity modality for the whole Take so

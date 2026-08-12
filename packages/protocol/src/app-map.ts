@@ -311,6 +311,12 @@ export type AppMapTest = AppMapEntity & {
   kind: "path" | "tour";
   flowId?: string;
   rootScreenId?: string;
+  /**
+   * Optional validated cold-start path for a standalone screen tour. The Flow
+   * must finish at `rootScreenId`, so a tour can begin from a known app state
+   * without copying launch or navigation steps into every test.
+   */
+  setupFlowId?: string;
   /** Exact mapped screens this test must capture. When omitted, a tour follows
    * every visible child row as before. */
   screenIds?: string[];
@@ -535,7 +541,10 @@ export type AppMapBatchChange =
   | { kind: "group.save"; group: MapGroup }
   | { kind: "group.remove"; groupId: string }
   | { kind: "flow.save"; flow: Flow }
-  | { kind: "flow.remove"; flowId: string };
+  | { kind: "flow.remove"; flowId: string }
+  /** A Flow and the Test that exposes it can be authored in one atomic map
+   * revision. This avoids a half-promoted recording on a revision conflict. */
+  | { kind: "test.save"; test: AppMapTest };
 
 export type ProposalChange =
   | { kind: "screen.add"; input: AddScreenInput }
@@ -900,6 +909,7 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         kind: work.kind,
         ...(work.flowId ? { flowId: work.flowId } : {}),
         ...(work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
+        ...(work.setupFlowId ? { setupFlowId: work.setupFlowId } : {}),
         ...(work.capture ? { capture: work.capture } : {}),
         depth: work.depth ?? (work.kind === "tour" ? 0 : undefined),
       })),

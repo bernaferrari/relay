@@ -1,4 +1,10 @@
-import { SCREEN_CARD_HEIGHT, SCREEN_CARD_WIDTH, type CanvasPoint } from "./app-map-canvas-layout";
+import {
+  SCREEN_CARD_HEIGHT,
+  SCREEN_CARD_WIDTH,
+  pointInDisplayedFrame,
+  type CanvasPoint,
+  type CanvasScreenRotation,
+} from "./app-map-canvas-layout";
 import { DEFAULT_CANVAS_GRID_SPACING, snapCanvasPointToGrid } from "./app-map-grid";
 
 type LayoutGraph = {
@@ -11,10 +17,23 @@ type LayoutGraph = {
     /** Recorded interaction evidence is optional for older/planned edges, but
      * when it exists it gives a much better sibling reading order than write
      * order alone. */
-    sourceAnchor?: { point?: { x?: number; y?: number } };
+    sourceAnchor?: {
+      point?: { x?: number; y?: number };
+      /** The captured control bounds are a better reading-order signal than
+       * an arbitrary tap inside the control. */
+      rect?: { x?: number; y?: number; width?: number; height?: number };
+    };
     presentation?: { sourcePort?: string };
   }[];
 };
+
+/** Presentation-only inputs for a layout pass. Keeping this outside the
+ * canonical App Map means a renderer can account for the orientation it is
+ * actually displaying without turning a temporary image transform into shared
+ * executable document state. */
+export type CompactCanvasLayoutOptions = Readonly<{
+  sourceRotationFor?: (screenId: string) => CanvasScreenRotation | undefined;
+}>;
 
 type LayoutEdge = { from: string; to: string };
 type LayoutBlock = { id: string; screenIds: string[]; order: number };
@@ -45,7 +64,10 @@ const CANONICAL_LAYOUT_GRID = { spacing: DEFAULT_CANVAS_GRID_SPACING } as const;
  * from the saved graph or renderer. A primary parent is then chosen for every
  * screen so siblings can be packed into contiguous, non-overlapping branches.
  */
-export function compactCanvasPositions(graph: LayoutGraph): Record<string, CanvasPoint> {
+export function compactCanvasPositions(
+  graph: LayoutGraph,
+  options: CompactCanvasLayoutOptions = {},
+): Record<string, CanvasPoint> {
   if (!graph.screens.length) return {};
 
   const screenOrder = new Map(graph.screens.map((screen, index) => [screen.id, index]));
@@ -55,6 +77,8 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
     const to =
       transition.destination.kind === "screen" ? transition.destination.screenId : undefined;
     if (!to || !screenIds.has(transition.fromScreenId) || !screenIds.has(to)) return [];
+    const sourceRotation = options.sourceRotationFor?.(transition.fromScreenId);
+    const sourceOrder = sourceAnchorCoordinate(transition, sourceRotation);
     return [
       {
         from: transition.fromScreenId,
@@ -62,8 +86,8 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
         viewport: isViewportTransition(transition.label),
         order: transitionIndex,
         sourceScreenId: transition.fromScreenId,
-        sourceOrder: sourceAnchorCoordinate(transition),
-        hasRecordedSourceOrder: sourceAnchorCoordinate(transition) !== undefined,
+        sourceOrder,
+        hasRecordedSourceOrder: sourceOrder !== undefined,
       },
     ];
   });
@@ -160,8 +184,9 @@ export function compactCanvasPositions(graph: LayoutGraph): Record<string, Canva
 
 function sourceAnchorCoordinate(
   transition: LayoutGraph["transitions"][number],
+  sourceRotation?: CanvasScreenRotation,
 ): number | undefined {
-  const point = transition.sourceAnchor?.point;
+  const point = displayedSourceAnchorPoint(transition, sourceRotation);
   const coordinate =
     transition.presentation?.sourcePort === "top" ||
     transition.presentation?.sourcePort === "bottom"
@@ -169,6 +194,48 @@ function sourceAnchorCoordinate(
       : point?.y;
   if (typeof coordinate !== "number" || !Number.isFinite(coordinate)) return undefined;
   return Math.min(1, Math.max(0, coordinate));
+}
+
+/**
+ * Preserve the visible control order even when an interaction was recorded
+ * near one edge of a large control. The rect centre represents the control a
+ * person sees; the raw point remains the fallback for point-only evidence.
+ *
+ * This is deliberately shared with the renderer's orientation transform. A
+ * landscape iPad frame that is displayed rotated must not make a visually
+ * upper control lay out below a visually lower one.
+ */
+function displayedSourceAnchorPoint(
+  transition: LayoutGraph["transitions"][number],
+  sourceRotation?: CanvasScreenRotation,
+): CanvasPoint | undefined {
+  const anchor = transition.sourceAnchor;
+  const rect = anchor?.rect;
+  const rectCenter =
+    rect &&
+    [rect.x, rect.y, rect.width, rect.height].every(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    ) &&
+    rect.width! > 0 &&
+    rect.height! > 0
+      ? { x: rect.x! + rect.width! / 2, y: rect.y! + rect.height! / 2 }
+      : undefined;
+  const point = rectCenter ?? anchor?.point;
+  if (
+    typeof point?.x !== "number" ||
+    !Number.isFinite(point.x) ||
+    typeof point.y !== "number" ||
+    !Number.isFinite(point.y)
+  ) {
+    return undefined;
+  }
+  return pointInDisplayedFrame(
+    {
+      x: Math.min(1, Math.max(0, point.x)),
+      y: Math.min(1, Math.max(0, point.y)),
+    },
+    sourceRotation ?? "none",
+  );
 }
 
 /**

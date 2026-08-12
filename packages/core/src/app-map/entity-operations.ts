@@ -340,6 +340,9 @@ export function removeAppMapFlow(
 ): AppMap {
   const flow = map.flows[flowId];
   if (!flow) appMapFail("missing-reference", `Flow ${flowId} does not exist`);
+  if (Object.values(map.tests ?? {}).some((work) => work.setupFlowId === flowId)) {
+    appMapFail("in-use", `Flow ${flowId} is still referenced by a screen tour`);
+  }
   return mutateAppMap(
     map,
     context,

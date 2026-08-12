@@ -1011,24 +1011,55 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, "tour.originAliases must be SHA-256 fingerprints");
         }
-        let preludeSteps: Extract<RecipeStep, { kind: "tap" | "key" }>[] | undefined;
+        if (
+          raw.preludeStartFingerprint !== undefined &&
+          (!isString(raw.preludeStartFingerprint) ||
+            !/^[a-f0-9]{64}$/u.test(raw.preludeStartFingerprint))
+        ) {
+          throw stepErr(index, "tour.preludeStartFingerprint must be a SHA-256 fingerprint");
+        }
+        if (
+          raw.preludeStartAliases !== undefined &&
+          (!Array.isArray(raw.preludeStartAliases) ||
+            raw.preludeStartAliases.length > 256 ||
+            !raw.preludeStartAliases.every(
+              (alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias),
+            ))
+        ) {
+          throw stepErr(index, "tour.preludeStartAliases must be SHA-256 fingerprints");
+        }
+        let preludeSteps:
+          | Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>[]
+          | undefined;
         if (raw.preludeSteps !== undefined) {
           if (!Array.isArray(raw.preludeSteps) || raw.preludeSteps.length > 16) {
             throw stepErr(index, "tour.preludeSteps must contain at most 16 steps");
           }
           const parsed = validateRecipeSteps(raw.preludeSteps);
           for (const [offset, item] of parsed.entries()) {
-            if (item.kind !== "tap" && item.kind !== "key") {
-              throw stepErr(index, `tour.preludeSteps[${offset}] must be tap or key`);
+            if (
+              item.kind !== "tap" &&
+              item.kind !== "key" &&
+              item.kind !== "swipe" &&
+              item.kind !== "scroll"
+            ) {
+              throw stepErr(
+                index,
+                `tour.preludeSteps[${offset}] must be tap, key, swipe, or scroll`,
+              );
             }
           }
-          preludeSteps = parsed as Extract<RecipeStep, { kind: "tap" | "key" }>[];
+          preludeSteps = parsed as Extract<
+            RecipeStep,
+            { kind: "tap" | "key" | "swipe" | "scroll" }
+          >[];
         }
         const step: Extract<RecipeStep, { kind: "tour" }> = {
           kind: "tour",
           ...(isNumber(raw.depth) ? { depth: raw.depth } : {}),
           ...(raw.screenshot === false ? { screenshot: false } : {}),
           ...(raw.screenshot === true ? { screenshot: true } : {}),
+          ...(raw.captureOrigin === true ? { captureOrigin: true } : {}),
           ...(isNumber(raw.maxStops) ? { maxStops: raw.maxStops } : {}),
           ...(raw.excludeLanguageRows === true ? { excludeLanguageRows: true } : {}),
           ...(originScreenId ? { originScreenId } : {}),
@@ -1036,6 +1067,12 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(isString(raw.originFingerprint) ? { originFingerprint: raw.originFingerprint } : {}),
           ...(Array.isArray(raw.originAliases) && raw.originAliases.length
             ? { originAliases: raw.originAliases }
+            : {}),
+          ...(isString(raw.preludeStartFingerprint)
+            ? { preludeStartFingerprint: raw.preludeStartFingerprint }
+            : {}),
+          ...(Array.isArray(raw.preludeStartAliases) && raw.preludeStartAliases.length
+            ? { preludeStartAliases: raw.preludeStartAliases }
             : {}),
           ...(preludeSteps?.length ? { preludeSteps } : {}),
           ...(fallbackStops.length ? { fallbackStops } : {}),

@@ -233,19 +233,87 @@ test("named control resolver uses an explicit point when Home labels collide", (
 });
 
 test("iOS snapshot fails fast instead of waiting out the 90s daemon budget", async () => {
-  const { snapshot } = await import("./device.js");
+  const { IosSnapshotInFlightError, snapshot } = await import("./device.js");
   const { runWithTargetContext } = await import("./target-context.js");
   const started = Date.now();
+  let calls = 0;
   const device = {
     capture: {
-      snapshot: () => new Promise(() => undefined),
+      snapshot: () => {
+        calls += 1;
+        return new Promise(() => undefined);
+      },
     },
   };
+  const target = { kind: "device", platform: "ios", serial: "ipad-timeout" } as const;
   await assert.rejects(
-    runWithTargetContext({ kind: "device", platform: "ios", serial: "ipad-timeout" }, () =>
-      snapshot(device as never),
-    ),
+    runWithTargetContext(target, () => snapshot(device as never)),
     /XCTest session|timed out/i,
   );
   assert.ok(Date.now() - started < 9_500);
+  await assert.rejects(
+    runWithTargetContext(target, () => snapshot(device as never)),
+    (error: unknown) => error instanceof IosSnapshotInFlightError,
+  );
+  assert.equal(calls, 1);
+});
+
+test("shares one in-flight physical-iPad accessibility read", async () => {
+  const { snapshot } = await import("./device.js");
+  const { runWithTargetContext } = await import("./target-context.js");
+  let calls = 0;
+  let release!: (value: { nodes: Array<{ label: string }> }) => void;
+  const pending = new Promise<{ nodes: Array<{ label: string }> }>((resolve) => {
+    release = resolve;
+  });
+  const device = {
+    capture: {
+      snapshot: () => {
+        calls += 1;
+        return pending;
+      },
+    },
+  };
+  const target = { kind: "device", platform: "ios", serial: "ipad-single-flight" } as const;
+  const first = runWithTargetContext(target, () => snapshot(device as never));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const second = runWithTargetContext(target, () => snapshot(device as never));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+
+  release({ nodes: [{ label: "Settings" }] });
+  assert.deepEqual(await first, [{ label: "Settings" }]);
+  assert.deepEqual(await second, [{ label: "Settings" }]);
+});
+
+test("does not overlap a full iPad tree read behind an interactive-only read", async () => {
+  const { IosSnapshotInFlightError, snapshot } = await import("./device.js");
+  const { runWithTargetContext } = await import("./target-context.js");
+  let calls = 0;
+  let release!: (value: { nodes: Array<{ label: string }> }) => void;
+  const pending = new Promise<{ nodes: Array<{ label: string }> }>((resolve) => {
+    release = resolve;
+  });
+  const device = {
+    capture: {
+      snapshot: () => {
+        calls += 1;
+        return pending;
+      },
+    },
+  };
+  const target = { kind: "device", platform: "ios", serial: "ipad-interactive-flight" } as const;
+  const interactive = runWithTargetContext(target, () =>
+    snapshot(device as never, { interactiveOnly: true }),
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  await assert.rejects(
+    runWithTargetContext(target, () => snapshot(device as never)),
+    (error: unknown) => error instanceof IosSnapshotInFlightError,
+  );
+  assert.equal(calls, 1);
+
+  release({ nodes: [{ label: "Settings" }] });
+  assert.deepEqual(await interactive, [{ label: "Settings" }]);
 });

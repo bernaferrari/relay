@@ -5,6 +5,7 @@ import type {
   AppMapMutationContext,
   AuthoringAction,
   AuthoringObservation,
+  TargetProfile,
 } from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
 import { commitAppMapRecording, commitAppMapScreenCapture } from "./recording-operations.js";
@@ -157,6 +158,170 @@ test("recapturing the same observed state refreshes its target variant", () => {
     "evidence-first",
     "evidence-second",
   ]);
+});
+
+test("keeps portrait and landscape evidence as distinct screen variants", () => {
+  const portrait: TargetProfile = {
+    id: "device:ipad-834x1112",
+    targetId: "ipad",
+    source: "device" as const,
+    platform: "ios" as const,
+    name: "iPad",
+    capabilities: ["snapshot", "screenshot"],
+    observedAt: 2,
+    viewport: { width: 834, height: 1112 },
+  };
+  const landscape = {
+    ...portrait,
+    id: "device:ipad-1112x834",
+    viewport: { width: 1112, height: 834 },
+  };
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      targetProfile: portrait,
+      observation: observation("settings-portrait", beforeFingerprint, "evidence-portrait"),
+    },
+    context("portrait"),
+  );
+  const second = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      targetProfile: landscape,
+      observation: observation("settings-landscape", beforeFingerprint, "evidence-landscape"),
+    },
+    context("landscape", first.appMap.revision),
+  );
+
+  assert.equal(second.created, false);
+  assert.equal(second.screenId, first.screenId);
+  assert.notEqual(second.variantId, first.variantId);
+  assert.deepEqual(
+    second.appMap.screens[first.screenId]?.variantIds.map(
+      (id) => second.appMap.screenVariants[id]?.targetProfile.viewport,
+    ),
+    [
+      { width: 834, height: 1112 },
+      { width: 1112, height: 834 },
+    ],
+  );
+});
+
+test("a title never overwrites a differently observed screen", () => {
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      title: "Grok Settings",
+      observation: observation("settings", beforeFingerprint, "evidence-settings"),
+    },
+    context("first"),
+  );
+  const second = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      title: "Grok Settings",
+      observation: observation("transient-model-sheet", afterFingerprint, "evidence-model-sheet"),
+    },
+    context("second", first.appMap.revision),
+  );
+
+  assert.equal(second.created, true);
+  assert.notEqual(second.screenId, first.screenId);
+  assert.equal(second.appMap.screens[first.screenId]?.title, "Grok Settings");
+  assert.equal(second.appMap.screens[second.screenId]?.title, "Grok Settings");
+  assert.equal(Object.keys(second.appMap.screens).length, 2);
+});
+
+test("a fresh semantic title merges an orientation into its named screen", () => {
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      title: "Settings",
+      observation: titledObservation(
+        "settings-landscape",
+        beforeFingerprint,
+        "evidence-landscape",
+        "Settings",
+      ),
+    },
+    context("landscape"),
+  );
+  const portraitProfile: TargetProfile = {
+    id: "device:ipad-834x1112",
+    targetId: "ipad",
+    source: "device",
+    platform: "ios",
+    name: "iPad",
+    capabilities: ["snapshot", "screenshot"],
+    observedAt: 2,
+    viewport: { width: 834, height: 1112 },
+  };
+  const second = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      targetProfile: portraitProfile,
+      title: "Settings",
+      observation: titledObservation(
+        "settings-portrait",
+        afterFingerprint,
+        "evidence-portrait",
+        "Settings",
+      ),
+    },
+    context("portrait", first.appMap.revision),
+  );
+
+  assert.equal(second.created, false);
+  assert.equal(second.screenId, first.screenId);
+  assert.equal(second.appMap.screens[first.screenId]?.variantIds.length, 2);
+});
+
+test("an accessibility-empty rotated recapture still joins its known screen", () => {
+  const landscapeProfile: TargetProfile = {
+    id: "device:ipad-1112x834",
+    targetId: "ipad",
+    source: "device",
+    platform: "ios",
+    name: "iPad",
+    capabilities: ["snapshot", "screenshot"],
+    observedAt: 2,
+    viewport: { width: 1112, height: 834 },
+  };
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      targetProfile: landscapeProfile,
+      title: "Appearance",
+      observation: observation("appearance-landscape", beforeFingerprint, "evidence-landscape"),
+    },
+    context("landscape"),
+  );
+  const portraitProfile: TargetProfile = {
+    ...landscapeProfile,
+    id: "device:ipad-834x1112",
+    viewport: { width: 834, height: 1112 },
+  };
+  const second = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      targetProfile: portraitProfile,
+      title: "Appearance",
+      observation: observation("appearance-portrait", afterFingerprint, "evidence-portrait"),
+    },
+    context("portrait", first.appMap.revision),
+  );
+
+  assert.equal(second.created, false);
+  assert.equal(second.screenId, first.screenId);
+  assert.equal(second.appMap.screens[first.screenId]?.variantIds.length, 2);
 });
 
 test("commits a recording as one immutable App Map revision", () => {

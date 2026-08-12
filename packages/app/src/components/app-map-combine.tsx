@@ -16,6 +16,12 @@ import {
   projectCombine,
 } from "../lib/app-map-combine-presentation";
 import { combineWithoutVariable, initialCombineDraft } from "../lib/app-map-combine-edit";
+import {
+  makeReusablePathFromRecording,
+  recordedPathCandidates,
+  sameRecordedPathConnectionIds,
+  type RecordedPathCandidate,
+} from "../lib/app-map-reusable-paths";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { confirmAction } from "./confirm-dialog";
 import { AppMapCombinePreflightSummary } from "./app-map-combine-preflight";
@@ -72,6 +78,7 @@ export function AppMapCombine(props: {
   const [busy, setBusy] = createSignal(false);
   const [savingOnly, setSavingOnly] = createSignal(false);
   const [preflight, setPreflight] = createSignal<AppMapCombinePreflight>();
+  const [promotingRecordedPathId, setPromotingRecordedPathId] = createSignal<string>();
   let scrollArea: HTMLDivElement | undefined;
   let initializedFor = "";
 
@@ -83,6 +90,15 @@ export function AppMapCombine(props: {
     ),
   );
   const variables = createMemo(() => Object.values(map()?.variables ?? {}));
+  const recordedPaths = createMemo(() => {
+    const current = map();
+    return current ? recordedPathCandidates(current) : [];
+  });
+  const draftConnectionCount = createMemo(
+    () =>
+      Object.values(map()?.connections ?? {}).filter((connection) => connection.state !== "ready")
+        .length,
+  );
   const candidates = createMemo((): TestCandidate[] => {
     const current = map();
     if (!current) return [];
@@ -297,6 +313,47 @@ export function AppMapCombine(props: {
     setSelectedTestKeys((current) =>
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
     );
+  }
+
+  async function makeRecordedPathReusable(candidate: RecordedPathCandidate) {
+    const initialMap = map();
+    if (!initialMap || busy()) return;
+    setBusy(true);
+    setPromotingRecordedPathId(candidate.id);
+    try {
+      // Load at the mutation boundary so this never converts stale canvas
+      // geometry into a route after another person has edited the map.
+      const currentMap = await server.loadAppMap(initialMap.id);
+      const currentCandidate = recordedPathCandidates(currentMap).find((item) =>
+        sameRecordedPathConnectionIds(item, candidate.connectionIds),
+      );
+      if (!currentCandidate) {
+        throw new Error("That recording is already part of a reusable path. Refresh the matrix.");
+      }
+      const reusable = makeReusablePathFromRecording(currentMap, currentCandidate, Date.now());
+      await server.runAction("app-map.commit", {
+        appMapId: currentMap.id,
+        expectedRevision: currentMap.revision,
+        summary: `Made ${reusable.test.name} reusable`,
+        changes: [
+          { kind: "flow.save" as const, flow: reusable.flow },
+          { kind: "test.save" as const, test: reusable.test },
+        ],
+      });
+      await server.refreshAppMaps();
+      const key = `test:${reusable.test.id}`;
+      setSelectedTestKeys((current) => (current.includes(key) ? current : [...current, key]));
+      setCaptureModes((current) => ({
+        ...current,
+        [key]: current[key] ?? "every-screen",
+      }));
+      toast(`Created reusable test: ${reusable.test.name}`, "success");
+    } catch (error) {
+      toast(humanError(error, "Could not make this path reusable"), "error");
+    } finally {
+      setPromotingRecordedPathId(undefined);
+      setBusy(false);
+    }
   }
 
   async function ensureTests(currentMap: NonNullable<ReturnType<typeof map>>) {
@@ -604,6 +661,10 @@ export function AppMapCombine(props: {
               candidates={candidates()}
               selectedTestKeys={selectedTestKeys()}
               selectedTests={selectedTests()}
+              recordedPaths={recordedPaths()}
+              draftConnectionCount={draftConnectionCount()}
+              screenCount={Object.keys(map()?.screens ?? {}).length}
+              promotingRecordedPathId={promotingRecordedPathId()}
               captureModes={captureModes()}
               strategy={strategy()}
               projection={projection()}
@@ -624,6 +685,7 @@ export function AppMapCombine(props: {
               }
               onStrategyChange={setStrategy}
               onToggleTest={toggleTest}
+              onMakeRecordedPathReusable={(candidate) => void makeRecordedPathReusable(candidate)}
               onCaptureModeChange={(candidate, mode) =>
                 setCaptureModes((current) => ({
                   ...current,

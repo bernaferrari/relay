@@ -5,9 +5,13 @@ import type { SnapshotNode } from "./device.js";
 import {
   inferIosSnapshotGeometry,
   inferSnapshotBounds,
+  normalizeIosScreenshotForCapture,
   normalizeIosSnapshotNodes,
   normalizeScreenshotToBounds,
 } from "./workspace.js";
+import { IosSnapshotInFlightError } from "./device.js";
+import { IosDeveloperDiskImageError } from "./ios-device-adapter.js";
+import { iosInspectionErrorMessage } from "./workspace-capture.js";
 
 test("uses the XCTest application root as the logical iPad viewport", () => {
   const nodes: SnapshotNode[] = [
@@ -34,6 +38,22 @@ test("uses the XCTest application root as the logical iPad viewport", () => {
   assert.deepEqual(inferSnapshotBounds(nodes, "android"), { width: 1112, height: 1112 });
   const geometry = inferIosSnapshotGeometry(nodes);
   assert.deepEqual(geometry, { rotation: "left", logicalWidth: 1112, logicalHeight: 834 });
+});
+
+test("exposes only product-safe iOS inspection failures", async () => {
+  const diskImage = await iosInspectionErrorMessage(
+    new IosDeveloperDiskImageError("CoreDeviceError 12040: kAMDMobileImageMounterMissingImagePath"),
+    "ipad",
+  );
+  assert.match(diskImage ?? "", /developer support image/i);
+  assert.match(diskImage ?? "", /Reconnect/i);
+
+  const busy = await iosInspectionErrorMessage(new IosSnapshotInFlightError(), "ipad");
+  assert.match(busy ?? "", /previous screen/i);
+  assert.equal(
+    await iosInspectionErrorMessage(new Error("/private/path with raw daemon details"), "ipad"),
+    undefined,
+  );
 });
 
 test("normalizes XCTest child rectangles into the logical landscape viewport", () => {
@@ -142,6 +162,17 @@ test("does not rotate when orientation is unknown and aspects already match", ()
   const source = new PNG({ width: 4, height: 2 });
   const before = PNG.sync.write(source);
   const after = normalizeScreenshotToBounds(before, { width: 1112, height: 834 });
+  assert.ok(before.equals(after));
+});
+
+test("preserves an upright iPad frame when recovery has no AX geometry or display orientation", () => {
+  const source = new PNG({ width: 4, height: 6 });
+  source.data[0] = 255;
+  source.data[1] = 128;
+  source.data[2] = 0;
+  source.data[3] = 255;
+  const before = PNG.sync.write(source);
+  const after = normalizeIosScreenshotForCapture(before);
   assert.ok(before.equals(after));
 });
 

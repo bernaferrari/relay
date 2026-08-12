@@ -120,6 +120,48 @@ test("physical Apple authoring freezes visible evidence before inspecting the ru
   assert.deepEqual(order, ["screenshot", "snapshot:start", "snapshot:end"]);
 });
 
+test("authoring rejects a blank device screenshot instead of saving a broken screen", async () => {
+  const session = {
+    target: { kind: "device", platform: "ios", targetId: "ipad-a" },
+  } as AuthoringSession;
+
+  await assert.rejects(
+    captureAuthoringObservation(session, {
+      async resolveDevice() {
+        return {} as Device;
+      },
+      async captureSnapshot() {
+        return {
+          serial: "ipad-a",
+          capturedAt: 10,
+          nodes: [],
+          interactive: [],
+          inspectable: false,
+          source: "pixels-only",
+          screenIdentity: {
+            schemaVersion: 1,
+            fingerprint: "pixels",
+            nodes: [],
+            volatileSignals: [],
+          },
+        };
+      },
+      async captureScreenshot() {
+        return {
+          serial: "ipad-a",
+          capturedAt: 11,
+          mime: "image/png",
+          base64:
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACklEQVR4AWPAAAAAEgABKPhxBgAAAABJRU5ErkJggg==",
+          path: "/ipad/blank.png",
+          bytes: 68,
+        };
+      },
+    }),
+    /blank screenshot/u,
+  );
+});
+
 test("Authoring Sessions require an explicit actor-owned target lease and remain observable", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-authoring-server-"));
   const previous = {

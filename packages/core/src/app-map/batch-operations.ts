@@ -74,5 +74,10 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
         appMapFail("missing-reference", `Flow ${change.flowId} does not exist`);
       }
       delete draft.flows[change.flowId];
+      return;
+    case "test.save":
+      assertEntityScope(draft, change.test);
+      draft.tests = { ...draft.tests, [change.test.id]: structuredClone(change.test) };
+      return;
   }
 }

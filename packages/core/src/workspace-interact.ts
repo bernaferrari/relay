@@ -57,6 +57,21 @@ export type InteractResult = {
   resolution?: NamedControlResolution;
 };
 
+/**
+ * A healthy iOS accessibility tree can still contain an off-screen SwiftUI
+ * control from a previous presentation.  Map teaching is a state-transition
+ * operation, so it can opt in to pixel evidence that the tap actually moved
+ * the device instead of accepting that stale selector as a successful edge.
+ */
+export function canVerifyIosScreenChange(input: InteractInput): boolean {
+  return (
+    input.kind === "identifier" ||
+    input.kind === "label" ||
+    input.kind === "find" ||
+    input.kind === "text-match"
+  );
+}
+
 function optionalInteractPoint(
   point?: InteractPoint,
 ): { point: InteractPoint } | Record<string, never> {
@@ -254,7 +269,7 @@ export async function interactOnDevice(
 
 export async function interact(
   input: InteractInput,
-  opts?: { serial?: string },
+  opts?: { serial?: string; verifyIosScreenChange?: boolean },
 ): Promise<InteractResult> {
   if (input.kind === "swipe") {
     const validPoint = (point: unknown): point is InteractPoint => {
@@ -310,6 +325,25 @@ export async function interact(
           bounds: { x: input.x, y: input.y, width: 1, height: 1 },
         },
       };
+    }
+    if (
+      context.kind === "device" &&
+      context.platform === "ios" &&
+      opts?.verifyIosScreenChange &&
+      canVerifyIosScreenChange(input)
+    ) {
+      let result: InteractResult | undefined;
+      await withSession(target.device, () =>
+        verifyIosScreenChanged(context.serial, async () => {
+          result = await interactOnDevice(target.device, input);
+          if (!result.resolution) {
+            throw new Error(
+              "No unique control matched this iOS accessibility target. Use a visible point instead.",
+            );
+          }
+        }),
+      );
+      return result!;
     }
     try {
       return await withSession(target.device, async () => {

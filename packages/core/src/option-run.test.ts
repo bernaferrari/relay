@@ -182,6 +182,91 @@ test("an Android app-language modifier uses stable locale ids instead of picker 
   ]);
 });
 
+test("a list modifier restores its saved row through the recorded sandwich", () => {
+  const language: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: {
+      kind: "list",
+      entryPath: [{ kind: "tap", target: { identifier: "settings.profile" } }],
+      pickerPath: [{ kind: "tap", target: { identifier: "settings.language" } }],
+      exitPath: [{ kind: "back" }],
+    },
+    options: [
+      {
+        id: "en",
+        identifier: "language.en",
+        label: "English",
+        text: "English (United States)",
+      },
+      { id: "it", identifier: "language.it" },
+    ],
+    restoreId: "en",
+  };
+  const { root } = composeOptionRunRecipes({
+    body,
+    request: { sets: [language], screenshotEach: false },
+    batchId: "list-restore",
+  });
+  const bodyIndex = root.steps.findIndex(
+    (step) => step.kind === "module" && step.recipeId === body.id,
+  );
+  assert.ok(bodyIndex >= 0);
+  assert.deepEqual(root.steps.slice(bodyIndex + 1), [
+    { kind: "tap", target: { identifier: "settings.profile" } },
+    { kind: "tap", target: { identifier: "settings.language" } },
+    {
+      kind: "tap",
+      target: { identifier: "language.en" },
+      fallbackTargets: [{ label: "English" }, { text: "English (United States)" }],
+    },
+    { kind: "sleep", ms: 900 },
+    { kind: "key", key: "back" },
+  ]);
+});
+
+test("list restore is omitted when a matrix explicitly leaves state changed", () => {
+  const language: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Language" } }] },
+    options: [{ id: "en", identifier: "language.en" }, { id: "it", identifier: "language.it" }],
+    restoreId: "en",
+  };
+  const { root } = composeOptionRunRecipes({
+    body,
+    request: { sets: [language], screenshotEach: false, restoreAtEnd: false },
+    batchId: "no-list-restore",
+  });
+  assert.ok(
+    !root.steps.some(
+      (step) => step.kind === "tap" && step.target.identifier === "language.en",
+    ),
+  );
+});
+
+test("list restore requires a saved row target instead of tapping an opaque row id", () => {
+  const language: OptionRunSet = {
+    id: "language",
+    name: "Language",
+    kind: "language",
+    apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Language" } }] },
+    options: [{ id: "en" }, { id: "it", identifier: "language.it" }],
+    restoreId: "en",
+  };
+  assert.throws(
+    () =>
+      composeOptionRunRecipes({
+        body,
+        request: { sets: [language], screenshotEach: false },
+        batchId: "invalid-list-restore",
+      }),
+    /restore option.*needs an identifier, label, or text/i,
+  );
+});
+
 test("seven app languages × ten mapped screens declares exactly 70 screenshots", async () => {
   const tenScreens: Recipe = {
     ...body,

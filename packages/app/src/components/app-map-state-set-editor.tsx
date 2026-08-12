@@ -6,9 +6,8 @@ import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
 import {
   assignableSwitcherConnections,
-  looksLikeLanguagePicker,
+  inspectVisibleList,
   taughtExampleFromSnapshotNode,
-  teachableLocaleRows,
 } from "../lib/app-map-locale-teach";
 import { suggestedAndroidAppPackage } from "../lib/app-map-android-package";
 import { cn } from "../lib/cn";
@@ -26,6 +25,7 @@ const KINDS: Array<{ id: AppMapVariableKind; label: string }> = [
 
 type LiveRow = { identifier?: string; label?: string; value?: string };
 type SourceMode = "device" | "manual" | "android";
+type ReadStatus = { tone: "info" | "warning" | "success"; message: string };
 
 function rowKey(row: LiveRow): string {
   return `${row.identifier ?? ""}|${row.label ?? row.value ?? ""}`;
@@ -99,6 +99,7 @@ export function AppMapStateSetEditor(props: {
     existingListApply()?.outConnectionId ?? "",
   );
   const [reading, setReading] = createSignal(false);
+  const [readStatus, setReadStatus] = createSignal<ReadStatus>();
   const [discoveringLocales, setDiscoveringLocales] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [pathsOpen, setPathsOpen] = createSignal(true);
@@ -152,21 +153,50 @@ export function AppMapStateSetEditor(props: {
     setReading(true);
     try {
       const snapshot = await server.captureUiSnapshot();
-      const next = teachableLocaleRows(snapshot?.nodes ?? [], 24);
-      if (kind() === "language" && !looksLikeLanguagePicker(next)) {
+      const device = server.devices().find((item) => item.serial === server.selectedDevice());
+      const deviceName = device?.name?.trim() || device?.serial || "the selected device";
+      if (!snapshot) {
+        const message = `Relay could not read visible controls from ${deviceName}. Open the device, show the value list, then try again.`;
         setRows([]);
         setSelectedKeys([]);
-        toast(
-          "This is not a language list. Open the language picker, or use App languages.",
-          "warning",
-        );
+        setReadStatus({ tone: "warning", message });
+        toast(message, "warning");
         return;
       }
-      setRows(next);
+      if (snapshot.inspectable === false && !snapshot.nodes.length) {
+        const issue = snapshot.inspectionError?.trim();
+        const message = issue
+          ? `${issue} Open the device after resolving that, show the value list, then try again.`
+          : `Relay cannot read visible controls from ${deviceName} yet. Open the device, resolve its setup, then show the value list and try again.`;
+        setRows([]);
+        setSelectedKeys([]);
+        setReadStatus({ tone: "warning", message });
+        toast(message, "warning");
+        return;
+      }
+      const read = inspectVisibleList(snapshot.nodes, kind(), 24);
+      if (read.status !== "ready") {
+        const message =
+          read.status === "empty"
+            ? "No selectable values are visible. Open the value list on the device, then read it again."
+            : read.context === "file-picker"
+              ? "Relay is seeing a file picker, not language options. Close it, open the app’s language picker, then read the visible list. For Android’s declared locales, choose App languages."
+              : "Relay cannot recognize language options on this screen. Open the app’s language picker, or choose App languages for Android’s declared locales.";
+        setRows([]);
+        setSelectedKeys([]);
+        setReadStatus({ tone: "warning", message });
+        toast(message, "warning");
+        return;
+      }
+      setRows(read.rows);
       setSelectedKeys([]);
-      if (!next.length) toast("Open a value list on the device, then read it again", "warning");
+      const message = `Read ${read.rows.length} visible value${read.rows.length === 1 ? "" : "s"}. Select one or two examples to teach Relay.`;
+      setReadStatus({ tone: "success", message });
+      toast(message, "success");
     } catch (error) {
-      toast(humanError(error, "Could not read the current screen"), "error");
+      const message = humanError(error, "Could not read the current screen");
+      setReadStatus({ tone: "warning", message });
+      toast(message, "error");
     } finally {
       setReading(false);
     }
@@ -342,6 +372,7 @@ export function AppMapStateSetEditor(props: {
               )}
               onClick={() => {
                 setSourceMode(source.id);
+                setReadStatus(undefined);
                 if (source.id === "android") setKind("language");
               }}
             >
@@ -367,7 +398,10 @@ export function AppMapStateSetEditor(props: {
           class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px] text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={kind()}
           disabled={sourceMode() === "android"}
-          onChange={(event) => setKind(event.currentTarget.value as AppMapVariableKind)}
+          onChange={(event) => {
+            setKind(event.currentTarget.value as AppMapVariableKind);
+            setReadStatus(undefined);
+          }}
         >
           <For each={KINDS}>{(item) => <option value={item.id}>{item.label}</option>}</For>
         </select>
@@ -442,9 +476,28 @@ export function AppMapStateSetEditor(props: {
         }
       >
         <div class="grid gap-2">
+          <div class="rounded-[9px] bg-[var(--surface-base)] px-3 py-2.5 text-[11px]/[1.45] text-[var(--text-weak)]">
+            Visible list reads exactly what is open on the device now. It does not search the app or
+            discover every supported language.
+            <Show when={kind() === "language"}>
+              <span class="mt-1 block text-[var(--text-base)]">
+                Use App languages above when you want an Android app’s declared locale list.
+              </span>
+            </Show>
+          </div>
           <div class="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={props.onOpenDevice}>
-              <Icon name="smartphone" size={12} /> Open device
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                toast(
+                  "Device panel opened. Navigate to the value list, then reopen Run matrix and read the visible list.",
+                  "info",
+                );
+                props.onOpenDevice();
+              }}
+            >
+              <Icon name="smartphone" size={12} /> Choose list on device
             </Button>
             <Button
               variant="secondary"
@@ -460,6 +513,22 @@ export function AppMapStateSetEditor(props: {
               {reading() ? "Reading…" : "Read visible list"}
             </Button>
           </div>
+
+          <Show when={readStatus()}>
+            {(status) => (
+              <p
+                class={cn(
+                  "m-0 rounded-[8px] px-2.5 py-2 text-[10.5px]/[1.4]",
+                  status().tone === "success"
+                    ? "bg-[var(--product-accent-soft)] text-[var(--text-base)]"
+                    : "bg-[var(--surface-base)] text-[var(--text-base)]",
+                )}
+                role="status"
+              >
+                {status().message}
+              </p>
+            )}
+          </Show>
 
           <Show
             when={rows().length}

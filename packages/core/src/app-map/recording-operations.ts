@@ -88,16 +88,76 @@ function screenOwnsFingerprint(map: AppMap, fingerprint: string, screenId: strin
   return !owner || owner.id === screenId;
 }
 
+function observationLikelyMatchesTitle(
+  observation: AuthoringObservation | undefined,
+  title: string,
+): boolean {
+  const words = title
+    .toLocaleLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((word) => word.length >= 4);
+  if (!words.length) return false;
+  const visibleText = (observation?.nodes ?? [])
+    .filter((node) => node.visibleToUser !== false)
+    .flatMap((node) => [node.label, node.identifier, node.value])
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLocaleLowerCase();
+  // An explicit title is useful to merge a new orientation into a known
+  // screen, but only when the fresh observation itself supports that title.
+  // This rejects stale iOS sidebar controls that remain in the tree after a
+  // different sheet is visually on screen.
+  return words.every((word) => visibleText.includes(word));
+}
+
+function hasAlternateOrientationVariant(
+  map: AppMap,
+  screen: Screen,
+  profile: TargetProfile | undefined,
+): boolean {
+  const viewport = profile?.viewport;
+  if (!viewport || !profile?.targetId || viewport.width === viewport.height) return false;
+  const portrait = viewport.height > viewport.width;
+  return screen.variantIds.some((variantId) => {
+    const candidate = map.screenVariants[variantId]?.targetProfile;
+    const candidateViewport = candidate?.viewport;
+    return (
+      candidate?.targetId === profile.targetId &&
+      candidate?.platform === profile.platform &&
+      candidateViewport !== undefined &&
+      candidateViewport.width !== candidateViewport.height &&
+      candidateViewport.height > candidateViewport.width !== portrait
+    );
+  });
+}
+
 export function findAppMapCaptureScreen(
   map: AppMap,
   input: AppMapScreenCaptureInput,
 ): Screen | undefined {
+  // A title is user-facing annotation, not an identity key.  Reusing a screen
+  // merely because a teach request named its desired destination allowed a
+  // stale iOS accessibility control to overwrite the real Settings screen
+  // with whatever transient surface happened to appear after the tap.
   const title = input.title?.trim();
   if (title) {
     const named = Object.values(map.screens).find((screen) => screen.title === title);
-    if (named) return named;
+    // A pending destination created from a recording has no captured identity
+    // yet. Its title is the explicit user intent, so the first capture should
+    // fill it. Once a screen has identity evidence, however, a duplicate
+    // title must never overwrite it.
+    if (
+      named &&
+      (!named.identity ||
+        observationLikelyMatchesTitle(input.observation, title) ||
+        hasAlternateOrientationVariant(map, named, input.targetProfile))
+    ) {
+      return named;
+    }
   }
-  return findObservedScreen(map, input.observation);
+  const observed = findObservedScreen(map, input.observation);
+  if (observed) return observed;
+  return undefined;
 }
 
 function semanticObservation(

@@ -320,6 +320,52 @@ test("commits a canvas gesture atomically as one revision and one activity event
   assert.ok(input.screens.home, "the original map remains untouched");
 });
 
+test("atomically promotes a saved Flow into a reusable Test", () => {
+  const input = mapFixture();
+  const reusableFlow = {
+    ...entity("reusable-home"),
+    name: "Reusable path: Welcome → Home",
+    startScreenId: "start",
+    connectionIds: ["open-home"],
+  };
+  const reusableTest: AppMapTest = {
+    ...entity("visit-home"),
+    name: "Welcome → Home",
+    kind: "path",
+    flowId: reusableFlow.id,
+  };
+
+  const result = commitAppMapChanges(
+    input,
+    [
+      { kind: "flow.save", flow: reusableFlow },
+      { kind: "test.save", test: reusableTest },
+    ],
+    undefined,
+    context(input, "promote-recording"),
+    "Made Welcome → Home reusable",
+  );
+
+  assert.deepEqual(result.flows[reusableFlow.id], reusableFlow);
+  assert.deepEqual(result.tests[reusableTest.id], reusableTest);
+  assert.equal(result.revision, input.revision + 1);
+  assert.equal(Object.keys(result.activity).length, 1);
+  assert.equal(result.activity["promote-recording"]?.summary, "Made Welcome → Home reusable");
+  assert.equal(input.tests[reusableTest.id], undefined, "the original map remains untouched");
+});
+
+test("rejects a reusable path whose saved Flow is missing", () => {
+  const input = mapFixture();
+  input.tests["missing-flow"] = {
+    ...entity("missing-flow"),
+    name: "Missing Flow",
+    kind: "path",
+    flowId: "not-recorded",
+  };
+
+  expectError("missing-reference", () => validateAppMap(input), /missing Flow/u);
+});
+
 test("keeps Groups visual-only and enforces one Group per screen", () => {
   const input = mapFixture();
   const grouped = commitAppMapChanges(
@@ -1051,6 +1097,43 @@ test("a saved Combine preserves its exact value subset and protects dependencies
       withTest,
       { ...combine, selected: { language: ["missing"] } },
       context(withTest, "save-bad-combine", combine.updatedAt),
+    ),
+  );
+});
+
+test("validates and protects a screen tour's reusable cold-start Flow", () => {
+  const input = mapFixture();
+  const tour: AppMapTest = {
+    ...entity("home-tour"),
+    name: "Open every Home row",
+    kind: "tour",
+    rootScreenId: "home",
+    setupFlowId: "main",
+  };
+  const saved = saveAppMapTest(input, tour, context(input, "save-home-tour"));
+  assert.equal(saved.tests[tour.id]?.setupFlowId, "main");
+  expectError("in-use", () =>
+    removeAppMapFlow(saved, "main", context(saved, "remove-tour-setup-flow", saved.updatedAt + 1)),
+  );
+
+  expectError("invalid-map", () =>
+    saveAppMapTest(
+      input,
+      { ...tour, id: "wrong-root", rootScreenId: "start" },
+      context(input, "save-wrong-tour-root"),
+    ),
+  );
+  expectError("invalid-map", () =>
+    saveAppMapTest(
+      input,
+      {
+        ...tour,
+        id: "path-with-setup",
+        kind: "path",
+        flowId: "main",
+        rootScreenId: undefined,
+      },
+      context(input, "save-path-with-setup"),
     ),
   );
 });

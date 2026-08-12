@@ -3,7 +3,11 @@ import test from "node:test";
 import { createServerCapture, type CaptureServerDeps } from "./server-capture";
 
 function createHarness(
-  options: { activeDiscoveryId?: string | null; collectAccessibility?: boolean } = {},
+  options: {
+    activeDiscoveryId?: string | null;
+    collectAccessibility?: boolean;
+    inspectionError?: string;
+  } = {},
 ) {
   const calls: string[] = [];
   const requestBodies: unknown[] = [];
@@ -40,6 +44,7 @@ function createHarness(
         nodes: [],
         interactive: [],
         bounds: { width: 100, height: 200 },
+        ...(options.inspectionError ? { inspectionError: options.inspectionError } : {}),
       } as T;
     }
     if (path === "/step/run") return { ok: true, durationMs: 12, logs: [] } as T;
@@ -122,6 +127,20 @@ test("accessibility off prevents explicit and background snapshot collection", a
 
   assert.deepEqual(harness.calls, []);
   assert.equal(harness.getSnapshot(), null);
+});
+
+test("live snapshots retain a safe inspection error alongside usable pixels", async () => {
+  const harness = createHarness({
+    inspectionError:
+      "Relay could not mount Apple’s developer support image for this iPad. Keep it unlocked and cabled, then let Xcode finish preparing the device.",
+  });
+
+  await harness.capture.pollLiveSnapshot();
+
+  assert.match(
+    (harness.getSnapshot() as { inspectionError?: string }).inspectionError ?? "",
+    /developer support image/i,
+  );
 });
 
 test("live capture leaves an identical device frame mounted", async () => {

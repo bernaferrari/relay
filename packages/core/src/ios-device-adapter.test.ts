@@ -6,8 +6,10 @@ import test from "node:test";
 import {
   diagnoseIosRunnerError,
   IosDeviceAttentionError,
+  IosDeveloperDiskImageError,
   iosRecordingOptions,
   IosRunnerSetupError,
+  IosXCTestSessionUnavailableError,
   normalizeIosRunnerError,
   parseIosDeviceLockState,
 } from "./ios-device-adapter.js";
@@ -24,6 +26,18 @@ test("maps disabled Developer Mode to the Relay iOS setup action", () => {
   const error = normalizeIosRunnerError(new Error("Developer Mode is not enabled on this iPad"));
   assert.ok(error instanceof IosRunnerSetupError);
   assert.match(error.message, /Turn on Developer Mode/);
+});
+
+test("preserves a CoreDevice developer disk image mount failure as a typed action", () => {
+  const error = normalizeIosRunnerError(
+    new Error(
+      "CoreDeviceError Code=12040: kAMDMobileImageMounterMissingImagePath: The developer disk image could not be mounted",
+    ),
+  );
+  assert.ok(error instanceof IosDeveloperDiskImageError);
+  assert.match(error.message, /developer support image/i);
+  assert.match(error.message, /CoreDevice 12040/);
+  assert.match(error.message, /press Reconnect/i);
 });
 
 test("explains automatic and manual signing conflicts directly", () => {
@@ -85,6 +99,76 @@ test("does not relabel an app-session failure from an older signing log", async 
 
     const original = new Error("iOS snapshot requires an active app session");
     assert.equal(await diagnoseIosRunnerError(original, udid), original);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("recovers the DDI cause when a later snapshot only reports no active XCTest session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-ios-ddi-log-"));
+  const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
+  const udid = "ipad-ddi";
+  try {
+    process.env.AGENT_DEVICE_STATE_DIR = root;
+    const session = join(root, "sessions", "relay-ios-ipad-ddi");
+    await mkdir(session, { recursive: true });
+    await writeFile(
+      join(session, "runner.log"),
+      [
+        "Command line invocation:",
+        "operation_errorDomain = com.apple.dt.CoreDeviceError.12040.com.apple.dt.CoreDeviceError;",
+        "kAMDMobileImageMounterMissingImagePath: Could not support development.",
+        "Testing failed: The developer disk image could not be mounted on this device.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const error = await diagnoseIosRunnerError(
+      new Error("iOS snapshot needs an active XCTest session"),
+      udid,
+    );
+    assert.ok(error instanceof IosDeveloperDiskImageError);
+    assert.match(error.message, /developer support image/i);
+    assert.match(error.message, /CoreDevice 12040/);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("makes an otherwise unexplained XCTest-session failure actionable", async () => {
+  const error = await diagnoseIosRunnerError(
+    new Error("iOS snapshot needs an active XCTest session"),
+  );
+  assert.ok(error instanceof IosXCTestSessionUnavailableError);
+  assert.match(error.message, /Press Reconnect/i);
+  assert.match(error.message, /unlocked/i);
+});
+
+test("upgrades an already-normalized XCTest error when the fresh runner log shows DDI", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-ios-normalized-ddi-log-"));
+  const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
+  const udid = "ipad-normalized-ddi";
+  try {
+    process.env.AGENT_DEVICE_STATE_DIR = root;
+    const session = join(root, "sessions", "relay-ios-ipad-normalized-ddi");
+    await mkdir(session, { recursive: true });
+    await writeFile(
+      join(session, "runner.log"),
+      [
+        "Command line invocation:",
+        "CoreDeviceError Code=12040",
+        "Testing failed: The developer disk image could not be mounted on this device.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const error = await diagnoseIosRunnerError(new IosXCTestSessionUnavailableError("sdk"), udid);
+    assert.ok(error instanceof IosDeveloperDiskImageError);
+    assert.match(error.message, /developer support image/i);
   } finally {
     if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
     else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;

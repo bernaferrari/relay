@@ -115,6 +115,8 @@ export type LiveInspectionHint = {
   title: string;
   detail: string;
   actionLabel: string;
+  /** Xcode is the useful first action for a missing iPad developer image. */
+  action?: "open-xcode";
 };
 
 /** Non-blocking copy when pixels work but names do not. Null means stay quiet. */
@@ -122,6 +124,11 @@ export function liveInspectionHint(input: {
   inspectable?: boolean;
   inspectionState?: string;
   nodeCount?: number;
+  inspectionError?: string;
+  platform?: string;
+  /** CoreDevice knows this before XCTest has a chance to emit a runner error. */
+  developerServicesAvailable?: boolean;
+  openXcodeAvailable?: boolean;
 }): LiveInspectionHint | null {
   if (input.inspectable !== false) return null;
   if (input.inspectionState === "asleep") {
@@ -136,6 +143,25 @@ export function liveInspectionHint(input: {
       title: "Unlock the phone",
       detail: "Names appear after you unlock. The picture still works.",
       actionLabel: "Try again",
+    };
+  }
+  // A screenshot is still a useful, live fallback in this state. Distinguish
+  // the missing Apple developer image from a normal uninspectable frame so
+  // the first action is useful rather than an ineffective retry loop.
+  if (
+    input.platform === "ios" &&
+    (input.developerServicesAvailable === false ||
+      /developer\s+(?:disk|support)\s+image|coredevice(?:error)?[^\n]{0,80}12040|xctest.*session/i.test(
+        input.inspectionError ?? "",
+      ))
+  ) {
+    return {
+      title: "iPad automation needs Xcode",
+      detail: input.openXcodeAvailable
+        ? "The picture still works. Open Xcode and keep the iPad unlocked while it prepares device support, then reconnect for labels and replay."
+        : "The picture still works. Keep the iPad unlocked while Xcode prepares device support, then reconnect for labels and replay.",
+      actionLabel: input.openXcodeAvailable ? "Open Xcode" : "Reconnect",
+      ...(input.openXcodeAvailable ? { action: "open-xcode" as const } : {}),
     };
   }
   return {
@@ -179,6 +205,8 @@ export type DevicePanelStateInput = {
   hasDisplayImage: boolean;
   recordingIssue: { kind: "setup" | "screen"; message: string } | null | undefined;
   liveCaptureIssue: string | null | undefined;
+  /** A current pixels-only snapshot can still make the live screen useful. */
+  inspectionError?: string;
   developerModeDisabled: boolean;
   iosSetupGuidance: string;
   iosDeviceSupportPending: boolean;
@@ -243,7 +271,15 @@ export function resolveDevicePanelState(input: DevicePanelStateInput): DevicePan
   // is paired or unlocked. During that interval an earlier screenshot poll
   // may still have an error attached to it. Preparation is authoritative:
   // never pair a spinner/header with a stale Retry action.
-  if (input.iosDeviceSupportPending || input.checkingIosSetup || input.preparingIosScreen) {
+  // Keep an actual pixels-only frame visible when its paired snapshot explains
+  // why names are unavailable. The hint on that frame gives a precise recovery
+  // path; replacing it with a generic spinner would make the useful fallback
+  // disappear exactly when iPad automation is unavailable.
+  const hasActionablePixelsOnlyFrame = input.hasDisplayImage && Boolean(input.inspectionError);
+  if (
+    (input.iosDeviceSupportPending || input.checkingIosSetup || input.preparingIosScreen) &&
+    !hasActionablePixelsOnlyFrame
+  ) {
     return {
       kind: "progress",
       title: `Connecting to ${input.deviceName ?? "iPad"}`,

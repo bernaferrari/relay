@@ -265,6 +265,8 @@ export type RecipeStep = RecipeStepMetadata &
         kind: "tour";
         depth?: number;
         screenshot?: boolean;
+        /** Capture the recovered tour origin before walking its child rows. */
+        captureOrigin?: boolean;
         maxStops?: number;
         excludeLanguageRows?: boolean;
         /** Mapped list this tour must reach before walking rows. */
@@ -276,6 +278,9 @@ export type RecipeStep = RecipeStepMetadata &
         /** Navigation needed to reach the mapped tour origin. Gestures are
          * preserved so scroll-state checkpoints are reproducible too. */
         preludeSteps?: Array<Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>>;
+        /** Identity of the surface on which the prelude is safe to begin. */
+        preludeStartFingerprint?: string;
+        preludeStartAliases?: string[];
         /** Used when the live tree is missing. Mapped exits + optional points. */
         fallbackStops?: Array<{
           label: string;

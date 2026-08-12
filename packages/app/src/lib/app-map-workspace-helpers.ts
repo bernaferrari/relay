@@ -193,6 +193,8 @@ export function appMapCommitSummary(input: {
       return `Updated flow ${change.flow.name}`;
     case "flow.remove":
       return `Removed flow ${appMap.flows[change.flowId]?.name ?? "Flow"}`;
+    case "test.save":
+      return `${appMap.tests?.[change.test.id] ? "Updated" : "Created"} reusable test ${change.test.name}`;
   }
 }
 
@@ -242,8 +244,9 @@ export function orderCanvasChanges(changes: AppMapBatchChange[]): AppMapBatchCha
     if (change.kind === "group.save") return 2;
     if (change.kind === "connection.create" || change.kind === "connection.update") return 3;
     if (change.kind === "flow.save" || change.kind === "flow.remove") return 4;
-    if (change.kind === "connection.remove") return 5;
-    return 6;
+    if (change.kind === "test.save") return 5;
+    if (change.kind === "connection.remove") return 6;
+    return 7;
   };
   return changes
     .map((change, index) => ({ change, index }))

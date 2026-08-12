@@ -74,6 +74,85 @@ test("a tour test compiles origin identity into the walk, not a prior expect-scr
   }
 });
 
+test("a screen tour runs its explicit setup Flow once before starting at its root", () => {
+  const work: AppMapTest = {
+    ...scope,
+    id: "settings-tour",
+    name: "Settings coverage",
+    kind: "tour",
+    rootScreenId: "settings",
+    setupFlowId: "open-settings",
+    depth: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...screen("home", "Home"),
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+      settings: {
+        ...screen("settings", "Settings"),
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+      },
+    },
+    screenVariants: {},
+    connections: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        fromScreenId: "home",
+        destination: { kind: "screen", screenId: "settings" },
+        label: "Settings",
+        state: "ready",
+        actions: [{ id: "tap-settings", kind: "tap", target: { identifier: "settings" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [work.id]: work },
+    combines: {},
+    routines: {},
+    flows: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        name: "Open settings",
+        startScreenId: "home",
+        connectionIds: ["open-settings"],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  const { root, graph } = compileAppMapTest(map, work);
+  const setupRecipeId = "app-map:map-1:flow:open-settings:r1";
+  assert.deepEqual(root.steps[0], { kind: "module", recipeId: setupRecipeId });
+  assert.equal(root.steps[1]?.kind, "tour");
+  assert.ok(graph[setupRecipeId]);
+  const tour = root.steps[1];
+  assert.ok(tour?.kind === "tour");
+  if (tour?.kind === "tour") assert.equal(tour.preludeSteps, undefined);
+});
+
 test("a tour compiles mapped exits as pixels-only fallback stops", () => {
   const work: AppMapTest = {
     ...scope,
@@ -204,6 +283,180 @@ test("a tour unwraps recorded taps as pixels-only fallback stops", () => {
   ]);
 });
 
+test("a tour rehydrates a recorded source anchor when accessibility lost the tap point", () => {
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      settings: { ...screen("settings", "Settings"), variantIds: ["settings-android"] },
+      customize: screen("customize", "Customize Grok"),
+    },
+    screenVariants: {
+      "settings-android": {
+        ...scope,
+        id: "settings-android",
+        screenId: "settings",
+        targetProfile: {
+          id: "device:android",
+          targetId: "android",
+          source: "device",
+          platform: "android",
+          name: "Android",
+          viewport: { width: 1080, height: 2340 },
+          capabilities: [],
+          observedAt: at,
+        },
+        evidenceIds: [],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    connections: {
+      customize: {
+        ...scope,
+        id: "customize",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "customize" },
+        label: "Customize Grok",
+        state: "ready",
+        actions: [{ id: "tap-customize", kind: "tap", target: { label: "Customize Grok" } }],
+        sourceAnchor: { point: { x: 0.335, y: 0.19 } },
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(fallbackTourStopsFromMap(map, "settings"), [
+    { label: "Customize Grok", point: { x: 362, y: 445 } },
+  ]);
+});
+
+test("a tour rehydrates an anchor against the source orientation shared by its destination", () => {
+  const portrait = {
+    id: "device:ipad-834x1112",
+    targetId: "ipad",
+    source: "device",
+    platform: "ios",
+    name: "iPad portrait",
+    viewport: { width: 834, height: 1112 },
+    capabilities: [],
+    observedAt: at,
+  };
+  const landscape = {
+    id: "device:ipad-1112x834",
+    targetId: "ipad",
+    source: "device",
+    platform: "ios",
+    name: "iPad landscape",
+    viewport: { width: 1112, height: 834 },
+    capabilities: [],
+    observedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    // Portrait deliberately comes first: source anchor replay must not depend
+    // on array order when the recorded transition landed in landscape.
+    screens: {
+      settings: {
+        ...screen("settings", "Settings"),
+        variantIds: ["settings-portrait", "settings-landscape"],
+      },
+      customize: { ...screen("customize", "Customize Grok"), variantIds: ["customize-landscape"] },
+    },
+    screenVariants: {
+      "settings-portrait": {
+        ...scope,
+        id: "settings-portrait",
+        screenId: "settings",
+        targetProfile: portrait,
+        evidenceIds: [],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "settings-landscape": {
+        ...scope,
+        id: "settings-landscape",
+        screenId: "settings",
+        targetProfile: landscape,
+        evidenceIds: [],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "customize-landscape": {
+        ...scope,
+        id: "customize-landscape",
+        screenId: "customize",
+        targetProfile: landscape,
+        evidenceIds: [],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    connections: {
+      customize: {
+        ...scope,
+        id: "customize",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "customize" },
+        label: "Customize Grok",
+        state: "ready",
+        actions: [{ id: "tap-customize", kind: "tap", target: { label: "Customize Grok" } }],
+        sourceAnchor: { point: { x: 0.5, y: 0.25 } },
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  assert.deepEqual(fallbackTourStopsFromMap(map, "settings"), [
+    { label: "Customize Grok", point: { x: 556, y: 209 } },
+  ]);
+
+  // If a connection has no source-viewport evidence, a pixel fallback is
+  // unsafe. Keep its semantic target rather than guessing portrait or landscape.
+  const ambiguous = structuredClone(map);
+  ambiguous.screens.customize!.variantIds = [];
+  assert.deepEqual(fallbackTourStopsFromMap(ambiguous, "settings"), [{ label: "Customize Grok" }]);
+});
+
 test("a tour prepends mapped prelude taps from the start screen", () => {
   const work: AppMapTest = {
     ...scope,
@@ -245,6 +498,10 @@ test("a tour prepends mapped prelude taps from the start screen", () => {
             takeId: "take-gear",
             takeRevision: 1,
             evidenceIds: [],
+            when: {
+              target: { identifier: "sidebar.open.button" },
+              condition: "present",
+            },
             steps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
           },
         ],
@@ -276,14 +533,22 @@ test("a tour prepends mapped prelude taps from the start screen", () => {
     updatedAt: at,
   } as AppMap;
   assert.deepEqual(preludeStepsToScreen(map, "settings"), [
-    { kind: "tap", target: { identifier: "sidebar.settings.button" } },
+    {
+      kind: "tap",
+      target: { identifier: "sidebar.settings.button" },
+      when: { target: { identifier: "sidebar.open.button" }, condition: "present" },
+    },
   ]);
   const { root } = compileAppMapTest(map, work);
   assert.equal(root.steps.length, 1);
   assert.equal(root.steps[0]?.kind, "tour");
   if (root.steps[0]?.kind === "tour") {
     assert.deepEqual(root.steps[0].preludeSteps, [
-      { kind: "tap", target: { identifier: "sidebar.settings.button" } },
+      {
+        kind: "tap",
+        target: { identifier: "sidebar.settings.button" },
+        when: { target: { identifier: "sidebar.open.button" }, condition: "present" },
+      },
     ]);
     assert.equal(root.steps[0].originTitle, "Settings");
   }
@@ -363,6 +628,24 @@ test("tour preludes preserve mapped scroll gestures", () => {
     { kind: "tap", target: { identifier: "settings" } },
     { kind: "swipe", from: { x: 500, y: 1600 }, to: { x: 500, y: 600 } },
   ]);
+  const { root } = compileAppMapTest(map, {
+    ...scope,
+    id: "middle-coverage",
+    name: "Middle coverage",
+    kind: "tour",
+    rootScreenId: "middle",
+    screenIds: ["middle"],
+    capture: { mode: "every-screen" },
+    createdAt: at,
+    updatedAt: at,
+  });
+  const tour = root.steps.find((step) => step.kind === "tour");
+  assert.ok(tour?.kind === "tour");
+  assert.deepEqual(tour.preludeSteps, [
+    { kind: "tap", target: { identifier: "settings" } },
+    { kind: "swipe", from: { x: 500, y: 1600 }, to: { x: 500, y: 600 } },
+  ]);
+  assert.equal(tour.captureOrigin, true);
 });
 
 test("tour stops exclude mapped scroll checkpoints", () => {
@@ -629,4 +912,66 @@ test("an exact screen tour compiles one capture per named screen", () => {
     matrix.root.steps.some((step) => step.kind === "screenshot"),
     false,
   );
+});
+
+test("an exact screen tour accepts and captures its start root", () => {
+  const work: AppMapTest = {
+    ...scope,
+    id: "settings-root",
+    name: "Settings root",
+    kind: "tour",
+    rootScreenId: "settings",
+    screenIds: ["settings", "appearance"],
+    capture: { mode: "every-screen" },
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      settings: screen("settings", "Settings"),
+      appearance: screen("appearance", "Appearance"),
+    },
+    screenVariants: {},
+    connections: {
+      appearance: {
+        ...scope,
+        id: "appearance",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "appearance" },
+        label: "Appearance",
+        state: "ready",
+        actions: [{ id: "tap-appearance", kind: "tap", target: { label: "Appearance" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [work.id]: work },
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  const { root } = compileAppMapTest(map, work);
+  assert.equal(
+    root.steps.some((step) => step.kind === "screenshot"),
+    false,
+  );
+  const tour = root.steps.find((step) => step.kind === "tour");
+  assert.equal(tour?.kind === "tour" && tour.captureOrigin, true);
 });

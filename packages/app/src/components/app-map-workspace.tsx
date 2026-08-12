@@ -858,7 +858,13 @@ export function AppMapWorkspace(props: {
     );
   });
   const tidyMap = () => {
-    const arranged = compactCanvasPositions(graph());
+    // The canvas may display a raw iPad capture in a rotated orientation.
+    // Pass that same presentation transform into the pure layout pass so
+    // sibling reading order follows what the user sees, not raw image axes.
+    const screenRotations = canvasScreenRotations();
+    const arranged = compactCanvasPositions(graph(), {
+      sourceRotationFor: (screenId) => screenRotations[screenId] ?? "none",
+    });
     if (!Object.keys(arranged).length) return;
     persistMetadata({ ...canvasState(), positions: arranged });
     requestAnimationFrame(fit);

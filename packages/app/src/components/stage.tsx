@@ -772,6 +772,10 @@ export function DeviceStage(_props: {
       inspectable: snap.inspectable,
       inspectionState: snap.inspectionState,
       nodeCount: snap.nodes?.length,
+      inspectionError: snap.inspectionError,
+      platform: currentDevice()?.platform,
+      developerServicesAvailable: currentDevice()?.developerServicesAvailable,
+      openXcodeAvailable: Boolean(platform.openXcode),
     });
   });
   const controlHint = createMemo(() => {
@@ -814,6 +818,7 @@ export function DeviceStage(_props: {
       hasDisplayImage: Boolean(displayImageSrc()),
       recordingIssue: rec.recordingIssue(),
       liveCaptureIssue: liveCaptureIssue(),
+      inspectionError: server.snapshot()?.inspectionError,
       developerModeDisabled: developerModeDisabled(),
       iosSetupGuidance: iosSetupGuidance(),
       iosDeviceSupportPending: iosDeviceSupportPending(),
@@ -1326,8 +1331,13 @@ export function DeviceStage(_props: {
                             title={hint().title}
                             detail={hint().detail}
                             actionLabel={hint().actionLabel}
+                            actionVariant={hint().action === "open-xcode" ? "primary" : "secondary"}
                             busy={inspectionRecovering()}
                             onAction={() => {
+                              if (hint().action === "open-xcode") {
+                                void platform.openXcode?.();
+                                return;
+                              }
                               void retryInspection();
                             }}
                           />

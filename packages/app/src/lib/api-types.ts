@@ -244,6 +244,8 @@ export type SnapshotState = {
   foregroundApp?: string;
   treeApp?: string;
   bindingState?: "matched" | "rebound" | "unavailable";
+  /** A product-safe explanation when pixels are available but the device hierarchy is not. */
+  inspectionError?: string;
   screenIdentity?: ScreenIdentityObservation;
   visualFingerprint?: string;
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;

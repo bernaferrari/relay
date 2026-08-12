@@ -4,7 +4,15 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { type DevicePlatform, base, snapshot, type Device, type SnapshotNode } from "./device.js";
+import { PNG } from "pngjs";
+import {
+  IosSnapshotInFlightError,
+  type DevicePlatform,
+  base,
+  snapshot,
+  type Device,
+  type SnapshotNode,
+} from "./device.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { observeScreenIdentity, observeVisualScreenFingerprint } from "./screen-identity.js";
@@ -19,7 +27,13 @@ import {
   type AndroidInspectionState,
 } from "./android-ui-snapshot.js";
 import { currentTargetContext, runWithTargetContext, targetIdentity } from "./target-context.js";
-import { readIosDisplayOrientation, recordIosVideo } from "./ios-device-adapter.js";
+import {
+  diagnoseIosRunnerError,
+  IosDeviceAttentionError,
+  IosRunnerSetupError,
+  readIosDisplayOrientation,
+  recordIosVideo,
+} from "./ios-device-adapter.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
 import { annotateTapPreview } from "./tap-preview.js";
 import {
@@ -48,6 +62,8 @@ export type SnapshotPayload = {
   foregroundApp?: string;
   treeApp?: string;
   bindingState?: "matched" | "rebound" | "unavailable";
+  /** Safe, actionable iOS runner state when pixels are available but AX is not. */
+  inspectionError?: string;
   /** Full normalized identity lets UI and agents explain and reuse a match;
    * a digest alone is not enough to repair an older visual-only baseline. */
   screenIdentity: import("@relay/protocol").ScreenIdentityObservation;
@@ -57,12 +73,58 @@ export type SnapshotPayload = {
 
 const iosSnapshotGeometryBySerial = new Map<string, IosSnapshotGeometry>();
 
+/**
+ * An all-black PNG is a transport/display failure, not valid visual evidence.
+ * Keep this deliberately conservative: dark-mode screens have text and chrome,
+ * while the iPad failure mode has no illuminated pixels at all.
+ */
+export function isBlankScreenshot(bytes: Uint8Array): boolean {
+  let image: PNG;
+  try {
+    image = PNG.sync.read(Buffer.from(bytes));
+  } catch {
+    return false;
+  }
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    const alpha = image.data[offset + 3] ?? 0;
+    const red = image.data[offset] ?? 0;
+    const green = image.data[offset + 1] ?? 0;
+    const blue = image.data[offset + 2] ?? 0;
+    if (alpha > 0 && Math.max(red, green, blue) > 4) return false;
+  }
+  return true;
+}
+
 export function iosLogicalBoundsForSerial(
   serial: string,
 ): { width: number; height: number } | undefined {
   const geometry = iosSnapshotGeometryBySerial.get(serial);
   if (!geometry) return undefined;
   return { width: geometry.logicalWidth, height: geometry.logicalHeight };
+}
+
+/**
+ * Normalize an iOS screenshot only when we have actual orientation evidence.
+ *
+ * A fresh or recovering XCTest session can have neither an accessibility root
+ * nor a CoreDevice display answer. In that state go-ios still returns an
+ * upright raster on physical iPads. Guessing that every portrait raster is a
+ * landscape transport buffer turned a correct frame sideways and poisoned
+ * App Map variants. Preserve raw pixels until geometry or display orientation
+ * says otherwise.
+ */
+export function normalizeIosScreenshotForCapture(
+  bytes: Buffer,
+  input: {
+    geometry?: IosSnapshotGeometry;
+    displayOrientation?: string;
+  } = {},
+): Buffer {
+  if (!input.geometry && !input.displayOrientation) return bytes;
+  const logical = input.geometry
+    ? { width: input.geometry.logicalWidth, height: input.geometry.logicalHeight }
+    : undefined;
+  return normalizeScreenshotToBounds(bytes, logical, input.displayOrientation);
 }
 
 export function inferSnapshotBounds(
@@ -106,30 +168,25 @@ async function snapshotThroughSdk(
   interactiveOnly: boolean,
 ): Promise<SnapshotNode[]> {
   const capture = () => withSession(device, () => snapshot(device, { interactiveOnly }));
-  const context = (() => {
-    try {
-      return currentTargetContext();
-    } catch {
-      return undefined;
-    }
-  })();
-  if (context?.kind === "device" && context.platform === "ios") {
-    return await Promise.race([
-      capture(),
-      new Promise<never>((_, reject) => {
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                "iOS accessibility tree did not return in 20s. Recover the iPad, then snapshot again.",
-              ),
-            ),
-          20_000,
-        );
-      }),
-    ]);
-  }
   return await capture();
+}
+
+/**
+ * iOS runner diagnostics may contain Xcode paths and raw daemon output. The
+ * snapshot API exposes only errors that were converted to product-safe copy
+ * (or Relay's own single-flight guard), never the original native message.
+ */
+export async function iosInspectionErrorMessage(
+  error: unknown,
+  serial: string | undefined,
+): Promise<string | undefined> {
+  if (!error) return undefined;
+  if (error instanceof IosSnapshotInFlightError) return error.message;
+  const diagnosed = await diagnoseIosRunnerError(error, serial).catch(() => undefined);
+  if (diagnosed instanceof IosRunnerSetupError || diagnosed instanceof IosDeviceAttentionError) {
+    return diagnosed.message;
+  }
+  return undefined;
 }
 
 type SnapshotCapture = Pick<
@@ -141,12 +198,14 @@ type SnapshotCapture = Pick<
   | "foregroundApp"
   | "treeApp"
   | "bindingState"
+  | "inspectionError"
 >;
 
 async function snapshotForTarget(
   target: Awaited<ReturnType<typeof resolveRuntimeTarget>>,
   interactiveOnly: boolean,
 ): Promise<SnapshotCapture> {
+  let iosPreparationError: unknown;
   if (
     target.context.kind === "device" &&
     target.context.platform === "ios" &&
@@ -154,8 +213,9 @@ async function snapshotForTarget(
   ) {
     try {
       await ensureIosRunnerPrepared(target.device, target.context.serial);
-    } catch {
+    } catch (error) {
       // Prepare can fail while a previous runner is still usable. Still try SDK.
+      iosPreparationError = error;
     }
   }
   if (
@@ -163,18 +223,34 @@ async function snapshotForTarget(
     target.context.platform !== "android" ||
     !target.context.serial
   ) {
-    const appleNodes =
+    const iosSerial =
       target.context.kind === "device" && target.context.platform === "ios"
-        ? await withSession(target.device, () =>
-            snapshotThroughSdk(target.device, interactiveOnly),
-          ).catch(() => [] as SnapshotNode[])
-        : await snapshotThroughSdk(target.device, interactiveOnly);
+        ? target.context.serial
+        : undefined;
+    let appleNodes: SnapshotNode[];
+    let iosSnapshotError: unknown;
+    if (iosSerial) {
+      try {
+        appleNodes = await withSession(target.device, () =>
+          snapshotThroughSdk(target.device, interactiveOnly),
+        );
+      } catch (error) {
+        appleNodes = [];
+        iosSnapshotError = error;
+      }
+    } else {
+      appleNodes = await snapshotThroughSdk(target.device, interactiveOnly);
+    }
     const inspectable = appleNodes.length > 0;
+    const inspectionError = inspectable
+      ? undefined
+      : await iosInspectionErrorMessage(iosSnapshotError ?? iosPreparationError, iosSerial);
     return {
       nodes: appleNodes,
       inspectable,
       source: inspectable ? "sdk" : "pixels-only",
       ...(inspectable ? {} : { bindingState: "unavailable" as const }),
+      ...(inspectionError ? { inspectionError } : {}),
     };
   }
 
@@ -265,11 +341,13 @@ export async function captureSnapshot(opts?: {
       snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
     } catch (error) {
       if (target.context.kind === "device" && target.context.platform === "ios") {
+        const inspectionError = await iosInspectionErrorMessage(error, target.context.serial);
         snapshot = {
           nodes: [],
           inspectable: false,
           source: "pixels-only",
           bindingState: "unavailable",
+          ...(inspectionError ? { inspectionError } : {}),
         };
       } else {
         throw error;
@@ -396,25 +474,17 @@ export async function captureScreenshot(opts?: {
     if (context.kind === "device" && context.platform === "ios" && context.serial) {
       // UIImage.pngData() drops imageOrientation. Bake from CoreDevice orientation:
       // portrait transport + landscape interface → one 90°; same-aspect landscape →
-      // one 180°. Never stack both. No AX snapshot here (watchdog wedge).
-      const dims = pngDimensions(buf);
+      // one 180°. Never stack both. Do not invent a landscape orientation when
+      // the recovering XCTest session has no geometry: physical iPads often
+      // already give us an upright portrait go-ios raster in that state.
       const geometry = iosSnapshotGeometryBySerial.get(context.serial);
-      const logical =
-        geometry != null
-          ? { width: geometry.logicalWidth, height: geometry.logicalHeight }
-          : dims && dims.height > dims.width
-            ? { width: dims.height, height: dims.width }
-            : dims
-              ? { width: dims.width, height: dims.height }
-              : undefined;
-      const displayOrientation =
-        (await readIosDisplayOrientation(context.serial).catch(() => undefined)) ??
-        (dims && dims.height > dims.width
-          ? "landscape-left"
-          : dims && dims.width > dims.height
-            ? "landscape-right"
-            : "portrait");
-      const normalized = normalizeScreenshotToBounds(buf, logical, displayOrientation);
+      const displayOrientation = geometry
+        ? await readIosDisplayOrientation(context.serial).catch(() => undefined)
+        : undefined;
+      const normalized = normalizeIosScreenshotForCapture(buf, {
+        ...(geometry ? { geometry } : {}),
+        ...(displayOrientation ? { displayOrientation } : {}),
+      });
       if (!buf.equals(normalized)) {
         buf = Buffer.from(normalized);
         await writeFile(path, buf);

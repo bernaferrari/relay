@@ -65,6 +65,50 @@ export function looksLikeLanguagePicker(
   );
 }
 
+/**
+ * The visible-list reader is deliberately literal: it can only teach from
+ * the controls that are on the device right now. Keep its classification
+ * separate from row extraction so the UI can say *why* an arbitrary picker
+ * (most commonly Android's document picker) cannot become a Language
+ * modifier.
+ */
+export type VisibleListRead = {
+  rows: Array<{ identifier?: string; label?: string; value?: string }>;
+  status: "ready" | "empty" | "not-language-list";
+  context?: "file-picker";
+};
+
+function looksLikeFilePicker(
+  nodes: readonly { identifier?: string; label?: string; value?: string }[],
+): boolean {
+  return nodes.some((node) => {
+    const text = [node.identifier, node.label, node.value].filter(Boolean).join(" ");
+    return /(?:documentsui|file\s*picker|\bfiles?\b|\.(?:jpg|jpeg|png|gif|webp|pdf|mp4)\b|\b(?:image|video|audio)\/)/iu.test(
+      text,
+    );
+  });
+}
+
+/** Inspect the currently visible rows without pretending that Relay navigated
+ * to them. Language modifiers require a real language picker; other modifier
+ * kinds may learn any visible list. */
+export function inspectVisibleList(
+  nodes: Array<{ identifier?: string; label?: string; value?: string; hittable?: boolean }>,
+  kind: string,
+  limit = 24,
+): VisibleListRead {
+  const rows = teachableLocaleRows(nodes, limit);
+  if (!rows.length) return { rows, status: "empty" };
+  if (kind === "language" && !looksLikeLanguagePicker(rows)) {
+    return {
+      rows,
+      status: "not-language-list",
+      ...(looksLikeFilePicker(nodes) ? { context: "file-picker" as const } : {}),
+    };
+  }
+  return { rows, status: "ready" };
+}
+
 export type LocaleNavStep = {
   kind: "tap" | "back" | "wait" | "scroll" | "relaunch" | "openApp";
   target?: { identifier?: string; label?: string; text?: string };

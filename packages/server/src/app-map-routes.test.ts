@@ -14,6 +14,7 @@ import { startServer } from "./index.js";
 import { explicitTargetAvailability } from "./app-map-run-routes.js";
 import {
   findEquivalentTeachConnection,
+  iosTeachObservationMatchesTitle,
   sourceAnchorForTeachInteraction,
 } from "./app-map-routes.js";
 
@@ -118,6 +119,24 @@ test("teaching preserves the resolved source control point as canvas evidence", 
     }),
     { point: { x: 0.5, y: 2050 / 2400 } },
   );
+});
+
+test("iOS teaching rejects a stale named destination but tolerates a temporarily empty tree", () => {
+  assert.equal(
+    iosTeachObservationMatchesTitle(
+      [{ visibleToUser: true, label: "Choose a model", identifier: "model.picker" }],
+      "Appearance",
+    ),
+    false,
+  );
+  assert.equal(
+    iosTeachObservationMatchesTitle(
+      [{ visibleToUser: true, label: "Appearance", identifier: "settings.appearance" }],
+      "Appearance",
+    ),
+    true,
+  );
+  assert.equal(iosTeachObservationMatchesTitle([], "Appearance"), true);
 });
 
 test("App Map operations are equivalent for human and agent actors", async () => {

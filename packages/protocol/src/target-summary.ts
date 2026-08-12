@@ -147,6 +147,18 @@ function inspectionRecoveryNote(
   return "Names unavailable. Screenshot and tap by point still work. relay device recover <serial> retries.";
 }
 
+/**
+ * Snapshot capture deliberately emits only product-safe inspection errors.
+ * Keep the CLI/MCP summary bounded too: it is an agent-facing status, not a
+ * channel for arbitrary host or Xcode diagnostics.
+ */
+function inspectionErrorSummary(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const message = value.trim();
+  if (!message) return undefined;
+  return message.slice(0, 480);
+}
+
 export function summarizeTargetOperationResult(operationId: string, result: unknown): unknown {
   if (operationId === "target.snapshot.capture") {
     if (!result || typeof result !== "object" || Array.isArray(result)) return result;
@@ -160,6 +172,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       screenIdentity?: { fingerprint?: unknown };
       visualFingerprint?: unknown;
       proposedRows?: unknown;
+      inspectionError?: unknown;
     };
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
@@ -194,6 +207,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
           ];
         })
       : [];
+    const inspectionError = inspectionErrorSummary(body.inspectionError);
     return {
       serial: body.serial,
       bounds: body.bounds,
@@ -213,13 +227,16 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       ...(chrome.header ? { header: chrome.header } : {}),
       controls: snapshotControlSummary(nodes),
       ...(proposedRows.length ? { proposedRows } : {}),
+      ...(inspectionError ? { inspectionError } : {}),
       nodeCount: nodes.length,
       ...(!inspectable
         ? {
-            note: inspectionRecoveryNote(
-              typeof body.inspectionState === "string" ? body.inspectionState : undefined,
-              proposedRows.length > 0,
-            ),
+            note:
+              inspectionError ??
+              inspectionRecoveryNote(
+                typeof body.inspectionState === "string" ? body.inspectionState : undefined,
+                proposedRows.length > 0,
+              ),
           }
         : {}),
     };

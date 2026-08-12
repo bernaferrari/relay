@@ -3,6 +3,7 @@ import test from "node:test";
 import type { AppMap, AppMapEntity, Connection, Screen } from "@relay/protocol";
 import {
   assignableSwitcherConnections,
+  inspectVisibleList,
   looksLikeLanguagePicker,
   localeLoopBodyFlowId,
   recordedLocalePreludeFromMap,
@@ -62,6 +63,40 @@ test("language picker check accepts language rows and rejects a document picker"
     ]),
     false,
   );
+});
+
+test("visible language list reader rejects an Android document picker with a useful context", () => {
+  const read = inspectVisibleList(
+    [
+      { identifier: "com.google.android.documentsui:id/dir_list", label: "Files" },
+      { label: "edited-image.jpg" },
+      { label: "366 kB · 5 hr. ago · image/jpeg" },
+    ],
+    "language",
+  );
+
+  assert.equal(read.status, "not-language-list");
+  assert.equal(read.context, "file-picker");
+});
+
+test("visible language list reader accepts a real locale picker but allows arbitrary custom lists", () => {
+  const languageRead = inspectVisibleList(
+    [
+      { identifier: "locale.en", label: "English" },
+      { identifier: "locale.it", label: "Italiano" },
+    ],
+    "language",
+  );
+  assert.equal(languageRead.status, "ready");
+
+  const customRead = inspectVisibleList(
+    [
+      { identifier: "plan.free", label: "Free" },
+      { identifier: "plan.pro", label: "Pro" },
+    ],
+    "custom",
+  );
+  assert.equal(customRead.status, "ready");
 });
 
 const at = 1;

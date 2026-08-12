@@ -510,6 +510,12 @@ export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: st
   }
   if (work.kind === "path") identifier(work.flowId ?? "", `${label}.flowId`);
   if (work.kind === "tour") identifier(work.rootScreenId ?? "", `${label}.rootScreenId`);
+  if (work.setupFlowId !== undefined) {
+    if (work.kind !== "tour") {
+      appMapFail("invalid-map", `${label}.setupFlowId is only valid for screen tours`);
+    }
+    identifier(work.setupFlowId, `${label}.setupFlowId`);
+  }
   if (work.screenIds !== undefined) stringArray(work.screenIds, `${label}.screenIds`);
   if (work.depth !== undefined) safeInteger(work.depth, `${label}.depth`);
   if (work.capture !== undefined) {

@@ -404,3 +404,158 @@ test("uses horizontal source-anchor order for top and bottom port fans", () => {
 
   assert.ok((positions["left-action"]?.y ?? 0) < (positions["right-action"]?.y ?? 0));
 });
+
+test("orders sibling targets by the captured control rect centre, not an arbitrary tap", () => {
+  const graph = {
+    screens: ["settings", "bottom", "top", "middle"].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      // Deliberately saved out of visual order. The tap happened low in the
+      // top cell, but the rect proves which control the user actually chose.
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "top" },
+        sourceAnchor: {
+          point: { x: 0.5, y: 0.86 },
+          rect: { x: 0.08, y: 0.1, width: 0.84, height: 0.12 },
+        },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "bottom" },
+        sourceAnchor: {
+          point: { x: 0.5, y: 0.12 },
+          rect: { x: 0.08, y: 0.78, width: 0.84, height: 0.12 },
+        },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "middle" },
+        sourceAnchor: {
+          point: { x: 0.5, y: 0.94 },
+          rect: { x: 0.08, y: 0.44, width: 0.84, height: 0.12 },
+        },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok((positions.top?.y ?? 0) < (positions.middle?.y ?? 0));
+  assert.ok((positions.middle?.y ?? 0) < (positions.bottom?.y ?? 0));
+});
+
+test("uses the source frame's displayed orientation when ordering an anchored fan", () => {
+  const graph = {
+    screens: ["source", "displayed-bottom", "displayed-top"].map((id) => ({ id })),
+    flows: [{ screenId: "source" }],
+    transitions: [
+      // A left-rotated frame maps logical X to displayed Y inversely. This
+      // edge is intentionally saved first even though its control is lower
+      // in the frame the person sees.
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "displayed-bottom" },
+        sourceAnchor: {
+          point: { x: 0.04, y: 0.5 },
+          rect: { x: 0.04, y: 0.12, width: 0.12, height: 0.76 },
+        },
+        presentation: { sourcePort: "right" },
+      },
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "displayed-top" },
+        sourceAnchor: {
+          point: { x: 0.96, y: 0.5 },
+          rect: { x: 0.84, y: 0.12, width: 0.12, height: 0.76 },
+        },
+        presentation: { sourcePort: "right" },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph, {
+    sourceRotationFor: () => "left",
+  });
+
+  assert.ok(
+    (positions["displayed-top"]?.y ?? 0) < (positions["displayed-bottom"]?.y ?? 0),
+    "the displayed top action should stay above the displayed bottom action",
+  );
+});
+
+test("keeps Grok Settings iPad branches in the recorded control order", () => {
+  const graph = {
+    screens: ["settings", "connectors", "skills", "customize", "appearance", "usage"].map((id) => ({
+      id,
+    })),
+    flows: [{ screenId: "settings" }],
+    // These are the current iPad map's source coordinates, intentionally
+    // stored in a different order from their vertical Settings-list order.
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "skills" },
+        sourceAnchor: { point: { x: 0.5, y: 0.8776978417266187 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "usage" },
+        sourceAnchor: { point: { x: 0.5, y: 0.36810551558752996 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "connectors" },
+        sourceAnchor: { point: { x: 0.5, y: 0.9304556354916067 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "appearance" },
+        sourceAnchor: { point: { x: 0.5, y: 0.49160671462829736 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "customize" },
+        sourceAnchor: { point: { x: 0.5, y: 0.8249400479616307 } },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+  const ordered = ["usage", "appearance", "customize", "skills", "connectors"];
+
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = positions[ordered[index - 1]!]!.y;
+    const next = positions[ordered[index]!]!.y;
+    assert.ok(previous < next, `${ordered[index - 1]} should remain above ${ordered[index]}`);
+  }
+  for (const point of Object.values(positions)) {
+    assert.equal(point.x % DEFAULT_CANVAS_GRID_SPACING, 0);
+    assert.equal(point.y % DEFAULT_CANVAS_GRID_SPACING, 0);
+  }
+});
+
+test("uses durable transition order for equal recorded source coordinates", () => {
+  const graph = {
+    screens: ["source", "first", "second"].map((id) => ({ id })),
+    flows: [{ screenId: "source" }],
+    transitions: [
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "first" },
+        sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+      },
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "second" },
+        sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+      },
+    ],
+  };
+
+  const first = compactCanvasPositions(graph);
+  const second = compactCanvasPositions(graph);
+
+  assert.deepEqual(first, second);
+  assert.ok((first.first?.y ?? 0) < (first.second?.y ?? 0));
+});

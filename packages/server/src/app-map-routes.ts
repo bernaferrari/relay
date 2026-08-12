@@ -70,6 +70,34 @@ type AppMapRouteInput = {
   scope: RequestContext;
 };
 
+/**
+ * An iOS XCTest tree can briefly retain controls from the previous surface
+ * after the pixels have moved.  A teaching request has an explicit intended
+ * destination title, so use the fresh, visible tree as a cheap guard before
+ * turning that transient state into a permanent map screen.
+ *
+ * We deliberately fail open for an empty tree: iOS can legitimately lose AX
+ * for a moment, and the screenshot/evidence guard is still useful there.
+ */
+export function iosTeachObservationMatchesTitle(
+  nodes: Array<Record<string, unknown>> | undefined,
+  title: string,
+): boolean {
+  if (!nodes?.length) return true;
+  const words = title
+    .toLocaleLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((word) => word.length >= 4);
+  if (!words.length) return true;
+  const visibleText = nodes
+    .filter((node) => node.visibleToUser !== false)
+    .flatMap((node) => [node.label, node.identifier, node.value])
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLocaleLowerCase();
+  return words.every((word) => visibleText.includes(word));
+}
+
 /** A repeated teach request can have a new event id after a UI retry. Reuse
  * the already-recorded edge when its executable meaning is identical, but do
  * not collapse distinct controls that happen to lead to the same screen. */
@@ -249,11 +277,25 @@ function currentTakeRevision(session: AuthoringSession) {
 async function profileForCapture(
   target: OperationInput<"app-map.screen.capture">["target"],
   observedAt: number,
+  bounds?: { width: number; height: number },
 ): Promise<TargetProfile> {
+  const viewport =
+    bounds &&
+    Number.isFinite(bounds.width) &&
+    Number.isFinite(bounds.height) &&
+    bounds.width > 0 &&
+    bounds.height > 0
+      ? { width: Math.round(bounds.width), height: Math.round(bounds.height) }
+      : undefined;
+  // Orientation is a material rendering target. A portrait iPad capture must
+  // not replace the landscape screenshot/coordinates for the same logical
+  // screen (or vice versa), which was the source of stretched canvas cards
+  // and bad replay anchors after a device rotation.
+  const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
   if (target.kind === "device") {
     const device = (await listDevices()).find((item) => item.serial === target.targetId);
     return {
-      id: `device:${target.targetId}`,
+      id: `device:${target.targetId}${viewportKey}`,
       targetId: target.targetId,
       source: "device",
       platform: target.platform,
@@ -262,16 +304,18 @@ async function profileForCapture(
       ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
       capabilities: ["snapshot", "screenshot"],
       observedAt,
+      ...(viewport ? { viewport } : {}),
     };
   }
   return {
-    id: `browser:${target.targetId}`,
+    id: `browser:${target.targetId}${viewportKey}`,
     targetId: target.targetId,
     source: "browser",
     platform: "browser",
     name: target.targetId,
     capabilities: ["snapshot", "screenshot"],
     observedAt,
+    ...(viewport ? { viewport } : {}),
   };
 }
 
@@ -466,7 +510,11 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       session = await authoringSessions.capture(session.id, createAuthoringRuntime());
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
-      const profile = await profileForCapture(body.target, take.before.capturedAt);
+      const profile = await profileForCapture(
+        body.target,
+        take.before.capturedAt,
+        take.before.bounds,
+      );
       let capturedScreenId = "";
       let capturedVariantId = "";
       let created = false;
@@ -552,7 +600,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       if (interaction.kind === "point") {
         const result = await interact(
           { kind: "point", x: interaction.x, y: interaction.y },
-          { serial },
+          { serial, verifyIosScreenChange: true },
         );
         resolvedInteractionPoint = result.resolution?.point;
       } else if (interaction.kind === "label") {
@@ -562,7 +610,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
             label: interaction.label,
             ...(interaction.point ? { point: interaction.point } : {}),
           },
-          { serial },
+          { serial, verifyIosScreenChange: true },
         );
         resolvedInteractionPoint = result.resolution?.point;
       } else if (interaction.kind === "identifier") {
@@ -572,7 +620,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
             identifier: interaction.identifier,
             ...(interaction.point ? { point: interaction.point } : {}),
           },
-          { serial },
+          { serial, verifyIosScreenChange: true },
         );
         resolvedInteractionPoint = result.resolution?.point;
       } else {
@@ -606,6 +654,23 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       session = await authoringSessions.capture(session.id, createAuthoringRuntime());
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      const intendedTitle = body.title?.trim();
+      if (
+        body.target.kind === "device" &&
+        body.target.platform === "ios" &&
+        intendedTitle &&
+        !iosTeachObservationMatchesTitle(take.before.nodes, intendedTitle)
+      ) {
+        throw new HttpError(
+          409,
+          "The iPad opened a different screen than the requested destination",
+          {
+            code: "unexpected-destination",
+            recovery:
+              "The iOS accessibility tree still describes another surface. Return to the source, wait for the intended destination to settle, then teach it again. No map screen was saved.",
+          },
+        );
+      }
       if (
         body.interaction &&
         findAppMapCaptureScreen(current, {
@@ -620,7 +685,11 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
             "Choose a visible control or point that opens another screen. Use a recorded path for gestures or changes that stay on this screen.",
         });
       }
-      const profile = await profileForCapture(body.target, take.before.capturedAt);
+      const profile = await profileForCapture(
+        body.target,
+        take.before.capturedAt,
+        take.before.bounds,
+      );
       let capturedScreenId = "";
       let capturedVariantId = "";
       let created = false;

@@ -25,20 +25,49 @@ export type IosVideoCaptureResult = {
 };
 
 export class IosRunnerSetupError extends Error {
-  readonly code = "ios-runner-setup";
+  readonly code: string = "ios-runner-setup";
 
-  constructor(readonly causeMessage: string) {
-    super(iosRunnerSetupMessage(causeMessage));
+  constructor(
+    readonly causeMessage: string,
+    message = iosRunnerSetupMessage(causeMessage),
+  ) {
+    super(message);
     this.name = "IosRunnerSetupError";
   }
 }
 
 export class IosDeviceAttentionError extends Error {
-  readonly code = "ios-device-attention";
+  readonly code: string = "ios-device-attention";
 
   constructor(message: string) {
     super(message);
     this.name = "IosDeviceAttentionError";
+  }
+}
+
+/**
+ * Xcode reports this as a generic CoreDevice launch failure, then later SDK
+ * calls collapse it into “no active XCTest session”. Keep the physical cause
+ * intact so Reconnect can tell someone what actually needs attention.
+ */
+export class IosDeveloperDiskImageError extends IosRunnerSetupError {
+  readonly code = "ios-developer-disk-image";
+
+  constructor(causeMessage: string) {
+    super(causeMessage, iosDeveloperDiskImageMessage(causeMessage));
+    this.name = "IosDeveloperDiskImageError";
+  }
+}
+
+/** The runner has not attached, but no more specific host failure is known. */
+export class IosXCTestSessionUnavailableError extends IosDeviceAttentionError {
+  readonly code = "ios-xctest-session-unavailable";
+
+  constructor(readonly causeMessage: string) {
+    super(
+      "Relay cannot attach its iOS UI Automation session yet. Press Reconnect once, keep the iPad unlocked and cabled, then wait for the Automation Running indicator before trying again.",
+    );
+    this.name = "IosXCTestSessionUnavailableError";
   }
 }
 
@@ -117,6 +146,25 @@ function iosRunnerSetupMessage(cause: string): string {
   return "Relay could not prepare this iPad yet. Reconnect it and try again.";
 }
 
+function isIosDeveloperDiskImageFailure(message: string): boolean {
+  return /developer\s+(?:disk|support)\s+image|ddi\s+services|coredevice(?:error)?[^\n]{0,80}12040|kAMDMobileImageMounterMissingImagePath|could not support development|image could not be mounted/i.test(
+    message,
+  );
+}
+
+function iosDeveloperDiskImageMessage(cause: string): string {
+  const code = /(?:coredevice(?:error)?[^\n]{0,80}12040|\b12040\b)/i.test(cause)
+    ? " (CoreDevice 12040)"
+    : "";
+  return `Relay could not mount Apple’s developer support image for this iPad${code}. Keep it unlocked and cabled, then let Xcode finish preparing the device. If it remains unavailable, install or update Xcode device support for this iPadOS version, then press Reconnect.`;
+}
+
+function isIosXCTestSessionUnavailableFailure(message: string): boolean {
+  return /iOS\s+snapshot\s+(?:needs|requires)\s+an\s+active\s+XCTest\s+session|no\s+active\s+XCTest\s+session/i.test(
+    message,
+  );
+}
+
 function valueFrom(result: unknown, key: "path" | "warning"): string | undefined {
   if (!result || typeof result !== "object") return undefined;
   const value = (result as Record<string, unknown>)[key];
@@ -167,8 +215,10 @@ async function recentIosRunnerFailure(udid?: string): Promise<string | undefined
       if (/developer mode/i.test(log)) {
         return "Developer Mode disabled";
       }
-      if (/developer disk image|ddi services/i.test(log)) {
-        return "Developer Disk Image unavailable";
+      if (isIosDeveloperDiskImageFailure(log)) {
+        return /(?:coredevice(?:error)?[^\n]{0,80}12040|\b12040\b)/i.test(log)
+          ? "CoreDeviceError 12040: developer disk image unavailable"
+          : "Developer disk image unavailable";
       }
       if (/no profiles? for|provisioning profiles? matching/i.test(log)) {
         return "No profiles for Relay's local runner";
@@ -186,7 +236,18 @@ async function recentIosRunnerFailure(udid?: string): Promise<string | undefined
 
 /** Convert noisy Xcode/agent-device configuration failures into product language. */
 export function normalizeIosRunnerError(error: unknown): Error {
+  if (
+    error instanceof IosDeveloperDiskImageError ||
+    error instanceof IosXCTestSessionUnavailableError ||
+    error instanceof IosRunnerSetupError ||
+    error instanceof IosDeviceAttentionError
+  ) {
+    return error;
+  }
   const message = error instanceof Error ? error.message : String(error);
+  if (isIosDeveloperDiskImageFailure(message)) {
+    return new IosDeveloperDiskImageError(message);
+  }
   if (
     /artifact restored but runner did not connect|runner did not accept connection|test runner hung before establishing connection/i.test(
       message,
@@ -220,6 +281,31 @@ export function normalizeIosRunnerError(error: unknown): Error {
 export async function diagnoseIosRunnerError(error: unknown, udid?: string): Promise<Error> {
   const normalized = normalizeIosRunnerError(error);
   const message = error instanceof Error ? error.message : String(error);
+  if (normalized instanceof IosDeveloperDiskImageError) return normalized;
+
+  // A caller can already have normalized the generic XCTest failure before it
+  // reaches snapshot capture. It is still worth consulting this target's
+  // fresh runner log: a DDI mount failure is actionable, while “Reconnect”
+  // alone merely repeats an operation Xcode cannot currently perform.
+  if (normalized instanceof IosXCTestSessionUnavailableError) {
+    const diagnostic = await recentIosRunnerFailure(udid);
+    if (diagnostic && isIosDeveloperDiskImageFailure(diagnostic)) {
+      return normalizeIosRunnerError(new Error(diagnostic));
+    }
+    return normalized;
+  }
+
+  // A failed DDI mount is commonly followed by the SDK's generic snapshot
+  // error. Consult the fresh, target-specific runner log before displaying
+  // that fallback so a person does not keep retrying an unavailable runner.
+  if (isIosXCTestSessionUnavailableFailure(message)) {
+    const diagnostic = await recentIosRunnerFailure(udid);
+    if (diagnostic && isIosDeveloperDiskImageFailure(diagnostic)) {
+      return normalizeIosRunnerError(new Error(diagnostic));
+    }
+    return new IosXCTestSessionUnavailableError(message);
+  }
+
   if (normalized instanceof IosRunnerSetupError) {
     const diagnostic = await recentIosRunnerFailure(udid);
     return diagnostic ? normalizeIosRunnerError(new Error(diagnostic)) : normalized;

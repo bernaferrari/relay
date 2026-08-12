@@ -13,6 +13,7 @@ import type {
   VariableRow,
   AppMapVariableKind,
   RecipeStep,
+  StepTarget,
   TargetProfile,
   TestData,
 } from "@relay/protocol";
@@ -355,6 +356,45 @@ function selectSteps(prefix: string): RecipeStep[] {
   ];
 }
 
+/**
+ * Resolve a saved list row into the same semantic target priority used while
+ * applying a matrix value. `restoreId` is a row id, not necessarily visible
+ * copy, so it must resolve through the row's recorded accessibility target.
+ */
+function targetsForOptionRow(row: VariableRow): StepTarget[] {
+  const candidates: StepTarget[] = [];
+  const identifier = row.identifier?.trim();
+  const label = row.label?.trim();
+  const text = row.text?.trim();
+  if (identifier) candidates.push({ identifier });
+  if (label) candidates.push({ label });
+  if (text) candidates.push({ text });
+  return candidates;
+}
+
+function restoreListSteps(set: OptionRunSet): RecipeStep[] {
+  const restoreId = set.restoreId?.trim();
+  if (!restoreId) return [];
+  const row = set.options.find((option) => option.id === restoreId);
+  if (!row) {
+    throw new Error(`variable “${set.name}” has no restore option ${restoreId}`);
+  }
+  const [target, ...fallbackTargets] = targetsForOptionRow(row);
+  if (!target) {
+    throw new Error(
+      `restore option “${restoreId}” for variable “${set.name}” needs an identifier, label, or text`,
+    );
+  }
+  return [
+    {
+      kind: "tap",
+      target,
+      ...(fallbackTargets.length ? { fallbackTargets } : {}),
+    },
+    { kind: "sleep", ms: 900 },
+  ];
+}
+
 export function composeOptionRunRecipes(input: {
   body: Recipe;
   bodyGraph?: Record<string, Recipe>;
@@ -437,18 +477,31 @@ export function composeOptionRunRecipes(input: {
 
   // Restore stable state after every world so one matrix cell cannot leak into
   // the next or leave the physical device changed after the batch. App-locales
-  // can be restored without replaying localized picker labels.
+  // use the platform locale API; captured list variables replay their own
+  // entry/select/exit sandwich with the saved restore row.
   if (input.request.restoreAtEnd !== false) {
     for (const set of [...input.request.sets].reverse()) {
-      if (!set.restoreId?.trim() || set.apply.kind !== "appLocale") continue;
-      steps.push({
-        kind: "app",
-        action: "set-locale",
-        app: set.apply.app,
-        locale: set.restoreId.trim(),
-      });
-      steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-      steps.push({ kind: "sleep", ms: 1200 });
+      if (!set.restoreId?.trim()) continue;
+      if (set.apply.kind === "appLocale") {
+        steps.push({
+          kind: "app",
+          action: "set-locale",
+          app: set.apply.app,
+          locale: set.restoreId.trim(),
+        });
+        steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
+        steps.push({ kind: "sleep", ms: 1200 });
+        continue;
+      }
+      if (set.apply.kind === "list") {
+        const resolved = assertOptionSandwichReady(set, input.request.map, undefined, {
+          profileId: input.request.profileId,
+          preset: input.request.preset,
+        });
+        steps.push(...navStepsToRecipe(resolved.entry, app));
+        steps.push(...restoreListSteps(set));
+        steps.push(...navStepsToRecipe(resolved.exit, app));
+      }
     }
   }
 

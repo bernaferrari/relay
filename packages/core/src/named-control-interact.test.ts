@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Device } from "./device.js";
 import { pressNamedControl } from "./device.js";
-import { interact, interactOnDevice, resolveInteractPreview } from "./workspace.js";
+import {
+  canVerifyIosScreenChange,
+  interact,
+  interactOnDevice,
+  resolveInteractPreview,
+} from "./workspace.js";
 import { runWithTargetContext } from "./target-context.js";
 
 function stubDevice(nodes: unknown[]): Device {
@@ -48,6 +53,18 @@ test("device swipe rejects missing coordinates with actionable syntax", async ()
   await assert.rejects(
     interact({ kind: "swipe" } as never, { serial: "unused" }),
     /Swipe requires "from" and "to" points/u,
+  );
+});
+
+test("only named iOS actions opt into visual transition verification", () => {
+  assert.equal(canVerifyIosScreenChange({ kind: "identifier", identifier: "settings" }), true);
+  assert.equal(canVerifyIosScreenChange({ kind: "label", label: "Settings" }), true);
+  assert.equal(canVerifyIosScreenChange({ kind: "find", query: "Settings" }), true);
+  assert.equal(canVerifyIosScreenChange({ kind: "text-match", match: "Settings" }), true);
+  assert.equal(canVerifyIosScreenChange({ kind: "point", x: 1, y: 2 }), false);
+  assert.equal(
+    canVerifyIosScreenChange({ kind: "swipe", from: { x: 1, y: 2 }, to: { x: 1, y: 8 } }),
+    false,
   );
 });
 

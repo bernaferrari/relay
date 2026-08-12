@@ -240,11 +240,19 @@ export function createDevice(explicitContext?: TargetContext): Device {
 
 export function resetDeviceClient(context = currentTargetContext()): void {
   devicesByTarget.delete(`${context.platform}:${targetIdentity(context)}`);
+  if (context.kind === "device" && context.platform === "ios") {
+    // A client reset only happens after an explicit runner/session repair. The
+    // old native snapshot cannot be cancelled by agent-device, but that repair
+    // has stopped its XCTest session, so it is safe for the next client to
+    // begin a fresh tree read.
+    iosSnapshotFlights.delete(`${context.platform}:${targetIdentity(context)}`);
+  }
 }
 
 /** Drop cached SDK clients after host-level device configuration changes. */
 export function resetDeviceClients(): void {
   devicesByTarget.clear();
+  iosSnapshotFlights.clear();
 }
 
 export function base() {
@@ -302,6 +310,99 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
 
 export const IOS_SNAPSHOT_TIMEOUT_MS = 8_000;
 
+/**
+ * The agent-device iOS snapshot RPC cannot be cancelled once XCTest has
+ * started traversing the accessibility tree. A timeout therefore only stops
+ * Relay from waiting; it does not stop the runner's work. Starting another
+ * tree read at that point leaves the runner executing two UI queries and is
+ * the common path to AGENT_DEVICE_RUNNER_BUSY.
+ *
+ * Keep exactly one native tree read per physical iOS device. Compatible
+ * callers share its bounded result. If an interactive-only read is already
+ * running, a later full tree request fails promptly instead of queueing a
+ * second XCTest command behind a potentially wedged one. A deliberate session
+ * reset clears the guard after the old runner has been stopped.
+ */
+export class IosSnapshotInFlightError extends Error {
+  constructor() {
+    super(
+      "iOS accessibility is still reading the previous screen. Wait for it to settle or reconnect the iPad before requesting another full tree.",
+    );
+    this.name = "IosSnapshotInFlightError";
+  }
+}
+
+type IosSnapshotFlight = {
+  interactiveOnly: boolean;
+  timedOut: boolean;
+  result: Promise<SnapshotNode[]>;
+};
+
+const iosSnapshotFlights = new Map<string, IosSnapshotFlight>();
+
+function iosSnapshotKey(context: TargetContext): string | undefined {
+  return context.kind === "device" && context.platform === "ios"
+    ? `${context.platform}:${context.serial}`
+    : undefined;
+}
+
+function raceIosSnapshotTimeout<T>(operation: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("iOS snapshot timed out")),
+      IOS_SNAPSHOT_TIMEOUT_MS,
+    );
+    void operation.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function snapshotIosSingleFlight(
+  key: string,
+  interactiveOnly: boolean,
+  run: () => Promise<{ nodes?: SnapshotNode[] }>,
+): Promise<SnapshotNode[]> {
+  const existing = iosSnapshotFlights.get(key);
+  if (existing) {
+    if (existing.timedOut) throw new IosSnapshotInFlightError();
+    // A full tree is a safe superset of an interactive-only tree, so those
+    // callers can share work. The inverse is not safe: do not make a full
+    // request look complete after an interactive-only SDK response.
+    if (!existing.interactiveOnly || interactiveOnly) return await existing.result;
+    throw new IosSnapshotInFlightError();
+  }
+
+  let flight!: IosSnapshotFlight;
+  const native = Promise.resolve().then(run);
+  const result = raceIosSnapshotTimeout(native).then(
+    (value) => (value.nodes ?? []) as SnapshotNode[],
+  );
+  flight = { interactiveOnly, timedOut: false, result };
+  iosSnapshotFlights.set(key, flight);
+
+  // Retain the lock until the actual native request settles, not merely until
+  // the bounded caller result rejects. That is what prevents a timed-out
+  // request from being followed by a second overlapping XCTest traversal.
+  void native
+    .finally(() => {
+      if (iosSnapshotFlights.get(key) === flight) iosSnapshotFlights.delete(key);
+    })
+    .catch(() => undefined);
+  void result.catch(() => {
+    flight.timedOut = true;
+  });
+
+  return await result;
+}
+
 export async function snapshot(
   device: Device,
   opts?: { interactiveOnly?: boolean; raw?: boolean },
@@ -322,15 +423,11 @@ export async function snapshot(
   // runner dies. Fail fast so expect-screen/tour can use pixels instead.
   if (context?.kind === "device" && context.platform === "ios") {
     try {
-      const result = await Promise.race([
-        run(),
-        new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error("iOS snapshot timed out")), IOS_SNAPSHOT_TIMEOUT_MS);
-        }),
-      ]);
-      return (result.nodes ?? []) as SnapshotNode[];
+      const key = iosSnapshotKey(context);
+      return await snapshotIosSingleFlight(key!, opts?.interactiveOnly ?? false, run);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof IosSnapshotInFlightError) throw error;
       if (/session|open first|timed out/i.test(message)) {
         throw new Error("iOS snapshot needs an active XCTest session");
       }
