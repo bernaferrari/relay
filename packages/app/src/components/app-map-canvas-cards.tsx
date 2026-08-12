@@ -225,8 +225,10 @@ export function ScreenCard(props: {
   geometry: ScreenCardGeometry;
   src: () => string;
   orientationEvidence?: ScreenshotOrientationEvidence;
-  /** The selected recorded connection's source target, if one exists. */
-  sourceAnchor?: CanvasInteractionAnchor;
+  /** The exact recorded action that starts the selected connection, if known. */
+  selectedConnectionOrigin?: CanvasInteractionAnchor;
+  /** This screen is the source of the selected connection. */
+  connectionOrigin?: boolean;
   onRotationChange?: (rotation: ScreenshotRotation) => void;
   onNaturalSize?: (size: { width: number; height: number }) => void;
   showActions?: boolean;
@@ -275,9 +277,10 @@ export function ScreenCard(props: {
       role="group"
       aria-roledescription="screen"
       tabIndex={0}
-      aria-label={`${props.title} screen${props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
+      aria-label={`${props.title} screen${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
       data-app-map-here={props.here ? "true" : undefined}
+      data-app-map-connection-origin={props.connectionOrigin ? "true" : undefined}
       data-tip="Click to inspect · Enter opens details"
       class={cn(
         "group/screen absolute grid w-[240px] grid-rows-[24px_var(--screen-frame-height)] gap-[6px] overflow-visible text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
@@ -385,7 +388,15 @@ export function ScreenCard(props: {
             }}
           />
         </Show>
-        <Show when={!props.editing && props.here}>
+        <Show when={!props.editing && props.connectionOrigin}>
+          <span
+            class="absolute left-[calc(100%+4px)] shrink-0 whitespace-nowrap rounded-[5px] bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--text-interactive-base)]"
+            data-tip="Selected path starts on this screen"
+          >
+            Origin
+          </span>
+        </Show>
+        <Show when={!props.editing && !props.connectionOrigin && props.here}>
           <span class="absolute left-0 inline-flex shrink-0 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--icon-success-base)]">
             <i class="size-1.5 rounded-full bg-current motion-safe:animate-pulse" />
             Here
@@ -394,6 +405,7 @@ export function ScreenCard(props: {
         <Show
           when={
             !props.editing &&
+            !props.connectionOrigin &&
             !props.here &&
             screenCardStartMarkerVisible(props.title, props.isFlowStart)
           }
@@ -472,9 +484,9 @@ export function ScreenCard(props: {
                 onError={() => setImageFailed(true)}
                 onRotationChange={props.onRotationChange}
                 overlay={
-                  props.sourceAnchor
+                  props.selectedConnectionOrigin
                     ? ({ rotation }) => {
-                        const anchor = props.sourceAnchor!;
+                        const anchor = props.selectedConnectionOrigin!;
                         const point = companionLogicalPointToDisplayed(anchor.point, rotation);
                         const rect = anchor.rect
                           ? companionLogicalRectToDisplayed(anchor.rect, rotation)
@@ -482,13 +494,13 @@ export function ScreenCard(props: {
                         return (
                           <div
                             class="pointer-events-none absolute inset-0 z-[2]"
-                            aria-label="Recorded step target"
-                            data-recorded-map-target
+                            aria-hidden="true"
+                            data-connection-origin-target
                           >
                             <Show when={rect}>
                               {(value) => (
                                 <div
-                                  class="absolute rounded-[3px] border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_10px_color-mix(in_srgb,var(--text-interactive-base)_32%,transparent)]"
+                                  class="absolute rounded-[4px] border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_12px_color-mix(in_srgb,var(--text-interactive-base)_36%,transparent)]"
                                   style={{
                                     left: `${value().x * 100}%`,
                                     top: `${value().y * 100}%`,
@@ -499,7 +511,7 @@ export function ScreenCard(props: {
                               )}
                             </Show>
                             <span
-                              class="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/28%)]"
+                              class="absolute size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--background-base)] bg-[var(--text-interactive-base)] shadow-[0_1px_5px_rgb(0_0_0/34%)]"
                               style={{
                                 left: `${point.x * 100}%`,
                                 top: `${point.y * 100}%`,

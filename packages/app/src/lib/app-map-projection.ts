@@ -274,7 +274,9 @@ export function mergeAppMapProjection(
       const connectionSteps = connectionStepsFromActions(connection.actions);
       const recordings = connection.actions.filter((action) => action.kind === "recorded");
       const stepIds = connectionSteps.flatMap((step) => (step.id ? [step.id] : []));
-      const sourceAnchor = sourceAnchorForSteps(connectionSteps);
+      const sourceAnchor: CanvasInteractionAnchor | undefined = connection.sourceAnchor
+        ? structuredClone(connection.sourceAnchor)
+        : sourceAnchorForSteps(connectionSteps);
       const evidenceIds = recordings.flatMap((action) => action.evidenceIds);
       const firstRecording = recordings[0];
       const mode = connection.actions.some((action) => action.kind === "routine")

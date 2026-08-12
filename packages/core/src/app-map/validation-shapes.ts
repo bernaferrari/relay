@@ -311,6 +311,37 @@ function assertConnectionPresentation(presentation: ConnectionPresentation, labe
   }
 }
 
+function assertNormalizedCoordinate(value: unknown, label: string): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    appMapFail("invalid-map", `${label} must be a finite coordinate between 0 and 1`);
+  }
+}
+
+function assertConnectionSourceAnchor(value: unknown, label: string): void {
+  const anchor = objectValue(value, label);
+  const point = objectValue(anchor.point, `${label}.point`);
+  assertNormalizedCoordinate(point.x, `${label}.point.x`);
+  assertNormalizedCoordinate(point.y, `${label}.point.y`);
+  if (anchor.rect === undefined) return;
+
+  const rect = objectValue(anchor.rect, `${label}.rect`);
+  const x = rect.x;
+  const y = rect.y;
+  const width = rect.width;
+  const height = rect.height;
+  assertNormalizedCoordinate(x, `${label}.rect.x`);
+  assertNormalizedCoordinate(y, `${label}.rect.y`);
+  if (typeof width !== "number" || !Number.isFinite(width) || width <= 0 || width > 1) {
+    appMapFail("invalid-map", `${label}.rect.width must be between 0 and 1`);
+  }
+  if (typeof height !== "number" || !Number.isFinite(height) || height <= 0 || height > 1) {
+    appMapFail("invalid-map", `${label}.rect.height must be between 0 and 1`);
+  }
+  if (x + width > 1 + Number.EPSILON || y + height > 1 + Number.EPSILON) {
+    appMapFail("invalid-map", `${label}.rect must remain within the normalized viewport`);
+  }
+}
+
 export function assertConnection(connection: Connection, scope: AppMapScope, label: string): void {
   assertEntity(connection, scope, label);
   identifier(connection.fromScreenId, `${label}.fromScreenId`);
@@ -325,6 +356,8 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   if (!(connection.state === "draft" || connection.state === "ready"))
     appMapFail("invalid-map", `${label}.state is unsupported`);
   assertActions(connection.actions, `${label}.actions`);
+  if (connection.sourceAnchor !== undefined)
+    assertConnectionSourceAnchor(connection.sourceAnchor, `${label}.sourceAnchor`);
   if (connection.presentation !== undefined)
     assertConnectionPresentation(connection.presentation, `${label}.presentation`);
 }

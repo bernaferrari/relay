@@ -4,6 +4,7 @@ import type {
   ConnectionPort,
   ConnectionPresentation,
 } from "@relay/protocol";
+import { smartElbowPoints, type ConnectorPortDirection } from "./app-map-connector-routing";
 import type { MapTreeNode } from "./app-map-tree";
 
 export type CanvasPoint = { x: number; y: number };
@@ -100,17 +101,19 @@ function arrowPathAt(tip: CanvasPoint, tangentPoint: CanvasPoint, strokeWidth: n
   const normalX = -tangentY;
   const normalY = tangentX;
   const extraWeight = Math.max(0, strokeWidth - 1);
-  const length = 8.5 + extraWeight * 0.75;
-  const halfWidth = 4.25 + extraWeight * 0.4;
-  const baseX = tip.x - tangentX * length;
-  const baseY = tip.y - tangentY * length;
+  // Figma's line arrow is two 45° strokes at the path endpoint. One shared
+  // projection keeps both wings equal instead of producing a narrow, swept
+  // chevron whose terminal can look hooked on a shallow curve.
+  const wing = 7 + extraWeight * 0.75;
+  const baseX = tip.x - tangentX * wing;
+  const baseY = tip.y - tangentY * wing;
   const first = {
-    x: baseX + normalX * halfWidth,
-    y: baseY + normalY * halfWidth,
+    x: baseX + normalX * wing,
+    y: baseY + normalY * wing,
   };
   const second = {
-    x: baseX - normalX * halfWidth,
-    y: baseY - normalY * halfWidth,
+    x: baseX - normalX * wing,
+    y: baseY - normalY * wing,
   };
 
   return `M ${first.x} ${first.y} L ${tip.x} ${tip.y} L ${second.x} ${second.y}`;
@@ -131,6 +134,38 @@ export const MAX_CANVAS_SCALE = 2;
 const MIN_FIT_CANVAS_SCALE = 0.06;
 const BRANCH_COLUMN_GAP = 136;
 const BRANCH_ROW_GAP = 48;
+/** Keep the terminal arrow visually associated with its destination without
+ * making it look like it pierces the screen/device frame. */
+const CONNECTOR_TARGET_GAP = 12;
+const CONNECTOR_TARGET_GAP_SCREEN_PIXELS = 8;
+/** A nearly facing automatic pair should look like the single intentional
+ * gesture it is, not a two-corner dogleg. Keep this in world space so the
+ * decision does not flicker while the person zooms. */
+const DIRECT_FACING_ALIGNMENT = 20;
+const DIRECT_PATH_EPSILON = 0.01;
+const DIRECT_FACING_MIN_FORWARD_DISTANCE = 16;
+const MIN_CUBIC_PULL = 8;
+const MAX_CUBIC_PULL_FRACTION = 0.42;
+/** A curve needs a visibly straight arrival, not only an infinitesimal Bézier
+ * tangent at the arrowhead. This stays world-space so it reads consistently
+ * as the canvas zooms. */
+const CURVE_TERMINAL_LEAD_IN = 32;
+/** Ignore sub-pixel-to-a-few-pixel pointer noise on a computed source fan.
+ * This is presentation behavior, never a migration or persistence rewrite. */
+const AUTOMATIC_FAN_CURVE_JITTER_RADIUS = 8;
+
+/**
+ * Resolve the FigJam-style terminal clearance in world coordinates. Keeping
+ * its rendered size constant means the deliberate air gap remains visible at
+ * both the readable zoom floor and close inspection zoom, rather than
+ * disappearing when a dense map is zoomed out.
+ */
+export function connectorTargetGapForViewport(viewportScale?: number): number {
+  if (viewportScale === undefined || !Number.isFinite(viewportScale) || viewportScale <= 0) {
+    return CONNECTOR_TARGET_GAP;
+  }
+  return CONNECTOR_TARGET_GAP_SCREEN_PIXELS / viewportScale;
+}
 
 export type ScreenCardGeometry = {
   width: number;
@@ -167,6 +202,31 @@ export function screenFrameBounds(
   const top = position.y + geometry.frameTop;
   const right = left + geometry.frameWidth;
   const bottom = top + geometry.frameHeight;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+/** The actual screenshot rectangle inside a screen frame. Portrait previews
+ * may reserve a small horizontal gutter so a very narrow device remains
+ * legible; interaction anchors must use this media box rather than the wider
+ * card frame or the highlighted action and its connector will drift apart. */
+export function screenMediaBounds(
+  position: CanvasPoint,
+  geometry: Pick<
+    ScreenCardGeometry,
+    "frameLeft" | "frameTop" | "frameWidth" | "frameHeight" | "mediaWidth" | "mediaHeight"
+  >,
+): CanvasFrameBounds {
+  const left = position.x + geometry.frameLeft + (geometry.frameWidth - geometry.mediaWidth) / 2;
+  const top = position.y + geometry.frameTop + (geometry.frameHeight - geometry.mediaHeight) / 2;
+  const right = left + geometry.mediaWidth;
+  const bottom = top + geometry.mediaHeight;
   return {
     left,
     top,
@@ -343,6 +403,10 @@ export function canvasEdgeGeometry(
     sourceAnchor?: CanvasInteractionAnchor;
     sourceRotation?: CanvasScreenRotation;
     presentation?: ConnectionPresentation;
+    /** Computed, render-only source fan provenance. Never persisted. */
+    automaticSourceLane?: boolean;
+    /** Render-only world-space clearance for the terminal arrowhead. */
+    targetGap?: number;
   },
   nodes: MapTreeNode[],
   positionFor: (node: MapTreeNode) => CanvasPoint,
@@ -370,64 +434,145 @@ export function canvasEdgeGeometry(
     ? pointInDisplayedFrame(sourceAnchor.point, edge.sourceRotation ?? "none")
     : undefined;
   const fromFrame = screenFrameBounds(fromPosition, fromGeometry);
+  const fromMedia = screenMediaBounds(fromPosition, fromGeometry);
   const toFrame = screenFrameBounds(toPosition, toGeometry);
-  const automaticDirection = relativePortDirection(fromFrame, toFrame);
-  const direction = explicitPort(edge.presentation?.sourcePort) ?? automaticDirection;
-  const targetDirection =
-    explicitPort(edge.presentation?.targetPort) ?? oppositePortDirection(automaticDirection);
+  const automaticPorts = autoConnectorPortPair(fromFrame, toFrame);
+  const direction = explicitPort(edge.presentation?.sourcePort) ?? automaticPorts.source;
+  const targetDirection = explicitPort(edge.presentation?.targetPort) ?? automaticPorts.target;
   const defaultStart = portPoint(fromFrame, direction, edge.presentation?.sourceOffset);
-  const start =
-    sourcePoint && !explicitPort(edge.presentation?.sourcePort)
-      ? {
-          x: fromFrame.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.frameWidth,
-          y: fromFrame.top + Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.frameHeight,
-        }
-      : defaultStart;
-  const end = portPoint(toFrame, targetDirection, edge.presentation?.targetOffset);
-  const route = edge.presentation?.route ?? "curve";
+  const start = sourcePoint
+    ? {
+        x: fromMedia.left + Math.max(0, Math.min(1, sourcePoint.x)) * fromGeometry.mediaWidth,
+        y: fromMedia.top + Math.max(0, Math.min(1, sourcePoint.y)) * fromGeometry.mediaHeight,
+      }
+    : defaultStart;
+  // A connector always arrives at the centre of its chosen target edge. Fan
+  // lanes may guide the route before its terminal segment, but they never
+  // obscure where the arrow actually lands on the destination screen.
+  const targetAttachment = portPoint(toFrame, targetDirection);
+  const targetVector = portDirectionVector(targetDirection);
+  // Match FigJam's deliberate air gap: the arrow tip stops just outside the
+  // target rather than painting into the screen preview. The route still uses
+  // the chosen target side for its final tangent.
+  const targetGap =
+    edge.targetGap !== undefined && Number.isFinite(edge.targetGap) && edge.targetGap >= 0
+      ? edge.targetGap
+      : CONNECTOR_TARGET_GAP;
+  const end = {
+    x: targetAttachment.x + targetVector.x * targetGap,
+    y: targetAttachment.y + targetVector.y * targetGap,
+  };
+  const route = edge.presentation?.route ?? "elbow";
+  const elbowPoints = () =>
+    smartElbowPoints({
+      start,
+      end,
+      sourceDirection: direction,
+      targetDirection,
+      sourceFrame: fromFrame,
+      targetFrame: toFrame,
+      obstacleFrames: nodes.map((node) =>
+        screenFrameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry()),
+      ),
+      sourceOffset: edge.presentation?.sourceOffset,
+      // Target offsets are internal rail hints only. The visible terminal
+      // above remains centred regardless of legacy or computed lane data.
+      targetOffset: edge.presentation?.targetOffset,
+      automaticSourceLane: edge.automaticSourceLane,
+    });
   if (route === "straight") return straightEdge(start, end);
-  if (route === "elbow") return elbowEdge(start, end, direction, targetDirection);
-  // Every ordinary connection uses the same curve model. Older routing
-  // switched between orthogonal detours and cubics when a card crossed an
-  // eight-pixel corridor; a one-pixel drag could therefore redraw the whole
-  // wire. Stable topology is more important than speculative obstacle
-  // avoidance—the layout and manual snapping keep cards out of the curve.
-  if (edge.kind === "return" && !framesAreSeparated(fromFrame, toFrame)) {
-    const railY = Math.min(start.y, end.y) - 34;
-    return cubicEdge(start, end, { x: start.x, y: railY }, { x: end.x, y: railY });
+  // A singleton automatic connection that is already aligned with its
+  // opposing target edge does not need a cosmetic elbow. Keep computed fan
+  // lanes on their reserved nested trunks: selecting a shortest route for an
+  // individual fan member would make it cut through a sibling's rail.
+  if (
+    route === "elbow" &&
+    edge.presentation?.sourceOffset === undefined &&
+    !edge.automaticSourceLane &&
+    directFacingPathIsClear(start, end, direction, targetDirection, from.id, to.id, nodes, positionFor, geometryFor)
+  ) {
+    return straightEdge(start, end);
   }
+  if (route === "elbow") return elbowEdge(elbowPoints());
 
-  const vertical = direction === "top" || direction === "bottom";
-  const distance = vertical ? Math.abs(end.y - start.y) : Math.abs(end.x - start.x);
-  const pull = Math.max(36, distance * 0.42);
-  const sign = direction === "right" || direction === "bottom" ? 1 : -1;
-  const control1 = vertical
-    ? { x: start.x, y: start.y + sign * pull }
-    : { x: start.x + sign * pull, y: start.y };
-  const control2 = vertical
-    ? { x: end.x, y: end.y - sign * pull }
-    : { x: end.x - sign * pull, y: end.y };
   const offset = edge.presentation?.controlOffset;
-  if (!offset) return cubicEdge(start, end, control1, control2);
+  const sourceVector = portDirectionVector(direction);
+  const forwardDistance = cubicForwardDistance(start, end, direction, targetDirection);
+  // A curve still needs a viable opposing exit/entry pair. Same-side and
+  // near-zero spans would fold a free cubic back on itself, so retain the
+  // obstacle-safe backbone for only those impossible geometries.
+  if (forwardDistance === undefined || forwardDistance < DIRECT_FACING_MIN_FORWARD_DISTANCE) {
+    return elbowEdge(elbowPoints());
+  }
+  // Curve is an explicit selected route. On an automatic fan, a default or
+  // tiny pointer-jitter offset becomes a visibly smoother compound cubic
+  // along the reserved no-crossing backbone—not a Bent/Q route that appears
+  // unchanged until someone drags an anchor. A meaningful anchor movement
+  // remains a free authored cubic below.
+  if (edge.automaticSourceLane && !hasMeaningfulAutomaticFanCurveOffset(offset)) {
+    return cubicBackboneEdge(elbowPoints());
+  }
+  // Reserve the final part of a free curve for a real straight run into the
+  // selected target port. The cubic ends at `leadStart` with a matching
+  // target-direction derivative, then the line continues G1-smoothly into
+  // the arrow tip. Very short viable spans simply reserve what they can.
+  const terminalLead = Math.min(
+    CURVE_TERMINAL_LEAD_IN,
+    Math.max(0, forwardDistance - DIRECT_FACING_MIN_FORWARD_DISTANCE),
+  );
+  const leadStart = {
+    x: end.x + targetVector.x * terminalLead,
+    y: end.y + targetVector.y * terminalLead,
+  };
+  const curveForwardDistance = forwardDistance - terminalLead;
+  const naturalPull = Math.hypot(leadStart.x - start.x, leadStart.y - start.y) * 0.35;
+  const pull = Math.min(
+    Math.max(MIN_CUBIC_PULL, naturalPull),
+    curveForwardDistance * MAX_CUBIC_PULL_FRACTION,
+  );
+  const baseControl1 = {
+    x: start.x + sourceVector.x * pull,
+    y: start.y + sourceVector.y * pull,
+  };
+  const baseControl2 = {
+    x: leadStart.x + targetVector.x * pull,
+    y: leadStart.y + targetVector.y * pull,
+  };
+  if (!offset) return cubicEdgeWithTerminalLeadIn(start, leadStart, end, baseControl1, baseControl2);
   // Moving both controls by 4/3 of the requested offset moves the cubic's
-  // midpoint by exactly that offset, so the drag handle stays under the
-  // pointer instead of lagging behind it.
-  const adjustment = { x: (offset.x * 4) / 3, y: (offset.y * 4) / 3 };
-  return cubicEdge(
+  // midpoint by exactly that offset. Clamp only the forward component so the
+  // two controls retain their source→target order; perpendicular shaping is
+  // still completely free and cannot create a loop along the connection.
+  const requested = { x: (offset.x * 4) / 3, y: (offset.y * 4) / 3 };
+  const forwardAdjustment = requested.x * sourceVector.x + requested.y * sourceVector.y;
+  const safeForwardAdjustment = Math.min(Math.max(forwardAdjustment, -pull), pull);
+  const perpendicularAdjustment = {
+    x: requested.x - sourceVector.x * forwardAdjustment,
+    y: requested.y - sourceVector.y * forwardAdjustment,
+  };
+  const adjustment = {
+    x: perpendicularAdjustment.x + sourceVector.x * safeForwardAdjustment,
+    y: perpendicularAdjustment.y + sourceVector.y * safeForwardAdjustment,
+  };
+  return cubicEdgeWithTerminalLeadIn(
     start,
+    leadStart,
     end,
-    { x: control1.x + adjustment.x, y: control1.y + adjustment.y },
-    { x: control2.x + adjustment.x, y: control2.y + adjustment.y },
+    { x: baseControl1.x + adjustment.x, y: baseControl1.y + adjustment.y },
+    { x: baseControl2.x + adjustment.x, y: baseControl2.y + adjustment.y },
   );
 }
 
-type EdgePortDirection = "left" | "right" | "top" | "bottom";
+type EdgePortDirection = ConnectorPortDirection;
 
 function explicitPort(port: ConnectionPort | undefined): EdgePortDirection | undefined {
   return port && port !== "auto" ? port : undefined;
 }
 
-function relativePortDirection(from: CanvasFrameBounds, to: CanvasFrameBounds): EdgePortDirection {
+function fallbackAutoPortDirection(
+  from: CanvasFrameBounds,
+  to: CanvasFrameBounds,
+): EdgePortDirection {
   if (to.left >= from.right) return "right";
   if (to.right <= from.left) return "left";
   if (to.top >= from.bottom) return "bottom";
@@ -439,11 +584,130 @@ function relativePortDirection(from: CanvasFrameBounds, to: CanvasFrameBounds): 
   return dy >= 0 ? "bottom" : "top";
 }
 
+/**
+ * Pick the semantic automatic port pair from the real visible frames. A card
+ * arranged to the right is a right→left connection even when it sits lower on
+ * the canvas: changing it to bottom→top makes the endpoint look unrelated to
+ * the diagram's reading direction. Vertical ports take over only when the
+ * frames overlap horizontally. Explicit endpoint ports bypass this chooser.
+ */
+export function autoConnectorPortPair(
+  from: CanvasFrameBounds,
+  to: CanvasFrameBounds,
+): { source: EdgePortDirection; target: EdgePortDirection } {
+  if (to.left >= from.right) return { source: "right", target: "left" };
+  if (to.right <= from.left) return { source: "left", target: "right" };
+  if (to.top >= from.bottom) return { source: "bottom", target: "top" };
+  if (to.bottom <= from.top) return { source: "top", target: "bottom" };
+  // A slight card overlap makes the normal facing side physically
+  // impossible: its source attachment would already be inside the target
+  // (or vice versa). This is the one automatic exception to the diagram's
+  // usual reading direction. Pick a valid exterior pair instead of drawing
+  // a backwards line through a screen. Explicit ports never reach here.
+  const exterior = overlappingFramePortPair(from, to);
+  if (exterior) return exterior;
+  const source = fallbackAutoPortDirection(from, to);
+  return { source, target: oppositePortDirection(source) };
+}
+
+type OverlapPortCandidate = {
+  source: EdgePortDirection;
+  target: EdgePortDirection;
+  score: number;
+};
+
+function overlappingFramePortPair(
+  from: CanvasFrameBounds,
+  to: CanvasFrameBounds,
+): { source: EdgePortDirection; target: EdgePortDirection } | undefined {
+  const directions: EdgePortDirection[] = ["bottom", "top", "left", "right"];
+  const candidates: OverlapPortCandidate[] = [];
+  for (const source of directions) {
+    const sourcePoint = portPoint(from, source);
+    if (pointIsInsideFrame(sourcePoint, to)) continue;
+    for (const target of directions) {
+      const targetPoint = portPoint(to, target);
+      if (pointIsInsideFrame(targetPoint, from)) continue;
+      const sourceVector = portDirectionVector(source);
+      const forward =
+        (targetPoint.x - sourcePoint.x) * sourceVector.x +
+        (targetPoint.y - sourcePoint.y) * sourceVector.y;
+      const opposing = target === oppositePortDirection(source);
+      const bends = opposing && forward > DIRECT_PATH_EPSILON ? 2 : opposing ? 4 : 3;
+      const clearance = Math.min(
+        portOutwardClearance(sourcePoint, source, to),
+        portOutwardClearance(targetPoint, target, from),
+      );
+      // Prioritize a clear outward exit, then fewer bends, then a compact
+      // route. The stable direction order above breaks true geometric ties.
+      const clearancePenalty = Number.isFinite(clearance)
+        ? Math.max(0, DIRECT_FACING_MIN_FORWARD_DISTANCE - clearance)
+        : 0;
+      candidates.push({
+        source,
+        target,
+        score:
+          clearancePenalty * 100_000 +
+          bends * 1_000 +
+          Math.abs(targetPoint.x - sourcePoint.x) + Math.abs(targetPoint.y - sourcePoint.y),
+      });
+    }
+  }
+  if (!candidates.length) return undefined;
+  const best = candidates.reduce((current, candidate) =>
+    candidate.score < current.score ? candidate : current,
+  );
+  return { source: best.source, target: best.target };
+}
+
+function pointIsInsideFrame(point: CanvasPoint, frame: CanvasFrameBounds): boolean {
+  return (
+    point.x > frame.left + DIRECT_PATH_EPSILON &&
+    point.x < frame.right - DIRECT_PATH_EPSILON &&
+    point.y > frame.top + DIRECT_PATH_EPSILON &&
+    point.y < frame.bottom - DIRECT_PATH_EPSILON
+  );
+}
+
+/** Distance available while leaving a port before the route would run into
+ * another frame. Infinity means the port immediately heads away from it. */
+function portOutwardClearance(
+  point: CanvasPoint,
+  direction: EdgePortDirection,
+  frame: CanvasFrameBounds,
+): number {
+  if (direction === "right") {
+    return point.y > frame.top && point.y < frame.bottom && point.x <= frame.left
+      ? frame.left - point.x
+      : Infinity;
+  }
+  if (direction === "left") {
+    return point.y > frame.top && point.y < frame.bottom && point.x >= frame.right
+      ? point.x - frame.right
+      : Infinity;
+  }
+  if (direction === "bottom") {
+    return point.x > frame.left && point.x < frame.right && point.y <= frame.top
+      ? frame.top - point.y
+      : Infinity;
+  }
+  return point.x > frame.left && point.x < frame.right && point.y >= frame.bottom
+    ? point.y - frame.bottom
+    : Infinity;
+}
+
 function oppositePortDirection(direction: EdgePortDirection): EdgePortDirection {
   if (direction === "left") return "right";
   if (direction === "right") return "left";
   if (direction === "top") return "bottom";
   return "top";
+}
+
+function portDirectionVector(direction: EdgePortDirection): CanvasPoint {
+  if (direction === "left") return { x: -1, y: 0 };
+  if (direction === "right") return { x: 1, y: 0 };
+  if (direction === "top") return { x: 0, y: -1 };
+  return { x: 0, y: 1 };
 }
 
 function portPoint(
@@ -464,6 +728,100 @@ function portPoint(
   return { x: frame.left + (frame.right - frame.left) * offset, y: frame.bottom };
 }
 
+/** Return the available distance in the source's forward direction when a
+ * cubic enters through the opposing target port. Undefined means a cubic
+ * would need to reverse direction before arriving, which is not a safe
+ * default shape. */
+function cubicForwardDistance(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+): number | undefined {
+  if (targetDirection !== oppositePortDirection(sourceDirection)) return undefined;
+  const vector = portDirectionVector(sourceDirection);
+  const distance = (end.x - start.x) * vector.x + (end.y - start.y) * vector.y;
+  return distance > DIRECT_PATH_EPSILON ? distance : undefined;
+}
+
+function hasMeaningfulAutomaticFanCurveOffset(offset: CanvasPoint | undefined): boolean {
+  return (
+    offset !== undefined &&
+    Math.hypot(offset.x, offset.y) > AUTOMATIC_FAN_CURVE_JITTER_RADIUS
+  );
+}
+
+/**
+ * Decide whether an automatic facing pair can be rendered as one deliberate
+ * line. This is intentionally stricter than generic collision routing: it
+ * only handles a near-aligned pair, and it never bypasses a computed source
+ * fan lane. That makes the short direct route safe without sacrificing the
+ * deterministic no-crossing invariant of a fan-out.
+ */
+function directFacingPathIsClear(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  sourceDirection: EdgePortDirection,
+  targetDirection: EdgePortDirection,
+  sourceId: string,
+  targetId: string,
+  nodes: readonly MapTreeNode[],
+  positionFor: (node: MapTreeNode) => CanvasPoint,
+  geometryFor: ((node: MapTreeNode) => ScreenCardGeometry) | undefined,
+): boolean {
+  if (targetDirection !== oppositePortDirection(sourceDirection)) return false;
+  if (
+    (cubicForwardDistance(start, end, sourceDirection, targetDirection) ?? 0) <
+    DIRECT_FACING_MIN_FORWARD_DISTANCE
+  ) {
+    return false;
+  }
+  const crossAxisDistance =
+    sourceDirection === "left" || sourceDirection === "right"
+      ? Math.abs(start.y - end.y)
+      : Math.abs(start.x - end.x);
+  if (crossAxisDistance > DIRECT_FACING_ALIGNMENT) return false;
+  return nodes.every((node) => {
+    if (node.id === sourceId || node.id === targetId) return true;
+    return !lineCrossesFrameInterior(
+      start,
+      end,
+      screenFrameBounds(positionFor(node), geometryFor?.(node) ?? screenCardGeometry()),
+    );
+  });
+}
+
+/** Strict line-vs-rectangle test. Endpoints on an edge are not considered a
+ * collision, but entering a third screen's visible frame is. This supports
+ * the tiny direct-route fast path above; the general router still handles
+ * all longer obstacle detours with its normal clearance rails. */
+function lineCrossesFrameInterior(
+  start: CanvasPoint,
+  end: CanvasPoint,
+  frame: CanvasFrameBounds,
+): boolean {
+  const intervalForAxis = (
+    origin: number,
+    delta: number,
+    minimum: number,
+    maximum: number,
+  ): [number, number] => {
+    if (Math.abs(delta) < DIRECT_PATH_EPSILON) {
+      return origin > minimum + DIRECT_PATH_EPSILON && origin < maximum - DIRECT_PATH_EPSILON
+        ? [-Infinity, Infinity]
+        : [Infinity, -Infinity];
+    }
+    const first = (minimum - origin) / delta;
+    const second = (maximum - origin) / delta;
+    return [Math.min(first, second), Math.max(first, second)];
+  };
+  const x = intervalForAxis(start.x, end.x - start.x, frame.left, frame.right);
+  const y = intervalForAxis(start.y, end.y - start.y, frame.top, frame.bottom);
+  const entersAt = Math.max(0, x[0], y[0]);
+  const exitsAt = Math.min(1, x[1], y[1]);
+  return entersAt < exitsAt - DIRECT_PATH_EPSILON;
+}
+
 function straightEdge(start: CanvasPoint, end: CanvasPoint): CanvasEdgeGeometry {
   return {
     path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`,
@@ -474,29 +832,70 @@ function straightEdge(start: CanvasPoint, end: CanvasPoint): CanvasEdgeGeometry 
   };
 }
 
-function elbowEdge(
-  start: CanvasPoint,
-  end: CanvasPoint,
-  sourceDirection: EdgePortDirection,
-  targetDirection: EdgePortDirection,
-): CanvasEdgeGeometry {
-  const horizontalSource = sourceDirection === "left" || sourceDirection === "right";
-  const horizontalTarget = targetDirection === "left" || targetDirection === "right";
-  const bend =
-    horizontalSource && horizontalTarget
-      ? { x: (start.x + end.x) / 2, y: start.y, x2: (start.x + end.x) / 2, y2: end.y }
-      : !horizontalSource && !horizontalTarget
-        ? { x: start.x, y: (start.y + end.y) / 2, x2: end.x, y2: (start.y + end.y) / 2 }
-        : horizontalSource
-          ? { x: end.x, y: start.y, x2: end.x, y2: end.y }
-          : { x: start.x, y: end.y, x2: end.x, y2: end.y };
-  const points = [start, { x: bend.x, y: bend.y }, { x: bend.x2, y: bend.y2 }, end].filter(
-    (point, index, all) =>
-      index === 0 || point.x !== all[index - 1]!.x || point.y !== all[index - 1]!.y,
-  );
+function elbowEdge(points: CanvasPoint[]): CanvasEdgeGeometry {
   const path = roundedOrthogonalPath(points, 14);
-  const middle = points[Math.floor((points.length - 1) / 2)] ?? start;
-  return { path, labelPoint: middle, startPoint: start, endPoint: end, hitPoints: points };
+  const start = points[0] ?? { x: 0, y: 0 };
+  const end = points.at(-1) ?? start;
+  return {
+    path,
+    labelPoint: pointAlongPolyline(points, 0.5),
+    startPoint: start,
+    endPoint: end,
+    hitPoints: points,
+  };
+}
+
+/** A selected Curve on an automatic fan stays inside the same collision-safe
+ * backbone as Bent, but its larger cubic corners make the route visibly and
+ * immediately distinct. Retaining the polyline hit points keeps marquee,
+ * arrow tangent, and crossing checks deterministic. */
+function cubicBackboneEdge(points: CanvasPoint[]): CanvasEdgeGeometry {
+  const start = points[0] ?? { x: 0, y: 0 };
+  const end = points.at(-1) ?? start;
+  if (points.length === 2) {
+    const control1 = {
+      x: start.x + (end.x - start.x) / 3,
+      y: start.y + (end.y - start.y) / 3,
+    };
+    const control2 = {
+      x: start.x + ((end.x - start.x) * 2) / 3,
+      y: start.y + ((end.y - start.y) * 2) / 3,
+    };
+    return cubicEdge(start, end, control1, control2);
+  }
+  return {
+    path: roundedOrthogonalCubicPath(points, 28),
+    labelPoint: pointAlongPolyline(points, 0.5),
+    startPoint: start,
+    endPoint: end,
+    hitPoints: points,
+  };
+}
+
+function pointAlongPolyline(points: readonly CanvasPoint[], fraction: number): CanvasPoint {
+  if (!points.length) return { x: 0, y: 0 };
+  if (points.length === 1) return points[0]!;
+  const lengths = points
+    .slice(1)
+    .map((point, index) => Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (!total) return points[0]!;
+  const target = total * fraction;
+  let travelled = 0;
+  for (const [index, length] of lengths.entries()) {
+    if (travelled + length < target) {
+      travelled += length;
+      continue;
+    }
+    const start = points[index]!;
+    const end = points[index + 1]!;
+    const progress = (target - travelled) / Math.max(length, 0.001);
+    return {
+      x: start.x + (end.x - start.x) * progress,
+      y: start.y + (end.y - start.y) * progress,
+    };
+  }
+  return points.at(-1)!;
 }
 
 function roundedOrthogonalPath(points: readonly CanvasPoint[], radius: number): string {
@@ -524,10 +923,40 @@ function roundedOrthogonalPath(points: readonly CanvasPoint[], radius: number): 
   return `${path} L ${end.x} ${end.y}`;
 }
 
-function framesAreSeparated(from: CanvasFrameBounds, to: CanvasFrameBounds): boolean {
-  return (
-    from.right <= to.left || to.right <= from.left || from.bottom <= to.top || to.bottom <= from.top
-  );
+/** Cubic equivalent of the rounded elbow. Each corner uses the exact cubic
+ * conversion of a quadratic corner, with a larger radius than Bent so a
+ * selected Curve has a clear visual change without widening into siblings. */
+function roundedOrthogonalCubicPath(points: readonly CanvasPoint[], radius: number): string {
+  if (points.length < 2) return "";
+  let path = `M ${points[0]!.x} ${points[0]!.y}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1]!;
+    const corner = points[index]!;
+    const next = points[index + 1]!;
+    const beforeLength = Math.hypot(corner.x - previous.x, corner.y - previous.y);
+    const afterLength = Math.hypot(next.x - corner.x, next.y - corner.y);
+    const cornerRadius = Math.min(radius, beforeLength / 2, afterLength / 2);
+    if (cornerRadius <= 0) continue;
+    const enter = {
+      x: corner.x + ((previous.x - corner.x) / beforeLength) * cornerRadius,
+      y: corner.y + ((previous.y - corner.y) / beforeLength) * cornerRadius,
+    };
+    const exit = {
+      x: corner.x + ((next.x - corner.x) / afterLength) * cornerRadius,
+      y: corner.y + ((next.y - corner.y) / afterLength) * cornerRadius,
+    };
+    const control1 = {
+      x: enter.x + ((corner.x - enter.x) * 2) / 3,
+      y: enter.y + ((corner.y - enter.y) * 2) / 3,
+    };
+    const control2 = {
+      x: exit.x + ((corner.x - exit.x) * 2) / 3,
+      y: exit.y + ((corner.y - exit.y) * 2) / 3,
+    };
+    path += ` L ${enter.x} ${enter.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${exit.x} ${exit.y}`;
+  }
+  const end = points.at(-1)!;
+  return `${path} L ${end.x} ${end.y}`;
 }
 
 function cubicEdge(
@@ -560,6 +989,50 @@ function cubicEdge(
           t ** 3 * end.y,
       };
     }),
+  };
+}
+
+/** A free cubic with a perceptible final run into its selected port. The
+ * final line is intentionally part of hit geometry so arrow orientation,
+ * marquee selection, and the visible terminal always agree. */
+function cubicEdgeWithTerminalLeadIn(
+  start: CanvasPoint,
+  leadStart: CanvasPoint,
+  end: CanvasPoint,
+  control1: CanvasPoint,
+  control2: CanvasPoint,
+): CanvasEdgeGeometry {
+  if (Math.hypot(end.x - leadStart.x, end.y - leadStart.y) < DIRECT_PATH_EPSILON) {
+    return cubicEdge(start, end, control1, control2);
+  }
+  const cubicPoints = Array.from({ length: 17 }, (_, index) => {
+    const t = index / 16;
+    const inverse = 1 - t;
+    return {
+      x:
+        inverse ** 3 * start.x +
+        3 * inverse ** 2 * t * control1.x +
+        3 * inverse * t ** 2 * control2.x +
+        t ** 3 * leadStart.x,
+      y:
+        inverse ** 3 * start.y +
+        3 * inverse ** 2 * t * control1.y +
+        3 * inverse * t ** 2 * control2.y +
+        t ** 3 * leadStart.y,
+    };
+  });
+  return {
+    path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${leadStart.x} ${leadStart.y} L ${end.x} ${end.y}`,
+    // Keep the curve's existing editable midpoint convention. Moving both
+    // handles by 4/3 of an offset therefore still moves this point exactly
+    // by the requested amount, independent of terminal clearance.
+    labelPoint: {
+      x: (start.x + 3 * control1.x + 3 * control2.x + leadStart.x) / 8,
+      y: (start.y + 3 * control1.y + 3 * control2.y + leadStart.y) / 8,
+    },
+    startPoint: start,
+    endPoint: end,
+    hitPoints: [...cubicPoints, end],
   };
 }
 

@@ -217,6 +217,56 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(result.appMap.activity["event-1"]?.subject.id, result.connectionId);
 });
 
+test("persists the recorded source control as normalized connection evidence", () => {
+  const before = observation("before", beforeFingerprint, "evidence-before");
+  before.bounds = { width: 1000, height: 2000 };
+  before.nodes = [
+    {
+      role: "button",
+      identifier: "settings.connectors",
+      label: "Connectors",
+      rect: { x: 120, y: 640, width: 760, height: 112 },
+    },
+  ];
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "session-source-anchor",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-source-anchor",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("open-connectors"),
+          steps: [
+            {
+              id: "tap-connectors",
+              kind: "tap",
+              target: {
+                identifier: "settings.connectors",
+                point: {
+                  x: 500,
+                  y: 696,
+                  referenceBounds: { width: 1000, height: 2000 },
+                },
+              },
+            },
+          ],
+        },
+      ],
+      before,
+      after: observation("after", afterFingerprint, "evidence-after"),
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-source-anchor"),
+  );
+
+  assert.deepEqual(result.appMap.connections[result.connectionId]?.sourceAnchor, {
+    point: { x: 0.5, y: 0.348 },
+    rect: { x: 0.12, y: 0.32, width: 0.76, height: 0.056 },
+  });
+});
+
 test("labels a recorded message transition from its meaningful action", () => {
   const result = commitAppMapRecording(
     mapFixture(),

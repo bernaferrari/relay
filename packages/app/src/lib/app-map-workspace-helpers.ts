@@ -14,10 +14,12 @@ import type { CanvasConnection } from "./app-map-connection-draft";
 import {
   canvasEdgeArrowPath,
   canvasEdgeGeometry,
+  connectorTargetGapForViewport,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   type CanvasBounds,
   type CanvasPoint,
+  type CanvasScreenRotation,
   type CanvasViewport,
   type ScreenCardGeometry,
 } from "./app-map-canvas-layout";
@@ -29,7 +31,11 @@ import {
 import type { TakeDestination } from "./app-map-canvas-graph";
 import { mapGroupGeometry } from "./app-map-groups";
 import { minimapPoint } from "./app-map-minimap";
-import { connectorAutoLanes, connectorPresentationWithAutoLane } from "./app-map-connector-lanes";
+import {
+  connectorAutoLanes,
+  connectorHasAutomaticSourceLane,
+  connectorPresentationWithAutoLane,
+} from "./app-map-connector-lanes";
 
 export function appMapLoadFailure(error: unknown): {
   title: string;
@@ -354,6 +360,8 @@ export function buildMinimapEdges(input: {
   connections: CanvasConnection[];
   positionFor: (node: MapTreeNode) => CanvasPoint;
   geometryForNode?: (node: MapTreeNode) => ScreenCardGeometry;
+  sourceRotationFor?: (screenId: string) => CanvasScreenRotation;
+  viewportScale?: number;
   selectedConnectionId: string | null;
   transitionStates: Record<string, AppMapRunPresentationState | undefined>;
 }) {
@@ -361,6 +369,9 @@ export function buildMinimapEdges(input: {
   const lanes = connectorAutoLanes(input.connections, (screenId) => {
     const node = nodes.get(screenId);
     return node ? input.positionFor(node) : undefined;
+  }, (screenId) => {
+    const node = nodes.get(screenId);
+    return node ? input.geometryForNode?.(node) : undefined;
   });
   return input.connections.flatMap((connection) => {
     const selected = input.selectedConnectionId === connection.id;
@@ -374,7 +385,10 @@ export function buildMinimapEdges(input: {
         to: connection.toScreenId,
         kind: connection.kind,
         sourceAnchor: connection.sourceAnchor,
+        sourceRotation: input.sourceRotationFor?.(connection.fromScreenId),
         presentation,
+        automaticSourceLane: connectorHasAutomaticSourceLane(connection, lanes),
+        targetGap: connectorTargetGapForViewport(input.viewportScale),
       },
       input.nodes,
       input.positionFor,
@@ -397,11 +411,17 @@ export function buildPresenceGeometry(input: {
   nodes: MapTreeNode[];
   connections: CanvasConnection[];
   positionFor: (node: MapTreeNode) => CanvasPoint;
+  geometryForNode?: (node: MapTreeNode) => ScreenCardGeometry;
+  sourceRotationFor?: (screenId: string) => CanvasScreenRotation;
+  viewportScale?: number;
 }) {
   const nodes = new Map(input.nodes.map((node) => [node.id, node]));
   const lanes = connectorAutoLanes(input.connections, (screenId) => {
     const node = nodes.get(screenId);
     return node ? input.positionFor(node) : undefined;
+  }, (screenId) => {
+    const node = nodes.get(screenId);
+    return node ? input.geometryForNode?.(node) : undefined;
   });
   return {
     screenPositions: Object.fromEntries(
@@ -416,10 +436,15 @@ export function buildPresenceGeometry(input: {
             to: connection.toScreenId,
             kind: connection.kind,
             sourceAnchor: connection.sourceAnchor,
+            sourceRotation: input.sourceRotationFor?.(connection.fromScreenId),
             presentation: connectorPresentationWithAutoLane(connection, lanes),
+            automaticSourceLane: connectorHasAutomaticSourceLane(connection, lanes),
+            targetGap: connectorTargetGapForViewport(input.viewportScale),
           },
           input.nodes,
           input.positionFor,
+          undefined,
+          input.geometryForNode,
         ).path,
       ]),
     ),

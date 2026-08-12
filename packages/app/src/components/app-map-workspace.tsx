@@ -14,6 +14,7 @@ import { type MapTreeNode } from "../lib/app-map-tree";
 import { canvasConnections, type CanvasConnection } from "../lib/app-map-connection-draft";
 import {
   connectorAutoLanes,
+  connectorHasAutomaticSourceLane,
   connectorPresentationWithAutoLane,
 } from "../lib/app-map-connector-lanes";
 import { connectionLabelMode } from "../lib/connection-presentation";
@@ -34,6 +35,7 @@ import {
   SCREEN_CARD_WIDTH,
   screenCardGeometry,
   type CanvasPoint,
+  type CanvasScreenRotation,
   type ScreenCardGeometry,
   type CanvasViewport,
 } from "../lib/app-map-canvas-layout";
@@ -294,6 +296,9 @@ export function AppMapWorkspace(props: {
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
   const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
   const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
+  const [canvasScreenRotations, setCanvasScreenRotations] = createSignal<
+    Record<string, CanvasScreenRotation>
+  >({});
 
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
   const [deviceCompanionOrientation, setDeviceCompanionOrientation] = createSignal<
@@ -309,12 +314,6 @@ export function AppMapWorkspace(props: {
   const canvasHistory = createAppMapCanvasHistory<AppMapCanvasState>();
   const positions = () => canvasState().positions;
   const positionFor = (node: MapTreeNode): CanvasPoint => positions()[node.id] ?? node;
-  const autoConnectionLanes = createMemo(() =>
-    connectorAutoLanes(connections(), (screenId) => {
-      const node = tree().nodes.find((candidate) => candidate.id === screenId);
-      return node ? positionFor(node) : undefined;
-    }),
-  );
   const resolvedPositions = createMemo(() =>
     Object.fromEntries(tree().nodes.map((node) => [node.id, positionFor(node)] as const)),
   );
@@ -325,6 +324,16 @@ export function AppMapWorkspace(props: {
     screenCardGeometry(orientationEvidenceForNode(node));
   const screenGeometries = createMemo<Record<string, ScreenCardGeometry>>(() =>
     Object.fromEntries(tree().nodes.map((node) => [node.id, geometryForNode(node)] as const)),
+  );
+  const autoConnectionLanes = createMemo(() =>
+    connectorAutoLanes(
+      connections(),
+      (screenId) => {
+        const node = tree().nodes.find((candidate) => candidate.id === screenId);
+        return node ? positionFor(node) : undefined;
+      },
+      (screenId) => screenGeometries()[screenId],
+    ),
   );
   const canvasGestures = useAppMapCanvasGestures({
     view,
@@ -350,7 +359,12 @@ export function AppMapWorkspace(props: {
             to: connection.toScreenId,
             kind: connection.kind,
             sourceAnchor: connection.sourceAnchor,
+            sourceRotation: canvasScreenRotations()[connection.fromScreenId],
             presentation: connectorPresentationWithAutoLane(connection, autoConnectionLanes()),
+            automaticSourceLane: connectorHasAutomaticSourceLane(
+              connection,
+              autoConnectionLanes(),
+            ),
           },
           tree().nodes,
           positionFor,
@@ -401,6 +415,7 @@ export function AppMapWorkspace(props: {
       setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
       setCapturedScreenUrls({});
+      setCanvasScreenRotations({});
       setRenamingNodeId(null);
       setContextSurface(null);
       setCaptureOpen(false);
@@ -629,6 +644,8 @@ export function AppMapWorkspace(props: {
       connections: connections(),
       positionFor,
       geometryForNode,
+      sourceRotationFor: (screenId) => canvasScreenRotations()[screenId] ?? "none",
+      viewportScale: view().scale,
       selectedConnectionId: selectedConnectionId(),
       transitionStates: Object.fromEntries(
         Object.entries(runProjection().transitions).map(([id, transition]) => [
@@ -646,6 +663,9 @@ export function AppMapWorkspace(props: {
       nodes: tree().nodes,
       connections: connections(),
       positionFor,
+      geometryForNode,
+      sourceRotationFor: (screenId) => canvasScreenRotations()[screenId] ?? "none",
+      viewportScale: view().scale,
     }),
   );
   const { remoteAwareness } = useAppMapPresence({
@@ -1500,6 +1520,11 @@ export function AppMapWorkspace(props: {
                     ""
                   }
                   orientationEvidenceFor={orientationEvidenceForNode}
+                  onScreenRotationChange={(nodeId, rotation) =>
+                    setCanvasScreenRotations((current) =>
+                      current[nodeId] === rotation ? current : { ...current, [nodeId]: rotation },
+                    )
+                  }
                   isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
                   screenRunState={(screenId) => runProjection().screens[screenId]?.state}
                   connectionRunState={(connectionId) =>

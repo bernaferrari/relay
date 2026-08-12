@@ -1,15 +1,11 @@
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import type {
-  CollaborationAwareness,
-  CanvasNote,
-  ConnectionPort,
-  ConnectionPresentation,
-} from "@relay/protocol";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import type { CollaborationAwareness, CanvasNote, ConnectionPresentation } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeArrowPath,
   canvasEdgeStartArrowPath,
   canvasEdgeGeometry,
+  connectorTargetGapForViewport,
   SCREEN_CARD_HEIGHT,
   SCREEN_CARD_WIDTH,
   screenCardGeometry,
@@ -21,6 +17,7 @@ import type { MapTreeNode } from "../lib/app-map-tree";
 import type { CanvasConnection } from "../lib/app-map-connection-draft";
 import {
   connectorAutoLanes,
+  connectorHasAutomaticSourceLane,
   connectorPresentationWithAutoLane,
 } from "../lib/app-map-connector-lanes";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
@@ -70,21 +67,11 @@ export type AppMapCanvasSceneProps = {
   onNoteText: (note: CanvasNote, text: string) => void;
   onCommitNote: (note: CanvasNote, previousText: string) => void;
   onDeleteNote: (note: CanvasNote) => void;
+  onScreenRotationChange?: (nodeId: string, rotation: CanvasScreenRotation) => void;
   hereScreenId?: string | null;
   combines?: readonly CanvasCombineCardModel[];
   onOpenCombine?: (combineId: string, section: CanvasCombineSection) => void;
   onOpenCombineResults?: (jobId: string) => void;
-};
-
-type ConnectionPortDrag = {
-  connectionId: string;
-  endpoint: "source" | "target";
-  presentation: ConnectionPresentation;
-};
-
-type EdgeAttachment = {
-  port: Exclude<ConnectionPort, "auto">;
-  offset: number;
 };
 
 type ConnectionControlDrag = {
@@ -95,6 +82,10 @@ type ConnectionControlDrag = {
 };
 
 const CURVE_KEYBOARD_NUDGE = 20;
+
+function connectionOriginClipId(connectionId: string): string {
+  return `app-map-connection-origin-${connectionId.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
+}
 
 function connectorHitWidthInScreenPixels(): number {
   if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) {
@@ -132,36 +123,15 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     Record<string, { width: number; height: number }>
   >({});
   const [hoveredConnectionId, setHoveredConnectionId] = createSignal<string | null>(null);
-  const [connectionPortDrag, setConnectionPortDrag] = createSignal<ConnectionPortDrag | null>(null);
   const [connectionControlDrag, setConnectionControlDrag] =
     createSignal<ConnectionControlDrag | null>(null);
   const [connectorToolbarAnchor, setConnectorToolbarAnchor] = createSignal<{
     connectionId: string;
     point: CanvasPoint;
   } | null>(null);
-  let clearHoveredConnectionTimer: ReturnType<typeof setTimeout> | undefined;
-  const keepConnectionHovered = (connectionId: string) => {
-    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
-    setHoveredConnectionId(connectionId);
-  };
-  const releaseConnectionHover = (connectionId: string) => {
-    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
-    clearHoveredConnectionTimer = setTimeout(() => {
-      if (hoveredConnectionId() === connectionId) setHoveredConnectionId(null);
-    }, 60);
-  };
-  onCleanup(() => {
-    if (clearHoveredConnectionTimer) clearTimeout(clearHoveredConnectionTimer);
-  });
   const selectedNodeIds = createMemo(() => new Set(props.selectedNodeIds));
   const nodeIndex = createMemo(() => new Map(props.nodes.map((node) => [node.id, node])));
   const nodeFor = (id: string) => nodeIndex().get(id);
-  const autoConnectionLanes = createMemo(() =>
-    connectorAutoLanes(props.connections, (screenId) => {
-      const node = nodeFor(screenId);
-      return node ? props.positionFor(node) : undefined;
-    }),
-  );
   const rotationForNode = (node: MapTreeNode): CanvasScreenRotation =>
     screenRotations()[node.id] ?? "none";
   const rotationForNodeId = (nodeId: string): CanvasScreenRotation => {
@@ -169,9 +139,9 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     return node ? rotationForNode(node) : "none";
   };
   const rememberRotation = (nodeId: string, rotation: ScreenshotRotation) => {
-    setScreenRotations((current) =>
-      current[nodeId] === rotation ? current : { ...current, [nodeId]: rotation },
-    );
+    if (screenRotations()[nodeId] === rotation) return;
+    setScreenRotations((current) => ({ ...current, [nodeId]: rotation }));
+    props.onScreenRotationChange?.(nodeId, rotation);
   };
   const geometryForNode = (node: MapTreeNode) => {
     const evidence = props.orientationEvidenceFor(node);
@@ -189,6 +159,19 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         : { ...current, [nodeId]: size };
     });
   };
+  const autoConnectionLanes = createMemo(() =>
+    connectorAutoLanes(
+      props.connections,
+      (screenId) => {
+        const node = nodeFor(screenId);
+        return node ? props.positionFor(node) : undefined;
+      },
+      (screenId) => {
+        const node = nodeFor(screenId);
+        return node ? geometryForNode(node) : undefined;
+      },
+    ),
+  );
   const visibleNodes = createMemo(() =>
     props.nodes.filter((node) => {
       if (selectedNodeIds().has(node.id) || node.id === props.renamingNodeId) return true;
@@ -209,26 +192,22 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       );
     });
   });
-  const displayedPresentation = (connection: CanvasConnection) => {
-    const portDrag = connectionPortDrag();
-    if (portDrag?.connectionId === connection.id) {
-      return connectorPresentationWithAutoLane(
-        { id: connection.id, presentation: portDrag.presentation },
-        autoConnectionLanes(),
-      );
-    }
+  const effectivePresentation = (connection: CanvasConnection) => {
     const controlDrag = connectionControlDrag();
-    return connectorPresentationWithAutoLane(
-      {
-        id: connection.id,
-        presentation:
-          controlDrag?.connectionId === connection.id
-            ? controlDrag.presentation
-            : connection.presentation,
-      },
+    return controlDrag?.connectionId === connection.id
+      ? controlDrag.presentation
+      : connection.presentation;
+  };
+  const displayedPresentation = (connection: CanvasConnection) =>
+    connectorPresentationWithAutoLane(
+      { id: connection.id, presentation: effectivePresentation(connection) },
       autoConnectionLanes(),
     );
-  };
+  const hasAutomaticSourceLane = (connection: CanvasConnection) =>
+    connectorHasAutomaticSourceLane(
+      { id: connection.id, presentation: effectivePresentation(connection) },
+      autoConnectionLanes(),
+    );
   const geometries = createMemo(
     () =>
       new Map(
@@ -242,6 +221,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               sourceAnchor: connection.sourceAnchor,
               sourceRotation: rotationForNodeId(connection.fromScreenId),
               presentation: displayedPresentation(connection),
+              automaticSourceLane: hasAutomaticSourceLane(connection),
+              targetGap: connectorTargetGapForViewport(props.viewportScale),
             },
             props.nodes,
             props.positionFor,
@@ -259,6 +240,24 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       endPoint: { x: 0, y: 0 },
       hitPoints: [],
     };
+  const selectedConnection = createMemo(() =>
+    props.connections.find((connection) => connection.id === props.selectedConnectionId),
+  );
+  const selectedCurveConnection = createMemo(() => {
+    const connection = selectedConnection();
+    return connection &&
+      visibleConnections().some((candidate) => candidate.id === connection.id) &&
+      (displayedPresentation(connection)?.route ?? "elbow") === "curve"
+      ? connection
+      : undefined;
+  });
+  const selectedConnectionOrigin = createMemo(() => {
+    const connection = selectedConnection();
+    if (!connection?.sourceAnchor || !visibleNodeIds().has(connection.fromScreenId))
+      return undefined;
+    const node = nodeFor(connection.fromScreenId);
+    return node ? { connection, node } : undefined;
+  });
   const pointerInCanvas = (event: PointerEvent, element: SVGGraphicsElement): CanvasPoint => {
     const svg = element.ownerSVGElement;
     const matrix = svg?.getScreenCTM()?.inverse();
@@ -299,67 +298,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         ? point
         : closest,
     );
-  };
-  const nearestAttachment = (point: CanvasPoint, nodeId: string): EdgeAttachment | undefined => {
-    const node = nodeFor(nodeId);
-    if (!node) return undefined;
-    const frame = screenFrameBounds(props.positionFor(node), geometryForNode(node));
-    const distances: Array<[Exclude<ConnectionPort, "auto">, number]> = [
-      ["left", Math.abs(point.x - frame.left)],
-      ["right", Math.abs(point.x - frame.right)],
-      ["top", Math.abs(point.y - frame.top)],
-      ["bottom", Math.abs(point.y - frame.bottom)],
-    ];
-    distances.sort((left, right) => left[1] - right[1]);
-    const port = distances[0]![0];
-    const vertical = port === "left" || port === "right";
-    const rawOffset = vertical
-      ? (point.y - frame.top) / (frame.bottom - frame.top)
-      : (point.x - frame.left) / (frame.right - frame.left);
-    return { port, offset: Math.max(0, Math.min(1, rawOffset)) };
-  };
-  const beginPortDrag = (
-    event: PointerEvent,
-    connection: CanvasConnection,
-    endpoint: "source" | "target",
-  ) => {
-    event.stopPropagation();
-    (event.currentTarget as SVGCircleElement).setPointerCapture(event.pointerId);
-    setConnectionPortDrag({
-      connectionId: connection.id,
-      endpoint,
-      presentation: { ...connection.presentation },
-    });
-  };
-  const movePortDrag = (event: PointerEvent, connection: CanvasConnection) => {
-    const drag = connectionPortDrag();
-    if (!drag || drag.connectionId !== connection.id) return;
-    const point = pointerInCanvas(event, event.currentTarget as SVGGraphicsElement);
-    const attachment = nearestAttachment(
-      point,
-      drag.endpoint === "source" ? connection.fromScreenId : connection.toScreenId,
-    );
-    if (!attachment) return;
-    const presentation =
-      drag.endpoint === "source"
-        ? {
-            ...drag.presentation,
-            sourcePort: attachment.port,
-            sourceOffset: attachment.offset,
-          }
-        : {
-            ...drag.presentation,
-            targetPort: attachment.port,
-            targetOffset: attachment.offset,
-          };
-    setConnectionPortDrag({ ...drag, presentation });
-  };
-  const finishPortDrag = (event: PointerEvent, connection: CanvasConnection) => {
-    const drag = connectionPortDrag();
-    if (!drag || drag.connectionId !== connection.id) return;
-    event.stopPropagation();
-    setConnectionPortDrag(null);
-    props.onChangeConnectionPresentation(connection, drag.presentation);
   };
   const beginControlDrag = (event: PointerEvent, connection: CanvasConnection) => {
     event.stopPropagation();
@@ -462,6 +400,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             const strokeWidth = () => presentation()?.strokeWidth ?? 2;
             const arrow = () => presentation()?.arrow ?? "end";
             const selected = () => props.selectedConnectionId === connection.id;
+            const hovered = () => hoveredConnectionId() === connection.id;
             // Routes live in world coordinates but must remain practical to
             // select at every zoom level. The broad hit lane and selection
             // halo therefore use screen-relative widths.
@@ -469,8 +408,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               Math.max(16, connectorHitWidthInScreenPixels() / Math.max(props.viewportScale, 0.01));
             const selectedHaloWidth = () =>
               Math.max(strokeWidth() + 6, 10 / Math.max(props.viewportScale, 0.01));
-            const handleHitRadius = () => 22 / Math.max(props.viewportScale, 0.01);
-            const handleVisibleRadius = () => 5.5 / Math.max(props.viewportScale, 0.01);
+            const hoveredHaloWidth = () =>
+              Math.max(strokeWidth() + 4, 8 / Math.max(props.viewportScale, 0.01));
             const strokeClass = () => connectionStrokeClass(runState(), connection, selected());
             const connectionName = () => {
               const source = nodeFor(connection.fromScreenId);
@@ -479,6 +418,17 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             };
             return (
               <g>
+                <Show when={hovered() && !selected()}>
+                  <path
+                    d={geometry().path}
+                    class="pointer-events-none fill-none stroke-[color-mix(in_srgb,var(--text-interactive-base)_30%,transparent)]"
+                    stroke-width={hoveredHaloWidth()}
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                    data-connection-hover-halo={connection.id}
+                  />
+                </Show>
                 <Show when={selected()}>
                   <path
                     d={geometry().path}
@@ -524,14 +474,26 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                   tabindex="0"
                   ref={(element) => element.setAttribute("focusable", "true")}
                   aria-label={connectionName()}
-                  onPointerEnter={() => keepConnectionHovered(connection.id)}
-                  onPointerLeave={() => releaseConnectionHover(connection.id)}
                   onPointerDown={(event) => event.stopPropagation()}
+                  onPointerEnter={() => setHoveredConnectionId(connection.id)}
+                  onPointerLeave={() =>
+                    setHoveredConnectionId((current) =>
+                      current === connection.id ? null : current,
+                    )
+                  }
                   onClick={(event) => {
                     event.stopPropagation();
                     selectConnectionAtPointer(connection, event);
                   }}
-                  onFocus={() => selectConnectionAtPointer(connection)}
+                  onFocus={() => {
+                    setHoveredConnectionId(connection.id);
+                    selectConnectionAtPointer(connection);
+                  }}
+                  onBlur={() =>
+                    setHoveredConnectionId((current) =>
+                      current === connection.id ? null : current,
+                    )
+                  }
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
@@ -539,81 +501,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                     selectConnectionAtPointer(connection);
                   }}
                 />
-                <Show when={connection.sourceAnchor && hoveredConnectionId() === connection.id}>
-                  <circle
-                    cx={geometry().startPoint.x}
-                    cy={geometry().startPoint.y}
-                    r="4"
-                    class="pointer-events-none fill-[var(--map-canvas)] stroke-[var(--text-interactive-base)]"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  />
-                </Show>
-                <Show when={props.selectedConnectionId === connection.id}>
-                  <circle
-                    cx={geometry().startPoint.x}
-                    cy={geometry().startPoint.y}
-                    r={handleHitRadius()}
-                    class="pointer-events-auto cursor-grab fill-transparent stroke-transparent active:cursor-grabbing"
-                    aria-hidden="true"
-                    onPointerDown={(event) => beginPortDrag(event, connection, "source")}
-                    onPointerMove={(event) => movePortDrag(event, connection)}
-                    onPointerUp={(event) => finishPortDrag(event, connection)}
-                    onPointerCancel={() => setConnectionPortDrag(null)}
-                  />
-                  <circle
-                    cx={geometry().startPoint.x}
-                    cy={geometry().startPoint.y}
-                    r={handleVisibleRadius()}
-                    class="pointer-events-none fill-[var(--background-base)] stroke-[var(--text-interactive-base)]"
-                    stroke-width={2 / Math.max(props.viewportScale, 0.01)}
-                    aria-hidden="true"
-                  />
-                  <circle
-                    cx={geometry().endPoint.x}
-                    cy={geometry().endPoint.y}
-                    r={handleHitRadius()}
-                    class="pointer-events-auto cursor-grab fill-transparent stroke-transparent active:cursor-grabbing"
-                    aria-hidden="true"
-                    onPointerDown={(event) => beginPortDrag(event, connection, "target")}
-                    onPointerMove={(event) => movePortDrag(event, connection)}
-                    onPointerUp={(event) => finishPortDrag(event, connection)}
-                    onPointerCancel={() => setConnectionPortDrag(null)}
-                  />
-                  <circle
-                    cx={geometry().endPoint.x}
-                    cy={geometry().endPoint.y}
-                    r={handleVisibleRadius()}
-                    class="pointer-events-none fill-[var(--background-base)] stroke-[var(--text-interactive-base)]"
-                    stroke-width={2 / Math.max(props.viewportScale, 0.01)}
-                    aria-hidden="true"
-                  />
-                  <Show when={(presentation()?.route ?? "curve") === "curve"}>
-                    <circle
-                      cx={geometry().labelPoint.x}
-                      cy={geometry().labelPoint.y}
-                      r={handleHitRadius()}
-                      class="pointer-events-auto cursor-move fill-transparent stroke-transparent focus-visible:stroke-[var(--border-focus)]"
-                      role="button"
-                      tabindex="0"
-                      aria-label="Adjust cubic curve. Use arrow keys to move the curve; hold Shift for larger steps."
-                      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
-                      onPointerDown={(event) => beginControlDrag(event, connection)}
-                      onPointerMove={(event) => moveControlDrag(event, connection)}
-                      onPointerUp={(event) => finishControlDrag(event, connection)}
-                      onPointerCancel={() => setConnectionControlDrag(null)}
-                      onKeyDown={(event) => nudgeCurveControl(event, connection)}
-                    />
-                    <circle
-                      cx={geometry().labelPoint.x}
-                      cy={geometry().labelPoint.y}
-                      r={handleVisibleRadius()}
-                      class="pointer-events-none fill-[var(--background-base)] stroke-[var(--text-interactive-base)]"
-                      stroke-width={2 / Math.max(props.viewportScale, 0.01)}
-                      aria-hidden="true"
-                    />
-                  </Show>
-                </Show>
               </g>
             );
           }}
@@ -644,10 +531,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 transform: "translate(-50%, -50%)",
               }}
               aria-label={`Open path from ${source() ? props.titleFor(source()!) : "start screen"} to ${target() ? props.titleFor(target()!) : "next screen"}`}
-              onFocus={() => keepConnectionHovered(connection.id)}
-              onBlur={() => releaseConnectionHover(connection.id)}
-              onPointerEnter={() => keepConnectionHovered(connection.id)}
-              onPointerLeave={() => releaseConnectionHover(connection.id)}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -672,9 +555,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         }}
       </For>
 
-      <Show
-        when={props.connections.find((connection) => connection.id === props.selectedConnectionId)}
-      >
+      <Show when={selectedConnection()}>
         {(connection) => (
           <AppMapConnectionToolbar
             connection={connection()}
@@ -697,11 +578,10 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
 
       <For each={visibleNodes()}>
         {(node) => {
-          const selectedConnectionAnchor = () =>
-            props.connections.find(
-              (connection) =>
-                connection.id === props.selectedConnectionId && connection.fromScreenId === node.id,
-            )?.sourceAnchor;
+          const selectedConnectionForNode = () => {
+            const connection = selectedConnection();
+            return connection?.fromScreenId === node.id ? connection : undefined;
+          };
           return (
             <ScreenCard
               node={node}
@@ -717,7 +597,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               src={() => props.imageFor(node)}
               orientationEvidence={props.orientationEvidenceFor(node)}
               onNaturalSize={(size) => rememberNaturalSize(node.id, size)}
-              sourceAnchor={selectedConnectionAnchor()}
+              selectedConnectionOrigin={selectedConnectionForNode()?.sourceAnchor}
+              connectionOrigin={Boolean(selectedConnectionForNode())}
               onRotationChange={(rotation) => rememberRotation(node.id, rotation)}
               onSelect={(event) => props.onSelectNode(node, event)}
               onRename={() => props.onRenameNode(node)}
@@ -729,6 +610,55 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           );
         }}
       </For>
+
+      <Show when={selectedConnectionOrigin()}>
+        {(origin) => {
+          const connection = () => origin().connection;
+          const geometry = () => geometryFor(connection());
+          const frame = () =>
+            screenFrameBounds(props.positionFor(origin().node), geometryForNode(origin().node));
+          const clipId = connectionOriginClipId(connection().id);
+          const strokeWidth = () => displayedPresentation(connection())?.strokeWidth ?? 2;
+          const haloWidth = () =>
+            Math.max(strokeWidth() + 6, 10 / Math.max(props.viewportScale, 0.01));
+          return (
+            <svg
+              class="pointer-events-none absolute inset-0 z-[21] overflow-visible"
+              width={props.width}
+              height={props.height}
+              aria-hidden="true"
+              data-connection-origin-guide
+            >
+              <defs>
+                <clipPath id={clipId}>
+                  <rect
+                    x={frame().left}
+                    y={frame().top}
+                    width={frame().right - frame().left}
+                    height={frame().bottom - frame().top}
+                  />
+                </clipPath>
+              </defs>
+              <path
+                d={geometry().path}
+                clip-path={`url(#${clipId})`}
+                class="fill-none stroke-[color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)]"
+                stroke-width={haloWidth()}
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d={geometry().path}
+                clip-path={`url(#${clipId})`}
+                class="fill-none stroke-[var(--text-interactive-base)]"
+                stroke-width={strokeWidth()}
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          );
+        }}
+      </Show>
 
       <For each={visibleNotes()}>
         {(note) => (
@@ -758,6 +688,51 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           />
         )}
       </For>
+
+      <Show when={selectedCurveConnection()}>
+        {(connection) => {
+          const geometry = () => geometryFor(connection());
+          const hitRadius = () => 22 / Math.max(props.viewportScale, 0.01);
+          const visibleRadius = () => 5.5 / Math.max(props.viewportScale, 0.01);
+          return (
+            <svg
+              class="pointer-events-none absolute inset-0 z-[21] overflow-visible"
+              width={props.width}
+              height={props.height}
+              role="group"
+              aria-label="Curve anchor controls"
+            >
+              <circle
+                cx={geometry().labelPoint.x}
+                cy={geometry().labelPoint.y}
+                r={hitRadius()}
+                class="cursor-grab touch-none fill-transparent stroke-transparent focus-visible:stroke-[var(--border-focus)] active:cursor-grabbing"
+                pointer-events="all"
+                role="button"
+                tabindex="0"
+                ref={(element) => element.setAttribute("focusable", "true")}
+                aria-label="Adjust cubic curve. Drag to reshape it, or use arrow keys to move it; hold Shift for larger steps."
+                aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
+                data-tip="Drag to reshape curve · Arrow keys nudge"
+                onPointerDown={(event) => beginControlDrag(event, connection())}
+                onPointerMove={(event) => moveControlDrag(event, connection())}
+                onPointerUp={(event) => finishControlDrag(event, connection())}
+                onPointerCancel={() => setConnectionControlDrag(null)}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => nudgeCurveControl(event, connection())}
+              />
+              <circle
+                cx={geometry().labelPoint.x}
+                cy={geometry().labelPoint.y}
+                r={visibleRadius()}
+                class="pointer-events-none fill-[var(--background-base)] stroke-[var(--text-interactive-base)]"
+                stroke-width={2 / Math.max(props.viewportScale, 0.01)}
+                aria-hidden="true"
+              />
+            </svg>
+          );
+        }}
+      </Show>
     </>
   );
 }

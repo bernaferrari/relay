@@ -183,7 +183,15 @@ export type ConnectionRouteStyle = "elbow" | "curve" | "straight";
  * route, port, and weight fields. */
 export type ConnectionArrowStyle = "none" | "start" | "end" | "both";
 export type ConnectionPort = "auto" | "left" | "right" | "top" | "bottom";
+/** Immutable source-side evidence for a recorded connection. Values are
+ * normalized to the captured source viewport, so an App Map can reliably mark
+ * the control that initiated a transition at any canvas size or zoom. */
+export type ConnectionSourceAnchor = {
+  point: AppMapPoint;
+  rect?: AppMapPoint & { width: number; height: number };
+};
 export type ConnectionPresentation = {
+  /** Omitted routes use the rounded bent connector. */
   route?: ConnectionRouteStyle;
   strokeWidth?: 1 | 2 | 3;
   arrow?: ConnectionArrowStyle;
@@ -193,8 +201,7 @@ export type ConnectionPresentation = {
   sourceOffset?: number;
   /** Position along the selected target edge, from 0 to 1. */
   targetOffset?: number;
-  /** Canvas-space nudge from the automatic route. This keeps the default
-   * useful while letting a person pull a crowded wire out of the way. */
+  /** Canvas-space nudge for an explicit curved connector. */
   controlOffset?: AppMapPoint;
 };
 
@@ -205,6 +212,8 @@ export type Connection = AppMapEntity & {
   caseStackId?: string;
   state: "draft" | "ready";
   actions: ActionSpec[];
+  /** Recorded source control evidence. This is not a mutable canvas-style field. */
+  sourceAnchor?: ConnectionSourceAnchor;
   presentation?: ConnectionPresentation;
 };
 

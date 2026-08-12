@@ -1,6 +1,12 @@
 import type { ConnectionPort, ConnectionPresentation } from "@relay/protocol";
 import type { CanvasConnection } from "./app-map-connection-draft";
-import type { CanvasPoint } from "./app-map-canvas-layout";
+import {
+  autoConnectorPortPair,
+  screenCardGeometry,
+  screenFrameBounds,
+  type CanvasPoint,
+  type ScreenCardGeometry,
+} from "./app-map-canvas-layout";
 
 type EdgePort = Exclude<ConnectionPort, "auto">;
 
@@ -16,34 +22,31 @@ type LaneGroup = {
   connections: LaneConnection[];
 };
 
-function directionBetween(from: CanvasPoint, to: CanvasPoint): EdgePort {
-  const x = to.x - from.x;
-  const y = to.y - from.y;
-  if (Math.abs(x) >= Math.abs(y)) return x >= 0 ? "right" : "left";
-  return y >= 0 ? "bottom" : "top";
+function automaticPortPair(
+  from: CanvasPoint,
+  to: CanvasPoint,
+  fromGeometry?: ScreenCardGeometry,
+  toGeometry?: ScreenCardGeometry,
+): { source: EdgePort; target: EdgePort } {
+  return autoConnectorPortPair(
+    screenFrameBounds(from, fromGeometry ?? screenCardGeometry()),
+    screenFrameBounds(to, toGeometry ?? screenCardGeometry()),
+  );
 }
 
-function opposite(direction: EdgePort): EdgePort {
-  if (direction === "left") return "right";
-  if (direction === "right") return "left";
-  if (direction === "top") return "bottom";
-  return "top";
-}
-
-function manualPort(port: ConnectionPort | undefined): boolean {
-  return Boolean(port && port !== "auto");
+function explicitPort(port: ConnectionPort | undefined): EdgePort | undefined {
+  return port && port !== "auto" ? port : undefined;
 }
 
 function supportsAutomaticLane(connection: LaneConnection, endpoint: "source" | "target"): boolean {
   const presentation = connection.presentation;
   if (endpoint === "source") {
-    return (
-      !connection.sourceAnchor &&
-      !manualPort(presentation?.sourcePort) &&
-      presentation?.sourceOffset === undefined
-    );
+    // An interaction anchor fixes where the connector starts inside the
+    // source preview. It does not fix the route's non-persisted fan lane
+    // after that point. Only an authored offset opts out of that lane.
+    return presentation?.sourceOffset === undefined;
   }
-  return !manualPort(presentation?.targetPort) && presentation?.targetOffset === undefined;
+  return presentation?.targetOffset === undefined;
 }
 
 function groupKey(screenId: string, direction: EdgePort): string {
@@ -73,15 +76,94 @@ function compareAlongPort(direction: EdgePort, left: CanvasPoint, right: CanvasP
   return primary || left.x - right.x || left.y - right.y;
 }
 
+/**
+ * A recorded interaction is the one reliable ordering signal at a fan's
+ * source: it says which control sits above/before another control on the
+ * screen.  Destination positions can be rearranged independently (or be
+ * temporarily stale while someone drags cards), so using them for an
+ * anchored source fan can make a later action claim the outer rail and cut
+ * across an earlier one.
+ */
+function sourceAnchorOrder(
+  connection: LaneConnection,
+  direction: EdgePort,
+): number | undefined {
+  const point = connection.sourceAnchor?.point;
+  const value = direction === "left" || direction === "right" ? point?.y : point?.x;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(1, Math.max(0, value));
+}
+
+function compareSourceFanOrder(
+  direction: EdgePort,
+  left: LaneConnection,
+  right: LaneConnection,
+): number | undefined {
+  const leftAnchor = sourceAnchorOrder(left, direction);
+  const rightAnchor = sourceAnchorOrder(right, direction);
+  if (leftAnchor === undefined && rightAnchor === undefined) return undefined;
+  // An unrecorded branch leaves the centre of its source edge before lane
+  // distribution moves it. Treat that real default as the comparison point
+  // so a planned link above/below a captured action does not jump to an
+  // arbitrary end of the fan merely because it lacks source evidence.
+  return (leftAnchor ?? 0.5) - (rightAnchor ?? 0.5);
+}
+
+function sourcePortDirection(
+  connection: LaneConnection,
+  positionFor: (screenId: string) => CanvasPoint | undefined,
+  geometryFor?: (screenId: string) => ScreenCardGeometry | undefined,
+): EdgePort | undefined {
+  const from = positionFor(connection.fromScreenId);
+  const to = positionFor(connection.toScreenId);
+  if (!from || !to) return undefined;
+  return (
+    explicitPort(connection.presentation?.sourcePort) ??
+    automaticPortPair(
+      from,
+      to,
+      geometryFor?.(connection.fromScreenId),
+      geometryFor?.(connection.toScreenId),
+    ).source
+  );
+}
+
+function sharesOrderingAxis(left: EdgePort, right: EdgePort): boolean {
+  const leftIsVerticalEdge = left === "left" || left === "right";
+  const rightIsVerticalEdge = right === "left" || right === "right";
+  return leftIsVerticalEdge === rightIsVerticalEdge;
+}
+
 function distributeLaneOffsets(
   groups: ReadonlyMap<string, LaneGroup>,
   endpoint: "source" | "target",
   positionFor: (screenId: string) => CanvasPoint | undefined,
+  geometryFor: ((screenId: string) => ScreenCardGeometry | undefined) | undefined,
   lanes: Map<string, ConnectorAutoLane>,
 ) {
   for (const group of groups.values()) {
     if (group.connections.length < 2) continue;
     const ordered = [...group.connections].sort((left, right) => {
+      if (endpoint === "source") {
+        const sourceOrder = compareSourceFanOrder(group.direction, left, right);
+        if (sourceOrder !== undefined && sourceOrder) return sourceOrder;
+      }
+      // Multiple actions from one screen can converge on the same target.
+      // Their source screen positions tie, so keep the target-side handles in
+      // the same action order instead of falling through to opaque IDs.
+      if (endpoint === "target" && left.fromScreenId === right.fromScreenId) {
+        const leftSourceDirection = sourcePortDirection(left, positionFor, geometryFor);
+        const rightSourceDirection = sourcePortDirection(right, positionFor, geometryFor);
+        if (
+          leftSourceDirection &&
+          rightSourceDirection &&
+          sharesOrderingAxis(leftSourceDirection, rightSourceDirection) &&
+          sharesOrderingAxis(leftSourceDirection, group.direction)
+        ) {
+          const sourceOrder = compareSourceFanOrder(leftSourceDirection, left, right);
+          if (sourceOrder !== undefined && sourceOrder) return sourceOrder;
+        }
+      }
       const leftPoint = positionFor(endpoint === "source" ? left.toScreenId : left.fromScreenId);
       const rightPoint = positionFor(endpoint === "source" ? right.toScreenId : right.fromScreenId);
       if (leftPoint && rightPoint) {
@@ -106,14 +188,15 @@ function distributeLaneOffsets(
 }
 
 /**
- * Derive stable, non-persisted edge lanes for a fan-out/fan-in. Manual ports,
- * manual offsets, and recorded interaction anchors always win. Keeping these
- * lanes computed means a collaboration merge never fights over presentation
- * data merely to make a crowded canvas readable.
+ * Derive stable, non-persisted edge lanes for a fan-out/fan-in. Chosen ports
+ * and recorded interaction origins stay intact while unset offsets receive a
+ * lane. Keeping these lanes computed means a collaboration merge never fights
+ * over presentation data merely to make a crowded canvas readable.
  */
 export function connectorAutoLanes(
   connections: readonly LaneConnection[],
   positionFor: (screenId: string) => CanvasPoint | undefined,
+  geometryFor?: (screenId: string) => ScreenCardGeometry | undefined,
 ): ReadonlyMap<string, ConnectorAutoLane> {
   const sourceGroups = new Map<string, LaneGroup>();
   const targetGroups = new Map<string, LaneGroup>();
@@ -121,7 +204,14 @@ export function connectorAutoLanes(
     const from = positionFor(connection.fromScreenId);
     const to = positionFor(connection.toScreenId);
     if (!from || !to) continue;
-    const sourceDirection = directionBetween(from, to);
+    const automaticPorts = automaticPortPair(
+      from,
+      to,
+      geometryFor?.(connection.fromScreenId),
+      geometryFor?.(connection.toScreenId),
+    );
+    const sourceDirection = explicitPort(connection.presentation?.sourcePort) ?? automaticPorts.source;
+    const targetDirection = explicitPort(connection.presentation?.targetPort) ?? automaticPorts.target;
     if (supportsAutomaticLane(connection, "source")) {
       addToGroup(
         sourceGroups,
@@ -131,7 +221,6 @@ export function connectorAutoLanes(
       );
     }
     if (supportsAutomaticLane(connection, "target")) {
-      const targetDirection = opposite(sourceDirection);
       addToGroup(
         targetGroups,
         groupKey(connection.toScreenId, targetDirection),
@@ -141,8 +230,8 @@ export function connectorAutoLanes(
     }
   }
   const lanes = new Map<string, ConnectorAutoLane>();
-  distributeLaneOffsets(sourceGroups, "source", positionFor, lanes);
-  distributeLaneOffsets(targetGroups, "target", positionFor, lanes);
+  distributeLaneOffsets(sourceGroups, "source", positionFor, geometryFor, lanes);
+  distributeLaneOffsets(targetGroups, "target", positionFor, geometryFor, lanes);
   return lanes;
 }
 
@@ -157,4 +246,20 @@ export function connectorPresentationWithAutoLane(
   ) as ConnectionPresentation;
   const presentation = { ...lane, ...explicit };
   return Object.keys(presentation).length ? presentation : undefined;
+}
+
+/**
+ * Auto lanes are render-only guidance, not authored endpoint placement. Keep
+ * that provenance separate from the merged presentation so routing can use a
+ * nested fan for computed lanes without changing what an explicit offset
+ * means to the person who set it.
+ */
+export function connectorHasAutomaticSourceLane(
+  connection: Pick<CanvasConnection, "id" | "presentation">,
+  lanes: ReadonlyMap<string, ConnectorAutoLane>,
+): boolean {
+  return (
+    connection.presentation?.sourceOffset === undefined &&
+    lanes.get(connection.id)?.sourceOffset !== undefined
+  );
 }

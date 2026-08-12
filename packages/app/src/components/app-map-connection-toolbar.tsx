@@ -45,7 +45,9 @@ export function AppMapConnectionToolbar(props: {
   let popoverElement: HTMLDivElement | undefined;
   let activeTrigger: HTMLButtonElement | undefined;
   const presentation = () => props.connection.presentation ?? {};
-  const route = () => presentation().route ?? "curve";
+  // FigJam-style bent connectors are the dependable default; a cubic is an
+  // explicit styling choice and keeps its editable control handle.
+  const route = () => presentation().route ?? "elbow";
   const arrow = () => presentation().arrow ?? "end";
   const canvasScale = () => Math.max(props.viewportScale, 0.01);
   const inverseScale = () => 1 / canvasScale();
@@ -242,9 +244,9 @@ export function AppMapConnectionToolbar(props: {
     if (!selected) return null;
     if (selected === "route") {
       const routes: Array<{ value: ConnectionRouteStyle; label: string }> = [
-        { value: "elbow", label: "Elbow route" },
-        { value: "curve", label: "Cubic curve" },
-        { value: "straight", label: "Straight route" },
+        { value: "elbow", label: "Bent connector" },
+        { value: "curve", label: "Curved connector" },
+        { value: "straight", label: "Straight connector" },
       ];
       return (
         <div
@@ -409,7 +411,7 @@ export function AppMapConnectionToolbar(props: {
 
   return (
     <div
-      class="absolute z-20"
+      class="absolute z-30"
       data-canvas-shortcuts="ignore"
       ref={(element) => {
         toolbarElement = element;

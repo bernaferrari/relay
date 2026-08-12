@@ -267,6 +267,57 @@ test("projects a recorded tap into the transition so every map view can show it"
   });
 });
 
+test("projects durable connection source evidence ahead of inferred step evidence", () => {
+  const observed = structuredClone(map);
+  observed.connections.open = {
+    id: "open",
+    organizationId: "acme",
+    projectId: "mobile",
+    appMapId: "store",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "wifi" },
+    state: "ready",
+    actions: [
+      {
+        id: "recorded-open",
+        kind: "recorded",
+        takeId: "take-open",
+        takeRevision: 1,
+        steps: [
+          {
+            id: "tap-wifi",
+            kind: "tap",
+            target: { point: { x: 100, y: 200, referenceBounds: { width: 1000, height: 2000 } } },
+            evidence: {
+              id: "evidence-wifi",
+              recordedAt: 3,
+              deviceBounds: { width: 1000, height: 2000 },
+              pointer: { x: 100, y: 200 },
+            },
+          },
+        ],
+        evidenceIds: [],
+      },
+    ],
+    sourceAnchor: {
+      point: { x: 0.8, y: 0.35 },
+      rect: { x: 0.2, y: 0.3, width: 0.6, height: 0.1 },
+    },
+    createdAt: 3,
+    updatedAt: 3,
+  };
+
+  const projected = mergeAppMapProjection(
+    { schemaVersion: 1, positions: {}, edgeLabels: {}, edgeKinds: {} },
+    observed,
+  );
+
+  assert.deepEqual(projected.graph?.transitions[0]?.sourceAnchor, {
+    point: { x: 0.8, y: 0.35 },
+    rect: { x: 0.2, y: 0.3, width: 0.6, height: 0.1 },
+  });
+});
+
 test("does not erase agent-owned entities or emit unchanged canvas fields", () => {
   const first = planAppMapProjection({
     appMap: map,

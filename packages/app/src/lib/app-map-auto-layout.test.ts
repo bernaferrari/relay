@@ -206,6 +206,88 @@ test("aligns independent linear continuations on stable rows", () => {
   assert.notEqual(positions.filter?.y, positions.paste?.y);
 });
 
+test("keeps a direct continuation on its parent row despite a same-rank cross-link", () => {
+  const graph = {
+    screens: [
+      "settings",
+      "noise",
+      "account-switcher",
+      "other-branch",
+      "edit-profile",
+      "birth-year",
+      "other-detail",
+    ].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "noise" } },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "account-switcher" },
+      },
+      { fromScreenId: "noise", destination: { kind: "screen", screenId: "other-branch" } },
+      {
+        fromScreenId: "account-switcher",
+        destination: { kind: "screen", screenId: "edit-profile" },
+      },
+      {
+        // Deliberately saved first: this is an extra graph relationship, not
+        // the primary visual owner of the Birth year dialog.
+        fromScreenId: "other-branch",
+        destination: { kind: "screen", screenId: "birth-year" },
+      },
+      {
+        fromScreenId: "other-branch",
+        destination: { kind: "screen", screenId: "other-detail" },
+      },
+      {
+        fromScreenId: "edit-profile",
+        destination: { kind: "screen", screenId: "birth-year" },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.equal(positions["account-switcher"]?.y, positions["edit-profile"]?.y);
+  assert.equal(positions["edit-profile"]?.y, positions["birth-year"]?.y);
+  assert.notEqual(positions["other-branch"]?.y, positions["birth-year"]?.y);
+});
+
+test("uses local connector geometry to promote the branch that removes a cross-link", () => {
+  const graph = {
+    screens: ["settings", "usage", "data-controls", "help", "advanced", "usage-detail", "end"].map(
+      (id) => ({ id }),
+    ),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      // The authored/source order starts Usage first. Its long continuation
+      // would make the direct Settings → Help edge take an avoidable dogleg.
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "usage" } },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "data-controls" },
+      },
+      { fromScreenId: "settings", destination: { kind: "screen", screenId: "help" } },
+      { fromScreenId: "usage", destination: { kind: "screen", screenId: "usage-detail" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "help" } },
+      { fromScreenId: "data-controls", destination: { kind: "screen", screenId: "advanced" } },
+      { fromScreenId: "usage-detail", destination: { kind: "screen", screenId: "end" } },
+    ],
+  };
+
+  const first = compactCanvasPositions(graph);
+  const second = compactCanvasPositions(graph);
+
+  assert.deepEqual(first, second, "the local lookahead is deterministic");
+  assert.equal(first.settings?.y, first["data-controls"]?.y);
+  assert.equal(first["data-controls"]?.y, first.help?.y);
+  assert.equal(first.usage?.y, first["usage-detail"]?.y);
+  assert.ok(
+    (first.usage?.y ?? 0) > (first["data-controls"]?.y ?? 0),
+    "the competing branch yields its primary row when that makes multiple links straighter",
+  );
+});
+
 test("preserves recorded sibling order while keeping each continuation on its branch row", () => {
   const graph = {
     // Deliberately scramble storage order. The path order is the user's UI order.
@@ -233,4 +315,58 @@ test("preserves recorded sibling order while keeping each continuation on its br
     (positions.memory?.y ?? 0) - (positions.data?.y ?? 0) > 278,
     "separate branches should have a visible lane gap",
   );
+});
+
+test("uses captured source action order for a fan-out even when transitions were saved out of order", () => {
+  const graph = {
+    screens: ["settings", "bottom", "top", "middle"].map((id) => ({ id })),
+    flows: [{ screenId: "settings" }],
+    transitions: [
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "bottom" },
+        sourceAnchor: { point: { x: 0.5, y: 0.84 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "top" },
+        sourceAnchor: { point: { x: 0.5, y: 0.16 } },
+      },
+      {
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "middle" },
+        sourceAnchor: { point: { x: 0.5, y: 0.5 } },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok((positions.top?.y ?? 0) < (positions.middle?.y ?? 0));
+  assert.ok((positions.middle?.y ?? 0) < (positions.bottom?.y ?? 0));
+});
+
+test("uses horizontal source-anchor order for top and bottom port fans", () => {
+  const graph = {
+    screens: ["source", "right-action", "left-action"].map((id) => ({ id })),
+    flows: [{ screenId: "source" }],
+    transitions: [
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "right-action" },
+        sourceAnchor: { point: { x: 0.85, y: 0.1 } },
+        presentation: { sourcePort: "bottom" },
+      },
+      {
+        fromScreenId: "source",
+        destination: { kind: "screen", screenId: "left-action" },
+        sourceAnchor: { point: { x: 0.15, y: 0.9 } },
+        presentation: { sourcePort: "bottom" },
+      },
+    ],
+  };
+
+  const positions = compactCanvasPositions(graph);
+
+  assert.ok((positions["left-action"]?.y ?? 0) < (positions["right-action"]?.y ?? 0));
 });

@@ -56,3 +56,47 @@ test("connector presentation accepts explicit arrowheads at either endpoint", ()
 
   assert.doesNotThrow(() => assertConnection(connection, scope, "connection"));
 });
+
+test("connection source evidence must stay inside its normalized viewport", () => {
+  const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+  const connection: Connection = {
+    ...scope,
+    id: "connection-source-anchor",
+    createdAt: 1,
+    updatedAt: 1,
+    fromScreenId: "screen-a",
+    destination: { kind: "screen", screenId: "screen-b" },
+    state: "ready",
+    actions: [],
+    sourceAnchor: {
+      point: { x: 0.5, y: 0.4 },
+      rect: { x: 0.1, y: 0.3, width: 0.6, height: 0.08 },
+    },
+  };
+
+  assert.doesNotThrow(() => assertConnection(connection, scope, "connection"));
+  assert.throws(
+    () =>
+      assertConnection(
+        { ...connection, sourceAnchor: { point: { x: 1.01, y: 0.4 } } },
+        scope,
+        "connection",
+      ),
+    /sourceAnchor\.point\.x/u,
+  );
+  assert.throws(
+    () =>
+      assertConnection(
+        {
+          ...connection,
+          sourceAnchor: {
+            point: { x: 0.5, y: 0.4 },
+            rect: { x: 0.8, y: 0.3, width: 0.3, height: 0.08 },
+          },
+        },
+        scope,
+        "connection",
+      ),
+    /sourceAnchor\.rect must remain/u,
+  );
+});

@@ -8,6 +8,7 @@ import {
   buildMinimapEdges,
   buildMinimapGroups,
   buildMinimapNodes,
+  buildPresenceGeometry,
   createCanvasNote,
   noteChangesFor,
   orderCanvasChanges,
@@ -150,6 +151,69 @@ test("buildMinimapEdges reuses the editor's authoritative connector geometry", (
   );
   assert.equal(edges[0]?.path, expected.path);
   assert.equal(edges[0]?.arrowPath, canvasEdgeArrowPath(expected, 2));
+});
+
+test("overview and presence geometry keep a rotated recorded origin aligned", () => {
+  const nodes = [
+    {
+      id: "source",
+      screenKey: "source",
+      title: "Source",
+      representativeStepIndex: 0,
+      stepIndexes: [0],
+      depth: 0,
+      x: 0,
+      y: 0,
+    },
+    {
+      id: "target",
+      screenKey: "target",
+      title: "Target",
+      representativeStepIndex: 1,
+      stepIndexes: [1],
+      depth: 1,
+      x: 400,
+      y: 0,
+    },
+  ];
+  const connections = [
+    {
+      id: "rotated-origin",
+      fromScreenId: "source",
+      toScreenId: "target",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.2, y: 0.75 } },
+    },
+  ] as never;
+  const positionFor = (node: (typeof nodes)[number]) => ({ x: node.x, y: node.y });
+  const expected = canvasEdgeGeometry(
+    {
+      from: "source",
+      to: "target",
+      kind: "forward",
+      sourceAnchor: { point: { x: 0.2, y: 0.75 } },
+      sourceRotation: "left",
+    },
+    nodes,
+    positionFor,
+  );
+  const minimap = buildMinimapEdges({
+    nodes,
+    connections,
+    positionFor,
+    sourceRotationFor: () => "left",
+    selectedConnectionId: null,
+    transitionStates: {},
+  });
+  const presence = buildPresenceGeometry({
+    nodes,
+    connections,
+    positionFor,
+    sourceRotationFor: () => "left",
+  });
+
+  assert.equal(minimap[0]?.path, expected.path);
+  assert.equal(presence.connectionPaths["rotated-origin"], expected.path);
 });
 
 test("orderCanvasChanges keeps stable priority and original order within a tier", () => {
