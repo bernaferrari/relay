@@ -8,7 +8,6 @@ import {
   connectAppMapScreens,
   commitAppMapChanges,
   commitAppMapScreenCapture,
-  interact,
   createAppMap,
   currentOperationContext,
   deleteAppMap,
@@ -52,6 +51,7 @@ import {
 } from "@relay/core";
 import type {
   ActionSpec,
+  AuthoringInteraction,
   AuthoringSession,
   ConnectionSourceAnchor,
   OperationInput,
@@ -127,6 +127,45 @@ export function findEquivalentTeachConnection(
 
 type TeachInteraction = NonNullable<OperationInput<"app-map.teach">["interaction"]>;
 type InteractionPoint = { x: number; y: number };
+
+/**
+ * Teaching a destination is still a recording: verify the requested source
+ * before touching the device, then retain the exact interaction in the Take.
+ * Keeping this conversion here makes the one-click teach affordance use the
+ * same source guard as the full Authoring Session rather than trusting the
+ * caller-supplied source id after the fact.
+ */
+export function teachInteractionToAuthoringInteraction(
+  interaction: TeachInteraction,
+): AuthoringInteraction {
+  switch (interaction.kind) {
+    case "point":
+      return { kind: "tap", target: { point: { x: interaction.x, y: interaction.y } } };
+    case "label":
+      return {
+        kind: "tap",
+        target: {
+          label: interaction.label,
+          ...(interaction.point ? { point: interaction.point } : {}),
+        },
+      };
+    case "identifier":
+      return {
+        kind: "tap",
+        target: {
+          identifier: interaction.identifier,
+          ...(interaction.point ? { point: interaction.point } : {}),
+        },
+      };
+    case "swipe":
+      return {
+        kind: "swipe",
+        from: interaction.from,
+        to: interaction.to,
+        ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
+      };
+  }
+}
 
 function finiteInteractionPoint(value: unknown): InteractionPoint | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -593,73 +632,64 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     if (body.fromScreenId && !current.screens[body.fromScreenId]) {
       throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
     }
-    let resolvedInteractionPoint: InteractionPoint | undefined;
-    if (body.interaction) {
-      const serial = body.target.targetId;
-      const interaction = body.interaction;
-      if (interaction.kind === "point") {
-        const result = await interact(
-          { kind: "point", x: interaction.x, y: interaction.y },
-          { serial, verifyIosScreenChange: true },
-        );
-        resolvedInteractionPoint = result.resolution?.point;
-      } else if (interaction.kind === "label") {
-        const result = await interact(
-          {
-            kind: "label",
-            label: interaction.label,
-            ...(interaction.point ? { point: interaction.point } : {}),
-          },
-          { serial, verifyIosScreenChange: true },
-        );
-        resolvedInteractionPoint = result.resolution?.point;
-      } else if (interaction.kind === "identifier") {
-        const result = await interact(
-          {
-            kind: "identifier",
-            identifier: interaction.identifier,
-            ...(interaction.point ? { point: interaction.point } : {}),
-          },
-          { serial, verifyIosScreenChange: true },
-        );
-        resolvedInteractionPoint = result.resolution?.point;
-      } else {
-        await interact(
-          {
-            kind: "swipe",
-            from: interaction.from,
-            to: interaction.to,
-            ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
-          },
-          { serial },
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    }
-
     let session: AuthoringSession | undefined;
     try {
+      if (body.interaction) {
+        // Do not let an explicit source id turn a tap on whatever happens to
+        // be visible into a permanent map edge. `start` observes and verifies
+        // the source before the interaction is executed.
+        session = await authoringSessions.create({
+          appMapId: current.id,
+          target: body.target,
+          leaseId: body.leaseId,
+          expectedAppMapRevision: current.revision,
+          sourceScreenId: body.fromScreenId,
+        });
+        const runtime = createAuthoringRuntime();
+        session = await authoringSessions.observe(session.id, runtime);
+        session = await authoringSessions.start(session.id, runtime);
+        if (session.state === "failed") {
+          throw new HttpError(409, session.error ?? "The device is not on the requested source", {
+            code: "unexpected-source",
+            recovery:
+              "Return to the selected map screen, then teach the control again. Relay did not tap the device.",
+          });
+        }
+        session = await authoringSessions.interact(
+          session.id,
+          teachInteractionToAuthoringInteraction(body.interaction),
+          runtime,
+        );
+        await runtime.settle?.(800);
+        session = await authoringSessions.observe(session.id, runtime);
+        session = await authoringSessions.stop(session.id, runtime);
+      }
       {
         const latestMap = await readAppMap(scope.projectId, appMapId);
         if (latestMap) current = latestMap;
       }
       const expectedRevision = current.revision;
       const mapId = current.id;
-      session = await authoringSessions.create({
-        appMapId: mapId,
-        target: body.target,
-        leaseId: body.leaseId,
-        expectedAppMapRevision: expectedRevision,
-      });
-      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      if (!session) {
+        session = await authoringSessions.create({
+          appMapId: mapId,
+          target: body.target,
+          leaseId: body.leaseId,
+          expectedAppMapRevision: expectedRevision,
+        });
+        session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      }
       const take = currentTakeRevision(session);
-      if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
+      const destinationObservation = body.interaction ? take?.after : take?.before;
+      if (!take || !destinationObservation) {
+        throw new HttpError(502, "The target returned no destination screen observation");
+      }
       const intendedTitle = body.title?.trim();
       if (
         body.target.kind === "device" &&
         body.target.platform === "ios" &&
         intendedTitle &&
-        !iosTeachObservationMatchesTitle(take.before.nodes, intendedTitle)
+        !iosTeachObservationMatchesTitle(destinationObservation.nodes, intendedTitle)
       ) {
         throw new HttpError(
           409,
@@ -675,8 +705,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         body.interaction &&
         findAppMapCaptureScreen(current, {
           target: body.target,
-          observation: take.before,
-          ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+          observation: destinationObservation,
         })?.id === body.fromScreenId
       ) {
         throw new HttpError(409, "The interaction did not open another screen", {
@@ -687,8 +716,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       }
       const profile = await profileForCapture(
         body.target,
-        take.before.capturedAt,
-        take.before.bounds,
+        destinationObservation.capturedAt,
+        destinationObservation.bounds,
       );
       let capturedScreenId = "";
       let capturedVariantId = "";
@@ -700,7 +729,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
             {
               target: body.target,
               targetProfile: profile,
-              observation: take.before!,
+              observation: destinationObservation,
               evidenceUrisById: Object.fromEntries(
                 take.evidence.map((item) => [item.id, item.uri]),
               ),
@@ -732,7 +761,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
           current,
           body.fromScreenId,
           body.interaction,
-          resolvedInteractionPoint,
+          undefined,
           profile,
         );
         const label =

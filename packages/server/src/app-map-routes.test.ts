@@ -16,6 +16,7 @@ import {
   findEquivalentTeachConnection,
   iosTeachObservationMatchesTitle,
   sourceAnchorForTeachInteraction,
+  teachInteractionToAuthoringInteraction,
 } from "./app-map-routes.js";
 
 test("explicit target preflight distinguishes disconnected and not-ready devices", () => {
@@ -43,6 +44,39 @@ test("explicit target preflight distinguishes disconnected and not-ready devices
       { serial: "ipad-1", booted: true, developerServicesAvailable: false },
     ]),
     "not-ready",
+  );
+});
+
+test("teaching converts every supported interaction into a source-guarded Take action", () => {
+  assert.deepEqual(teachInteractionToAuthoringInteraction({ kind: "point", x: 40, y: 80 }), {
+    kind: "tap",
+    target: { point: { x: 40, y: 80 } },
+  });
+  assert.deepEqual(
+    teachInteractionToAuthoringInteraction({
+      kind: "label",
+      label: "Language",
+      point: { x: 120, y: 360 },
+    }),
+    { kind: "tap", target: { label: "Language", point: { x: 120, y: 360 } } },
+  );
+  assert.deepEqual(
+    teachInteractionToAuthoringInteraction({ kind: "identifier", identifier: "settings" }),
+    { kind: "tap", target: { identifier: "settings" } },
+  );
+  assert.deepEqual(
+    teachInteractionToAuthoringInteraction({
+      kind: "swipe",
+      from: { x: 500, y: 1800 },
+      to: { x: 500, y: 500 },
+      durationMs: 320,
+    }),
+    {
+      kind: "swipe",
+      from: { x: 500, y: 1800 },
+      to: { x: 500, y: 500 },
+      durationMs: 320,
+    },
   );
 });
 
