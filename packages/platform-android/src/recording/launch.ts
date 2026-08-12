@@ -48,7 +48,10 @@ export async function startInitialTransaction(params: {
     try {
       chunk = await startChunkAt(transport, remotePath, input, signal);
     } catch (error) {
-      if (signal.aborted) throw signal.reason;
+      if (signal.aborted) {
+        await retireCanceledLaunchMarker(transport, manifestPath, error);
+        throw signal.reason;
+      }
       await removeFailedCandidateManifest(transport, manifestPath, error);
       last = error;
       continue;
@@ -61,12 +64,38 @@ export async function startInitialTransaction(params: {
         signal,
       );
     } catch (error) {
-      await rollbackChunks(transport, [chunk]).catch(() => {});
+      await rollbackPublishedChunk(transport, manifestPath, chunk);
       throw error;
     }
     return { chunk, manifestPath };
   }
   throw last ?? new Error('Android screenrecord did not begin producing frames');
+}
+
+async function retireCanceledLaunchMarker(
+  transport: Transport,
+  manifestPath: string,
+  launchError: unknown,
+): Promise<void> {
+  // `startChunkAt` has already rolled back the child and its artifact. Retire the pre-launch
+  // marker only when that cleanup is confirmed; otherwise leave it for fenced recovery.
+  if (launchError instanceof AndroidScreenRecordingStartRollbackUnconfirmed) return;
+  await removeNativeManifest(transport, manifestPath).catch(() => {});
+}
+
+async function rollbackPublishedChunk(
+  transport: Transport,
+  manifestPath: string,
+  chunk: NativeChunk,
+): Promise<void> {
+  try {
+    await rollbackChunks(transport, [chunk]);
+  } catch {
+    // Retain the pending marker when native cleanup is uncertain so a fenced recovery can prove
+    // ownership before a later start is admitted.
+    return;
+  }
+  await removeNativeManifest(transport, manifestPath).catch(() => {});
 }
 
 /**
