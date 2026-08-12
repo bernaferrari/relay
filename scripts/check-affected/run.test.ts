@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { runCmdSync } from '../../src/utils/exec.ts';
+import { CHECK_CATALOG } from './checks.ts';
 import { DEFAULT_VITEST_MAX_WORKERS } from '../lib/vitest-concurrency.ts';
 import { selectChecks } from './model.ts';
 import { type CommandExecutor, readChangedFiles, runChecks } from './run.ts';
@@ -88,24 +89,15 @@ test('readChangedFiles unions staged and unstaged so a net diff cannot hide a fi
   }
 });
 
-const ALL_SCRIPTS: Record<string, string> = {
-  'format:check': 'x',
-  lint: 'x',
-  typecheck: 'x',
-  'test-app:typecheck': 'x',
-  'check:layering': 'x',
-  'check:fallow': 'x',
-  'check:mcp-metadata': 'x',
-  build: 'x',
-  'check:package': 'x',
-  'check:unit': 'x',
-  'check:coverage-changed': 'x',
-  'test:integration:provider': 'x',
-  'test:integration:node': 'x',
-  'test:integration:progress:check': 'x',
-  'check:replay-compat': 'x',
-  'check:daemon-wire-compat': 'x',
-};
+const repoRoot = path.resolve(import.meta.dirname, '../..');
+
+// The real package scripts: a fixture map has to be hand-extended for every new
+// gate, which is the drift the registry exists to remove.
+const ALL_SCRIPTS: Record<string, string> = (
+  JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  }
+).scripts;
 
 const ARGS = { base: 'origin/main', head: 'HEAD', json: false, run: true };
 
@@ -163,7 +155,15 @@ test('runChecks skips GitHub-authoritative checks and passes when locals succeed
   const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, { execute, cwd: '.' });
   assert.equal(code, 0);
   const ran = executed.map((command) => command[command.length - 1]);
-  for (const skipped of ['build:xcuitest', 'build:android-snapshot-helper', 'test:smoke:web']) {
+  // Derived from the catalog rather than hand-listed. A hand-written name goes vacuous the
+  // moment a check is repointed: this list still asserted `build:android-snapshot-helper`
+  // after `android-helpers` moved to `build:android`, so it could not have failed however
+  // the flag was set.
+  const authoritative = CHECK_CATALOG.filter((spec) => !spec.localRunnable).flatMap((spec) =>
+    spec.kind.type === 'script' ? [spec.kind.script] : [],
+  );
+  assert.ok(authoritative.length >= 10, 'the catalog must still mark CI-owned checks');
+  for (const skipped of authoritative) {
     assert.ok(
       !ran.includes(skipped),
       `${skipped} is GitHub-authoritative and must not run locally`,
