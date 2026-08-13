@@ -131,6 +131,12 @@ export function AppMapTestWorkspace(props: {
     setCompileMessage("");
     setCompiledPlan();
     if (edits.length === 0) {
+      if (failedDraft) {
+        failedDraft = snapshot;
+        setRetryAvailable(true);
+        setSaveState("error");
+        return;
+      }
       failedDraft = undefined;
       setSaveError("");
       setRetryAvailable(false);

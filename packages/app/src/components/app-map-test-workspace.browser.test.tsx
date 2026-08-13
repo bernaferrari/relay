@@ -224,6 +224,9 @@ test("revision conflict keeps the local Test draft and retries as semantic edits
 
   expect(root.textContent).toContain("Revision conflict");
   expect(intent.value).toBe("Open the reviewed cart");
+  intent.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+  await settle();
+  expect(root.textContent).toContain("Revision conflict");
   intent.value = "Open the reviewed cart safely";
   intent.dispatchEvent(new InputEvent("input", { bubbles: true }));
   intent.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
