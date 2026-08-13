@@ -635,6 +635,7 @@ export function AppMapTestWorkspace(props: {
                 selectedStepId={selectedStepId()}
                 compiledPlan={compiledPlan()}
                 onOpenRun={props.onOpenRun}
+                onSelectStep={setSelectedStepId}
               />
             </div>
           )}

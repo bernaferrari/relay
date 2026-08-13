@@ -1,0 +1,164 @@
+import { expect, test, vi } from "vitest";
+import { render } from "solid-js/web";
+import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
+import type { JobInfo } from "../lib/api-types";
+import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
+
+const testFixture: AppMapScenarioTest = {
+  kind: "scenario",
+  id: "checkout",
+  organizationId: "org",
+  projectId: "project",
+  appMapId: "shop",
+  name: "Checkout",
+  intentSchemaVersion: 1,
+  steps: [
+    {
+      id: "confirm",
+      kind: "validation",
+      intent: "Confirm the total",
+      binding: { status: "unresolved", reason: "Fixture" },
+    },
+  ],
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const plan: AppMapCompiledTest = {
+  schemaVersion: 1,
+  appMapId: "shop",
+  appMapRevision: 4,
+  test: { id: "checkout", name: "Checkout", kind: "scenario", intentSchemaVersion: 1 },
+  rootRecipeId: "app-map:shop:test:checkout:root:r4",
+  recipes: {
+    "app-map:shop:test:checkout:root:r4": {
+      id: "app-map:shop:test:checkout:root:r4",
+      title: "Checkout",
+      parameters: [],
+      steps: [{ id: "confirm-recipe", kind: "sleep", ms: 1 }],
+    },
+  },
+  stepProvenance: [
+    {
+      recipeId: "app-map:shop:test:checkout:root:r4",
+      stepIndex: 0,
+      recipeStepId: "confirm-recipe",
+      testId: "checkout",
+      testStepId: "confirm",
+      bindingKind: "assertion",
+      referencedEntityIds: [],
+    },
+  ],
+};
+
+const failedRun: JobInfo = {
+  id: "run-1",
+  action: plan.rootRecipeId,
+  status: "error",
+  queuedAt: 1,
+  startedAt: 2,
+  finishedAt: 7,
+  logs: [],
+  error: "Expected $42, observed $41",
+  failureCategory: "deterministic-assertion",
+  steps: [
+    {
+      id: "trace-confirm",
+      index: 0,
+      kind: "sleep",
+      tone: "danger",
+      title: "Confirm",
+      glyphs: [],
+      startedAt: 2,
+      finishedAt: 7,
+      durationMs: 5,
+      frames: [],
+      log: "Mismatch",
+      status: "error",
+    },
+  ],
+};
+
+test("results make the latest failure and exact authored step actionable", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const onSelectStep = vi.fn();
+  const dispose = render(
+    () => (
+      <AppMapTestEvidencePanel
+        test={testFixture}
+        plan={plan}
+        selectedStepId="confirm"
+        run={failedRun}
+        counts={{ frames: 0, events: 0, artifacts: 0 }}
+        provenance={plan.stepProvenance}
+        detailError=""
+        devices={[]}
+        frameUrl={() => ""}
+        onSelectStep={onSelectStep}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Latest result");
+  expect(root.textContent).toContain("Failed");
+  expect(root.textContent).toContain("Failure location");
+  expect(root.textContent).toContain("Confirm the total");
+  expect(root.textContent).toContain("Expected $42, observed $41");
+  expect(root.textContent).toContain("1/1");
+  root.querySelector<HTMLButtonElement>("button")!.click();
+  expect(onSelectStep).toHaveBeenCalledWith("confirm");
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("nested provenance stays explicit when no nested runtime trace exists", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const nestedPlan: AppMapCompiledTest = {
+    ...plan,
+    recipes: {
+      ...plan.recipes,
+      branch: {
+        id: "branch",
+        title: "Branch",
+        parameters: [],
+        steps: [{ id: "nested-recipe", kind: "sleep", ms: 1 }],
+      },
+    },
+    stepProvenance: [
+      {
+        ...plan.stepProvenance[0]!,
+        recipeId: "branch",
+        recipeStepId: "nested-recipe",
+      },
+    ],
+  };
+  const dispose = render(
+    () => (
+      <AppMapTestEvidencePanel
+        test={testFixture}
+        plan={nestedPlan}
+        selectedStepId="confirm"
+        run={failedRun}
+        counts={{ frames: 0, events: 0, artifacts: 0 }}
+        provenance={nestedPlan.stepProvenance}
+        detailError=""
+        devices={[]}
+        frameUrl={() => ""}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Not observed");
+  expect(root.textContent).toContain("no nested trace join");
+  expect(root.textContent).toContain("0/0");
+
+  dispose();
+  document.body.replaceChildren();
+});
