@@ -137,6 +137,15 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   await settle();
   expect(root.querySelector("button[aria-label^='Then 2: Instruction']")).toBeNull();
   expect(root.querySelector("button[aria-label^='Then 1: Instruction']")).not.toBeNull();
+  expect(root.textContent).toContain("Deleted Describe what the person should do");
+
+  const undo = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Undo",
+  )!;
+  undo.click();
+  await settle();
+  expect(root.querySelector("button[aria-label^='Then 2: Instruction']")).not.toBeNull();
+  expect(editBatches.flat().some((edit) => edit.kind === "step.add")).toBe(true);
 
   dispose();
   document.body.replaceChildren();

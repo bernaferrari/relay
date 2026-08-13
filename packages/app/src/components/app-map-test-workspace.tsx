@@ -28,11 +28,17 @@ import {
 } from "../lib/app-map-test-editor-tree";
 import { AppMapTestInspector } from "./app-map-test-inspector";
 import { AppMapTestOutline } from "./app-map-test-outline";
+import { AppMapTestUndo } from "./app-map-test-undo";
 import { AppMapTestDeviceEvidence } from "./app-map-test-device-evidence";
 import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
 import { Icon } from "./icon";
 
 type SaveState = "saved" | "saving" | "error";
+type UndoDelete = {
+  message: string;
+  test: AppMapScenarioTest;
+  selectedStepId?: string;
+};
 
 export function AppMapTestWorkspace(props: {
   testId?: string;
@@ -55,6 +61,7 @@ export function AppMapTestWorkspace(props: {
   const [saveState, setSaveState] = createSignal<SaveState>("saved");
   const [saveError, setSaveError] = createSignal("");
   const [retryAvailable, setRetryAvailable] = createSignal(false);
+  const [undoDelete, setUndoDelete] = createSignal<UndoDelete>();
   const [creating, setCreating] = createSignal(false);
   const [compiling, setCompiling] = createSignal(false);
   const [compileMessage, setCompileMessage] = createSignal("");
@@ -87,6 +94,7 @@ export function AppMapTestWorkspace(props: {
     if (!map || !test) {
       setDraft();
       queuedDraft = undefined;
+      setUndoDelete();
       setSelectedStepId();
       loadedKey = "";
       return;
@@ -95,6 +103,7 @@ export function AppMapTestWorkspace(props: {
     if (key === loadedKey || saveState() !== "saved") return;
     loadedKey = key;
     setCompiledPlan();
+    setUndoDelete();
     optimisticRevision = map.revision;
     if (test.kind === "scenario") {
       const copy = structuredClone(test);
@@ -119,13 +128,14 @@ export function AppMapTestWorkspace(props: {
     flattenScenarioSteps(draft()?.steps ?? []).find((item) => item.step.id === selectedStepId()),
   );
 
-  function queueSave(next: AppMapScenarioTest): void {
+  function queueSave(next: AppMapScenarioTest, options?: { preserveUndo?: boolean }): void {
     const map = appMap();
     if (!map) return;
     const snapshot = structuredClone(next);
     const previous = queuedDraft ?? draft();
     if (!previous) return;
     const edits = planScenarioTestEdits(previous, snapshot);
+    if (!options?.preserveUndo) setUndoDelete();
     queuedDraft = snapshot;
     setDraft(snapshot);
     setCompileMessage("");
@@ -290,14 +300,32 @@ export function AppMapTestWorkspace(props: {
   function deleteStep(stepId: string): void {
     const test = draft();
     if (!test) return;
+    const deleted = findScenarioStep(test.steps, stepId);
     const nextSelection = siblingFocusAfterDelete(test.steps, stepId);
-    queueSave({
-      ...test,
-      steps: deleteScenarioStepTree(test.steps, stepId),
-      updatedAt: Date.now(),
+    setUndoDelete({
+      message: `Deleted ${deleted?.intent || "step"}`,
+      test: structuredClone(test),
+      selectedStepId: stepId,
     });
+    queueSave(
+      {
+        ...test,
+        steps: deleteScenarioStepTree(test.steps, stepId),
+        updatedAt: Date.now(),
+      },
+      { preserveUndo: true },
+    );
     setSelectedStepId(nextSelection);
     focusStep(nextSelection);
+  }
+
+  function undoStepDelete(): void {
+    const deleted = undoDelete();
+    if (!deleted) return;
+    setUndoDelete();
+    queueSave({ ...deleted.test, updatedAt: Date.now() });
+    setSelectedStepId(deleted.selectedStepId);
+    focusStep(deleted.selectedStepId);
   }
 
   async function createTest(): Promise<void> {
@@ -349,7 +377,23 @@ export function AppMapTestWorkspace(props: {
   }
 
   return (
-    <section class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--map-canvas)] text-text-strong">
+    <section
+      class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--map-canvas)] text-text-strong"
+      onKeyDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          !undoDelete() ||
+          !(event.metaKey || event.ctrlKey) ||
+          event.key.toLowerCase() !== "z" ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+        event.preventDefault();
+        undoStepDelete();
+      }}
+    >
       <header class="flex min-h-14 items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4">
         <div class="min-w-0">
           <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
@@ -428,6 +472,15 @@ export function AppMapTestWorkspace(props: {
         </div>
 
         <div class="min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha">
+          <Show when={undoDelete()}>
+            {(undo) => (
+              <AppMapTestUndo
+                message={undo().message}
+                onUndo={undoStepDelete}
+                onDismiss={() => setUndoDelete()}
+              />
+            )}
+          </Show>
           <Show when={saveState() === "error"}>
             <div
               class="m-3 flex items-start justify-between gap-3 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[12px] text-text-critical-base"
