@@ -50,26 +50,34 @@ function captured(png: Buffer, capturedAt: number, anchor = "toolbar") {
   };
 }
 
-test("scroll survey preserves frames and restores every successful down movement at the end", async () => {
-  const pages = [image(0), image(40), image(40)];
-  let page = 0;
+test("restores actual movement without inverting a confirmed terminal no-op", async () => {
+  const startingPage = 2;
+  const terminalPage = 3;
+  let page = startingPage;
   let successfulDown = 0;
+  let actualDownMovements = 0;
   let up = 0;
   const result = await captureScrollableSurvey({
-    capture: async () => captured(pages[page]!, page),
+    capture: async () => captured(image((page - startingPage) * 40), successfulDown),
     scrollDown: async () => {
       successfulDown += 1;
-      page = Math.min(page + 1, pages.length - 1);
+      const nextPage = Math.min(page + 1, terminalPage);
+      if (nextPage !== page) actualDownMovements += 1;
+      page = nextPage;
     },
     scrollUp: async () => {
       up += 1;
+      page -= 1;
     },
     settle: async () => {},
   });
   assert.equal(result.status, "completed");
   assert.equal(result.reason, "end-of-content");
   assert.equal(result.frames.length, 2);
-  assert.equal(up, successfulDown);
+  assert.equal(successfulDown, 2);
+  assert.equal(actualDownMovements, 1);
+  assert.equal(up, actualDownMovements);
+  assert.equal(page, startingPage);
   assert.equal(result.restoredStartViewport, true);
   assert.ok(result.stitched);
 });

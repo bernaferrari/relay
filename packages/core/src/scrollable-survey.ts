@@ -335,12 +335,12 @@ export async function captureScrollableSurvey(
     );
   }
   let restored = true;
-  let movements = 0;
+  let owedMovements = 0;
   let restorationStarted = false;
   const restoreOnce = async () => {
     if (restorationStarted) return;
     restorationStarted = true;
-    for (let index = 0; index < movements; index += 1) {
+    for (let index = 0; index < owedMovements; index += 1) {
       try {
         await driver.scrollUp();
       } catch {
@@ -371,7 +371,7 @@ export async function captureScrollableSurvey(
         await driver.scrollDown();
         // The target may have moved as soon as the driver resolves. From this
         // point every exit owes exactly one inverse movement.
-        movements += 1;
+        owedMovements += 1;
         await driver.settle();
       } catch {
         decision = {
@@ -428,6 +428,11 @@ export async function captureScrollableSurvey(
         break;
       }
       if (seam.shiftY === 0) {
+        // The matching viewport proves this scrollDown resolved without moving
+        // the target. Discharge its provisional inverse so restoration stops
+        // exactly at the starting viewport, including when capture began
+        // partway through a list.
+        owedMovements -= 1;
         decision = {
           status: "completed",
           reason: "end-of-content",

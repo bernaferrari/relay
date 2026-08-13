@@ -120,14 +120,14 @@ test(
 
 test("build and device-pool IDs are isolated by project", async () => {
   await withStateRoot("relay-state-project-keys-", async () => {
-    await saveBuild({
+    const firstBuild = await saveBuild({
       id: "debug",
       projectId: "one",
       name: "One debug",
       platform: "android",
       status: "ready",
     });
-    await saveBuild({
+    const secondBuild = await saveBuild({
       id: "debug",
       projectId: "two",
       name: "Two debug",
@@ -136,15 +136,25 @@ test("build and device-pool IDs are isolated by project", async () => {
     });
     assert.equal((await listBuilds("one"))[0]?.name, "One debug");
     assert.equal((await listBuilds("two"))[0]?.name, "Two debug");
+    const updatedFirstBuild = await saveBuild({
+      id: "debug",
+      projectId: "one",
+      name: "One debug updated",
+      platform: "android",
+      status: "ready",
+    });
+    assert.equal(updatedFirstBuild.createdAt, firstBuild.createdAt);
+    assert.equal((await listBuilds("one"))[0]?.name, "One debug updated");
+    assert.equal((await listBuilds("two"))[0]?.name, secondBuild.name);
 
-    await saveDevicePool({
+    const firstPool = await saveDevicePool({
       id: "local",
       projectId: "one",
       name: "One pool",
       platform: "android",
       deviceSerials: ["A"],
     });
-    await saveDevicePool({
+    const secondPool = await saveDevicePool({
       id: "local",
       projectId: "two",
       name: "Two pool",
@@ -153,6 +163,16 @@ test("build and device-pool IDs are isolated by project", async () => {
     });
     assert.equal((await listDevicePools("one"))[0]?.name, "One pool");
     assert.equal((await listDevicePools("two"))[0]?.name, "Two pool");
+    const updatedFirstPool = await saveDevicePool({
+      id: "local",
+      projectId: "one",
+      name: "One pool updated",
+      platform: "android",
+      deviceSerials: ["A", "C"],
+    });
+    assert.equal(updatedFirstPool.createdAt, firstPool.createdAt);
+    assert.deepEqual((await listDevicePools("one"))[0]?.deviceSerials, ["A", "C"]);
+    assert.equal((await listDevicePools("two"))[0]?.name, secondPool.name);
   });
 });
 
