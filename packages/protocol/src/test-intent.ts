@@ -159,6 +159,7 @@ export type AppMapTestStepPatch = {
 };
 
 export type AppMapScenarioTestEdit =
+  | { kind: "test.patch"; patch: { name?: string; capture?: AppMapCapturePolicy | null } }
   | {
       kind: "step.add";
       step: AppMapScenarioTestStep;

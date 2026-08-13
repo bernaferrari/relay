@@ -219,7 +219,7 @@ function DecisionBinding(props: {
         </label>
       </Show>
       <small class="text-[10px] text-text-weak">
-        Then/Else nested step editing is available through agents and CLI in this slice.
+        Add Then and Else steps directly beneath this decision in the outline.
       </small>
     </div>
   );

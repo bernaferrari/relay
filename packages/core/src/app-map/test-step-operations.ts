@@ -363,6 +363,31 @@ export function applyScenarioTestStepEdits(
   return edits.reduce((current, edit, editIndex) => {
     try {
       switch (edit.kind) {
+        case "test.patch": {
+          const keys = Object.keys(edit.patch);
+          const unknown = keys.find((key) => !["name", "capture"].includes(key));
+          if (unknown) {
+            fail(
+              "invalid-patch",
+              unknown === "id" || unknown === "kind"
+                ? `Test ${unknown} is immutable`
+                : `Test patch contains unsupported field ${unknown}`,
+            );
+          }
+          if (keys.length === 0) fail("invalid-patch", "Test patch must change a field");
+          const base =
+            edit.patch.capture === null
+              ? (() => {
+                  const { capture: _capture, ...withoutCapture } = current;
+                  return withoutCapture;
+                })()
+              : current;
+          return validated({
+            ...base,
+            ...(edit.patch.name !== undefined ? { name: edit.patch.name } : {}),
+            ...(edit.patch.capture && { capture: structuredClone(edit.patch.capture) }),
+          });
+        }
         case "step.add":
           return addScenarioTestStep(current, edit.step, edit.placement, edit.index);
         case "step.patch":

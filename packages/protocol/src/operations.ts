@@ -1875,7 +1875,9 @@ const appMapTestEditInputParser = objectParser<OperationInput<"app-map.test.edit
     for (const [index, raw] of input.edits.entries()) {
       const edit = record(raw, `Test edit ${index}`);
       const kind = string(edit.kind, `Test edit ${index} kind`);
-      if (kind === "step.add") {
+      if (kind === "test.patch") {
+        record(edit.patch, `Test edit ${index} patch`);
+      } else if (kind === "step.add") {
         record(edit.step, `Test edit ${index} step`);
         if (edit.placement !== undefined) record(edit.placement, `Test edit ${index} placement`);
         if (edit.index !== undefined) number(edit.index, `Test edit ${index} index`);

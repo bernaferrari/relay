@@ -2,6 +2,7 @@ import type {
   AppMapCapturePolicy,
   AppMapCombinePreflight,
   AppMapTest,
+  AppMapScenarioTestEdit,
   MatrixExpansion,
 } from "@relay/protocol";
 import type { CompatibilityReport, JobInfo } from "./api-types";
@@ -327,6 +328,29 @@ export async function saveTestRemote(
     {
       method: "PUT",
       body: JSON.stringify({ expectedRevision: input.expectedRevision, test: input.test }),
+    },
+  );
+}
+
+export async function editTestRemote(
+  request: ServerRequest,
+  input: {
+    appMapId: string;
+    testId: string;
+    expectedRevision: number;
+    eventId?: string;
+    edits: AppMapScenarioTestEdit[];
+  },
+): Promise<{ appMap: { revision: number } }> {
+  return request(
+    `/app-maps/${encodeURIComponent(input.appMapId)}/tests/${encodeURIComponent(input.testId)}/edit`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        ...(input.eventId ? { eventId: input.eventId } : {}),
+        edits: input.edits,
+      }),
     },
   );
 }

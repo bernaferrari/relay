@@ -344,6 +344,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
       testId: "welcome-scenario",
       expectedRevision: 7,
       edits: [
+        { kind: "test.patch", patch: { name: "Welcome smoke" } },
         {
           kind: "step.patch",
           stepId: "check-welcome",
@@ -353,6 +354,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     });
     const scenario = scenarioEdited.appMap.tests["welcome-scenario"];
     assert.ok(scenario?.kind === "scenario");
+    assert.equal(scenario.name, "Welcome smoke");
     assert.equal(scenario.steps[0]?.intent, "The Welcome screen is visible");
 
     const combineSaved = await human.invoke("app-map.combine.save", {

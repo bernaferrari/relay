@@ -199,6 +199,7 @@ test("binds and unbinds while preserving step identity", () => {
 test("applies serializable edits in order and identifies a failed batch edit", () => {
   const source = scenario();
   const changed = applyScenarioTestStepEdits(source, [
+    { kind: "test.patch", patch: { name: "Checkout safely" } },
     { kind: "step.add", step: leaf("review-order"), index: 1 },
     {
       kind: "step.patch",
@@ -213,10 +214,19 @@ test("applies serializable edits in order and identifies a failed batch edit", (
   ]);
 
   assert.equal(changed.steps[0]?.id, "review-order");
+  assert.equal(changed.name, "Checkout safely");
   assert.equal(changed.steps[0]?.intent, "Review the order");
   assert.deepEqual(
     source.steps.map(({ id }) => id),
     ["open-cart", "choose-path", "retry-payment"],
+  );
+
+  assert.throws(
+    () => applyScenarioTestStepEdits(source, [{ kind: "test.patch", patch: {} }]),
+    (error) =>
+      error instanceof AppMapTestStepOperationError &&
+      error.code === "invalid-patch" &&
+      error.editIndex === 0,
   );
 
   assert.throws(

@@ -13,6 +13,7 @@ import {
   saveVariableRemote,
   removeVariableRemote,
   saveTestRemote,
+  editTestRemote,
   saveCombineRemote,
   preflightCombineRemote,
   removeCombineRemote,
@@ -310,6 +311,10 @@ export function createServerRunController(deps: RunControllerDependencies) {
     return saveTestRemote(deps.request, input);
   }
 
+  async function editTest(input: Parameters<typeof editTestRemote>[1]) {
+    return editTestRemote(deps.request, input);
+  }
+
   async function saveCombine(input: Parameters<typeof saveCombineRemote>[1]) {
     return saveCombineRemote(deps.request, input);
   }
@@ -469,6 +474,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     saveVariable,
     removeVariable,
     saveTest,
+    editTest,
     saveCombine,
     preflightCombine,
     removeCombine,

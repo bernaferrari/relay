@@ -45,21 +45,16 @@ import { appMapPrimaryAction } from "../lib/app-map-primary-action";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
 import type { SettingsSection } from "../pages/settings";
+import { AuthoringSurfaceSwitch, type AuthoringSurface } from "./authoring-surface-switch";
+import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
 
 type ProductArea = "tests" | "runs";
 type MapLibraryArea = ProductArea;
-type AuthoringSurface = "test" | "map";
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
 );
 const RunsWorkspace = lazy(() =>
   import("./runs-workspace").then((module) => ({ default: module.RunsWorkspace })),
-);
-const AppMapWorkspace = lazy(() =>
-  import("./app-map-workspace").then((module) => ({ default: module.AppMapWorkspace })),
-);
-const AppMapTestWorkspace = lazy(() =>
-  import("./app-map-test-workspace").then((module) => ({ default: module.AppMapTestWorkspace })),
 );
 const EmptyAppMap = lazy(() =>
   import("./app-map-empty").then((module) => ({ default: module.EmptyAppMap })),
@@ -717,38 +712,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           >
             <Show when={area() === "tests"}>
               <Show when={selectedMap()}>
-                <div
-                  class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
-                  role="group"
-                  aria-label="Authoring surface"
-                >
-                  <button
-                    type="button"
-                    class={cn(
-                      "min-h-8 rounded-md px-3 text-[11px] font-medium transition-[background-color,color,box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
-                      authoringSurface() === "test"
-                        ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
-                        : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
-                    )}
-                    aria-pressed={authoringSurface() === "test"}
-                    onClick={() => setAuthoringSurface("test")}
-                  >
-                    Test
-                  </button>
-                  <button
-                    type="button"
-                    class={cn(
-                      "min-h-8 rounded-md px-3 text-[11px] font-medium transition-[background-color,color,box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
-                      authoringSurface() === "map"
-                        ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
-                        : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
-                    )}
-                    aria-pressed={authoringSurface() === "map"}
-                    onClick={() => setAuthoringSurface("map")}
-                  >
-                    Map
-                  </button>
-                </div>
+                <AuthoringSurfaceSwitch value={authoringSurface()} onChange={setAuthoringSurface} />
               </Show>
               <DevicePicker
                 liveOpen={devicePanelOpen()}
@@ -1003,28 +967,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   }
                 >
                   <div class={cn(shellMapWrap, "flex flex-1")}>
-                    <Show
-                      when={authoringSurface() === "test"}
-                      fallback={
-                        <Suspense fallback={<WorkspaceLoading label="map" />}>
-                          <AppMapWorkspace
-                            navigatorOpen={navOpen()}
-                            onOpenTargets={() => props.onOpenSettings("targets")}
-                            onOpenActions={() => setAuthoringSurface("test")}
-                            onOpenVariables={() => setVariablesOpen(true)}
-                            onOpenCombine={toggleRunMatrix}
-                            onOpenRun={(id) => {
-                              server.setSelectedJobId(id);
-                              setArea("runs");
-                            }}
-                          />
-                        </Suspense>
-                      }
-                    >
-                      <Suspense fallback={<WorkspaceLoading label="test editor" />}>
-                        <AppMapTestWorkspace onOpenMap={() => setAuthoringSurface("map")} />
-                      </Suspense>
-                    </Show>
+                    <StudioAuthoringWorkspace
+                      surface={authoringSurface()}
+                      navigatorOpen={navOpen()}
+                      onOpenSurface={setAuthoringSurface}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                      onOpenVariables={() => setVariablesOpen(true)}
+                      onOpenCombine={toggleRunMatrix}
+                      onOpenRun={(id) => {
+                        server.setSelectedJobId(id);
+                        setArea("runs");
+                      }}
+                    />
                   </div>
                   <Show when={settingsOpen()}>
                     <MapPropertiesPanel
