@@ -921,6 +921,90 @@ test("rejects a stale proposal when another actor changed the same entity", () =
   );
 });
 
+test("reviews and atomically approves stable-ID graph Test edits", () => {
+  const input = mapFixture();
+  input.tests.checkout = {
+    ...entity("checkout"),
+    name: "Checkout",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "submit-order",
+        kind: "instruction",
+        intent: "Submit order",
+        binding: { status: "unresolved", reason: "Needs a mapped path" },
+      },
+    ],
+  };
+  const proposal: Proposal = {
+    ...entity("proposal-test-edit"),
+    title: "Clarify checkout",
+    status: "pending",
+    baseRevision: input.revision,
+    changes: [
+      {
+        kind: "test.edit",
+        testId: "checkout",
+        edits: [
+          { kind: "test.patch", patch: { name: "Checkout smoke" } },
+          {
+            kind: "step.patch",
+            stepId: "submit-order",
+            patch: { intent: "Submit the reviewed order" },
+          },
+        ],
+      },
+    ],
+  };
+
+  const submitted = submitAppMapProposal(input, proposal, context(input, "submit-test-edit"));
+  const change = submitted.proposals[proposal.id]?.changes[0];
+  assert.ok(change?.kind === "test.edit");
+  assert.deepEqual(change.review, {
+    before: { name: "Checkout", stepCount: 1, resolvedStepCount: 0, unresolvedStepCount: 1 },
+    after: {
+      name: "Checkout smoke",
+      stepCount: 1,
+      resolvedStepCount: 0,
+      unresolvedStepCount: 1,
+    },
+    edits: [
+      { kind: "test.patch", summary: "Rename “Checkout” to “Checkout smoke”" },
+      {
+        kind: "step.patch",
+        stepId: "submit-order",
+        summary: "Update intent for instruction step “Submit order”",
+      },
+    ],
+  });
+  assert.equal((submitted.tests.checkout as { name: string }).name, "Checkout");
+
+  const approved = approveAppMapProposal(
+    submitted,
+    proposal.id,
+    context(submitted, "approve-test-edit"),
+  );
+  const test = approved.tests.checkout;
+  assert.ok(test?.kind === "scenario");
+  assert.equal(test.name, "Checkout smoke");
+  assert.equal(test.steps[0]?.intent, "Submit the reviewed order");
+
+  const stale = submitAppMapProposal(input, proposal, context(input, "submit-stale-test-edit"));
+  const concurrent = saveAppMapTest(
+    stale,
+    { ...input.tests.checkout!, name: "Checkout regression", updatedAt: stale.updatedAt + 1 },
+    context(stale, "concurrent-test-edit", stale.updatedAt + 1),
+  );
+  expectError("revision-conflict", () =>
+    approveAppMapProposal(
+      concurrent,
+      proposal.id,
+      context(concurrent, "approve-stale-test-edit"),
+    ),
+  );
+});
+
 test("rejects a proposal without applying its changes", () => {
   const input = mapFixture();
   input.proposals["proposal-1"] = pendingProposal(input.revision);

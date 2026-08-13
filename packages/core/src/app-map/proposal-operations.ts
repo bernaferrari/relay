@@ -5,6 +5,7 @@ import { mutateAppMap } from "./mutation.js";
 import { proposalConflictsSince } from "./proposal-conflicts.js";
 import { dropScreen, patchScreen, putScreen } from "./screen-operations.js";
 import { dropMapGroup, putMapGroup } from "./group-operations.js";
+import { applyScenarioTestStepEdits } from "./test-step-operations.js";
 
 function applyProposalChange(
   draft: AppMap,
@@ -37,6 +38,21 @@ function applyProposalChange(
     case "group.remove":
       dropMapGroup(draft, change.groupId);
       break;
+    case "test.edit": {
+      const test = draft.tests[change.testId];
+      if (!test) appMapFail("missing-reference", `Test ${change.testId} does not exist`);
+      if (test.kind !== "scenario") {
+        appMapFail(
+          "invalid-map",
+          `Test ${change.testId} is a legacy ${test.kind} test and cannot accept graph-native edits`,
+        );
+      }
+      draft.tests[change.testId] = {
+        ...applyScenarioTestStepEdits(test, change.edits),
+        updatedAt: at,
+      };
+      break;
+    }
   }
 }
 

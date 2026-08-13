@@ -103,6 +103,36 @@ test("App Map flow runs accept an explicit replay boundary", () => {
   );
 });
 
+test("graph Test proposals accept only bounded semantic edit batches", () => {
+  const input = {
+    appMapId: "map-1",
+    testId: "checkout",
+    expectedRevision: 7,
+    proposalId: "proposal-checkout",
+    title: "Clarify checkout",
+    edits: [
+      {
+        kind: "step.patch",
+        stepId: "submit-order",
+        patch: { intent: "Submit the reviewed order" },
+      },
+    ],
+  };
+  assert.deepEqual(operationDefinition("app-map.test.propose").input.parse(input), input);
+  assert.throws(
+    () => operationDefinition("app-map.test.propose").input.parse({ ...input, edits: [] }),
+    /between 1 and 100 semantic edits/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.propose").input.parse({
+        ...input,
+        edits: [{ kind: "replace-source", source: "generated code" }],
+      }),
+    /kind.*unsupported/u,
+  );
+});
+
 test("screenshot preview coordinates accept query-string numbers", () => {
   assert.deepEqual(
     operationDefinition("target.screenshot.capture").input.parse({

@@ -824,6 +824,36 @@ function assertProposalChange(change: ProposalChange, scope: AppMapScope, label:
     case "group.remove":
       identifier(change.groupId, `${label}.groupId`);
       break;
+    case "test.edit":
+      identifier(change.testId, `${label}.testId`);
+      if (!Array.isArray(change.edits) || change.edits.length === 0 || change.edits.length > 100) {
+        appMapFail("invalid-map", `${label}.edits must contain between 1 and 100 edits`);
+      }
+      if (change.review !== undefined) {
+        objectValue(change.review, `${label}.review`);
+        for (const side of ["before", "after"] as const) {
+          const value = change.review[side];
+          objectValue(value, `${label}.review.${side}`);
+          requiredText(value.name, `${label}.review.${side}.name`);
+          for (const count of ["stepCount", "resolvedStepCount", "unresolvedStepCount"] as const) {
+            safeInteger(value[count], `${label}.review.${side}.${count}`);
+          }
+          if (value.resolvedStepCount + value.unresolvedStepCount !== value.stepCount) {
+            appMapFail("invalid-map", `${label}.review.${side} step counts are inconsistent`);
+          }
+        }
+        if (!Array.isArray(change.review.edits) || change.review.edits.length !== change.edits.length) {
+          appMapFail("invalid-map", `${label}.review.edits must describe every edit`);
+        }
+        change.review.edits.forEach((edit, index) => {
+          objectValue(edit, `${label}.review.edits[${index}]`);
+          requiredText(edit.kind, `${label}.review.edits[${index}].kind`);
+          requiredText(edit.summary, `${label}.review.edits[${index}].summary`);
+          if (edit.stepId !== undefined)
+            identifier(edit.stepId, `${label}.review.edits[${index}].stepId`);
+        });
+      }
+      break;
     default:
       appMapFail("invalid-map", `${label}.kind is unsupported`);
   }

@@ -14,6 +14,7 @@ import type {
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
 import { proposalConflictsSince } from "./proposal-conflicts.js";
+import { materializeProposalReviews } from "./proposal-review.js";
 
 export function updateAppMap(
   map: AppMap,
@@ -439,6 +440,7 @@ export function submitAppMapProposal(
   }
   if (map.proposals[proposal.id])
     appMapFail("duplicate-id", `Proposal ${proposal.id} already exists`);
+  const reviewedProposal = materializeProposalReviews(map, proposal);
   return mutateAppMap(
     map,
     context,
@@ -449,7 +451,7 @@ export function submitAppMapProposal(
     },
     (draft) => {
       draft.proposals[proposal.id] = {
-        ...structuredClone(proposal),
+        ...reviewedProposal,
         baseRevision: draft.revision,
         ...(originalBaseRevision < draft.revision ? { sourceRevision: originalBaseRevision } : {}),
       };

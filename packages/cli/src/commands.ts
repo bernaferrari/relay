@@ -910,6 +910,31 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "app-map.test.propose",
+    path("test propose", ["appMapId", "testId"], undefined, {
+      summary: "Submit stable-ID Test edits for human review",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "App Map revision the agent reviewed",
+        },
+        {
+          name: "edits",
+          type: "array",
+          required: true,
+          description: "The same semantic edits accepted by test edit",
+        },
+        { name: "proposalId", type: "string", description: "Optional stable proposal id" },
+        { name: "title", type: "string", description: "Optional review title" },
+      ],
+      examples: [
+        'relay test propose checkout smoke --input \'{"expectedRevision":7,"title":"Clarify checkout intent","edits":[{"kind":"step.patch","stepId":"submit-order","patch":{"intent":"Submit the reviewed order"}}]}\'',
+      ],
+    }),
+  ),
+  mapped(
     "app-map.test.compile",
     path("test compile", ["appMapId", "testId"], undefined, {
       summary: "Validate and inspect deterministic recipes plus step provenance",

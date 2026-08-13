@@ -147,6 +147,85 @@ const connectionDestination = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("end") }).strict(),
 ]);
 
+const testStepPlacement = z
+  .object({
+    parentStepId: identifier("Stable parent Test step identifier").optional(),
+    branch: z.enum(["root", "then", "else", "steps"]).optional(),
+  })
+  .strict();
+
+const testSemanticEdit = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("test.patch"),
+      patch: z
+        .object({
+          name: text("New Test name").optional(),
+          capture: unknownRecord
+            .describe("Evidence capture policy; use null to remove it")
+            .nullable()
+            .optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.add"),
+      step: unknownRecord.describe("Complete graph-native Test step with a new stable id"),
+      placement: testStepPlacement.optional(),
+      index: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.patch"),
+      stepId: identifier("Stable Test step identifier"),
+      patch: z
+        .object({
+          intent: text("Human-readable step intent").optional(),
+          note: z.string().nullable().optional(),
+          binding: unknownRecord.describe("Resolved or unresolved canonical binding").optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.remove"),
+      stepId: identifier("Stable Test step identifier"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.reorder"),
+      orderedStepIds: z.array(identifier("Stable sibling Test step identifier")),
+      placement: testStepPlacement.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.bind"),
+      stepId: identifier("Stable Test step identifier"),
+      binding: unknownRecord.describe("Resolved canonical binding"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("step.unbind"),
+      stepId: identifier("Stable Test step identifier"),
+      reason: text("Why the binding is unresolved"),
+      candidates: z.array(unknownRecord).optional(),
+    })
+    .strict(),
+]);
+
+const testSemanticEdits = z
+  .array(testSemanticEdit)
+  .min(1)
+  .max(100)
+  .describe("Ordered atomic stable-ID Test edits");
+
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
@@ -496,6 +575,27 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       routineId: identifier("Routine identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
+    })
+    .strict(),
+  "app-map.test.edit": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      edits: testSemanticEdits,
+    })
+    .strict(),
+  "app-map.test.propose": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("App Map revision the proposal was based on"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      proposalId: identifier("Optional stable proposal identifier").optional(),
+      title: text("Human-readable review title").optional(),
+      description: text("Optional review context").optional(),
+      edits: testSemanticEdits,
     })
     .strict(),
   "app-map.proposal.submit": z

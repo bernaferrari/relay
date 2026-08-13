@@ -161,6 +161,7 @@ const mapOperations = [
 
 const authorOperations = [
   ...mapOperations,
+  "app-map.test.propose",
   "workspace.variables.get",
   "workspace.variables.update",
   "authoring.take.trim",

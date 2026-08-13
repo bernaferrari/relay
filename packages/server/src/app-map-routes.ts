@@ -1353,6 +1353,46 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     return true;
   }
 
+  const testProposal = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/proposals");
+  if (method === "POST" && testProposal) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.propose">,
+      "appMapId" | "testId"
+    >;
+    const operation = currentOperationContext();
+    if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
+    const proposalId = body.proposalId?.trim() || `proposal:${operation.requestId}`;
+    const appMap = await applyRebasableMutation(
+      scope,
+      testProposal.appMapId!,
+      body.eventId,
+      (map, context) => {
+        const testId = testProposal.testId!;
+        const test = map.tests[testId];
+        if (!test) throw new AppMapDomainError("missing-reference", `Test ${testId} does not exist`);
+        return submitAppMapProposal(
+          map,
+          {
+            id: proposalId,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            title: body.title?.trim() || `Edit ${test.name}`,
+            ...(body.description?.trim() ? { description: body.description.trim() } : {}),
+            status: "pending",
+            baseRevision: body.expectedRevision,
+            changes: [{ kind: "test.edit", testId, edits: body.edits }],
+            createdAt: context.at,
+            updatedAt: context.at,
+          },
+          context,
+        );
+      },
+    );
+    json(response, 200, { appMap, proposalId });
+    return true;
+  }
+
   const comboSave = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId");
   if (method === "PUT" && comboSave) {
     const body = (await parseJsonBody(request)) as Omit<

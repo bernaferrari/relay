@@ -1,5 +1,5 @@
 import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recipes.js";
-import type { AppMapScenarioTest } from "./test-intent.js";
+import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.js";
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity, TargetProfile } from "./index.js";
 
@@ -563,7 +563,36 @@ export type ProposalChange =
   | { kind: "connection.update"; connectionId: string; patch: ConnectionPatch }
   | { kind: "connection.remove"; connectionId: string }
   | { kind: "group.save"; group: MapGroup }
-  | { kind: "group.remove"; groupId: string };
+  | { kind: "group.remove"; groupId: string }
+  /** Reviewable graph-Test edits use the same stable-ID operations as direct
+   * authoring. A proposal is a review boundary, not a second Test format. */
+  | {
+      kind: "test.edit";
+      testId: string;
+      edits: AppMapScenarioTestEdit[];
+      /** Server-derived, review-only projection. Approval always replays the
+       * semantic edits and never trusts this cached description as input. */
+      review?: AppMapTestProposalReview;
+    };
+
+export type AppMapTestProposalSnapshot = {
+  name: string;
+  stepCount: number;
+  resolvedStepCount: number;
+  unresolvedStepCount: number;
+};
+
+export type AppMapTestProposalEditSummary = {
+  kind: AppMapScenarioTestEdit["kind"];
+  summary: string;
+  stepId?: string;
+};
+
+export type AppMapTestProposalReview = {
+  before: AppMapTestProposalSnapshot;
+  after: AppMapTestProposalSnapshot;
+  edits: AppMapTestProposalEditSummary[];
+};
 
 export type ProposalDecision = { actorId: string; at: number; reason?: string };
 

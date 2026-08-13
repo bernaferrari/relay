@@ -856,6 +856,19 @@ type SpecificOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.test.propose": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+      proposalId?: string;
+      title?: string;
+      description?: string;
+      edits: AppMapScenarioTestEdit[];
+    };
+    output: { appMap: AppMap; proposalId: string };
+  };
   "app-map.test.compile": {
     input: { appMapId: string; testId: string };
     output: { plan: AppMapCompiledTest };
@@ -1862,6 +1875,47 @@ function appMapMutationParser<Id extends OperationId>(
   });
 }
 
+function validateAppMapTestEdits(input: Record<string, unknown>, label: string): void {
+  if (!Array.isArray(input.edits) || input.edits.length === 0 || input.edits.length > 100) {
+    fail(`${label} edits`, "must contain between 1 and 100 semantic edits");
+  }
+  for (const [index, raw] of input.edits.entries()) {
+    const edit = record(raw, `${label} edit ${index}`);
+    const kind = string(edit.kind, `${label} edit ${index} kind`);
+    if (kind === "test.patch") {
+      record(edit.patch, `${label} edit ${index} patch`);
+    } else if (kind === "step.add") {
+      record(edit.step, `${label} edit ${index} step`);
+      if (edit.placement !== undefined) record(edit.placement, `${label} edit ${index} placement`);
+      if (edit.index !== undefined) number(edit.index, `${label} edit ${index} index`);
+    } else if (kind === "step.patch") {
+      string(edit.stepId, `${label} edit ${index} stepId`);
+      record(edit.patch, `${label} edit ${index} patch`);
+    } else if (kind === "step.remove") {
+      string(edit.stepId, `${label} edit ${index} stepId`);
+    } else if (kind === "step.reorder") {
+      if (!Array.isArray(edit.orderedStepIds)) {
+        fail(`${label} edit ${index} orderedStepIds`, "must be an array");
+      }
+      edit.orderedStepIds.forEach((id, stepIndex) =>
+        string(id, `${label} edit ${index} orderedStepIds ${stepIndex}`),
+      );
+      if (edit.placement !== undefined) record(edit.placement, `${label} edit ${index} placement`);
+    } else if (kind === "step.bind") {
+      string(edit.stepId, `${label} edit ${index} stepId`);
+      record(edit.binding, `${label} edit ${index} binding`);
+    } else if (kind === "step.unbind") {
+      string(edit.stepId, `${label} edit ${index} stepId`);
+      string(edit.reason, `${label} edit ${index} reason`);
+      if (edit.candidates !== undefined && !Array.isArray(edit.candidates)) {
+        fail(`${label} edit ${index} candidates`, "must be an array");
+      }
+    } else {
+      fail(`${label} edit ${index} kind`, "is unsupported");
+    }
+  }
+}
+
 const appMapTestEditInputParser = objectParser<OperationInput<"app-map.test.edit">>(
   "Test edit",
   (input) => {
@@ -1869,44 +1923,21 @@ const appMapTestEditInputParser = objectParser<OperationInput<"app-map.test.edit
     string(input.testId, "Test edit testId");
     number(input.expectedRevision, "Test edit expectedRevision");
     if (input.eventId !== undefined) string(input.eventId, "Test edit eventId");
-    if (!Array.isArray(input.edits) || input.edits.length === 0 || input.edits.length > 100) {
-      fail("Test edits", "must contain between 1 and 100 semantic edits");
-    }
-    for (const [index, raw] of input.edits.entries()) {
-      const edit = record(raw, `Test edit ${index}`);
-      const kind = string(edit.kind, `Test edit ${index} kind`);
-      if (kind === "test.patch") {
-        record(edit.patch, `Test edit ${index} patch`);
-      } else if (kind === "step.add") {
-        record(edit.step, `Test edit ${index} step`);
-        if (edit.placement !== undefined) record(edit.placement, `Test edit ${index} placement`);
-        if (edit.index !== undefined) number(edit.index, `Test edit ${index} index`);
-      } else if (kind === "step.patch") {
-        string(edit.stepId, `Test edit ${index} stepId`);
-        record(edit.patch, `Test edit ${index} patch`);
-      } else if (kind === "step.remove") {
-        string(edit.stepId, `Test edit ${index} stepId`);
-      } else if (kind === "step.reorder") {
-        if (!Array.isArray(edit.orderedStepIds)) {
-          fail(`Test edit ${index} orderedStepIds`, "must be an array");
-        }
-        edit.orderedStepIds.forEach((id, stepIndex) =>
-          string(id, `Test edit ${index} orderedStepIds ${stepIndex}`),
-        );
-        if (edit.placement !== undefined) record(edit.placement, `Test edit ${index} placement`);
-      } else if (kind === "step.bind") {
-        string(edit.stepId, `Test edit ${index} stepId`);
-        record(edit.binding, `Test edit ${index} binding`);
-      } else if (kind === "step.unbind") {
-        string(edit.stepId, `Test edit ${index} stepId`);
-        string(edit.reason, `Test edit ${index} reason`);
-        if (edit.candidates !== undefined && !Array.isArray(edit.candidates)) {
-          fail(`Test edit ${index} candidates`, "must be an array");
-        }
-      } else {
-        fail(`Test edit ${index} kind`, "is unsupported");
-      }
-    }
+    validateAppMapTestEdits(input, "Test");
+  },
+);
+
+const appMapTestProposeInputParser = objectParser<OperationInput<"app-map.test.propose">>(
+  "Test proposal",
+  (input) => {
+    string(input.appMapId, "Test proposal appMapId");
+    string(input.testId, "Test proposal testId");
+    number(input.expectedRevision, "Test proposal expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "Test proposal eventId");
+    if (input.proposalId !== undefined) string(input.proposalId, "Test proposal proposalId");
+    if (input.title !== undefined) string(input.title, "Test proposal title");
+    if (input.description !== undefined) string(input.description, "Test proposal description");
+    validateAppMapTestEdits(input, "Test proposal");
   },
 );
 
@@ -3358,6 +3389,23 @@ export const operationDefinitions = [
       category: "authoring",
       input: appMapTestEditInputParser,
       output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.test.propose",
+    "Propose stable-ID edits to a graph-native map test",
+    "POST",
+    "/app-maps/:appMapId/tests/:testId/proposals",
+    {
+      category: "authoring",
+      input: appMapTestProposeInputParser,
+      output: objectParser<OperationOutput<"app-map.test.propose">>(
+        "Test proposal response",
+        (output) => {
+          record(output.appMap, "Test proposal App Map");
+          string(output.proposalId, "Test proposal proposalId");
+        },
+      ),
     },
   ),
   query(
