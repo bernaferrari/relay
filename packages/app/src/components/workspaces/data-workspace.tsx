@@ -5,6 +5,12 @@ import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
+import { DataSourceControl } from "../data-source-control";
+import {
+  dataSourceModePatch,
+  dataSourceScopePatch,
+  type DataSourceMode,
+} from "../../lib/data-source-mode";
 import {
   readPrivateVariableValues,
   removePrivateVariableValue,
@@ -26,7 +32,8 @@ type DataRow = {
   id: string;
   name: string;
   scope: "shared" | "private";
-  mode: "AI" | "List" | "Default";
+  mode: DataSourceMode;
+  sharedMode?: DataSourceMode;
   preview: string;
   values?: string[];
   fallback: string;
@@ -34,7 +41,7 @@ type DataRow = {
 };
 
 const fieldClass =
-  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-[13px]/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
+  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-[16px]/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
 
 export function DataWorkspace(props: {
   onConfigureProvider: () => void;
@@ -288,12 +295,7 @@ export function DataWorkspace(props: {
                               "bg-background-stronger text-text-strong shadow-[0_1px_2px_rgb(0_0_0/8%)]",
                           )}
                           aria-pressed={row().scope === scope}
-                          onClick={() =>
-                            patchRow(row().id, {
-                              scope,
-                              ...(scope === "private" ? { mode: "Default" as const } : {}),
-                            })
-                          }
+                          onClick={() => patchRow(row().id, dataSourceScopePatch(row(), scope))}
                         >
                           {scope === "shared" ? "Project" : "Only me"}
                         </button>
@@ -315,24 +317,12 @@ export function DataWorkspace(props: {
                     onInput={(event) => patchRow(row().id, { name: event.currentTarget.value })}
                   />
                 </label>
-                <Show when={row().scope === "shared" && row().mode === "AI"}>
-                  <label class="grid gap-1.5">
-                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">
-                      How to choose it
-                    </span>
-                    <select
-                      class={fieldClass}
-                      value={row().mode}
-                      onChange={(event) =>
-                        patchRow(row().id, { mode: event.currentTarget.value as DataRow["mode"] })
-                      }
-                    >
-                      <option value="AI">Generate with AI</option>
-                      <option value="List">Choose from a list</option>
-                      <option value="Default">Fixed value</option>
-                    </select>
-                  </label>
-                </Show>
+                <DataSourceControl
+                  scope={row().scope}
+                  mode={row().mode}
+                  class={fieldClass}
+                  onModeChange={(mode) => patchRow(row().id, dataSourceModePatch(mode))}
+                />
                 <Show
                   when={row().scope === "private"}
                   fallback={

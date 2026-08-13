@@ -83,6 +83,7 @@ import type {
 } from "../lib/api-types";
 import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
 import { mergeAuthoringSessionProjections } from "../lib/authoring-session-projection";
+import { refreshFailure, type RefreshOutcome } from "../lib/refresh-outcome";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -790,8 +791,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return `${serverUrl()}/authoring-evidence/${sha256}${query}`;
     }
 
-    async function refreshJobs() {
-      if (health() === "offline") return;
+    async function refreshJobs(): Promise<RefreshOutcome> {
+      if (health() === "offline") return refreshFailure("Relay is offline");
       try {
         const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
         const list = asArray<JobInfo>(data, "jobs");
@@ -809,22 +810,20 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           });
         });
         setRunning(Boolean(active && (active.status === "running" || active.status === "paused")));
-      } catch {
-        /* ignore */
+        return { ok: true };
+      } catch (error) {
+        return refreshFailure(error);
       }
     }
 
-    async function refreshRuns(appMapId?: string) {
-      if (health() === "offline") return;
+    async function refreshRuns(appMapId?: string): Promise<RefreshOutcome> {
+      if (health() === "offline") return refreshFailure("Relay is offline");
       try {
         const query = new URLSearchParams({ limit: appMapId ? "200" : "40" });
         if (appMapId) query.set("appMapId", appMapId);
         const data = await request<{ runs: PersistedRun[]; root: string }>(`/runs?${query}`);
         const list = asArray<PersistedRun>(data, "runs");
-        // /runs returns lightweight catalog summaries with no steps/frames.
-        // A run already enriched via loadRunDetail (full steps + frames) must
-        // keep that detail across this refresh, or an open run report would
-        // silently revert to "not reached" the next time this poll fires.
+        // Preserve detail already enriched by loadRunDetail across catalog-only refreshes.
         setPersistedRuns((current) => {
           const detailed = new Map(
             current.filter((run) => run.steps?.length).map((run) => [run.id, run]),
@@ -846,8 +845,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           return [...byId.values()].sort((left, right) => right.writtenAt - left.writtenAt);
         });
         setRunsRoot(data.root ?? "");
-      } catch {
-        /* ignore */
+        return { ok: true };
+      } catch (error) {
+        return refreshFailure(error);
       }
     }
 
@@ -924,7 +924,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runAction,
       setJobs,
       setPersistedRuns,
-      refreshRuns,
+      refreshRuns: async () => void (await refreshRuns()),
     });
 
     async function generate(input: GenerationRequest): Promise<GenerationResult> {
@@ -1718,7 +1718,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedJobId,
       setSelectedAction,
       setError,
-      refreshJobs,
+      refreshJobs: async () => void (await refreshJobs()),
       rememberJob: (job) =>
         setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]),
       notify: platform.notify,

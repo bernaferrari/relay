@@ -310,11 +310,12 @@ export function createMcpServer({
     instructions: relayMcpInstructions,
   });
 
-  for (const descriptor of relayMcpToolsForProfile(profile)) {
+  const tools = relayMcpToolsForProfile(profile);
+  for (const descriptor of tools) {
     registerRelayTool(server, descriptor, invoker);
   }
   registerRelayResources(server, { invoker, scope });
-  registerRelayPrompts(server, scope);
+  registerRelayPrompts(server, scope, tools);
 
   return server;
 }

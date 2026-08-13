@@ -13,7 +13,6 @@ import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
 import { nextRovingIndex } from "../lib/roving-focus";
 import { eyebrow, mono, productPage } from "../lib/ui";
-import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { runFrameCanvasItems } from "../lib/frame-canvas-presentation";
 import { initialRunReviewStep, runCompletion, runReviewCounts } from "../lib/run-review-model";
 import type {
@@ -37,6 +36,7 @@ import { RunReplayStage } from "./run-replay-stage";
 import { RunMatrixReview } from "./run-matrix-review";
 import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
+import { RunsRefreshControl } from "./runs-refresh-control";
 import {
   filterRunRows,
   dedupeLatestRunFlows,
@@ -92,7 +92,6 @@ export function RunsWorkspace(props: {
   const [regressionSignals, setRegressionSignals] = createSignal<
     import("@relay/protocol").RegressionSignal[]
   >([]);
-  const [refreshing, setRefreshing] = createSignal(false);
   const [runFilter, setRunFilter] = createSignal<RunFilterId>("all");
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const requestedDetails = new Set<string>();
@@ -101,18 +100,6 @@ export function RunsWorkspace(props: {
     if (linkedRun) void server.loadRunDetail(linkedRun);
   });
 
-  async function refreshRuns(): Promise<void> {
-    if (refreshing()) return;
-    setRefreshing(true);
-    try {
-      await withRefreshFeedback(async () => {
-        await server.refreshJobs();
-        await server.refreshRuns();
-      });
-    } finally {
-      setRefreshing(false);
-    }
-  }
   const rows = createMemo(() => {
     const live = server.jobs();
     const liveIds = new Set(live.map((run) => run.id));
@@ -438,25 +425,10 @@ export function RunsWorkspace(props: {
               Every path and matrix run, including screenshot evidence.
             </p>
           </div>
-          <Show when={rows().length > 0}>
-            <Button
-              variant="secondary"
-              size="lg"
-              disabled={refreshing()}
-              aria-busy={refreshing()}
-              onClick={() => void refreshRuns()}
-            >
-              <Icon
-                name="refresh"
-                size={15}
-                class={cn(
-                  refreshing() &&
-                    "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
-                )}
-              />{" "}
-              Refresh
-            </Button>
-          </Show>
+          <RunsRefreshControl
+            refreshJobs={server.refreshJobs}
+            refreshRuns={() => server.refreshRuns()}
+          />
         </div>
       </Show>
       <div

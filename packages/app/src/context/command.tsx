@@ -133,6 +133,24 @@ function formatKeybind(bind: string): string {
     .join(isMac ? "" : "+");
 }
 
+export const commandResultsId = "relay-command-results";
+export function commandOptionId(commandId: string): string {
+  return `relay-command-option-${encodeURIComponent(commandId)}`;
+}
+export function commandComboboxAttributes(activeCommandId?: string) {
+  return {
+    role: "combobox" as const,
+    "aria-expanded": true,
+    "aria-haspopup": "listbox" as const,
+    "aria-controls": commandResultsId,
+    "aria-autocomplete": "list" as const,
+    "aria-activedescendant": activeCommandId ? commandOptionId(activeCommandId) : undefined,
+  };
+}
+export function commandResultAnnouncement(count: number): string {
+  return count === 1 ? "1 command available" : `${count} commands available`;
+}
+
 export const { use: useCommand, provider: CommandProvider } = createSimpleContext({
   name: "Command",
   gate: false,
@@ -333,6 +351,7 @@ export function CommandPalette(): JSX.Element {
   });
 
   const filtered = cmd.filtered;
+  const activeCommandId = () => filtered()[cmd.active()]?.id;
   const groupStart = (idx: number) => {
     const list = filtered();
     if (idx === 0) return true;
@@ -362,30 +381,35 @@ export function CommandPalette(): JSX.Element {
         >
           <div class="border-b border-border-weak-base p-1">
             <input
-              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-14-regular text-text-strong placeholder:text-text-weak focus:outline-none"
+              type="search"
+              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-[16px]/[1.4] text-text-strong placeholder:text-text-weak focus:outline-none"
               placeholder="Search commands, tests…"
+              aria-label="Search commands"
+              {...commandComboboxAttributes(activeCommandId())}
               value={cmd.query()}
               onInput={(e) => cmd.setQuery(e.currentTarget.value)}
               autocomplete="off"
               spellcheck={false}
             />
-            <Show
-              when={filtered().length > 0}
-              fallback={
-                <div
-                  class="px-6 py-8 text-center text-14-regular text-text-base"
-                  role="presentation"
-                >
-                  No matching commands
-                </div>
-              }
+            <span class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {commandResultAnnouncement(filtered().length)}
+            </span>
+            <div
+              id={commandResultsId}
+              class="max-h-[min(40vh,360px)] flex-1 overflow-y-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="listbox"
+              aria-label="Commands"
+              ref={(el) => {
+                listRef = el;
+              }}
             >
-              <div
-                class="max-h-[min(40vh,360px)] flex-1 overflow-y-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                role="listbox"
-                ref={(el) => {
-                  listRef = el;
-                }}
+              <Show
+                when={filtered().length > 0}
+                fallback={
+                  <div class="px-6 py-8 text-center text-14-regular text-text-base">
+                    No matching commands
+                  </div>
+                }
               >
                 <For each={filtered()}>
                   {(c, i) => (
@@ -399,10 +423,11 @@ export function CommandPalette(): JSX.Element {
                         </div>
                       </Show>
                       <button
+                        id={commandOptionId(c.id)}
                         type="button"
                         role="option"
                         class={cn(
-                          "flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-14-regular text-text-strong transition-colors",
+                          "flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-14-regular text-text-strong transition-colors",
                           "hover:bg-surface-raised-base-hover",
                           cmd.active() === i() && "bg-surface-base-active",
                         )}
@@ -428,8 +453,8 @@ export function CommandPalette(): JSX.Element {
                     </>
                   )}
                 </For>
-              </div>
-            </Show>
+              </Show>
+            </div>
           </div>
         </div>
       </div>

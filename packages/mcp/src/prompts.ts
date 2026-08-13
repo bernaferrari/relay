@@ -1,6 +1,8 @@
 import { McpServer, type GetPromptResult } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { relayMcpResourceUris } from "./resources.js";
+import type { OperationId } from "@relay/protocol";
+import type { RelayMcpToolDescriptor } from "./tools.js";
 
 export const relayMcpPromptNames = {
   mapAppSafely: "relay_map_this_app_safely",
@@ -9,28 +11,90 @@ export const relayMcpPromptNames = {
   planRunMatrix: "relay_plan_this_run_matrix",
 } as const;
 
+export type RelayMcpPromptDescriptor = {
+  readonly name: (typeof relayMcpPromptNames)[keyof typeof relayMcpPromptNames];
+  readonly title: string;
+  readonly description: string;
+  readonly requiredOperationIds: readonly OperationId[];
+};
+
 export const relayMcpPrompts = [
   {
     name: relayMcpPromptNames.mapAppSafely,
     title: "Map this app safely",
     description: "Observe a Target and extend one App Map without exceeding explicit permission.",
+    requiredOperationIds: [
+      "target.snapshot.capture",
+      "target.screenshot.capture",
+      "lease.list",
+      "lease.create",
+      "authoring.session.create",
+      "authoring.session.capture",
+      "authoring.session.start",
+      "authoring.session.interact",
+      "authoring.session.stop",
+      "app-map.proposal.submit",
+    ],
   },
   {
     name: relayMcpPromptNames.repairFailedConnection,
     title: "Repair this failed connection",
     description: "Diagnose, replay, and repair one identified App Map connection.",
+    requiredOperationIds: [
+      "target.screenshot.capture",
+      "lease.list",
+      "lease.create",
+      "authoring.session.interact",
+      "authoring.take.trim",
+      "authoring.take.reorder",
+      "authoring.take.replace",
+      "authoring.take.replay",
+      "authoring.session.commit",
+    ],
   },
   {
     name: relayMcpPromptNames.reviewTake,
     title: "Review this Take",
     description: "Inspect and refine one recorded Take before deciding whether to commit it.",
+    requiredOperationIds: [
+      "target.screenshot.capture",
+      "lease.list",
+      "lease.create",
+      "authoring.take.trim",
+      "authoring.take.reorder",
+      "authoring.take.replace",
+      "authoring.take.replay",
+      "authoring.session.commit",
+      "authoring.session.discard",
+    ],
   },
   {
     name: relayMcpPromptNames.planRunMatrix,
     title: "Plan this run matrix",
     description: "Turn a testing goal into one reviewable modifier × test plan, then run it.",
+    requiredOperationIds: [
+      "target.screenshot.capture",
+      "app-map.combine.save",
+      "app-map.combine.preflight",
+      "lease.list",
+      "lease.create",
+      "job.combine.start",
+      "job.list",
+      "job.get",
+      "job.retry",
+      "job.combine.export",
+    ],
   },
-] as const;
+] as const satisfies readonly RelayMcpPromptDescriptor[];
+
+export function relayMcpPromptsForTools(
+  tools: readonly Pick<RelayMcpToolDescriptor, "operationId">[],
+): readonly RelayMcpPromptDescriptor[] {
+  const available = new Set<OperationId>(tools.map(({ operationId }) => operationId));
+  return relayMcpPrompts.filter(({ requiredOperationIds }) =>
+    requiredOperationIds.every((operationId) => available.has(operationId)),
+  );
+}
 
 type RelayPromptScope = {
   projectId: string;
@@ -234,9 +298,15 @@ function registerMatrixPrompt(server: McpServer, scope: RelayPromptScope): void 
   );
 }
 
-export function registerRelayPrompts(server: McpServer, scope: RelayPromptScope): void {
-  registerMapPrompt(server, scope);
-  registerRepairPrompt(server, scope);
-  registerReviewPrompt(server, scope);
-  registerMatrixPrompt(server, scope);
+export function registerRelayPrompts(
+  server: McpServer,
+  scope: RelayPromptScope,
+  tools: readonly RelayMcpToolDescriptor[],
+): void {
+  const available = new Set(relayMcpPromptsForTools(tools).map(({ name }) => name));
+  if (available.has(relayMcpPromptNames.mapAppSafely)) registerMapPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.repairFailedConnection))
+    registerRepairPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.reviewTake)) registerReviewPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.planRunMatrix)) registerMatrixPrompt(server, scope);
 }

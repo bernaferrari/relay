@@ -1,8 +1,10 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
+import type { OperationId } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { relayMcpPromptNames, relayMcpPrompts } from "./prompts.js";
+import { relayMcpPromptNames, relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
+import { relayMcpProfiles, relayMcpToolsForProfile, type RelayMcpProfile } from "./tools.js";
 
 type RpcResponse = {
   id: number;
@@ -17,13 +19,13 @@ type PromptMessage = {
 
 const projectId = "project-a";
 
-async function connectMcp() {
+async function connectMcp(profile: RelayMcpProfile = "full", expectPrompts = true) {
   const invoker: OperationInvoker = {
     async invoke(operationId) {
       throw new Error(`prompt test unexpectedly invoked ${operationId}`);
     },
   };
-  const server = createMcpServer({ invoker, scope: { projectId } });
+  const server = createMcpServer({ invoker, scope: { projectId }, profile });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,
@@ -60,7 +62,9 @@ async function connectMcp() {
   });
   assert.equal(initialized.error, undefined);
   assert.ok(initialized.result);
-  assert.ok((initialized.result.capabilities as Record<string, unknown>).prompts);
+  const promptCapability = (initialized.result.capabilities as Record<string, unknown>).prompts;
+  if (expectPrompts) assert.ok(promptCapability);
+  else assert.equal(promptCapability, undefined);
   await clientTransport.send({
     jsonrpc: "2.0",
     method: "notifications/initialized",
@@ -106,7 +110,9 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
       })),
       [
         {
-          ...relayMcpPrompts[0],
+          name: relayMcpPrompts[0].name,
+          title: relayMcpPrompts[0].title,
+          description: relayMcpPrompts[0].description,
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
@@ -115,7 +121,9 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
           ],
         },
         {
-          ...relayMcpPrompts[1],
+          name: relayMcpPrompts[1].name,
+          title: relayMcpPrompts[1].title,
+          description: relayMcpPrompts[1].description,
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
@@ -125,7 +133,9 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
           ],
         },
         {
-          ...relayMcpPrompts[2],
+          name: relayMcpPrompts[2].name,
+          title: relayMcpPrompts[2].title,
+          description: relayMcpPrompts[2].description,
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
@@ -135,7 +145,9 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
           ],
         },
         {
-          ...relayMcpPrompts[3],
+          name: relayMcpPrompts[3].name,
+          title: relayMcpPrompts[3].title,
+          description: relayMcpPrompts[3].description,
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
@@ -147,6 +159,52 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
     );
   } finally {
     await session.close();
+  }
+});
+
+test("every profile advertises only prompts whose required tools it exposes", async () => {
+  assert.deepEqual(relayMcpPrompts[3].requiredOperationIds, [
+    "target.screenshot.capture",
+    "app-map.combine.save",
+    "app-map.combine.preflight",
+    "lease.list",
+    "lease.create",
+    "job.combine.start",
+    "job.list",
+    "job.get",
+    "job.retry",
+    "job.combine.export",
+  ]);
+  assert.equal(
+    relayMcpPromptsForTools(relayMcpToolsForProfile("author")).some(
+      ({ name }) => name === relayMcpPromptNames.planRunMatrix,
+    ),
+    false,
+  );
+
+  for (const profile of relayMcpProfiles) {
+    const tools = relayMcpToolsForProfile(profile);
+    const toolIds = new Set<OperationId>(tools.map(({ operationId }) => operationId));
+    const compatible = relayMcpPromptsForTools(tools);
+    for (const descriptor of compatible) {
+      assert.ok(
+        descriptor.requiredOperationIds.every((operationId) => toolIds.has(operationId)),
+        `${profile} advertised ${descriptor.name} without every required tool`,
+      );
+    }
+
+    const session = await connectMcp(profile, compatible.length > 0);
+    try {
+      if (compatible.length === 0) continue;
+      const response = await session.request("prompts/list", {});
+      const prompts = response.result?.prompts as Array<{ name: string }>;
+      assert.deepEqual(
+        prompts.map(({ name }) => name),
+        compatible.map(({ name }) => name),
+      );
+    } finally {
+      await session.close();
+    }
   }
 });
 

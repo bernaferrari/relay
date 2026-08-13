@@ -14,6 +14,8 @@ import { useServer } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DevicePicker } from "./device-picker";
+import { AppMapPrimaryActionButton } from "./app-map-primary-action-button";
+import { OfflineGate } from "./offline-gate";
 import { MapPropertiesPanel } from "./test-details-panel";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
@@ -388,10 +390,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       running: server.running(),
     }),
   );
-  const graphBlockedReason = () => {
-    const action = graphPrimaryAction();
-    return action.kind === "run" ? "" : action.reason;
-  };
   const runSelectedTest = () => {
     const action = graphPrimaryAction();
     if (action.kind === "choose-device") {
@@ -901,32 +899,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
               </div>
               <Show when={graphRunReadiness().visible}>
-                <Show
-                  when={
-                    graphPrimaryAction().kind === "run" || graphPrimaryAction().kind === "view-run"
-                  }
-                >
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    class="text-[12px]"
-                    aria-describedby={graphBlockedReason() ? "app-map-run-blocker" : undefined}
-                    disabled={graphPrimaryAction().kind === "blocked"}
-                    data-tip={graphBlockedReason() || graphRunReadiness().label}
-                    aria-label={graphPrimaryAction().label}
-                    onClick={runSelectedTest}
-                  >
-                    <Icon
-                      name={graphPrimaryAction().icon}
-                      size={13}
-                      class={cn(
-                        graphPrimaryAction().icon === "refresh" &&
-                          "ui-refresh-spin motion-reduce:opacity-70",
-                      )}
-                    />
-                    <span class="max-[620px]:hidden">{graphPrimaryAction().label}</span>
-                  </Button>
-                </Show>
+                <AppMapPrimaryActionButton
+                  action={graphPrimaryAction()}
+                  fallbackTip={graphRunReadiness().label}
+                  onActivate={runSelectedTest}
+                />
                 <Button
                   variant="secondary"
                   size="lg"
@@ -947,110 +924,105 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Icon name="grid" size={13} />
                   <span class="max-[720px]:hidden">Run matrix</span>
                 </Button>
-                <Show when={graphBlockedReason()}>
-                  {(reason) => (
-                    <span id="app-map-run-blocker" class="sr-only">
-                      {reason()}
-                    </span>
-                  )}
-                </Show>
               </Show>
             </Show>
           </div>
         </header>
 
-        <Show when={area() === "tests"}>
-          <section class={shellStudio}>
-            <div
-              class={
-                selectedMap()
-                  ? "relative flex min-h-0 min-w-0 flex-1"
-                  : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
-              }
-            >
-              <Show
-                when={selectedMap()}
-                fallback={
-                  <Suspense fallback={<WorkspaceLoading label="canvas" />}>
-                    <EmptyAppMap
-                      deviceOpen={devicePanelOpen()}
-                      creating={creatingBlankMap()}
-                      onToggleDevice={toggleDevicePanel}
-                      onOpenTargets={() => props.onOpenSettings("targets")}
-                      onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
-                    />
-                  </Suspense>
+        <OfflineGate overlay>
+          <Show when={area() === "tests"}>
+            <section class={shellStudio}>
+              <div
+                class={
+                  selectedMap()
+                    ? "relative flex min-h-0 min-w-0 flex-1"
+                    : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
                 }
               >
-                <div class={cn(shellMapWrap, "flex flex-1")}>
-                  <Suspense fallback={<WorkspaceLoading label="map" />}>
-                    <AppMapWorkspace
-                      navigatorOpen={navOpen()}
-                      onOpenTargets={() => props.onOpenSettings("targets")}
-                      onOpenActions={() => undefined}
-                      onOpenVariables={() => setVariablesOpen(true)}
-                      onOpenCombine={toggleRunMatrix}
-                      onOpenRun={(id) => {
-                        server.setSelectedJobId(id);
-                        setArea("runs");
-                      }}
-                    />
-                  </Suspense>
-                </div>
-                <Show when={settingsOpen()}>
-                  <MapPropertiesPanel
-                    presentation="floating"
-                    onClose={() => setSettingsOpen(false)}
-                    onOpenVariables={() => setVariablesOpen(true)}
-                  />
-                </Show>
-              </Show>
-              <Show when={combineOpen()}>
-                <aside
-                  class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
-                  aria-label="Run matrix"
-                  onWheel={(event) => event.stopPropagation()}
+                <Show
+                  when={selectedMap()}
+                  fallback={
+                    <Suspense fallback={<WorkspaceLoading label="canvas" />}>
+                      <EmptyAppMap
+                        deviceOpen={devicePanelOpen()}
+                        creating={creatingBlankMap()}
+                        onToggleDevice={toggleDevicePanel}
+                        onOpenTargets={() => props.onOpenSettings("targets")}
+                        onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
+                      />
+                    </Suspense>
+                  }
                 >
-                  <Suspense
-                    fallback={
-                      <div class="grid h-40 flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
-                        Loading run matrix…
-                      </div>
-                    }
-                  >
-                    <AppMapCombine
-                      combineId={combineFocusId()}
-                      focusSection={combineFocusSection()}
-                      onOpenDevice={() => {
-                        setCombineOpen(false);
-                        setCombineFocusId(undefined);
-                        setCombineFocusSection(undefined);
-                        if (!devicePanelOpen()) {
-                          window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-                        }
-                      }}
-                      onClose={() => {
-                        setCombineOpen(false);
-                        setCombineFocusId(undefined);
-                        setCombineFocusSection(undefined);
-                      }}
+                  <div class={cn(shellMapWrap, "flex flex-1")}>
+                    <Suspense fallback={<WorkspaceLoading label="map" />}>
+                      <AppMapWorkspace
+                        navigatorOpen={navOpen()}
+                        onOpenTargets={() => props.onOpenSettings("targets")}
+                        onOpenActions={() => undefined}
+                        onOpenVariables={() => setVariablesOpen(true)}
+                        onOpenCombine={toggleRunMatrix}
+                        onOpenRun={(id) => {
+                          server.setSelectedJobId(id);
+                          setArea("runs");
+                        }}
+                      />
+                    </Suspense>
+                  </div>
+                  <Show when={settingsOpen()}>
+                    <MapPropertiesPanel
+                      presentation="floating"
+                      onClose={() => setSettingsOpen(false)}
+                      onOpenVariables={() => setVariablesOpen(true)}
                     />
-                  </Suspense>
-                </aside>
-              </Show>
-            </div>
-          </section>
-        </Show>
+                  </Show>
+                </Show>
+                <Show when={combineOpen()}>
+                  <aside
+                    class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
+                    aria-label="Run matrix"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    <Suspense
+                      fallback={
+                        <div class="grid h-40 flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
+                          Loading run matrix…
+                        </div>
+                      }
+                    >
+                      <AppMapCombine
+                        combineId={combineFocusId()}
+                        focusSection={combineFocusSection()}
+                        onOpenDevice={() => {
+                          setCombineOpen(false);
+                          setCombineFocusId(undefined);
+                          setCombineFocusSection(undefined);
+                          if (!devicePanelOpen()) {
+                            window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+                          }
+                        }}
+                        onClose={() => {
+                          setCombineOpen(false);
+                          setCombineFocusId(undefined);
+                          setCombineFocusSection(undefined);
+                        }}
+                      />
+                    </Suspense>
+                  </aside>
+                </Show>
+              </div>
+            </section>
+          </Show>
 
-        <Show when={area() === "runs"}>
-          <Suspense fallback={<WorkspaceLoading label="runs" />}>
-            <RunsWorkspace
-              onOpenMap={openMap}
-              onOpenTest={openTest}
-              onOpenTests={() => setArea("tests")}
-            />
-          </Suspense>
-        </Show>
+          <Show when={area() === "runs"}>
+            <Suspense fallback={<WorkspaceLoading label="runs" />}>
+              <RunsWorkspace
+                onOpenMap={openMap}
+                onOpenTest={openTest}
+                onOpenTests={() => setArea("tests")}
+              />
+            </Suspense>
+          </Show>
+        </OfflineGate>
       </main>
       <Show when={variablesOpen()}>
         <div

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import type { RunMatrixReview as RunMatrixReviewModel } from "../lib/run-matrix-review";
@@ -10,6 +10,7 @@ import {
 } from "../lib/run-matrix-review";
 import { RunMatrixCaptureCard } from "./run-matrix-capture-card";
 import { modalPanel, modalScrim } from "../lib/ui";
+import { trapFocus } from "../lib/modal";
 
 export function RunMatrixReview(props: {
   review: RunMatrixReviewModel;
@@ -317,7 +318,9 @@ function RunMatrixScreenshotDialog(props: {
   onClose: () => void;
 }) {
   let dialog: HTMLDivElement | undefined;
-  onMount(() => dialog?.focus());
+  onMount(() => {
+    if (dialog) onCleanup(trapFocus(dialog));
+  });
   const valueLabel = () =>
     props.values.length
       ? props.values.map((value) => `${value.name}: ${value.value}`).join(" · ")
@@ -330,7 +333,11 @@ function RunMatrixScreenshotDialog(props: {
         if (event.target === event.currentTarget) props.onClose();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") props.onClose();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onClose();
+        }
         if (event.key === "ArrowLeft" && props.onPrevious) {
           event.preventDefault();
           props.onPrevious();
