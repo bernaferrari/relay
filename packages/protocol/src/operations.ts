@@ -35,6 +35,7 @@ import type {
   SaveFlowInput,
   SaveRoutineInput,
   Screen,
+  ScreenIdentityObservation,
   ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
@@ -177,6 +178,54 @@ type DevicePoolDto = {
   createdAt: number;
   updatedAt: number;
 };
+
+type ScrollSurveyNodeDto = {
+  label?: string;
+  value?: string;
+  identifier?: string;
+  role?: string;
+  type?: string;
+  enabled?: boolean;
+  selected?: boolean;
+  focused?: boolean;
+  visibleToUser?: boolean;
+  hittable?: boolean;
+  rect?: { x: number; y: number; width: number; height: number };
+  ref?: string;
+  index?: number;
+  depth?: number;
+  parentIndex?: number;
+  bundleId?: string;
+};
+
+type ScrollSurveySnapshotDto = {
+  serial?: string;
+  capturedAt: number;
+  nodes: ScrollSurveyNodeDto[];
+  interactive: ScrollSurveyNodeDto[];
+  bounds?: { width: number; height: number };
+  inspectable: boolean;
+  source: "sdk" | "android-system" | "pixels-only";
+  inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
+  foregroundApp?: string;
+  treeApp?: string;
+  bindingState?: "matched" | "rebound" | "unavailable";
+  inspectionError?: string;
+  screenIdentity: ScreenIdentityObservation;
+  visualFingerprint?: string;
+  proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+};
+
+type ScrollSurveyStopReasonDto =
+  | "end-of-content"
+  | "screen-changed"
+  | "inspection-unavailable"
+  | "missing-page-anchor"
+  | "seam-ambiguous"
+  | "dimension-changed"
+  | "scroll-failed"
+  | "restore-failed"
+  | "limit-reached";
 
 type DeviceLeaseDto = {
   id: string;
@@ -345,6 +394,34 @@ type SpecificOperationMap = {
         bottom?: number;
         height?: number;
       }>;
+    };
+  };
+  "target.scroll-survey.capture": {
+    input: { serial: string; maxScrolls?: number };
+    output: {
+      status: "completed" | "stopped";
+      reason: ScrollSurveyStopReasonDto;
+      frames: Array<{
+        index: number;
+        offsetY: number;
+        screenshot: {
+          base64: string;
+          width: number;
+          height: number;
+          capturedAt: number;
+        };
+        snapshot: ScrollSurveySnapshotDto;
+        appendedHeight: number;
+      }>;
+      stitched?: {
+        base64: string;
+        width: number;
+        height: number;
+        mime: "image/png";
+      };
+      mergedNodes: ScrollSurveyNodeDto[];
+      restoredStartViewport: boolean;
+      message: string;
     };
   };
   "target.app.launch": {
@@ -1209,6 +1286,141 @@ const screenshotParser = objectParser<OperationOutput<"target.screenshot.capture
     number(input.bytes, "screenshot bytes");
   },
 );
+
+const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
+  "end-of-content",
+  "screen-changed",
+  "inspection-unavailable",
+  "missing-page-anchor",
+  "seam-ambiguous",
+  "dimension-changed",
+  "scroll-failed",
+  "restore-failed",
+  "limit-reached",
+]);
+
+function assertScrollSurveyRect(value: unknown, label: string): void {
+  const rect = record(value, label);
+  number(rect.x, `${label} x`);
+  number(rect.y, `${label} y`);
+  number(rect.width, `${label} width`);
+  number(rect.height, `${label} height`);
+}
+
+function assertScrollSurveyNode(value: unknown, label: string): void {
+  const node = record(value, label);
+  for (const field of ["index", "depth", "parentIndex"]) {
+    if (node[field] !== undefined && !Number.isInteger(number(node[field], `${label} ${field}`))) {
+      fail(`${label} ${field}`, "must be an integer");
+    }
+  }
+  if (node.rect !== undefined) assertScrollSurveyRect(node.rect, `${label} rect`);
+}
+
+function assertScrollSurveySnapshot(value: unknown, label: string): void {
+  const snapshot = record(value, label);
+  if (snapshot.serial !== undefined) string(snapshot.serial, `${label} serial`);
+  number(snapshot.capturedAt, `${label} capturedAt`);
+  if (!Array.isArray(snapshot.nodes)) fail(`${label} nodes`, "must be an array");
+  snapshot.nodes.forEach((node, index) => assertScrollSurveyNode(node, `${label} node ${index}`));
+  if (!Array.isArray(snapshot.interactive)) fail(`${label} interactive`, "must be an array");
+  snapshot.interactive.forEach((node, index) =>
+    assertScrollSurveyNode(node, `${label} interactive node ${index}`),
+  );
+  if (snapshot.bounds !== undefined) {
+    const bounds = record(snapshot.bounds, `${label} bounds`);
+    number(bounds.width, `${label} bounds width`);
+    number(bounds.height, `${label} bounds height`);
+  }
+  boolean(snapshot.inspectable, `${label} inspectable`);
+  if (!new Set(["sdk", "android-system", "pixels-only"]).has(String(snapshot.source))) {
+    fail(`${label} source`, "must be sdk, android-system, or pixels-only");
+  }
+  if (
+    snapshot.inspectionState !== undefined &&
+    !new Set(["active", "keyguard", "asleep", "unavailable", "unknown"]).has(
+      String(snapshot.inspectionState),
+    )
+  ) {
+    fail(`${label} inspectionState`, "is unsupported");
+  }
+  if (
+    snapshot.bindingState !== undefined &&
+    !new Set(["matched", "rebound", "unavailable"]).has(String(snapshot.bindingState))
+  ) {
+    fail(`${label} bindingState`, "is unsupported");
+  }
+  record(snapshot.screenIdentity, `${label} screenIdentity`);
+  if (snapshot.proposedRows !== undefined) {
+    if (!Array.isArray(snapshot.proposedRows)) fail(`${label} proposedRows`, "must be an array");
+    snapshot.proposedRows.forEach((value, index) => {
+      const row = record(value, `${label} proposed row ${index}`);
+      number(row.x, `${label} proposed row ${index} x`);
+      number(row.y, `${label} proposed row ${index} y`);
+    });
+  }
+}
+
+const targetScrollSurveyInputParser = objectParser<OperationInput<"target.scroll-survey.capture">>(
+  "scroll survey input",
+  (input) => {
+    if (typeof input.serial !== "string" || !input.serial.trim()) {
+      fail("scroll survey serial", "must be a non-empty string");
+    }
+    if (
+      input.maxScrolls !== undefined &&
+      (typeof input.maxScrolls !== "number" ||
+        !Number.isInteger(input.maxScrolls) ||
+        input.maxScrolls < 1 ||
+        input.maxScrolls > 6)
+    ) {
+      fail("scroll survey maxScrolls", "must be an integer between 1 and 6");
+    }
+  },
+);
+
+const targetScrollSurveyOutputParser = objectParser<
+  OperationOutput<"target.scroll-survey.capture">
+>("scroll survey response", (input) => {
+  if (input.status !== "completed" && input.status !== "stopped") {
+    fail("scroll survey status", "must be completed or stopped");
+  }
+  if (!scrollSurveyReasons.has(input.reason as ScrollSurveyStopReasonDto)) {
+    fail("scroll survey reason", "is unsupported");
+  }
+  if (!Array.isArray(input.frames) || input.frames.length === 0) {
+    fail("scroll survey frames", "must be a non-empty array");
+  }
+  input.frames.forEach((value, index) => {
+    const frame = record(value, `scroll survey frame ${index}`);
+    if (!Number.isInteger(number(frame.index, `scroll survey frame ${index} index`))) {
+      fail(`scroll survey frame ${index} index`, "must be an integer");
+    }
+    number(frame.offsetY, `scroll survey frame ${index} offsetY`);
+    number(frame.appendedHeight, `scroll survey frame ${index} appendedHeight`);
+    const screenshot = record(frame.screenshot, `scroll survey frame ${index} screenshot`);
+    string(screenshot.base64, `scroll survey frame ${index} screenshot base64`);
+    number(screenshot.width, `scroll survey frame ${index} screenshot width`);
+    number(screenshot.height, `scroll survey frame ${index} screenshot height`);
+    number(screenshot.capturedAt, `scroll survey frame ${index} screenshot capturedAt`);
+    assertScrollSurveySnapshot(frame.snapshot, `scroll survey frame ${index} snapshot`);
+  });
+  if (input.stitched !== undefined) {
+    const stitched = record(input.stitched, "scroll survey stitched preview");
+    string(stitched.base64, "scroll survey stitched preview base64");
+    number(stitched.width, "scroll survey stitched preview width");
+    number(stitched.height, "scroll survey stitched preview height");
+    if (stitched.mime !== "image/png") {
+      fail("scroll survey stitched preview mime", "must be image/png");
+    }
+  }
+  if (!Array.isArray(input.mergedNodes)) fail("scroll survey mergedNodes", "must be an array");
+  input.mergedNodes.forEach((node, index) =>
+    assertScrollSurveyNode(node, `scroll survey merged node ${index}`),
+  );
+  boolean(input.restoredStartViewport, "scroll survey restoredStartViewport");
+  string(input.message, "scroll survey message");
+});
 
 const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (input) => {
   if (!Array.isArray(input.jobs)) fail("jobs", "must be an array");
@@ -2509,6 +2721,21 @@ export const operationDefinitions = [
     input: targetInputParser,
     output: screenshotParser,
   }),
+  command(
+    "target.scroll-survey.capture",
+    "Capture a bounded scrollable-page survey",
+    "POST",
+    "/capture/scroll-survey",
+    {
+      category: "target",
+      targetCapabilities: ["scroll", "snapshot", "screenshot"],
+      lease: "exclusive",
+      input: targetScrollSurveyInputParser,
+      output: targetScrollSurveyOutputParser,
+      progress: false,
+      cancellable: false,
+    },
+  ),
   command("target.app.launch", "Launch app on target", "POST", "/device/app/launch", {
     category: "target",
     targetCapabilities: ["launch"],

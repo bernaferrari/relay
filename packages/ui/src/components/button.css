@@ -246,8 +246,8 @@
 }
 
 [data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(
-  :disabled
-) {
+    :disabled
+  ) {
   background-color: var(--surface-base-active);
 }
 
@@ -261,7 +261,7 @@
 }
 
 [data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(
-  :disabled
-) {
+    :disabled
+  ) {
   background-color: var(--surface-base-active);
 }

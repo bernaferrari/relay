@@ -184,6 +184,26 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.scroll-survey.capture",
+    path("target survey", ["serial"]),
+    path("device survey", ["serial"], undefined, {
+      summary: "Capture a bounded scrollable page with original viewport evidence",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "maxScrolls",
+          type: "integer (1-6)",
+          description: "Maximum downward scrolls; defaults to 4",
+        },
+      ],
+      examples: [
+        "relay device survey emulator-5554 --json",
+        "relay device survey 00008110 --input '{\"maxScrolls\":6}' --json",
+      ],
+      note: "Requires an exclusive lease. Relay keeps every original PNG + accessibility snapshot, stops at uncertain seams, and restores the starting viewport.",
+    }),
+  ),
+  mapped(
     "target.app.launch",
     path("target app launch", ["serial", "app"]),
     path("device launch", ["serial", "app"], undefined, {
@@ -1698,6 +1718,16 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   })),
 
   ...runEvidenceCommandDescriptors,
+  mapped(
+    "run.replay",
+    path("run replay", ["runId"], undefined, {
+      summary: "Replay a persisted run's recorded device actions",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      examples: ["relay run replay <run-id>"],
+      note: "Requires exclusive control of the original target and watches the replay job to completion.",
+      behavior: "job-start-watch",
+    }),
+  ),
   mapped("run.catalog.rebuild", path("run catalog rebuild")),
   mapped("run.retention.apply", path("run retention apply")),
   mapped(

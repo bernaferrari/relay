@@ -742,8 +742,9 @@ export async function createCorpusReplaySession(input: {
     progress: {
       phase: "idle",
       screensCaptured: copiedScreens.length,
-      transitionsCaptured: source.transitions.filter((transition) => transition.locale === mapLocale)
-        .length,
+      transitionsCaptured: source.transitions.filter(
+        (transition) => transition.locale === mapLocale,
+      ).length,
       completedLocales: [mapLocale],
       message: `Reusing ${mapLocale} baseline (${copiedScreens.length} checkpoints)`,
       updatedAt: now,

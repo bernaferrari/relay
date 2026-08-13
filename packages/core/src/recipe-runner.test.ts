@@ -1722,15 +1722,21 @@ describe("runRecipeStep tour", () => {
         kind: "tour",
         screenshot: false,
         fallbackStops: [{ label: "Appearance", point: { x: 240, y: 422 } }],
+        // With no live tree or recorded origin identity there is no truthful
+        // way to verify a return. Finish on the explicitly mapped final child.
+        returnAfterLast: false,
       },
       noLog,
     );
-    assert.ok(presses.length >= 1);
+    assert.deepEqual(presses, [
+      { platform: "android", serial: "recipe-runner-test", x: 240, y: 422 },
+    ]);
   });
 
   it("keeps popping until origin rows return, not just the shared header", async () => {
-    let screen: "settings" | "appearance" = "settings";
-    const presses: string[] = [];
+    let screen: "settings" | "appearance" | "haptics" = "settings";
+    const presses: unknown[] = [];
+    const visits: string[] = [];
     const backs: number[] = [];
     const device = stubDevice({
       snapshot: () =>
@@ -1740,9 +1746,17 @@ describe("runRecipeStep tour", () => {
           typeof options === "object" && options && "selector" in options
             ? String((options as { selector?: string }).selector ?? "")
             : "";
-        presses.push(selector);
-        if (selector.includes("Appearance")) screen = "appearance";
-        if (selector.includes("Back")) screen = "settings";
+        const point = options as { x?: number; y?: number };
+        presses.push(options);
+        if (selector.includes("Appearance") || point.y === 422) {
+          screen = "appearance";
+          visits.push("Appearance");
+        }
+        if (selector.includes("Haptics") || point.y === 466) {
+          screen = "haptics";
+          visits.push("Haptics");
+        }
+        if (selector.includes("Back") || point.y === 88) screen = "settings";
         return Promise.resolve({});
       },
       back: () => {
@@ -1758,10 +1772,15 @@ describe("runRecipeStep tour", () => {
       noLog,
     );
 
-    assert.ok(backs.length >= 1);
-    assert.ok(presses.some((selector) => selector.includes("Appearance")));
-    assert.ok(presses.some((selector) => selector.includes("Back")));
-    assert.ok(presses.some((selector) => selector.includes("Haptics")));
+    assert.deepEqual(visits, ["Appearance", "Haptics"]);
+    assert.ok(
+      presses.some(
+        (action) =>
+          typeof action === "object" && action !== null && (action as { y?: number }).y === 88,
+      ),
+      "the observed Back bounds should return each child even though the header is unchanged",
+    );
+    assert.equal(backs.length, 0, "a verified app Back should precede hardware Back");
     assert.equal(screen, "settings");
   });
 
@@ -1794,7 +1813,8 @@ describe("runRecipeStep tour", () => {
 
   it("backs from the wrong list before walking mapped Settings rows", async () => {
     let screen: "automations" | "settings" | "appearance" = "automations";
-    const presses: string[] = [];
+    const presses: unknown[] = [];
+    const visits: string[] = [];
     const device = stubDevice({
       snapshot: () =>
         Promise.resolve({
@@ -1810,9 +1830,13 @@ describe("runRecipeStep tour", () => {
           typeof options === "object" && options && "selector" in options
             ? String((options as { selector?: string }).selector ?? "")
             : "";
-        presses.push(selector);
-        if (selector.includes("Back")) screen = "settings";
-        if (selector.includes("Appearance")) screen = "appearance";
+        const point = options as { x?: number; y?: number };
+        presses.push(options);
+        if (selector.includes("Back") || point.y === 88) screen = "settings";
+        if (selector.includes("Appearance") || point.y === 422) {
+          screen = "appearance";
+          visits.push("Appearance");
+        }
         return Promise.resolve({});
       },
       back: () => {
@@ -1834,14 +1858,29 @@ describe("runRecipeStep tour", () => {
       noLog,
     );
 
-    assert.ok(presses.some((selector) => selector.includes("Back")));
-    assert.ok(presses.some((selector) => selector.includes("Appearance")));
-    assert.ok(!presses.some((selector) => selector.includes("Automations")));
+    assert.ok(
+      presses.some(
+        (action) =>
+          typeof action === "object" && action !== null && (action as { y?: number }).y === 88,
+      ),
+      "the verified leading Back point should leave the wrong list",
+    );
+    assert.deepEqual(visits, ["Appearance"]);
+    assert.ok(
+      !presses.some(
+        (action) =>
+          typeof action === "object" &&
+          action !== null &&
+          "selector" in action &&
+          String((action as { selector?: string }).selector).includes("Automations"),
+      ),
+    );
   });
 
   it("skips an unavailable optional mapped row without falling back to its old point", async () => {
     let screen: "settings" | "appearance" = "settings";
-    const presses: string[] = [];
+    const presses: unknown[] = [];
+    const visits: string[] = [];
     const logs: string[] = [];
     const device = stubDevice({
       snapshot: () =>
@@ -1851,9 +1890,13 @@ describe("runRecipeStep tour", () => {
           typeof options === "object" && options && "selector" in options
             ? String((options as { selector?: string }).selector ?? "")
             : "";
-        presses.push(selector);
-        if (selector.includes("Appearance")) screen = "appearance";
-        if (selector.includes("Back")) screen = "settings";
+        const point = options as { x?: number; y?: number };
+        presses.push(options);
+        if (selector.includes("Appearance") || point.y === 422) {
+          screen = "appearance";
+          visits.push("Appearance");
+        }
+        if (selector.includes("Back") || point.y === 88) screen = "settings";
         return Promise.resolve({});
       },
       back: () => {
@@ -1879,8 +1922,17 @@ describe("runRecipeStep tour", () => {
       { log: (line) => logs.push(line) },
     );
 
-    assert.ok(presses.some((selector) => selector.includes("Appearance")));
-    assert.ok(!presses.some((selector) => selector.includes("Buy More")));
+    assert.deepEqual(visits, ["Appearance"]);
+    assert.ok(
+      !presses.some(
+        (action) =>
+          typeof action === "object" &&
+          action !== null &&
+          (action as { x?: number }).x === 300 &&
+          (action as { y?: number }).y === 700,
+      ),
+      "the unavailable row's recorded point must never be used",
+    );
     assert.ok(
       logs.some(
         (line) => line.includes("optional row(s) unavailable") && line.includes("Buy More"),
@@ -2007,7 +2059,8 @@ describe("runRecipeStep tour", () => {
 
   it("runs a mapped prelude only when the device is not already on origin", async () => {
     let screen: "home" | "settings" = "home";
-    const presses: string[] = [];
+    const presses: unknown[] = [];
+    const visits: string[] = [];
     const homeNodes = [
       { type: "Application", label: "Grok", rect: { x: 0, y: 0, width: 834, height: 1112 } },
       {
@@ -2025,11 +2078,13 @@ describe("runRecipeStep tour", () => {
           typeof options === "object" && options && "selector" in options
             ? String((options as { selector?: string }).selector ?? "")
             : "";
-        presses.push(selector);
+        const point = options as { x?: number; y?: number };
+        presses.push(options);
         if (selector.includes("sidebar.settings.button") || selector.includes("Settings")) {
           screen = "settings";
         }
-        if (selector.includes("Back")) screen = "home";
+        if (selector.includes("Appearance") || point.y === 422) visits.push("Appearance");
+        if (selector.includes("Back") || point.y === 88) screen = "settings";
         return Promise.resolve({});
       },
       back: () => Promise.resolve({}),
@@ -2049,9 +2104,11 @@ describe("runRecipeStep tour", () => {
       noLog,
     );
 
-    assert.match(presses[0] ?? "", /sidebar\.settings\.button/);
-    assert.ok(presses.some((selector) => selector.includes("sidebar.settings.button")));
-    assert.ok(presses.some((selector) => selector.includes("Appearance")));
+    assert.match(
+      String((presses[0] as { selector?: string } | undefined)?.selector ?? ""),
+      /sidebar\.settings\.button/,
+    );
+    assert.deepEqual(visits, ["Appearance"]);
   });
 
   it("fails closed when seek never reaches the mapped origin", async () => {

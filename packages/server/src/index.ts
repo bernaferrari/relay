@@ -127,7 +127,7 @@ import {
   parseLimit,
   text,
 } from "./http.js";
-import { RevisionConflict } from "@relay/protocol";
+import { RevisionConflict, type OperationInput } from "@relay/protocol";
 import {
   injectAndroidKey,
   injectAndroidScroll,
@@ -1250,7 +1250,9 @@ async function handleRequest(
     }
 
     if (method === "POST" && pathname === "/capture/scroll-survey") {
-      const body = (await parseJsonBody(req)) as { serial?: unknown; maxScrolls?: unknown };
+      const body = (await parseJsonBody(req)) as Partial<
+        OperationInput<"target.scroll-survey.capture">
+      >;
       const serial = typeof body.serial === "string" ? body.serial.trim() : "";
       if (!serial) throw new HttpError(400, "serial is required");
       if (getActiveJob(serial)?.status === "running") {
@@ -1259,14 +1261,19 @@ async function handleRequest(
           "A job is running — pause or cancel it before surveying a scrollable page",
         );
       }
-      const maxScrolls =
-        typeof body.maxScrolls === "number" && Number.isInteger(body.maxScrolls)
-          ? Math.max(1, Math.min(6, body.maxScrolls))
-          : undefined;
+      if (
+        body.maxScrolls !== undefined &&
+        (typeof body.maxScrolls !== "number" ||
+          !Number.isInteger(body.maxScrolls) ||
+          body.maxScrolls < 1 ||
+          body.maxScrolls > 6)
+      ) {
+        throw new HttpError(400, "maxScrolls must be an integer between 1 and 6");
+      }
       await assertTargetControl(scope, serial);
       const survey = await captureScrollableSurveyForTarget({
         serial,
-        ...(maxScrolls ? { maxScrolls } : {}),
+        ...(body.maxScrolls !== undefined ? { maxScrolls: body.maxScrolls } : {}),
       });
       json(res, 200, survey);
       return;

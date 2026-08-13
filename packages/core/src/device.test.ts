@@ -239,8 +239,17 @@ test("named control resolver taps Home by identifier then label, and records the
   assert.equal(byLabel?.bounds.width, 80);
 });
 
-test("named control resolver prefers caller point for a unique non-hittable identifier", () => {
+test("named control resolver uses current bounds for a unique non-hittable child", () => {
+  const row = {
+    index: 1,
+    type: "Cell",
+    enabled: true,
+    hittable: true,
+    rect: { x: 680, y: 1024, width: 100, height: 72 },
+  };
   const gear = {
+    index: 2,
+    parentIndex: 1,
     type: "Button",
     identifier: "sidebar.settings.button",
     label: "grok-gear",
@@ -248,26 +257,31 @@ test("named control resolver prefers caller point for a unique non-hittable iden
     hittable: false,
     rect: { x: 714, y: 1046, width: 44, height: 44 },
   };
-  const byId = resolveNamedControl([gear], { identifier: "sidebar.settings.button" });
+  const byId = resolveNamedControl([row, gear], { identifier: "sidebar.settings.button" });
   assert.equal(byId?.method, "identifier");
-  const withPoint = resolveNamedControl([gear], {
+  assert.equal(byId?.activation, "snapshot-point");
+  assert.deepEqual(byId?.point, { x: 730, y: 1060 });
+  assert.deepEqual(byId?.bounds, row.rect);
+  const withStalePoint = resolveNamedControl([row, gear], {
     identifier: "sidebar.settings.button",
-    point: { x: 736, y: 1068 },
+    point: { x: 10, y: 10 },
   });
-  assert.equal(withPoint?.method, "point");
-  assert.deepEqual(withPoint?.point, { x: 736, y: 1068 });
-  const mixedCase = resolveNamedControl([gear], {
+  assert.equal(withStalePoint?.method, "identifier");
+  assert.equal(withStalePoint?.activation, "snapshot-point");
+  assert.deepEqual(withStalePoint?.point, { x: 730, y: 1060 });
+  const mixedCase = resolveNamedControl([row, gear], {
     identifier: "Sidebar.Settings.Button",
-    point: { x: 736, y: 1068 },
+    point: { x: 10, y: 10 },
   });
-  assert.equal(mixedCase?.method, "point");
-  assert.deepEqual(mixedCase?.point, { x: 736, y: 1068 });
-  const missingId = resolveNamedControl([gear], {
+  assert.equal(mixedCase?.method, "identifier");
+  assert.equal(mixedCase?.activation, "snapshot-point");
+  assert.deepEqual(mixedCase?.point, { x: 730, y: 1060 });
+  const missingId = resolveNamedControl([row, gear], {
     identifier: "navigation.tab.ask",
     point: { x: 353, y: 41 },
   });
   assert.equal(missingId?.method, "point");
-  assert.equal(resolveNamedControl([gear], { identifier: "navigation.tab.ask" }), undefined);
+  assert.equal(resolveNamedControl([row, gear], { identifier: "navigation.tab.ask" }), undefined);
 });
 
 test("named control resolver uses an explicit point when Home labels collide", () => {

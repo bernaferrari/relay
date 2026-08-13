@@ -138,6 +138,31 @@ test("session replay is an alias of take replay", () => {
   });
 });
 
+test("device survey exposes the canonical scroll-survey operation and bounded input help", () => {
+  assert.deepEqual(resolveCommand(["device", "survey", "ipad-1"], { maxScrolls: 6 }), {
+    operationId: "target.scroll-survey.capture",
+    commandPath: "device survey",
+    input: { serial: "ipad-1", maxScrolls: 6 },
+  });
+  const descriptor = mappedCommandDescriptors.find(
+    (candidate) => candidate.operationId === "target.scroll-survey.capture",
+  );
+  assert.ok(descriptor && !("exclusion" in descriptor));
+  const help = descriptor.paths.find((candidate) => candidate.command === "device survey");
+  assert.equal(help?.inputHelp?.[0]?.name, "maxScrolls");
+  assert.match(help?.inputHelp?.[0]?.type ?? "", /1-6/u);
+  assert.match(help?.note ?? "", /exclusive lease/u);
+});
+
+test("persisted run replay has one friendly watched command", () => {
+  assert.deepEqual(resolveCommand(["run", "replay", "run-1"]), {
+    operationId: "run.replay",
+    commandPath: "run replay",
+    input: { runId: "run-1" },
+    behavior: "job-start-watch",
+  });
+});
+
 test("unknown session verbs point at family help instead of four arbitrary commands", () => {
   assert.throws(
     () => resolveCommand(["session", "reploy", "authoring-1"]),
@@ -241,6 +266,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { actionId: "login", serial: "pixel-9" },
     ],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
+    [["device", "survey", "pixel-9"], "target.scroll-survey.capture", { serial: "pixel-9" }],
     [
       ["device", "launch", "ipad-1", "Settings"],
       "target.app.launch",

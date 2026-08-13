@@ -1503,17 +1503,25 @@ function isActivationContainer(node: SnapshotNode): boolean {
   return role === "application" || role === "window";
 }
 
+type SnapshotTargetResolution = {
+  node: SnapshotNode;
+  point: { x: number; y: number };
+  bounds: { x: number; y: number; width: number; height: number };
+  usesActivationAncestor: boolean;
+};
+
 /**
  * Resolve one semantic target to a coordinate without pretending an ambiguous
  * accessibility result is safe. Physical iOS apps occasionally expose visible
  * controls as `hittable:false` even though XCTest can activate their bounds.
- * Relay uses this only after a native selector reports no match.
+ * The result retains the exact current-tree node so activation policy never
+ * has to infer selector trust from a platform or a recorded coordinate.
  */
-export function resolveSnapshotTargetPoint(
+function resolveSnapshotTarget(
   nodes: SnapshotNode[],
   target: SemanticSnapshotTarget,
   region?: SnapshotTargetRegion,
-): { x: number; y: number } | undefined {
+): SnapshotTargetResolution | undefined {
   const normalized = {
     identifier: target.identifier?.trim().toLocaleLowerCase(),
     ref: target.ref?.replace(/^@/u, "").trim().toLocaleLowerCase(),
@@ -1528,11 +1536,7 @@ export function resolveSnapshotTargetPoint(
     while (typeof parentIndex === "number") {
       const parent = nodesByIndex.get(parentIndex);
       if (!parent) return undefined;
-      if (
-        parent.hittable &&
-        isUsableTapTarget(parent) &&
-        !isActivationContainer(parent)
-      ) {
+      if (parent.hittable && isUsableTapTarget(parent) && !isActivationContainer(parent)) {
         return parent;
       }
       parentIndex = parent.parentIndex;
@@ -1585,6 +1589,8 @@ export function resolveSnapshotTargetPoint(
       return {
         node,
         point,
+        bounds: activationRect,
+        usesActivationAncestor: activationNode !== undefined,
         // Compose often places the title inside an unlabeled tappable row.
         // Prefer that row over an identically named section heading or
         // caption, while retaining the child label for semantic matching.
@@ -1609,7 +1615,7 @@ export function resolveSnapshotTargetPoint(
   );
   if (distinct.length !== 1) return undefined;
 
-  return best
+  const selected = best
     .filter(
       (candidate) =>
         Math.abs(candidate.point.x - distinct[0]!.point.x) <= 4 &&
@@ -1617,7 +1623,23 @@ export function resolveSnapshotTargetPoint(
     )
     .sort(
       (left, right) => left.area - right.area || (right.node.depth ?? 0) - (left.node.depth ?? 0),
-    )[0]?.point;
+    )[0];
+  return selected
+    ? {
+        node: selected.node,
+        point: selected.point,
+        bounds: selected.bounds,
+        usesActivationAncestor: selected.usesActivationAncestor,
+      }
+    : undefined;
+}
+
+export function resolveSnapshotTargetPoint(
+  nodes: SnapshotNode[],
+  target: SemanticSnapshotTarget,
+  region?: SnapshotTargetRegion,
+): { x: number; y: number } | undefined {
+  return resolveSnapshotTarget(nodes, target, region)?.point;
 }
 
 export type NamedControlTarget = {
@@ -1633,6 +1655,13 @@ export type NamedControlResolution = {
   method: NamedControlMethod;
   point: { x: number; y: number };
   bounds: { x: number; y: number; width: number; height: number };
+  /**
+   * The current accessibility snapshot proved a unique semantic match whose
+   * native selector is specifically untrustworthy. Use the live snapshot's
+   * activation bounds instead. This is never inferred from platform alone and
+   * never carries a recorded point forward.
+   */
+  activation?: "snapshot-point";
 };
 
 function explicitPointResolution(
@@ -1649,8 +1678,10 @@ function explicitPointResolution(
 /**
  * Shared mouse + recipe tap policy: identifier → label → text → explicit point.
  * Ambiguous labels do not guess; callers must supply a point fallback.
- * A unique non-hittable identifier plus an operator point uses the point —
- * Grok (and similar SwiftUI trees) often expose ids on hittable:false ancestors.
+ * A non-hittable child with a current hittable ancestor uses that ancestor's
+ * bounds. An authored row whose tree does not report selector hittability uses
+ * its unique live bounds instead of its saved point. Otherwise selectors stay
+ * first, and a caller point remains only the fallback when no name resolves.
  */
 export function resolveNamedControl(
   nodes: SnapshotNode[],
@@ -1661,31 +1692,21 @@ export function resolveNamedControl(
     value: string | undefined,
   ): NamedControlResolution | undefined => {
     if (!value?.trim()) return undefined;
-    const hit = resolveSnapshotTargetPoint(nodes, { [method]: value });
+    const hit = resolveSnapshotTarget(nodes, { [method]: value });
     if (!hit) return undefined;
-    const bounds = nodes.find((node) => {
-      if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0) return false;
-      const mid = center(node.rect);
-      return Math.abs(mid.x - hit.x) <= 4 && Math.abs(mid.y - hit.y) <= 4;
-    })?.rect ?? { x: hit.x, y: hit.y, width: 1, height: 1 };
-    return { method, point: hit, bounds };
+    const hasVerifiedCurrentPoint =
+      (hit.node.hittable === false && hit.usesActivationAncestor) ||
+      (hit.node.hittable === undefined && explicitPointResolution(target.point) !== undefined);
+    return {
+      method,
+      point: hit.point,
+      bounds: hit.bounds,
+      ...(hasVerifiedCurrentPoint ? { activation: "snapshot-point" as const } : {}),
+    };
   };
 
   const byIdentifier = resolve("identifier", target.identifier);
-  if (byIdentifier) {
-    const wanted = target.identifier?.trim().toLocaleLowerCase();
-    const matched = nodes.find((node) => {
-      if (!node.rect || node.identifier?.trim().toLocaleLowerCase() !== wanted) return false;
-      const mid = center(node.rect);
-      return (
-        Math.abs(mid.x - byIdentifier.point.x) <= 4 && Math.abs(mid.y - byIdentifier.point.y) <= 4
-      );
-    });
-    if (matched?.hittable === false) {
-      return explicitPointResolution(target.point) ?? byIdentifier;
-    }
-    return byIdentifier;
-  }
+  if (byIdentifier) return byIdentifier;
 
   return (
     resolve("label", target.label) ??
@@ -1700,16 +1721,10 @@ export async function pressResolvedControl(
   target: NamedControlTarget,
   repeated?: RepeatedPress,
 ): Promise<NamedControlResolution> {
-  // Once the current accessibility tree has uniquely resolved a named row,
-  // use that live row coordinate instead of delegating to the platform
-  // selector. Compose can expose stale semantic nodes and XCTest can claim a
-  // non-hittable SwiftUI control succeeded while activating its application
-  // container. This remains semantic-first: the point comes from the current
-  // identifier/label/text match, not from a recorded coordinate.
-  if (
-    (selectedPlatform() === "android" || selectedPlatform() === "ios") &&
-    resolution.method !== "point"
-  ) {
+  // Only resolutions with current-tree evidence that their native selector is
+  // untrustworthy opt out. Stable identifiers and labels keep their stronger
+  // selector-first behavior.
+  if (resolution.activation === "snapshot-point") {
     await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
     return resolution;
   }
@@ -1742,7 +1757,9 @@ export async function pressResolvedControl(
 function semanticSelectorDidNotMatch(error: unknown): boolean {
   if (error instanceof Error && error.name === "JobCancelledError") return false;
   const message = error instanceof Error ? error.message : String(error);
-  return /\bno match\b|did not match|element not found|selector.*not.*element/i.test(message);
+  return /\bno match\b|did not match|element not found|selector.*not.*element|(?:native\s+)?(?:label|identifier)(?:\s+selector)?\s+unavailable/i.test(
+    message,
+  );
 }
 
 /** agent-device reports every Android package transition after a coordinate

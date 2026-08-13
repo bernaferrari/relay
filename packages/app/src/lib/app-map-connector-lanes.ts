@@ -84,10 +84,7 @@ function compareAlongPort(direction: EdgePort, left: CanvasPoint, right: CanvasP
  * anchored source fan can make a later action claim the outer rail and cut
  * across an earlier one.
  */
-function sourceAnchorOrder(
-  connection: LaneConnection,
-  direction: EdgePort,
-): number | undefined {
+function sourceAnchorOrder(connection: LaneConnection, direction: EdgePort): number | undefined {
   const point = connection.sourceAnchor?.point;
   const value = direction === "left" || direction === "right" ? point?.y : point?.x;
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -210,8 +207,10 @@ export function connectorAutoLanes(
       geometryFor?.(connection.fromScreenId),
       geometryFor?.(connection.toScreenId),
     );
-    const sourceDirection = explicitPort(connection.presentation?.sourcePort) ?? automaticPorts.source;
-    const targetDirection = explicitPort(connection.presentation?.targetPort) ?? automaticPorts.target;
+    const sourceDirection =
+      explicitPort(connection.presentation?.sourcePort) ?? automaticPorts.source;
+    const targetDirection =
+      explicitPort(connection.presentation?.targetPort) ?? automaticPorts.target;
     if (supportsAutomaticLane(connection, "source")) {
       addToGroup(
         sourceGroups,

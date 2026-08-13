@@ -672,7 +672,14 @@ test("locale replay reuses English screenshots, accessibility, and the recorded 
   );
   assert.equal(
     existsSync(
-      join(root, ".relay", "corpus", replay.id, "screens", `${recorded.screen.id}.accessibility.json`),
+      join(
+        root,
+        ".relay",
+        "corpus",
+        replay.id,
+        "screens",
+        `${recorded.screen.id}.accessibility.json`,
+      ),
     ),
     true,
   );

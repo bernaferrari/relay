@@ -129,6 +129,62 @@ test("screenshot preview coordinates accept query-string numbers", () => {
   );
 });
 
+test("scroll survey has one strict target-operation contract", () => {
+  const definition = operationDefinition("target.scroll-survey.capture");
+  assert.equal(definition.transport.method, "POST");
+  assert.equal(definition.transport.path, "/capture/scroll-survey");
+  assert.equal(definition.category, "target");
+  assert.equal(definition.lease, "exclusive");
+  assert.deepEqual(definition.targetCapabilities, ["scroll", "snapshot", "screenshot"]);
+  assert.equal(definition.progress, false);
+  assert.equal(definition.cancellable, false);
+
+  assert.deepEqual(definition.input.parse({ serial: "ipad-1", maxScrolls: 4 }), {
+    serial: "ipad-1",
+    maxScrolls: 4,
+  });
+  for (const input of [
+    { serial: "" },
+    { serial: "   " },
+    { serial: "ipad-1", maxScrolls: 0 },
+    { serial: "ipad-1", maxScrolls: 7 },
+    { serial: "ipad-1", maxScrolls: 1.5 },
+    { serial: "ipad-1", maxScrolls: "4" },
+  ]) {
+    assert.throws(() => definition.input.parse(input), /scroll survey/u);
+  }
+
+  const validOutput = {
+    status: "stopped",
+    reason: "inspection-unavailable",
+    frames: [
+      {
+        index: 0,
+        offsetY: 0,
+        screenshot: { base64: "png", width: 834, height: 1112, capturedAt: 1 },
+        snapshot: {
+          serial: "ipad-1",
+          capturedAt: 2,
+          nodes: [],
+          interactive: [],
+          inspectable: false,
+          source: "pixels-only",
+          screenIdentity: {},
+        },
+        appendedHeight: 0,
+      },
+    ],
+    mergedNodes: [],
+    restoredStartViewport: true,
+    message: "Accessibility is unavailable; no scroll survey was started.",
+  };
+  assert.deepEqual(definition.output.parse(validOutput), validOutput);
+  assert.throws(
+    () => definition.output.parse({ ...validOutput, reason: "unknown" }),
+    /scroll survey reason/u,
+  );
+});
+
 test("runtime parsers reject malformed input and output", () => {
   assert.throws(
     () => operationDefinition("job.start").input.parse({ serial: "device" }),

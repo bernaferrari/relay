@@ -338,13 +338,7 @@ function routeAroundFrames(
   // the union of every obstacle rather than pretending that short segment is
   // an intentional straight connector.
   if (!candidates.length) {
-    return exteriorFallbackRoute(
-      sourceStub,
-      targetStub,
-      sourceDirection,
-      targetDirection,
-      frames,
-    );
+    return exteriorFallbackRoute(sourceStub, targetStub, sourceDirection, targetDirection, frames);
   }
   return candidates.reduce((best, candidate) =>
     routeScore(candidate) < routeScore(best) ? candidate : best,
