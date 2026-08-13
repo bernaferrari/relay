@@ -30,6 +30,11 @@ import { AppMapTestInspector } from "./app-map-test-inspector";
 import { AppMapTestOutline } from "./app-map-test-outline";
 import { AppMapTestUndo } from "./app-map-test-undo";
 import { AppMapTestDeviceEvidence } from "./app-map-test-device-evidence";
+import {
+  AppMapTestRunControl,
+  isActiveTestRun,
+  type TestRunLaunchState,
+} from "./app-map-test-run-control";
 import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
 import { Icon } from "./icon";
 
@@ -66,12 +71,17 @@ export function AppMapTestWorkspace(props: {
   const [compiling, setCompiling] = createSignal(false);
   const [compileMessage, setCompileMessage] = createSignal("");
   const [compiledPlan, setCompiledPlan] = createSignal<AppMapCompiledTest>();
+  const [runJobId, setRunJobId] = createSignal<string>();
+  const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
+  const [runError, setRunError] = createSignal("");
+  const [runAttributionMismatch, setRunAttributionMismatch] = createSignal(false);
   let loadedKey = "";
   let optimisticRevision = 0;
   let saveQueue = Promise.resolve();
   let pendingSaves = 0;
   let failedDraft: AppMapScenarioTest | undefined;
   let queuedDraft: AppMapScenarioTest | undefined;
+  let runTestKey = "";
 
   const selectTest = (id: string) => {
     setLocalTestId(id);
@@ -97,7 +107,20 @@ export function AppMapTestWorkspace(props: {
       setUndoDelete();
       setSelectedStepId();
       loadedKey = "";
+      runTestKey = "";
+      setRunJobId();
+      setRunLaunchState("idle");
+      setRunError("");
+      setRunAttributionMismatch(false);
       return;
+    }
+    const nextRunTestKey = `${map.id}:${test.id}`;
+    if (nextRunTestKey !== runTestKey) {
+      runTestKey = nextRunTestKey;
+      setRunJobId();
+      setRunLaunchState("idle");
+      setRunError("");
+      setRunAttributionMismatch(false);
     }
     const key = `${map.id}:${test.id}:${map.revision}`;
     if (key === loadedKey || saveState() !== "saved") return;
@@ -127,6 +150,23 @@ export function AppMapTestWorkspace(props: {
   const selectedItem = createMemo(() =>
     flattenScenarioSteps(draft()?.steps ?? []).find((item) => item.step.id === selectedStepId()),
   );
+  const runJob = createMemo(() => {
+    const id = runJobId();
+    return id ? server.jobs().find((job) => job.id === id) : undefined;
+  });
+  const selectedDevice = createMemo(() =>
+    server.devices().find((device) => device.serial === server.selectedDevice()),
+  );
+  const runBlockedReason = createMemo(() => {
+    if (server.isOffline()) return "Reconnect Relay before running this Test.";
+    if (saveState() === "saving") return "Wait for the latest changes to finish saving.";
+    if (saveState() === "error") return "Retry the local changes before running.";
+    if (blockers().length) {
+      return `Resolve ${blockers().length} incomplete ${blockers().length === 1 ? "binding" : "bindings"} before running.`;
+    }
+    if (!selectedDevice()) return "Choose a target before running this Test.";
+    return undefined;
+  });
 
   function queueSave(next: AppMapScenarioTest, options?: { preserveUndo?: boolean }): void {
     const map = appMap();
@@ -140,6 +180,12 @@ export function AppMapTestWorkspace(props: {
     setDraft(snapshot);
     setCompileMessage("");
     setCompiledPlan();
+    if (!isActiveTestRun(runJob())) {
+      setRunJobId();
+      setRunLaunchState("idle");
+      setRunError("");
+      setRunAttributionMismatch(false);
+    }
     if (edits.length === 0) {
       if (failedDraft) {
         failedDraft = snapshot;
@@ -351,10 +397,10 @@ export function AppMapTestWorkspace(props: {
     }
   }
 
-  async function compileTest(): Promise<void> {
+  async function compileTest(): Promise<AppMapCompiledTest | undefined> {
     const map = appMap();
     const test = draft();
-    if (!map || !test || blockers().length || compiling()) return;
+    if (!map || !test || blockers().length || compiling()) return undefined;
     setCompiling(true);
     setCompileMessage("");
     try {
@@ -369,11 +415,56 @@ export function AppMapTestWorkspace(props: {
       setCompileMessage(
         `Compiled ${recipeCount} ${recipeCount === 1 ? "recipe" : "recipes"} with ${linkCount} provenance ${linkCount === 1 ? "link" : "links"}.`,
       );
+      return plan;
     } catch (error) {
       setCompileMessage(error instanceof Error ? error.message : String(error));
+      return undefined;
     } finally {
       setCompiling(false);
     }
+  }
+
+  async function runTest(): Promise<void> {
+    const map = appMap();
+    const test = draft();
+    if (!map || !test || runBlockedReason() || isActiveTestRun(runJob())) return;
+    setRunLaunchState("preparing");
+    setRunError("");
+    setRunAttributionMismatch(false);
+    setRunJobId();
+    const plan = await compileTest();
+    if (!plan) {
+      setRunError(compileMessage() || "Relay could not compile this Test.");
+      setRunLaunchState("error");
+      return;
+    }
+    const jobId = await server.runPathAcrossVariables({
+      appMapId: map.id,
+      testId: test.id,
+      title: test.name,
+    });
+    if (!jobId) {
+      setRunError("Relay did not start the Test. Review Activity, then try again.");
+      setRunLaunchState("error");
+      return;
+    }
+    setRunJobId(jobId);
+    setRunLaunchState("idle");
+    const job = server.jobs().find((candidate) => candidate.id === jobId);
+    if (job && job.action !== plan.rootRecipeId) {
+      setRunAttributionMismatch(true);
+      setRunError("The queued job does not match this compiled Test revision.");
+      setRunLaunchState("error");
+    }
+  }
+
+  async function cancelRun(): Promise<void> {
+    const id = runJobId();
+    if (!id || !isActiveTestRun(runJob()) || runLaunchState() === "canceling") return;
+    setRunLaunchState("canceling");
+    await server.cancelJob(id);
+    await server.refreshJobs();
+    setRunLaunchState(runAttributionMismatch() ? "error" : "idle");
   }
 
   return (
@@ -394,14 +485,14 @@ export function AppMapTestWorkspace(props: {
         undoStepDelete();
       }}
     >
-      <header class="flex min-h-14 items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4">
+      <header class="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4 py-2">
         <div class="min-w-0">
           <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
             Test editor
           </p>
           <p class="m-0 truncate text-[13px] font-semibold">{appMap()?.name ?? "App map"}</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center justify-end gap-2">
           <span class="text-[11px] text-text-weak" role="status" aria-live="polite">
             {compileMessage() ||
               (saveState() === "saving"
@@ -418,19 +509,20 @@ export function AppMapTestWorkspace(props: {
             <Icon name="map" size={13} /> Open map
           </Button>
           <Show when={draft()}>
-            <Button
-              size="sm"
-              disabled={
-                server.isOffline() ||
-                saveState() !== "saved" ||
-                blockers().length > 0 ||
-                compiling()
-              }
-              title={blockers().length ? "Resolve every incomplete binding first" : undefined}
-              onClick={() => void compileTest()}
-            >
-              <Icon name="play" size={13} /> {compiling() ? "Compiling…" : "Compile test"}
-            </Button>
+            <AppMapTestRunControl
+              launchState={runLaunchState()}
+              job={runJob()}
+              blockedReason={runBlockedReason()}
+              error={runError()}
+              onRun={() => void runTest()}
+              onCancel={() => void cancelRun()}
+              onOpenResult={() => {
+                const id = runJobId();
+                if (!id) return;
+                props.onOpenRun?.(id);
+                setRunJobId();
+              }}
+            />
           </Show>
         </div>
       </header>

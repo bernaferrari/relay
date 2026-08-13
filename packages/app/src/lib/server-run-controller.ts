@@ -280,7 +280,11 @@ export function createServerRunController(deps: RunControllerDependencies) {
         title: input.title,
         projectId: deps.projectId(),
       });
-      if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);
+      for (const job of data.jobs.toReversed()) deps.rememberJob(job);
+      if (data.jobs[0]) {
+        deps.setSelectedJobId(data.jobs[0].id);
+        deps.setSelectedAction(data.jobs[0].action);
+      }
       const worlds = data.batch.worlds.length;
       toast(
         worlds <= 1

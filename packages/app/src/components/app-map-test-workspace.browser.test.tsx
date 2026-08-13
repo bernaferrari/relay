@@ -3,10 +3,12 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type {
   AppMap,
+  AppMapCompiledTest,
   AppMapScenarioTest,
   AppMapScenarioTestEdit,
   AppMapTest,
 } from "@relay/protocol";
+import type { JobInfo } from "../lib/api-types";
 
 const serverMock = vi.hoisted(() => ({ current: undefined as unknown }));
 vi.mock("../context/server", () => ({ useServer: () => serverMock.current }));
@@ -355,6 +357,140 @@ test("a saved semantic edit settles after its projection refresh recovers", asyn
   expect(
     root.querySelector<HTMLTextAreaElement>("#test-step-intent-open-cart-refresh")?.value,
   ).toBe("Open the reviewed cart");
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("the primary Test action compiles, runs, cancels, and opens its exact result", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "checkout-run",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Checkout run",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        kind: "script",
+        id: "prepare-cart",
+        intent: "Prepare cart",
+        binding: { status: "resolved", kind: "script", source: "return true" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const initial = fixture();
+  initial.tests[scenario.id] = scenario;
+  const rootRecipeId = "app-map:checkout:test:checkout-run:root:r1";
+  const plan: AppMapCompiledTest = {
+    schemaVersion: 1,
+    appMapId: "checkout",
+    appMapRevision: 1,
+    test: {
+      id: scenario.id,
+      name: scenario.name,
+      kind: "scenario",
+      intentSchemaVersion: 1,
+    },
+    rootRecipeId,
+    recipes: {
+      [rootRecipeId]: {
+        id: rootRecipeId,
+        title: scenario.name,
+        parameters: [],
+        steps: [{ kind: "script", source: "return true" }],
+      },
+    },
+    stepProvenance: [],
+  };
+  const [jobs, setJobs] = createSignal<JobInfo[]>([]);
+  const calls: string[] = [];
+  const opened: string[] = [];
+  let finishCompile!: () => void;
+  const compileGate = new Promise<void>((resolve) => (finishCompile = resolve));
+  serverMock.current = {
+    selectedAppMap: () => initial,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [
+      { serial: "ipad-1", name: "Design iPad", platform: "ios", connectionState: "connected" },
+    ],
+    selectedDevice: () => "ipad-1",
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => ({ setup: {}, checks: [] }),
+    jobs,
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    refreshJobs: async () => undefined,
+    runAction: async (id: string) => {
+      calls.push(id);
+      await compileGate;
+      return { plan };
+    },
+    runPathAcrossVariables: async () => {
+      calls.push("run");
+      setJobs([
+        {
+          id: "job-exact",
+          action: rootRecipeId,
+          status: "queued",
+          queuedAt: 2,
+          logs: [],
+        },
+      ]);
+      return "job-exact";
+    },
+    cancelJob: async (id: string) => {
+      calls.push(`cancel:${id}`);
+      setJobs((current) => current.map((job) => ({ ...job, status: "cancelled" as const })));
+    },
+  };
+
+  const dispose = render(
+    () => (
+      <AppMapTestWorkspace
+        testId={scenario.id}
+        onOpenMap={() => undefined}
+        onOpenRun={(id) => opened.push(id)}
+      />
+    ),
+    root,
+  );
+  await settle();
+
+  const primary = () =>
+    [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      /Run test|Preparing run|Cancel queued run|Open result/.test(button.textContent ?? ""),
+    )!;
+  expect(primary().textContent).toContain("Run test");
+  primary().click();
+  await settle();
+
+  expect(primary().textContent).toContain("Preparing run");
+  expect(primary().getAttribute("aria-busy")).toBe("true");
+  finishCompile();
+  await settle();
+
+  expect(calls.slice(0, 2)).toEqual(["app-map.test.compile", "run"]);
+  expect(primary().textContent).toContain("Cancel queued run");
+  expect(root.textContent).toContain("Queued on the selected target");
+  primary().click();
+  await settle();
+
+  expect(calls).toContain("cancel:job-exact");
+  expect(primary().textContent).toContain("Open result");
+  primary().click();
+  expect(opened).toEqual(["job-exact"]);
 
   dispose();
   document.body.replaceChildren();
