@@ -4,6 +4,8 @@ export {
   type ActivityEvent,
   type AppMapCombine,
   type AppMapTest,
+  type AppMapScenarioTest,
+  type AppMapScenarioTestStep,
   type ActivitySubjectKind,
   type AddScreenInput,
   type AppMap,
@@ -52,4 +54,8 @@ export {
   type TargetResultReference,
   type UpdateScreenInput,
 } from "@relay/protocol";
-export { APP_MAP_COLLABORATION_DOCUMENT_VERSION } from "@relay/protocol";
+export {
+  APP_MAP_COLLABORATION_DOCUMENT_VERSION,
+  APP_MAP_TEST_INTENT_LIMITS,
+  APP_MAP_TEST_INTENT_SCHEMA_VERSION,
+} from "@relay/protocol";

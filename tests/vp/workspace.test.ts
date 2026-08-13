@@ -24,7 +24,9 @@ describe("Relay workspace verification", () => {
 
   it("discovers package tests recursively instead of listing files", async () => {
     const app = await packageJson("packages/app/package.json");
-    expect(app.scripts?.test).toBe("tsx --test src/**/*.test.ts");
+    expect(app.scripts?.test).toBe(
+      "tsx --test src/**/*.test.ts && vitest run --config vite.browser-test.config.ts",
+    );
     expect(app.scripts?.test).not.toContain("step-sentence.test.ts");
   });
 

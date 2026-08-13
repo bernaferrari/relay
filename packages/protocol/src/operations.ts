@@ -39,6 +39,7 @@ import type {
   ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
+import type { AppMapCompiledTest, AppMapScenarioTestEdit } from "./test-intent.js";
 import type {
   VisualBaseline,
   VisualComparison,
@@ -844,6 +845,20 @@ type SpecificOperationMap = {
       eventId?: string;
     };
     output: { appMap: AppMap };
+  };
+  "app-map.test.edit": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+      edits: AppMapScenarioTestEdit[];
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.test.compile": {
+    input: { appMapId: string; testId: string };
+    output: { plan: AppMapCompiledTest };
   };
   "app-map.combine.save": {
     input: {
@@ -1846,6 +1861,52 @@ function appMapMutationParser<Id extends OperationId>(
     if (nested) record(input[nested], `${description} ${nested}`);
   });
 }
+
+const appMapTestEditInputParser = objectParser<OperationInput<"app-map.test.edit">>(
+  "Test edit",
+  (input) => {
+    string(input.appMapId, "Test edit appMapId");
+    string(input.testId, "Test edit testId");
+    number(input.expectedRevision, "Test edit expectedRevision");
+    if (input.eventId !== undefined) string(input.eventId, "Test edit eventId");
+    if (!Array.isArray(input.edits) || input.edits.length === 0 || input.edits.length > 100) {
+      fail("Test edits", "must contain between 1 and 100 semantic edits");
+    }
+    for (const [index, raw] of input.edits.entries()) {
+      const edit = record(raw, `Test edit ${index}`);
+      const kind = string(edit.kind, `Test edit ${index} kind`);
+      if (kind === "step.add") {
+        record(edit.step, `Test edit ${index} step`);
+        if (edit.placement !== undefined) record(edit.placement, `Test edit ${index} placement`);
+        if (edit.index !== undefined) number(edit.index, `Test edit ${index} index`);
+      } else if (kind === "step.patch") {
+        string(edit.stepId, `Test edit ${index} stepId`);
+        record(edit.patch, `Test edit ${index} patch`);
+      } else if (kind === "step.remove") {
+        string(edit.stepId, `Test edit ${index} stepId`);
+      } else if (kind === "step.reorder") {
+        if (!Array.isArray(edit.orderedStepIds)) {
+          fail(`Test edit ${index} orderedStepIds`, "must be an array");
+        }
+        edit.orderedStepIds.forEach((id, stepIndex) =>
+          string(id, `Test edit ${index} orderedStepIds ${stepIndex}`),
+        );
+        if (edit.placement !== undefined) record(edit.placement, `Test edit ${index} placement`);
+      } else if (kind === "step.bind") {
+        string(edit.stepId, `Test edit ${index} stepId`);
+        record(edit.binding, `Test edit ${index} binding`);
+      } else if (kind === "step.unbind") {
+        string(edit.stepId, `Test edit ${index} stepId`);
+        string(edit.reason, `Test edit ${index} reason`);
+        if (edit.candidates !== undefined && !Array.isArray(edit.candidates)) {
+          fail(`Test edit ${index} candidates`, "must be an array");
+        }
+      } else {
+        fail(`Test edit ${index} kind`, "is unsupported");
+      }
+    }
+  },
+);
 
 const appMapScreenAddParser = objectParser<OperationInput<"app-map.screen.add">>(
   "screen addition",
@@ -3265,7 +3326,7 @@ export const operationDefinitions = [
   ),
   command(
     "app-map.test.save",
-    "Save a map test (path or tour)",
+    "Save a graph-native, path, or tour map test",
     "PUT",
     "/app-maps/:appMapId/tests/:testId",
     {
@@ -3284,6 +3345,33 @@ export const operationDefinitions = [
       input: appMapMutationParser<"app-map.test.remove">("Test removal", undefined, ["testId"]),
       output: appMapOutputParser,
       confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.test.edit",
+    "Apply stable-ID edits to a graph-native map test",
+    "POST",
+    "/app-maps/:appMapId/tests/:testId/edit",
+    {
+      category: "authoring",
+      input: appMapTestEditInputParser,
+      output: appMapOutputParser,
+    },
+  ),
+  query(
+    "app-map.test.compile",
+    "Compile and validate a graph-native map test",
+    "/app-maps/:appMapId/tests/:testId/compile",
+    {
+      category: "authoring",
+      input: objectParser<OperationInput<"app-map.test.compile">>("Test compilation", (input) => {
+        string(input.appMapId, "Test compilation appMapId");
+        string(input.testId, "Test compilation testId");
+      }),
+      output: objectParser<OperationOutput<"app-map.test.compile">>(
+        "Test compilation response",
+        (output) => record(output.plan, "Test compilation plan"),
+      ),
     },
   ),
   command(

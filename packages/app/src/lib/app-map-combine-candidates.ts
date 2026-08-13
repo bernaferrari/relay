@@ -33,11 +33,13 @@ export function testCandidates(map: AppMap): TestCandidate[] {
     kind: test.kind,
     source: "test",
     test,
-    screenCount: test.screenIds?.length,
+    screenCount: test.kind === "tour" ? test.screenIds?.length : undefined,
   }));
   const referencedFlows = new Set(
     candidates.flatMap((candidate) =>
-      candidate.source === "test" && candidate.test.flowId ? [candidate.test.flowId] : [],
+      candidate.source === "test" && candidate.test.kind === "path" && candidate.test.flowId
+        ? [candidate.test.flowId]
+        : [],
     ),
   );
   for (const flow of Object.values(map.flows ?? {})) {

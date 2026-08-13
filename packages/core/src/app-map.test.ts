@@ -1111,7 +1111,8 @@ test("validates and protects a screen tour's reusable cold-start Flow", () => {
     setupFlowId: "main",
   };
   const saved = saveAppMapTest(input, tour, context(input, "save-home-tour"));
-  assert.equal(saved.tests[tour.id]?.setupFlowId, "main");
+  const savedTour = saved.tests[tour.id];
+  assert.equal(savedTour?.kind === "tour" ? savedTour.setupFlowId : undefined, "main");
   expectError("in-use", () =>
     removeAppMapFlow(saved, "main", context(saved, "remove-tour-setup-flow", saved.updatedAt + 1)),
   );

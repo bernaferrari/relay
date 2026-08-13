@@ -5,6 +5,7 @@ export * from "./activity.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
+export * from "./test-intent.js";
 export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";

@@ -338,7 +338,7 @@ export function AppMapCombine(props: {
             projectId: currentMap.projectId,
             appMapId: currentMap.id,
             name: candidate.name,
-            kind: candidate.kind,
+            kind: candidate.source === "flow" ? "path" : "tour",
             ...(candidate.source === "flow"
               ? { flowId: candidate.flow.id }
               : { rootScreenId, screenIds: [...candidate.group.screenIds] }),

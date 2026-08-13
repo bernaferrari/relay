@@ -42,6 +42,24 @@ export {
 export { serializeAppMap } from "./app-map/serialization.js";
 export { proposalFromDiscovery } from "./app-map/observation-proposal.js";
 export {
+  AppMapTestStepOperationError,
+  addScenarioTestStep,
+  applyScenarioTestStepEdits,
+  bindScenarioTestStep,
+  findScenarioTestStep,
+  patchScenarioTestStep,
+  removeScenarioTestStep,
+  reorderScenarioTestSteps,
+  selectScenarioTestStep,
+  unbindScenarioTestStep,
+  type AppMapScenarioTestEdit,
+  type AppMapTestStepBranch,
+  type AppMapTestStepLocation,
+  type AppMapTestStepOperationErrorCode,
+  type AppMapTestStepPatch,
+  type AppMapTestStepPlacement,
+} from "./app-map/test-step-operations.js";
+export {
   commitAppMapRecording,
   commitAppMapScreenCapture,
   findAppMapCaptureScreen,

@@ -15,7 +15,7 @@ export type CombineVariable = {
 export type CombineTestColumn = {
   id: string;
   name: string;
-  kind: "path" | "tour";
+  kind: "path" | "tour" | "scenario";
   screenCount?: number;
 };
 

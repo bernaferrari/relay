@@ -1,4 +1,9 @@
-import type { AppMapCapturePolicy, AppMapCombinePreflight, MatrixExpansion } from "@relay/protocol";
+import type {
+  AppMapCapturePolicy,
+  AppMapCombinePreflight,
+  AppMapTest,
+  MatrixExpansion,
+} from "@relay/protocol";
 import type { CompatibilityReport, JobInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 
@@ -314,21 +319,7 @@ export async function saveTestRemote(
   input: {
     appMapId: string;
     expectedRevision: number;
-    test: {
-      id: string;
-      organizationId: string;
-      projectId: string;
-      appMapId: string;
-      name: string;
-      kind: "path" | "tour";
-      flowId?: string;
-      rootScreenId?: string;
-      screenIds?: string[];
-      depth?: number;
-      screenshotEach?: boolean;
-      createdAt: number;
-      updatedAt: number;
-    };
+    test: AppMapTest;
   },
 ): Promise<{ appMap: { revision: number } }> {
   return request(

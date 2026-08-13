@@ -32,6 +32,7 @@ import type {
 } from "./model.js";
 import type { ScreenIdentityObservation } from "../screen-identity.js";
 import { assertActions } from "./action-validation.js";
+import { assertScenarioTest } from "./test-intent-validation.js";
 import {
   finiteTimestamp,
   identifier,
@@ -505,8 +506,12 @@ export function assertAppMapVariable(set: AppMapVariable, scope: AppMapScope, la
 export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: string): void {
   assertEntity(work, scope, label);
   requiredText(work.name, `${label}.name`);
-  if (!(work.kind === "path" || work.kind === "tour")) {
+  if (!(work.kind === "path" || work.kind === "tour" || work.kind === "scenario")) {
     appMapFail("invalid-map", `${label}.kind is unsupported`);
+  }
+  if (work.kind === "scenario") {
+    assertScenarioTest(work, label);
+    return;
   }
   if (work.kind === "path") identifier(work.flowId ?? "", `${label}.flowId`);
   if (work.kind === "tour") identifier(work.rootScreenId ?? "", `${label}.rootScreenId`);

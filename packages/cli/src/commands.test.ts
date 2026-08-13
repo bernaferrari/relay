@@ -283,6 +283,16 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { appMapId: "grok-ios", testId: "settings-tour" },
     ],
     [
+      ["test", "edit", "grok-ios", "checkout"],
+      "app-map.test.edit",
+      { appMapId: "grok-ios", testId: "checkout" },
+    ],
+    [
+      ["test", "compile", "grok-ios", "checkout"],
+      "app-map.test.compile",
+      { appMapId: "grok-ios", testId: "checkout" },
+    ],
+    [
       ["work", "run", "grok-ios", "settings-tour"],
       "job.combine.start",
       { appMapId: "grok-ios", testId: "settings-tour" },

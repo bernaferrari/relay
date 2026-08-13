@@ -304,10 +304,61 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     } as never);
     assert.equal(testSaved.appMap.tests["welcome-tour"]?.projectId, "mobile");
 
+    const scenarioSaved = await human.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "welcome-scenario",
+      expectedRevision: 6,
+      test: {
+        name: "Welcome scenario",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "check-welcome",
+            kind: "validation",
+            intent: "Welcome is visible",
+            binding: {
+              status: "resolved",
+              kind: "assertion",
+              assertion: {
+                kind: "target",
+                target: { identifier: "welcome-title" },
+                condition: "visible",
+              },
+            },
+          },
+        ],
+      },
+    } as never);
+    assert.equal(scenarioSaved.appMap.tests["welcome-scenario"]?.kind, "scenario");
+
+    const scenarioCompiled = await human.invoke("app-map.test.compile", {
+      appMapId: "store",
+      testId: "welcome-scenario",
+    });
+    assert.equal(scenarioCompiled.plan.test.id, "welcome-scenario");
+    assert.equal(scenarioCompiled.plan.stepProvenance[0]?.testStepId, "check-welcome");
+
+    const scenarioEdited = await human.invoke("app-map.test.edit", {
+      appMapId: "store",
+      testId: "welcome-scenario",
+      expectedRevision: 7,
+      edits: [
+        {
+          kind: "step.patch",
+          stepId: "check-welcome",
+          patch: { intent: "The Welcome screen is visible" },
+        },
+      ],
+    });
+    const scenario = scenarioEdited.appMap.tests["welcome-scenario"];
+    assert.ok(scenario?.kind === "scenario");
+    assert.equal(scenario.steps[0]?.intent, "The Welcome screen is visible");
+
     const combineSaved = await human.invoke("app-map.combine.save", {
       appMapId: "store",
       combineId: "language-welcome",
-      expectedRevision: 6,
+      expectedRevision: 8,
       combine: {
         name: "Language × Welcome",
         variableIds: ["language"],

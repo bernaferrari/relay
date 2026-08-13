@@ -48,6 +48,7 @@ import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs";
 type MapLibraryArea = ProductArea;
+type AuthoringSurface = "test" | "map";
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
 );
@@ -56,6 +57,9 @@ const RunsWorkspace = lazy(() =>
 );
 const AppMapWorkspace = lazy(() =>
   import("./app-map-workspace").then((module) => ({ default: module.AppMapWorkspace })),
+);
+const AppMapTestWorkspace = lazy(() =>
+  import("./app-map-test-workspace").then((module) => ({ default: module.AppMapTestWorkspace })),
 );
 const EmptyAppMap = lazy(() =>
   import("./app-map-empty").then((module) => ({ default: module.EmptyAppMap })),
@@ -82,6 +86,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
+  const [authoringSurface, setAuthoringSurface] = createSignal<AuthoringSurface>("test");
   // The App Map is the only authoring surface. Device remains one click away.
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
@@ -585,6 +590,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openMap(id: string): void {
     server.setSelectedAppMapId(id);
     setArea("tests");
+    setAuthoringSurface("test");
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.
@@ -710,6 +716,40 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             aria-hidden={server.isOffline() ? "true" : undefined}
           >
             <Show when={area() === "tests"}>
+              <Show when={selectedMap()}>
+                <div
+                  class="flex h-9 items-center rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-0.5"
+                  role="group"
+                  aria-label="Authoring surface"
+                >
+                  <button
+                    type="button"
+                    class={cn(
+                      "min-h-8 rounded-md px-3 text-[11px] font-medium transition-[background-color,color,box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
+                      authoringSurface() === "test"
+                        ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
+                        : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                    )}
+                    aria-pressed={authoringSurface() === "test"}
+                    onClick={() => setAuthoringSurface("test")}
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    class={cn(
+                      "min-h-8 rounded-md px-3 text-[11px] font-medium transition-[background-color,color,box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
+                      authoringSurface() === "map"
+                        ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
+                        : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                    )}
+                    aria-pressed={authoringSurface() === "map"}
+                    onClick={() => setAuthoringSurface("map")}
+                  >
+                    Map
+                  </button>
+                </div>
+              </Show>
               <DevicePicker
                 liveOpen={devicePanelOpen()}
                 targetSets={server.matrices()}
@@ -963,19 +1003,28 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   }
                 >
                   <div class={cn(shellMapWrap, "flex flex-1")}>
-                    <Suspense fallback={<WorkspaceLoading label="map" />}>
-                      <AppMapWorkspace
-                        navigatorOpen={navOpen()}
-                        onOpenTargets={() => props.onOpenSettings("targets")}
-                        onOpenActions={() => undefined}
-                        onOpenVariables={() => setVariablesOpen(true)}
-                        onOpenCombine={toggleRunMatrix}
-                        onOpenRun={(id) => {
-                          server.setSelectedJobId(id);
-                          setArea("runs");
-                        }}
-                      />
-                    </Suspense>
+                    <Show
+                      when={authoringSurface() === "test"}
+                      fallback={
+                        <Suspense fallback={<WorkspaceLoading label="map" />}>
+                          <AppMapWorkspace
+                            navigatorOpen={navOpen()}
+                            onOpenTargets={() => props.onOpenSettings("targets")}
+                            onOpenActions={() => setAuthoringSurface("test")}
+                            onOpenVariables={() => setVariablesOpen(true)}
+                            onOpenCombine={toggleRunMatrix}
+                            onOpenRun={(id) => {
+                              server.setSelectedJobId(id);
+                              setArea("runs");
+                            }}
+                          />
+                        </Suspense>
+                      }
+                    >
+                      <Suspense fallback={<WorkspaceLoading label="test editor" />}>
+                        <AppMapTestWorkspace onOpenMap={() => setAuthoringSurface("map")} />
+                      </Suspense>
+                    </Show>
                   </div>
                   <Show when={settingsOpen()}>
                     <MapPropertiesPanel

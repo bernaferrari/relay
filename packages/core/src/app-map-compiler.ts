@@ -15,6 +15,7 @@ import { validateAppMap } from "./app-map.js";
 export type AppMapCompileErrorCode =
   | "missing-flow"
   | "missing-connection"
+  | "missing-routine"
   | "draft-connection"
   | "missing-screen-identity"
   | "tour-setup-root-mismatch";
@@ -497,4 +498,16 @@ export function compileAppMapConnection(
       : [],
     terminal: structuredClone(connection.destination),
   };
+}
+
+/** Compile one approved Routine without manufacturing a Flow or Connection. */
+export function compileAppMapRoutine(
+  map: AppMap,
+  routineId: string,
+): { rootRecipeId: string; recipes: Record<string, AppMapCompiledRecipe> } {
+  validateAppMap(map);
+  if (!map.routines[routineId]) fail("missing-routine", `Routine ${routineId} does not exist`);
+  const recipes: Record<string, AppMapCompiledRecipe> = {};
+  routineCompiler(map, recipes)(routineId);
+  return { rootRecipeId: recipeId(map, "routine", routineId), recipes };
 }

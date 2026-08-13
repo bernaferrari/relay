@@ -3,6 +3,8 @@ import type {
   AppMap,
   AppMapCombine,
   AppMapCompiledFlow,
+  AppMapCompiledTest,
+  AppMapScenarioTest,
   AppMapTest,
   Connection,
   RecipeStep,
@@ -11,6 +13,7 @@ import type {
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import { compileAppMapFlow, compileAppMapTourSetupFlow } from "./app-map-compiler.js";
+import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
 import type { TourStop } from "./tour.js";
 
 const LANGUAGE_ROW = /language|idioma|sprache|langue|言語|语言|語言/i;
@@ -423,7 +426,10 @@ function tourStopTargetKey(
 }
 
 function captureMode(work: AppMapTest): NonNullable<AppMapTest["capture"]>["mode"] {
-  return work.capture?.mode ?? (work.screenshotEach === false ? "none" : "every-screen");
+  return (
+    work.capture?.mode ??
+    (work.kind !== "scenario" && work.screenshotEach === false ? "none" : "every-screen")
+  );
 }
 
 function preludeConnectionsToScreen(map: AppMap, rootScreenId: string): Connection[] {
@@ -474,9 +480,19 @@ export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeS
 
 export function compileAppMapTest(
   map: AppMap,
+  work: AppMapScenarioTest,
+  options?: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow },
+): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest };
+export function compileAppMapTest(
+  map: AppMap,
+  work: AppMapTest,
+  options?: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow },
+): { root: Recipe; graph: Record<string, Recipe>; plan?: AppMapCompiledTest };
+export function compileAppMapTest(
+  map: AppMap,
   work: AppMapTest,
   options: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow } = {},
-): { root: Recipe; graph: Record<string, Recipe> } {
+): { root: Recipe; graph: Record<string, Recipe>; plan?: AppMapCompiledTest } {
   if (work.kind === "path") {
     const flowId = work.flowId?.trim();
     if (!flowId || !map.flows[flowId]) throw new Error(`Test “${work.name}” is missing its path`);
@@ -526,6 +542,9 @@ export function compileAppMapTest(
       graph[root.id] = root;
     }
     return { root, graph };
+  }
+  if (work.kind === "scenario") {
+    return compileAppMapScenarioTest(map, work);
   }
   if (!work.rootScreenId?.trim() || !map.screens[work.rootScreenId]) {
     throw new Error(`Test “${work.name}” needs a root screen`);
@@ -715,9 +734,10 @@ export function compileAppMapCombine(
     const work = map.tests?.[testId];
     if (!work) throw new Error(`Test ${testId} is missing`);
     const setupFlowId = work.kind === "tour" ? work.setupFlowId?.trim() : undefined;
+    const tourRootScreenId = work.kind === "tour" ? work.rootScreenId : undefined;
     const setupPlan =
-      setupFlowId && work.rootScreenId
-        ? compileAppMapTourSetupFlow(map, setupFlowId, work.rootScreenId)
+      setupFlowId && tourRootScreenId
+        ? compileAppMapTourSetupFlow(map, setupFlowId, tourRootScreenId)
         : undefined;
     const compiled = compileAppMapTest(
       map,

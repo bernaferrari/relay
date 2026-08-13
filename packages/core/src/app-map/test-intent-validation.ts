@@ -1,0 +1,276 @@
+import type {
+  AppMapScenarioTest,
+  AppMapScenarioTestStep,
+  AssertionSpec,
+  RecipeStep,
+} from "@relay/protocol";
+import { APP_MAP_TEST_INTENT_LIMITS, APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
+import { validateRecipeSteps } from "../recipes.js";
+import { appMapFail } from "./errors.js";
+import { assertActions, assertTarget } from "./action-validation.js";
+import {
+  identifier,
+  objectValue,
+  optionalText,
+  requiredText,
+  safeInteger,
+  stringArray,
+} from "./validation-primitives.js";
+
+function allowedKeys(value: object, keys: readonly string[], label: string): void {
+  const unknown = Object.keys(value).filter((key) => !keys.includes(key));
+  if (unknown.length) appMapFail("invalid-map", `${label} contains unknown field ${unknown[0]}`);
+}
+
+function validateCanonicalStep(step: RecipeStep, label: string): void {
+  try {
+    validateRecipeSteps([step]);
+  } catch (error) {
+    appMapFail(
+      "invalid-map",
+      `${label} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function assertBinding(step: AppMapScenarioTestStep, label: string): void {
+  const binding = objectValue(step.binding, `${label}.binding`);
+  if (binding.status === "unresolved") {
+    allowedKeys(binding, ["status", "reason", "candidates"], `${label}.binding`);
+    requiredText(binding.reason, `${label}.binding.reason`);
+    if (binding.candidates !== undefined) {
+      if (!Array.isArray(binding.candidates)) {
+        appMapFail("invalid-map", `${label}.binding.candidates must be an array`);
+      }
+      if (binding.candidates.length > APP_MAP_TEST_INTENT_LIMITS.maxCandidates) {
+        appMapFail("invalid-map", `${label}.binding.candidates exceeds its limit`);
+      }
+      for (const [index, raw] of binding.candidates.entries()) {
+        const candidate = objectValue(raw, `${label}.binding.candidates[${index}]`);
+        allowedKeys(candidate, ["kind", "id", "label"], `${label}.binding.candidates[${index}]`);
+        if (!(["connection", "screen", "routine"] as unknown[]).includes(candidate.kind)) {
+          appMapFail("invalid-map", `${label}.binding.candidates[${index}].kind is unsupported`);
+        }
+        identifier(candidate.id, `${label}.binding.candidates[${index}].id`);
+        requiredText(candidate.label, `${label}.binding.candidates[${index}].label`);
+      }
+      const candidateIds = binding.candidates.map(({ id }) => id);
+      if (new Set(candidateIds).size !== candidateIds.length) {
+        appMapFail("duplicate-id", `${label}.binding.candidates contains duplicate ids`);
+      }
+    }
+    return;
+  }
+  if (binding.status !== "resolved") {
+    appMapFail("invalid-map", `${label}.binding.status is unsupported`);
+  }
+
+  switch (step.kind) {
+    case "instruction":
+      allowedKeys(binding, ["status", "kind", "connectionIds"], `${label}.binding`);
+      if (binding.kind !== "connections")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      stringArray(binding.connectionIds, `${label}.binding.connectionIds`);
+      if (binding.connectionIds.length === 0)
+        appMapFail("invalid-map", `${label}.binding needs a connection`);
+      break;
+    case "validation":
+      if (binding.kind === "assertion") {
+        allowedKeys(binding, ["status", "kind", "assertion"], `${label}.binding`);
+        assertActions(
+          [
+            {
+              id: `${step.id}-assertion`,
+              kind: "assertion",
+              assertion: binding.assertion as AssertionSpec,
+            },
+          ],
+          `${label}.binding.assertionAction`,
+        );
+      } else if (binding.kind === "recipe-step") {
+        allowedKeys(binding, ["status", "kind", "step"], `${label}.binding`);
+        validateCanonicalStep(binding.step as RecipeStep, `${label}.binding.step`);
+        if (
+          !(["expect", "expect-set", "assert-content", "evaluate-semantic"] as unknown[]).includes(
+            objectValue(binding.step, `${label}.binding.step`).kind,
+          )
+        ) {
+          appMapFail("invalid-map", `${label}.binding.step is not a validation`);
+        }
+      } else appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      break;
+    case "extraction":
+      allowedKeys(binding, ["status", "kind", "as", "target", "role"], `${label}.binding`);
+      if (binding.kind !== "extract")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      identifier(binding.as, `${label}.binding.as`);
+      assertTarget(binding.target as never, `${label}.binding.target`);
+      break;
+    case "manual": {
+      allowedKeys(
+        binding,
+        ["status", "kind", "message", "reason", "resumeLabel", "timeoutMs", "verifyAfter"],
+        `${label}.binding`,
+      );
+      if (binding.kind !== "pause")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      validateCanonicalStep(
+        { kind: "pause", ...binding } as unknown as RecipeStep,
+        `${label}.binding`,
+      );
+      break;
+    }
+    case "module":
+      allowedKeys(binding, ["status", "kind", "routineId", "bindings"], `${label}.binding`);
+      if (binding.kind !== "routine")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      identifier(binding.routineId, `${label}.binding.routineId`);
+      if (binding.bindings !== undefined) {
+        for (const [name, value] of Object.entries(
+          objectValue(binding.bindings, `${label}.binding.bindings`),
+        )) {
+          identifier(name, `${label}.binding.bindings key`);
+          if (typeof value !== "string") {
+            appMapFail("invalid-map", `${label}.binding.bindings.${name} must be a string`);
+          }
+        }
+      }
+      break;
+    case "decision":
+      allowedKeys(binding, ["status", "kind", "input", "operator", "expected"], `${label}.binding`);
+      if (binding.kind !== "condition")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      requiredText(binding.input, `${label}.binding.input`);
+      if (!(["exists", "equals", "not-equals", "contains"] as unknown[]).includes(binding.operator))
+        appMapFail("invalid-map", `${label}.binding.operator is unsupported`);
+      break;
+    case "loop":
+      allowedKeys(binding, ["status", "kind", "count"], `${label}.binding`);
+      if (binding.kind !== "repeat")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      safeInteger(binding.count, `${label}.binding.count`);
+      if (binding.count < 1 || binding.count > APP_MAP_TEST_INTENT_LIMITS.maxLoopIterations)
+        appMapFail("invalid-map", `${label}.binding.count is out of bounds`);
+      break;
+    case "script":
+      allowedKeys(binding, ["status", "kind", "source"], `${label}.binding`);
+      if (binding.kind !== "script")
+        appMapFail("invalid-map", `${label}.binding.kind is unsupported`);
+      requiredText(
+        binding.source,
+        `${label}.binding.source`,
+        APP_MAP_TEST_INTENT_LIMITS.maxScriptLength,
+      );
+      validateCanonicalStep(
+        { kind: "script", source: binding.source } as RecipeStep,
+        `${label}.binding`,
+      );
+      break;
+  }
+}
+
+function assertSteps(
+  steps: AppMapScenarioTestStep[],
+  label: string,
+  seen: Set<string>,
+  depth: number,
+  count: { value: number },
+): void {
+  if (!Array.isArray(steps)) appMapFail("invalid-map", `${label} must be an array`);
+  if (depth > APP_MAP_TEST_INTENT_LIMITS.maxDepth)
+    appMapFail("invalid-map", `${label} exceeds nesting depth`);
+  for (const [index, step] of steps.entries()) {
+    const item = `${label}[${index}]`;
+    objectValue(step, item);
+    identifier(step.id, `${item}.id`);
+    if (seen.has(step.id))
+      appMapFail("duplicate-id", `${label} contains duplicate step ${step.id}`);
+    seen.add(step.id);
+    count.value += 1;
+    if (count.value > APP_MAP_TEST_INTENT_LIMITS.maxSteps)
+      appMapFail("invalid-map", `${label} exceeds its step limit`);
+    requiredText(step.intent, `${item}.intent`, APP_MAP_TEST_INTENT_LIMITS.maxIntentLength);
+    optionalText(step.note, `${item}.note`, APP_MAP_TEST_INTENT_LIMITS.maxNoteLength);
+    if (
+      !(
+        [
+          "instruction",
+          "validation",
+          "extraction",
+          "manual",
+          "module",
+          "decision",
+          "loop",
+          "script",
+        ] as unknown[]
+      ).includes(step.kind)
+    )
+      appMapFail("invalid-map", `${item}.kind is unsupported`);
+    const nested =
+      step.kind === "decision" ? ["thenSteps", "elseSteps"] : step.kind === "loop" ? ["steps"] : [];
+    allowedKeys(step, ["id", "kind", "intent", "note", "binding", ...nested], item);
+    assertBinding(step, item);
+    if (step.kind === "decision") {
+      assertSteps(step.thenSteps, `${item}.thenSteps`, seen, depth + 1, count);
+      if (step.elseSteps) assertSteps(step.elseSteps, `${item}.elseSteps`, seen, depth + 1, count);
+      if (
+        step.thenSteps.length + (step.elseSteps?.length ?? 0) >
+        APP_MAP_TEST_INTENT_LIMITS.maxBranches
+      )
+        appMapFail("invalid-map", `${item} has too many branch steps`);
+    } else if (step.kind === "loop") {
+      assertSteps(step.steps, `${item}.steps`, seen, depth + 1, count);
+    }
+  }
+}
+
+export function assertScenarioTest(test: AppMapScenarioTest, label: string): void {
+  objectValue(test, label);
+  allowedKeys(
+    test,
+    [
+      "id",
+      "organizationId",
+      "projectId",
+      "appMapId",
+      "name",
+      "kind",
+      "intentSchemaVersion",
+      "steps",
+      "capture",
+      "createdAt",
+      "updatedAt",
+    ],
+    label,
+  );
+  identifier(test.id, `${label}.id`);
+  identifier(test.organizationId, `${label}.organizationId`);
+  identifier(test.projectId, `${label}.projectId`);
+  identifier(test.appMapId, `${label}.appMapId`);
+  requiredText(test.name, `${label}.name`);
+  if (test.kind !== "scenario") appMapFail("invalid-map", `${label}.kind must be scenario`);
+  if (test.intentSchemaVersion !== APP_MAP_TEST_INTENT_SCHEMA_VERSION) {
+    appMapFail("invalid-map", `${label}.intentSchemaVersion is unsupported`);
+  }
+  if (test.capture !== undefined) {
+    const capture = objectValue(test.capture, `${label}.capture`);
+    allowedKeys(capture, ["mode", "screenIds"], `${label}.capture`);
+    if (
+      !("mode" in capture) ||
+      !(
+        ["every-screen", "checkpoints", "final-screen", "failures-only", "none"] as unknown[]
+      ).includes(capture.mode)
+    ) {
+      appMapFail("invalid-map", `${label}.capture.mode is unsupported`);
+    }
+    if (capture.mode === "checkpoints") {
+      stringArray(capture.screenIds, `${label}.capture.screenIds`);
+      if (capture.screenIds.length === 0) {
+        appMapFail("invalid-map", `${label}.capture.screenIds must contain a screen`);
+      }
+    } else if (capture.screenIds !== undefined) {
+      appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
+    }
+  }
+  assertSteps(test.steps, `${label}.steps`, new Set(), 0, { value: 0 });
+}

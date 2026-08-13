@@ -21,7 +21,8 @@ export function defaultCaptureMode(candidate: TestCandidate): SimpleCaptureMode 
   if (candidate.source === "test") {
     const mode = candidate.test.capture?.mode;
     if (mode && mode !== "checkpoints") return mode;
-    if (candidate.test.screenshotEach === false) return "none";
+    if (candidate.test.kind !== "scenario" && candidate.test.screenshotEach === false)
+      return "none";
   }
   return "every-screen";
 }
@@ -32,7 +33,9 @@ function candidateDescription(candidate: TestCandidate): string {
       ? `${candidate.screenCount} mapped ${candidate.screenCount === 1 ? "screen" : "screens"} · reusable test`
       : candidate.kind === "tour"
         ? "Visit mapped screens · reusable test"
-        : "Saved reusable path";
+        : candidate.kind === "scenario"
+          ? "Editable scenario · reusable test"
+          : "Saved reusable path";
   }
   if (candidate.source === "flow") {
     return `${candidate.flow.connectionIds.length} recorded ${candidate.flow.connectionIds.length === 1 ? "step" : "steps"} · saved flow`;

@@ -174,18 +174,18 @@ function assertTests(map: AppMap): void {
         `Path Test ${work.id} references missing Flow ${work.flowId}`,
       );
     }
-    if (work.rootScreenId && !map.screens[work.rootScreenId]) {
+    if (work.kind === "tour" && work.rootScreenId && !map.screens[work.rootScreenId]) {
       appMapFail(
         "missing-reference",
         `Test ${work.id} references missing root screen ${work.rootScreenId}`,
       );
     }
-    for (const screenId of work.screenIds ?? []) {
+    for (const screenId of work.kind === "tour" ? (work.screenIds ?? []) : []) {
       if (!map.screens[screenId]) {
         appMapFail("missing-reference", `Test ${work.id} references missing screen ${screenId}`);
       }
     }
-    if (work.capture?.mode === "checkpoints") {
+    if (work.kind === "tour" && work.capture?.mode === "checkpoints") {
       const traversal = new Set(work.screenIds ?? []);
       for (const screenId of work.capture.screenIds) {
         if (!map.screens[screenId]) {
@@ -206,6 +206,7 @@ function assertTests(map: AppMap): void {
  * against its verified terminal screen without reimplementing Flow validation. */
 function assertTourSetupFlows(map: AppMap): void {
   for (const work of Object.values(map.tests ?? {})) {
+    if (work.kind !== "tour") continue;
     if (!work.setupFlowId) continue;
     const flow = map.flows[work.setupFlowId];
     if (!flow) {

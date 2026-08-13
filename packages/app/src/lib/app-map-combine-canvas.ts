@@ -56,10 +56,13 @@ export function canvasCombineCards(
     const variables = combine.variableIds
       .map((id) => map.variables?.[id])
       .filter((variable): variable is NonNullable<typeof variable> => Boolean(variable));
+    const tour = tests.find((test) => test.kind === "tour" && test.rootScreenId?.trim());
     const rootScreenId =
-      tests.find((test) => test.rootScreenId?.trim())?.rootScreenId ??
+      (tour?.kind === "tour" ? tour.rootScreenId : undefined) ??
       tests
-        .map((test) => (test.flowId ? map.flows?.[test.flowId]?.startScreenId : undefined))
+        .map((test) =>
+          test.kind === "path" && test.flowId ? map.flows?.[test.flowId]?.startScreenId : undefined,
+        )
         .find((id) => id?.trim());
     const rootScreen = rootScreenId ? screenFor(rootScreenId) : undefined;
     const anchor = rootScreen?.position;

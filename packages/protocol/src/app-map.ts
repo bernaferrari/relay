@@ -1,4 +1,5 @@
 import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recipes.js";
+import type { AppMapScenarioTest } from "./test-intent.js";
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity, TargetProfile } from "./index.js";
 
@@ -298,7 +299,8 @@ export type AppMapVariable = AppMapEntity & {
   screenshotEach?: boolean;
 };
 
-/** A test you can bind to variables. Path = recorded flow. Tour = live children. */
+/** A test you can bind to variables. Scenario = graph-native intent; Path and
+ * Tour remain compatibility forms for recorded flows and live child walks. */
 export type AppMapCapturePolicy =
   | { mode: "every-screen" }
   | { mode: "checkpoints"; screenIds: string[] }
@@ -306,7 +308,7 @@ export type AppMapCapturePolicy =
   | { mode: "failures-only" }
   | { mode: "none" };
 
-export type AppMapTest = AppMapEntity & {
+export type LegacyAppMapTest = AppMapEntity & {
   name: string;
   kind: "path" | "tour";
   flowId?: string;
@@ -332,6 +334,8 @@ export type AppMapTest = AppMapEntity & {
   /** @deprecated Read as every-screen/none when capture is absent. */
   screenshotEach?: boolean;
 };
+
+export type AppMapTest = LegacyAppMapTest | AppMapScenarioTest;
 
 /** Figma-like binding: variables × tests. Extra variables are M×N×O; extra tests run in order. */
 export type AppMapCombine = AppMapEntity & {
@@ -912,11 +916,12 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         id: work.id,
         name: work.name,
         kind: work.kind,
-        ...(work.flowId ? { flowId: work.flowId } : {}),
-        ...(work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
-        ...(work.setupFlowId ? { setupFlowId: work.setupFlowId } : {}),
+        ...(work.kind === "path" && work.flowId ? { flowId: work.flowId } : {}),
+        ...(work.kind === "tour" && work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
+        ...(work.kind === "tour" && work.setupFlowId ? { setupFlowId: work.setupFlowId } : {}),
         ...(work.capture ? { capture: work.capture } : {}),
-        depth: work.depth ?? (work.kind === "tour" ? 0 : undefined),
+        ...(work.kind === "tour" ? { depth: work.depth ?? 0 } : {}),
+        ...(work.kind === "scenario" ? { stepCount: work.steps.length } : {}),
       })),
       combines: byId(map.combines ?? {}).map((combine) => ({
         id: combine.id,

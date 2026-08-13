@@ -486,9 +486,9 @@ function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string,
   // doing so changes the setup terminal and makes the tour invalid. Keep the
   // setup Flow as an immutable checkpoint and create a sibling Flow below.
   const tourSetupFlowIds = new Set(
-    Object.values(map.tests ?? {})
-      .filter((work) => work.kind === "tour" && work.setupFlowId)
-      .map((work) => work.setupFlowId!),
+    Object.values(map.tests ?? {}).flatMap((work) =>
+      work.kind === "tour" && work.setupFlowId ? [work.setupFlowId] : [],
+    ),
   );
   const continuable = Object.values(map.flows).filter(
     (flow) => flowTerminal(map, flow) === sourceScreenId && !tourSetupFlowIds.has(flow.id),

@@ -881,9 +881,39 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "app-map.test.save",
     path("test save", ["appMapId", "testId"], undefined, {
-      summary: "Save a test: recorded path or open-every-row tour",
+      summary: "Save a graph-native scenario, recorded path, or screen tour",
     }),
     path("work save", ["appMapId", "testId"]),
+  ),
+  mapped(
+    "app-map.test.edit",
+    path("test edit", ["appMapId", "testId"], undefined, {
+      summary: "Apply atomic stable-ID edits to a graph-native test",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "edits",
+          type: "array",
+          required: true,
+          description:
+            "step.add, step.patch, step.remove, step.reorder, step.bind, or step.unbind edits",
+        },
+      ],
+      examples: [
+        'relay test edit checkout smoke --input \'{"expectedRevision":7,"edits":[{"kind":"step.patch","stepId":"submit-order","patch":{"intent":"Submit the reviewed order"}}]}\'',
+      ],
+    }),
+  ),
+  mapped(
+    "app-map.test.compile",
+    path("test compile", ["appMapId", "testId"], undefined, {
+      summary: "Validate and inspect deterministic recipes plus step provenance",
+    }),
   ),
   mapped(
     "app-map.test.remove",
@@ -1646,7 +1676,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       summary: "Run one test once (no variable matrix)",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "testId", type: "string", description: "Saved test (tour or path)" },
+        { name: "testId", type: "string", description: "Saved graph-native, tour, or path test" },
       ],
       behavior: "job-start-watch",
     }),
@@ -1654,7 +1684,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       summary: "Alias of test run",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "testId", type: "string", description: "Saved test (tour or path)" },
+        { name: "testId", type: "string", description: "Saved graph-native, tour, or path test" },
       ],
       behavior: "job-start-watch",
     }),

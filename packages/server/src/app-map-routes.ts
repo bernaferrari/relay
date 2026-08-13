@@ -1,14 +1,17 @@
 import type http from "node:http";
 import {
   AppMapDomainError,
+  AppMapTestStepOperationError,
   addAppMapScreen,
   authoringSessions,
   approveAppMapProposal,
+  applyScenarioTestStepEdits,
   attachAppMapCaseStack,
   connectAppMapScreens,
   commitAppMapChanges,
   commitAppMapScreenCapture,
   createAppMap,
+  compileAppMapTest,
   currentOperationContext,
   deleteAppMap,
   duplicateAppMap,
@@ -1277,6 +1280,23 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     return true;
   }
 
+  const testCompile = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/compile");
+  if (method === "GET" && testCompile) {
+    const appMap = await readAppMap(scope.projectId, testCompile.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${testCompile.appMapId} not found`);
+    const test = appMap.tests[testCompile.testId!];
+    if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
+    if (test.kind !== "scenario") {
+      throw new HttpError(400, `Test ${test.id} is a legacy ${test.kind} test`);
+    }
+    try {
+      json(response, 200, { plan: compileAppMapTest(appMap, test).plan });
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }
+
   const testRemove = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/remove");
   if (method === "POST" && testRemove) {
     const body = (await parseJsonBody(request)) as Omit<
@@ -1289,6 +1309,45 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       body.expectedRevision,
       body.eventId,
       (map, context) => removeAppMapTest(map, testRemove.testId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const testEdit = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/edit");
+  if (method === "POST" && testEdit) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.edit">,
+      "appMapId" | "testId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      testEdit.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => {
+        const id = testEdit.testId!;
+        const test = map.tests[id];
+        if (!test) throw new AppMapDomainError("missing-reference", `Test ${id} does not exist`);
+        if (test.kind !== "scenario") {
+          throw new AppMapDomainError(
+            "invalid-map",
+            `Test ${id} is a legacy ${test.kind} test and cannot accept graph-native edits`,
+          );
+        }
+        try {
+          return saveAppMapTest(
+            map,
+            { ...applyScenarioTestStepEdits(test, body.edits), updatedAt: context.at },
+            context,
+          );
+        } catch (error) {
+          if (error instanceof AppMapTestStepOperationError) {
+            throw new AppMapDomainError("invalid-map", error.message);
+          }
+          throw error;
+        }
+      },
     );
     json(response, 200, { appMap });
     return true;
