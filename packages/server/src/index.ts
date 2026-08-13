@@ -20,6 +20,7 @@ import {
 } from "./security.js";
 import {
   captureScreenshot,
+  captureScrollableSurveyForTarget,
   currentOperationContext,
   cleanupScreenshot,
   captureSnapshot,
@@ -1245,6 +1246,29 @@ async function handleRequest(
       });
       json(res, 200, shot);
       if (ephemeral) await cleanupScreenshot(shot.path);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/capture/scroll-survey") {
+      const body = (await parseJsonBody(req)) as { serial?: unknown; maxScrolls?: unknown };
+      const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+      if (!serial) throw new HttpError(400, "serial is required");
+      if (getActiveJob(serial)?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before surveying a scrollable page",
+        );
+      }
+      const maxScrolls =
+        typeof body.maxScrolls === "number" && Number.isInteger(body.maxScrolls)
+          ? Math.max(1, Math.min(6, body.maxScrolls))
+          : undefined;
+      await assertTargetControl(scope, serial);
+      const survey = await captureScrollableSurveyForTarget({
+        serial,
+        ...(maxScrolls ? { maxScrolls } : {}),
+      });
+      json(res, 200, survey);
       return;
     }
 

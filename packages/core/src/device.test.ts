@@ -73,6 +73,33 @@ test("resolves a unique visible iOS control even when XCTest marks it non-hittab
   );
 });
 
+test("never uses a hittable iOS application container as a child control's tap target", () => {
+  assert.deepEqual(
+    resolveSnapshotTargetPoint(
+      [
+        {
+          index: 0,
+          type: "Application",
+          hittable: true,
+          enabled: true,
+          rect: { x: 0, y: 0, width: 834, height: 1112 },
+        },
+        {
+          index: 1,
+          parentIndex: 0,
+          type: "Button",
+          identifier: "sidebar.settings.button",
+          hittable: false,
+          enabled: true,
+          rect: { x: 130, y: 1046, width: 44, height: 44 },
+        },
+      ],
+      { identifier: "sidebar.settings.button" },
+    ),
+    { x: 152, y: 1068 },
+  );
+});
+
 test("ignores status-bar app names when a real row shares the label", () => {
   assert.deepEqual(
     resolveSnapshotTargetPoint(

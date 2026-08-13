@@ -20,6 +20,7 @@ import {
   mutateStoredAppMap,
   now,
   proposalFromDiscovery,
+  reviewAppMapScreenCapture,
   readAppMap,
   readDiscoverySession,
   appMapYamlFilename,
@@ -55,6 +56,7 @@ import type {
   AuthoringSession,
   ConnectionSourceAnchor,
   OperationInput,
+  ScreenVariant,
   TargetProfile,
 } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
@@ -84,7 +86,12 @@ export function iosTeachObservationMatchesTitle(
   title: string,
 ): boolean {
   if (!nodes?.length) return true;
-  const words = title
+  // A capture title may append a viewport qualifier such as “Settings ·
+  // Lower”. The qualifier names the map state, not text expected in the app.
+  // Verify the live screen-title portion instead of rejecting valid scroll
+  // captures just because the author gave them a useful descriptive name.
+  const screenTitle = title.split(/\s*[·•]\s*/u, 1)[0] ?? title;
+  const words = screenTitle
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((word) => word.length >= 4);
@@ -557,25 +564,55 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       let capturedScreenId = "";
       let capturedVariantId = "";
       let created = false;
+      let reviewProposalId: string | undefined;
+      let proposedVariant: ScreenVariant | undefined;
+      const capture = {
+        target: body.target,
+        targetProfile: profile,
+        observation: take.before!,
+        evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
+        evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
+        ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+        ...(body.position ? { position: body.position } : {}),
+      };
+      const operation = currentOperationContext();
+      const initialReview = reviewAppMapScreenCapture(current, capture, {
+        expectedRevision: current.revision,
+        eventId: body.eventId?.trim() || operation?.requestId || "screen-capture-review",
+        actorId: operation?.actorId || "system:screen-capture",
+        actorKind: operation?.actorKind || "system",
+        at: Math.max(now(), current.updatedAt),
+      });
+      if (initialReview) {
+        const appMap = await applyRebasableMutation(
+          scope,
+          current.id,
+          body.eventId,
+          (map, context) => {
+            const review = reviewAppMapScreenCapture(map, capture, context);
+            if (!review) {
+              throw new HttpError(409, "The screen changed again while preparing its review");
+            }
+            capturedScreenId = review.screenId;
+            capturedVariantId = review.proposedVariant.id;
+            proposedVariant = review.proposedVariant;
+            reviewProposalId = review.proposal.id;
+            return submitAppMapProposal(map, review.proposal, context);
+          },
+        );
+        json(response, 200, {
+          appMapId: appMap.id,
+          appMapRevision: appMap.revision,
+          screen: appMap.screens[capturedScreenId],
+          variant: proposedVariant!,
+          created,
+          reviewProposalId: reviewProposalId!,
+        });
+        return true;
+      }
       const persistCapture = (mapRevision: number) =>
         applyMutation(scope, current.id, mapRevision, body.eventId, (map, context) => {
-          const result = commitAppMapScreenCapture(
-            map,
-            {
-              target: body.target,
-              targetProfile: profile,
-              observation: take.before!,
-              evidenceUrisById: Object.fromEntries(
-                take.evidence.map((item) => [item.id, item.uri]),
-              ),
-              evidenceKindsById: Object.fromEntries(
-                take.evidence.map((item) => [item.id, item.kind]),
-              ),
-              ...(body.title?.trim() ? { title: body.title.trim() } : {}),
-              ...(body.position ? { position: body.position } : {}),
-            },
-            context,
-          );
+          const result = commitAppMapScreenCapture(map, capture, context);
           capturedScreenId = result.screenId;
           capturedVariantId = result.variantId;
           created = result.created;
@@ -594,8 +631,9 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         appMapId: appMap.id,
         appMapRevision: appMap.revision,
         screen: appMap.screens[capturedScreenId],
-        variant: appMap.screenVariants[capturedVariantId],
+        variant: proposedVariant ?? appMap.screenVariants[capturedVariantId],
         created,
+        ...(reviewProposalId ? { reviewProposalId } : {}),
       });
     } finally {
       if (session) {
@@ -722,24 +760,49 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       let capturedScreenId = "";
       let capturedVariantId = "";
       let created = false;
+      let reviewProposalId: string | undefined;
+      let proposedVariant: ScreenVariant | undefined;
+      const capture = {
+        target: body.target,
+        targetProfile: profile,
+        observation: destinationObservation,
+        evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
+        evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
+        ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+      };
+      const operation = currentOperationContext();
+      const initialReview = reviewAppMapScreenCapture(current, capture, {
+        expectedRevision: current.revision,
+        eventId: body.eventId?.trim() || operation?.requestId || "teach-capture-review",
+        actorId: operation?.actorId || "system:teach-capture",
+        actorKind: operation?.actorKind || "system",
+        at: Math.max(now(), current.updatedAt),
+      });
+      if (initialReview) {
+        const appMap = await applyRebasableMutation(scope, mapId, body.eventId, (map, context) => {
+          const review = reviewAppMapScreenCapture(map, capture, context);
+          if (!review) {
+            throw new HttpError(409, "The destination changed again while preparing its review");
+          }
+          capturedScreenId = review.screenId;
+          capturedVariantId = review.proposedVariant.id;
+          proposedVariant = review.proposedVariant;
+          reviewProposalId = review.proposal.id;
+          return submitAppMapProposal(map, review.proposal, context);
+        });
+        json(response, 200, {
+          appMapId: appMap.id,
+          appMapRevision: appMap.revision,
+          screen: appMap.screens[capturedScreenId],
+          variant: proposedVariant!,
+          created,
+          reviewProposalId: reviewProposalId!,
+        });
+        return true;
+      }
       const persistCapture = (mapRevision: number) =>
         applyMutation(scope, mapId, mapRevision, body.eventId, (map, context) => {
-          const result = commitAppMapScreenCapture(
-            map,
-            {
-              target: body.target,
-              targetProfile: profile,
-              observation: destinationObservation,
-              evidenceUrisById: Object.fromEntries(
-                take.evidence.map((item) => [item.id, item.uri]),
-              ),
-              evidenceKindsById: Object.fromEntries(
-                take.evidence.map((item) => [item.id, item.kind]),
-              ),
-              ...(body.title?.trim() ? { title: body.title.trim() } : {}),
-            },
-            context,
-          );
+          const result = commitAppMapScreenCapture(map, capture, context);
           capturedScreenId = result.screenId;
           capturedVariantId = result.variantId;
           created = result.created;
@@ -756,7 +819,12 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       }
 
       let connectionId: string | undefined;
-      if (body.fromScreenId && body.interaction && capturedScreenId !== body.fromScreenId) {
+      if (
+        !reviewProposalId &&
+        body.fromScreenId &&
+        body.interaction &&
+        capturedScreenId !== body.fromScreenId
+      ) {
         const sourceAnchor = sourceAnchorForTeachInteraction(
           current,
           body.fromScreenId,
@@ -858,8 +926,9 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         appMapId: appMap.id,
         appMapRevision: appMap.revision,
         screen: appMap.screens[capturedScreenId],
-        variant: appMap.screenVariants[capturedVariantId],
+        variant: proposedVariant ?? appMap.screenVariants[capturedVariantId],
         created,
+        ...(reviewProposalId ? { reviewProposalId } : {}),
         ...(connectionId ? { connectionId } : {}),
       });
     } finally {

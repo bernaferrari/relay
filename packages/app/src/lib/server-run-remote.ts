@@ -484,3 +484,12 @@ export async function retryJob(request: ServerRequest, jobId: string): Promise<J
   });
   return data.job;
 }
+
+/** Re-run the immutable plan saved with a completed run, even after restart. */
+export async function replayRecordedRun(request: ServerRequest, runId: string): Promise<JobInfo> {
+  const data = await request<{ job: JobInfo }>(`/runs/${encodeURIComponent(runId)}/replay`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.job;
+}

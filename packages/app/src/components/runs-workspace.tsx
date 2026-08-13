@@ -665,6 +665,22 @@ export function RunsWorkspace(props: {
                       <Icon name="refresh" size={12} /> Retry
                     </Button>
                   </Show>
+                  <Show
+                    when={
+                      job().persisted &&
+                      ["ok", "error", "healed", "cancelled"].includes(job().status)
+                    }
+                  >
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      class="text-[11px]"
+                      data-tip="Run the exact frozen plan and saved non-private inputs again"
+                      onClick={() => void server.replayRecordedRunFromHistory(job().id)}
+                    >
+                      <Icon name="refresh" size={12} /> Replay recorded plan
+                    </Button>
+                  </Show>
                   <Show when={["running", "paused"].includes(job().status)}>
                     <Button
                       variant="secondary"

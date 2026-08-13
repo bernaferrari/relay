@@ -173,6 +173,13 @@ test("iOS teaching rejects a stale named destination but tolerates a temporarily
   assert.equal(iosTeachObservationMatchesTitle([], "Appearance"), true);
 });
 
+test("iOS teaching permits a descriptive viewport qualifier after the live screen title", () => {
+  const settings = [{ visibleToUser: true, label: "Settings", identifier: "settings" }];
+  assert.equal(iosTeachObservationMatchesTitle(settings, "Settings · Lower"), true);
+  assert.equal(iosTeachObservationMatchesTitle(settings, "Settings · Middle upper"), true);
+  assert.equal(iosTeachObservationMatchesTitle(settings, "Voice · Middle"), false);
+});
+
 test("App Map operations are equivalent for human and agent actors", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-server-"));
   const previous = process.env.RELAY_STATE_DIR;

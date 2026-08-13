@@ -21,6 +21,7 @@ import {
   enqueueRecipe,
   loadMatrixReport,
   exportRunMatrixPack,
+  replayRecordedRun,
   retryJob,
 } from "./server-run-remote";
 import { privateValuesForRun } from "./private-variables";
@@ -439,6 +440,27 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
   }
 
+  async function replayRecordedRunFromHistory(runId: string): Promise<void> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t replay this recorded run", "warning");
+      return;
+    }
+    deps.appendLog(`replay recorded run ${runId.slice(0, 8)}…`, "info");
+    try {
+      const job = await replayRecordedRun(deps.request, runId);
+      deps.setSelectedJobId(job.id);
+      deps.setSelectedAction(job.action);
+      deps.rememberJob(job);
+      toast("Replaying the recorded plan", "success");
+      void deps.refreshJobs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "warning");
+      deps.setError(message);
+    }
+  }
+
   return {
     runRecipe,
     inferLocaleOptionsFromDevice,
@@ -457,5 +479,6 @@ export function createServerRunController(deps: RunControllerDependencies) {
     loadCompatibilityReport,
     exportMatrixEvidence,
     retrySelectedJob,
+    replayRecordedRunFromHistory,
   };
 }

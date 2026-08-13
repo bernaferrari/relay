@@ -71,6 +71,7 @@ test("a tour test compiles origin identity into the walk, not a prior expect-scr
     assert.equal(root.steps[0].originFingerprint, "settings".padEnd(64, "a"));
     assert.equal(root.steps[0].fallbackStops, undefined);
     assert.equal(root.steps[0].preludeSteps, undefined);
+    assert.equal(root.steps[0].returnAfterLast, false);
   }
 });
 
@@ -153,6 +154,201 @@ test("a screen tour runs its explicit setup Flow once before starting at its roo
   if (tour?.kind === "tour") {
     assert.equal(tour.preludeSteps, undefined);
     assert.equal(tour.originVerifiedBySetup, true);
+  }
+});
+
+test("a combined tour returns only to its shared root instead of Home", () => {
+  const work = {
+    ...scope,
+    id: "settings-tour",
+    name: "Settings coverage",
+    kind: "tour" as const,
+    rootScreenId: "settings",
+    setupFlowId: "open-settings",
+    depth: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const second = {
+    ...work,
+    id: "middle-tour",
+    name: "Settings middle pass",
+    kind: "path" as const,
+    flowId: "open-settings-middle",
+    rootScreenId: undefined,
+    setupFlowId: undefined,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...screen("home", "Home"),
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+      settings: {
+        ...screen("settings", "Settings"),
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+      },
+      middle: {
+        ...screen("middle", "Settings middle"),
+        identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+      },
+    },
+    screenVariants: {},
+    connections: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        fromScreenId: "home",
+        destination: { kind: "screen" as const, screenId: "settings" },
+        label: "Settings",
+        state: "ready" as const,
+        actions: [{ id: "tap-settings", kind: "tap" as const, target: { identifier: "settings" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "scroll-settings": {
+        ...scope,
+        id: "scroll-settings",
+        fromScreenId: "settings",
+        destination: { kind: "screen" as const, screenId: "middle" },
+        label: "Scroll settings",
+        state: "ready" as const,
+        actions: [
+          {
+            id: "scroll-middle",
+            kind: "gesture" as const,
+            gesture: { kind: "scroll" as const, direction: "down" as const },
+          },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [work.id]: work, [second.id]: second },
+    combines: {},
+    routines: {},
+    flows: {
+      "open-settings": {
+        ...scope,
+        id: "open-settings",
+        name: "Open settings",
+        startScreenId: "home",
+        connectionIds: ["open-settings"],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "open-settings-middle": {
+        ...scope,
+        id: "open-settings-middle",
+        name: "Open settings middle",
+        startScreenId: "home",
+        connectionIds: ["open-settings", "scroll-settings"],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+  const combine = {
+    ...scope,
+    id: "combined",
+    name: "Combined",
+    variableIds: [],
+    testIds: [work.id, second.id],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const compiled = compileAppMapCombine(map, combine);
+  const setup = compiled.graph["app-map:map-1:flow:open-settings-middle:r1"]!;
+  // The Path captures its two verified checkpoints, but the executable
+  // navigation is only shared Settings recovery → one remaining scroll.
+  assert.equal(setup.steps.length, 5);
+  const source = setup.steps[0];
+  assert.equal(source?.kind, "expect-screen");
+  assert.equal(source?.kind === "expect-screen" ? source.screenId : undefined, "settings");
+  assert.deepEqual(source?.kind === "expect-screen" ? source.recovery : undefined, {
+    strategy: "back",
+    maxAttempts: 8,
+    restoreParentViewport: true,
+  });
+  assert.equal(setup.steps[2]?.kind, "scroll");
+  assert.equal(
+    setup.steps[3]?.kind === "expect-screen" ? setup.steps[3].screenId : undefined,
+    "middle",
+  );
+});
+
+test("a screen tour compiles account-state branches as optional semantic stops", () => {
+  const work: AppMapTest = {
+    ...scope,
+    id: "usage-tour",
+    name: "Usage coverage",
+    kind: "tour",
+    rootScreenId: "usage",
+    screenIds: ["usage", "buy-more"],
+    optionalScreenIds: ["buy-more"],
+    capture: { mode: "every-screen" },
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: { usage: screen("usage", "Usage"), "buy-more": screen("buy-more", "Buy More") },
+    screenVariants: {},
+    connections: {
+      "open-buy-more": {
+        ...scope,
+        id: "open-buy-more",
+        fromScreenId: "usage",
+        destination: { kind: "screen", screenId: "buy-more" },
+        label: "Buy More",
+        state: "ready",
+        actions: [{ id: "tap-buy-more", kind: "tap", target: { label: "Buy More" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [work.id]: work },
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  const { root } = compileAppMapTest(map, work);
+  const tour = root.steps.find((step) => step.kind === "tour");
+  assert.ok(tour?.kind === "tour");
+  if (tour?.kind === "tour") {
+    assert.deepEqual(tour.fallbackStops, [{ label: "Buy More", optional: true }]);
   }
 });
 

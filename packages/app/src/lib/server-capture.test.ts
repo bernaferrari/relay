@@ -47,6 +47,44 @@ function createHarness(
         ...(options.inspectionError ? { inspectionError: options.inspectionError } : {}),
       } as T;
     }
+    if (path === "/capture/scroll-survey") {
+      return {
+        status: "completed",
+        reason: "end-of-content",
+        message: "Captured 2 viewports and returned to the starting position.",
+        restoredStartViewport: true,
+        frames: [
+          {
+            index: 0,
+            offsetY: 0,
+            appendedHeight: 0,
+            screenshot: { base64: "first", width: 100, height: 200, capturedAt: 100 },
+            snapshot: {
+              serial: "device-1",
+              capturedAt: 100,
+              nodes: [{ label: "Usage", rect: { x: 10, y: 20, width: 60, height: 24 } }],
+              interactive: [],
+              inspectable: true,
+            },
+          },
+          {
+            index: 1,
+            offsetY: 140,
+            appendedHeight: 140,
+            screenshot: { base64: "second", width: 100, height: 200, capturedAt: 200 },
+            snapshot: {
+              serial: "device-1",
+              capturedAt: 200,
+              nodes: [{ label: "Buy more", rect: { x: 10, y: 80, width: 60, height: 24 } }],
+              interactive: [],
+              inspectable: true,
+            },
+          },
+        ],
+        stitched: { base64: "stitched", width: 100, height: 340, mime: "image/png" },
+        mergedNodes: [{ label: "Buy more", rect: { x: 10, y: 220, width: 60, height: 24 } }],
+      } as T;
+    }
     if (path === "/step/run") return { ok: true, durationMs: 12, logs: [] } as T;
     return {} as T;
   };
@@ -175,6 +213,29 @@ test("copy screenshot is ephemeral and does not create a Relay frame or log", as
   assert.deepEqual(harness.frames, []);
   assert.deepEqual(harness.logs, []);
   assert.equal(harness.isBusy(), false);
+});
+
+test("scroll survey keeps every viewport's accessibility tree and the stitched coordinate map", async () => {
+  const harness = createHarness();
+
+  const survey = await harness.capture.captureScrollablePage();
+
+  assert.equal(harness.calls[0], "/capture/scroll-survey");
+  assert.deepEqual(harness.requestBodies[0], { serial: "device-1", maxScrolls: 4 });
+  assert.equal(survey?.frames.length, 2);
+  assert.equal(harness.frames.length, 3, "two original viewports plus a convenience preview");
+  const first = harness.frames[0] as {
+    caption: string;
+    scrollSurvey: { kind: string; snapshot?: { nodes: Array<{ label?: string }> } };
+  };
+  assert.equal(first.caption, "full page · viewport 1");
+  assert.equal(first.scrollSurvey.kind, "viewport");
+  assert.equal(first.scrollSurvey.snapshot?.nodes[0]?.label, "Usage");
+  const stitched = harness.frames[2] as {
+    scrollSurvey: { kind: string; mergedNodes?: Array<{ label?: string }> };
+  };
+  assert.equal(stitched.scrollSurvey.kind, "stitched-preview");
+  assert.equal(stitched.scrollSurvey.mergedNodes?.[0]?.label, "Buy more");
 });
 
 test("live capture exposes a setup failure without throwing from the polling loop", async () => {

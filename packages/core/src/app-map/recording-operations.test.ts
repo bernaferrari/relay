@@ -8,7 +8,13 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
-import { commitAppMapRecording, commitAppMapScreenCapture } from "./recording-operations.js";
+import {
+  commitAppMapRecording,
+  commitAppMapScreenCapture,
+  reviewAppMapScreenCapture,
+} from "./recording-operations.js";
+import { approveAppMapProposal } from "./proposal-operations.js";
+import { submitAppMapProposal } from "./entity-operations.js";
 
 const beforeFingerprint = "a".repeat(64);
 const afterFingerprint = "b".repeat(64);
@@ -158,6 +164,60 @@ test("recapturing the same observed state refreshes its target variant", () => {
     "evidence-first",
     "evidence-second",
   ]);
+});
+
+test("holds a changed target variant for comparison instead of overwriting it", () => {
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: titledObservation("settings-old", beforeFingerprint, "evidence-old", "Settings"),
+      evidenceUrisById: { "evidence-old": "relay-evidence://old.png" },
+      evidenceKindsById: { "evidence-old": "screenshot" },
+      title: "Settings",
+    },
+    context("capture-old"),
+  );
+  const review = reviewAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      observation: {
+        ...titledObservation("settings-new", "c".repeat(64), "evidence-new", "Settings"),
+        nodes: [
+          { type: "NavigationBar", identifier: "Settings", depth: 2 },
+          { type: "NavigationBar", identifier: "Settings", label: "Back", depth: 3 },
+          { role: "button", label: "New setting", enabled: true },
+        ],
+      },
+      evidenceUrisById: { "evidence-new": "relay-evidence://new.png" },
+      evidenceKindsById: { "evidence-new": "screenshot" },
+      title: "Settings",
+    },
+    context("review-new", first.appMap.revision, 20),
+  );
+
+  assert.ok(review);
+  assert.equal(
+    first.appMap.screenVariants[review.currentVariant.id]?.screenshotUri,
+    "relay-evidence://old.png",
+  );
+  assert.equal(review.proposedVariant.screenshotUri, "relay-evidence://new.png");
+
+  const submitted = submitAppMapProposal(
+    first.appMap,
+    review.proposal,
+    context("submit-review", first.appMap.revision, 20),
+  );
+  const approved = approveAppMapProposal(
+    submitted,
+    review.proposal.id,
+    context("approve-new", submitted.revision, 30),
+  );
+  assert.equal(
+    approved.screenVariants[review.currentVariant.id]?.screenshotUri,
+    "relay-evidence://new.png",
+  );
 });
 
 test("keeps portrait and landscape evidence as distinct screen variants", () => {

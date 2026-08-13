@@ -19,6 +19,23 @@ test("automatic evidence preserves causal frames without duplicating passive ste
   assert.deepEqual(automaticEvidencePhases({ kind: "sleep", ms: 500 }), []);
   assert.deepEqual(automaticEvidencePhases({ kind: "screenshot" }), []);
   assert.deepEqual(
+    automaticEvidencePhases({ kind: "app", action: "open", app: "com.example.app" }),
+    [],
+  );
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "app",
+      action: "set-locale",
+      app: "com.example.app",
+      locale: "it",
+    }),
+    [],
+  );
+  assert.deepEqual(automaticEvidencePhases({ kind: "device", action: "keyboard-dismiss" }), []);
+  assert.deepEqual(automaticEvidencePhases({ kind: "device", action: "keyboard-enter" }), [
+    "after",
+  ]);
+  assert.deepEqual(
     automaticEvidencePhases({
       kind: "tour",
       depth: 0,

@@ -376,6 +376,33 @@ export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIde
   };
 }
 
+/**
+ * Locale-neutral signature of a complete visible accessibility structure.
+ *
+ * This intentionally ignores copy and transient focus, while retaining every
+ * visible role/depth/state anchor. It is suitable only for a substantial
+ * screen tree: a generic header or one shared row must never identify a
+ * translated screen.
+ */
+export function localeNeutralStructureSignature(
+  observation: Pick<ScreenIdentityObservation, "nodes">,
+): string | undefined {
+  if (observation.nodes.length < 12) return undefined;
+  return observation.nodes
+    .map((node) =>
+      JSON.stringify([
+        node.role,
+        node.identifier ?? "",
+        node.enabled ?? null,
+        node.selected ?? null,
+        node.hittable ?? null,
+        node.depth ?? null,
+      ]),
+    )
+    .sort()
+    .join("\n");
+}
+
 const LOCALIZED_STRING_KEY = /^LocalizedStringKey\(key: "([^"]+)"/u;
 
 /** Extract a SwiftUI LocalizedStringKey symbolic key when the a11y label carries one. */

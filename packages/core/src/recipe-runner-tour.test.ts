@@ -2,10 +2,93 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   foregroundApplicationBundle,
+  leadingNavigationPoint,
+  localizedLeadingBackPoint,
   mappedTourStopLandmarkPairs,
   mappedTourStopPointPairs,
+  mappedTourRowsNeedRefresh,
+  mayRestoreTourViewportAfterReturn,
   mergeMappedTourStops,
+  missingRequiredTourStops,
+  tourMappedRowRecoveryMoves,
+  tourViewportRecoveryMoves,
 } from "./recipe-runner-tour.js";
+
+test("leading navigation recovery mirrors only the navigation chrome for RTL", () => {
+  const frame = { x: 0, y: 0, width: 1080, height: 2340 };
+  assert.deepEqual(leadingNavigationPoint(frame, false), { x: 44, y: 132 });
+  assert.deepEqual(leadingNavigationPoint(frame, true), { x: 1036, y: 132 });
+});
+
+test("localized app Back point requires an observed leading Back affordance", () => {
+  assert.deepEqual(
+    localizedLeadingBackPoint([
+      {
+        label: "Indietro",
+        rect: { x: 44, y: 148, width: 70, height: 70 },
+      },
+      {
+        label: "Chiudi",
+        rect: { x: 44, y: 148, width: 70, height: 70 },
+      },
+    ]),
+    { x: 79, y: 183 },
+  );
+  assert.equal(
+    localizedLeadingBackPoint([
+      { label: "Chiudi", rect: { x: 44, y: 148, width: 70, height: 70 } },
+    ]),
+    undefined,
+  );
+});
+
+test("parent-list recovery resets upward before seeking the recorded viewport", () => {
+  assert.deepEqual(tourViewportRecoveryMoves(), ["up", "up", "down", "down"]);
+  assert.equal(
+    mayRestoreTourViewportAfterReturn({ interactionSucceeded: false, localized: false }),
+    false,
+  );
+  assert.equal(
+    mayRestoreTourViewportAfterReturn({ interactionSucceeded: true, localized: true }),
+    false,
+  );
+  assert.equal(
+    mayRestoreTourViewportAfterReturn({
+      interactionSucceeded: true,
+      localized: true,
+      verifiedAppBack: true,
+    }),
+    true,
+  );
+  assert.equal(
+    mayRestoreTourViewportAfterReturn({ interactionSucceeded: true, localized: false }),
+    true,
+  );
+});
+
+test("a setup-verified tour searches its known parent viewport before calling a row missing", () => {
+  assert.deepEqual(tourMappedRowRecoveryMoves(), ["up", "up", "up", "down", "down", "down"]);
+  assert.deepEqual(
+    missingRequiredTourStops(
+      [{ label: "Voice" }, { label: "Data Controls" }],
+      [
+        { label: "Voice" },
+        { label: "Shared Conversations" },
+        { label: "Data Controls" },
+        { label: "Usage Help", optional: true },
+      ],
+    ).map((stop) => stop.label),
+    ["Shared Conversations"],
+  );
+  assert.equal(
+    mappedTourRowsNeedRefresh([{ label: "Advanced" }], [{ label: "Paste as File" }]),
+    true,
+  );
+  assert.equal(
+    mappedTourRowsNeedRefresh([{ label: "Paste as File" }], [{ label: "Paste as File" }]),
+    false,
+  );
+});
 
 test("foreground app ranking ignores a smaller keyboard accessibility window", () => {
   assert.equal(
@@ -96,6 +179,26 @@ test("exact localized tours select a recorded subset by nearby live row points",
     live[3],
     live[4],
   ]);
+});
+
+test("localized point pairing keeps an ordered block when every live row shifts together", () => {
+  const live = [
+    { label: "Widget", point: { x: 540, y: 360 } },
+    { label: "Lingua App", point: { x: 540, y: 524 } },
+    { label: "Avanzate", point: { x: 540, y: 688 } },
+    { label: "Personalizza Grok", point: { x: 540, y: 1030 } },
+    { label: "Connettori", point: { x: 540, y: 1190 } },
+    { label: "Abilità", point: { x: 540, y: 1354 } },
+    { label: "Memoria", point: { x: 540, y: 1518 } },
+    { label: "Modalità Per Bambini", point: { x: 540, y: 1742 } },
+  ];
+  const mapped = [
+    { label: "Customize Grok", point: { x: 381, y: 1194 } },
+    { label: "Connectors", point: { x: 310, y: 1358 } },
+    { label: "Skills", point: { x: 267, y: 1522 } },
+    { label: "Memory", point: { x: 292, y: 1686 } },
+  ];
+  assert.deepEqual(mappedTourStopPointPairs(live, mapped), live.slice(3, 7));
 });
 
 test("localized point pairing refuses a stale coordinate instead of guessing", () => {

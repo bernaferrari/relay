@@ -182,6 +182,49 @@ test("an Android app-language modifier uses stable locale ids instead of picker 
   ]);
 });
 
+test("a mapped suite cold-launches once then warms every generated setup", () => {
+  const setup: Recipe = {
+    ...body,
+    id: "mapped-setup",
+    steps: [
+      { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
+      {
+        kind: "expect-screen",
+        id: "relay-source-settings",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "a".repeat(64),
+      },
+    ],
+  };
+  const combined: Recipe = {
+    ...body,
+    id: "mapped-combined",
+    steps: [{ kind: "module", recipeId: setup.id }],
+  };
+  const { root, graph } = composeOptionRunRecipes({
+    body: combined,
+    bodyGraph: { [combined.id]: combined, [setup.id]: setup },
+    request: { sets: [], app: "ai.x.grok", screenshotEach: false },
+    batchId: "warm-suite",
+  });
+  assert.deepEqual(root.steps.slice(0, 2), [
+    { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
+    { kind: "sleep", ms: 1200 },
+  ]);
+  assert.deepEqual(graph[setup.id]?.steps[0], {
+    kind: "app",
+    action: "open",
+    app: "ai.x.grok",
+    relaunch: false,
+  });
+  const source = graph[setup.id]?.steps[1];
+  assert.deepEqual(source?.kind === "expect-screen" ? source.recovery : undefined, {
+    strategy: "back",
+    maxAttempts: 8,
+  });
+});
+
 test("a list modifier restores its saved row through the recorded sandwich", () => {
   const language: OptionRunSet = {
     id: "language",
@@ -232,7 +275,10 @@ test("list restore is omitted when a matrix explicitly leaves state changed", ()
     name: "Language",
     kind: "language",
     apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Language" } }] },
-    options: [{ id: "en", identifier: "language.en" }, { id: "it", identifier: "language.it" }],
+    options: [
+      { id: "en", identifier: "language.en" },
+      { id: "it", identifier: "language.it" },
+    ],
     restoreId: "en",
   };
   const { root } = composeOptionRunRecipes({
@@ -241,9 +287,7 @@ test("list restore is omitted when a matrix explicitly leaves state changed", ()
     batchId: "no-list-restore",
   });
   assert.ok(
-    !root.steps.some(
-      (step) => step.kind === "tap" && step.target.identifier === "language.en",
-    ),
+    !root.steps.some((step) => step.kind === "tap" && step.target.identifier === "language.en"),
   );
 });
 
@@ -301,6 +345,38 @@ test("seven app languages × ten mapped screens declares exactly 70 screenshots"
   assert.equal(matrix.cases.length, 7);
   assert.equal(expectedRecipeScreenshotCount(root, graph), 10);
   assert.equal(matrix.cases.length * expectedRecipeScreenshotCount(root, graph)!, 70);
+});
+
+test("preflight counts an exact tour's captured origin", () => {
+  const root: Recipe = {
+    ...body,
+    id: "captured-origin",
+    steps: [
+      {
+        kind: "tour",
+        mappedStopsOnly: true,
+        screenshot: true,
+        captureOrigin: true,
+        fallbackStops: [],
+      },
+    ],
+  };
+  assert.equal(expectedRecipeScreenshotCount(root, { [root.id]: root }), 1);
+});
+
+test("preflight leaves an account-dependent tour count live", () => {
+  const root: Recipe = {
+    ...body,
+    id: "optional-offer",
+    steps: [
+      {
+        kind: "tour",
+        mappedStopsOnly: true,
+        fallbackStops: [{ label: "Buy More", optional: true }],
+      },
+    ],
+  };
+  assert.equal(expectedRecipeScreenshotCount(root, { [root.id]: root }), undefined);
 });
 
 const at = 1;

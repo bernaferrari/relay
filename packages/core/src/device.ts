@@ -1495,6 +1495,14 @@ function isUsableTapTarget(node: SnapshotNode): boolean {
   return true;
 }
 
+/** XCTest can mark the application/window container itself as hittable. It is
+ * never an activation target for a descendant: using its centre turns a
+ * semantic press into an accidental tap in the middle of the app. */
+function isActivationContainer(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+  return role === "application" || role === "window";
+}
+
 /**
  * Resolve one semantic target to a coordinate without pretending an ambiguous
  * accessibility result is safe. Physical iOS apps occasionally expose visible
@@ -1520,7 +1528,13 @@ export function resolveSnapshotTargetPoint(
     while (typeof parentIndex === "number") {
       const parent = nodesByIndex.get(parentIndex);
       if (!parent) return undefined;
-      if (parent.hittable && isUsableTapTarget(parent)) return parent;
+      if (
+        parent.hittable &&
+        isUsableTapTarget(parent) &&
+        !isActivationContainer(parent)
+      ) {
+        return parent;
+      }
       parentIndex = parent.parentIndex;
     }
     return undefined;
@@ -1686,14 +1700,16 @@ export async function pressResolvedControl(
   target: NamedControlTarget,
   repeated?: RepeatedPress,
 ): Promise<NamedControlResolution> {
-  // Map recordings keep a saved point only as an inspection fallback. Once
-  // the current Android accessibility tree has uniquely resolved a named
-  // row, click that *live* row coordinate instead of delegating to the
-  // platform label selector. Compose can expose the same label in an old or
-  // hidden semantic node, and the native selector then has no geometry to
-  // distinguish it. This remains semantic-first: the point is derived from
-  // the successful identifier/label/text match above.
-  if (selectedPlatform() === "android" && target.point && resolution.method !== "point") {
+  // Once the current accessibility tree has uniquely resolved a named row,
+  // use that live row coordinate instead of delegating to the platform
+  // selector. Compose can expose stale semantic nodes and XCTest can claim a
+  // non-hittable SwiftUI control succeeded while activating its application
+  // container. This remains semantic-first: the point comes from the current
+  // identifier/label/text match, not from a recorded coordinate.
+  if (
+    (selectedPlatform() === "android" || selectedPlatform() === "ios") &&
+    resolution.method !== "point"
+  ) {
     await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
     return resolution;
   }

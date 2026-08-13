@@ -75,6 +75,7 @@ import type { TestJob } from "./session.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
   compareScreenIdentity,
+  localeNeutralStructureSignature,
   observeScreenIdentity,
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
@@ -109,6 +110,7 @@ function localizedScreenIdentityMatch(
   job?: TestJob,
 ): boolean {
   if (!isLocalizedRecipeJob(job)) return false;
+  const structureSignature = localeNeutralStructureSignature(observed);
   return observations.some((observation) => {
     const comparison = compareScreenIdentity(observed, observation);
     const stableIdentifiers = comparison.signals.find(
@@ -117,7 +119,11 @@ function localizedScreenIdentityMatch(
     const structure = comparison.signals.find(
       (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
     )?.strength;
-    return (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95;
+    return (
+      ((stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
+      (structureSignature !== undefined &&
+        structureSignature === localeNeutralStructureSignature(observation))
+    );
   });
 }
 import { runTourStep } from "./recipe-runner-tour.js";
@@ -1002,8 +1008,22 @@ async function runRequiredRecipeStep(
 
     case "expect-screen": {
       const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
-      const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
+      const recoveryMaxAttempts =
+        step.recovery?.strategy === "back" ? (step.recovery.maxAttempts ?? 6) : 0;
+      let parentViewportRecoveryAttempts =
+        step.recovery?.strategy === "back" && step.recovery.restoreParentViewport === true ? 2 : 0;
+      // A warm source recovery is intentional navigation, not just a render
+      // settle. Reserve time for every bounded Back + accessibility snapshot;
+      // otherwise a configured eight-step recovery can time out after three.
+      const timeout = Math.min(
+        Math.max(
+          step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS,
+          recoveryMaxAttempts ? recoveryMaxAttempts * 2_500 : 0,
+        ),
+        MAX_WAIT_MS,
+      );
       const deadline = Date.now() + timeout;
+      let recoveryAttempts = recoveryMaxAttempts;
       let observedTitle = "unknown";
       let reached = false;
       do {
@@ -1055,6 +1075,41 @@ async function runRequiredRecipeStep(
         if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
           reached = true;
           break;
+        }
+        // A warm run commonly starts inside a child page. One Back returns to
+        // the correct parent list, but its scroll offset may belong to a
+        // lower checkpoint. Normalize that known parent before taking another
+        // Back—otherwise we leave the app's tree merely because a list is
+        // scrolled.
+        if (recoveryAttempts < recoveryMaxAttempts && parentViewportRecoveryAttempts > 0) {
+          const attempt = 3 - parentViewportRecoveryAttempts;
+          parentViewportRecoveryAttempts -= 1;
+          log(`screen: restoring parent list viewport (${attempt})`);
+          try {
+            await scrollUp(device, 0.7);
+            await sleep(350, device);
+          } catch {
+            // Keep the explicit Back recovery available on targets that do
+            // not expose scroll through their automation adapter.
+          }
+          continue;
+        }
+        if (recoveryAttempts > 0) {
+          const attempt = recoveryMaxAttempts - recoveryAttempts + 1;
+          recoveryAttempts -= 1;
+          log(`screen: not ${step.screenTitle} yet — recovering with Back (${attempt})`);
+          // Prefer an application's explicit semantic control. Hardware Back
+          // is the safe fallback for native navigation chrome that does not
+          // expose a named control. This is source-only generated recovery;
+          // destination assertions never opt in and therefore preserve their
+          // failure evidence.
+          try {
+            await pressLabel(device, "Back");
+          } catch {
+            await pressKey(device, "back");
+          }
+          await sleep(350, device);
+          continue;
         }
         if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
       } while (Date.now() < deadline);

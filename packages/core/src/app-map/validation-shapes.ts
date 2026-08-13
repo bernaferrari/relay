@@ -517,6 +517,20 @@ export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: st
     identifier(work.setupFlowId, `${label}.setupFlowId`);
   }
   if (work.screenIds !== undefined) stringArray(work.screenIds, `${label}.screenIds`);
+  if (work.optionalScreenIds !== undefined) {
+    if (work.kind !== "tour") {
+      appMapFail("invalid-map", `${label}.optionalScreenIds is only valid for screen tours`);
+    }
+    stringArray(work.optionalScreenIds, `${label}.optionalScreenIds`);
+    if (!work.screenIds?.length) {
+      appMapFail("invalid-map", `${label}.optionalScreenIds requires screenIds`);
+    }
+    const selected = new Set(work.screenIds);
+    const unsupported = work.optionalScreenIds.filter((screenId) => !selected.has(screenId));
+    if (unsupported.length) {
+      appMapFail("invalid-map", `${label}.optionalScreenIds must be included in screenIds`);
+    }
+  }
   if (work.depth !== undefined) safeInteger(work.depth, `${label}.depth`);
   if (work.capture !== undefined) {
     const capture = objectValue(work.capture, `${label}.capture`);

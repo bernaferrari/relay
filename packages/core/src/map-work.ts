@@ -58,6 +58,88 @@ function recipeGraphFromCompiledFlow(
   );
 }
 
+/**
+ * A combined matrix launches once, then reuses the app process for each
+ * subsequent mapped path. Preserve the recorded setup/navigation steps, but
+ * make its launch warm and let only its generated source assertion climb back
+ * through the app hierarchy first. Destination assertions remain strict.
+ */
+/**
+ * A tour setup Flow is a cold-start route to the tour's root. Once a combined
+ * run has already opened the app, replaying that whole route is actively
+ * harmful: its source assertion is usually Home, so recovery backs out of the
+ * current Settings branch only to walk straight back into it.
+ *
+ * The warm form therefore retains the Flow's terminal screen assertion and
+ * makes that the recovery target. From any descendant, Back reaches the
+ * nearest shared ancestor (the tour root) without visiting Home or replaying
+ * menu navigation. The cold Flow remains authoritative for the first test in
+ * a world and whenever a tour is run on its own.
+ */
+function warmCompiledFlowGraphFromSharedPrefix(
+  graph: Record<string, Recipe>,
+  plan: AppMapCompiledFlow,
+  previousPlan?: AppMapCompiledFlow,
+): Record<string, Recipe> {
+  const root = graph[plan.rootRecipeId];
+  if (!root) return graph;
+  const sharesStart = previousPlan?.flow.startScreenId === plan.flow.startScreenId;
+  let sharedConnectionCount = 0;
+  if (sharesStart) {
+    while (
+      sharedConnectionCount < plan.connections.length &&
+      sharedConnectionCount < (previousPlan?.connections.length ?? 0) &&
+      plan.connections[sharedConnectionCount]?.connectionId ===
+        previousPlan?.connections[sharedConnectionCount]?.connectionId
+    ) {
+      sharedConnectionCount += 1;
+    }
+  }
+
+  const sharedConnection = plan.connections[sharedConnectionCount - 1];
+  const sharedScreenId =
+    sharedConnectionCount === 0
+      ? plan.flow.startScreenId
+      : sharedConnection?.destination.kind === "screen"
+        ? sharedConnection.destination.screenId
+        : undefined;
+  const sourceIndex = root.steps.findIndex(
+    (step) => step.kind === "expect-screen" && step.id === `relay-source-${plan.flow.id}`,
+  );
+  const suffixStart =
+    sharedConnectionCount === 0 ? sourceIndex + 1 : sharedConnection?.compiledStepRange[1];
+  const terminalExpectation =
+    sharedScreenId && suffixStart !== undefined && suffixStart > 0
+      ? root?.steps
+          .slice(0, suffixStart)
+          .reverse()
+          .find(
+            (step): step is Extract<RecipeStep, { kind: "expect-screen" }> =>
+              step.kind === "expect-screen" && step.screenId === sharedScreenId,
+          )
+      : undefined;
+
+  // A malformed/legacy setup plan should keep the safe existing behavior,
+  // rather than manufacture an unverifiable recovery target.
+  if (sourceIndex < 0 || !terminalExpectation) return graph;
+
+  return {
+    ...graph,
+    [plan.rootRecipeId]: {
+      ...root,
+      title: root.title.replace(/cold start/iu, "warm recovery"),
+      steps: [
+        {
+          ...structuredClone(terminalExpectation),
+          id: `${terminalExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
+          recovery: { strategy: "back", maxAttempts: 8, restoreParentViewport: true },
+        },
+        ...root.steps.slice(suffixStart),
+      ],
+    },
+  };
+}
+
 function tapTargetFromStep(step: RecipeStep): StepTarget | undefined {
   if (step.kind !== "tap" || !step.target) return undefined;
   return step.target;
@@ -280,27 +362,36 @@ function fallbackTourStopsForScreens(
   rootScreenId: string,
   screenIds: Set<string>,
   captureScreenIds?: ReadonlySet<string>,
+  optionalScreenIds?: ReadonlySet<string>,
 ): TourStop[] {
-  const allowedTargetKeys = new Set(
-    (Object.values(map.connections ?? {}) as Connection[])
-      .filter(
-        (connection) =>
-          connection.fromScreenId === rootScreenId &&
-          connection.destination.kind === "screen" &&
-          screenIds.has(connection.destination.screenId),
-      )
-      .map((connection) => {
-        const label = connection.label?.trim();
-        const target = firstTapTarget(connection.actions);
-        const point = target ? sourceAnchorPoint(map, connection) : undefined;
-        const resolvedTarget = target && point && !target.point ? { ...target, point } : target;
-        return label && resolvedTarget ? tourStopTargetKey(resolvedTarget, label) : undefined;
-      })
-      .filter((key): key is string => Boolean(key)),
-  );
-  return fallbackTourStopsFromMap(map, rootScreenId, captureScreenIds).filter((stop) =>
-    allowedTargetKeys.has(tourStopTargetKey(stop, stop.label)),
-  );
+  const targets = (Object.values(map.connections ?? {}) as Connection[])
+    .filter(
+      (connection) =>
+        connection.fromScreenId === rootScreenId &&
+        connection.destination.kind === "screen" &&
+        screenIds.has(connection.destination.screenId),
+    )
+    .map((connection) => {
+      const destination = connection.destination;
+      if (destination.kind !== "screen") return undefined;
+      const label = connection.label?.trim();
+      const target = firstTapTarget(connection.actions);
+      const point = target ? sourceAnchorPoint(map, connection) : undefined;
+      const resolvedTarget = target && point && !target.point ? { ...target, point } : target;
+      return label && resolvedTarget
+        ? {
+            key: tourStopTargetKey(resolvedTarget, label),
+            optional: optionalScreenIds?.has(destination.screenId) === true,
+          }
+        : undefined;
+    })
+    .filter((target): target is { key: string; optional: boolean } => Boolean(target));
+  const allowedTargets = new Map(targets.map((target) => [target.key, target]));
+  return fallbackTourStopsFromMap(map, rootScreenId, captureScreenIds).flatMap((stop) => {
+    const target = allowedTargets.get(tourStopTargetKey(stop, stop.label));
+    if (!target) return [];
+    return [{ ...stop, ...(target.optional ? { optional: true } : {}) }];
+  });
 }
 
 /** The complete ordered row set is only a calibration aid for localized exact
@@ -312,7 +403,13 @@ function landmarkTourStopsForExactTour(
 ): TourStop[] {
   if (!fallbackStops.length) return [];
   const landmarks = fallbackTourStopsFromMap(map, rootScreenId);
-  return landmarks.length ? landmarks : [];
+  // A landmark list only calibrates a *subset* within a longer, complete
+  // recorded list. When it is the same list as the selected stops, pairing by
+  // rank simply turns the first visible translated rows into our targets.
+  // That is how Widget/Advanced were mistaken for Customize/Connectors after
+  // a viewport shift. Let the recorded tap points pair those rows instead;
+  // if they are stale, fail closed rather than choosing a neighbouring row.
+  return landmarks.length > fallbackStops.length ? landmarks : [];
 }
 
 function tourStopTargetKey(
@@ -378,12 +475,16 @@ export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeS
 export function compileAppMapTest(
   map: AppMap,
   work: AppMapTest,
+  options: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow } = {},
 ): { root: Recipe; graph: Record<string, Recipe> } {
   if (work.kind === "path") {
     const flowId = work.flowId?.trim();
     if (!flowId || !map.flows[flowId]) throw new Error(`Test “${work.name}” is missing its path`);
     const plan = compileAppMapFlow(map, flowId);
-    const graph = recipeGraphFromCompiledFlow(map, plan);
+    let graph = recipeGraphFromCompiledFlow(map, plan);
+    if (options.warmSetup) {
+      graph = warmCompiledFlowGraphFromSharedPrefix(graph, plan, options.warmSetupFrom);
+    }
     let root = graph[plan.rootRecipeId];
     if (!root) throw new Error(`Test “${work.name}” compiled without a root recipe`);
     const evidenceMode = captureMode(work);
@@ -441,6 +542,7 @@ export function compileAppMapTest(
     .map((variantId) => map.screenVariants[variantId]?.observation)
     .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
   const exactScreenIds = work.screenIds?.length ? new Set(work.screenIds) : undefined;
+  const optionalScreenIds = new Set(work.optionalScreenIds ?? []);
   const evidenceMode = captureMode(work);
   const checkpointIds =
     work.capture?.mode === "checkpoints" ? new Set(work.capture.screenIds) : undefined;
@@ -464,7 +566,13 @@ export function compileAppMapTest(
     }
   }
   const fallbackStops = exactScreenIds
-    ? fallbackTourStopsForScreens(map, work.rootScreenId, exactScreenIds, checkpointIds)
+    ? fallbackTourStopsForScreens(
+        map,
+        work.rootScreenId,
+        exactScreenIds,
+        checkpointIds,
+        optionalScreenIds,
+      )
     : fallbackTourStopsFromMap(map, work.rootScreenId, checkpointIds);
   const landmarkStops = exactScreenIds
     ? landmarkTourStopsForExactTour(map, work.rootScreenId, fallbackStops)
@@ -566,6 +674,7 @@ export function compileAppMapTest(
       ...(fallbackStops.length ? { fallbackStops } : {}),
       ...(landmarkStops.length ? { landmarkStops } : {}),
       ...(exactScreenIds ? { mappedStopsOnly: true } : {}),
+      ...(evidenceMode !== "final-screen" ? { returnAfterLast: false } : {}),
     });
   }
   if (evidenceMode === "final-screen") {
@@ -580,10 +689,15 @@ export function compileAppMapTest(
     createdAt: map.updatedAt,
     updatedAt: map.updatedAt,
   };
+  const setupGraph = setupPlan ? recipeGraphFromCompiledFlow(map, setupPlan) : undefined;
   return {
     root,
     graph: {
-      ...(setupPlan ? recipeGraphFromCompiledFlow(map, setupPlan) : {}),
+      ...(setupGraph
+        ? options.warmSetup
+          ? warmCompiledFlowGraphFromSharedPrefix(setupGraph, setupPlan!, options.warmSetupFrom)
+          : setupGraph
+        : {}),
       [root.id]: root,
     },
   };
@@ -596,15 +710,37 @@ export function compileAppMapCombine(
   if (!combine.testIds.length) throw new Error("Combination needs at least one test");
   const graph: Record<string, Recipe> = {};
   const modules: RecipeStep[] = [];
-  for (const testId of combine.testIds) {
+  let previousSetupPlan: AppMapCompiledFlow | undefined;
+  for (const [index, testId] of combine.testIds.entries()) {
     const work = map.tests?.[testId];
     if (!work) throw new Error(`Test ${testId} is missing`);
-    const compiled = compileAppMapTest(map, {
-      ...work,
-      ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
-    });
+    const setupFlowId = work.kind === "tour" ? work.setupFlowId?.trim() : undefined;
+    const setupPlan =
+      setupFlowId && work.rootScreenId
+        ? compileAppMapTourSetupFlow(map, setupFlowId, work.rootScreenId)
+        : undefined;
+    const compiled = compileAppMapTest(
+      map,
+      {
+        ...work,
+        ...(combine.captures?.[testId] ? { capture: combine.captures[testId] } : {}),
+      },
+      {
+        warmSetup: index > 0,
+        ...(previousSetupPlan ? { warmSetupFrom: previousSetupPlan } : {}),
+      },
+    );
     Object.assign(graph, compiled.graph);
     modules.push({ kind: "module", recipeId: compiled.root.id });
+    if (setupPlan) {
+      previousSetupPlan = setupPlan;
+    } else if (work.kind === "path" && work.flowId?.trim()) {
+      // A Path ends at a verified flow terminal, so it is a valid predecessor
+      // for the following tour's shared-prefix recovery.
+      previousSetupPlan = compileAppMapFlow(map, work.flowId);
+    } else {
+      previousSetupPlan = undefined;
+    }
   }
   if (modules.length === 1) {
     const only = modules[0];

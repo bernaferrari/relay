@@ -1307,18 +1307,22 @@ export function AppMapWorkspace(props: {
             }}
             onOpenProposals={() => setProposalReviewOpen(true)}
           />
-          <Show when={proposalReviewOpen()}>
-            <AppMapProposalReview
-              proposals={pendingProposals()}
-              busyId={proposalBusyId()}
-              error={proposalError()}
-              onApprove={(proposalId) => void decideProposal(proposalId, "approve")}
-              onReject={(proposalId) => void decideProposal(proposalId, "reject")}
-              onRequestChanges={(proposalId, reason) =>
-                void decideProposal(proposalId, "reject", reason)
-              }
-              onClose={() => setProposalReviewOpen(false)}
-            />
+          <Show when={proposalReviewOpen() && activeAppMap()}>
+            {(appMap) => (
+              <AppMapProposalReview
+                appMap={appMap()}
+                proposals={pendingProposals()}
+                busyId={proposalBusyId()}
+                error={proposalError()}
+                evidenceUrl={(uri) => server.authoringEvidenceUrl(uri, "image/png")}
+                onApprove={(proposalId) => void decideProposal(proposalId, "approve")}
+                onReject={(proposalId) => void decideProposal(proposalId, "reject")}
+                onRequestChanges={(proposalId, reason) =>
+                  void decideProposal(proposalId, "reject", reason)
+                }
+                onClose={() => setProposalReviewOpen(false)}
+              />
+            )}
           </Show>
           <Show when={agentOpen() && activeAppMap()}>
             <AppMapAgentPanel
@@ -1958,6 +1962,7 @@ export function AppMapWorkspace(props: {
           onClose={closeCapturePanel}
           onOpenTargets={props.onOpenTargets}
           onSaveScreen={() => void captureCurrentScreen()}
+          onSurveyPage={() => void server.captureScrollablePage()}
           onRecord={recordFromHere}
           onOrientation={setDeviceCompanionOrientation}
         />

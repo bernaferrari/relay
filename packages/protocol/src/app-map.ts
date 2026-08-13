@@ -320,6 +320,11 @@ export type AppMapTest = AppMapEntity & {
   /** Exact mapped screens this test must capture. When omitted, a tour follows
    * every visible child row as before. */
   screenIds?: string[];
+  /** Screen branches that are valid only for some account or feature states.
+   * They are visited and captured when their recorded semantic row is present,
+   * but their absence must not turn into a stale-coordinate tap or fail the
+   * current-state coverage run. Values must also appear in `screenIds`. */
+  optionalScreenIds?: string[];
   depth?: number;
   /** Evidence is independent from traversal: a test can visit ten screens
    * without necessarily saving ten screenshots. */

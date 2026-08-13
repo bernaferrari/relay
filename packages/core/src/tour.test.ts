@@ -89,6 +89,25 @@ test("translated settings rows still become tour stops", () => {
   );
 });
 
+test("named product preferences are not discarded as bare editing commands", () => {
+  const stops = extractTourStops([
+    {
+      type: "Cell",
+      label: "Paste as File",
+      rect: { x: 40, y: 400, width: 700, height: 120 },
+    },
+    {
+      type: "Button",
+      label: "Paste",
+      rect: { x: 40, y: 540, width: 120, height: 44 },
+    },
+  ]);
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Paste as File"],
+  );
+});
+
 test("Compose TextViews inherit their hittable row and suppress row subtitles", () => {
   const stops = extractTourStops([
     {
@@ -161,6 +180,35 @@ test("a tappable Voice row is not mistaken for a Voice section heading", () => {
     ["Voice"],
   );
   assert.deepEqual(stops[0]?.point, { x: 540, y: 1001 });
+});
+
+test("a tappable Grok agent card is not mistaken for a section heading", () => {
+  const stops = extractTourStops([
+    {
+      index: 1,
+      type: "android.widget.TextView",
+      label: "Your Agents",
+      rect: { x: 90, y: 280, width: 240, height: 49 },
+    },
+    {
+      index: 2,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 350, width: 990, height: 180 },
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      type: "android.widget.TextView",
+      label: "Grok",
+      rect: { x: 203, y: 420, width: 110, height: 53 },
+    },
+  ]);
+
+  assert.deepEqual(
+    stops.map((stop) => stop.label),
+    ["Grok"],
+  );
 });
 
 test("a Compose row without parent indexes keeps its title over the selected value", () => {

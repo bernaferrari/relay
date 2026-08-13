@@ -761,6 +761,37 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, "expect-screen.observations must be semantic observations");
         }
+        let recovery: Extract<RecipeStep, { kind: "expect-screen" }>["recovery"];
+        if (raw.recovery !== undefined) {
+          if (!isObject(raw.recovery) || raw.recovery.strategy !== "back") {
+            throw stepErr(index, 'expect-screen.recovery.strategy must be "back"');
+          }
+          if (
+            raw.recovery.maxAttempts !== undefined &&
+            (!isNumber(raw.recovery.maxAttempts) ||
+              !Number.isInteger(raw.recovery.maxAttempts) ||
+              raw.recovery.maxAttempts < 1 ||
+              raw.recovery.maxAttempts > 12)
+          ) {
+            throw stepErr(
+              index,
+              "expect-screen.recovery.maxAttempts must be an integer from 1 to 12",
+            );
+          }
+          if (
+            raw.recovery.restoreParentViewport !== undefined &&
+            typeof raw.recovery.restoreParentViewport !== "boolean"
+          ) {
+            throw stepErr(index, "expect-screen.recovery.restoreParentViewport must be a boolean");
+          }
+          recovery = {
+            strategy: "back",
+            ...(raw.recovery.maxAttempts !== undefined
+              ? { maxAttempts: raw.recovery.maxAttempts }
+              : {}),
+            ...(raw.recovery.restoreParentViewport === true ? { restoreParentViewport: true } : {}),
+          };
+        }
         out.push({
           kind: "expect-screen",
           screenId: raw.screenId,
@@ -776,6 +807,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                 >["observations"],
               }
             : {}),
+          ...(recovery ? { recovery } : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -976,6 +1008,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                   identifier?: unknown;
                   point?: { x?: unknown; y?: unknown };
                   capture?: unknown;
+                  optional?: unknown;
                 };
                 const label = typeof row.label === "string" ? row.label.trim() : "";
                 if (!label) return [];
@@ -990,6 +1023,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                     ...(identifier ? { identifier } : {}),
                     ...(point ? { point } : {}),
                     ...(includeCapture && row.capture === true ? { capture: true } : {}),
+                    ...(includeCapture && row.optional === true ? { optional: true } : {}),
                   },
                 ];
               })
@@ -1074,6 +1108,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             { kind: "tap" | "key" | "swipe" | "scroll" }
           >[];
         }
+        if (raw.returnAfterLast !== undefined && typeof raw.returnAfterLast !== "boolean") {
+          throw stepErr(index, "tour.returnAfterLast must be a boolean");
+        }
         const step: Extract<RecipeStep, { kind: "tour" }> = {
           kind: "tour",
           ...(isNumber(raw.depth) ? { depth: raw.depth } : {}),
@@ -1106,6 +1143,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(preludeSteps?.length ? { preludeSteps } : {}),
           ...(fallbackStops.length ? { fallbackStops } : {}),
           ...(landmarkStops.length ? { landmarkStops } : {}),
+          ...(raw.returnAfterLast === false ? { returnAfterLast: false } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);

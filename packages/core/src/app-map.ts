@@ -45,10 +45,12 @@ export {
   commitAppMapRecording,
   commitAppMapScreenCapture,
   findAppMapCaptureScreen,
+  reviewAppMapScreenCapture,
 } from "./app-map/recording-operations.js";
 export type {
   AppMapRecordingInput,
   AppMapRecordingResult,
   AppMapScreenCaptureInput,
   AppMapScreenCaptureResult,
+  AppMapScreenCaptureReview,
 } from "./app-map/recording-operations.js";

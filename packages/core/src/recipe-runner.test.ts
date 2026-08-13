@@ -983,6 +983,68 @@ describe("runRecipeStep expect-screen", () => {
     );
     assert.deepEqual(lines, ["screen: reached Home"]);
   });
+
+  it("accepts an exact translated Compose viewport without per-row identifiers", async () => {
+    const english = Array.from({ length: 12 }, (_, index) => ({
+      role: index < 8 ? "android.view.View" : "android.widget.TextView",
+      label: `English row ${index}`,
+      enabled: true,
+      hittable: index < 8,
+      depth: index < 8 ? 12 : 13,
+    }));
+    const italian = english.map((node, index) => ({
+      ...node,
+      label: `Riga italiana ${index}`,
+    }));
+    const lines: string[] = [];
+
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: italian }) }),
+      {
+        kind: "expect-screen",
+        screenId: "settings-middle",
+        screenTitle: "Settings middle",
+        fingerprint: "a".repeat(64),
+        observations: [observeScreenIdentity(english)],
+      },
+      {
+        log: (line) => lines.push(line),
+        job: { resolvedInputs: { language: "it" }, artifacts: [] } as unknown as TestJob,
+      },
+    );
+
+    assert.deepEqual(lines, ["screen: reached Settings middle"]);
+  });
+
+  it("uses the full bounded Back ladder for a warm source before replay", async () => {
+    let backs = 0;
+    const lines: string[] = [];
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: backs >= 4 ? nodes : [{ role: "heading", label: "Nested settings" }],
+          }),
+        press: () => {
+          backs += 1;
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "expect-screen",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint,
+        recovery: { strategy: "back", maxAttempts: 6 },
+      },
+      {
+        log: (line) => lines.push(line),
+        observeVisualFingerprint: () => Promise.resolve("b".repeat(64)),
+      },
+    );
+    assert.equal(backs, 4);
+    assert.deepEqual(lines.at(-1), "screen: reached Home");
+  });
 });
 
 describe("runRecipeStep conversational evidence", () => {
@@ -1775,6 +1837,55 @@ describe("runRecipeStep tour", () => {
     assert.ok(presses.some((selector) => selector.includes("Back")));
     assert.ok(presses.some((selector) => selector.includes("Appearance")));
     assert.ok(!presses.some((selector) => selector.includes("Automations")));
+  });
+
+  it("skips an unavailable optional mapped row without falling back to its old point", async () => {
+    let screen: "settings" | "appearance" = "settings";
+    const presses: string[] = [];
+    const logs: string[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({ nodes: screen === "settings" ? settingsNodes : appearanceNodes }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        presses.push(selector);
+        if (selector.includes("Appearance")) screen = "appearance";
+        if (selector.includes("Back")) screen = "settings";
+        return Promise.resolve({});
+      },
+      back: () => {
+        screen = "settings";
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runIosRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        originTitle: "Settings",
+        originFingerprint: observeScreenIdentity(settingsNodes).fingerprint,
+        fallbackStops: [
+          { label: "Appearance" },
+          { label: "Buy More", point: { x: 300, y: 700 }, optional: true },
+        ],
+        mappedStopsOnly: true,
+      },
+      { log: (line) => logs.push(line) },
+    );
+
+    assert.ok(presses.some((selector) => selector.includes("Appearance")));
+    assert.ok(!presses.some((selector) => selector.includes("Buy More")));
+    assert.ok(
+      logs.some(
+        (line) => line.includes("optional row(s) unavailable") && line.includes("Buy More"),
+      ),
+    );
   });
 
   it("recognizes a translated tour origin from stable native identity and structure", async () => {
