@@ -1,26 +1,15 @@
 import { For, Show } from "solid-js";
-import type {
-  AppMapCapturePolicy,
-  AppMapTest,
-  AppMapVariable,
-  CaseExpansionStrategy,
-  Flow,
-  MapGroup,
-} from "@relay/protocol";
+import type { AppMapCapturePolicy, AppMapVariable, CaseExpansionStrategy } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
-import type { CombineProjection, CombineTestColumn } from "../lib/app-map-combine-presentation";
+import type { TestCandidate } from "../lib/app-map-combine-candidates";
+import type { CombineProjection } from "../lib/app-map-combine-presentation";
 import type { RecordedPathCandidate } from "../lib/app-map-reusable-paths";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
 import { Icon } from "./icon";
 
-export type TestCandidate = CombineTestColumn &
-  (
-    | { source: "test"; test: AppMapTest }
-    | { source: "flow"; flow: Flow }
-    | { source: "group"; group: MapGroup }
-  );
+export type { TestCandidate } from "../lib/app-map-combine-candidates";
 
 export type SimpleCaptureMode = Exclude<AppMapCapturePolicy["mode"], "checkpoints">;
 

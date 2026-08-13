@@ -17,6 +17,12 @@ import {
 } from "../lib/app-map-combine-presentation";
 import { combineWithoutVariable, initialCombineDraft } from "../lib/app-map-combine-edit";
 import {
+  matrixId,
+  savedTestId,
+  testCandidates,
+  tourRootScreenId,
+} from "../lib/app-map-combine-candidates";
+import {
   makeReusablePathFromRecording,
   recordedPathCandidates,
   sameRecordedPathConnectionIds,
@@ -39,23 +45,6 @@ import { Icon } from "./icon";
 
 const MAX_DEVICE_WORLDS = 250;
 const MAX_PREVIEW_WORLDS = 40;
-
-function savedTestId(candidate: TestCandidate): string {
-  return candidate.source === "test"
-    ? candidate.test.id
-    : candidate.source === "flow"
-      ? `flow-${candidate.flow.id}`
-      : `group-${candidate.group.id}`;
-}
-function matrixId(variableIds: string[], testIds: string[]): string {
-  const slug = [...variableIds, "to", ...testIds]
-    .join("-")
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-  return `matrix-${slug || "run"}`;
-}
 /**
  * A Figma-like run-plan inspector. Modifiers are dimensions, tests are
  * columns, and the visible grid is the exact work Relay will execute.
@@ -101,36 +90,7 @@ export function AppMapCombine(props: {
   );
   const candidates = createMemo((): TestCandidate[] => {
     const current = map();
-    if (!current) return [];
-    const tests: TestCandidate[] = Object.values(current.tests ?? {}).map((test) => ({
-      id: test.id,
-      name: test.name,
-      kind: test.kind,
-      source: "test",
-      test,
-      screenCount: test.screenIds?.length,
-    }));
-    const referencedFlows = new Set(
-      tests.flatMap((candidate) =>
-        candidate.source === "test" && candidate.test.flowId ? [candidate.test.flowId] : [],
-      ),
-    );
-    for (const flow of Object.values(current.flows ?? {})) {
-      if (!flow.connectionIds.length || referencedFlows.has(flow.id)) continue;
-      tests.push({ id: flow.id, name: flow.name, kind: "path", source: "flow", flow });
-    }
-    for (const group of Object.values(current.groups ?? {})) {
-      if (!group.screenIds.length) continue;
-      tests.push({
-        id: group.id,
-        name: group.name,
-        kind: "tour",
-        source: "group",
-        group,
-        screenCount: group.screenIds.length,
-      });
-    }
-    return tests;
+    return current ? testCandidates(current) : [];
   });
   const selectedVariables = createMemo(() => {
     const chosen = new Set(selectedVariableIds());
@@ -368,19 +328,7 @@ export function AppMapCombine(props: {
       const existing = currentMap.tests?.[id];
       if (!existing) {
         const now = Date.now();
-        const rootScreenId =
-          candidate.source === "group"
-            ? [...candidate.group.screenIds].sort((left, right) => {
-                const outgoing = (screenId: string) =>
-                  Object.values(currentMap.connections).filter(
-                    (connection) =>
-                      connection.fromScreenId === screenId &&
-                      connection.destination.kind === "screen" &&
-                      candidate.group.screenIds.includes(connection.destination.screenId),
-                  ).length;
-                return outgoing(right) - outgoing(left);
-              })[0]
-            : undefined;
+        const rootScreenId = tourRootScreenId(currentMap, candidate);
         const saved = await server.saveTest({
           appMapId: currentMap.id,
           expectedRevision: revision,

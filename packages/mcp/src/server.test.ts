@@ -297,7 +297,16 @@ test("requires literal confirmation for confirmation-protected operations", asyn
 });
 
 test("profile selection exposes deterministic least-privilege tool sets", async () => {
-  for (const profile of ["observe", "author", "execute", "review", "admin", "full"] as const) {
+  for (const profile of [
+    "map",
+    "observe",
+    "author",
+    "run",
+    "execute",
+    "review",
+    "admin",
+    "full",
+  ] as const) {
     const session = await connectMcp({ async invoke() {} }, profile);
     try {
       const listed = await session.request("tools/list", {});

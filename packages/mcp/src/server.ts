@@ -314,7 +314,7 @@ export function createMcpServer({
   for (const descriptor of tools) {
     registerRelayTool(server, descriptor, invoker);
   }
-  registerRelayResources(server, { invoker, scope });
+  registerRelayResources(server, { invoker, scope, profile, tools });
   registerRelayPrompts(server, scope, tools);
 
   return server;

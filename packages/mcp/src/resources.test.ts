@@ -7,6 +7,12 @@ import {
   relayMcpResourceUris,
 } from "./resources.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
+import {
+  defaultRelayMcpProfile,
+  relayMcpTools,
+  relayMcpToolsForProfile,
+  type RelayMcpProfile,
+} from "./tools.js";
 
 type RpcResponse = {
   id: number;
@@ -106,8 +112,11 @@ function fixtureInvoker(overrides: Partial<Record<string, unknown>> = {}): Opera
   };
 }
 
-async function connectMcp(invoker: OperationInvoker = fixtureInvoker()) {
-  const server = createMcpServer({ invoker, scope: { projectId } });
+async function connectMcp(
+  invoker: OperationInvoker = fixtureInvoker(),
+  profile: RelayMcpProfile = defaultRelayMcpProfile,
+) {
+  const server = createMcpServer({ invoker, scope: { projectId }, profile });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,
@@ -177,6 +186,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
     const uris = resources.map(({ uri }) => uri);
     for (const uri of [
       relayMcpResourceUris.project,
+      relayMcpResourceUris.operations,
       relayMcpResourceUris.variables,
       relayMcpResourceUris.appMaps,
       relayMcpResourceUris.runs,
@@ -208,6 +218,48 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
         relayMcpResourceUris.authoringSession,
         relayMcpResourceUris.targetObservation,
       ],
+    );
+  } finally {
+    await session.close();
+  }
+});
+
+test("discovers excluded profile operations without eagerly exposing their tools", async () => {
+  const session = await connectMcp(fixtureInvoker(), "map");
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.operations }),
+    );
+    assert.ok(Buffer.byteLength(content.text, "utf8") <= relayMcpResourceByteLimit);
+    const envelope = JSON.parse(content.text) as {
+      truncated: boolean;
+      data: {
+        activeProfile: string;
+        activeOperations: string[];
+        additionalOperations: Array<{
+          operationId: string;
+          task: string;
+          role: string;
+          profiles: string[];
+        }>;
+      };
+    };
+    assert.equal(envelope.truncated, false);
+    assert.equal(envelope.data.activeProfile, "map");
+    assert.deepEqual(
+      envelope.data.activeOperations,
+      relayMcpToolsForProfile("map").map(({ operationId }) => operationId),
+    );
+    const discoverable = new Set([
+      ...envelope.data.activeOperations,
+      ...envelope.data.additionalOperations.map(({ operationId }) => operationId),
+    ]);
+    assert.deepEqual(discoverable, new Set(relayMcpTools.map(({ operationId }) => operationId)));
+    assert.ok(
+      envelope.data.additionalOperations.some(
+        ({ operationId, task, role }) =>
+          operationId === "schedule.create" && task === "workspace" && role === "admin",
+      ),
     );
   } finally {
     await session.close();

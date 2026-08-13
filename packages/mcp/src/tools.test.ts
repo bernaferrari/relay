@@ -5,6 +5,7 @@ import {
   assertRelayMcpToolParity,
   defaultRelayMcpProfile,
   relayMcpExclusions,
+  relayMcpOperationCatalog,
   relayMcpProfiles,
   relayMcpTools,
   relayMcpToolsForProfile,
@@ -183,8 +184,17 @@ test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
   );
 });
 
-test("defines deterministic role profiles with a compact authoring default", () => {
-  assert.deepEqual(relayMcpProfiles, ["observe", "author", "execute", "review", "admin", "full"]);
+test("defines deterministic task profiles with a compact authoring default", () => {
+  assert.deepEqual(relayMcpProfiles, [
+    "map",
+    "observe",
+    "author",
+    "run",
+    "execute",
+    "review",
+    "admin",
+    "full",
+  ]);
   assert.equal(defaultRelayMcpProfile, "author");
   assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
   assert.equal(
@@ -222,6 +232,7 @@ test("defines deterministic role profiles with a compact authoring default", () 
   assert.ok(
     relayMcpToolsForProfile("execute").some(({ operationId }) => operationId === "job.start"),
   );
+  assert.deepEqual(relayMcpToolsForProfile("execute"), relayMcpToolsForProfile("run"));
   assert.ok(
     relayMcpToolsForProfile("review").some(
       ({ operationId }) => operationId === "app-map.proposal.approve",
@@ -235,5 +246,23 @@ test("defines deterministic role profiles with a compact authoring default", () 
   for (const profile of relayMcpProfiles) {
     const selected = relayMcpToolsForProfile(profile);
     assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
+    if (profile !== "full") assert.ok(selected.length < 30, `${profile}: ${selected.length}`);
   }
+});
+
+test("publishes compact discovery metadata for every eligible operation", () => {
+  const catalog = relayMcpOperationCatalog();
+  assert.deepEqual(
+    catalog.map(({ operationId }) => operationId),
+    relayMcpTools.map(({ operationId }) => operationId),
+  );
+  const screenshot = catalog.find(({ operationId }) => operationId === "target.screenshot.capture");
+  assert.deepEqual(screenshot, {
+    operationId: "target.screenshot.capture",
+    task: "evidence",
+    role: "viewer",
+    confirmation: "none",
+    capabilities: ["screenshot"],
+    profiles: ["map", "observe", "author", "run", "execute", "review"],
+  });
 });

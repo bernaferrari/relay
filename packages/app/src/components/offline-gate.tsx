@@ -13,8 +13,14 @@ export function OfflineGate(props: {
   children: JSX.Element;
   /** When true, only overlay the stage area (parent positions relatively). */
   overlay?: boolean;
+  /** Narrow injectable boundary keeps connection state host-agnostic and testable. */
+  connection?: {
+    isOffline: () => boolean;
+    serverUrl: () => string;
+    retryConnection: () => Promise<void>;
+  };
 }) {
-  const server = useServer();
+  const server = props.connection ?? useServer();
   const [busy, setBusy] = createSignal(false);
   const [retryError, setRetryError] = createSignal("");
   const retry = createGuardedRetry(server.retryConnection, setBusy);

@@ -26,6 +26,7 @@ import type { CanvasCombineCardModel, CanvasCombineSection } from "../lib/app-ma
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
+import { AppMapCurveControl } from "./app-map-curve-control";
 import { AppMapConnectionToolbar } from "./app-map-connection-toolbar";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
 
@@ -76,14 +77,10 @@ export type AppMapCanvasSceneProps = {
   onOpenCombineResults?: (jobId: string) => void;
 };
 
-type ConnectionControlDrag = {
+type ConnectionControlPreview = {
   connectionId: string;
   presentation: ConnectionPresentation;
-  originPointer: CanvasPoint;
-  originOffset: CanvasPoint;
 };
-
-const CURVE_KEYBOARD_NUDGE = 20;
 
 function connectionOriginClipId(connectionId: string): string {
   return `app-map-connection-origin-${connectionId.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
@@ -125,8 +122,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
     Record<string, { width: number; height: number }>
   >({});
   const [hoveredConnectionId, setHoveredConnectionId] = createSignal<string | null>(null);
-  const [connectionControlDrag, setConnectionControlDrag] =
-    createSignal<ConnectionControlDrag | null>(null);
+  const [connectionControlPreview, setConnectionControlPreview] =
+    createSignal<ConnectionControlPreview | null>(null);
   const [connectorToolbarAnchor, setConnectorToolbarAnchor] = createSignal<{
     connectionId: string;
     point: CanvasPoint;
@@ -188,10 +185,8 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   );
   const visibleNodeIds = createMemo(() => new Set(visibleNodes().map((node) => node.id)));
   const effectivePresentation = (connection: CanvasConnection) => {
-    const controlDrag = connectionControlDrag();
-    return controlDrag?.connectionId === connection.id
-      ? controlDrag.presentation
-      : connection.presentation;
+    const preview = connectionControlPreview();
+    return preview?.connectionId === connection.id ? preview.presentation : connection.presentation;
   };
   const displayedPresentation = (connection: CanvasConnection) =>
     connectorPresentationWithAutoLane(
@@ -309,62 +304,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         ? point
         : closest,
     );
-  };
-  const beginControlDrag = (event: PointerEvent, connection: CanvasConnection) => {
-    event.stopPropagation();
-    const element = event.currentTarget as SVGCircleElement;
-    element.setPointerCapture(event.pointerId);
-    setConnectionControlDrag({
-      connectionId: connection.id,
-      presentation: { ...connection.presentation, route: "curve" },
-      originPointer: pointerInCanvas(event, element),
-      originOffset: connection.presentation?.controlOffset ?? { x: 0, y: 0 },
-    });
-  };
-  const moveControlDrag = (event: PointerEvent, connection: CanvasConnection) => {
-    const drag = connectionControlDrag();
-    if (!drag || drag.connectionId !== connection.id) return;
-    const pointer = pointerInCanvas(event, event.currentTarget as SVGGraphicsElement);
-    setConnectionControlDrag({
-      ...drag,
-      presentation: {
-        ...drag.presentation,
-        route: "curve",
-        controlOffset: {
-          x: drag.originOffset.x + pointer.x - drag.originPointer.x,
-          y: drag.originOffset.y + pointer.y - drag.originPointer.y,
-        },
-      },
-    });
-  };
-  const finishControlDrag = (event: PointerEvent, connection: CanvasConnection) => {
-    const drag = connectionControlDrag();
-    if (!drag || drag.connectionId !== connection.id) return;
-    event.stopPropagation();
-    setConnectionControlDrag(null);
-    props.onChangeConnectionPresentation(connection, drag.presentation);
-  };
-  const nudgeCurveControl = (event: KeyboardEvent, connection: CanvasConnection) => {
-    const multiplier = event.shiftKey ? 4 : 1;
-    const delta =
-      event.key === "ArrowLeft"
-        ? { x: -CURVE_KEYBOARD_NUDGE * multiplier, y: 0 }
-        : event.key === "ArrowRight"
-          ? { x: CURVE_KEYBOARD_NUDGE * multiplier, y: 0 }
-          : event.key === "ArrowUp"
-            ? { x: 0, y: -CURVE_KEYBOARD_NUDGE * multiplier }
-            : event.key === "ArrowDown"
-              ? { x: 0, y: CURVE_KEYBOARD_NUDGE * multiplier }
-              : undefined;
-    if (!delta) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const offset = connection.presentation?.controlOffset ?? { x: 0, y: 0 };
-    props.onChangeConnectionPresentation(connection, {
-      ...connection.presentation,
-      route: "curve",
-      controlOffset: { x: offset.x + delta.x, y: offset.y + delta.y },
-    });
   };
   const visibleNotes = createMemo(() =>
     props.notes.filter(
@@ -702,48 +641,23 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
       </For>
 
       <Show when={selectedCurveConnection()}>
-        {(connection) => {
-          const geometry = () => geometryFor(connection());
-          const hitRadius = () => 22 / Math.max(props.viewportScale, 0.01);
-          const visibleRadius = () => 5.5 / Math.max(props.viewportScale, 0.01);
-          return (
-            <svg
-              class="pointer-events-none absolute inset-0 z-[21] overflow-visible"
-              width={props.width}
-              height={props.height}
-              role="group"
-              aria-label="Curve anchor controls"
-            >
-              <circle
-                cx={geometry().labelPoint.x}
-                cy={geometry().labelPoint.y}
-                r={hitRadius()}
-                class="cursor-grab touch-none fill-transparent stroke-transparent focus-visible:stroke-[var(--border-focus)] active:cursor-grabbing"
-                pointer-events="all"
-                role="button"
-                tabindex="0"
-                ref={(element) => element.setAttribute("focusable", "true")}
-                aria-label="Adjust curve"
-                aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
-                data-tip="Drag to reshape curve · Arrow keys nudge"
-                onPointerDown={(event) => beginControlDrag(event, connection())}
-                onPointerMove={(event) => moveControlDrag(event, connection())}
-                onPointerUp={(event) => finishControlDrag(event, connection())}
-                onPointerCancel={() => setConnectionControlDrag(null)}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => nudgeCurveControl(event, connection())}
-              />
-              <circle
-                cx={geometry().labelPoint.x}
-                cy={geometry().labelPoint.y}
-                r={visibleRadius()}
-                class="pointer-events-none fill-[var(--background-base)] stroke-[var(--text-interactive-base)]"
-                stroke-width={2 / Math.max(props.viewportScale, 0.01)}
-                aria-hidden="true"
-              />
-            </svg>
-          );
-        }}
+        {(connection) => (
+          <AppMapCurveControl
+            connection={connection()}
+            geometry={geometryFor(connection())}
+            viewportScale={props.viewportScale}
+            width={props.width}
+            height={props.height}
+            onPreviewPresentation={(presentation) =>
+              setConnectionControlPreview({ connectionId: connection().id, presentation })
+            }
+            onChangePresentation={(presentation) => {
+              setConnectionControlPreview(null);
+              props.onChangeConnectionPresentation(connection(), presentation);
+            }}
+            onCancelPreview={() => setConnectionControlPreview(null)}
+          />
+        )}
       </Show>
     </>
   );

@@ -2,8 +2,10 @@ import { operationDefinitions, type OperationDefinition, type OperationId } from
 import { relayToolInputSchema, type RelayToolInputSchema } from "./input-schemas.js";
 
 export const relayMcpProfiles = [
+  "map",
   "observe",
   "author",
+  "run",
   "execute",
   "review",
   "admin",
@@ -115,103 +117,97 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
   operationDefinitions.filter(isToolOperation).map(toolDescriptor),
 );
 
-const authorSupport = new Set<OperationId>([
+const observeOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.snapshot.capture",
+  "target.screenshot.capture",
+  "lease.list",
+  "workspace.variables.get",
+  "app-map.list",
+  "app-map.get",
+  "authoring.session.list",
+  "authoring.session.get",
+  "job.list",
+  "job.get",
+  "run.list",
+  "run.get",
+  "run.evidence.get",
+] as const satisfies readonly OperationId[];
+
+const mapOperations = [
   "system.health.get",
   "system.doctor.get",
   "target.devices.list",
   "target.list",
   "target.preflight",
-  "target.open",
   "target.snapshot.capture",
   "target.screenshot.capture",
-  "target.app.launch",
-  "target.interact",
-  "target.ui.describe",
-  "target.ui.back",
-  "target.ui.scrollCollect",
   "lease.list",
   "lease.create",
-  "lease.takeover",
-  "lease.release",
+  "app-map.list",
+  "app-map.get",
+  "authoring.session.list",
+  "authoring.session.get",
+  "authoring.session.create",
+  "authoring.session.capture",
+  "authoring.session.start",
+  "authoring.session.interact",
+  "authoring.session.stop",
+  "app-map.proposal.submit",
+] as const satisfies readonly OperationId[];
+
+const authorOperations = [
+  ...mapOperations,
   "workspace.variables.get",
   "workspace.variables.update",
-  "app-map.list",
-  "app-map.get",
-  "app-map.create",
-  "app-map.export",
-  "app-map.update",
-  "app-map.screen.capture",
-  "app-map.teach",
-  "app-map.flow.run",
-  "app-map.case-stack.save",
-  "app-map.case-stack.attach",
-  "app-map.case-stack.remove",
-  "app-map.routine.save",
-  "app-map.routine.remove",
-  "app-map.proposal.submit",
-  "app-map.observations.propose",
-  "corpus.list",
-  "corpus.create",
-  "corpus.get",
-  "corpus.start",
-  "corpus.cancel",
-  "corpus.coverage",
-  "corpus.analysis",
-  "corpus.export",
-  "language-profile.list",
-  "language-profile.scan",
-  "language-profile.save",
-  "switcher-profile.list",
-  "switcher-profile.scan",
-  "switcher-profile.save",
-  "generation.create",
-]);
+  "authoring.take.trim",
+  "authoring.take.reorder",
+  "authoring.take.replace",
+  "authoring.take.replay",
+  "authoring.session.commit",
+  "authoring.session.discard",
+] as const satisfies readonly OperationId[];
 
-const executePrefixes = ["job."] as const;
-const executeSupport = new Set<OperationId>([
+const runOperations = [
   "system.health.get",
   "system.doctor.get",
-  "target.actions.list",
   "target.devices.list",
   "target.list",
   "target.preflight",
-  "target.open",
-  "target.boot",
-  "target.authorize",
-  "target.snapshot.capture",
   "target.screenshot.capture",
-  "target.app.launch",
-  "target.interact",
-  "target.ui.describe",
-  "target.ui.back",
-  "target.ui.scrollCollect",
-  "target.touch",
-  "target.key",
-  "target.scroll",
-  "target.video.start",
   "lease.list",
   "lease.create",
-  "lease.takeover",
-  "lease.release",
-  "action.run",
   "app-map.list",
   "app-map.get",
-  "matrix.list",
-  "matrix.resolve",
+  "app-map.combine.preflight",
+  "app-map.combine.save",
+  "job.list",
+  "job.get",
+  "job.start",
+  "job.retry",
+  "job.cancel",
+  "job.combine.start",
+  "job.combine.export",
   "run.list",
-  "step.run",
-  "app-map.flow.run",
-]);
+  "run.get",
+  "run.evidence.get",
+] as const satisfies readonly OperationId[];
 
-const reviewSupport = new Set<OperationId>([
+const reviewOperations = [
   "system.health.get",
   "target.devices.list",
   "target.snapshot.capture",
   "target.screenshot.capture",
   "lease.list",
   "lease.create",
-  "lease.takeover",
   "lease.release",
+  "app-map.list",
+  "app-map.get",
+  "app-map.proposal.approve",
+  "app-map.proposal.reject",
   "authoring.session.list",
   "authoring.session.get",
   "authoring.take.trim",
@@ -220,62 +216,95 @@ const reviewSupport = new Set<OperationId>([
   "authoring.take.replay",
   "authoring.session.commit",
   "authoring.session.discard",
-  "authoring.session.cancel",
-  "authoring.session.cleanup",
   "job.list",
   "job.get",
   "run.list",
+  "run.get",
+  "run.evidence.get",
   "run.review",
   "run.visual.compare",
   "run.visual-baseline.update",
   "run.visual.review",
-  "run.visual-policy.get",
-  "run.visual-policy.update",
   "run.pin.update",
-]);
+] as const satisfies readonly OperationId[];
+
+const adminOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "system.audit.list",
+  "activity.list",
+  "workspace.privacy.get",
+  "workspace.privacy.update",
+  "workspace.evidence.get",
+  "workspace.evidence.update",
+  "project.list",
+  "project.save",
+  "target.list",
+  "target.create",
+  "target.delete",
+  "build.list",
+  "build.save",
+  "build.preflight",
+  "device-pool.list",
+  "device-pool.save",
+  "device-pool.preflight",
+  "target-worker.list",
+  "schedule.list",
+  "schedule.create",
+  "schedule.delete",
+  "run.retention.apply",
+] as const satisfies readonly OperationId[];
+
+const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<OperationId>> = {
+  map: new Set(mapOperations),
+  observe: new Set(observeOperations),
+  author: new Set(authorOperations),
+  run: new Set(runOperations),
+  execute: new Set(runOperations),
+  review: new Set(reviewOperations),
+  admin: new Set(adminOperations),
+};
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
   if (profile === "full") return true;
-  const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
-  if (profile === "observe") return definition.mode === "query";
-  if (profile === "author") {
-    return tool.operationId.startsWith("authoring.") || authorSupport.has(tool.operationId);
-  }
-  if (profile === "execute") {
-    return (
-      executeSupport.has(tool.operationId) ||
-      executePrefixes.some((prefix) => tool.operationId.startsWith(prefix))
-    );
-  }
-  if (profile === "review") {
-    return (
-      reviewSupport.has(tool.operationId) ||
-      tool.operationId === "app-map.list" ||
-      tool.operationId === "app-map.get" ||
-      tool.operationId.startsWith("app-map.proposal.")
-    );
-  }
-  return (
-    definition.category === "system" ||
-    definition.category === "workspace" ||
-    tool.operationId.startsWith("project.") ||
-    tool.operationId.startsWith("build.") ||
-    tool.operationId.startsWith("device-pool.") ||
-    tool.operationId.startsWith("schedule.") ||
-    tool.operationId.startsWith("matrix.") ||
-    tool.operationId.startsWith("run.") ||
-    tool.operationId === "target.list" ||
-    tool.operationId === "target.create" ||
-    tool.operationId === "target.delete" ||
-    tool.operationId === "target.preflight" ||
-    tool.operationId === "generation.create"
-  );
+  return profileOperations[profile].has(tool.operationId);
 }
 
 export function relayMcpToolsForProfile(
   profile: RelayMcpProfile = defaultRelayMcpProfile,
 ): readonly RelayMcpToolDescriptor[] {
   return Object.freeze(relayMcpTools.filter((tool) => toolInProfile(tool, profile)));
+}
+
+export type RelayMcpOperationCatalogEntry = {
+  readonly operationId: RelayMcpToolDescriptor["operationId"];
+  readonly task: OperationDefinition<OperationId>["category"];
+  readonly role: OperationDefinition<OperationId>["minimumRole"];
+  readonly confirmation: OperationDefinition<OperationId>["confirmation"];
+  readonly capabilities?: readonly string[];
+  readonly profiles: readonly RelayMcpProfile[];
+};
+
+/** Compact discovery metadata for agents that need to move beyond their task profile. */
+export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEntry[] {
+  return Object.freeze(
+    relayMcpTools.map((tool) => {
+      const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
+      const profiles = relayMcpProfiles.filter(
+        (profile) => profile !== "full" && toolInProfile(tool, profile),
+      );
+      return Object.freeze({
+        operationId: tool.operationId,
+        task: definition.category,
+        role: definition.minimumRole,
+        confirmation: definition.confirmation,
+        ...(definition.targetCapabilities.length
+          ? { capabilities: definition.targetCapabilities }
+          : {}),
+        profiles,
+      });
+    }),
+  );
 }
 
 export function assertRelayMcpToolParity(

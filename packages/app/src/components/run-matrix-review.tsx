@@ -305,7 +305,7 @@ export function RunMatrixReview(props: {
   );
 }
 
-function RunMatrixScreenshotDialog(props: {
+export function RunMatrixScreenshotDialog(props: {
   title: string;
   source: string;
   world: string;

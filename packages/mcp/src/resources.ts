@@ -9,12 +9,21 @@ import {
 } from "@modelcontextprotocol/server";
 import type { OperationId } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
+import {
+  relayMcpExclusions,
+  relayMcpOperationCatalog,
+  relayMcpProfiles,
+  relayMcpToolsForProfile,
+  type RelayMcpProfile,
+  type RelayMcpToolDescriptor,
+} from "./tools.js";
 
 export const relayMcpResourceByteLimit = 32_768;
 export const relayMcpResourceMimeType = "application/json";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
+  operations: "relay://operations",
   variables: "relay://workspace/variables",
   appMaps: "relay://app-maps",
   appMap: "relay://app-maps/{appMapId}",
@@ -34,6 +43,8 @@ export type RelayResourceScope = {
 type RegisterRelayResourcesOptions = {
   invoker: OperationInvoker;
   scope: RelayResourceScope;
+  profile: RelayMcpProfile;
+  tools: readonly RelayMcpToolDescriptor[];
 };
 
 type ResourceEnvelope = {
@@ -271,8 +282,33 @@ function registerStaticResource(
 
 export function registerRelayResources(
   server: McpServer,
-  { invoker, scope }: RegisterRelayResourcesOptions,
+  { invoker, scope, profile, tools }: RegisterRelayResourcesOptions,
 ): void {
+  registerStaticResource(
+    server,
+    "operations",
+    "Relay operation discovery",
+    relayMcpResourceUris.operations,
+    async () => {
+      const active = new Set(tools.map(({ operationId }) => operationId));
+      return {
+        activeProfile: profile,
+        activeToolCount: tools.length,
+        activeOperations: tools.map(({ operationId }) => operationId),
+        profiles: relayMcpProfiles.map((id) => ({
+          id,
+          toolCount: relayMcpToolsForProfile(id).length,
+        })),
+        additionalOperations: relayMcpOperationCatalog().filter(
+          ({ operationId }) => !active.has(operationId),
+        ),
+        excludedOperations: relayMcpExclusions,
+        guidance:
+          "Choose one task profile at server startup. Use full only for deliberate low-level access.",
+      };
+    },
+    scope,
+  );
   registerStaticResource(
     server,
     "current-project",
