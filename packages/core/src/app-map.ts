@@ -22,10 +22,7 @@ export {
 export { previewRoutineImpact } from "./app-map/routine-operations.js";
 export { recordAppMapRun, type RecordAppMapRunInput } from "./app-map/run-operations.js";
 export { approveAppMapProposal, rejectAppMapProposal } from "./app-map/proposal-operations.js";
-export {
-  deriveTestProposalReview,
-  materializeProposalReviews,
-} from "./app-map/proposal-review.js";
+export { deriveTestProposalReview, materializeProposalReviews } from "./app-map/proposal-review.js";
 export {
   attachAppMapCaseStack,
   removeAppMapFlow,

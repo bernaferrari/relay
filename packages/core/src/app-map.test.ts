@@ -997,11 +997,7 @@ test("reviews and atomically approves stable-ID graph Test edits", () => {
     context(stale, "concurrent-test-edit", stale.updatedAt + 1),
   );
   expectError("revision-conflict", () =>
-    approveAppMapProposal(
-      concurrent,
-      proposal.id,
-      context(concurrent, "approve-stale-test-edit"),
-    ),
+    approveAppMapProposal(concurrent, proposal.id, context(concurrent, "approve-stale-test-edit")),
   );
 });
 

@@ -8,10 +8,7 @@ import type {
   Proposal,
 } from "./model.js";
 import { appMapFail } from "./errors.js";
-import {
-  applyScenarioTestStepEdits,
-  findScenarioTestStep,
-} from "./test-step-operations.js";
+import { applyScenarioTestStepEdits, findScenarioTestStep } from "./test-step-operations.js";
 
 function allSteps(steps: AppMapScenarioTestStep[]): AppMapScenarioTestStep[] {
   return steps.flatMap((step) => [

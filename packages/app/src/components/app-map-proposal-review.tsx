@@ -12,7 +12,46 @@ function describeChange(change: ProposalChange): string {
   if (change.kind === "connection.update") return `Update path ${change.connectionId}`;
   if (change.kind === "connection.remove") return `Remove path ${change.connectionId}`;
   if (change.kind === "group.save") return `Save Group “${change.group.name}”`;
-  return `Remove Group ${change.groupId}`;
+  if (change.kind === "group.remove") return `Remove Group ${change.groupId}`;
+  return change.review ? `Edit Test “${change.review.before.name}”` : `Edit Test ${change.testId}`;
+}
+
+function TestChangeReview(props: { change: Extract<ProposalChange, { kind: "test.edit" }> }) {
+  const review = () => props.change.review;
+  return (
+    <Show when={review()}>
+      {(details) => (
+        <div class="mt-3 rounded-[9px] bg-[var(--background-base)] p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+          <div class="flex items-center justify-between gap-2">
+            <strong class="text-[10px] font-medium text-[var(--text-strong)]">Test changes</strong>
+            <span class="text-[9px] tabular-nums text-[var(--text-weak)]">
+              {details().before.stepCount} → {details().after.stepCount} steps ·{" "}
+              {details().after.unresolvedStepCount} unresolved
+            </span>
+          </div>
+          <Show when={details().before.name !== details().after.name}>
+            <p class="mt-2 text-[9.5px] text-[var(--text-base)]">
+              Rename “{details().before.name}” to “{details().after.name}”
+            </p>
+          </Show>
+          <ul class="mt-2 grid list-none gap-1.5 p-0">
+            <For each={details().edits}>
+              {(edit) => (
+                <li class="flex items-start gap-1.5 text-[9.5px]/[1.45] text-[var(--text-base)]">
+                  <Icon
+                    name="arrow-right"
+                    size={9}
+                    class="mt-0.5 shrink-0 text-[var(--text-weak)]"
+                  />
+                  <span>{edit.summary}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      )}
+    </Show>
+  );
 }
 
 function screenVariantReplacement(
@@ -138,6 +177,13 @@ export function AppMapProposalReview(props: {
                       +{proposal.changes.length - 5} more changes
                     </span>
                   </Show>
+                  <For each={proposal.changes.filter((change) => change.kind === "test.edit")}>
+                    {(change) => (
+                      <TestChangeReview
+                        change={change as Extract<ProposalChange, { kind: "test.edit" }>}
+                      />
+                    )}
+                  </For>
                   <Show when={screenReview}>
                     <div class="mt-3 rounded-[9px] bg-[var(--background-base)] p-2 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
                       <div class="mb-2 flex items-center justify-between gap-2">

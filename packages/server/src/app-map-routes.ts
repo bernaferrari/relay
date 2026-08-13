@@ -1369,7 +1369,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       (map, context) => {
         const testId = testProposal.testId!;
         const test = map.tests[testId];
-        if (!test) throw new AppMapDomainError("missing-reference", `Test ${testId} does not exist`);
+        if (!test)
+          throw new AppMapDomainError("missing-reference", `Test ${testId} does not exist`);
         return submitAppMapProposal(
           map,
           {

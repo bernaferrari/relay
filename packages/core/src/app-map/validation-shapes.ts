@@ -842,7 +842,10 @@ function assertProposalChange(change: ProposalChange, scope: AppMapScope, label:
             appMapFail("invalid-map", `${label}.review.${side} step counts are inconsistent`);
           }
         }
-        if (!Array.isArray(change.review.edits) || change.review.edits.length !== change.edits.length) {
+        if (
+          !Array.isArray(change.review.edits) ||
+          change.review.edits.length !== change.edits.length
+        ) {
           appMapFail("invalid-map", `${label}.review.edits must describe every edit`);
         }
         change.review.edits.forEach((edit, index) => {
