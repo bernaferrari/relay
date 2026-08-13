@@ -50,3 +50,13 @@ export function trapFocus(root: HTMLElement): () => void {
     previouslyFocused?.focus?.({ preventScroll: true });
   };
 }
+
+/** Move focus into a non-modal interruption while keeping surrounding chrome
+ * reachable, then return focus when the interruption clears. */
+export function focusFirstAndRestore(root: HTMLElement): () => void {
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  const target = focusables(root)[0] ?? root;
+  root.tabIndex = -1;
+  target.focus({ preventScroll: true });
+  return () => previouslyFocused?.focus?.({ preventScroll: true });
+}

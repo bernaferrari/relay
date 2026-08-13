@@ -428,6 +428,7 @@ export function RunsWorkspace(props: {
           <RunsRefreshControl
             refreshJobs={server.refreshJobs}
             refreshRuns={() => server.refreshRuns()}
+            hasSavedResults={rows().length > 0}
           />
         </div>
       </Show>

@@ -17,12 +17,15 @@ export function AppMapPrimaryActionButton(props: {
       <Button
         variant="primary"
         size="lg"
-        class="text-[12px]"
+        class="text-[12px] aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
         aria-describedby={control().describedBy}
-        disabled={control().disabled}
+        aria-disabled={control().blocked ? "true" : undefined}
         data-tip={control().reason || props.fallbackTip}
         aria-label={control().label}
-        onClick={control().activate}
+        onClick={(event) => {
+          if (control().blocked) event.preventDefault();
+          control().activate();
+        }}
       >
         <Icon
           name={props.action.icon}

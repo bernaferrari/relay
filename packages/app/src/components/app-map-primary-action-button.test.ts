@@ -38,7 +38,7 @@ test("renders every primary action with its label and truthful disabled descript
           Button({ action, fallbackTip: "Run this path", onActivate: () => undefined }) as never,
       );
       assert.match(html, new RegExp(`aria-label="${action.label}"`));
-      assert.equal(/<button[^>]* disabled(?: |>|$)/.test(html), action.kind === "blocked");
+      assert.equal(html.includes('aria-disabled="true"'), action.kind === "blocked");
       assert.equal(
         html.includes('aria-describedby="app-map-primary-action-reason"'),
         Boolean(action.reason),

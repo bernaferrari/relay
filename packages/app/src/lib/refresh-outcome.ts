@@ -14,12 +14,16 @@ export function runCatalogRefreshState(
   jobs: RefreshOutcome,
   runs: RefreshOutcome,
   completedAt: number,
+  hasSavedResults = true,
 ): RunCatalogRefreshState {
   const failures = [
     !jobs.ok ? `jobs: ${jobs.error}` : null,
     !runs.ok ? `runs: ${runs.error}` : null,
   ].filter((message): message is string => Boolean(message));
   return failures.length
-    ? { ...previous, error: `Couldn’t refresh ${failures.join("; ")}. Showing saved results.` }
+    ? {
+        ...previous,
+        error: `Couldn’t refresh ${failures.join("; ")}. ${hasSavedResults ? "Showing saved results." : "No saved results are available yet."}`,
+      }
     : { error: null, lastSuccessAt: completedAt };
 }

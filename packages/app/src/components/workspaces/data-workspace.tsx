@@ -13,8 +13,12 @@ import {
 } from "../../lib/data-source-mode";
 import {
   readPrivateVariableValues,
+  readSharedVariableDrafts,
   removePrivateVariableValue,
+  removeSharedVariableDraft,
+  writeSharedVariableDraft,
   writePrivateVariableValue,
+  type SharedVariableDraft,
 } from "../../lib/private-variables";
 import {
   eyebrow,
@@ -61,8 +65,9 @@ export function DataWorkspace(props: {
     const remote = server.projectVariables();
     if (remote.updatedAt <= 0 || hydrated()) return;
     const privateValues = readPrivateVariableValues(server.projectId());
+    const sharedDrafts = readSharedVariableDrafts(server.projectId());
     const nextRows = remote.value.map((variable) =>
-      variableToDataRow(variable, privateValues[variable.id]),
+      variableToDataRow(variable, privateValues[variable.id], sharedDrafts[variable.id]),
     );
     setRows(nextRows);
     lastSavedSnapshot = JSON.stringify(nextRows.map(dataRowToVariable));
@@ -100,6 +105,7 @@ export function DataWorkspace(props: {
   };
   const deleteRow = (id: string) => {
     removePrivateVariableValue(server.projectId(), id);
+    removeSharedVariableDraft(server.projectId(), id);
     setDraftIds((current) => {
       if (!current.has(id)) return current;
       const next = new Set(current);
@@ -211,7 +217,7 @@ export function DataWorkspace(props: {
                       : row.scope === "private"
                         ? "Value stays on this computer"
                         : row.mode === "List"
-                          ? `${row.values?.length ?? 1} allowed values`
+                          ? `${row.values?.length ?? 0} allowed values`
                           : "Shared across tests"}
                   </small>
                 </span>
@@ -295,7 +301,17 @@ export function DataWorkspace(props: {
                               "bg-background-stronger text-text-strong shadow-[0_1px_2px_rgb(0_0_0/8%)]",
                           )}
                           aria-pressed={row().scope === scope}
-                          onClick={() => patchRow(row().id, dataSourceScopePatch(row(), scope))}
+                          onClick={() => {
+                            if (scope === "private" && row().scope === "shared") {
+                              writeSharedVariableDraft(server.projectId(), row().id, {
+                                mode: row().mode,
+                                preview: row().preview,
+                                ...(row().values ? { values: row().values } : {}),
+                                fallback: row().fallback,
+                              });
+                            }
+                            patchRow(row().id, dataSourceScopePatch(row(), scope));
+                          }}
                         >
                           {scope === "shared" ? "Project" : "Only me"}
                         </button>
@@ -422,20 +438,38 @@ export function DataWorkspace(props: {
   );
 }
 
-function variableToDataRow(variable: TestData, privateValue = ""): DataRow {
+export function variableToDataRow(
+  variable: TestData,
+  privateValue = "",
+  sharedDraft?: SharedVariableDraft,
+): DataRow {
+  const privateDraft = variable.scope === "private" ? sharedDraft : undefined;
   return {
     id: variable.id,
     name: variable.name,
     scope: variable.scope ?? "shared",
-    mode: variable.source === "generated" ? "AI" : variable.source === "list" ? "List" : "Default",
-    preview: variable.values?.[0] ?? variable.prompt ?? variable.fallback ?? "",
-    ...(variable.source === "list" ? { values: variable.values ?? [] } : {}),
-    fallback: variable.fallback ?? "",
+    mode:
+      variable.scope === "private"
+        ? "Default"
+        : variable.source === "generated"
+          ? "AI"
+          : variable.source === "list"
+            ? "List"
+            : "Default",
+    ...(privateDraft ? { sharedMode: privateDraft.mode } : {}),
+    preview:
+      privateDraft?.preview ?? variable.values?.[0] ?? variable.prompt ?? variable.fallback ?? "",
+    ...(privateDraft?.values
+      ? { values: privateDraft.values }
+      : variable.source === "list"
+        ? { values: variable.values ?? [] }
+        : {}),
+    fallback: privateDraft?.fallback ?? variable.fallback ?? "",
     privateValue,
   };
 }
 
-function dataRowToVariable(row: DataRow): TestData {
+export function dataRowToVariable(row: DataRow): TestData {
   const values =
     row.mode === "List"
       ? (row.values ?? [row.preview]).map((value) => value.trim()).filter(Boolean)

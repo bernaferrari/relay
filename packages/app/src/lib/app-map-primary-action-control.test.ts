@@ -52,11 +52,11 @@ test("all primary action kinds expose truthful button semantics and one activati
     });
 
     assert.equal(control.label, action.label);
-    assert.equal(control.disabled, action.kind === "blocked");
+    assert.equal(control.blocked, action.kind === "blocked");
     assert.equal(control.describedBy, action.reason ? "app-map-primary-action-reason" : undefined);
     assert.equal(control.reason, action.reason);
 
-    if (!control.disabled) control.activate();
+    control.activate();
     assert.equal(activations, action.kind === "blocked" ? 0 : 1);
   }
 });

@@ -683,6 +683,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 value={displayTitle(mapNameDraft())}
                 placeholder="My map"
                 spellcheck={false}
+                disabled={server.isOffline()}
                 onFocus={() => {
                   titleBeforeEdit = mapNameDraft();
                 }}
@@ -703,7 +704,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               />
             </Show>
           </div>
-          <div class={shellTopbarActions}>
+          <div
+            class={shellTopbarActions}
+            inert={server.isOffline()}
+            aria-hidden={server.isOffline() ? "true" : undefined}
+          >
             <Show when={area() === "tests"}>
               <DevicePicker
                 liveOpen={devicePanelOpen()}
@@ -918,7 +923,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       ? "Close run matrix"
                       : "Multiply modifiers such as languages or models by reusable tests."
                   }
-                  disabled={!selectedMap() || Object.keys(selectedMap()!.screens).length === 0}
+                  disabled={
+                    server.isOffline() ||
+                    !selectedMap() ||
+                    Object.keys(selectedMap()!.screens).length === 0
+                  }
                   onClick={() => toggleRunMatrix()}
                 >
                   <Icon name="grid" size={13} />

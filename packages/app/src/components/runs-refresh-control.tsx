@@ -12,6 +12,7 @@ import {
 export function RunsRefreshControl(props: {
   refreshJobs: () => Promise<RefreshOutcome>;
   refreshRuns: () => Promise<RefreshOutcome>;
+  hasSavedResults: boolean;
 }) {
   const [refreshing, setRefreshing] = createSignal(false);
   const [state, setState] = createSignal<RunCatalogRefreshState>({
@@ -26,7 +27,9 @@ export function RunsRefreshControl(props: {
       const [jobs, runs] = await withRefreshFeedback(() =>
         Promise.all([props.refreshJobs(), props.refreshRuns()]),
       );
-      setState((current) => runCatalogRefreshState(current, jobs, runs, Date.now()));
+      setState((current) =>
+        runCatalogRefreshState(current, jobs, runs, Date.now(), props.hasSavedResults),
+      );
     } finally {
       setRefreshing(false);
     }

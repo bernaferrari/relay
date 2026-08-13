@@ -28,3 +28,15 @@ test("a recovered refresh clears the error and records only the successful compl
   const next = runCatalogRefreshState({ error: "old failure", lastSuccessAt: 100 }, ok, ok, 300);
   assert.deepEqual(next, { error: null, lastSuccessAt: 300 });
 });
+
+test("a first-load failure does not claim that nonexistent saved results are visible", () => {
+  const next = runCatalogRefreshState(
+    { error: null, lastSuccessAt: null },
+    { ok: false, error: "offline" },
+    ok,
+    300,
+    false,
+  );
+  assert.match(next.error ?? "", /No saved results are available yet/);
+  assert.doesNotMatch(next.error ?? "", /Showing saved results/);
+});

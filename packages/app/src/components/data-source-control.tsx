@@ -24,6 +24,9 @@ export function DataSourceControl(props: {
             {(option) => <option value={option.value}>{option.label}</option>}
           </For>
         </select>
+        <small class="text-[10px]/[1.4] text-text-weaker">
+          Fixed uses one value. List runs each allowed value. AI generates values from your prompt.
+        </small>
       </label>
     </Show>
   );

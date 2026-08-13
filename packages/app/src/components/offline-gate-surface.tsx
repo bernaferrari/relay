@@ -8,6 +8,7 @@ export function OfflineGateSurface(props: {
   offline: boolean;
   serverUrl?: string;
   overlay?: boolean;
+  dialogRef?: (element: HTMLDivElement) => void;
 }) {
   return (
     <div class={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", props.overlay && "h-full")}>
@@ -28,6 +29,8 @@ export function OfflineGateSurface(props: {
           role="alertdialog"
           aria-labelledby="offline-gate-title"
           aria-describedby="offline-gate-desc"
+          ref={props.dialogRef}
+          tabIndex={-1}
         >
           <div
             class={cn(

@@ -45,6 +45,14 @@ export function appMapPrimaryAction(input: {
       icon: "refresh",
     };
   }
+  if (!input.serverOnline) {
+    return {
+      kind: "blocked",
+      label: "Relay offline",
+      reason: "Reconnect Relay before editing or running this path",
+      icon: "alert",
+    };
+  }
   if (input.running) {
     return {
       kind: "view-run",
@@ -118,14 +126,6 @@ export function appMapPrimaryAction(input: {
     }
   }
 
-  if (!input.serverOnline) {
-    return {
-      kind: "blocked",
-      label: "Relay offline",
-      reason: "Reconnect Relay before running this path",
-      icon: "alert",
-    };
-  }
   if (input.device.kind === "choose-device") {
     return {
       kind: "choose-device",

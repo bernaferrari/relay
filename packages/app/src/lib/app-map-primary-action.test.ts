@@ -58,6 +58,31 @@ test("map validity takes precedence over device setup", () => {
   );
 });
 
+test("offline blocks authoring actions before they can open dead workspace controls", () => {
+  assert.deepEqual(
+    appMapPrimaryAction({
+      saveState: "saved",
+      run: {
+        visible: true,
+        ready: false,
+        reason: "Record taps between screens",
+        next: "record",
+        label: "Record path",
+        transitionPath: null,
+      },
+      serverOnline: false,
+      device: { kind: "ready" },
+      liveLocation: "here",
+    }),
+    {
+      kind: "blocked",
+      label: "Relay offline",
+      reason: "Reconnect Relay before editing or running this path",
+      icon: "alert",
+    },
+  );
+});
+
 test("a ready map and device produce the run action", () => {
   assert.deepEqual(
     appMapPrimaryAction({
