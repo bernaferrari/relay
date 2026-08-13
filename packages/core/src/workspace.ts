@@ -36,6 +36,15 @@ export {
   formatSnapshotTree,
 } from "./workspace-capture.js";
 export {
+  captureScrollableSurvey,
+  captureScrollableSurveyForTarget,
+  verticalScrollSeam,
+  type ScrollSurveyFrame,
+  type ScrollSurveyOptions,
+  type ScrollSurveyResult,
+  type ScrollSurveyStopReason,
+} from "./scrollable-survey.js";
+export {
   type InteractPoint,
   type InteractInput,
   type InteractResult,

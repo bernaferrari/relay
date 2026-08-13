@@ -9,6 +9,7 @@ export type TourStop = {
   identifier?: string;
   point?: { x: number; y: number };
   capture?: boolean;
+  optional?: boolean;
 };
 
 export type TourScreenSignature = {
@@ -16,7 +17,10 @@ export type TourScreenSignature = {
 };
 
 const HEADER = /^(app|grok|voice|general|other)$/i;
-const SKIP = /search|close|back|done|cancel|dismiss|keyboard|undo|redo|paste/i;
+// Only discard bare editing/chrome commands. Product preferences can include
+// the same words (for example Grok's “Paste as File”), and treating those as
+// chrome silently removes real map destinations from a tour.
+const SKIP = /^(?:search(?:\s.*)?|close|back|done|cancel|dismiss|keyboard|undo|redo|paste)$/i;
 const LANGUAGE_ROW = /language|idioma|sprache|langue|lingua|língua|لغة|言語|语言|語言/i;
 
 /**
@@ -172,14 +176,13 @@ export function extractTourStops(
     // or more TextViews. Treat that ancestor as the cell so the title becomes
     // a stable tour stop and subtitles in the same row are ignored.
     const row = isNativeCell ? node : (closestHittableAncestor(node) ?? enclosingHittableRow(node));
-    // “Voice” is both a section heading and a real Grok Settings row. Only
-    // ignore it as chrome when it has no tappable row behind it; otherwise a
-    // valid recorded stop disappears and an exact tour cannot safely run.
-    if (
-      HEADER.test(label) &&
-      label.length <= 12 &&
-      (!/^voice$/i.test(label) || isNativeCell || !row)
-    ) {
+    // “Voice” and “Grok” may be either a section header or a real card title.
+    // The text alone cannot decide, so keep those only when Compose exposes a
+    // native/tappable row behind them. The remaining short labels (App,
+    // General, Other) are structural section headers even when a platform
+    // exposes their container as a Cell.
+    const mayNameARow = /^(?:voice|grok)$/i.test(label);
+    if (HEADER.test(label) && label.length <= 12 && (!mayNameARow || (!isNativeCell && !row))) {
       continue;
     }
     const rowRect = row?.rect ?? rect;

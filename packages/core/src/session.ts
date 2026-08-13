@@ -25,7 +25,7 @@ import {
   type StepKind,
   type StepTone,
 } from "./trace.js";
-import { persistRun, writeFramePng, ensureRunDir } from "./runs.js";
+import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import { classifyJobError } from "./report.js";
 import {
   JobCancelledError,
@@ -50,7 +50,8 @@ import {
   type StepTarget,
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
-import { redactPrivateValue } from "./private-inputs.js";
+import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
+import { REDACTED } from "./redaction.js";
 import { classifyRunOutcome } from "./outcomes.js";
 import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "./ios-geometry.js";
 import {
@@ -351,6 +352,72 @@ export type EnqueueJobInput = {
   workerId?: string;
   workerCapacity?: number;
 };
+
+/**
+ * Reconstruct the execution contract that was frozen with a completed run.
+ *
+ * A replay deliberately uses the recorded recipe graph instead of whatever a
+ * map, test, or variable happens to look like today. That lets a person or an
+ * agent answer “what exactly did we ask the device to do?” and repeat it
+ * later, even after the server's in-memory job list has been restarted.
+ *
+ * Private inputs are never persisted, so this fails closed rather than
+ * pretending a replay is equivalent while substituting redacted values.
+ */
+export function replayInputFromPersistedRun(
+  run: Pick<
+    PersistedRun,
+    | "id"
+    | "action"
+    | "serial"
+    | "platform"
+    | "targetProfile"
+    | "title"
+    | "resolvedInputs"
+    | "recipeSnapshot"
+    | "recipeGraph"
+    | "projectId"
+    | "ownerId"
+  >,
+): EnqueueJobInput {
+  if (!run.recipeSnapshot || !run.recipeGraph) {
+    throw new Error("This run predates frozen replay data and cannot be replayed safely");
+  }
+  const unavailableInput = Object.entries(run.resolvedInputs).find(
+    ([, value]) => value === PRIVATE_INPUT || value === REDACTED,
+  );
+  if (unavailableInput) {
+    throw new Error(
+      `This run used a private value for “${unavailableInput[0]}”. Provide it again before replaying.`,
+    );
+  }
+  const platform =
+    run.platform === "android" || run.platform === "ios" || run.platform === "browser"
+      ? run.platform
+      : undefined;
+  const targetId = run.serial?.trim();
+  if (!targetId || !platform) {
+    throw new Error("This run has no reusable target identity and cannot be replayed safely");
+  }
+  return {
+    recipe: run.action,
+    ...(platform === "browser"
+      ? { targetKind: "browser" as const, browserTargetId: targetId }
+      : { targetKind: "device" as const, serial: targetId, platform }),
+    targetProfile: run.targetProfile,
+    title: `${run.title ?? run.action} · replay`,
+    variables: structuredClone(run.resolvedInputs),
+    recipeSnapshot: structuredClone(run.recipeSnapshot),
+    recipeGraph: structuredClone(run.recipeGraph),
+    projectId: run.projectId,
+    ownerId: run.ownerId,
+  };
+}
+
+/** Re-run an immutable persisted execution and preserve its source lineage. */
+export function replayPersistedRun(run: PersistedRun): TestJob {
+  return enqueueJob({ ...replayInputFromPersistedRun(run), retryOf: run.id });
+}
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   const parent = input.retryOf ? jobs.get(input.retryOf) : undefined;
@@ -739,6 +806,20 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     case "repeat":
     case "branch":
       return [];
+    case "app":
+      // A matrix's locale/open wrapper is followed by an explicit mapped
+      // screen assertion and screenshot. Capturing both sides here duplicates
+      // that evidence, costs two full tree+raster reads per world, and makes a
+      // simple one-cold-start traversal look like repeated app restarts. Keep
+      // the command attempt and its failure frame; mapped destinations remain
+      // the canonical visual evidence.
+      if (step.action === "open" || step.action === "set-locale") return [];
+      return ["after"];
+    case "device":
+      // Keyboard dismissal is setup noise. The next mapped assertion captures
+      // the settled application surface; failures still receive a frame.
+      if (step.action === "keyboard-dismiss") return [];
+      return ["after"];
     // Assertions and waits need the resulting state, not an identical frame
     // before the check. Interaction steps retain both sides of the causal
     // boundary.

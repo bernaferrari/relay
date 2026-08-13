@@ -267,4 +267,22 @@ export type Frame = {
   fingerprint?: string;
   visualFingerprint?: string;
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
+  /**
+   * Evidence retained from a bounded scrollable-page survey.  The stitched
+   * image is only a convenience preview: each viewport keeps the exact tree
+   * that was observed with it, so a later review can split the page back into
+   * trustworthy device-sized evidence.
+   */
+  scrollSurvey?: {
+    kind: "viewport" | "stitched-preview";
+    index?: number;
+    offsetY?: number;
+    appendedHeight?: number;
+    snapshot?: SnapshotState;
+    mergedNodes?: SnapshotNode[];
+    status: "completed" | "stopped";
+    reason: string;
+    message: string;
+    restoredStartViewport: boolean;
+  };
 };

@@ -58,6 +58,22 @@ type ScreenshotResponse = {
   proposedRows?: Array<{ x: number; y: number; top?: number; bottom?: number; height?: number }>;
 };
 
+type ScrollSurveyResponse = {
+  status: "completed" | "stopped";
+  reason: string;
+  message: string;
+  restoredStartViewport: boolean;
+  frames: Array<{
+    index: number;
+    offsetY: number;
+    appendedHeight: number;
+    screenshot: { base64: string; width: number; height: number; capturedAt: number };
+    snapshot: NonNullable<SnapshotState>;
+  }>;
+  stitched?: { base64: string; width: number; height: number; mime: string };
+  mergedNodes: SnapshotNode[];
+};
+
 export type DeviceVideoTake = {
   id: string;
   serial: string;
@@ -248,6 +264,82 @@ export function createServerCapture(deps: CaptureServerDeps) {
     } catch (error) {
       deps.appendLog(error instanceof Error ? error.message : String(error), "error");
       throw error;
+    } finally {
+      deps.setBusyCapture(false);
+    }
+  }
+
+  /**
+   * Explicit long-list survey. Each viewport is retained as a normal frame;
+   * the stitched image is a convenience preview and never replaces evidence.
+   */
+  async function captureScrollablePage(): Promise<ScrollSurveyResponse | null> {
+    const serial = serialFor(deps);
+    if (!serial) return null;
+    deps.setBusyCapture(true);
+    try {
+      const survey = await deps.request<ScrollSurveyResponse>(
+        "/capture/scroll-survey",
+        { method: "POST", body: JSON.stringify({ serial, maxScrolls: 4 }) },
+        90_000,
+      );
+      for (const frame of survey.frames) {
+        deps.pushFrame({
+          capturedAt: frame.screenshot.capturedAt,
+          mime: "image/png",
+          base64: frame.screenshot.base64,
+          bytes: Math.floor((frame.screenshot.base64.length * 3) / 4),
+          serial,
+          caption: `full page · viewport ${frame.index + 1}`,
+          width: frame.screenshot.width,
+          height: frame.screenshot.height,
+          scrollSurvey: {
+            kind: "viewport",
+            index: frame.index,
+            offsetY: frame.offsetY,
+            appendedHeight: frame.appendedHeight,
+            snapshot: frame.snapshot,
+            status: survey.status,
+            reason: survey.reason,
+            message: survey.message,
+            restoredStartViewport: survey.restoredStartViewport,
+          },
+        });
+      }
+      if (survey.stitched) {
+        deps.pushFrame({
+          capturedAt: Date.now(),
+          mime: survey.stitched.mime,
+          base64: survey.stitched.base64,
+          bytes: Math.floor((survey.stitched.base64.length * 3) / 4),
+          serial,
+          caption: "full page · stitched preview",
+          width: survey.stitched.width,
+          height: survey.stitched.height,
+          scrollSurvey: {
+            kind: "stitched-preview",
+            mergedNodes: survey.mergedNodes,
+            status: survey.status,
+            reason: survey.reason,
+            message: survey.message,
+            restoredStartViewport: survey.restoredStartViewport,
+          },
+        });
+      }
+      deps.appendLog(
+        `full-page survey: ${survey.reason} · ${survey.frames.length} viewports`,
+        survey.status === "completed" ? "success" : "info",
+      );
+      toast(
+        survey.status === "completed" ? "Full page captured" : survey.message,
+        survey.status === "completed" ? "success" : "warning",
+      );
+      return survey;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "error");
+      return null;
     } finally {
       deps.setBusyCapture(false);
     }
@@ -475,6 +567,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     scrollDevice,
     captureUiSnapshot,
     captureUiScreenshot,
+    captureScrollablePage,
     copyUiScreenshot,
     persistRecordingEvidence,
     recordingEvidenceUrl: (recipeId: string, evidenceId: string) =>

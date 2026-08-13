@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeJob, type TestJob } from "./session.js";
+import { replayInputFromPersistedRun, summarizeJob, type TestJob } from "./session.js";
 
 test("job summaries expose only the safe matrix identity needed by live review", () => {
   const job = {
@@ -69,4 +69,51 @@ test("job summaries discard malformed matrix values instead of trusting artifact
   } as unknown as TestJob;
 
   assert.deepEqual(summarizeJob(job).matrixCase?.values, { language: "it-IT" });
+});
+
+test("a persisted run can replay its frozen plan without consulting current authoring state", () => {
+  const replay = replayInputFromPersistedRun({
+    id: "run-1",
+    action: "app-map:settings:flow",
+    serial: "pixel-1",
+    platform: "android",
+    title: "Settings coverage",
+    resolvedInputs: { language: "it" },
+    recipeSnapshot: {
+      id: "app-map:settings:flow",
+      title: "Frozen settings plan",
+      steps: [{ kind: "sleep", ms: 1 }],
+    } as never,
+    recipeGraph: {
+      "app-map:settings:flow": {
+        id: "app-map:settings:flow",
+        title: "Frozen settings plan",
+        steps: [{ kind: "sleep", ms: 1 }],
+      },
+    } as never,
+    projectId: "project-1",
+    ownerId: "human:one",
+  });
+
+  assert.equal(replay.recipe, "app-map:settings:flow");
+  assert.equal(replay.serial, "pixel-1");
+  assert.equal(replay.platform, "android");
+  assert.deepEqual(replay.variables, { language: "it" });
+  assert.equal(replay.recipeSnapshot?.title, "Frozen settings plan");
+});
+
+test("a recorded run with redacted private inputs refuses unsafe replay", () => {
+  assert.throws(
+    () =>
+      replayInputFromPersistedRun({
+        id: "run-1",
+        action: "settings",
+        serial: "pixel-1",
+        platform: "android",
+        resolvedInputs: { login_email: "[private]" },
+        recipeSnapshot: { id: "settings", title: "Settings", steps: [] } as never,
+        recipeGraph: { settings: { id: "settings", title: "Settings", steps: [] } } as never,
+      }),
+    /private value.*login_email/i,
+  );
 });

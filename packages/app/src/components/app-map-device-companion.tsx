@@ -39,6 +39,7 @@ export function AppMapDeviceCompanion(props: {
   onClose: () => void;
   onOpenTargets: () => void;
   onSaveScreen: () => void;
+  onSurveyPage: () => void;
   onRecord: () => void;
   onStop: () => void;
   onOrientation?: (orientation: DeviceCompanionOrientation) => void;
@@ -68,6 +69,18 @@ export function AppMapDeviceCompanion(props: {
           identityOnly
         />
         <div class="flex items-center gap-1">
+          <Show when={!props.recording}>
+            <button
+              type="button"
+              class="app-map-icon-button"
+              aria-label="Capture full scrollable page"
+              data-tip="Capture full page · preserves every viewport and stops if a seam is uncertain"
+              disabled={props.captureBusy}
+              onClick={props.onSurveyPage}
+            >
+              <Icon name="scan" size={13} />
+            </button>
+          </Show>
           <label
             class="relative inline-flex h-7 items-center rounded-md pl-2 text-[11px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
             data-tip={ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}

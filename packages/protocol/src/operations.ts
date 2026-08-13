@@ -428,6 +428,7 @@ type SpecificOperationMap = {
     input: { recipe: string; serial?: string; [key: string]: unknown };
     output: { job: OperationRecord };
   };
+  "run.replay": { input: { runId: string }; output: { job: OperationRecord } };
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
@@ -539,6 +540,9 @@ type SpecificOperationMap = {
       screen: Screen;
       variant: ScreenVariant;
       created: boolean;
+      /** A changed semantic capture is pending human comparison; the map still
+       * renders its prior approved variant until this proposal is accepted. */
+      reviewProposalId?: string;
     };
   };
   "app-map.teach": {
@@ -569,6 +573,7 @@ type SpecificOperationMap = {
       variant: ScreenVariant;
       created: boolean;
       connectionId?: string;
+      reviewProposalId?: string;
     };
   };
   "app-map.screen.update": {
@@ -1049,6 +1054,7 @@ type GenericOperationId =
   | "switcher-profile.scan"
   | "switcher-profile.save"
   | "job.retry"
+  | "run.replay"
   | "job.active.cancel"
   | "job.matrix.start"
   | "job.compatibility-matrix.start"
@@ -1764,6 +1770,8 @@ const appMapScreenCaptureOutputParser = objectParser<OperationOutput<"app-map.sc
     record(output.screen, "App Map screen capture response screen");
     record(output.variant, "App Map screen capture response variant");
     boolean(output.created, "App Map screen capture response created");
+    if (output.reviewProposalId !== undefined)
+      string(output.reviewProposalId, "App Map screen capture response reviewProposalId");
   },
 );
 
@@ -1836,6 +1844,8 @@ const appMapTeachOutputParser = objectParser<OperationOutput<"app-map.teach">>(
     record(output.screen, "App Map teach response screen");
     record(output.variant, "App Map teach response variant");
     boolean(output.created, "App Map teach response created");
+    if (output.reviewProposalId !== undefined)
+      string(output.reviewProposalId, "App Map teach response reviewProposalId");
     if (output.connectionId !== undefined)
       string(output.connectionId, "App Map teach connectionId");
   },
@@ -3484,6 +3494,12 @@ export const operationDefinitions = [
   }),
   command("job.retry", "Retry job", "POST", "/jobs/:jobId/retry", {
     category: "execution",
+    progress: true,
+    cancellable: true,
+  }),
+  command("run.replay", "Replay recorded run", "POST", "/runs/:runId/replay", {
+    category: "execution",
+    input: runIdInputParser,
     progress: true,
     cancellable: true,
   }),

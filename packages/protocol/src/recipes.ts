@@ -215,6 +215,19 @@ export type RecipeStep = RecipeStepMetadata &
         /** Approved semantic observations let dynamic screens retain one
          * identity while their body content changes between executions. */
         observations?: ScreenIdentityObservation[];
+        /**
+         * Generated warm-suite source checks may return through the current
+         * app hierarchy before replaying their recorded navigation. This is
+         * deliberately unavailable on destination checks: a bad action must
+         * fail where it landed rather than navigating away from evidence.
+         */
+        recovery?: {
+          strategy: "back";
+          maxAttempts?: number;
+          /** After one Back reaches a scrollable parent list, return it to
+           * its stable top checkpoint before considering another Back. */
+          restoreParentViewport?: boolean;
+        };
       }
     | {
         kind: "extract";
@@ -296,6 +309,10 @@ export type RecipeStep = RecipeStepMetadata &
           point?: { x: number; y: number };
           /** A mapped checkpoint may be visited without becoming evidence. */
           capture?: boolean;
+          /** This recorded branch only exists in some account/feature states.
+           * Its absence is reported and skipped, never tapped by its old
+           * coordinate. */
+          optional?: boolean;
         }>;
         /**
          * Complete recorded row order for the current surface. These are
@@ -310,6 +327,9 @@ export type RecipeStep = RecipeStepMetadata &
         }>;
         /** Restrict a deterministic screen test to its mapped fallback stops. */
         mappedStopsOnly?: boolean;
+        /** A generated coverage tour can finish on its final child. The next
+         * warm setup owns returning to its own source. */
+        returnAfterLast?: boolean;
       }
     | { kind: "flow"; flow: string }
     | { kind: "module"; recipeId: string; bindings?: Record<string, string> }

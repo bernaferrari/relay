@@ -20,6 +20,7 @@ import type {
   AppMapMutationContext,
   Connection,
   Flow,
+  Proposal,
   Screen,
   ScreenVariant,
 } from "./model.js";
@@ -59,6 +60,15 @@ export type AppMapScreenCaptureResult = {
   screenId: string;
   variantId: string;
   created: boolean;
+};
+
+/** A changed semantic capture is kept outside the approved map until someone
+ * compares its pixels and accessibility snapshot with the current variant. */
+export type AppMapScreenCaptureReview = {
+  proposal: Proposal;
+  screenId: string;
+  currentVariant: ScreenVariant;
+  proposedVariant: ScreenVariant;
 };
 
 function stableId(prefix: string, seed: string): string {
@@ -193,7 +203,7 @@ function targetProfile(
   };
 }
 
-function observeScreen(input: {
+function capturedVariant(input: {
   map: AppMap;
   screen: Screen;
   observation?: AuthoringObservation;
@@ -202,9 +212,9 @@ function observeScreen(input: {
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
   at: number;
-}): void {
+}): ScreenVariant | undefined {
   const { map, screen, observation, at } = input;
-  if (!observation) return;
+  if (!observation) return undefined;
   const fingerprint = observation.screen.fingerprint;
   const semanticFingerprint = semanticObservation(observation)?.fingerprint;
   const aliases = new Set(screen.identity?.aliases ?? []);
@@ -259,8 +269,81 @@ function observeScreen(input: {
     updatedAt: at,
     ...(existing?.baseline ? { baseline: structuredClone(existing.baseline) } : {}),
   };
+  return variant;
+}
+
+function observeScreen(input: {
+  map: AppMap;
+  screen: Screen;
+  observation?: AuthoringObservation;
+  target: AuthoringTarget;
+  targetProfile?: TargetProfile;
+  evidenceUrisById?: Record<string, string>;
+  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  at: number;
+}): void {
+  const { map, screen } = input;
+  const variant = capturedVariant(input);
+  if (!variant) return;
   map.screenVariants[variant.id] = variant;
   screen.variantIds = [...new Set([...screen.variantIds, variant.id])].sort();
+}
+
+/**
+ * Build, but do not apply, the reviewable replacement for an existing target
+ * variant. Exact semantic refreshes are deliberately not proposals: evidence
+ * can accumulate without turning clocks or screenshot compression into work.
+ */
+export function reviewAppMapScreenCapture(
+  map: AppMap,
+  input: AppMapScreenCaptureInput,
+  context: AppMapMutationContext,
+): AppMapScreenCaptureReview | undefined {
+  const screen = findAppMapCaptureScreen(map, input);
+  if (!screen) return undefined;
+  const profile = targetProfile(input.target, context.at, input.targetProfile, input.observation);
+  const currentVariant = screen.variantIds
+    .map((id) => map.screenVariants[id])
+    .find((variant) => variant?.targetProfile.id === profile.id);
+  if (!currentVariant) return undefined;
+
+  const proposedVariant = capturedVariant({
+    map,
+    screen: structuredClone(screen),
+    observation: input.observation,
+    target: input.target,
+    ...(input.targetProfile ? { targetProfile: input.targetProfile } : {}),
+    ...(input.evidenceUrisById ? { evidenceUrisById: input.evidenceUrisById } : {}),
+    ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
+    at: context.at,
+  });
+  if (!proposedVariant) return undefined;
+  if (currentVariant.observation?.fingerprint === proposedVariant.observation?.fingerprint) {
+    return undefined;
+  }
+
+  const proposal: Proposal = {
+    ...entityScope(map),
+    id: stableId(
+      "proposal",
+      `${map.id}:capture:${screen.id}:${currentVariant.id}:${proposedVariant.observation?.fingerprint ?? "unknown"}:${context.eventId}`,
+    ),
+    title: `Review updated screen “${screen.title}”`,
+    description:
+      "The visible accessibility structure changed. Compare the approved and new captures before replacing it.",
+    status: "pending",
+    baseRevision: map.revision,
+    changes: [
+      {
+        kind: "screen.update",
+        screenId: screen.id,
+        input: { patch: {}, upsertVariants: [proposedVariant] },
+      },
+    ],
+    createdAt: context.at,
+    updatedAt: context.at,
+  };
+  return { proposal, screenId: screen.id, currentVariant, proposedVariant };
 }
 
 /** Persist one observed app state without inventing an executable transition.

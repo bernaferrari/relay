@@ -29,6 +29,8 @@ import {
   redactRunMatrix,
   resumeJob,
   retryJob,
+  replayPersistedRun,
+  readPersistedRun,
   startLocaleRecipeRun,
   startOptionRecipeRun,
   compileAppMapTest,
@@ -93,6 +95,26 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
     const job = retryJob(retryMatch.id!);
     json(res, 202, { job });
+    return true;
+  }
+
+  const replayMatch = matchPath(pathname, "/runs/:id/replay");
+  if (method === "POST" && replayMatch) {
+    const run = await readPersistedRun(replayMatch.id!);
+    if (!run) throw new HttpError(404, "Recorded run not found");
+    if (
+      !scope.localTrusted &&
+      (run.projectId !== scope.projectId || run.ownerId !== scope.subject)
+    ) {
+      throw new HttpError(404, "Recorded run not found");
+    }
+    await assertTargetControl(scope, run.serial);
+    try {
+      const job = replayPersistedRun(run);
+      json(res, 202, { job });
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : String(error));
+    }
     return true;
   }
 

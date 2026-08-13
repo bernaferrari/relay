@@ -1599,7 +1599,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         {
           name: "selected",
           type: "object",
-          description: "Optional value ids selected per state set",
+          description:
+            'Optional value ids selected per state set, for example {"language":["it"]} to run Italian only',
         },
         {
           name: "strategy",

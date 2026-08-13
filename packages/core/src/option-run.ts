@@ -403,6 +403,32 @@ export function composeOptionRunRecipes(input: {
 }): { root: Recipe; graph: Record<string, Recipe> } {
   const app = input.request.app?.trim();
   const at = Date.now();
+  const hasAppLocale = input.request.sets.some((set) => set.apply.kind === "appLocale");
+  const hasGeneratedMapSources = Object.values(input.bodyGraph ?? {}).some((recipe) =>
+    recipe.steps.some(
+      (step) => step.kind === "expect-screen" && (step.id ?? "").startsWith("relay-source-"),
+    ),
+  );
+  const warmMapSuiteRecipe = (recipe: Recipe): Recipe => ({
+    ...recipe,
+    ...(() => {
+      let warmedLaunch = false;
+      const steps = recipe.steps.map((step) => {
+        if (step.kind === "app" && step.action === "open" && step.relaunch === true) {
+          warmedLaunch = true;
+          return { ...step, relaunch: false };
+        }
+        if (step.kind === "expect-screen" && (step.id ?? "").startsWith("relay-source-")) {
+          return { ...step, recovery: { strategy: "back" as const, maxAttempts: 8 } };
+        }
+        return step;
+      });
+      return {
+        ...(warmedLaunch ? { title: recipe.title.replace(/cold start/iu, "warm recovery") } : {}),
+        steps,
+      };
+    })(),
+  });
   const ownsScreenshots = (recipe: Recipe, visiting = new Set<string>()): boolean => {
     if (visiting.has(recipe.id)) return false;
     const nextVisiting = new Set(visiting).add(recipe.id);
@@ -418,11 +444,23 @@ export function composeOptionRunRecipes(input: {
   const bodyOwnsScreenshots = ownsScreenshots(input.body);
   const screenshot = input.request.screenshotEach !== false && !bodyOwnsScreenshots;
   const steps: RecipeStep[] = [];
-  const graph: Record<string, Recipe> = {
-    [input.body.id]: structuredClone(input.body),
-  };
+  const graph: Record<string, Recipe> = Object.fromEntries(
+    Object.entries(input.bodyGraph ?? {}).map(([id, recipe]) => [
+      id,
+      hasGeneratedMapSources
+        ? warmMapSuiteRecipe(structuredClone(recipe))
+        : structuredClone(recipe),
+    ]),
+  );
+  graph[input.body.id] = hasGeneratedMapSources
+    ? warmMapSuiteRecipe(structuredClone(input.body))
+    : structuredClone(input.body);
 
-  if (app) {
+  // The matrix wrapper owns the one cold launch for this world. Map-derived
+  // modules below run warm and recover their source screen through Back before
+  // replaying navigation, avoiding a process kill for every sibling test.
+  let appLaunched = false;
+  if (app && !hasAppLocale) {
     steps.push({
       kind: "app",
       action: "open",
@@ -430,6 +468,7 @@ export function composeOptionRunRecipes(input: {
       relaunch: input.request.relaunch !== false,
     });
     steps.push({ kind: "sleep", ms: 1200 });
+    appLaunched = true;
   }
 
   for (const set of input.request.sets) {
@@ -440,8 +479,11 @@ export function composeOptionRunRecipes(input: {
         app: set.apply.app,
         locale: `{{${set.id}}}`,
       });
-      steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
-      steps.push({ kind: "sleep", ms: 1200 });
+      if (!appLaunched) {
+        steps.push({ kind: "app", action: "open", app: set.apply.app, relaunch: true });
+        steps.push({ kind: "sleep", ms: 1200 });
+        appLaunched = true;
+      }
       steps.push({ kind: "device", action: "keyboard-dismiss" });
       steps.push({ kind: "sleep", ms: 250 });
       continue;
@@ -458,6 +500,11 @@ export function composeOptionRunRecipes(input: {
     steps.push(...navStepsToRecipe(resolved.entry, app));
     steps.push(...selectSteps(prefix));
     steps.push(...navStepsToRecipe(resolved.exit, app));
+  }
+
+  if (app && !appLaunched) {
+    steps.push({ kind: "app", action: "open", app, relaunch: input.request.relaunch !== false });
+    steps.push({ kind: "sleep", ms: 1200 });
   }
 
   const singleLocale = input.request.sets.length === 1 && input.request.sets[0]?.id === "locale";
@@ -533,10 +580,15 @@ export function expectedRecipeScreenshotCount(
     }
     if (step.kind === "tour") {
       if (!step.mappedStopsOnly) return undefined;
+      // An account/feature-dependent row is intentionally skipped when it is
+      // absent. Preflight must not promise a fixed evidence count for that
+      // live branch; the run report will record what was actually available.
+      if (step.fallbackStops?.some((stop) => stop.optional)) return undefined;
       count +=
         step.screenshot === false
           ? 0
-          : (step.fallbackStops?.filter((stop) => stop.capture !== false).length ?? 0);
+          : (step.captureOrigin ? 1 : 0) +
+            (step.fallbackStops?.filter((stop) => stop.capture !== false).length ?? 0);
       continue;
     }
     if (step.kind === "module") {

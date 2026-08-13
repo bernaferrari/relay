@@ -736,6 +736,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         // transient reviewing session cannot open the path-review editor for
         // a screenshot-only action.
         await Promise.all([server.refreshAppMaps(), server.refreshAuthoringSessions()]);
+        if (result.reviewProposalId) {
+          toast("Screen changed · review the old and new capture before replacing it", "info");
+        }
         return { ...result, appMap: await server.loadAppMap(appMapId) };
       } catch (error) {
         toast(humanError(error), "warning");

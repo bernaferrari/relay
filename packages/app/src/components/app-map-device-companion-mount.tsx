@@ -18,6 +18,7 @@ export function AppMapDeviceCompanionMount(props: {
   onClose: () => void;
   onOpenTargets: () => void;
   onSaveScreen: () => void;
+  onSurveyPage: () => void;
   onRecord: () => void;
   onOrientation: (orientation: "portrait" | "landscape" | "square" | "unknown") => void;
 }) {
@@ -43,6 +44,7 @@ export function AppMapDeviceCompanionMount(props: {
       onClose={props.onClose}
       onOpenTargets={props.onOpenTargets}
       onSaveScreen={props.onSaveScreen}
+      onSurveyPage={props.onSurveyPage}
       onRecord={props.onRecord}
       onStop={() => void recorder.stopRecording()}
       onOrientation={props.onOrientation}
