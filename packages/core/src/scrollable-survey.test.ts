@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
 import { captureScrollableSurvey, verticalScrollSeam } from "./scrollable-survey.js";
+import type { SnapshotPayload } from "./workspace-capture.js";
 
 function image(offset: number): Buffer {
   const png = new PNG({ width: 64, height: 160 });
@@ -25,31 +26,39 @@ test("finds a vertical overlap and detects an unchanged terminal viewport", () =
   assert.ok(Math.abs(seam!.shiftY - 40) <= 2);
 });
 
-test("scroll survey preserves original frames and restores after reaching the end", async () => {
+function snapshot(anchor = "toolbar", capturedAt = 0): SnapshotPayload {
+  return {
+    capturedAt,
+    nodes: [{ identifier: anchor, type: "Button", rect: { x: 0, y: 0, width: 20, height: 20 } }],
+    interactive: [],
+    bounds: { width: 64, height: 160 },
+    inspectable: true,
+    source: "sdk",
+    screenIdentity: { fingerprint: `screen-${anchor}`, nodes: [], volatileSignals: [] },
+  };
+}
+
+function captured(png: Buffer, capturedAt: number, anchor = "toolbar") {
+  return {
+    screenshot: {
+      base64: png.toString("base64"),
+      width: 64,
+      height: 160,
+      capturedAt,
+    },
+    snapshot: snapshot(anchor, capturedAt),
+  };
+}
+
+test("scroll survey preserves frames and restores every successful down movement at the end", async () => {
   const pages = [image(0), image(40), image(40)];
   let page = 0;
+  let successfulDown = 0;
   let up = 0;
   const result = await captureScrollableSurvey({
-    capture: async () => ({
-      screenshot: {
-        base64: pages[page]!.toString("base64"),
-        width: 64,
-        height: 160,
-        capturedAt: page,
-      },
-      snapshot: {
-        capturedAt: page,
-        nodes: [
-          { identifier: "toolbar", type: "Button", rect: { x: 0, y: 0, width: 20, height: 20 } },
-        ],
-        interactive: [],
-        bounds: { width: 64, height: 160 },
-        inspectable: true,
-        source: "sdk",
-        screenIdentity: { fingerprint: `screen-${page}`, nodes: [], volatileSignals: [] },
-      },
-    }),
+    capture: async () => captured(pages[page]!, page),
     scrollDown: async () => {
+      successfulDown += 1;
       page = Math.min(page + 1, pages.length - 1);
     },
     scrollUp: async () => {
@@ -60,6 +69,216 @@ test("scroll survey preserves original frames and restores after reaching the en
   assert.equal(result.status, "completed");
   assert.equal(result.reason, "end-of-content");
   assert.equal(result.frames.length, 2);
-  assert.equal(up, 1);
+  assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
   assert.ok(result.stitched);
+});
+
+test("restores after a screen change on the first captured movement", async () => {
+  let captureIndex = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () =>
+      captureIndex++ === 0 ? captured(image(0), 0) : captured(image(40), 1, "other-screen"),
+    scrollDown: async () => {
+      successfulDown += 1;
+    },
+    scrollUp: async () => {
+      up += 1;
+    },
+    settle: async () => {},
+  });
+  assert.equal(result.reason, "screen-changed");
+  assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
+});
+
+test("restores all movements after a later screen change", async () => {
+  const pages = [captured(image(0), 0), captured(image(40), 1), captured(image(80), 2, "other")];
+  let page = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => pages[page]!,
+      scrollDown: async () => {
+        successfulDown += 1;
+        page += 1;
+      },
+      scrollUp: async () => {
+        up += 1;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 3 },
+  );
+  assert.equal(result.reason, "screen-changed");
+  assert.equal(result.frames.length, 2);
+  assert.equal(up, successfulDown);
+});
+
+test("restores after an ambiguous seam", async () => {
+  let captureIndex = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () =>
+      captureIndex++ === 0
+        ? captured(image(0), 0)
+        : {
+            ...captured(image(40), 1),
+            screenshot: {
+              base64: Buffer.from("not-png").toString("base64"),
+              width: 64,
+              height: 160,
+              capturedAt: 1,
+            },
+          },
+    scrollDown: async () => {
+      successfulDown += 1;
+    },
+    scrollUp: async () => {
+      up += 1;
+    },
+    settle: async () => {},
+  });
+  assert.equal(result.reason, "seam-ambiguous");
+  assert.equal(up, successfulDown);
+});
+
+test("restores after capture failure", async () => {
+  let captures = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () => {
+      if (captures++ > 0) throw new Error("capture failed");
+      return captured(image(0), 0);
+    },
+    scrollDown: async () => {
+      successfulDown += 1;
+    },
+    scrollUp: async () => {
+      up += 1;
+    },
+    settle: async () => {},
+  });
+  assert.equal(result.reason, "scroll-failed");
+  assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
+});
+
+test("restores after post-scroll settling fails", async () => {
+  let settleCalls = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () => captured(image(0), 0),
+    scrollDown: async () => {
+      successfulDown += 1;
+    },
+    scrollUp: async () => {
+      up += 1;
+    },
+    settle: async () => {
+      if (settleCalls++ === 0) throw new Error("settle failed");
+    },
+  });
+  assert.equal(result.reason, "scroll-failed");
+  assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
+});
+
+test("does not restore a scrollDown call that never succeeded", async () => {
+  let up = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () => captured(image(0), 0),
+    scrollDown: async () => {
+      throw new Error("scroll failed");
+    },
+    scrollUp: async () => {
+      up += 1;
+    },
+    settle: async () => {},
+  });
+  assert.equal(result.reason, "scroll-failed");
+  assert.equal(up, 0);
+  assert.equal(result.restoredStartViewport, true);
+});
+
+test("reports restore failure while still attempting one up per successful down", async () => {
+  let page = 0;
+  let successfulDown = 0;
+  let upAttempts = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(page === 0 ? image(0) : image(40), page),
+      scrollDown: async () => {
+        successfulDown += 1;
+        page = 1;
+      },
+      scrollUp: async () => {
+        upAttempts += 1;
+        throw new Error("restore failed");
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 1 },
+  );
+  assert.equal(result.reason, "restore-failed");
+  assert.equal(result.restoredStartViewport, false);
+  assert.equal(upAttempts, successfulDown);
+});
+
+test("marks restoration incomplete when its settling step fails", async () => {
+  let page = 0;
+  let settleCalls = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(page === 0 ? image(0) : image(40), page),
+      scrollDown: async () => {
+        successfulDown += 1;
+        page = 1;
+      },
+      scrollUp: async () => {
+        up += 1;
+      },
+      settle: async () => {
+        settleCalls += 1;
+        if (settleCalls === 2) throw new Error("restore did not settle");
+      },
+    },
+    { maxScrolls: 1 },
+  );
+  assert.equal(result.reason, "restore-failed");
+  assert.equal(result.restoredStartViewport, false);
+  assert.equal(up, successfulDown);
+});
+
+test("restores every movement when the configured limit is reached", async () => {
+  const pages = [image(0), image(40), image(80)];
+  let page = 0;
+  let successfulDown = 0;
+  let up = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(pages[page]!, page),
+      scrollDown: async () => {
+        successfulDown += 1;
+        page += 1;
+      },
+      scrollUp: async () => {
+        up += 1;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 2 },
+  );
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.frames.length, 3);
+  assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
 });

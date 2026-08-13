@@ -335,89 +335,134 @@ export async function captureScrollableSurvey(
     );
   }
   let restored = true;
-  let successfulScrolls = 0;
-  const restore = async () => {
-    for (let index = 0; index < successfulScrolls; index += 1) {
+  let movements = 0;
+  let restorationStarted = false;
+  const restoreOnce = async () => {
+    if (restorationStarted) return;
+    restorationStarted = true;
+    for (let index = 0; index < movements; index += 1) {
       try {
         await driver.scrollUp();
+      } catch {
+        restored = false;
+        continue;
+      }
+      try {
         await driver.settle();
       } catch {
         restored = false;
-        break;
       }
     }
   };
-  for (let index = 0; index < maxScrolls; index += 1) {
-    try {
-      await driver.scrollDown();
-      await driver.settle();
-    } catch {
-      await restore();
-      return result(
-        frames,
-        "stopped",
-        "scroll-failed",
-        "Scrolling failed; original captured viewports were retained.",
-        restored,
+  let decision: {
+    status: ScrollSurveyResult["status"];
+    reason: ScrollSurveyStopReason;
+    message: string;
+  } = {
+    status: "stopped",
+    reason: "limit-reached",
+    message:
+      "Relay reached the configured survey limit; inspect the saved viewports before collecting more.",
+  };
+  let unexpected: unknown;
+  try {
+    for (let index = 0; index < maxScrolls; index += 1) {
+      try {
+        await driver.scrollDown();
+        // The target may have moved as soon as the driver resolves. From this
+        // point every exit owes exactly one inverse movement.
+        movements += 1;
+        await driver.settle();
+      } catch {
+        decision = {
+          status: "stopped",
+          reason: "scroll-failed",
+          message: "Scrolling failed; original captured viewports were retained.",
+        };
+        break;
+      }
+
+      let next: Awaited<ReturnType<ScrollSurveyDriver["capture"]>>;
+      try {
+        next = await driver.capture();
+      } catch {
+        decision = {
+          status: "stopped",
+          reason: "scroll-failed",
+          message: "Capturing the scrolled viewport failed; Relay restored the starting viewport.",
+        };
+        break;
+      }
+      if (!sameSurveySurface(first.snapshot, next.snapshot)) {
+        decision = {
+          status: "stopped",
+          reason: "screen-changed",
+          message:
+            "The scroll changed to a different screen; Relay stopped before stitching unrelated content.",
+        };
+        break;
+      }
+      const previous = frames.at(-1)!;
+      const width = next.screenshot.width ?? 0;
+      const height = next.screenshot.height ?? 0;
+      if (width !== previous.screenshot.width || height !== previous.screenshot.height) {
+        decision = {
+          status: "stopped",
+          reason: "dimension-changed",
+          message:
+            "The viewport dimensions changed while scrolling; Relay stopped before stitching.",
+        };
+        break;
+      }
+      const seam = verticalScrollSeam(
+        Buffer.from(previous.screenshot.base64, "base64"),
+        Buffer.from(next.screenshot.base64, "base64"),
       );
+      if (!seam) {
+        decision = {
+          status: "stopped",
+          reason: "seam-ambiguous",
+          message:
+            "Relay could not verify the visual overlap between scroll viewports; review the original frames before continuing.",
+        };
+        break;
+      }
+      if (seam.shiftY === 0) {
+        decision = {
+          status: "completed",
+          reason: "end-of-content",
+          message: "Captured the complete visible list and restored the original viewport.",
+        };
+        break;
+      }
+      const offsetY = previous.offsetY + seam.shiftY;
+      frames.push({
+        index: frames.length,
+        offsetY,
+        screenshot: {
+          base64: next.screenshot.base64,
+          width,
+          height,
+          capturedAt: next.screenshot.capturedAt,
+        },
+        snapshot: next.snapshot,
+        appendedHeight: seam.shiftY,
+      });
     }
-    const next = await driver.capture();
-    if (!sameSurveySurface(first.snapshot, next.snapshot)) {
-      await restore();
-      return result(
-        frames,
-        "stopped",
-        "screen-changed",
-        "The scroll changed to a different screen; Relay stopped before stitching unrelated content.",
-        restored,
-      );
-    }
-    const previous = frames.at(-1)!;
-    const seam = verticalScrollSeam(
-      Buffer.from(previous.screenshot.base64, "base64"),
-      Buffer.from(next.screenshot.base64, "base64"),
-    );
-    if (!seam) {
-      await restore();
-      return result(
-        frames,
-        "stopped",
-        "seam-ambiguous",
-        "Relay could not verify the visual overlap between scroll viewports; review the original frames before continuing.",
-        restored,
-      );
-    }
-    if (seam.shiftY === 0) {
-      await restore();
-      return result(
-        frames,
-        "completed",
-        "end-of-content",
-        "Captured the complete visible list and restored the original viewport.",
-        restored,
-      );
-    }
-    const offsetY = previous.offsetY + seam.shiftY;
-    frames.push({
-      index: frames.length,
-      offsetY,
-      screenshot: {
-        base64: next.screenshot.base64,
-        width: next.screenshot.width ?? 0,
-        height: next.screenshot.height ?? 0,
-        capturedAt: next.screenshot.capturedAt,
-      },
-      snapshot: next.snapshot,
-      appendedHeight: seam.shiftY,
-    });
-    successfulScrolls += 1;
+  } catch (error) {
+    unexpected = error;
+  } finally {
+    await restoreOnce();
   }
-  await restore();
-  return result(
-    frames,
-    "stopped",
-    "limit-reached",
-    "Relay reached the configured survey limit; inspect the saved viewports before collecting more.",
-    restored,
-  );
+  if (unexpected !== undefined) throw unexpected;
+  if (!restored) {
+    return result(
+      frames,
+      "stopped",
+      "restore-failed",
+      "Relay stopped safely, but could not restore every captured scroll movement.",
+      false,
+    );
+  }
+  return result(frames, decision.status, decision.reason, decision.message, true);
 }

@@ -17,12 +17,24 @@ export class JobCancelledError extends Error {
   }
 }
 
+export class JobControlOwnershipError extends Error {
+  readonly code = "CONTROL_OWNERSHIP_LOST" as const;
+  constructor(message = "Job control lease is no longer valid") {
+    super(message);
+    this.name = "JobControlOwnershipError";
+  }
+}
+
 export type JobControlState = {
   cancel: boolean;
   pause: boolean;
   /** Incremented on cancel for waiters */
   generation: number;
+  /** Execution ownership check installed by the job host. */
+  validator?: JobControlValidator;
 };
+
+export type JobControlValidator = () => Promise<void>;
 
 const controls = new Map<string, JobControlState>();
 const cancelWaiters = new Map<string, Set<() => void>>();
@@ -77,6 +89,10 @@ export function requestResume(jobId: string): void {
 
 export function getControl(jobId: string): JobControlState | undefined {
   return controls.get(jobId);
+}
+
+export function setControlValidator(jobId: string, validator: JobControlValidator): void {
+  ensureControl(jobId).validator = validator;
 }
 
 let fallbackExecutingJobId: string | null = null;
@@ -146,9 +162,12 @@ export async function cooperativeCheckpoint(jobId?: string | null): Promise<void
   if (!c) return;
 
   if (c.cancel) throw new JobCancelledError();
+  await c.validator?.();
+  if (c.cancel) throw new JobCancelledError();
 
   while (c.pause && !c.cancel) {
     await new Promise((r) => setTimeout(r, 50));
+    await c.validator?.();
   }
 
   if (c.cancel) throw new JobCancelledError();

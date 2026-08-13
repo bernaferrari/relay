@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,21 +8,153 @@ import {
   createAppMap,
   deleteAppMap,
   duplicateAppMap,
+  isDeviceLeaseClaimActive,
   leaseDevice,
+  listBuilds,
   deleteCompatibilityMatrix,
   listCompatibilityMatrices,
   listAppMaps,
+  listDevicePools,
   listDeviceLeases,
+  listProjects,
   readAppMap,
   readProjectVariables,
   releaseDeviceLease,
   renewDeviceLease,
+  saveBuild,
   takeOverDeviceLease,
+  saveDevicePool,
   saveCompatibilityMatrix,
   mutateStoredAppMap,
   writeProjectVariables,
 } from "./collaboration.js";
 import { addAppMapScreen } from "./app-map.js";
+
+async function withStateRoot<T>(
+  prefix: string,
+  operation: (root: string) => Promise<T>,
+): Promise<T> {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  try {
+    return await operation(root);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+test("missing state initializes safely and valid mutations retain a last-known-good backup", async () => {
+  await withStateRoot("relay-state-backup-", async (root) => {
+    assert.equal((await listProjects("local"))[0]?.id, "default");
+    await saveBuild({
+      id: "debug",
+      projectId: "p",
+      name: "Debug",
+      platform: "android",
+      status: "ready",
+    });
+    const path = join(root, "collaboration.json");
+    const first = await readFile(path, "utf8");
+    await saveBuild({
+      id: "release",
+      projectId: "p",
+      name: "Release",
+      platform: "ios",
+      status: "ready",
+    });
+    assert.equal(await readFile(`${path}.bak`, "utf8"), first);
+  });
+});
+
+test("invalid collaboration state rejects reads and mutations without changing original bytes", async () => {
+  await withStateRoot("relay-state-corrupt-", async (root) => {
+    const path = join(root, "collaboration.json");
+    const invalidStates = [
+      '{"projects":',
+      "[]",
+      JSON.stringify({ projects: {} }),
+      JSON.stringify({ builds: ["not-a-build"] }),
+      JSON.stringify({ appMaps: { "p:broken": { schemaVersion: 1 } } }),
+    ];
+    for (const source of invalidStates) {
+      await writeFile(path, source, "utf8");
+      await assert.rejects(listProjects("local"));
+      await assert.rejects(
+        saveBuild({
+          id: "must-not-write",
+          projectId: "p",
+          name: "Unsafe",
+          platform: "android",
+          status: "ready",
+        }),
+      );
+      assert.equal(await readFile(path, "utf8"), source);
+    }
+  });
+});
+
+test(
+  "non-file collaboration read failures reject without recovery writes",
+  { skip: process.platform === "win32" },
+  async () => {
+    await withStateRoot("relay-state-read-failure-", async (root) => {
+      const path = join(root, "collaboration.json");
+      await mkdir(path);
+      await assert.rejects(listProjects("local"));
+      await assert.rejects(
+        saveBuild({
+          id: "must-not-write",
+          projectId: "p",
+          name: "Unsafe",
+          platform: "android",
+          status: "ready",
+        }),
+      );
+      assert.equal((await stat(path)).isDirectory(), true);
+    });
+  },
+);
+
+test("build and device-pool IDs are isolated by project", async () => {
+  await withStateRoot("relay-state-project-keys-", async () => {
+    await saveBuild({
+      id: "debug",
+      projectId: "one",
+      name: "One debug",
+      platform: "android",
+      status: "ready",
+    });
+    await saveBuild({
+      id: "debug",
+      projectId: "two",
+      name: "Two debug",
+      platform: "ios",
+      status: "ready",
+    });
+    assert.equal((await listBuilds("one"))[0]?.name, "One debug");
+    assert.equal((await listBuilds("two"))[0]?.name, "Two debug");
+
+    await saveDevicePool({
+      id: "local",
+      projectId: "one",
+      name: "One pool",
+      platform: "android",
+      deviceSerials: ["A"],
+    });
+    await saveDevicePool({
+      id: "local",
+      projectId: "two",
+      name: "Two pool",
+      platform: "ios",
+      deviceSerials: ["B"],
+    });
+    assert.equal((await listDevicePools("one"))[0]?.name, "One pool");
+    assert.equal((await listDevicePools("two"))[0]?.name, "Two pool");
+  });
+});
 
 test("App Maps persist normalized revisions and reject unsafe stored mutations", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-maps-"));
@@ -157,6 +289,28 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
       ownerId: "worker-1",
       expiresAt: Date.now() + 60_000,
     });
+    const claim = {
+      projectId: "p",
+      deviceSerial: "ABC",
+      ownerId: "worker-1",
+      leaseId: lease.id,
+    };
+    assert.equal(await isDeviceLeaseClaimActive(claim), true);
+    assert.equal(await isDeviceLeaseClaimActive(claim, lease.expiresAt), false);
+    assert.equal(await isDeviceLeaseClaimActive({ ...claim, projectId: "other-project" }), false);
+    assert.equal(await isDeviceLeaseClaimActive({ ...claim, deviceSerial: "other-target" }), false);
+    assert.equal(await isDeviceLeaseClaimActive({ ...claim, ownerId: "other-owner" }), false);
+    const sameActorDifferentLease = await leaseDevice({
+      projectId: "p",
+      poolId: "android",
+      deviceSerial: "XYZ",
+      ownerId: "worker-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    assert.equal(
+      await isDeviceLeaseClaimActive({ ...claim, leaseId: sameActorDifferentLease.id }),
+      false,
+    );
     await assert.rejects(
       leaseDevice({
         projectId: "p",
@@ -168,6 +322,7 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
       /already leased/,
     );
     assert.equal((await releaseDeviceLease(lease.id)).status, "released");
+    assert.equal(await isDeviceLeaseClaimActive(claim), false);
     assert.equal((await listDeviceLeases("p"))[0]?.status, "released");
     const again = await leaseDevice({
       projectId: "p",
@@ -178,6 +333,7 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     });
     const later = Date.now() + 120_000;
     assert.equal((await renewDeviceLease(again.id, later)).expiresAt, later);
+    assert.equal(await isDeviceLeaseClaimActive({ ...claim, leaseId: again.id }), true);
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
@@ -219,6 +375,15 @@ test("device lease takeover is explicit, atomic, and preserves handoff provenanc
     const history = await listDeviceLeases("p");
     assert.equal(history.find((lease) => lease.id === original.id)?.status, "released");
     assert.equal(history.find((lease) => lease.id === next.id)?.status, "leased");
+    assert.equal(
+      await isDeviceLeaseClaimActive({
+        projectId: "p",
+        deviceSerial: "ABC",
+        ownerId: "human:owner",
+        leaseId: original.id,
+      }),
+      false,
+    );
     await assert.rejects(
       takeOverDeviceLease(original.id, {
         projectId: "p",

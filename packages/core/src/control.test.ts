@@ -5,11 +5,13 @@ import {
   clearControl,
   debugWaiterCount,
   ensureControl,
+  getControl,
   raceCancel,
   requestCancel,
   requestPause,
   requestResume,
   runWithJobControl,
+  setControlValidator,
   setExecutingJobId,
   throwIfCancelled,
   cooperativeCheckpoint,
@@ -86,5 +88,44 @@ describe("job control", () => {
     assert.equal(b, "ok");
     clearControl("parallel-a");
     clearControl("parallel-b");
+  });
+
+  it("validates ownership before a checkpoint continues", async () => {
+    let validations = 0;
+    setControlValidator("owned", async () => {
+      validations += 1;
+    });
+    await cooperativeCheckpoint("owned");
+    assert.equal(validations, 1);
+    clearControl("owned");
+  });
+
+  it("rejects an invalid lease before work starts", async () => {
+    setControlValidator("expired", async () => {
+      throw new Error("Job control lease is no longer valid");
+    });
+    await assert.rejects(cooperativeCheckpoint("expired"), /Job control lease is no longer valid/u);
+    clearControl("expired");
+  });
+
+  it("detects release or takeover at the next checkpoint", async () => {
+    let valid = true;
+    setControlValidator("handoff", async () => {
+      if (!valid) throw new Error("Job control lease is no longer valid");
+    });
+    await cooperativeCheckpoint("handoff");
+    valid = false;
+    await assert.rejects(cooperativeCheckpoint("handoff"), /Job control lease is no longer valid/u);
+    clearControl("handoff");
+  });
+
+  it("leaves jobs without an exclusive lease unchanged and clears validators", async () => {
+    await assert.doesNotReject(cooperativeCheckpoint("browser-without-lease"));
+    setControlValidator("cleared", async () => {
+      throw new Error("stale validator");
+    });
+    clearControl("cleared");
+    assert.equal(getControl("cleared"), undefined);
+    await assert.doesNotReject(cooperativeCheckpoint("cleared"));
   });
 });

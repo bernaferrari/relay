@@ -29,12 +29,14 @@ import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./ru
 import { classifyJobError } from "./report.js";
 import {
   JobCancelledError,
+  JobControlOwnershipError,
   clearControl,
   ensureControl,
   requestCancel,
   requestPause,
   requestResume,
   runWithJobControl,
+  setControlValidator,
   cooperativeCheckpoint,
   throwIfCancelled,
   hardStopDeviceSession,
@@ -86,6 +88,8 @@ import type { JobSummary } from "@relay/protocol";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
+import { JobRegistry } from "./job-registry.js";
+import { isDeviceLeaseClaimActive } from "./collaboration.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -216,19 +220,13 @@ export type TestJob = {
   };
 };
 
-const jobs = new Map<string, TestJob>();
-const jobOrder: string[] = [];
 const MAX_JOBS = 100;
+const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
 const activeJobIds = new Set<string>();
 const scheduler = new TargetWorkerScheduler();
 
 export function listJobs(limit = 50): TestJob[] {
-  return jobOrder
-    .slice()
-    .reverse()
-    .slice(0, limit)
-    .map((id) => jobs.get(id)!)
-    .filter(Boolean);
+  return jobRegistry.list(limit);
 }
 
 function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
@@ -292,11 +290,13 @@ export function summarizeJob(job: TestJob): JobSummary {
 }
 
 export function getJob(id: string): TestJob | undefined {
-  return jobs.get(id);
+  return jobRegistry.get(id);
 }
 
 export function getActiveJobs(): TestJob[] {
-  return [...activeJobIds].map((id) => jobs.get(id)).filter((job): job is TestJob => Boolean(job));
+  return [...activeJobIds]
+    .map((id) => jobRegistry.get(id))
+    .filter((job): job is TestJob => Boolean(job));
 }
 
 export function getActiveJob(targetId?: string): TestJob | null {
@@ -309,19 +309,34 @@ export function listTargetWorkers(): TargetWorkerStatus[] {
   return scheduler.statuses();
 }
 
-function remember(job: TestJob): void {
-  jobs.set(job.id, job);
-  jobOrder.push(job.id);
-  while (jobOrder.length > MAX_JOBS) {
-    const old = jobOrder.shift();
-    if (old) jobs.delete(old);
-  }
-}
-
 function setOutcome(job: TestJob): void {
   const classified = classifyRunOutcome(job);
   job.outcome = classified.outcome;
   job.failureCategory = classified.failureCategory;
+}
+
+function jobLeaseValidator(job: TestJob): (() => Promise<void>) | undefined {
+  const context = job.operationContext;
+  if (job.targetContext.kind !== "device" || !context?.leaseId) return undefined;
+  if (
+    !context.projectId ||
+    !context.actorId ||
+    (job.projectId !== undefined && job.projectId !== context.projectId) ||
+    (job.ownerId !== undefined && job.ownerId !== context.actorId)
+  ) {
+    return async () => {
+      throw new JobControlOwnershipError();
+    };
+  }
+  return async () => {
+    const active = await isDeviceLeaseClaimActive({
+      projectId: context.projectId,
+      deviceSerial: job.targetContext.kind === "device" ? job.targetContext.serial : "",
+      ownerId: context.actorId,
+      leaseId: context.leaseId!,
+    }).catch(() => false);
+    if (!active) throw new JobControlOwnershipError();
+  };
 }
 
 export type EnqueueJobInput = {
@@ -420,7 +435,7 @@ export function replayPersistedRun(run: PersistedRun): TestJob {
 }
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
-  const parent = input.retryOf ? jobs.get(input.retryOf) : undefined;
+  const parent = input.retryOf ? jobRegistry.get(input.retryOf) : undefined;
   const id = randomUUID();
   const targetKind = input.targetKind ?? parent?.targetKind ?? "device";
   const targetContext: TargetContext =
@@ -537,10 +552,10 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
   requireOperationContext();
   const job = makeJob(input);
   if (input.retryOf) {
-    const parent = jobs.get(input.retryOf);
+    const parent = jobRegistry.get(input.retryOf);
     if (parent) parent.retriedBy = job.id;
   }
-  remember(job);
+  jobRegistry.remember(job);
   publish({
     type: "job.queued",
     at: job.queuedAt,
@@ -568,7 +583,7 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
 
 /** Re-run a failed (or any) job — success after failure marks healed. */
 export function retryJob(id: string): TestJob {
-  const parent = jobs.get(id);
+  const parent = jobRegistry.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
   return enqueueJob({
     recipe: parent.recipeId!,
@@ -703,7 +718,7 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
  * ADB work is more likely to drop (best-effort).
  */
 export function cancelJob(id: string): TestJob {
-  const job = jobs.get(id);
+  const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
 
   if (
@@ -725,7 +740,9 @@ export function cancelJob(id: string): TestJob {
     scheduler.remove(id);
     job.startedAt = job.startedAt ?? now();
     finalizeCancelled(job);
-    void persistRun(job).catch(() => undefined);
+    void persistRun(job)
+      .then(() => jobRegistry.pruneTerminalHistory())
+      .catch(() => undefined);
     clearControl(id);
     return job;
   }
@@ -743,7 +760,7 @@ export function cancelJob(id: string): TestJob {
 
 /** Pause a running job (cooperative — takes effect at next sleep/checkpoint). */
 export function pauseJob(id: string): TestJob {
-  const job = jobs.get(id);
+  const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
   if (job.status !== "running") {
     throw new Error(`Cannot pause job in status ${job.status}`);
@@ -764,7 +781,7 @@ export function pauseJob(id: string): TestJob {
 
 /** Resume a paused job. */
 export function resumeJob(id: string): TestJob {
-  const job = jobs.get(id);
+  const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
   if (job.status !== "paused") {
     throw new Error(`Cannot resume job in status ${job.status}`);
@@ -972,11 +989,55 @@ async function captureAutomaticState(
 }
 
 async function executeJob(id: string): Promise<void> {
-  const job = jobs.get(id);
-  if (!job) return;
+  const job = jobRegistry.get(id);
+  if (!job) {
+    const message = `Job registry invariant violated: scheduled job ${id} is missing`;
+    publish({ type: "error", at: now(), message, where: "session.executeJob" });
+    throw new Error(message);
+  }
   if (job.status === "cancelled") return;
 
   ensureControl(id);
+  const validateLease = jobLeaseValidator(job);
+  if (validateLease) {
+    setControlValidator(id, validateLease);
+    try {
+      await cooperativeCheckpoint(id);
+    } catch (error) {
+      job.startedAt = now();
+      if (
+        error instanceof JobCancelledError ||
+        (error instanceof Error && error.name === "JobCancelledError")
+      ) {
+        finalizeCancelled(job);
+      } else {
+        const message =
+          error instanceof JobControlOwnershipError ||
+          (error instanceof Error && error.name === "JobControlOwnershipError")
+            ? "Job control lease is no longer valid"
+            : "Job control ownership could not be validated";
+        job.finishedAt = job.startedAt;
+        job.status = "error";
+        job.error = message;
+        job.errorCode = classifyError(message);
+        job.logs.push(`==> FAIL: ${message}`);
+        setOutcome(job);
+        publish({
+          type: "job.finished",
+          at: job.finishedAt,
+          jobId: job.id,
+          action: job.action,
+          ok: false,
+          error: message,
+          durationMs: 0,
+        });
+      }
+      await persistCompletedRun(job, (line) => job.logs.push(line));
+      clearControl(id);
+      jobRegistry.pruneTerminalHistory();
+      return;
+    }
+  }
   activeJobIds.add(id);
   job.status = "running";
   job.startedAt = now();
@@ -1156,6 +1217,13 @@ async function executeJob(id: string): Promise<void> {
       await persistCompletedRun(job, pushLog);
       return;
     }
+    if (
+      err instanceof JobControlOwnershipError ||
+      (err instanceof Error && err.name === "JobControlOwnershipError")
+    ) {
+      await hardStopDeviceSession(job.targetContext);
+      resetDeviceClient(job.targetContext);
+    }
     await finishEvidence();
     const message = err instanceof Error ? err.message : String(err);
     job.finishedAt = now();
@@ -1183,6 +1251,7 @@ async function executeJob(id: string): Promise<void> {
     await finishEvidence();
     activeJobIds.delete(id);
     clearControl(id);
+    jobRegistry.pruneTerminalHistory();
   }
 }
 
@@ -1194,7 +1263,7 @@ export async function attachJobFrame(opts: {
   mime?: string;
 }): Promise<TraceFrameRef | null> {
   if (!visualEvidenceAllowed()) return null;
-  const job = opts.jobId ? jobs.get(opts.jobId) : getActiveJob();
+  const job = opts.jobId ? jobRegistry.get(opts.jobId) : getActiveJob();
   if (!job) return null;
   const frame = await writeFramePng(job, opts.base64, opts.caption);
   const step = job.steps[job.steps.length - 1];

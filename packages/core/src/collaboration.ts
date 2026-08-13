@@ -36,6 +36,12 @@ type CollaborationState = {
   idempotency: Record<string, number | string>;
 };
 
+type LoadedCollaborationState = {
+  state: CollaborationState;
+  /** Exact bytes that parsed and validated successfully. */
+  source?: string;
+};
+
 let queue = Promise.resolve();
 
 function stateRoot(): string {
@@ -62,44 +68,124 @@ function emptyState(): CollaborationState {
   };
 }
 
-async function readState(): Promise<CollaborationState> {
-  try {
-    const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<CollaborationState>;
-    // App Map schema v1 is the only persisted canvas. Unsupported maps are
-    // discarded instead of migrated or kept as dual state.
-    const appMaps = Object.fromEntries(
-      Object.entries(parsed.appMaps ?? {}).filter(
-        ([, value]) => value.schemaVersion === APP_MAP_SCHEMA_VERSION && value.notes,
-      ),
-    );
-    const empty = emptyState();
-    return {
-      projects: parsed.projects ?? empty.projects,
-      builds: parsed.builds ?? [],
-      pools: parsed.pools ?? [],
-      matrices: parsed.matrices ?? [],
-      leases: parsed.leases ?? [],
-      variables: parsed.variables ?? {},
-      appMaps,
-      idempotency: parsed.idempotency ?? {},
-    };
-  } catch {
-    return emptyState();
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-async function persist(state: CollaborationState): Promise<void> {
+function invalidState(message: string): never {
+  throw new Error(`Invalid collaboration state: ${message}`);
+}
+
+function objectArray<T>(state: Record<string, unknown>, key: string, fallback: T[]): T[] {
+  const value = state[key];
+  if (value === undefined) return fallback;
+  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) {
+    invalidState(`${key} must be an array of objects`);
+  }
+  return value as T[];
+}
+
+function objectRecord<T>(
+  state: Record<string, unknown>,
+  key: string,
+  fallback: Record<string, T>,
+): Record<string, T> {
+  const value = state[key];
+  if (value === undefined) return fallback;
+  if (!isRecord(value)) invalidState(`${key} must be an object`);
+  return value as Record<string, T>;
+}
+
+function parseState(source: string): CollaborationState {
+  let value: unknown;
+  try {
+    value = JSON.parse(source) as unknown;
+  } catch (error) {
+    throw new Error("Invalid collaboration state: JSON could not be parsed", { cause: error });
+  }
+  if (!isRecord(value)) invalidState("top level must be an object");
+
+  const empty = emptyState();
+  const variables = objectRecord<Revisioned<TestData[]>>(value, "variables", {});
+  for (const [projectId, revision] of Object.entries(variables)) {
+    if (
+      !isRecord(revision) ||
+      typeof revision.revision !== "number" ||
+      !Number.isSafeInteger(revision.revision) ||
+      typeof revision.updatedAt !== "number" ||
+      !Number.isFinite(revision.updatedAt) ||
+      !Array.isArray(revision.value)
+    ) {
+      invalidState(`variables.${projectId} must be revisioned variable data`);
+    }
+  }
+
+  const rawAppMaps = objectRecord<unknown>(value, "appMaps", {});
+  const appMaps: Record<string, AppMap> = {};
+  for (const [key, candidate] of Object.entries(rawAppMaps)) {
+    const appMap = validateAppMap(candidate);
+    if (appMap.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
+      invalidState(`appMaps.${key} has an unsupported schema`);
+    }
+    if (key !== `${appMap.projectId}:${appMap.id}`) {
+      invalidState(`appMaps.${key} does not match its project and id`);
+    }
+    appMaps[key] = appMap;
+  }
+
+  const idempotency = objectRecord<number | string>(value, "idempotency", {});
+  if (
+    Object.values(idempotency).some((item) => typeof item !== "number" && typeof item !== "string")
+  ) {
+    invalidState("idempotency values must be strings or numbers");
+  }
+
+  return {
+    projects: objectArray<Project>(value, "projects", empty.projects),
+    builds: objectArray<Build>(value, "builds", []),
+    pools: objectArray<DevicePool>(value, "pools", []),
+    matrices: objectArray<CompatibilityMatrix>(value, "matrices", []),
+    leases: objectArray<DeviceLease>(value, "leases", []),
+    variables,
+    appMaps,
+    idempotency,
+  };
+}
+
+async function loadState(): Promise<LoadedCollaborationState> {
+  let source: string;
+  try {
+    source = await readFile(statePath(), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: emptyState() };
+    throw error;
+  }
+  return { state: parseState(source), source };
+}
+
+async function readState(): Promise<CollaborationState> {
+  return (await loadState()).state;
+}
+
+async function persist(state: CollaborationState, previousSource?: string): Promise<void> {
   await mkdir(stateRoot(), { recursive: true });
-  const temp = `${statePath()}.${process.pid}.tmp`;
+  const path = statePath();
+  if (previousSource !== undefined) {
+    const backup = `${path}.bak`;
+    const backupTemp = `${backup}.${process.pid}.tmp`;
+    await writeFile(backupTemp, previousSource, "utf8");
+    await rename(backupTemp, backup);
+  }
+  const temp = `${path}.${process.pid}.tmp`;
   await writeFile(temp, JSON.stringify(state, null, 2), "utf8");
-  await rename(temp, statePath());
+  await rename(temp, path);
 }
 
 async function mutate<T>(fn: (state: CollaborationState) => Promise<T> | T): Promise<T> {
   const pending = queue.then(async () => {
-    const state = await readState();
-    const result = await fn(state);
-    await persist(state);
+    const loaded = await loadState();
+    const result = await fn(loaded.state);
+    await persist(loaded.state, loaded.source);
     return result;
   });
   queue = pending.then(
@@ -163,9 +249,14 @@ export async function readBuild(projectId: string, id: string): Promise<Build | 
 export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): Promise<Build> {
   return mutate((state) => {
     const at = now();
-    const existing = state.builds.find((item) => item.id === input.id);
+    const existing = state.builds.find(
+      (item) => item.projectId === input.projectId && item.id === input.id,
+    );
     const build = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
-    state.builds = [...state.builds.filter((item) => item.id !== input.id), build];
+    state.builds = [
+      ...state.builds.filter((item) => item.projectId !== input.projectId || item.id !== input.id),
+      build,
+    ];
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -191,9 +282,14 @@ export async function saveDevicePool(
   validateDevicePool(input);
   return mutate((state) => {
     const at = now();
-    const existing = state.pools.find((item) => item.id === input.id);
+    const existing = state.pools.find(
+      (item) => item.projectId === input.projectId && item.id === input.id,
+    );
     const pool = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
-    state.pools = [...state.pools.filter((item) => item.id !== input.id), pool];
+    state.pools = [
+      ...state.pools.filter((item) => item.projectId !== input.projectId || item.id !== input.id),
+      pool,
+    ];
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -286,6 +382,27 @@ export async function listDeviceLeases(projectId: string): Promise<DeviceLease[]
         ? { ...item, status: "expired" as const }
         : item,
     );
+}
+
+/** Read-only execution check. It never creates, renews, or changes a lease. */
+export async function isDeviceLeaseClaimActive(
+  input: {
+    projectId: string;
+    deviceSerial: string;
+    ownerId: string;
+    leaseId: string;
+  },
+  at = now(),
+): Promise<boolean> {
+  const lease = (await readState()).leases.find((item) => item.id === input.leaseId);
+  return Boolean(
+    lease &&
+    lease.projectId === input.projectId &&
+    lease.deviceSerial === input.deviceSerial &&
+    lease.ownerId === input.ownerId &&
+    lease.status === "leased" &&
+    lease.expiresAt > at,
+  );
 }
 
 export async function leaseDevice(
