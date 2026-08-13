@@ -6,7 +6,7 @@ import test from "node:test";
 import { JobRegistry } from "./job-registry.js";
 import { leaseDevice } from "./collaboration.js";
 import { runWithOperationContext } from "./operation-context.js";
-import { enqueueJob, getJob, type TestJob } from "./session.js";
+import { enqueueJob, waitForJobCompletion } from "./session.js";
 
 type RegistryJob = {
   id: string;
@@ -76,16 +76,6 @@ test("retains terminal jobs until persistence succeeds", () => {
   assert.equal(registry.get(failedWrite.id), undefined);
 });
 
-async function waitForTerminal(id: string): Promise<TestJob> {
-  const timeout = Date.now() + 5_000;
-  while (Date.now() < timeout) {
-    const job = getJob(id);
-    if (job && ["ok", "error", "healed", "cancelled"].includes(job.status)) return job;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for job ${id}`);
-}
-
 test("an expired frozen lease fails before device execution starts", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-session-lease-"));
   const previousState = process.env.RELAY_STATE_DIR;
@@ -93,52 +83,62 @@ test("an expired frozen lease fails before device execution starts", async () =>
   process.env.RELAY_STATE_DIR = root;
   process.env.RELAY_RUNS_DIR = join(root, "runs");
   try {
-    const lease = await leaseDevice({
-      projectId: "project-a",
-      poolId: "local",
-      deviceSerial: "unreachable-device",
-      ownerId: "agent:runner",
-      expiresAt: Date.now() - 1,
-    });
-    const job = runWithOperationContext(
-      {
-        schemaVersion: 1,
-        actorId: "agent:runner",
-        actorKind: "agent",
-        organizationId: "org-a",
+    const jobs = [];
+    for (let index = 0; index < 20; index += 1) {
+      const serial = `unreachable-device-${index}`;
+      const lease = await leaseDevice({
         projectId: "project-a",
-        operationId: "job.start",
-        requestId: crypto.randomUUID(),
-        idempotencyKey: crypto.randomUUID(),
-        issuedAt: Date.now(),
-        leaseId: lease.id,
-      },
-      () =>
-        enqueueJob({
-          recipe: "lease-preflight",
-          serial: "unreachable-device",
-          platform: "android",
-          projectId: "project-a",
-          ownerId: "agent:runner",
-          recipeSnapshot: {
-            id: "lease-preflight",
-            title: "Lease preflight",
-            source: "builtin",
-            steps: [],
-            createdAt: 1,
-            updatedAt: 1,
+        poolId: "local",
+        deviceSerial: serial,
+        ownerId: "agent:runner",
+        expiresAt: Date.now() - 1,
+      });
+      jobs.push(
+        runWithOperationContext(
+          {
+            schemaVersion: 1,
+            actorId: "agent:runner",
+            actorKind: "agent",
+            organizationId: "org-a",
+            projectId: "project-a",
+            operationId: "job.start",
+            requestId: crypto.randomUUID(),
+            idempotencyKey: crypto.randomUUID(),
+            issuedAt: Date.now(),
+            leaseId: lease.id,
           },
-          recipeGraph: {},
-        }),
-    );
-    const terminal = await waitForTerminal(job.id);
-    assert.equal(terminal.status, "error");
-    assert.equal(terminal.error, "Job control lease is no longer valid");
-    assert.equal(
-      terminal.logs.some((line) => line.includes("device missing")),
-      false,
-      "device discovery never became the failure path",
-    );
+          () =>
+            enqueueJob({
+              recipe: "lease-preflight",
+              serial,
+              platform: "android",
+              projectId: "project-a",
+              ownerId: "agent:runner",
+              recipeSnapshot: {
+                id: "lease-preflight",
+                title: "Lease preflight",
+                source: "builtin",
+                steps: [],
+                createdAt: 1,
+                updatedAt: 1,
+              },
+              recipeGraph: {},
+            }),
+        ),
+      );
+    }
+
+    const completed = await Promise.all(jobs.map((job) => waitForJobCompletion(job.id)));
+    for (const terminal of completed) {
+      assert.equal(terminal.status, "error");
+      assert.equal(terminal.error, "Job control lease is no longer valid");
+      assert.equal(terminal.persisted, true, "completion includes durable run persistence");
+      assert.equal(
+        terminal.logs.some((line) => line.includes("device missing")),
+        false,
+        "device discovery never became the failure path",
+      );
+    }
   } finally {
     if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousState;

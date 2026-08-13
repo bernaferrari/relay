@@ -222,6 +222,7 @@ export type TestJob = {
 
 const MAX_JOBS = 100;
 const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
+const jobCompletions = new WeakMap<TestJob, { promise: Promise<void>; resolve: () => void }>();
 const activeJobIds = new Set<string>();
 const scheduler = new TargetWorkerScheduler();
 
@@ -291,6 +292,18 @@ export function summarizeJob(job: TestJob): JobSummary {
 
 export function getJob(id: string): TestJob | undefined {
   return jobRegistry.get(id);
+}
+
+/** Wait until the scheduled execution has fully drained, including its
+ * terminal persistence attempt and lifecycle cleanup. A terminal status alone
+ * is not this boundary: it is assigned before the terminal run is written. */
+export async function waitForJobCompletion(id: string): Promise<TestJob> {
+  const job = jobRegistry.get(id);
+  if (!job) throw new Error(`Unknown job: ${id}`);
+  const completion = jobCompletions.get(job);
+  if (!completion) throw new Error(`Job ${id} has no execution lifecycle`);
+  await completion.promise;
+  return job;
 }
 
 export function getActiveJobs(): TestJob[] {
@@ -551,6 +564,11 @@ export function jobForTransport(job: TestJob): TestJob {
 export function enqueueJob(input: EnqueueJobInput): TestJob {
   requireOperationContext();
   const job = makeJob(input);
+  let resolveCompletion!: () => void;
+  const completion = new Promise<void>((resolve) => {
+    resolveCompletion = resolve;
+  });
+  jobCompletions.set(job, { promise: completion, resolve: resolveCompletion });
   if (input.retryOf) {
     const parent = jobRegistry.get(input.retryOf);
     if (parent) parent.retriedBy = job.id;
@@ -569,13 +587,17 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
     targetId: job.browserTargetId ?? job.serial!,
     capacity: job.workerCapacity!,
     run: async () => {
-      if (job.status === "cancelled") return;
-      const execute = () =>
-        runWithJobControl(job.id, () =>
-          runWithTargetContext(job.targetContext, () => executeJob(job.id)),
-        );
-      if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
-      else await execute();
+      try {
+        if (job.status === "cancelled") return;
+        const execute = () =>
+          runWithJobControl(job.id, () =>
+            runWithTargetContext(job.targetContext, () => executeJob(job.id)),
+          );
+        if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
+        else await execute();
+      } finally {
+        resolveCompletion();
+      }
     },
   });
   return job;
@@ -742,7 +764,8 @@ export function cancelJob(id: string): TestJob {
     finalizeCancelled(job);
     void persistRun(job)
       .then(() => jobRegistry.pruneTerminalHistory())
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => jobCompletions.get(job)?.resolve());
     clearControl(id);
     return job;
   }
@@ -1292,17 +1315,5 @@ export async function runJobSync(input: EnqueueJobInput): Promise<TestJob> {
       ? await freezeRecipeExecution(input.recipe)
       : undefined;
   const job = enqueueJob({ ...input, ...frozen });
-  for (;;) {
-    const current = getJob(job.id);
-    if (!current) throw new Error("job vanished");
-    if (
-      current.status === "ok" ||
-      current.status === "error" ||
-      current.status === "healed" ||
-      current.status === "cancelled"
-    ) {
-      return current;
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
+  return waitForJobCompletion(job.id);
 }
