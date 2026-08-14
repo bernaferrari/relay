@@ -2,7 +2,6 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { useServer } from "../context/server";
 import { useRecorder } from "../context/recorder";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
-import { useCommand } from "../context/command";
 import { usePlatform } from "../context/platform";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
@@ -51,6 +50,8 @@ import {
 } from "../lib/use-device-stage-recorded-evidence";
 import { useDeviceStageAccessibility } from "./use-device-stage-accessibility";
 import { useDeviceStagePicker } from "./use-device-stage-picker";
+import { useDeviceStageLiveFrame } from "../lib/use-device-stage-live-frame";
+import { useDeviceStageKeyboard } from "../lib/use-device-stage-keyboard";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: {
@@ -70,33 +71,10 @@ export function DeviceStage(_props: {
 }) {
   const server = useServer();
   const rec = useRecorder();
-  const cmd = useCommand();
   const platform = usePlatform();
   const embeddedRecordingControls = () => _props.recordingControls === "embedded";
 
-  const [liveFrameSrc, setLiveFrameSrc] = createSignal("");
-  let liveFrameObjectUrl = "";
-  createEffect(() => {
-    const live = server.liveFrame();
-    const previous = liveFrameObjectUrl;
-    if (!live?.base64) {
-      liveFrameObjectUrl = "";
-      setLiveFrameSrc("");
-      if (previous) URL.revokeObjectURL(previous);
-      return;
-    }
-    const binary = atob(live.base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    liveFrameObjectUrl = URL.createObjectURL(new Blob([bytes], { type: live.mime || "image/png" }));
-    setLiveFrameSrc(liveFrameObjectUrl);
-    if (previous) URL.revokeObjectURL(previous);
-  });
-  onCleanup(() => {
-    if (liveFrameObjectUrl) URL.revokeObjectURL(liveFrameObjectUrl);
-  });
+  const liveFrameSrc = useDeviceStageLiveFrame();
   const [stageView, setStageView] = createSignal<DeviceStageView>("live");
   const liveViewActive = () => rec.interacting() && stageView() === "live";
   const liveControlActive = () => liveViewActive() && Boolean(server.selectedLeaseId());
@@ -217,29 +195,10 @@ export function DeviceStage(_props: {
     },
   });
 
-  // ── Typing capture (plan 010 step 3.3): route printable keys + Backspace +
-  //    Enter to the phone while Record is active. The modal/focus/modifier
-  //    gate here keeps palette/dialog/input keys (⌘K included) from leaking to
-  //    the device; the recorder owns the buffer + flush.
-  const onDriveKey = (e: KeyboardEvent) => {
-    if (!liveControlActive()) return;
-    if (cmd.modalOpen()) return;
-    // Modifier chords belong to the app / command palette, never the phone.
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    // Don't steal keystrokes meant for an app input, textarea, or editor.
-    const ae = typeof document !== "undefined" ? document.activeElement : null;
-    // Control mode only owns the keyboard after the user focuses the mirrored
-    // screen. Record mode remains armed until the user switches it off.
-    if (!rec.recording() && ae !== deviceScreenEl) return;
-    if (
-      ae &&
-      (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || (ae as HTMLElement).isContentEditable)
-    )
-      return;
-    if (rec.feedTypeKey(e)) e.preventDefault();
-  };
-  window.addEventListener("keydown", onDriveKey);
-  onCleanup(() => window.removeEventListener("keydown", onDriveKey));
+  useDeviceStageKeyboard({
+    controlActive: liveControlActive,
+    screenElement: () => deviceScreenEl,
+  });
 
   // ── Live control: auto-refresh the stage image + snapshot while controlling.
   //    Skips a tick while a request is in flight, the tab is hidden, the server

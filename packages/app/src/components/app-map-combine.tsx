@@ -44,13 +44,9 @@ import {
 } from "./app-map-combine-controls";
 import { AppMapStateSetEditor } from "./app-map-state-set-editor";
 import { Icon } from "./icon";
+import { useAppMapCombineSectionFocus } from "../lib/use-app-map-combine-section-focus";
 
-const MAX_DEVICE_WORLDS = 250;
-const MAX_PREVIEW_WORLDS = 40;
-/**
- * A Figma-like run-plan inspector. Modifiers are dimensions, tests are
- * columns, and the visible grid is the exact work Relay will execute.
- */
+const [MAX_DEVICE_WORLDS, MAX_PREVIEW_WORLDS] = [250, 40];
 export function AppMapCombine(props: {
   onClose: () => void;
   onOpenDevice: () => void;
@@ -70,7 +66,6 @@ export function AppMapCombine(props: {
   const [savingOnly, setSavingOnly] = createSignal(false);
   const [preflight, setPreflight] = createSignal<AppMapCombinePreflight>();
   const [promotingRecordedPathId, setPromotingRecordedPathId] = createSignal<string>();
-  let scrollArea: HTMLDivElement | undefined;
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
@@ -108,17 +103,9 @@ export function AppMapCombine(props: {
   });
   const modifierEditorOpen = () => creatingSet() || Boolean(editingModifierId());
 
-  createEffect(() => {
-    const focusSection = props.focusSection;
-    if (!focusSection || !scrollArea || modifierEditorOpen()) return;
-    queueMicrotask(() => {
-      const section = scrollArea?.querySelector<HTMLElement>(
-        `[data-matrix-section="${focusSection}"]`,
-      );
-      if (!section || !scrollArea) return;
-      scrollArea.scrollTop = Math.max(0, section.offsetTop - 12);
-      section.focus({ preventScroll: true });
-    });
+  const observeScrollArea = useAppMapCombineSectionFocus({
+    section: () => props.focusSection,
+    editorOpen: modifierEditorOpen,
   });
 
   function valuesFor(variable: AppMapVariable): string[] {
@@ -245,8 +232,6 @@ export function AppMapCombine(props: {
   });
 
   createEffect(() => {
-    // A server preflight describes the saved matrix revision. Hide it as soon
-    // as the draft changes so an old “Ready” badge can never bless new work.
     selectedVariableIds();
     selectedValues();
     selectedTestKeys();
@@ -283,8 +268,6 @@ export function AppMapCombine(props: {
     setBusy(true);
     setPromotingRecordedPathId(candidate.id);
     try {
-      // Load at the mutation boundary so this never converts stale canvas
-      // geometry into a route after another person has edited the map.
       const currentMap = await server.loadAppMap(initialMap.id);
       const currentCandidate = recordedPathCandidates(currentMap).find((item) =>
         sameRecordedPathConnectionIds(item, candidate.connectionIds),
@@ -614,9 +597,7 @@ export function AppMapCombine(props: {
       <AppMapCombineHeader headline={headline()} subhead={subhead()} onClose={props.onClose} />
 
       <div
-        ref={(element) => {
-          scrollArea = element;
-        }}
+        ref={observeScrollArea}
         class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
         onWheel={(event) => event.stopPropagation()}
       >
