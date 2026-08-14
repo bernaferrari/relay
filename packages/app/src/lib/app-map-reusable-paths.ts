@@ -1,4 +1,10 @@
-import type { AppMap, AppMapTest, Connection, Flow } from "@relay/protocol";
+import {
+  APP_MAP_TEST_INTENT_SCHEMA_VERSION,
+  type AppMap,
+  type AppMapScenarioTest,
+  type Connection,
+  type Flow,
+} from "@relay/protocol";
 
 /**
  * A ready map recording that is not owned by a saved Flow yet.  A recording
@@ -207,7 +213,8 @@ function uniqueName(base: string, usedNames: Iterable<string>): string {
 }
 
 /** Build the two durable objects required by a run matrix from one explicit
- * recorded candidate. Callers persist the Flow and Test together in one revision. */
+ * recorded candidate. The Test binds the reviewed connections directly so new
+ * authoring never creates the legacy read-only Path document. */
 export function makeReusablePathFromRecording(
   map: Pick<
     AppMap,
@@ -215,7 +222,7 @@ export function makeReusablePathFromRecording(
   >,
   candidate: RecordedPathCandidate,
   at: number,
-): { flow: Flow; test: AppMapTest } {
+): { flow: Flow; test: AppMapScenarioTest } {
   if (!isRecordedPathCandidateRunnable(map, candidate)) {
     throw new Error("This recording cannot become a reusable path until every screen is verified");
   }
@@ -240,14 +247,26 @@ export function makeReusablePathFromRecording(
     createdAt: at,
     updatedAt: at,
   };
-  const test: AppMapTest = {
+  const test: AppMapScenarioTest = {
     id: testId,
     organizationId: map.organizationId,
     projectId: map.projectId,
     appMapId: map.id,
     name: testName,
-    kind: "path",
-    flowId,
+    kind: "scenario",
+    intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
+    steps: [
+      {
+        id: `${testId}-path`,
+        kind: "instruction",
+        intent: `Follow ${testName}`,
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: [...candidate.connectionIds],
+        },
+      },
+    ],
     createdAt: at,
     updatedAt: at,
   };

@@ -195,6 +195,36 @@ test("scenario tests compile all eight intent kinds deterministically with prove
   );
 });
 
+test("scenario capture policy compiles explicit screen evidence", () => {
+  const presentedSteps = (work: AppMapScenarioTest) =>
+    compileAppMapTest(fixture(), work).root.steps.map((step) => [
+      step.kind,
+      step.kind === "screenshot" ? step.caption : undefined,
+    ]);
+  const every = scenario();
+  every.steps = [every.steps[0]!];
+  every.capture = { mode: "every-screen" };
+  assert.deepEqual(presentedSteps(every), [
+    ["screenshot", "screen:home"],
+    ["module", undefined],
+    ["screenshot", "screen:cart"],
+  ]);
+
+  const checkpoint = structuredClone(every);
+  checkpoint.capture = { mode: "checkpoints", screenIds: ["cart"] };
+  assert.deepEqual(presentedSteps(checkpoint), [
+    ["module", undefined],
+    ["screenshot", "screen:cart"],
+  ]);
+
+  const final = structuredClone(every);
+  final.capture = { mode: "final-screen" };
+  assert.deepEqual(presentedSteps(final), [
+    ["module", undefined],
+    ["screenshot", "final:Checkout smoke"],
+  ]);
+});
+
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
   const work = scenario();
   work.steps[0] = {

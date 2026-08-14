@@ -177,8 +177,13 @@ test("creates a durable flow and test without treating a recording as already ru
   assert.deepEqual(reusable.flow.connectionIds, ["home-menu"]);
   assert.equal(reusable.flow.startScreenId, "home");
   assert.match(reusable.flow.name, /^Reusable path: Home → Menu$/);
-  assert.equal(reusable.test.kind, "path");
-  assert.equal(reusable.test.flowId, reusable.flow.id);
+  assert.equal(reusable.test.kind, "scenario");
+  assert.equal(reusable.test.steps[0]?.kind, "instruction");
+  assert.deepEqual(reusable.test.steps[0]?.binding, {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: ["home-menu"],
+  });
   assert.equal(reusable.test.name, "Home → Menu");
   assert.equal(reusable.test.createdAt, 20);
 });

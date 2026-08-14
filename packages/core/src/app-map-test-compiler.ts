@@ -80,6 +80,20 @@ export function compileAppMapScenarioTest(
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   let compiledCount = 0;
+  const captureScreen = (screenId: string): RecipeStep | undefined => {
+    const capture = test.capture;
+    const mode = capture?.mode;
+    if (
+      mode !== "every-screen" &&
+      !(capture?.mode === "checkpoints" && capture.screenIds.includes(screenId))
+    ) {
+      return undefined;
+    }
+    return {
+      kind: "screenshot",
+      caption: `screen:${map.screens[screenId]?.title ?? screenId}`,
+    };
+  };
 
   const importRecipes = (
     step: AppMapScenarioTestStep,
@@ -122,7 +136,15 @@ export function compileAppMapScenarioTest(
               fail("draft-connection", test, step, `Connection ${connectionId} is not ready`);
             const compiled = compileAppMapConnection(map, connectionId);
             importRecipes(step, compiled.recipes, connectionId);
+            if (recipeSteps.length === 0) {
+              const sourceCapture = captureScreen(connection.fromScreenId);
+              if (sourceCapture) recipeSteps.push(sourceCapture);
+            }
             recipeSteps.push({ kind: "module", recipeId: compiled.rootRecipeId });
+            if (connection.destination.kind === "screen") {
+              const destinationCapture = captureScreen(connection.destination.screenId);
+              if (destinationCapture) recipeSteps.push(destinationCapture);
+            }
             referencedEntityIds.push(connectionId);
           }
           break;
@@ -215,6 +237,10 @@ export function compileAppMapScenarioTest(
           `Test exceeds ${MAX_COMPILED_STEPS} compiled steps`,
         );
       }
+    }
+    if (suffix === "root" && test.capture?.mode === "final-screen") {
+      recipeSteps.push({ kind: "screenshot", caption: `final:${test.name}` });
+      compiledCount += 1;
     }
     graph[id] = {
       id,

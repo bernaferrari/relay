@@ -2,9 +2,11 @@ import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
 import type {
   AppMapCapturePolicy,
   AppMapCombinePreflight,
+  AppMapTest,
   AppMapVariable,
   CaseExpansionStrategy,
 } from "@relay/protocol";
+import { APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
@@ -329,22 +331,64 @@ export function AppMapCombine(props: {
       if (!existing) {
         const now = Date.now();
         const rootScreenId = tourRootScreenId(currentMap, candidate);
+        const isFlow = candidate.source === "flow";
+        const test: AppMapTest = isFlow
+          ? {
+              id,
+              organizationId: currentMap.organizationId,
+              projectId: currentMap.projectId,
+              appMapId: currentMap.id,
+              name: candidate.name,
+              kind: "scenario",
+              intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
+              steps: [
+                ...(candidate.flow.setup
+                  ? [
+                      {
+                        id: `${id}-setup`,
+                        kind: "module" as const,
+                        intent: `Prepare ${candidate.name}`,
+                        binding: {
+                          status: "resolved" as const,
+                          kind: "routine" as const,
+                          routineId: candidate.flow.setup.routineId,
+                          ...(candidate.flow.setup.bindings
+                            ? { bindings: candidate.flow.setup.bindings }
+                            : {}),
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  id: `${id}-path`,
+                  kind: "instruction",
+                  intent: `Follow ${candidate.name}`,
+                  binding: {
+                    status: "resolved",
+                    kind: "connections",
+                    connectionIds: [...candidate.flow.connectionIds],
+                  },
+                },
+              ],
+              createdAt: now,
+              updatedAt: now,
+            }
+          : {
+              id,
+              organizationId: currentMap.organizationId,
+              projectId: currentMap.projectId,
+              appMapId: currentMap.id,
+              name: candidate.name,
+              kind: "tour",
+              rootScreenId,
+              screenIds: [...candidate.group.screenIds],
+              createdAt: now,
+              updatedAt: now,
+            };
         const saved = await server.saveTest({
           appMapId: currentMap.id,
           expectedRevision: revision,
-          test: {
-            id,
-            organizationId: currentMap.organizationId,
-            projectId: currentMap.projectId,
-            appMapId: currentMap.id,
-            name: candidate.name,
-            kind: candidate.source === "flow" ? "path" : "tour",
-            ...(candidate.source === "flow"
-              ? { flowId: candidate.flow.id }
-              : { rootScreenId, screenIds: [...candidate.group.screenIds] }),
-            createdAt: now,
-            updatedAt: now,
-          },
+          test,
         });
         revision = saved.appMap.revision;
       }
