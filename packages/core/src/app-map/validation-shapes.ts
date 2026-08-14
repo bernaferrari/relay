@@ -1,9 +1,7 @@
 import type { ScreenIdentity, TargetProfile } from "@relay/protocol";
 import { appMapFail } from "./errors.js";
 import type {
-  ActivityEvent,
   AddScreenInput,
-  AppMapEntity,
   AppMapNote,
   AppMapScope,
   BaselineProvenance,
@@ -32,6 +30,7 @@ import type {
 } from "./model.js";
 import type { ScreenIdentityObservation } from "../screen-identity.js";
 import { assertActions } from "./action-validation.js";
+import { assertEntity } from "./entity-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
 import {
   finiteTimestamp,
@@ -50,29 +49,7 @@ export {
   requiredText,
   safeInteger,
 } from "./validation-primitives.js";
-
-function assertScope(value: AppMapScope, scope: AppMapScope, label: string): void {
-  if (
-    value.organizationId !== scope.organizationId ||
-    value.projectId !== scope.projectId ||
-    value.appMapId !== scope.appMapId
-  ) {
-    appMapFail("scope-mismatch", `${label} does not belong to this App Map project scope`);
-  }
-}
-
-function assertEntity(value: AppMapEntity, scope: AppMapScope, label: string): void {
-  identifier(value.id, `${label}.id`);
-  identifier(value.organizationId, `${label}.organizationId`);
-  identifier(value.projectId, `${label}.projectId`);
-  identifier(value.appMapId, `${label}.appMapId`);
-  assertScope(value, scope, label);
-  finiteTimestamp(value.createdAt, `${label}.createdAt`);
-  finiteTimestamp(value.updatedAt, `${label}.updatedAt`);
-  if (value.updatedAt < value.createdAt) {
-    appMapFail("invalid-map", `${label}.updatedAt cannot precede createdAt`);
-  }
-}
+export { assertActivity } from "./activity-validation.js";
 
 function assertIdentity(value: ScreenIdentity, label: string): void {
   if (value.schemaVersion !== 1 || !/^[a-f0-9]{64}$/u.test(value.fingerprint)) {
@@ -895,84 +872,4 @@ export function assertProposal(proposal: Proposal, scope: AppMapScope, label: st
     finiteTimestamp(proposal.decision.at, `${label}.decision.at`);
     optionalText(proposal.decision.reason, `${label}.decision.reason`);
   }
-}
-
-export function assertActivity(
-  event: ActivityEvent,
-  scope: AppMapScope,
-  label: string,
-  mapRevision: number,
-): void {
-  identifier(event.id, `${label}.id`);
-  identifier(event.organizationId, `${label}.organizationId`);
-  identifier(event.projectId, `${label}.projectId`);
-  identifier(event.appMapId, `${label}.appMapId`);
-  assertScope(event, scope, label);
-  identifier(event.actorId, `${label}.actorId`);
-  if (!(event.actorKind === "human" || event.actorKind === "agent" || event.actorKind === "system"))
-    appMapFail("invalid-map", `${label}.actorKind is unsupported`);
-  const eventTypes: ActivityEvent["eventType"][] = [
-    "app-map.updated",
-    "app-map.committed",
-    "screen.added",
-    "screen.updated",
-    "screen.removed",
-    "connection.connected",
-    "connection.updated",
-    "connection.removed",
-    "group.saved",
-    "group.removed",
-    "flow.saved",
-    "flow.removed",
-    "routine.saved",
-    "routine.removed",
-    "case-stack.saved",
-    "case-stack.attached",
-    "case-stack.removed",
-    "variable.saved",
-    "variable.removed",
-    "test.saved",
-    "test.removed",
-    "combine.saved",
-    "combine.removed",
-    "recording.committed",
-    "run.finished",
-    "proposal.submitted",
-    "proposal.approved",
-    "proposal.rejected",
-  ];
-  if (!eventTypes.includes(event.eventType))
-    appMapFail("invalid-map", `${label}.eventType is unsupported`);
-  objectValue(event.subject, `${label}.subject`);
-  if (
-    !(
-      event.subject.kind === "app-map" ||
-      event.subject.kind === "screen" ||
-      event.subject.kind === "connection" ||
-      event.subject.kind === "group" ||
-      event.subject.kind === "flow" ||
-      event.subject.kind === "routine" ||
-      event.subject.kind === "case-stack" ||
-      event.subject.kind === "variable" ||
-      event.subject.kind === "test" ||
-      event.subject.kind === "combine" ||
-      event.subject.kind === "proposal" ||
-      event.subject.kind === "run"
-    )
-  )
-    appMapFail("invalid-map", `${label}.subject.kind is unsupported`);
-  identifier(event.subject.id, `${label}.subject.id`);
-  if (event.touched !== undefined) {
-    stringArray(event.touched, `${label}.touched`);
-    if (!event.touched.length) appMapFail("invalid-map", `${label}.touched must not be empty`);
-    if (new Set(event.touched).size !== event.touched.length) {
-      appMapFail("duplicate-id", `${label}.touched contains duplicate subjects`);
-    }
-  }
-  requiredText(event.summary, `${label}.summary`, 240);
-  finiteTimestamp(event.at, `${label}.at`);
-  safeInteger(event.beforeRevision, `${label}.beforeRevision`);
-  safeInteger(event.afterRevision, `${label}.afterRevision`);
-  if (event.afterRevision !== event.beforeRevision + 1 || event.afterRevision > mapRevision)
-    appMapFail("invalid-map", `${label} has an invalid revision transition`);
 }
