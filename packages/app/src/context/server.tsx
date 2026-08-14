@@ -1,28 +1,19 @@
 import { createSignal, createEffect, createMemo, onCleanup } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
-import { ApiError, RelayClient } from "@relay/client";
+import { RelayClient } from "@relay/client";
 import type {
-  GenerationRequest,
-  GenerationResult,
   DiscoverySession,
   OperationId,
   OperationInput,
   OperationOutput,
   CompatibilityMatrix,
-  Revisioned,
   ServerConnection,
-  TestData,
   TargetProfile,
   TargetDefinition,
-  EventEnvelope,
-  AuthoringSession,
-  AuthoringInteraction,
-  AuthoringCommitDestination,
-  AppMap,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
-import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
+import { asArray, normalizeLocalBase } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
 import {
   accessibilityCollectionEnabled,
@@ -33,36 +24,11 @@ import { createServerTargetController } from "../lib/server-target-controller";
 import { createServerDiscoveryController } from "../lib/server-discovery-controller";
 import {
   listActions,
-  listAndroidDevicesFast,
-  listDevices,
   bootDevice as bootDeviceRequest,
   authorizeDevice as authorizeDeviceRequest,
 } from "../lib/server-target-remote";
-import { preferredTargetSerial, targetIsReady } from "../lib/target-presentation";
-import { interimDeviceScan, reconcileDeviceScan } from "../lib/device-inventory";
-import { projectRelayEvent, type EventActivity, type EventRefresh } from "../lib/event-projection";
-import {
-  deleteRecipe,
-  importRecipeYaml as importRecipeYamlRemote,
-  loadRecipeHistory as loadRecipeHistoryRemote,
-  loadRecipeStability as loadRecipeStabilityRemote,
-  loadRecipeYaml as loadRecipeYamlRemote,
-  previewRecipeYaml as previewRecipeYamlRemote,
-  restoreRecipeVersion as restoreRecipeVersionRemote,
-  saveRecipe as saveRecipeRemoteRequest,
-} from "../lib/server-recipe-remote";
+import { targetIsReady } from "../lib/target-presentation";
 import { createServerPrivacyController } from "../lib/server-privacy-controller";
-import {
-  loadAndroidDeviceSetup,
-  loadAndroidAppLocales as loadAndroidAppLocalesRequest,
-  loadAppleDeviceSetup,
-  loadAppleSetupPreflight,
-  saveAppleDeviceSetup as saveAppleDeviceSetupRequest,
-  saveIosLivePreview as saveIosLivePreviewRequest,
-  type AppleDeviceSetup,
-  type AppleSetupStatus,
-  type AndroidSetupStatus,
-} from "../lib/server-device-setup-remote";
 import { createServerRunController } from "../lib/server-run-controller";
 import { createServerRunReportController } from "../lib/server-run-report-controller";
 import type {
@@ -71,19 +37,20 @@ import type {
   Frame,
   HealthState,
   JobInfo,
-  LogLine,
   PersistedRun,
-  RecipeParameter,
   RecipeInfo,
-  RecipeStep,
-  RecipeStability,
   SnapshotState,
-  TraceFrameRef,
-  LocalSchedule,
 } from "../lib/api-types";
 import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
-import { mergeAuthoringSessionProjections } from "../lib/authoring-session-projection";
-import { refreshFailure, type RefreshOutcome } from "../lib/refresh-outcome";
+import { createServerAuthoringController } from "../lib/server-authoring-controller";
+import { createServerRecipeController } from "../lib/server-recipe-controller";
+import { createServerProjectController } from "../lib/server-project-controller";
+import { createServerJobController } from "../lib/server-job-controller";
+import { createServerTimelineController } from "../lib/server-timeline-controller";
+import { createServerEventController } from "../lib/server-event-controller";
+import { createServerDeviceSetupController } from "../lib/server-device-setup-controller";
+import { createServerDeviceInventoryController } from "../lib/server-device-inventory-controller";
+import { createServerAppMapController } from "../lib/server-app-map-controller";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -126,9 +93,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [actorId, setActorId] = createSignal("");
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
-    const [deviceDiscoveryStatus, setDeviceDiscoveryStatus] = createSignal<
-      "idle" | "scanning" | "ready"
-    >("idle");
     const [targets, setTargets] = createSignal<TargetDefinition[]>([]);
     const [targetProfiles, setTargetProfiles] = createSignal<TargetProfile[]>([]);
     const [matrices, setMatrices] = createSignal<CompatibilityMatrix[]>([]);
@@ -138,12 +102,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
-    const [appMaps, setAppMaps] = createSignal<AppMap[]>([]);
-    const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
-    const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
-    let authoringProjectionVersion = 0;
-    let authoringRefreshVersion = 0;
     // Reopen the last App Map like a document editor. Hardware selection and
     // the live-device panel remain separate state, so resuming the canvas does
     // not imply that a recording has started.
@@ -160,20 +119,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
-    const [schedules, setSchedules] = createSignal<LocalSchedule[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
-    const [logs, setLogs] = createSignal<LogLine[]>([]);
     const [snapshot, setSnapshot] = createSignal<SnapshotState>(null);
-    const [frames, setFrames] = createSignal<Frame[]>([]);
-    const [frameIndex, setFrameIndex] = createSignal(0);
-    const [playing, setPlaying] = createSignal(false);
     const [busyCapture, setBusyCapture] = createSignal(false);
-    const [sseConnected, setSseConnected] = createSignal(false);
     const [accessibilityMode, setAccessibilityModeState] =
       createSignal<AccessibilityOverlayMode>("hover");
     function setAccessibilityMode(mode: AccessibilityOverlayMode): void {
@@ -193,29 +146,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [takingControlOfSelectedDevice, setTakingControlOfSelectedDevice] = createSignal(false);
     const canTakeControlOfSelectedDevice = () => Boolean(conflictingLeaseId());
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
-    const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
-    const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
-      null,
-    );
-    const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestData[]>>({
-      revision: 0,
-      value: [],
-      updatedAt: 0,
-    });
     const [clock, setClock] = createSignal(Date.now());
-    const [eventActivity, setEventActivity] = createSignal<EventActivity | null>(null);
     const [selectedLeaseId, setSelectedLeaseId] = createSignal<string | null>(null);
 
-    let logSeq = 0;
-    let eventAbort: AbortController | null = null;
-    let eventReconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let connection: ServerConnection | null = null;
     let client: RelayClient | null = null;
-    let playTimer: NodeJS.Timeout | undefined;
     let clockTimer: NodeJS.Timeout | undefined;
-    let appleSetupRefreshSequence = 0;
-    let deviceRefreshSequence = 0;
-    let eventCursor = 0;
 
     const fetcher = () => platform.fetch ?? fetch;
 
@@ -237,12 +173,20 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return created;
     }
 
-    const currentFrame = () => {
-      const list = frames();
-      if (list.length === 0) return null;
-      const i = Math.min(Math.max(frameIndex(), 0), list.length - 1);
-      return list[i] ?? null;
-    };
+    const {
+      logs,
+      appendLog,
+      clearLogs,
+      frames,
+      frameIndex,
+      setFrameIndex,
+      currentFrame,
+      playing,
+      pushFrame,
+      clearFrames,
+      togglePlayback,
+      stopPlayback,
+    } = createServerTimelineController();
 
     async function resolveConnection() {
       connection = platform.getServerConnection
@@ -287,68 +231,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    function appendLog(text: string, level?: LogLine["level"], jobId?: string) {
-      logSeq += 1;
-      setLogs((prev) => [
-        ...prev.slice(-400),
-        {
-          id: logSeq,
-          text,
-          level: level ?? levelFromLine(text),
-          at: Date.now(),
-          jobId,
-        },
-      ]);
-    }
-
-    function clearLogs() {
-      logSeq = 0;
-      setLogs([]);
-    }
-
-    function pushFrame(frame: Omit<Frame, "id">) {
-      const full: Frame = { ...frame, id: uid() };
-      setFrames((prev) => {
-        const next = [...prev, full].slice(-80);
-        setFrameIndex(next.length - 1);
-        return next;
-      });
-      return full;
-    }
-
-    function clearFrames() {
-      setFrames([]);
-      setFrameIndex(0);
-      setPlaying(false);
-    }
-
-    function stopPlayback() {
-      setPlaying(false);
-      if (playTimer) {
-        clearInterval(playTimer);
-        playTimer = undefined;
-      }
-    }
-
-    function togglePlayback() {
-      if (playing()) {
-        stopPlayback();
-        return;
-      }
-      if (frames().length === 0) return;
-      setPlaying(true);
-      playTimer = setInterval(() => {
-        setFrameIndex((i) => {
-          const max = frames().length - 1;
-          if (i >= max) {
-            stopPlayback();
-            return i;
-          }
-          return i + 1;
-        });
-      }, 900);
-    }
-
     async function request<T = unknown>(
       path: string,
       init?: RequestInit,
@@ -361,6 +243,26 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       });
     }
 
+    async function connectedClient(): Promise<RelayClient> {
+      if (!client) await resolveConnection();
+      return client!;
+    }
+
+    const {
+      appleDeviceSetup,
+      androidDeviceSetup,
+      refreshAppleDeviceSetup,
+      preflightAppleDeviceSetup,
+      refreshAndroidDeviceSetup,
+      loadAndroidAppLocales,
+      saveAppleDeviceSetup,
+      saveIosLivePreview,
+    } = createServerDeviceSetupController({
+      request,
+      selectedDevice,
+      setLiveCaptureIssue,
+    });
+
     const {
       redactionPolicy,
       evidenceCollectionPolicy,
@@ -371,51 +273,27 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearPrivacyPolicies,
     } = createServerPrivacyController(request);
 
-    async function refreshAppleDeviceSetup(): Promise<AppleSetupStatus> {
-      const sequence = ++appleSetupRefreshSequence;
-      const status = await loadAppleDeviceSetup(request);
-      // Settings can issue a background refresh while a save is in flight.
-      // Only the newest reply may change the shared setup state.
-      if (sequence === appleSetupRefreshSequence) setAppleDeviceSetup(status);
-      return status;
-    }
-
-    async function preflightAppleDeviceSetup(): Promise<boolean> {
-      const status = await loadAppleSetupPreflight(request);
-      return status.configured;
-    }
-
-    async function refreshAndroidDeviceSetup(): Promise<AndroidSetupStatus> {
-      const status = await loadAndroidDeviceSetup(request);
-      setAndroidDeviceSetup(status);
-      return status;
-    }
-
-    async function loadAndroidAppLocales(packageName: string): Promise<string[]> {
-      const serial = selectedDevice();
-      if (!serial) throw new Error("Choose a connected Android device first");
-      return loadAndroidAppLocalesRequest(request, serial, packageName);
-    }
-
-    async function saveAppleDeviceSetup(input: AppleDeviceSetup): Promise<void> {
-      await saveAppleDeviceSetupRequest(request, input);
-      await refreshAppleDeviceSetup();
-      // A runner setup failure belongs to the previous configuration. Once a
-      // new configuration saves successfully, let the stage retry from a
-      // clean state instead of continuing to offer its stale setup error.
-      setLiveCaptureIssue(null);
-    }
-
-    async function saveIosLivePreview(
-      backend: "agent-device-png" | "go-ios-auto" | "go-ios-mjpeg",
-    ): Promise<void> {
-      await saveIosLivePreviewRequest(request, backend);
-      await refreshAppleDeviceSetup();
-    }
-
     function clearLiveCaptureIssue(): void {
       setLiveCaptureIssue(null);
     }
+
+    const {
+      deviceDiscoveryStatus,
+      refreshDevices,
+      selectedDeviceAvailable,
+      setSelectedDeviceAvailable,
+    } = createServerDeviceInventoryController({
+      request,
+      health,
+      devices,
+      setDevices,
+      selectedDevice,
+      selectDevice: selectDeviceRemote,
+      validateSelectedControl: validateSelectedTargetControl,
+      resetLivePreview: () => resetLivePreview(),
+      error,
+      setError,
+    });
 
     const {
       refreshTargets,
@@ -450,104 +328,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const isOffline = () => health() === "offline";
     const isEmptyDevices = () => devices().length === 0;
 
-    let selectedDeviceAvailable = false;
-    let deviceRefreshInFlight: Promise<void> | null = null;
-    async function refreshDevices() {
-      if (health() === "offline") return;
-      if (deviceRefreshInFlight) return deviceRefreshInFlight;
-
-      const sequence = ++deviceRefreshSequence;
-      setDeviceDiscoveryStatus("scanning");
-      const refresh = (async () => {
-        const applyDeviceList = (list: DeviceInfo[]) => {
-          if (sequence !== deviceRefreshSequence) return;
-          setDevices(list);
-          // Preserve an explicit selection across a transient USB/Wi-Fi drop.
-          // When the same serial reappears, the stage recovers without silently
-          // switching the user to a simulator or another phone.
-          const selected = selectedDevice();
-          const selectedTarget = list.find((device) => device.serial === selected);
-          const selectedTargetReady = targetIsReady(selectedTarget, true);
-          if (!selected) {
-            void selectDeviceRemote(preferredTargetSerial(list));
-          } else if (selectedTargetReady) {
-            // Availability and control are separate. A server restart can
-            // expire the lease while screenshots remain observable, so every
-            // device refresh revalidates the focused target idempotently.
-            void validateSelectedTargetControl(selected);
-          } else if (!selectedTargetReady && selectedDeviceAvailable) {
-            // A cached screen is evidence from a device that is no longer
-            // present. Keep the intentional selection for auto-recovery, but
-            // never present its pixels as the current live screen.
-            resetLivePreview();
-          }
-          selectedDeviceAvailable = selectedTargetReady;
-        };
-
-        try {
-          const fullScan = listDevices(request);
-          let android: DeviceInfo[];
-          try {
-            const previousBySerial = new Map(
-              devices()
-                .filter((device) => device.platform === "android")
-                .map((device) => [device.serial, device]),
-            );
-            android = (await listAndroidDevicesFast(request)).map((d) => {
-              const serial = String(d.serial ?? d.id ?? "");
-              return {
-                // Keep stable metadata (notably the OS version) while ADB's
-                // fast phase refreshes only current reachability.
-                ...previousBySerial.get(serial),
-                ...d,
-                serial,
-              };
-            });
-          } catch {
-            // A failed request is not evidence that the phone disconnected.
-            // Keep the last Android rows and reconcile them on the next poll.
-            android = devices().filter((device) => device.platform === "android");
-          }
-          // Keep non-Android rows from the last completed scan while replacing
-          // Android with ADB's current result. A connected phone is usable now;
-          // Apple discovery and simulator enumeration continue in parallel.
-          applyDeviceList(interimDeviceScan(devices(), android));
-
-          const list = (await fullScan).map((d) => ({
-            ...d,
-            serial: String(d.serial ?? d.id ?? ""),
-          }));
-          // The cross-platform inventory is slower and can omit Android for a
-          // single sample while its adapter is reconnecting. Keep the fresh
-          // ADB phase authoritative for this refresh and replace only the
-          // slower platforms. A disconnect is observed by the next fast phase
-          // without making a connected phone blink between phases.
-          const stableList = reconcileDeviceScan(devices(), android, list);
-          // Device discovery runs from polling, manual refresh, and target
-          // changes. Ignore an older reply so a transient stale list cannot
-          // make the current device disappear or rebind the wrong target.
-          if (sequence !== deviceRefreshSequence) return;
-          applyDeviceList(stableList);
-          // clear only network-ish noise; keep explicit action errors
-          if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
-        } catch (err) {
-          if (sequence !== deviceRefreshSequence) return;
-          // calm when known offline — OfflineGate owns that UX
-          if (health() === "offline") return;
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      })();
-      deviceRefreshInFlight = refresh;
-      try {
-        await refresh;
-      } finally {
-        if (deviceRefreshInFlight === refresh) {
-          deviceRefreshInFlight = null;
-          setDeviceDiscoveryStatus("ready");
-        }
-      }
-    }
-
     async function refreshActions() {
       if (health() === "offline") return;
       try {
@@ -572,6 +352,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     const {
+      saveRecipeRemote,
+      loadRecipeYaml,
+      previewRecipeYaml,
+      importRecipeYaml,
+      loadRecipeHistory,
+      restoreRecipeVersion,
+      loadRecipeStability,
+      deleteRecipeRemote,
+    } = createServerRecipeController({
+      request,
+      recipes,
+      selectedRecipeId,
+      setSelectedRecipeId,
+      refreshRecipes,
+      appendLog,
+    });
+
+    const {
       refreshDiscoverySessions,
       createDiscoverySessionRemote,
       setDiscoveryStatusRemote,
@@ -594,309 +392,33 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRecipes,
     });
 
-    async function refreshAppMaps(): Promise<AppMap[]> {
-      if (health() === "offline") return appMaps();
-      const result = await runAction("app-map.list", {});
-      setAppMaps(result.appMaps);
-      setAppMapsLoaded(true);
-      return result.appMaps;
-    }
+    const { appMaps, appMapsLoaded, refreshAppMaps, loadAppMap, createAppMap } =
+      createServerAppMapController({ health, runAction });
 
-    async function loadAppMap(appMapId: string): Promise<AppMap> {
-      const appMap = (await runAction("app-map.get", { appMapId })).appMap;
-      setAppMaps((current) => [
-        appMap,
-        ...current.filter((candidate) => candidate.id !== appMap.id),
-      ]);
-      return appMap;
-    }
-
-    async function createAppMap(appMapId: string, name: string): Promise<AppMap> {
-      const result = await runAction("app-map.create", { appMapId, name });
-      setAppMaps((current) => [
-        result.appMap,
-        ...current.filter((candidate) => candidate.id !== result.appMap.id),
-      ]);
-      return result.appMap;
-    }
-
-    function projectAuthoringSession(session: AuthoringSession): AuthoringSession {
-      authoringProjectionVersion += 1;
-      setAuthoringSessions((current) => [
-        session,
-        ...current.filter((item) => item.id !== session.id),
-      ]);
-      return session;
-    }
-
-    async function refreshAuthoringSessions(): Promise<AuthoringSession[]> {
-      if (!client) await resolveConnection();
-      const refreshVersion = ++authoringRefreshVersion;
-      const projectionVersion = authoringProjectionVersion;
-      // The authoring archive contains immutable screenshots and accessibility
-      // trees. The live workspace only needs open sessions for its current
-      // document and target; downloading the complete archive made a single
-      // record click parse megabytes of unrelated evidence.
-      const result = await client!.authoringSessions({
-        activeOnly: true,
-        ...(selectedAppMapId() ? { appMapId: selectedAppMapId()! } : {}),
-        ...(selectedDevice() ? { targetId: selectedDevice()! } : {}),
-      });
-      if (refreshVersion !== authoringRefreshVersion) return result.sessions;
-      setAuthoringSessions((current) =>
-        projectionVersion === authoringProjectionVersion
-          ? result.sessions
-          : mergeAuthoringSessionProjections(current, result.sessions),
-      );
-      return result.sessions;
-    }
-
-    async function createAuthoringSession(input: {
-      appMapId: string;
-      target:
-        | { kind: "device"; platform: "android" | "ios"; targetId: string }
-        | {
-            kind: "browser";
-            platform: "browser";
-            targetId: string;
-          };
-      leaseId: string;
-      expectedAppMapRevision: number;
-      sourceScreenId?: string;
-      pendingConnectionId?: string;
-      group?: string;
-    }): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession((await client!.createAuthoringSession(input)).session);
-    }
-
-    async function observeAuthoringSession(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.observeAuthoringSession(id, AbortSignal.timeout(120_000))).session,
-      );
-    }
-
-    async function captureAuthoringScreen(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.captureAuthoringScreen(id, AbortSignal.timeout(120_000))).session,
-      );
-    }
-
-    async function startAuthoringSession(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.startAuthoringSession(id, AbortSignal.timeout(120_000))).session,
-      );
-    }
-
-    async function interactAuthoringSession(
-      id: string,
-      interaction: AuthoringInteraction,
-    ): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.interactAuthoringSession(id, interaction)).session,
-      );
-    }
-
-    async function stopAuthoringSession(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.stopAuthoringSession(id, AbortSignal.timeout(120_000))).session,
-      );
-    }
-
-    async function trimAuthoringTake(
-      id: string,
-      input: { fromMs?: number; toMs?: number; actionIds?: string[] },
-    ): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.trimAuthoringTake({ sessionId: id, ...input })).session,
-      );
-    }
-
-    async function reorderAuthoringTake(
-      id: string,
-      actionIds: string[],
-    ): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.reorderAuthoringTake({ sessionId: id, actionIds })).session,
-      );
-    }
-
-    async function replaceAuthoringAction(
-      id: string,
-      actionId: string,
-      interaction: AuthoringInteraction,
-    ): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      return projectAuthoringSession(
-        (await client!.replaceAuthoringAction({ sessionId: id, actionId, interaction })).session,
-      );
-    }
-
-    async function replayAuthoringTake(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      // Attached Apple hardware may need to serialize action, snapshot, and
-      // screenshot evidence through one runner. Replays share the same honest
-      // long-operation budget as observation and Stop instead of failing at
-      // the generic 30-second request deadline while the device is healthy.
-      return projectAuthoringSession(
-        (await client!.replayAuthoringTake(id, AbortSignal.timeout(120_000))).session,
-      );
-    }
-
-    async function commitAuthoringSession(
-      id: string,
-      input: {
-        destination?: AuthoringCommitDestination;
-      },
-    ): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      const session = projectAuthoringSession(
-        (await client!.commitAuthoringSession({ sessionId: id, ...input })).session,
-      );
-      await refreshAppMaps();
-      return session;
-    }
-
-    async function discardAuthoringSession(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      const session = projectAuthoringSession((await client!.discardAuthoringSession(id)).session);
-      setAuthoringSessions((current) => {
-        const without = current.filter((item) => item.id !== session.id);
-        return [...without, session].sort((left, right) => right.updatedAt - left.updatedAt);
-      });
-      return session;
-    }
-
-    async function cancelAuthoringSession(id: string): Promise<AuthoringSession> {
-      if (!client) await resolveConnection();
-      const session = projectAuthoringSession((await client!.cancelAuthoringSession(id)).session);
-      setAuthoringSessions((current) => {
-        const without = current.filter((item) => item.id !== session.id);
-        return [...without, session].sort((left, right) => right.updatedAt - left.updatedAt);
-      });
-      return session;
-    }
-
-    function authoringEvidenceUrl(uri: string, mime?: string): string {
-      const sha256 = uri.match(/^relay-evidence:\/\/([a-f0-9]{64})$/)?.[1];
-      if (!sha256) return "";
-      const query = mime ? `?mime=${encodeURIComponent(mime)}` : "";
-      return `${serverUrl()}/authoring-evidence/${sha256}${query}`;
-    }
-
-    async function refreshJobs(): Promise<RefreshOutcome> {
-      if (health() === "offline") return refreshFailure("Relay is offline");
-      try {
-        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
-        const list = asArray<JobInfo>(data, "jobs");
-        const active = data.active;
-        setJobs((current) => {
-          const detailed = new Map(
-            current
-              .filter((job) => job.recipeSnapshot || job.artifacts?.length || job.steps?.length)
-              .map((job) => [job.id, job]),
-          );
-          return list.map((summary) => {
-            if (active?.id === summary.id) return active;
-            const richer = detailed.get(summary.id);
-            return richer ? { ...richer, ...summary } : summary;
-          });
-        });
-        setRunning(Boolean(active && (active.status === "running" || active.status === "paused")));
-        return { ok: true };
-      } catch (error) {
-        return refreshFailure(error);
-      }
-    }
-
-    async function refreshRuns(appMapId?: string): Promise<RefreshOutcome> {
-      if (health() === "offline") return refreshFailure("Relay is offline");
-      try {
-        const query = new URLSearchParams({ limit: appMapId ? "200" : "40" });
-        if (appMapId) query.set("appMapId", appMapId);
-        const data = await request<{ runs: PersistedRun[]; root: string }>(`/runs?${query}`);
-        const list = asArray<PersistedRun>(data, "runs");
-        // Preserve detail already enriched by loadRunDetail across catalog-only refreshes.
-        setPersistedRuns((current) => {
-          const detailed = new Map(
-            current.filter((run) => run.steps?.length).map((run) => [run.id, run]),
-          );
-          const projected = list.map((incoming) => {
-            const richer = detailed.get(incoming.id);
-            return richer && !incoming.steps?.length
-              ? {
-                  ...incoming,
-                  steps: richer.steps,
-                  frames: richer.frames,
-                  artifacts: richer.artifacts,
-                }
-              : incoming;
-          });
-          if (!appMapId) return projected;
-          const byId = new Map(current.map((run) => [run.id, run]));
-          for (const run of projected) byId.set(run.id, run);
-          return [...byId.values()].sort((left, right) => right.writtenAt - left.writtenAt);
-        });
-        setRunsRoot(data.root ?? "");
-        return { ok: true };
-      } catch (error) {
-        return refreshFailure(error);
-      }
-    }
-
-    async function refreshProjectVariables() {
-      if (!client || health() === "offline") return;
-      try {
-        setProjectVariables(await client.variables());
-      } catch {
-        /* project data is non-critical to device connectivity */
-      }
-    }
-
-    async function saveProjectVariables(value: TestData[]): Promise<void> {
-      if (!client) await resolveConnection();
-      const before = projectVariables();
-      const optimistic = { ...before, revision: before.revision + 1, value, updatedAt: Date.now() };
-      setProjectVariables(optimistic);
-      try {
-        setProjectVariables(
-          await client!.updateVariables({
-            expectedRevision: before.revision,
-            value,
-            idempotencyKey: crypto.randomUUID(),
-          }),
-        );
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          const current = (error.body as { current?: Revisioned<TestData[]> })?.current;
-          if (current) {
-            const localById = new Map(value.map((item) => [item.id, item]));
-            const merged = [
-              ...current.value.map((item) => localById.get(item.id) ?? item),
-              ...value.filter((item) => !current.value.some((remote) => remote.id === item.id)),
-            ];
-            setProjectVariables(
-              await client!.updateVariables({
-                expectedRevision: current.revision,
-                value: merged,
-                idempotencyKey: crypto.randomUUID(),
-              }),
-            );
-            toast("Variables merged with newer project changes", "info");
-            return;
-          }
-        }
-        setProjectVariables(before);
-        throw error;
-      }
-    }
+    const {
+      authoringSessions,
+      refreshAuthoringSessions,
+      createAuthoringSession,
+      observeAuthoringSession,
+      captureAuthoringScreen,
+      startAuthoringSession,
+      interactAuthoringSession,
+      stopAuthoringSession,
+      trimAuthoringTake,
+      reorderAuthoringTake,
+      replaceAuthoringAction,
+      replayAuthoringTake,
+      commitAuthoringSession,
+      discardAuthoringSession,
+      cancelAuthoringSession,
+      authoringEvidenceUrl,
+    } = createServerAuthoringController({
+      client: connectedClient,
+      serverUrl,
+      selectedAppMapId,
+      selectedDevice,
+      refreshAppMaps,
+    });
 
     async function runAction<Id extends OperationId>(
       operationId: Id,
@@ -908,6 +430,48 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         idempotencyKey: crypto.randomUUID(),
       });
     }
+
+    const {
+      projectVariables,
+      refreshProjectVariables,
+      saveProjectVariables,
+      generate,
+      schedules,
+      scheduleRecipe,
+      refreshSchedules,
+      deleteLocalSchedule,
+    } = createServerProjectController({
+      request,
+      client: connectedClient,
+      currentClient: () => client,
+      health,
+      selectedDevice,
+      devices,
+      projectId: () => connection?.projectId ?? "default",
+    });
+
+    const {
+      refreshJobs,
+      refreshRuns,
+      cancelJob: cancelJobRemote,
+      pauseJob: pauseJobRemote,
+      resumeJob: resumeJobRemote,
+      activeJob,
+      isPaused,
+      queuedJobs,
+    } = createServerJobController({
+      request,
+      client: connectedClient,
+      health,
+      jobs,
+      setJobs,
+      persistedRuns,
+      setPersistedRuns,
+      setRunsRoot,
+      setRunning,
+      selectedJobId,
+      appendLog,
+    });
 
     const {
       loadRunDetail,
@@ -926,48 +490,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setPersistedRuns,
       refreshRuns: async () => void (await refreshRuns()),
     });
-
-    async function generate(input: GenerationRequest): Promise<GenerationResult> {
-      if (!client) await resolveConnection();
-      return client!.generate(input);
-    }
-
-    async function scheduleRecipe(input: {
-      recipeId: string;
-      intervalMinutes: number;
-      repetitions?: number;
-    }): Promise<LocalSchedule> {
-      const targetId = selectedDevice();
-      if (!targetId) throw new Error("Select a target before scheduling");
-      const targetPlatform =
-        devices().find((device) => device.serial === targetId)?.platform ?? "android";
-      const data = await request<{ schedule: LocalSchedule }>("/schedules", {
-        method: "POST",
-        body: JSON.stringify({
-          ...input,
-          targetKind: targetPlatform === "browser" ? "browser" : "device",
-          targetId,
-          platform: targetPlatform,
-          projectId: connection?.projectId ?? "default",
-        }),
-      });
-      setSchedules((items) => [
-        ...items.filter((item) => item.id !== data.schedule.id),
-        data.schedule,
-      ]);
-      return data.schedule;
-    }
-
-    async function refreshSchedules(): Promise<void> {
-      if (health() === "offline") return;
-      const data = await request<{ schedules: LocalSchedule[] }>("/schedules");
-      setSchedules(data.schedules ?? []);
-    }
-
-    async function deleteLocalSchedule(id: string): Promise<void> {
-      await request(`/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setSchedules((items) => items.filter((item) => item.id !== id));
-    }
 
     async function pollHealth() {
       try {
@@ -1039,157 +561,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    function refreshFromEvent(kind: EventRefresh) {
-      const refreshers: Record<EventRefresh, () => Promise<unknown>> = {
-        devices: refreshDevices,
-        recipes: refreshRecipes,
-        appMaps: refreshAppMaps,
-        jobs: refreshJobs,
-        runs: refreshRuns,
-        variables: refreshProjectVariables,
-        matrices: refreshMatrices,
-        discoveries: refreshDiscoverySessions,
-        // Corpus crawling remains a CLI/internal capture primitive. Desktop
-        // screenshot evidence is projected through canonical App Map runs.
-        corpora: async () => undefined,
-        authoring: refreshAuthoringSessions,
-      };
-      void refreshers[kind]();
-    }
-
-    function handleBusEvent(envelope: EventEnvelope) {
-      const projection = projectRelayEvent(eventCursor, envelope);
-      if (!projection.accepted) return;
-      eventCursor = projection.cursor;
-      if (projection.activity) setEventActivity(projection.activity);
-      for (const refresh of new Set(projection.refresh)) refreshFromEvent(refresh);
-      const ev = envelope.payload as Record<string, unknown>;
-      const type = String(ev.type ?? "");
-      switch (type) {
-        case "job.queued":
-          appendLog(`queued ${ev.action}`, "info", ev.jobId as string);
-          void refreshJobs();
-          break;
-        case "job.started":
-          appendLog(`started ${ev.action}`, "info", ev.jobId as string);
-          setRunning(true);
-          if (!selectedJobId()) {
-            setSelectedJobId((ev.jobId as string) ?? null);
-          }
-          void refreshJobs();
-          break;
-        case "job.log":
-          if (ev.line) appendLog(String(ev.line), ev.level as LogLine["level"], ev.jobId as string);
-          break;
-        case "job.healed":
-          appendLog(`healed ${ev.action}: ${ev.healMessage}`, "success", ev.jobId as string);
-          void refreshJobs();
-          void refreshRuns();
-          break;
-        case "job.paused":
-          appendLog(`paused ${ev.action}`, "info", ev.jobId as string);
-          setRunning(true);
-          void refreshJobs();
-          break;
-        case "job.resumed":
-          appendLog(`resumed ${ev.action}`, "info", ev.jobId as string);
-          setRunning(true);
-          void refreshJobs();
-          break;
-        case "job.cancelled":
-          appendLog(`cancelled ${ev.action}`, "error", ev.jobId as string);
-          setRunning(false);
-          void refreshJobs();
-          void refreshRuns();
-          void loadRunDetail(ev.jobId as string);
-          break;
-        case "job.finished":
-          appendLog(
-            ev.healed
-              ? `healed ${ev.action} (${ev.durationMs ?? "?"}ms)`
-              : ev.ok
-                ? `finished ${ev.action} (${ev.durationMs ?? "?"}ms)`
-                : `failed ${ev.action}: ${ev.error ?? "?"}`,
-            ev.ok || ev.healed ? "success" : "error",
-            ev.jobId as string,
-          );
-          setRunning(false);
-          void refreshJobs();
-          void refreshRuns();
-          // The terminal event is emitted immediately before the atomic run
-          // bundle commit. A single eager refresh can therefore observe the
-          // previous catalog forever. Reconcile once more after persistence
-          // without making the normal polling loop continuously scan runs.
-          setTimeout(() => void refreshRuns(), 300);
-          void captureUiScreenshot(
-            ev.ok || ev.healed ? `${ev.action} · done` : `${ev.action} · failed`,
-            ev.jobId as string,
-            ev.action as string,
-            true,
-          ).catch(() => undefined);
-          break;
-        case "job.step": {
-          const step = ev.step as { title?: string; status?: string } | undefined;
-          if (step?.title) {
-            appendLog(
-              `step: ${step.title}${step.status ? ` (${step.status})` : ""}`,
-              "info",
-              ev.jobId as string,
-            );
-          }
-          void refreshJobs();
-          break;
-        }
-        case "job.frame": {
-          const frame = ev.frame as TraceFrameRef | undefined;
-          if (frame?.base64) {
-            pushFrame({
-              capturedAt: frame.capturedAt,
-              mime: frame.mime ?? "image/png",
-              base64: frame.base64,
-              bytes: frame.bytes ?? 0,
-              caption: frame.caption,
-              jobId: ev.jobId as string,
-              path: frame.path,
-            });
-          }
-          void refreshJobs();
-          break;
-        }
-        case "device.selected":
-          // Selection is client-local focus. Other actors remain visible via
-          // eventActivity, but can never retarget this renderer.
-          break;
-        case "error":
-          appendLog(String(ev.message ?? "error"), "error");
-          break;
-        default:
-          break;
-      }
-    }
-
-    function connectSse() {
-      eventAbort?.abort();
-      if (eventReconnectTimer) clearTimeout(eventReconnectTimer);
-      if (!client) return;
-      const controller = new AbortController();
-      eventAbort = controller;
-      setSseConnected(false);
-      void client
-        .events(handleBusEvent, {
-          signal: controller.signal,
-          afterSequence: eventCursor,
-          onOpen: () => setSseConnected(true),
-        })
-        .catch((error: unknown) => {
-          if ((error as { name?: string }).name === "AbortError" || controller.signal.aborted) {
-            return;
-          }
-          setSseConnected(false);
-          eventReconnectTimer = setTimeout(() => connectSse(), 1_000);
-        });
-    }
-
     const [bootingSerial, setBootingSerial] = createSignal<string | null>(null);
     const [authorizingSerial, setAuthorizingSerial] = createSignal<string | null>(null);
     let selectedTargetControlValidation: Promise<void> | null = null;
@@ -1258,7 +629,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
       setSelectedDevice(serial);
       const selectedTarget = devices().find((device) => device.serial === serial);
-      selectedDeviceAvailable = targetIsReady(selectedTarget, health() === "online");
+      setSelectedDeviceAvailable(targetIsReady(selectedTarget, health() === "online"));
       void Promise.resolve(platform.storage.set("selectedDevice", serial ?? "")).catch(
         () => undefined,
       );
@@ -1295,7 +666,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const claimableVirtualTarget = Boolean(
           serial && /simulator|emulator/i.test(selectedTarget?.kind ?? ""),
         );
-        if (serial && (selectedDeviceAvailable || claimableVirtualTarget)) {
+        if (serial && (selectedDeviceAvailable() || claimableVirtualTarget)) {
           const active = leases.find(
             (lease) =>
               lease.deviceSerial === serial &&
@@ -1367,94 +738,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function saveRecipeRemote(input: {
-      id?: string;
-      title: string;
-      description?: string;
-      variables?: Record<string, string>;
-      parameters?: RecipeParameter[];
-      steps: RecipeStep[];
-      quarantined?: boolean;
-      quarantineReason?: string;
-    }): Promise<RecipeInfo | null> {
-      try {
-        const recipe = await saveRecipeRemoteRequest(request, {
-          ...input,
-          expectedRevision: recipes().find((item) => item.id === input.id)?.updatedAt ?? 0,
-        });
-        await refreshRecipes();
-        return recipe;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        appendLog(msg, "error");
-        toast(msg, "error");
-        return null;
-      }
-    }
-
-    async function loadRecipeYaml(id: string): Promise<string | null> {
-      try {
-        return await loadRecipeYamlRemote(request, id);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        appendLog(message, "error");
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function previewRecipeYaml(yaml: string): Promise<{
-      recipe: RecipeInfo;
-      exists: boolean;
-      canonicalYaml: string;
-    }> {
-      return previewRecipeYamlRemote(request, yaml);
-    }
-
-    async function importRecipeYaml(
-      yaml: string,
-      conflict: "reject" | "replace" | "copy" = "reject",
-    ): Promise<RecipeInfo | null> {
-      try {
-        const recipe = await importRecipeYamlRemote(request, yaml, conflict);
-        await refreshRecipes();
-        toast(`Imported “${recipe.title}”`, "success");
-        return recipe;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        appendLog(message, "error");
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function loadRecipeHistory(id: string): Promise<RecipeInfo[]> {
-      return loadRecipeHistoryRemote(request, id);
-    }
-
-    async function restoreRecipeVersion(id: string, updatedAt: number): Promise<RecipeInfo> {
-      const recipe = await restoreRecipeVersionRemote(request, id, updatedAt);
-      await refreshRecipes();
-      return recipe;
-    }
-
-    async function loadRecipeStability(id: string): Promise<RecipeStability> {
-      return loadRecipeStabilityRemote(request, id);
-    }
-
-    async function deleteRecipeRemote(id: string): Promise<void> {
-      try {
-        await deleteRecipe(request, id);
-        if (selectedRecipeId() === id) setSelectedRecipeId(null);
-        await refreshRecipes();
-        toast("Test deleted", "success");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        appendLog(msg, "error");
-        toast(msg, "error");
-      }
-    }
-
     const {
       resetLivePreview,
       captureUiSnapshot,
@@ -1490,6 +773,37 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       copyImage: platform.copyImage,
       appendLog,
       refreshDiscoverySessions,
+    });
+    const {
+      sseConnected,
+      eventActivity,
+      connect: connectSse,
+      dispose: disposeSse,
+    } = createServerEventController({
+      client: () => client,
+      refreshers: {
+        devices: refreshDevices,
+        recipes: refreshRecipes,
+        appMaps: refreshAppMaps,
+        jobs: refreshJobs,
+        runs: refreshRuns,
+        variables: refreshProjectVariables,
+        matrices: refreshMatrices,
+        discoveries: refreshDiscoverySessions,
+        // Corpus crawling remains a CLI/internal capture primitive. Desktop
+        // screenshot evidence is projected through canonical App Map runs.
+        corpora: async () => undefined,
+        authoring: refreshAuthoringSessions,
+      },
+      appendLog,
+      pushFrame,
+      setRunning,
+      selectedJobId,
+      setSelectedJobId,
+      refreshJobs,
+      refreshRuns,
+      loadRunDetail,
+      captureUiScreenshot,
     });
     const visualBaselineFrameUrl = (runId: string, frameIndex: number) =>
       buildVisualBaselineFrameUrl(serverUrl(), runId, frameIndex);
@@ -1617,70 +931,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearInterval(poll);
       clearInterval(clockTimer);
       stopPlayback();
-      eventAbort?.abort();
-      if (eventReconnectTimer) clearTimeout(eventReconnectTimer);
+      disposeSse();
       const leaseId = selectedLeaseId();
       if (client && leaseId) void client.releaseLease(leaseId).catch(() => undefined);
     });
 
-    async function cancelJobRemote(jobId?: string) {
-      const id = jobId ?? selectedJobId() ?? undefined;
-      try {
-        if (id) {
-          if (!client) await resolveConnection();
-          await client!.invoke("job.cancel", { jobId: id });
-        } else {
-          if (!client) await resolveConnection();
-          await client!.invoke("job.active.cancel", {});
-        }
-        appendLog("cancel requested", "info", id);
-        void refreshJobs();
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      }
-    }
-
-    async function pauseJobRemote(jobId?: string) {
-      const id = jobId ?? selectedJobId();
-      if (!id) {
-        appendLog("No job to pause", "error");
-        return;
-      }
-      try {
-        if (!client) await resolveConnection();
-        await client!.invoke("job.pause", { jobId: id });
-        appendLog("paused", "info", id);
-        void refreshJobs();
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      }
-    }
-
-    async function resumeJobRemote(jobId?: string) {
-      const id = jobId ?? selectedJobId();
-      if (!id) {
-        appendLog("No job to resume", "error");
-        return;
-      }
-      try {
-        if (!client) await resolveConnection();
-        await client!.invoke("job.resume", { jobId: id });
-        appendLog("resumed", "info", id);
-        void refreshJobs();
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      }
-    }
-
-    const activeJob = () =>
-      jobs().find((j) => j.status === "running" || j.status === "paused") ?? null;
-    const isPaused = () => activeJob()?.status === "paused";
-    // jobs() is newest-first (listJobs reverses); queued display order is
-    // execution order — oldest queued first — so reverse the filtered slice.
-    const queuedJobs = () =>
-      jobs()
-        .filter((j) => j.status === "queued")
-        .reverse();
     const {
       runRecipe: runRecipeRemote,
       inferLocaleOptionsFromDevice,
