@@ -184,6 +184,26 @@ test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
   );
 });
 
+test("gives run agents one revision-pinned graph Test operation", () => {
+  const input = {
+    appMapId: "checkout",
+    testId: "smoke",
+    expectedRevision: 7,
+    target: { kind: "browser" as const, platform: "browser" as const, targetId: "chrome" },
+  };
+  assert.deepEqual(tool("app-map.test.run").inputSchema.parse(input), input);
+  assert.ok(
+    relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "app-map.test.run"),
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      target: input.target,
+    }),
+  );
+});
+
 test("defines deterministic task profiles with a compact authoring default", () => {
   assert.deepEqual(relayMcpProfiles, [
     "map",

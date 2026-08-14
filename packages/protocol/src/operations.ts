@@ -873,6 +873,24 @@ type SpecificOperationMap = {
     input: { appMapId: string; testId: string };
     output: { plan: AppMapCompiledTest };
   };
+  "app-map.test.run": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      target: AuthoringTarget;
+    };
+    output: {
+      planIdentity: {
+        appMapId: string;
+        appMapRevision: number;
+        testId: string;
+        rootRecipeId: string;
+      };
+      plan: AppMapCompiledTest;
+      job: JobSummaryDto;
+    };
+  };
   "app-map.combine.save": {
     input: {
       appMapId: string;
@@ -1938,6 +1956,48 @@ const appMapTestProposeInputParser = objectParser<OperationInput<"app-map.test.p
     if (input.title !== undefined) string(input.title, "Test proposal title");
     if (input.description !== undefined) string(input.description, "Test proposal description");
     validateAppMapTestEdits(input, "Test proposal");
+  },
+);
+
+const appMapTestRunInputParser = objectParser<OperationInput<"app-map.test.run">>(
+  "Test run",
+  (input) => {
+    string(input.appMapId, "Test run appMapId");
+    string(input.testId, "Test run testId");
+    if (number(input.expectedRevision, "Test run expectedRevision") < 0) {
+      fail("Test run expectedRevision", "must be non-negative");
+    }
+    const target = record(input.target, "Test run target");
+    string(target.targetId, "Test run targetId");
+    if (target.kind !== "device" && target.kind !== "browser") {
+      fail("Test run target kind", "must be device or browser");
+    }
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      fail("Test run target platform", "must be android, ios, or browser");
+    }
+    if (
+      (target.kind === "browser" && target.platform !== "browser") ||
+      (target.kind === "device" && target.platform === "browser")
+    ) {
+      fail("Test run target", "kind and platform do not describe the same target");
+    }
+  },
+);
+
+const appMapTestRunOutputParser = objectParser<OperationOutput<"app-map.test.run">>(
+  "Test run response",
+  (output) => {
+    const identity = record(output.planIdentity, "Test run plan identity");
+    string(identity.appMapId, "Test run plan identity appMapId");
+    number(identity.appMapRevision, "Test run plan identity appMapRevision");
+    string(identity.testId, "Test run plan identity testId");
+    string(identity.rootRecipeId, "Test run plan identity rootRecipeId");
+    record(output.plan, "Test run plan");
+    record(output.job, "Test run job");
   },
 );
 
@@ -3422,6 +3482,21 @@ export const operationDefinitions = [
         "Test compilation response",
         (output) => record(output.plan, "Test compilation plan"),
       ),
+    },
+  ),
+  command(
+    "app-map.test.run",
+    "Compile and run one exact graph-native map test revision",
+    "POST",
+    "/app-maps/:appMapId/tests/:testId/run",
+    {
+      category: "execution",
+      input: appMapTestRunInputParser,
+      output: appMapTestRunOutputParser,
+      targetCapabilities: ["tap", "type", "scroll", "screenshot"],
+      lease: "exclusive",
+      progress: true,
+      cancellable: true,
     },
   ),
   command(

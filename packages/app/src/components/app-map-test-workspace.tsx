@@ -68,8 +68,6 @@ export function AppMapTestWorkspace(props: {
   const [retryAvailable, setRetryAvailable] = createSignal(false);
   const [undoDelete, setUndoDelete] = createSignal<UndoDelete>();
   const [creating, setCreating] = createSignal(false);
-  const [compiling, setCompiling] = createSignal(false);
-  const [compileMessage, setCompileMessage] = createSignal("");
   const [compiledPlan, setCompiledPlan] = createSignal<AppMapCompiledTest>();
   const [runJobId, setRunJobId] = createSignal<string>();
   const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
@@ -165,6 +163,7 @@ export function AppMapTestWorkspace(props: {
       return `Resolve ${blockers().length} incomplete ${blockers().length === 1 ? "binding" : "bindings"} before running.`;
     }
     if (!selectedDevice()) return "Choose a target before running this Test.";
+    if (!selectedDevice()?.platform) return "Refresh the selected target before running this Test.";
     return undefined;
   });
 
@@ -178,7 +177,6 @@ export function AppMapTestWorkspace(props: {
     if (!options?.preserveUndo) setUndoDelete();
     queuedDraft = snapshot;
     setDraft(snapshot);
-    setCompileMessage("");
     setCompiledPlan();
     if (!isActiveTestRun(runJob())) {
       setRunJobId();
@@ -397,63 +395,43 @@ export function AppMapTestWorkspace(props: {
     }
   }
 
-  async function compileTest(): Promise<AppMapCompiledTest | undefined> {
-    const map = appMap();
-    const test = draft();
-    if (!map || !test || blockers().length || compiling()) return undefined;
-    setCompiling(true);
-    setCompileMessage("");
-    try {
-      await saveQueue;
-      const { plan } = await server.runAction("app-map.test.compile", {
-        appMapId: map.id,
-        testId: test.id,
-      });
-      setCompiledPlan(plan);
-      const recipeCount = Object.keys(plan.recipes).length;
-      const linkCount = plan.stepProvenance.length;
-      setCompileMessage(
-        `Compiled ${recipeCount} ${recipeCount === 1 ? "recipe" : "recipes"} with ${linkCount} provenance ${linkCount === 1 ? "link" : "links"}.`,
-      );
-      return plan;
-    } catch (error) {
-      setCompileMessage(error instanceof Error ? error.message : String(error));
-      return undefined;
-    } finally {
-      setCompiling(false);
-    }
-  }
-
   async function runTest(): Promise<void> {
     const map = appMap();
     const test = draft();
-    if (!map || !test || runBlockedReason() || isActiveTestRun(runJob())) return;
+    const device = selectedDevice();
+    if (!map || !test || !device || runBlockedReason() || isActiveTestRun(runJob())) return;
     setRunLaunchState("preparing");
     setRunError("");
     setRunAttributionMismatch(false);
     setRunJobId();
-    const plan = await compileTest();
-    if (!plan) {
-      setRunError(compileMessage() || "Relay could not compile this Test.");
-      setRunLaunchState("error");
-      return;
-    }
-    const jobId = await server.runPathAcrossVariables({
-      appMapId: map.id,
-      testId: test.id,
-      title: test.name,
-    });
-    if (!jobId) {
-      setRunError("Relay did not start the Test. Review Activity, then try again.");
-      setRunLaunchState("error");
-      return;
-    }
-    setRunJobId(jobId);
-    setRunLaunchState("idle");
-    const job = server.jobs().find((candidate) => candidate.id === jobId);
-    if (job && job.action !== plan.rootRecipeId) {
-      setRunAttributionMismatch(true);
-      setRunError("The queued job does not match this compiled Test revision.");
+    try {
+      await saveQueue;
+      const target =
+        device.platform === "browser"
+          ? ({ kind: "browser", platform: "browser", targetId: device.serial } as const)
+          : ({
+              kind: "device",
+              platform: device.platform!,
+              targetId: device.serial,
+            } as const);
+      const result = await server.runAction("app-map.test.run", {
+        appMapId: map.id,
+        testId: test.id,
+        expectedRevision: map.revision,
+        target,
+      });
+      setCompiledPlan(result.plan);
+      setRunJobId(result.job.id);
+      await server.refreshJobs();
+      setRunLaunchState("idle");
+      const job = server.jobs().find((candidate) => candidate.id === result.job.id);
+      if (job && job.action !== result.planIdentity.rootRecipeId) {
+        setRunAttributionMismatch(true);
+        setRunError("The queued job does not match this saved Test revision.");
+        setRunLaunchState("error");
+      }
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
       setRunLaunchState("error");
     }
   }
@@ -494,16 +472,15 @@ export function AppMapTestWorkspace(props: {
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
           <span class="text-[11px] text-text-weak" role="status" aria-live="polite">
-            {compileMessage() ||
-              (saveState() === "saving"
-                ? "Saving…"
-                : saveState() === "error"
-                  ? "Not saved"
-                  : draft()
-                    ? blockers().length
-                      ? `${blockers().length} incomplete`
-                      : "Ready to compile"
-                    : "Saved")}
+            {saveState() === "saving"
+              ? "Saving…"
+              : saveState() === "error"
+                ? "Not saved"
+                : draft()
+                  ? blockers().length
+                    ? `${blockers().length} incomplete`
+                    : "Ready to run"
+                  : "Saved"}
           </span>
           <Button variant="secondary" size="sm" onClick={props.onOpenMap}>
             <Icon name="map" size={13} /> Open map

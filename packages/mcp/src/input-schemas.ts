@@ -598,6 +598,14 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       edits: testSemanticEdits,
     })
     .strict(),
+  "app-map.test.run": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("Exact saved App Map revision to run"),
+      target: authoringTarget.describe("Explicit device or managed browser target"),
+    })
+    .strict(),
   "app-map.proposal.submit": z
     .object({
       appMapId: identifier("App Map identifier"),

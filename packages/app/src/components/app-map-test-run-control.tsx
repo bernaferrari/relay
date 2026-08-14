@@ -38,7 +38,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     return "Run test";
   };
   const status = () => {
-    if (props.launchState === "preparing") return "Saving and compiling the latest Test…";
+    if (props.launchState === "preparing") return "Starting the exact saved Test revision…";
     if (props.launchState === "canceling") return "Cancellation requested. Waiting for Relay…";
     if (props.error) return props.error;
     if (props.blockedReason) return props.blockedReason;

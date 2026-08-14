@@ -941,6 +941,38 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "app-map.test.run",
+    path("test run", ["appMapId", "testId"], undefined, {
+      summary: "Run one exact saved graph-native Test revision",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "testId", type: "string", description: "Graph-native Test identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Exact saved App Map revision to run",
+        },
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: "Explicit device or browser target",
+        },
+      ],
+      examples: [
+        'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+      ],
+      behavior: "job-start-watch",
+    }),
+    path("work run", ["appMapId", "testId"], undefined, {
+      summary: "Compatibility alias of test run",
+      behavior: "job-start-watch",
+    }),
+  ),
+  mapped(
     "app-map.test.remove",
     path("test remove", ["appMapId", "testId"]),
     path("work remove", ["appMapId", "testId"]),
@@ -1694,22 +1726,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "combineId", type: "string", description: "Saved combination" },
-      ],
-      behavior: "job-start-watch",
-    }),
-    path("test run", ["appMapId", "testId"], undefined, {
-      summary: "Run one test once (no variable matrix)",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "testId", type: "string", description: "Saved graph-native, tour, or path test" },
-      ],
-      behavior: "job-start-watch",
-    }),
-    path("work run", ["appMapId", "testId"], undefined, {
-      summary: "Alias of test run",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "testId", type: "string", description: "Saved graph-native, tour, or path test" },
       ],
       behavior: "job-start-watch",
     }),

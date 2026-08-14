@@ -551,17 +551,22 @@ test("job watch --no-wait gets the job exactly once", async () => {
   });
 });
 
-test("work run watches jobs[0] when the 202 body omits job", async () => {
+test("work run starts the canonical exact Test operation and watches its job", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
   let polls = 0;
   const client: OperationInvoker = {
     async invoke(operationId, input) {
       calls.push({ operationId, input });
-      if (operationId === "job.combine.start") {
+      if (operationId === "app-map.test.run") {
         return {
-          jobs: [{ id: "work-job", status: "running", lastLogs: ["tour: 2 stop(s)"] }],
-          batch: { id: "work-job", worlds: ["once"] },
+          job: { id: "work-job", status: "running", lastLogs: ["test: 2 steps"] },
+          planIdentity: {
+            appMapId: "grok-ios",
+            appMapRevision: 7,
+            testId: "settings-tour",
+            rootRecipeId: "app-map:grok-ios:test:settings-tour:root:r7",
+          },
         };
       }
       polls += 1;
@@ -576,19 +581,35 @@ test("work run watches jobs[0] when the 202 body omits job", async () => {
     events: async () => {},
   };
 
-  const code = await runCli(["work", "run", "grok-ios", "settings-tour", "--ndjson"], {
-    streams: io.streams,
-    createClient: () => client,
-    registerSignalHandlers: false,
-    pollIntervalMs: 0,
-    env: {},
-  });
+  const code = await runCli(
+    [
+      "work",
+      "run",
+      "grok-ios",
+      "settings-tour",
+      "--input",
+      '{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"ipad"}}',
+      "--ndjson",
+    ],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
 
   assert.equal(code, ExitCode.success);
   assert.deepEqual(calls, [
     {
-      operationId: "job.combine.start",
-      input: { appMapId: "grok-ios", testId: "settings-tour" },
+      operationId: "app-map.test.run",
+      input: {
+        appMapId: "grok-ios",
+        testId: "settings-tour",
+        expectedRevision: 7,
+        target: { kind: "device", platform: "ios", targetId: "ipad" },
+      },
     },
     { operationId: "job.get", input: { jobId: "work-job" } },
     { operationId: "job.get", input: { jobId: "work-job" } },

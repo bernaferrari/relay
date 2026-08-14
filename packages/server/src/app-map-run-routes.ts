@@ -5,6 +5,7 @@ import {
   buildTargetProfiles,
   compileAppMapConnection,
   compileAppMapFlow,
+  compileAppMapTest,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -66,6 +67,137 @@ export type AppMapRunRouteContext = {
 
 export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promise<boolean> {
   if (input.method !== "POST") return false;
+  const testMatch = matchPath(input.pathname, "/app-maps/:appMapId/tests/:testId/run");
+  if (testMatch) {
+    const body = (await parseJsonBody(input.request)) as Omit<
+      OperationInput<"app-map.test.run">,
+      "appMapId" | "testId"
+    >;
+    const map = await readAppMap(input.scope.projectId, testMatch.appMapId!);
+    if (!map) throw new HttpError(404, `App Map ${testMatch.appMapId} not found`);
+    if (map.revision !== body.expectedRevision) {
+      throw new HttpError(
+        409,
+        `Expected App Map revision ${body.expectedRevision}, current revision is ${map.revision}`,
+        {
+          code: "revision-conflict",
+          currentRevision: map.revision,
+          recovery: "Reload the Test and run its current saved revision.",
+        },
+      );
+    }
+    const test = map.tests[testMatch.testId!];
+    if (!test) throw new HttpError(404, `Test ${testMatch.testId} not found`);
+    if (test.kind !== "scenario") {
+      throw new HttpError(409, `Test ${test.id} is a legacy ${test.kind} test`);
+    }
+
+    const targetId = body.target.targetId.trim();
+    let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
+    if (body.target.kind === "device") {
+      const operation = currentOperationContext();
+      const activeLease = operation
+        ? (await listDeviceLeases(input.scope.projectId)).some(
+            (lease) =>
+              lease.deviceSerial === targetId &&
+              lease.ownerId === operation.actorId &&
+              lease.status === "leased" &&
+              lease.expiresAt > Date.now(),
+          )
+        : false;
+      if (!activeLease) {
+        try {
+          observedDevices = await listDevices();
+        } catch (error) {
+          throw new HttpError(503, "Relay cannot verify the selected device", {
+            code: "TARGET_DISCOVERY_UNAVAILABLE",
+            targetId,
+            detail: error instanceof Error ? error.message : String(error),
+            recovery:
+              "Reconnect the device or restart Relay, then refresh the target list before retrying.",
+            recoveryAction: {
+              operationId: "target.devices.list",
+              cli: { argv: ["device", "list"] },
+            },
+          });
+        }
+        const availability = explicitTargetAvailability(targetId, observedDevices);
+        if (availability === "missing") {
+          throw new HttpError(409, `Target ${targetId} is not connected`, {
+            code: "TARGET_NOT_CONNECTED",
+            targetId,
+            recovery: "Connect the device, unlock it, and refresh the target list before retrying.",
+            recoveryAction: {
+              operationId: "target.devices.list",
+              cli: { argv: ["device", "list"] },
+            },
+          });
+        }
+        if (availability === "not-ready") {
+          throw new HttpError(409, `Target ${targetId} is not ready for control`, {
+            code: "TARGET_NOT_READY",
+            targetId,
+            recovery:
+              "Unlock or authorize the device, then refresh the target list before retrying.",
+            recoveryAction: {
+              operationId: "target.devices.list",
+              cli: { argv: ["device", "list"] },
+            },
+          });
+        }
+      }
+    }
+    await assertTargetControl(input.scope, targetId);
+
+    let compiled;
+    try {
+      compiled = compileAppMapTest(map, test);
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : String(error));
+    }
+    const plan = compiled.plan;
+    const recipeGraph: Record<string, Recipe> = Object.fromEntries(
+      Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
+    );
+    const recipeSnapshot = recipeGraph[plan.rootRecipeId];
+    if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
+    const operation = currentOperationContext();
+    if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
+    const targetProfile = (
+      await buildTargetProfiles({
+        devices: observedDevices ?? (await listDevices().catch(() => [])),
+        targets: await listTargets(),
+      })
+    ).find((profile) => profile.targetId === targetId);
+    const planIdentity = {
+      appMapId: plan.appMapId,
+      appMapRevision: plan.appMapRevision,
+      testId: plan.test.id,
+      rootRecipeId: plan.rootRecipeId,
+    };
+    const job = enqueueJob({
+      recipe: recipeSnapshot.id,
+      title: recipeSnapshot.title,
+      recipeSnapshot,
+      recipeGraph,
+      serial: body.target.kind === "device" ? targetId : undefined,
+      platform: body.target.kind === "device" ? body.target.platform : undefined,
+      targetKind: body.target.kind,
+      browserTargetId: body.target.kind === "browser" ? targetId : undefined,
+      ...(targetProfile ? { targetProfile } : {}),
+      artifacts: [
+        {
+          kind: "app-map-test-plan",
+          capturedAt: Date.now(),
+          data: plan,
+        },
+      ],
+      projectId: input.scope.projectId,
+      ownerId: operation.actorId,
+    });
+    json(input.response, 202, { planIdentity, plan, job });
+    return true;
+  }
   const flowMatch = matchPath(input.pathname, "/app-maps/:appMapId/flows/:flowId/run");
   const connectionMatch = matchPath(
     input.pathname,

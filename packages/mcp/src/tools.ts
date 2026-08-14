@@ -183,6 +183,7 @@ const runOperations = [
   "lease.create",
   "app-map.list",
   "app-map.get",
+  "app-map.test.run",
   "app-map.combine.preflight",
   "app-map.combine.save",
   "job.list",

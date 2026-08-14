@@ -633,6 +633,83 @@ test("an agent turns observations into a proposal that a human must approve", as
   }
 });
 
+test("a graph Test run freezes one exact revision before enqueueing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-map-test-run-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:test-runner",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "atomic-test", name: "Atomic Test" });
+    const saved = await client.invoke("app-map.test.save", {
+      appMapId: "atomic-test",
+      testId: "smoke",
+      expectedRevision: 0,
+      test: {
+        name: "Smoke",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "prepare",
+            kind: "script",
+            intent: "Prepare the fixture",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+        ],
+      },
+    } as never);
+    const lease = await client.invoke("lease.create", {
+      poolId: "local",
+      deviceSerial: "atomic-target",
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const result = await client.invoke("app-map.test.run", {
+      appMapId: "atomic-test",
+      testId: "smoke",
+      expectedRevision: saved.appMap.revision,
+      target: { kind: "device", platform: "android", targetId: "atomic-target" },
+    });
+    assert.deepEqual(result.planIdentity, {
+      appMapId: "atomic-test",
+      appMapRevision: saved.appMap.revision,
+      testId: "smoke",
+      rootRecipeId: result.plan.rootRecipeId,
+    });
+    assert.equal(result.job.action, result.plan.rootRecipeId);
+    assert.equal(result.job.serial, "atomic-target");
+    assert.equal(result.plan.stepProvenance[0]?.testStepId, "prepare");
+
+    const jobsBeforeConflict = await client.invoke("job.list", { limit: 100 });
+    await assert.rejects(
+      client.invoke("app-map.test.run", {
+        appMapId: "atomic-test",
+        testId: "smoke",
+        expectedRevision: 0,
+        target: { kind: "device", platform: "android", targetId: "atomic-target" },
+      }),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+    const jobsAfterConflict = await client.invoke("job.list", { limit: 100 });
+    assert.equal(jobsAfterConflict.jobs.length, jobsBeforeConflict.jobs.length);
+    await client.invoke("job.cancel", { jobId: result.job.id });
+    await client.invoke("lease.release", { leaseId: lease.lease.id });
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a saved App Map flow runs without an auxiliary canvas document", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-app-map-run-"));
   const previous = process.env.RELAY_STATE_DIR;

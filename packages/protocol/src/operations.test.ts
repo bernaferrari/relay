@@ -103,6 +103,33 @@ test("App Map flow runs accept an explicit replay boundary", () => {
   );
 });
 
+test("graph Test runs require an exact revision and explicit target", () => {
+  const input = {
+    appMapId: "map-1",
+    testId: "checkout",
+    expectedRevision: 7,
+    target: { kind: "device" as const, platform: "android" as const, targetId: "phone-1" },
+  };
+  assert.deepEqual(operationDefinition("app-map.test.run").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        target: { kind: "browser", platform: "android", targetId: "browser-1" },
+      }),
+    /kind and platform/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        appMapId: "map-1",
+        testId: "checkout",
+        target: input.target,
+      }),
+    /expectedRevision/u,
+  );
+});
+
 test("graph Test proposals accept only bounded semantic edit batches", () => {
   const input = {
     appMapId: "map-1",

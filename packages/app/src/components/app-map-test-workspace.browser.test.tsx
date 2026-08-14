@@ -412,8 +412,9 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   const [jobs, setJobs] = createSignal<JobInfo[]>([]);
   const calls: string[] = [];
   const opened: string[] = [];
-  let finishCompile!: () => void;
-  const compileGate = new Promise<void>((resolve) => (finishCompile = resolve));
+  let finishRun!: () => void;
+  const runGate = new Promise<void>((resolve) => (finishRun = resolve));
+  let runInput: Record<string, unknown> | undefined;
   serverMock.current = {
     selectedAppMap: () => initial,
     isOffline: () => false,
@@ -431,14 +432,11 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     loadRunDetail: async () => undefined,
     frameUrlForPersisted: () => "",
     refreshAppMaps: async () => undefined,
-    refreshJobs: async () => undefined,
-    runAction: async (id: string) => {
+    refreshJobs: async () => ({ ok: true }),
+    runAction: async (id: string, input: Record<string, unknown>) => {
       calls.push(id);
-      await compileGate;
-      return { plan };
-    },
-    runPathAcrossVariables: async () => {
-      calls.push("run");
+      runInput = input;
+      await runGate;
       setJobs([
         {
           id: "job-exact",
@@ -448,7 +446,16 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
           logs: [],
         },
       ]);
-      return "job-exact";
+      return {
+        plan,
+        planIdentity: {
+          appMapId: plan.appMapId,
+          appMapRevision: plan.appMapRevision,
+          testId: plan.test.id,
+          rootRecipeId,
+        },
+        job: { id: "job-exact", action: rootRecipeId, status: "queued", queuedAt: 2 },
+      };
     },
     cancelJob: async (id: string) => {
       calls.push(`cancel:${id}`);
@@ -467,6 +474,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     root,
   );
   await settle();
+  expect(root.textContent).toContain("Ready to run");
 
   const primary = () =>
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -478,10 +486,16 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
 
   expect(primary().textContent).toContain("Preparing run");
   expect(primary().getAttribute("aria-busy")).toBe("true");
-  finishCompile();
+  finishRun();
   await settle();
 
-  expect(calls.slice(0, 2)).toEqual(["app-map.test.compile", "run"]);
+  expect(calls).toEqual(["app-map.test.run"]);
+  expect(runInput).toEqual({
+    appMapId: "checkout",
+    testId: "checkout-run",
+    expectedRevision: 1,
+    target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+  });
   expect(primary().textContent).toContain("Cancel queued run");
   expect(root.textContent).toContain("Queued on the selected target");
   primary().click();
