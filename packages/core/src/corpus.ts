@@ -14,11 +14,8 @@ import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type {
   CorpusControl,
-  CorpusAnalysisReport,
-  CorpusFinding,
   CorpusJourney,
   CorpusJourneyStep,
-  CorpusCoverageReport,
   CorpusMapAction,
   CorpusMapPlan,
   CorpusNavStep,
@@ -47,23 +44,12 @@ import {
   sleep,
   type Device,
 } from "./device.js";
-import {
-  dismissTowardParent,
-  isExploreChromeLabel,
-  isUnsafeExploreControlText,
-  scrollCollectControls,
-} from "./explore.js";
+import { dismissTowardParent, scrollCollectControls } from "./explore.js";
 import { hardStopDeviceSession } from "./control.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { publish } from "./events.js";
 import { currentOperationContext } from "./operation-context.js";
-import {
-  corpusControlStableKey,
-  observeLocaleStableIdentity,
-  observeScreenIdentity,
-  slugCorpusPathSegment,
-  stableLabelKey,
-} from "./screen-identity.js";
+import { slugCorpusPathSegment } from "./screen-identity.js";
 import {
   captureScreenshot,
   captureSnapshot,
@@ -73,6 +59,18 @@ import {
   type InteractInput,
 } from "./workspace.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import {
+  corpusControls,
+  fingerprintCorpusScreen,
+  titleFromNodes,
+} from "./corpus-screen-analysis.js";
+import { analyzeCorpus } from "./corpus-report.js";
+export {
+  corpusControls,
+  fingerprintCorpusScreen,
+  titleFromNodes,
+} from "./corpus-screen-analysis.js";
+export { analyzeCorpus, buildCorpusCoverage, formatCorpusExport } from "./corpus-report.js";
 
 const DEFAULT_SCOPE: CorpusScope = {
   maxDepth: 3,
@@ -132,10 +130,6 @@ function screenAssetPath(sessionId: string, screenId: string): string {
 function screenAccessibilityAssetPath(sessionId: string, screenId: string): string {
   if (!/^screen-[A-Za-z0-9-]+$/.test(screenId)) throw new Error("invalid corpus screen id");
   return join(sessionDir(sessionId), "screens", `${screenId}.accessibility.json`);
-}
-
-function digest(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function emitCorpus(session: CorpusSession, created = false): void {
@@ -374,254 +368,6 @@ function assertMutable(session: CorpusSession): void {
   if (Date.now() - session.createdAt > session.scope.maxDurationMs) {
     throw new Error("corpus time budget is exhausted");
   }
-}
-
-function unsafeControlText(value: string): boolean {
-  return isUnsafeExploreControlText(value);
-}
-
-function isCorpusChromeLabel(value: string): boolean {
-  if (isExploreChromeLabel(value, { excludeLanguageSwitcher: true })) return true;
-  const label = value.trim();
-  // Grok app chrome that leaks under the Settings sheet.
-  if (/^grok[-_]/i.test(label)) return true;
-  if (
-    /^(Grok|Ask|Imagine|Build|Open sidebar|New Message|Ask Anything|Speak|Attach|Auto)$/i.test(
-      label,
-    )
-  )
-    return true;
-  if (/^Profile picture,/i.test(label)) return true;
-  if (/^supergrok-branding/i.test(label)) return true;
-  if (/scroll bar|scrollbar|page indicator/i.test(label)) return true;
-  if (/^forward$/i.test(label)) return true;
-  return false;
-}
-
-function isToggleControl(node: SnapshotNode, label: string): boolean {
-  const role = `${node.role ?? ""} ${node.type ?? ""}`.toLocaleLowerCase();
-  if (/\bswitch\b|\btoggle\b/.test(role)) return true;
-  if (/^(on|off|1|0)$/i.test((node.value ?? "").trim())) return true;
-  if (/^enable\b|^disable\b|^lock\b/i.test(label) && /\bswitch\b/.test(role)) return true;
-  return false;
-}
-
-function isNestedSettingsPage(nodes: SnapshotNode[]): boolean {
-  return nodes.some((node) => {
-    const id = (node.identifier ?? "").toLocaleLowerCase();
-    const label = (node.label ?? "").toLocaleLowerCase();
-    return (
-      id === "toolbar.back.button" ||
-      label === "grok-arrow-left" ||
-      (label === "back" &&
-        /button|nav/.test(`${node.type ?? ""} ${node.role ?? ""}`.toLocaleLowerCase()))
-    );
-  });
-}
-
-function isSettingsRoot(nodes: SnapshotNode[]): boolean {
-  const labels = new Set(nodes.map((node) => (node.label ?? "").trim()).filter(Boolean));
-  if (!labels.has("Settings") && ![...labels].some((label) => /settings/i.test(label))) {
-    return false;
-  }
-  return (
-    labels.has("Appearance") ||
-    labels.has("SuperGrok") ||
-    labels.has("Haptics") ||
-    labels.has("Usage") ||
-    [...labels].some((label) => /appearance|supergrok|haptics/i.test(label))
-  );
-}
-
-function structuralControlKey(
-  nodes: SnapshotNode[],
-  node: SnapshotNode,
-  fallbackIndex: number,
-): string {
-  const byIndex = new Map(
-    nodes.map((candidate, index) => [candidate.index ?? index, candidate] as const),
-  );
-  const segments: string[] = [];
-  let current: SnapshotNode | undefined = node;
-  let guard = 0;
-  while (current && guard < 14) {
-    const parentIndex = current.parentIndex;
-    const type = (current.role ?? current.type ?? "control").trim().toLocaleLowerCase();
-    const siblings = nodes.filter((candidate) => candidate.parentIndex === parentIndex);
-    const sameType = siblings.filter(
-      (candidate) =>
-        (candidate.role ?? candidate.type ?? "control").trim().toLocaleLowerCase() === type,
-    );
-    const ordinal = Math.max(0, sameType.indexOf(current));
-    segments.push(`${type}[${ordinal}]`);
-    if (parentIndex === undefined) break;
-    current = byIndex.get(parentIndex);
-    guard += 1;
-  }
-  return `structure:${segments.reverse().join("/") || `control[${fallbackIndex}]`}`;
-}
-
-function isSystemOrKeyboardNode(node: SnapshotNode): boolean {
-  const owner = `${node.bundleId ?? ""} ${node.identifier ?? ""}`;
-  return /(?:^|\s)(?:com\.android\.systemui|com\.touchtype\.swiftkey|com\.google\.android\.inputmethod\.latin|com\.samsung\.android\.honeyboard)(?::|\/|\.|\s|$)/i.test(
-    owner,
-  );
-}
-
-function actionableAnchor(nodes: SnapshotNode[], node: SnapshotNode): SnapshotNode | undefined {
-  if (node.hittable) return node;
-  const byIndex = new Map(
-    nodes.map((candidate, fallback) => [candidate.index ?? fallback, candidate] as const),
-  );
-  let parentIndex = node.parentIndex;
-  let guard = 0;
-  while (parentIndex !== undefined && guard < 16) {
-    const parent = byIndex.get(parentIndex);
-    if (!parent) return undefined;
-    if (parent.hittable) return parent;
-    parentIndex = parent.parentIndex;
-    guard += 1;
-  }
-  return undefined;
-}
-
-/** Interactive candidates for the corpus crawl. Prefer stable identifiers. */
-export function corpusControls(
-  nodes: SnapshotNode[],
-  options?: { allowSensitive?: boolean; includeToggles?: boolean },
-): CorpusControl[] {
-  const seen = new Set<string>();
-  const nested = isNestedSettingsPage(nodes);
-  return nodes
-    .filter((node) => node.visibleToUser !== false && node.enabled !== false)
-    .flatMap((node, index) => {
-      if (isSystemOrKeyboardNode(node)) return [];
-      const anchor = actionableAnchor(nodes, node);
-      if (anchor && isSystemOrKeyboardNode(anchor)) return [];
-      const visibleLabel = (node.label ?? node.value ?? "").trim();
-      const identifierOnlyControl =
-        !visibleLabel &&
-        Boolean(node.identifier) &&
-        Boolean(anchor) &&
-        !/framelayout|linearlayout|scrollview|content|root/i.test(
-          `${node.type ?? ""} ${node.identifier ?? ""}`,
-        );
-      const label = visibleLabel || (identifierOnlyControl ? node.identifier!.trim() : "");
-      if (!label) return [];
-      if (isCorpusChromeLabel(label)) return [];
-      if (!options?.includeToggles && isToggleControl(node, label)) return [];
-      if (!options?.allowSensitive && unsafeControlText(label)) return [];
-      if (!anchor && node.type !== "Cell" && !node.identifier) return [];
-      // Nested pages often still expose the parent settings list in the AX tree.
-      if (nested && node.hittable === false && !node.identifier && !anchor) return [];
-      const role = `${node.role ?? ""} ${node.type ?? ""}`.toLocaleLowerCase();
-      if (
-        /statictext|header|heading/.test(role) &&
-        node.type !== "Cell" &&
-        node.type !== "Button"
-      ) {
-        return [];
-      }
-      const semanticKey =
-        stableLabelKey(anchor?.label) ??
-        stableLabelKey(anchor?.value) ??
-        stableLabelKey(node.label) ??
-        stableLabelKey(node.value);
-      const stableKey =
-        anchor?.identifier || node.identifier || semanticKey
-          ? corpusControlStableKey(anchor ?? node)
-          : structuralControlKey(nodes, anchor ?? node, index);
-      const target = anchor?.identifier
-        ? { identifier: anchor.identifier }
-        : anchor?.ref
-          ? { ref: anchor.ref }
-          : node.identifier
-            ? { identifier: node.identifier }
-            : node.ref
-              ? { ref: node.ref }
-              : stableLabelKey(node.label)
-                ? { label: node.label! }
-                : node.label
-                  ? { label: node.label }
-                  : undefined;
-      if (!target) return [];
-      const key = stableKey;
-      if (seen.has(key)) return [];
-      seen.add(key);
-      return [
-        {
-          id: `${index}-${digest(key).slice(0, 8)}`,
-          label,
-          stableKey,
-          role: node.role ?? node.type,
-          target,
-        },
-      ];
-    })
-    .slice(0, 60);
-}
-
-/** Prefer real nav/page titles; never toolbar chrome. */
-export function titleFromNodes(nodes: SnapshotNode[], path: string[]): string | undefined {
-  const chrome = (label: string) => isCorpusChromeLabel(label) || isExploreChromeLabel(label);
-
-  // NavigationBar.identifier is often the page title on Grok (e.g. "Kids Mode").
-  for (const node of nodes) {
-    const type = `${node.type ?? ""} ${node.role ?? ""}`.toLocaleLowerCase();
-    if (!/navigationbar/.test(type)) continue;
-    const id = (node.identifier ?? "").trim();
-    if (id && !chrome(id) && !/^toolbar\./i.test(id) && id.length < 80) return id;
-    const label = (node.label ?? "").trim();
-    if (label && !chrome(label) && label.length < 80) return label;
-  }
-
-  // Centered header-ish static text near the top of the sheet.
-  const headerCandidates = nodes
-    .filter((node) => node.visibleToUser !== false)
-    .map((node) => {
-      const label = (stableLabelKey(node.label) ?? node.label ?? "").trim();
-      if (!label || label.length >= 80 || chrome(label)) return null;
-      const role = `${node.role ?? ""} ${node.type ?? ""}`.toLocaleLowerCase();
-      if (!/header|heading|statictext|text/.test(role)) return null;
-      if (/button|cell|switch/.test(role)) return null;
-      const rect = node.rect;
-      const y = rect?.y ?? 999;
-      const x = rect?.x ?? 0;
-      const width = rect?.width ?? 0;
-      if (y < 40 || y > 140) return null;
-      const centerBonus = width > 40 && x > 120 ? 0 : 20;
-      return { label, score: y + centerBonus };
-    })
-    .filter((item): item is { label: string; score: number } => item !== null)
-    .sort((left, right) => left.score - right.score);
-  if (headerCandidates[0]) return headerCandidates[0].label;
-
-  if (path.length) return path.at(-1);
-  if (isSettingsRoot(nodes)) return "Settings";
-  return undefined;
-}
-
-/**
- * Locale-stable key for the root; path-scoped key for nested pages so parent
- * AX leakage cannot collapse every settings subpage into one node.
- */
-export function fingerprintCorpusScreen(
-  nodes: SnapshotNode[],
-  pathKeys: string[] = [],
-): {
-  fingerprint: string;
-  canonicalKey: string;
-} {
-  const localeStable = observeLocaleStableIdentity(nodes).fingerprint;
-  const visualFingerprint = observeScreenIdentity(nodes).fingerprint;
-  const canonicalKey =
-    pathKeys.length > 0
-      ? digest(`relay-corpus-path:v1:${localeStable}:${pathKeys.join(">")}`)
-      : localeStable;
-  return {
-    fingerprint: visualFingerprint,
-    canonicalKey,
-  };
 }
 
 export async function createCorpusSession(input: {
@@ -1013,211 +759,6 @@ export async function readCorpusScreenAccessibilityAsset(
   }
 }
 
-export function buildCorpusCoverage(session: CorpusSession): CorpusCoverageReport {
-  const locales = session.scope.locales;
-  const byKey = new Map<string, CorpusScreen[]>();
-  for (const screen of session.screens) {
-    const group = byKey.get(screen.canonicalKey) ?? [];
-    group.push(screen);
-    byKey.set(screen.canonicalKey, group);
-  }
-  const screens = [...byKey.entries()].map(([canonicalKey, group]) => {
-    const observedLocales = [...new Set(group.map((screen) => screen.locale))];
-    const missingLocales = locales.filter((locale) => !observedLocales.includes(locale));
-    const label =
-      group.find((screen) => screen.title)?.title ??
-      group[0]?.path.at(-1) ??
-      canonicalKey.slice(0, 12);
-    return {
-      id: canonicalKey.slice(0, 16),
-      label,
-      canonicalKey,
-      observedLocales,
-      missingLocales,
-      screenIds: group.map((screen) => screen.id),
-    };
-  });
-  screens.sort((left, right) => left.label.localeCompare(right.label));
-  const complete = screens.filter((item) => item.missingLocales.length === 0).length;
-  const missing = screens.filter((item) => item.observedLocales.length === 0).length;
-  const partial = screens.length - complete - missing;
-  return {
-    sessionId: session.id,
-    name: session.name,
-    generatedAt: Date.now(),
-    locales: [...locales],
-    screens,
-    complete,
-    partial,
-    missing,
-  };
-}
-
-function normalizedCorpusLabel(value: string | undefined): string {
-  return (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
-}
-
-function meaningfulCorpusLabel(value: string | undefined): boolean {
-  const label = (value ?? "").trim();
-  if (label.length < 4 || !/\p{L}/u.test(label)) return false;
-  if (/^(?:https?:\/\/|www\.|[\d\W_]+$)/iu.test(label)) return false;
-  return true;
-}
-
-function localeFamily(locale: string): string {
-  return locale.trim().toLocaleLowerCase().split(/[-_]/u)[0] ?? locale;
-}
-
-function corpusFindingId(parts: string[]): string {
-  return digest(`relay-corpus-finding:v1:${parts.join("\u0000")}`).slice(0, 20);
-}
-
-/** Explainable checks over locale-stable screen and control evidence. No model
- * call is required, and possible linguistic defects remain explicitly
- * qualified so the report does not overstate certainty. */
-export function analyzeCorpus(session: CorpusSession): CorpusAnalysisReport {
-  const baselineLocale = session.scope.mapLocale ?? session.scope.locales[0]!;
-  const groups = new Map<string, CorpusScreen[]>();
-  for (const screen of session.screens) {
-    const group = groups.get(screen.canonicalKey) ?? [];
-    group.push(screen);
-    groups.set(screen.canonicalKey, group);
-  }
-  const findings: CorpusFinding[] = [];
-  const add = (finding: Omit<CorpusFinding, "id">): void => {
-    findings.push({
-      ...finding,
-      id: corpusFindingId([
-        finding.code,
-        finding.canonicalKey,
-        finding.locale,
-        finding.stableKey ?? "",
-      ]),
-    });
-  };
-
-  for (const [canonicalKey, group] of groups) {
-    const baseline = group.find((screen) => screen.locale === baselineLocale);
-    const screenLabel =
-      baseline?.title ??
-      baseline?.path.at(-1) ??
-      group.find((screen) => screen.title)?.title ??
-      group[0]?.path.at(-1) ??
-      canonicalKey.slice(0, 12);
-
-    for (const locale of session.scope.locales) {
-      const current = group.find((screen) => screen.locale === locale);
-      if (!current) {
-        add({
-          code: "SCREEN_MISSING",
-          severity: "critical",
-          confidence: "high",
-          canonicalKey,
-          screenLabel,
-          locale,
-          baselineLocale,
-          detail: `${screenLabel} was not captured in ${locale}.`,
-        });
-        continue;
-      }
-      if (
-        !baseline ||
-        locale === baselineLocale ||
-        localeFamily(locale) === localeFamily(baselineLocale)
-      ) {
-        continue;
-      }
-
-      const baselineLabels = baseline.localizedLabels ?? {};
-      const currentLabels = current.localizedLabels ?? {};
-      const stableBaselineLabels = Object.entries(baselineLabels).filter(
-        ([key, label]) => !key.startsWith("label:") && meaningfulCorpusLabel(label),
-      );
-      const commonLabels = stableBaselineLabels.filter(([key]) => key in currentLabels);
-      const unchangedLabels = commonLabels.filter(
-        ([key, label]) =>
-          normalizedCorpusLabel(currentLabels[key]) === normalizedCorpusLabel(label),
-      );
-
-      const sameScreenshot =
-        Boolean(baseline.snapshotDigest) && baseline.snapshotDigest === current.snapshotDigest;
-      if (
-        (sameScreenshot || baseline.fingerprint === current.fingerprint) &&
-        stableBaselineLabels.length > 0 &&
-        commonLabels.length > 0 &&
-        unchangedLabels.length === commonLabels.length
-      ) {
-        add({
-          code: "POSSIBLE_LOCALE_NOT_APPLIED",
-          severity: "critical",
-          confidence: sameScreenshot ? "high" : "medium",
-          canonicalKey,
-          screenLabel,
-          locale,
-          baselineLocale,
-          detail: sameScreenshot
-            ? `${screenLabel} has the exact same screenshot and labels in ${baselineLocale} and ${locale}; the language may not have changed.`
-            : `${screenLabel} has the same semantic content in ${baselineLocale} and ${locale}; the language may not have changed.`,
-        });
-        continue;
-      }
-
-      for (const [stableKey, expected] of stableBaselineLabels) {
-        const observed = currentLabels[stableKey];
-        if (observed === undefined) {
-          add({
-            code: "CONTROL_MISSING",
-            severity: "warning",
-            confidence: "medium",
-            canonicalKey,
-            screenLabel,
-            locale,
-            baselineLocale,
-            stableKey,
-            expected,
-            detail: `${expected} is present in ${baselineLocale} but missing from ${locale}.`,
-          });
-          continue;
-        }
-        if (normalizedCorpusLabel(observed) === normalizedCorpusLabel(expected)) {
-          add({
-            code: "POSSIBLE_UNTRANSLATED_TEXT",
-            severity: "warning",
-            confidence: "medium",
-            canonicalKey,
-            screenLabel,
-            locale,
-            baselineLocale,
-            stableKey,
-            expected,
-            observed,
-            detail: `“${observed}” is unchanged from ${baselineLocale} on ${screenLabel}.`,
-          });
-        }
-      }
-    }
-  }
-
-  const severityOrder = { critical: 0, warning: 1 } as const;
-  findings.sort(
-    (left, right) =>
-      severityOrder[left.severity] - severityOrder[right.severity] ||
-      left.screenLabel.localeCompare(right.screenLabel) ||
-      left.locale.localeCompare(right.locale) ||
-      left.code.localeCompare(right.code),
-  );
-  return {
-    schemaVersion: 1,
-    sessionId: session.id,
-    generatedAt: Date.now(),
-    baselineLocale,
-    findings,
-    critical: findings.filter((finding) => finding.severity === "critical").length,
-    warnings: findings.filter((finding) => finding.severity === "warning").length,
-    affectedScreens: new Set(findings.map((finding) => finding.canonicalKey)).size,
-  };
-}
-
 function packRelativePath(screen: CorpusScreen): string {
   const segments = [
     slugCorpusPathSegment(screen.locale),
@@ -1347,41 +888,6 @@ export async function exportCorpusPack(sessionId: string): Promise<{
   await writeSession(session);
   emitCorpus(session);
   return { session, manifest, rootDir };
-}
-
-export function formatCorpusExport(session: CorpusSession, format: "json" | "markdown"): string {
-  if (format === "json") return `${JSON.stringify(session, null, 2)}\n`;
-  const coverage = buildCorpusCoverage(session);
-  const analysis = analyzeCorpus(session);
-  const lines = [
-    `# ${session.name}`,
-    "",
-    `- Status: ${session.status}`,
-    `- Target: ${session.targetProfile?.name ?? session.targetId}`,
-    `- Locales: ${session.scope.locales.join(", ")}`,
-    `- Screens: ${session.screens.length}`,
-    `- Transitions: ${session.transitions.length}`,
-    `- Coverage: ${coverage.complete} complete · ${coverage.partial} partial`,
-    `- Findings: ${analysis.critical} critical · ${analysis.warnings} warnings`,
-    "",
-    "## Screens by locale",
-  ];
-  for (const locale of session.scope.locales) {
-    lines.push("", `### ${locale}`);
-    for (const screen of session.screens.filter((item) => item.locale === locale)) {
-      const path = screen.path.length ? screen.path.join(" › ") : "Root";
-      lines.push(
-        `- d${screen.depth} ${path}${screen.title ? ` — ${screen.title}` : ""} (\`${screen.artifactPath ?? screen.screenshotPath ?? screen.id}\`)`,
-      );
-    }
-  }
-  if (analysis.findings.length) {
-    lines.push("", "## Findings");
-    for (const finding of analysis.findings) {
-      lines.push(`- **${finding.severity}** · ${finding.locale} · ${finding.detail}`);
-    }
-  }
-  return `${lines.join("\n")}\n`;
 }
 
 async function runNavSteps(

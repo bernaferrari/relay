@@ -17,14 +17,7 @@ import {
 } from "./device.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
 import { inferDevicePlatformFromSerial } from "./target-context.js";
-import {
-  glyphsFromLogLine,
-  type Glyph,
-  type TraceFrameRef,
-  type TraceStep,
-  type StepKind,
-  type StepTone,
-} from "./trace.js";
+import { glyphsFromLogLine, type Glyph, type TraceFrameRef, type TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import { classifyJobError } from "./report.js";
 import {
@@ -46,10 +39,7 @@ import {
   freezeRecipeExecution,
   describeRecipeStep,
   glyphsForStep,
-  type HumanCheckpointReason,
-  type Recipe,
   type RecipeStep,
-  type StepTarget,
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
@@ -74,22 +64,15 @@ import {
   currentOperationContext,
   requireOperationContext,
   runWithOperationContext,
-  type OperationContext,
 } from "./operation-context.js";
-import type {
-  EvidenceCollectionPolicy,
-  EvidenceManifest,
-  FailureCategory,
-  RunOutcome,
-  RunReview,
-  TargetProfile,
-} from "@relay/protocol";
-import type { JobSummary } from "@relay/protocol";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
 import { isDeviceLeaseClaimActive } from "./collaboration.js";
+import type { EnqueueJobInput, JobErrorCode, TestJob } from "./session-contract.js";
+export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
+export { summarizeJob } from "./session-summary.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -123,103 +106,6 @@ async function resolveDeviceMeta(
   }
 }
 
-export type JobStatus = "queued" | "running" | "paused" | "ok" | "error" | "healed" | "cancelled";
-
-export type JobErrorCode =
-  | "ACTION_FAILED"
-  | "DEVICE_MISSING"
-  | "UNKNOWN_ACTION"
-  | "TIMEOUT"
-  | "ACCOUNT_SWITCH_FAILED"
-  | "CANCELLED"
-  | "INTERNAL";
-
-export type TestJob = {
-  id: string;
-  projectId?: string;
-  ownerId?: string;
-  operationContext?: OperationContext;
-  /** Immutable execution target captured when the job is accepted. */
-  targetContext: TargetContext;
-  action: string;
-  /** recipe id when this job runs a recipe (action == recipeId for naming) */
-  recipeId?: string;
-  serial?: string;
-  /** Human device name from agent-device list */
-  deviceName?: string;
-  platform: DevicePlatform;
-  targetKind?: "device" | "browser";
-  browserTargetId?: string;
-  /** Frozen facts used to select this run from a compatibility matrix. */
-  targetProfile?: TargetProfile;
-  /** Scheduler provenance. Optional only when reading older persisted runs. */
-  workerId?: string;
-  workerCapacity?: number;
-  status: JobStatus;
-  queuedAt: number;
-  startedAt?: number;
-  finishedAt?: number;
-  logs: string[];
-  result?: unknown;
-  error?: string;
-  errorCode?: JobErrorCode;
-  outcome?: RunOutcome;
-  failureCategory?: FailureCategory;
-  /** A completed run whose final verdict is intentionally deferred to a human. */
-  review?: RunReview;
-  /** Optional app-under-test version if known from the action result. */
-  appVersion?: string;
-  batchId?: string;
-  caseIndex?: number;
-  caseCount?: number;
-  /** prior failure message if this run self-healed via retry */
-  previousError?: string;
-  healed?: boolean;
-  healMessage?: string;
-  attempts: number;
-  /** retries this job (or job this retries) */
-  retryOf?: string;
-  retriedBy?: string;
-  steps: TraceStep[];
-  frames: TraceFrameRef[];
-  glyphs: Glyph[];
-  kind: StepKind;
-  tone: StepTone;
-  title: string;
-  runDir?: string;
-  persisted?: boolean;
-  /** Frozen authoring input and evidence payloads written once with the run. */
-  recipeSnapshot?: Recipe;
-  /** Complete immutable graph used by module, branch, and repeat steps. */
-  recipeGraph?: Record<string, Recipe>;
-  /** Structured completeness and ordered evidence timeline for this run. */
-  evidence?: EvidenceManifest;
-  /** Consent grants frozen before collectors start. */
-  evidencePolicy: EvidenceCollectionPolicy;
-  /** Present while a recipe is deliberately waiting for a person to act. */
-  waitingFor?: {
-    kind: "human";
-    message: string;
-    reason: HumanCheckpointReason;
-    resumeLabel: string;
-    since: number;
-    timeoutMs?: number;
-    verifyAfter?: {
-      target: StepTarget;
-      condition: "visible" | "gone";
-      timeoutMs?: number;
-    };
-  };
-  artifacts: { kind: string; capturedAt: number; data: unknown }[];
-  resolvedInputs: Record<string, string>;
-  /** Input names whose values are execution-only and must never cross a
-   * transport or persistence boundary in plaintext. */
-  sensitiveInputNames?: string[];
-  options?: {
-    prodAccountMatch?: string;
-  };
-};
-
 const MAX_JOBS = 100;
 const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
 const jobCompletions = new WeakMap<TestJob, { promise: Promise<void>; resolve: () => void }>();
@@ -228,66 +114,6 @@ const scheduler = new TargetWorkerScheduler();
 
 export function listJobs(limit = 50): TestJob[] {
   return jobRegistry.list(limit);
-}
-
-function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
-  const candidate = data as Record<string, unknown>;
-  if (candidate.kind !== "combine" || typeof candidate.world !== "string") return undefined;
-  if (
-    !candidate.values ||
-    typeof candidate.values !== "object" ||
-    Array.isArray(candidate.values)
-  ) {
-    return undefined;
-  }
-  const values = Object.fromEntries(
-    Object.entries(candidate.values).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
-  );
-  return {
-    kind: "combine",
-    ...(typeof candidate.combineId === "string" && candidate.combineId.trim()
-      ? { combineId: candidate.combineId.trim() }
-      : {}),
-    world: candidate.world,
-    values,
-    ...(typeof candidate.expectedScreenshots === "number" &&
-    Number.isFinite(candidate.expectedScreenshots)
-      ? { expectedScreenshots: candidate.expectedScreenshots }
-      : {}),
-  };
-}
-
-export function summarizeJob(job: TestJob): JobSummary {
-  const lastLogs = job.logs.slice(-12);
-  const frozenInputs = job.artifacts.find((artifact) => artifact.kind === "frozen-inputs")?.data;
-  const matrixCase = summarizeMatrixCase(frozenInputs);
-  return {
-    id: job.id,
-    action: job.action,
-    title: job.title,
-    status: job.status,
-    queuedAt: job.queuedAt,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    durationMs:
-      job.finishedAt && (job.startedAt ?? job.queuedAt)
-        ? job.finishedAt - (job.startedAt ?? job.queuedAt)
-        : undefined,
-    platform: job.targetKind === "browser" ? "browser" : job.platform,
-    serial: job.browserTargetId ?? job.serial,
-    outcome: job.outcome,
-    review: job.review,
-    batchId: job.batchId,
-    caseIndex: job.caseIndex,
-    caseCount: job.caseCount,
-    ...(matrixCase ? { matrixCase } : {}),
-    frameCount: job.frames.length,
-    evidenceComplete: Boolean(job.evidence?.finishedAt),
-    ...(lastLogs.length ? { lastLogs } : {}),
-  };
 }
 
 export function getJob(id: string): TestJob | undefined {
@@ -351,35 +177,6 @@ function jobLeaseValidator(job: TestJob): (() => Promise<void>) | undefined {
     if (!active) throw new JobControlOwnershipError();
   };
 }
-
-export type EnqueueJobInput = {
-  /** Internal executable recipe projection for a canonical App Map Flow. */
-  recipe: string;
-  serial?: string;
-  platform?: DevicePlatform;
-  targetKind?: "device" | "browser";
-  browserTargetId?: string;
-  targetProfile?: TargetProfile;
-  prodAccountMatch?: string;
-  /** retry a failed job — enables heal if success */
-  retryOf?: string;
-  /** provisional title for recipe jobs (recipe id is used if absent) */
-  title?: string;
-  variables?: Record<string, string>;
-  sensitiveInputNames?: string[];
-  batchId?: string;
-  caseIndex?: number;
-  caseCount?: number;
-  artifacts?: TestJob["artifacts"];
-  /** Frozen execution input. Matrix and retry jobs reuse this snapshot. */
-  recipeSnapshot?: Recipe;
-  recipeGraph?: Record<string, Recipe>;
-  projectId?: string;
-  ownerId?: string;
-  evidencePolicy?: EvidenceCollectionPolicy;
-  workerId?: string;
-  workerCapacity?: number;
-};
 
 /**
  * Reconstruct the execution contract that was frozen with a completed run.
