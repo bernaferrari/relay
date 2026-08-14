@@ -1,0 +1,675 @@
+import type { Device } from "./device.js";
+import { createHash } from "node:crypto";
+import { resolveStepPoint, type StepPoint } from "@relay/protocol";
+import {
+  pressIdentifier,
+  pressRef,
+  pressLabel,
+  pressMatchingText,
+  findClick,
+  pressPoint,
+  pressText,
+  pressResolvedControl,
+  androidNamedPressCompletedHandoff,
+  resolveNamedControl,
+  resolveSnapshotTargetPoint,
+  selectedPlatform,
+  sleep,
+  base,
+  longPressTarget,
+  snapshot,
+  type SnapshotNode,
+} from "./device.js";
+import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
+import { now } from "./events.js";
+import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
+import type { TestJob } from "./session.js";
+import {
+  compareScreenIdentity,
+  localeNeutralStructureSignature,
+  observeScreenIdentity,
+} from "./screen-identity.js";
+import {
+  nodeMatchesTarget,
+  refMatchesRecordedTarget,
+  textForTarget,
+  sameTarget,
+} from "./recipe-target-match.js";
+import type { RecipeStepContext } from "./recipe-runner-context.js";
+
+function isLocalizedRecipeJob(job?: TestJob): boolean {
+  const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")
+    .trim()
+    .toLocaleLowerCase();
+  return Boolean(locale && !/^en(?:-|$)/.test(locale));
+}
+
+/**
+ * App-locale runs intentionally change visible text, so an English semantic
+ * fingerprint cannot be the only screen proof.  Stable platform identifiers
+ * plus near-identical accessibility structure are a strict, language-neutral
+ * substitute.  Labels alone never qualify: that would make an unrelated
+ * translated surface look like the recorded screen.
+ */
+function localizedScreenIdentityMatch(
+  observed: ReturnType<typeof observeScreenIdentity>,
+  observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
+  job?: TestJob,
+): boolean {
+  if (!isLocalizedRecipeJob(job)) return false;
+  const structureSignature = localeNeutralStructureSignature(observed);
+  return observations.some((observation) => {
+    const comparison = compareScreenIdentity(observed, observation);
+    const stableIdentifiers = comparison.signals.find(
+      (signal) => signal.kind === "stable-identifier-overlap" && signal.impact === "positive",
+    )?.strength;
+    const structure = comparison.signals.find(
+      (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
+    )?.strength;
+    return (
+      ((stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
+      (structureSignature !== undefined &&
+        structureSignature === localeNeutralStructureSignature(observation))
+    );
+  });
+}
+function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
+  let width = 0;
+  let height = 0;
+  for (const node of nodes) {
+    if (!node.rect) continue;
+    width = Math.max(width, node.rect.x + node.rect.width);
+    height = Math.max(height, node.rect.y + node.rect.height);
+  }
+  return width > 0 && height > 0
+    ? { width: Math.round(width), height: Math.round(height) }
+    : undefined;
+}
+
+const runtimeBoundsCache = new WeakMap<
+  Device,
+  Promise<{ width: number; height: number } | undefined>
+>();
+
+function runtimeBounds(device: Device): Promise<{ width: number; height: number } | undefined> {
+  const cached = runtimeBoundsCache.get(device);
+  if (cached) return cached;
+  const pending = snapshot(device)
+    .then(snapshotBounds)
+    .catch(() => undefined);
+  runtimeBoundsCache.set(device, pending);
+  return pending;
+}
+
+async function resolvePointForDevice(
+  device: Device,
+  point: StepPoint,
+  mirrorX = false,
+): Promise<{ x: number; y: number }> {
+  const bounds = await runtimeBounds(device);
+  const logicalPoint =
+    point.anchor && point.referenceBounds
+      ? resolveStepPoint(point, bounds ?? point.referenceBounds)
+      : { x: point.x, y: point.y };
+  // agent-device's XCTest runner accepts logical application coordinates even
+  // when raw snapshot children arrive in a portrait-native buffer.
+  return mirrorX && bounds
+    ? { x: Math.max(0, bounds.width - logicalPoint.x), y: logicalPoint.y }
+    : logicalPoint;
+}
+
+export function isRightToLeftRun(variables?: Record<string, string>): boolean {
+  const locale = (variables?.language ?? variables?.locale ?? "").trim().toLowerCase();
+  return /^(?:ar|fa|he|iw|ps|ur)(?:-|$)/.test(locale);
+}
+
+async function waitForResponseCompletion(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "wait-response" }>,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const timeoutMs = Math.min(step.timeoutMs ?? 90_000, MAX_WAIT_MS);
+  const stableForMs = step.stableForMs ?? 2_000;
+  const pollMs = 250;
+  const beganAt = now();
+  const deadline = beganAt + timeoutMs;
+  const initialNodes = await snapshot(device);
+  const initialText = textForTarget(initialNodes, step.target);
+  let previousText = initialText;
+  const initiallyIdle = step.idleTarget
+    ? initialNodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
+    : false;
+  const completionTargetIsIdle = Boolean(
+    step.idleTarget && sameTarget(step.target, step.idleTarget),
+  );
+  let sawIdleLeave = !initiallyIdle;
+  // Physical-device snapshots can be slower than a short model response. If
+  // the first post-action sample already contains content and the independent
+  // idle signal, the response completed before Relay could observe it growing.
+  // Treat that as a started response instead of waiting for an impossible
+  // second content transition. A target that is also the idle signal is not
+  // independent, though: it may be left over from the previous response. In
+  // that case require the control to leave and return so an old response can
+  // never satisfy a new wait immediately.
+  let startedAt: number | undefined =
+    initialText && initiallyIdle && !completionTargetIsIdle ? beganAt : undefined;
+  let stableSince: number | undefined = startedAt;
+  let samples = 1;
+  let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
+
+  if (startedAt) {
+    ctx.log(`response completion: content already complete (${initialText.length} characters)`);
+  }
+
+  const record = (status: "complete" | "timeout", completedAt: number, text: string) => {
+    ctx.job?.artifacts.push({
+      kind: "response-completion",
+      capturedAt: completedAt,
+      data: {
+        status,
+        beganAt,
+        startedAt,
+        completedAt,
+        durationMs: completedAt - beganAt,
+        stableForMs,
+        timeoutMs,
+        samples,
+        signals: lastSignals,
+        observedCharacters: text.length,
+        usedBusyTarget: Boolean(step.busyTarget),
+        usedIdleTarget: Boolean(step.idleTarget),
+      },
+    });
+  };
+
+  while (now() < deadline) {
+    await sleep(pollMs, device);
+    const capturedAt = now();
+    const nodes = await snapshot(device);
+    samples += 1;
+    const text = textForTarget(nodes, step.target);
+    const changedFromInitial = text.length > 0 && text !== initialText;
+    const idleVisible = step.idleTarget
+      ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
+      : false;
+    if (step.idleTarget && !idleVisible) sawIdleLeave = true;
+
+    if (
+      !startedAt &&
+      (changedFromInitial ||
+        (!initialText && text.length > 0) ||
+        (completionTargetIsIdle && sawIdleLeave && idleVisible && text.length > 0))
+    ) {
+      startedAt = capturedAt;
+      stableSince = capturedAt;
+      ctx.log(`response completion: content started (${text.length} characters)`);
+    }
+    if (startedAt) {
+      if (text !== previousText) stableSince = capturedAt;
+      const stable = Boolean(text && stableSince && capturedAt - stableSince >= stableForMs);
+      const busyGone = step.busyTarget
+        ? !nodes.some((node) => nodeMatchesTarget(node, step.busyTarget!))
+        : false;
+      lastSignals = [
+        "response-started",
+        ...(stable ? ["text-stable"] : []),
+        ...(busyGone ? ["busy-gone"] : []),
+        ...(idleVisible ? ["idle-visible"] : []),
+      ];
+      const hasIndependentCompletionTarget = Boolean(step.busyTarget || step.idleTarget);
+      if (stable && (!hasIndependentCompletionTarget || busyGone || idleVisible)) {
+        record("complete", capturedAt, text);
+        ctx.log(`response completion: complete · ${lastSignals.join(" + ")}`);
+        return;
+      }
+    }
+    previousText = text;
+  }
+
+  record("timeout", now(), previousText);
+  throw new Error(
+    `response completion: timed out after ${Math.round(timeoutMs / 1000)}s (${lastSignals.join(" + ") || "no response observed"})`,
+  );
+}
+
+function readInput(ctx: RecipeStepContext, input: string): string {
+  const variables = ctx.job?.resolvedInputs ?? ctx.variables;
+  if (!variables) throw new Error("extract: conversational steps require an execution context");
+  const key = input.replace(/^\{\{\s*|\s*\}\}$/g, "");
+  if (!Object.hasOwn(variables, key)) {
+    throw new Error(`extract: input variable is missing (${key})`);
+  }
+  return variables[key]!;
+}
+
+function runVariableScript(source: string, ctx: RecipeStepContext): void {
+  const values = ctx.job?.resolvedInputs;
+  if (!values) throw new Error("script: variable transforms require an owning job");
+  for (const [index, raw] of source.split("\n").entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const set = line.match(/^set\s+([a-zA-Z0-9_.-]+)\s*=\s*(.*)$/);
+    if (set) {
+      values[set[1]!] = set[2]!;
+      continue;
+    }
+    const copy = line.match(/^copy\s+([a-zA-Z0-9_.-]+)\s*=\s*([a-zA-Z0-9_.-]+)$/);
+    if (copy) {
+      if (!Object.hasOwn(values, copy[2]!))
+        throw new Error(`script line ${index + 1}: source variable ${copy[2]} is missing`);
+      values[copy[1]!] = values[copy[2]!]!;
+      continue;
+    }
+    const remove = line.match(/^delete\s+([a-zA-Z0-9_.-]+)$/);
+    if (remove) {
+      delete values[remove[1]!];
+      continue;
+    }
+    const assertion = line.match(
+      /^assert\s+([a-zA-Z0-9_.-]+)\s+(exists|equals|contains)(?:\s+(.*))?$/,
+    );
+    if (assertion) {
+      const actual = values[assertion[1]!];
+      const operator = assertion[2];
+      const expected = assertion[3] ?? "";
+      const passed =
+        operator === "exists"
+          ? actual !== undefined && actual.length > 0
+          : operator === "equals"
+            ? actual === expected
+            : actual?.includes(expected) === true;
+      if (!passed) throw new Error(`script line ${index + 1}: assertion failed`);
+      continue;
+    }
+    throw new Error(
+      `script line ${index + 1}: use set, copy, delete, or assert (arbitrary code is not allowed)`,
+    );
+  }
+}
+
+/** Resolve {{name}} placeholders immediately before execution. Unresolved
+ * placeholders stay visible so a bad configuration fails transparently. */
+export function resolveRecipeStep(step: RecipeStep, variables: Record<string, string>): RecipeStep {
+  const visit = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      return value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (whole, name: string) =>
+        Object.hasOwn(variables, name) ? variables[name]! : whole,
+      );
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item)]));
+    }
+    return value;
+  };
+  const resolved = visit(step) as RecipeStep;
+  // Branch input names are references, not display strings. Replacing
+  // `{{language_identifier}}` here turns the reference into its value (`-`),
+  // then the executor incorrectly looks up a variable literally named `-`.
+  // Preserve the reference while still resolving expected values and every
+  // other field in the step.
+  return step.kind === "branch" && resolved.kind === "branch"
+    ? { ...resolved, input: step.input }
+    : resolved;
+}
+
+function isCancel(err: unknown): boolean {
+  return err instanceof Error && err.name === "JobCancelledError";
+}
+
+/**
+ * Try each present target strategy in robustness order; log + continue on
+ * failure, rethrow cancel immediately, throw when none succeed.
+ */
+async function tapTarget(
+  device: Device,
+  target: StepTarget,
+  log: (line: string) => void,
+  repetitions = 1,
+  intervalMs = 90,
+  region?: NonNullable<RecipeStep["when"]>["region"],
+  mirrorPoints = false,
+): Promise<{
+  strategy: string;
+  method?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+  point?: { x: number; y: number };
+}> {
+  const repeated =
+    repetitions > 1
+      ? {
+          count: repetitions,
+          intervalMs,
+          // XCTest's native doubleTap is observably different from two
+          // independent taps for text selection and zoom gestures.
+          ...(repetitions === 2 ? { doubleTap: true } : {}),
+        }
+      : undefined;
+  const point = target.point
+    ? await resolvePointForDevice(device, target.point, mirrorPoints)
+    : undefined;
+  const namedTarget = {
+    ...(target.identifier ? { identifier: target.identifier } : {}),
+    ...(target.label ? { label: target.label } : {}),
+    ...(target.text ? { text: target.text } : {}),
+    ...(point ? { point } : {}),
+  };
+  const nodes = await snapshot(device);
+  const named = resolveNamedControl(nodes, namedTarget);
+  if (named) {
+    try {
+      await pressResolvedControl(device, named, namedTarget, repeated);
+    } catch (error) {
+      // A semantic control may intentionally open a system surface (for
+      // example Grok's App Language row opens Android Settings). Keep the
+      // recipe executor aligned with pressNamedControl: accept that completed
+      // handoff, but continue rejecting raw-point and launcher escapes.
+      if (!androidNamedPressCompletedHandoff(error, namedTarget)) throw error;
+    }
+    return {
+      strategy: named.method,
+      method: named.method,
+      bounds: named.bounds,
+      point: named.point,
+    };
+  }
+  const attempts: { strategy: string; run: () => Promise<void> }[] = [];
+  if (target.identifier)
+    attempts.push({
+      strategy: "identifier",
+      run: () => pressIdentifier(device, target.identifier!, repeated),
+    });
+  if (target.ref)
+    attempts.push({
+      strategy: "ref",
+      run: async () => {
+        if (
+          selectedPlatform() === "ios" &&
+          (target.identifier || target.label) &&
+          !refMatchesRecordedTarget(await snapshot(device), target)
+        ) {
+          throw new Error("recorded element reference now identifies a different control");
+        }
+        await pressRef(device, target.ref!, repeated);
+      },
+    });
+  if (target.label)
+    attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!, repeated) });
+  if (target.label)
+    attempts.push({
+      strategy: "snapshot-label",
+      run: () => pressMatchingText(device, target.label!),
+    });
+  if (target.label && region && selectedPlatform() === "ios") {
+    attempts.push({
+      strategy: "snapshot-region",
+      run: async () => {
+        const point = resolveSnapshotTargetPoint(await snapshot(device), target, region);
+        if (!point) throw new Error("regional snapshot target was absent or ambiguous");
+        await pressPoint(device, point.x, point.y, repeated);
+      },
+    });
+  }
+  if (target.text)
+    attempts.push({
+      strategy: "text",
+      run: () =>
+        repeated ? pressText(device, target.text!, repeated) : findClick(device, target.text!),
+    });
+  if (target.point) {
+    const p = point!;
+    attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y, repeated) });
+  }
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i]!;
+    try {
+      await a.run();
+      return { strategy: a.strategy, method: a.strategy };
+    } catch (err) {
+      if (isCancel(err)) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i === attempts.length - 1) {
+        throw new Error(`tap failed: no strategy matched (${describeTarget(target)})`);
+      }
+      log(`tap: ${a.strategy} failed (${msg}) — trying next`);
+    }
+  }
+  throw new Error(`tap failed: target has no usable strategy (${describeTarget(target)})`);
+}
+
+async function tapRecordedTarget(
+  device: Device,
+  input: {
+    target: StepTarget;
+    fallbackTargets?: StepTarget[];
+    evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
+    region?: NonNullable<RecipeStep["when"]>["region"];
+  },
+  ctx: RecipeStepContext,
+  repetitions = 1,
+  intervalMs = 90,
+): Promise<void> {
+  const candidates = [
+    input.target,
+    ...(input.fallbackTargets ?? []),
+    ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
+  ];
+  const unique = candidates.filter(
+    (candidate, index) =>
+      candidates.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) ===
+      index,
+  );
+  const configuredTargetCount = 1 + (input.fallbackTargets?.length ?? 0);
+  const failures: string[] = [];
+  for (const [index, candidate] of unique.entries()) {
+    try {
+      const hit = await tapTarget(
+        device,
+        candidate,
+        ctx.log,
+        repetitions,
+        intervalMs,
+        input.region,
+        isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+      );
+      const resolution = {
+        kind: "target-resolution" as const,
+        capturedAt: now(),
+        data: {
+          method: hit.method ?? hit.strategy,
+          strategy: hit.strategy,
+          ...(hit.bounds ? { bounds: hit.bounds } : {}),
+          ...(hit.point ? { point: hit.point } : {}),
+          target: candidate,
+        },
+      };
+      ctx.job?.artifacts.push(resolution);
+      ctx.artifacts?.push(resolution);
+      if (index > 0) {
+        const configuredFallback = index < configuredTargetCount;
+        ctx.job?.artifacts.push({
+          kind: configuredFallback ? "locator-fallback" : "locator-heal",
+          capturedAt: now(),
+          data: {
+            original: input.target,
+            replacement: candidate,
+            strategy: hit.strategy,
+            reason: failures.join("; "),
+            persisted: false,
+          },
+        });
+        ctx.log(
+          `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${hit.strategy})`,
+        );
+      }
+      return;
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
+}
+
+async function longPressRecordedTarget(
+  device: Device,
+  input: {
+    target: StepTarget;
+    fallbackTargets?: StepTarget[];
+    evidence?: Extract<RecipeStep, { kind: "tap" }>["evidence"];
+    durationMs?: number;
+  },
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const candidates = [
+    input.target,
+    ...(input.fallbackTargets ?? []),
+    ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
+  ];
+  const attempts = (
+    await Promise.all(
+      candidates.map(async (target) => [
+        ...(target.identifier ? [{ identifier: target.identifier }] : []),
+        ...(target.ref ? [{ ref: target.ref }] : []),
+        ...(target.label ? [{ label: target.label }] : []),
+        ...(target.text ? [{ text: target.text }] : []),
+        ...(target.point
+          ? [
+              {
+                point: await resolvePointForDevice(
+                  device,
+                  target.point,
+                  isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+                ),
+              },
+            ]
+          : []),
+      ]),
+    )
+  ).flat();
+  const unique = attempts.filter(
+    (candidate, index) =>
+      attempts.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) === index,
+  );
+  const failures: string[] = [];
+  for (const [index, candidate] of unique.entries()) {
+    try {
+      await longPressTarget(device, candidate, input.durationMs);
+      if (index > 0) ctx.log(`locator: used recorded hold fallback ${index + 1}/${unique.length}`);
+      return;
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throw new Error(`hold failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
+}
+
+/** Scroll up — mirrors scrollDown but via the SDK's direction field. */
+async function scrollUp(device: Device, amount = 0.5): Promise<void> {
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  await raceCancel(device.interactions.scroll({ ...base(), direction: "up", amount }));
+}
+
+const MAX_WAIT_MS = 15 * 60 * 1000;
+const DEFAULT_EXPECT_TIMEOUT_MS = 5000;
+
+/**
+ * True when the error signals a genuine "element not there / condition unmet"
+ * outcome — the SDK's find throws "No match", the wait command and our own
+ * poll loops throw timeout-phrased errors. Anything else (no device, adb,
+ * session binding, connection failures) is infrastructure and must keep its
+ * original message instead of being converted into an assertion failure.
+ */
+function isNotFoundOrTimeout(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\bno match\b|did not match|not found|timed out|timeout/i.test(msg);
+}
+
+/**
+ * True if the target's identifier/ref/label/text strategy currently resolves. Unlike the
+ * `exists` helper (which swallows every non-cancel error as `false`),
+ * infrastructure failures propagate with their original message — only a
+ * genuine "No match" reads as absent, so `expect ... gone` cannot pass just
+ * because the device went away.
+ */
+async function targetPresent(device: Device, target: StepTarget): Promise<boolean> {
+  const query = target.identifier
+    ? `id="${target.identifier.replaceAll('"', '\\"')}"`
+    : target.ref
+      ? target.ref.startsWith("@")
+        ? target.ref
+        : `@${target.ref}`
+      : (target.label ?? target.text);
+  if (!query) return false;
+  try {
+    await cooperativeCheckpoint();
+    throwIfCancelled();
+    await raceCancel(device.interactions.find({ ...base(), query, action: "exists", first: true }));
+    return true;
+  } catch (err) {
+    if (isCancel(err)) throw err;
+    if (isNotFoundOrTimeout(err)) return false;
+    throw err;
+  }
+}
+
+async function conditionalTargetPresent(
+  device: Device,
+  condition: NonNullable<RecipeStep["when"]>,
+): Promise<boolean> {
+  if (!condition.region) return targetPresent(device, condition.target);
+  const nodes = await snapshot(device);
+  const viewport =
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "application")?.rect ??
+    nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "window")?.rect;
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
+    throw new Error("conditional target: viewport bounds are unavailable");
+  }
+  const region = condition.region;
+  return nodes.some((node) => {
+    if (!nodeMatchesTarget(node, condition.target) || !node.rect) return false;
+    const x = (node.rect.x + node.rect.width / 2 - viewport.x) / viewport.width;
+    const y = (node.rect.y + node.rect.height / 2 - viewport.y) / viewport.height;
+    return (
+      (region.minX === undefined || x >= region.minX) &&
+      (region.maxX === undefined || x <= region.maxX) &&
+      (region.minY === undefined || y >= region.minY) &&
+      (region.maxY === undefined || y <= region.maxY)
+    );
+  });
+}
+
+function clipboardExpectationError(
+  observed: string,
+  expected: string,
+  match: "exact" | "contains" | undefined,
+): Error {
+  const observedDigest = createHash("sha256").update(observed).digest("hex").slice(0, 12);
+  const expectedDigest = createHash("sha256").update(expected).digest("hex").slice(0, 12);
+  return new Error(
+    `clipboard: ${match === "contains" ? "content" : "value"} did not match expectation ` +
+      `(observed ${observed.length} chars, sha256:${observedDigest}; ` +
+      `expected ${expected.length} chars, sha256:${expectedDigest})`,
+  );
+}
+
+export {
+  DEFAULT_EXPECT_TIMEOUT_MS,
+  MAX_WAIT_MS,
+  clipboardExpectationError,
+  conditionalTargetPresent,
+  isCancel,
+  isNotFoundOrTimeout,
+  localizedScreenIdentityMatch,
+  longPressRecordedTarget,
+  readInput,
+  resolvePointForDevice,
+  runtimeBoundsCache,
+  runVariableScript,
+  scrollUp,
+  tapRecordedTarget,
+  targetPresent,
+  waitForResponseCompletion,
+};
