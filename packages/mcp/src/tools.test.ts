@@ -202,6 +202,14 @@ test("gives run agents one revision-pinned graph Test operation", () => {
       target: input.target,
     }),
   );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      target: { kind: "browser", platform: "android", targetId: "chrome" },
+    }),
+  );
 });
 
 test("defines deterministic task profiles with a compact authoring default", () => {
@@ -209,6 +217,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
     "map",
     "observe",
     "author",
+    "test",
     "run",
     "execute",
     "review",
@@ -226,9 +235,51 @@ test("defines deterministic task profiles with a compact authoring default", () 
       ({ operationId }) => operationId === "app-map.proposal.submit",
     ),
   );
+  const observed = new Set(
+    relayMcpToolsForProfile("observe").map(({ operationId }) => operationId),
+  );
+  assert.equal(
+    [...observed].every((operationId) =>
+      relayMcpToolsForProfile("author").some((tool) => tool.operationId === operationId),
+    ),
+    true,
+  );
+  assert.deepEqual(
+    relayMcpToolsForProfile("test")
+      .map(({ operationId }) => operationId)
+      .filter((operationId) =>
+        [
+          "app-map.test.save",
+          "app-map.test.edit",
+          "app-map.test.propose",
+          "app-map.test.compile",
+          "app-map.test.run",
+          "job.get",
+          "job.cancel",
+          "run.get",
+          "run.evidence.get",
+        ].includes(operationId),
+      ),
+    [
+      "app-map.test.save",
+      "app-map.test.edit",
+      "app-map.test.propose",
+      "app-map.test.compile",
+      "app-map.test.run",
+      "job.get",
+      "job.cancel",
+      "run.get",
+      "run.evidence.get",
+    ],
+  );
   assert.ok(
     relayMcpToolsForProfile("author").some(
       ({ operationId }) => operationId === "workspace.variables.update",
+    ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "authoring.session.observe",
     ),
   );
   assert.equal(
@@ -266,7 +317,7 @@ test("defines deterministic task profiles with a compact authoring default", () 
   for (const profile of relayMcpProfiles) {
     const selected = relayMcpToolsForProfile(profile);
     assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
-    if (profile !== "full") assert.ok(selected.length < 30, `${profile}: ${selected.length}`);
+    if (profile !== "full") assert.ok(selected.length < 35, `${profile}: ${selected.length}`);
   }
 });
 
@@ -283,6 +334,171 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: ["map", "observe", "author", "run", "execute", "review"],
+    profiles: ["map", "observe", "author", "test", "run", "execute", "review"],
   });
+});
+
+test("publishes exact graph Test and one-pass run schemas", () => {
+  const save = tool("app-map.test.save").inputSchema.parse({
+    appMapId: "checkout",
+    testId: "smoke",
+    expectedRevision: 7,
+    test: {
+      name: "Checkout smoke",
+      kind: "scenario",
+      intentSchemaVersion: 1,
+      capture: { mode: "failures-only" },
+      steps: [
+        {
+          id: "submit-order",
+          kind: "instruction",
+          intent: "Submit the order",
+          binding: {
+            status: "resolved",
+            kind: "connections",
+            connectionIds: ["submit"],
+          },
+        },
+        {
+          id: "branch-on-total",
+          kind: "decision",
+          intent: "Choose the expected total",
+          binding: {
+            status: "resolved",
+            kind: "condition",
+            input: "total",
+            operator: "exists",
+          },
+          thenSteps: [],
+        },
+        {
+          id: "validate-success",
+          kind: "validation",
+          intent: "Success is visible",
+          binding: {
+            status: "resolved",
+            kind: "assertion",
+            assertion: { kind: "screen", screenId: "success" },
+          },
+        },
+        {
+          id: "extract-order-id",
+          kind: "extraction",
+          intent: "Remember the order id",
+          binding: {
+            status: "resolved",
+            kind: "extract",
+            as: "order_id",
+            target: { identifier: "order-id" },
+          },
+        },
+        {
+          id: "confirm-payment",
+          kind: "manual",
+          intent: "Confirm the external payment",
+          binding: {
+            status: "resolved",
+            kind: "pause",
+            message: "Confirm payment, then continue",
+            reason: "verification",
+          },
+        },
+        {
+          id: "sign-in",
+          kind: "module",
+          intent: "Sign in before checkout",
+          binding: { status: "resolved", kind: "routine", routineId: "sign-in" },
+        },
+        {
+          id: "retry-once",
+          kind: "loop",
+          intent: "Retry once",
+          binding: { status: "resolved", kind: "repeat", count: 1 },
+          steps: [],
+        },
+        {
+          id: "calculate-total",
+          kind: "script",
+          intent: "Calculate the expected total",
+          binding: { status: "resolved", kind: "script", source: "return true" },
+        },
+      ],
+    },
+  });
+  assert.equal((save.test as { kind?: string }).kind, "scenario");
+  assert.throws(() =>
+    tool("app-map.test.save").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      test: {
+        name: "Bad",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [{ id: "bad", kind: "instruction", intent: "Bad", binding: {} }],
+      },
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.save").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      test: {
+        name: "Duplicate IDs",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "same",
+            kind: "script",
+            intent: "First",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+          {
+            id: "same",
+            kind: "script",
+            intent: "Second",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+        ],
+      },
+    }),
+  );
+  assert.throws(() =>
+    tool("app-map.test.edit").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      edits: [
+        {
+          kind: "step.reorder",
+          orderedStepIds: ["submit-order"],
+          placement: { parentStepId: "branch-on-total", branch: "root" },
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    tool("app-map.test.run").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      target: { kind: "device", platform: "android", targetId: "pixel-9" },
+    }),
+    {
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      target: { kind: "device", platform: "android", targetId: "pixel-9" },
+    },
+  );
+  assert.throws(() =>
+    tool("app-map.test.run").inputSchema.parse({
+      appMapId: "checkout",
+      testId: "smoke",
+      expectedRevision: 7,
+      target: { kind: "device", platform: "browser", targetId: "pixel-9" },
+    }),
+  );
 });

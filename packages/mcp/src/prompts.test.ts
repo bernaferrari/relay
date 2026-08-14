@@ -155,6 +155,18 @@ test("lists the curated Relay prompts with required scoped arguments", async () 
             { name: "goal", required: true },
           ],
         },
+        {
+          name: relayMcpPrompts[4].name,
+          title: relayMcpPrompts[4].title,
+          description: relayMcpPrompts[4].description,
+          arguments: [
+            { name: "projectId", required: true },
+            { name: "targetId", required: true },
+            { name: "appMapId", required: true },
+            { name: "testId", required: true },
+            { name: "goal", required: true },
+          ],
+        },
       ],
     );
   } finally {
@@ -180,6 +192,12 @@ test("every profile advertises only prompts whose required tools it exposes", as
       ({ name }) => name === relayMcpPromptNames.planRunMatrix,
     ),
     false,
+  );
+  assert.equal(
+    relayMcpPromptsForTools(relayMcpToolsForProfile("test")).some(
+      ({ name }) => name === relayMcpPromptNames.authorGraphTest,
+    ),
+    true,
   );
 
   for (const profile of relayMcpProfiles) {
@@ -280,6 +298,27 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
           "Safety contract:",
           "Observation and plan (no mutation):",
           "Save, preflight, and run (only after explicit confirmation):",
+        ],
+      },
+    },
+    {
+      name: relayMcpPromptNames.authorGraphTest,
+      arguments: {
+        projectId,
+        targetId: "target-1",
+        appMapId: "map-1",
+        testId: "checkout-smoke",
+        goal: "submit an order and verify success",
+      },
+      expected: {
+        description: relayMcpPrompts[4].description,
+        firstLine:
+          "Author graph Test checkout-smoke for “submit an order and verify success” in App Map map-1, project project-a, using Target target-1 only for an approved run.",
+        headings: [
+          "Safety contract:",
+          "Read and design (no mutation):",
+          "Create or propose (only after explicit confirmation):",
+          "Run and evidence (only after separate run confirmation):",
         ],
       },
     },
@@ -414,6 +453,37 @@ test("matrix prompt keeps authoring, preflight, execution, retry, and export on 
     assert.match(text, /retry only problem cells/i);
     assert.match(text, /portable screenshot report/);
     assert.match(text, /absent from the canvas/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("graph Test prompt keeps authoring, compilation, execution, and evidence in one profile", async () => {
+  const session = await connectMcp("test");
+  try {
+    const { text } = promptText(
+      await session.request("prompts/get", {
+        name: relayMcpPromptNames.authorGraphTest,
+        arguments: {
+          projectId,
+          targetId: "target-1",
+          appMapId: "map-1",
+          testId: "checkout-smoke",
+          goal: "submit an order and verify success",
+        },
+      }),
+    );
+    assert.match(text, /tests\/checkout-smoke\/outline/);
+    assert.match(
+      text,
+      /instruction, validation, extraction, manual, module, decision, loop, or script/,
+    );
+    assert.match(text, /relay_app_map_test_propose/);
+    assert.match(text, /relay_app_map_test_compile/);
+    assert.match(text, /relay_app_map_test_run/);
+    assert.match(text, /expectedRevision/);
+    assert.match(text, /relay_run_evidence_get/);
+    assert.match(text, /do not replace the whole Test or approve your own proposal/i);
   } finally {
     await session.close();
   }

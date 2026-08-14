@@ -215,6 +215,10 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
         relayMcpResourceUris.appMap,
+        relayMcpResourceUris.tests,
+        relayMcpResourceUris.test,
+        relayMcpResourceUris.testOutline,
+        relayMcpResourceUris.testOutlinePage,
         relayMcpResourceUris.authoringSession,
         relayMcpResourceUris.targetObservation,
       ],
@@ -367,6 +371,152 @@ test("bounds deterministic JSON with explicit truncation metadata", async () => 
     assert.equal(envelope.data, null);
     assert.equal(envelope.byteLimit, relayMcpResourceByteLimit);
     assert.ok(Number(envelope.originalBytes) > relayMcpResourceByteLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("reads compact Test lists, details, and stable-ID outlines", async () => {
+  const graphTest = {
+    id: "smoke",
+    name: "Checkout smoke",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    updatedAt: 200,
+    steps: [
+      {
+        id: "submit",
+        kind: "instruction",
+        intent: "Submit the order",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["submit-order"],
+        },
+      },
+      {
+        id: "decision",
+        kind: "decision",
+        intent: "Check total",
+        binding: { status: "unresolved", reason: "Choose an extracted value" },
+        thenSteps: [
+          {
+            id: "check-total",
+            kind: "validation",
+            intent: "Total is visible",
+            binding: { status: "unresolved", reason: "Choose a target" },
+          },
+        ],
+      },
+    ],
+  };
+  const session = await connectMcp(
+    fixtureInvoker({
+      "app-map.get": {
+        appMap: { id: "map-1", revision: 7, tests: { smoke: graphTest } },
+      },
+    }),
+    "test",
+  );
+  try {
+    const list = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", { uri: "relay://app-maps/map-1/tests" }),
+      ).text,
+    ) as { data: { appMapRevision: number; tests: Array<{ id: string }> } };
+    assert.equal(list.data.appMapRevision, 7);
+    assert.deepEqual(
+      list.data.tests.map(({ id }) => id),
+      ["smoke"],
+    );
+
+    const detail = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", {
+          uri: "relay://app-maps/map-1/tests/smoke",
+        }),
+      ).text,
+    ) as { truncated: boolean; data: { test: { id: string } } };
+    assert.equal(detail.truncated, false);
+    assert.equal(detail.data.test.id, "smoke");
+
+    const outline = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", {
+          uri: "relay://app-maps/map-1/tests/smoke/outline",
+        }),
+      ).text,
+    ) as {
+      data: {
+        stepCount: number;
+        page: number;
+        unresolvedCount: number;
+        steps: Array<{ id: string; parentStepId?: string; branch: string }>;
+      };
+    };
+    assert.equal(outline.data.stepCount, 3);
+    assert.equal(outline.data.page, 0);
+    assert.equal(outline.data.unresolvedCount, 2);
+    assert.deepEqual(outline.data.steps[2], {
+      binding: { reason: "Choose a target", status: "unresolved" },
+      branch: "then",
+      id: "check-total",
+      index: 0,
+      intent: "Total is visible",
+      kind: "validation",
+      parentStepId: "decision",
+    });
+  } finally {
+    await session.close();
+  }
+});
+
+test("oversized Test details retain a bounded outline instead of null data", async () => {
+  const hugeTest = {
+    id: "huge",
+    name: "Huge Test",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: Array.from({ length: 200 }, (_, index) => ({
+      id: `step-${index}`,
+      kind: "script",
+      intent: `Check ${index} ${"x".repeat(500)}`,
+      binding: { status: "resolved", kind: "script", source: "return true" },
+    })),
+  };
+  const session = await connectMcp(
+    fixtureInvoker({
+      "app-map.get": { appMap: { id: "map-1", revision: 9, tests: { huge: hugeTest } } },
+    }),
+    "test",
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: "relay://app-maps/map-1/tests/huge",
+      }),
+    );
+    assert.ok(Buffer.byteLength(content.text, "utf8") <= relayMcpResourceByteLimit);
+    const envelope = JSON.parse(content.text) as {
+      truncated: boolean;
+      data: { stepCount: number; returnedStepCount: number; remainingStepCount: number } | null;
+    };
+    assert.equal(envelope.truncated, true);
+    assert.ok(envelope.data);
+    assert.equal(envelope.data.stepCount, 200);
+    assert.equal(envelope.data.returnedStepCount, 50);
+    assert.equal(envelope.data.remainingStepCount, 150);
+
+    const page = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", {
+          uri: "relay://app-maps/map-1/tests/huge/outline/3",
+        }),
+      ).text,
+    ) as { data: { page: number; returnedStepCount: number; remainingStepCount: number } };
+    assert.equal(page.data.page, 3);
+    assert.equal(page.data.returnedStepCount, 50);
+    assert.equal(page.data.remainingStepCount, 0);
   } finally {
     await session.close();
   }

@@ -8,6 +8,7 @@ import {
   resolveCommand,
   resolveResourceCommand,
 } from "./commands.js";
+import { renderHelp } from "./help.js";
 
 test("every registry operation is mapped or excluded exactly once", () => {
   const coverage = new Map<string, number>();
@@ -128,6 +129,19 @@ test("matrix authoring vocabulary exposes modifiers, tests, and saved matrices",
       input: { appMapId: "grok-android", combineId: "locale-x-tour", serial: "pixel-9" },
     },
   );
+});
+
+test("Test help exposes graph creation, semantic edits, and the required run target", () => {
+  const help = renderHelp("test");
+  assert.match(help, /intentSchemaVersion 1/);
+  assert.match(help, /test\.patch, step\.add/);
+  assert.match(help, /expectedRevision \(number, required\)/);
+  assert.match(help, /target \(object, required\)/);
+  assert.match(help, /"kind":"browser","platform":"browser"/);
+  assert.match(help, /revision and target are mandatory/);
+  assert.match(help, /eventId/);
+  assert.match(help, /relay test save checkout smoke/);
+  assert.match(help, /relay test run checkout smoke/);
 });
 
 test("session replay is an alias of take replay", () => {

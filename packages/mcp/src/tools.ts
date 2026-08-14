@@ -5,6 +5,7 @@ export const relayMcpProfiles = [
   "map",
   "observe",
   "author",
+  "test",
   "run",
   "execute",
   "review",
@@ -152,6 +153,7 @@ const mapOperations = [
   "authoring.session.list",
   "authoring.session.get",
   "authoring.session.create",
+  "authoring.session.observe",
   "authoring.session.capture",
   "authoring.session.start",
   "authoring.session.interact",
@@ -161,6 +163,7 @@ const mapOperations = [
 
 const authorOperations = [
   ...mapOperations,
+  ...observeOperations,
   "app-map.test.propose",
   "workspace.variables.get",
   "workspace.variables.update",
@@ -170,6 +173,30 @@ const authorOperations = [
   "authoring.take.replay",
   "authoring.session.commit",
   "authoring.session.discard",
+] as const satisfies readonly OperationId[];
+
+const testOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.preflight",
+  "target.snapshot.capture",
+  "target.screenshot.capture",
+  "lease.list",
+  "lease.create",
+  "app-map.list",
+  "app-map.get",
+  "app-map.test.save",
+  "app-map.test.edit",
+  "app-map.test.propose",
+  "app-map.test.compile",
+  "app-map.test.run",
+  "job.list",
+  "job.get",
+  "job.cancel",
+  "run.get",
+  "run.evidence.get",
 ] as const satisfies readonly OperationId[];
 
 const runOperations = [
@@ -261,6 +288,7 @@ const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<Op
   map: new Set(mapOperations),
   observe: new Set(observeOperations),
   author: new Set(authorOperations),
+  test: new Set(testOperations),
   run: new Set(runOperations),
   execute: new Set(runOperations),
   review: new Set(reviewOperations),

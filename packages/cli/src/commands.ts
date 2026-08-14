@@ -882,6 +882,30 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "app-map.test.save",
     path("test save", ["appMapId", "testId"], undefined, {
       summary: "Save a graph-native scenario, recorded path, or screen tour",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "test",
+          type: "object",
+          required: true,
+          description:
+            "Test name, kind, and graph steps; graph Tests use kind scenario and intentSchemaVersion 1",
+        },
+        {
+          name: "eventId",
+          type: "string",
+          description: "Stable idempotency key for safe retries",
+        },
+      ],
+      examples: [
+        'relay test save checkout smoke --input \'{"expectedRevision":7,"eventId":"create-smoke-v1","test":{"name":"Checkout smoke","kind":"scenario","intentSchemaVersion":1,"steps":[{"id":"submit-order","kind":"instruction","intent":"Submit the reviewed order","binding":{"status":"unresolved","reason":"Choose a mapped checkout connection"}}]}}\'',
+      ],
+      note: "Use `relay test propose` for reviewable edits to an existing Test. Stable step IDs survive reordering.",
     }),
     path("work save", ["appMapId", "testId"]),
   ),
@@ -901,7 +925,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: "array",
           required: true,
           description:
-            "step.add, step.patch, step.remove, step.reorder, step.bind, or step.unbind edits",
+            "test.patch, step.add, step.patch, step.remove, step.reorder, step.bind, or step.unbind edits",
         },
       ],
       examples: [
@@ -964,7 +988,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
+      note: "The revision and target are mandatory. Device runs require control under the same --actor lease identity.",
       behavior: "job-start-watch",
     }),
     path("work run", ["appMapId", "testId"], undefined, {

@@ -1,5 +1,11 @@
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
+import {
+  graphTest,
+  legacyTest,
+  testCapturePolicy,
+  testSemanticEdits,
+} from "./test-input-schemas.js";
 
 export type RelayOperationInputSchema = z.ZodObject;
 export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
@@ -19,16 +25,55 @@ const sessionReference = {
   sessionId: identifier("Authoring session identifier"),
 };
 
-const authoringTarget = z
+const authoringTarget = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("device"),
+      platform: z.enum(["android", "ios"]),
+      targetId: identifier("Connected device serial"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("browser"),
+      platform: z.literal("browser"),
+      targetId: identifier("Managed browser target identifier"),
+    })
+    .strict(),
+]);
+
+const point = z
   .object({
-    kind: z.enum(["device", "browser"]),
-    platform: z.enum(["android", "ios", "browser"]),
-    targetId: identifier("Device serial or managed browser target identifier"),
+    x: z.number(),
+    y: z.number(),
+    anchor: z
+      .object({
+        horizontal: z.enum(["left", "center", "right"]),
+        vertical: z.enum(["top", "center", "bottom"]),
+      })
+      .strict()
+      .optional(),
+    referenceBounds: z
+      .object({ width: z.number().positive(), height: z.number().positive() })
+      .strict()
+      .optional(),
   })
   .strict();
-
-const point = z.object({ x: z.number(), y: z.number() }).strict();
-const stepTarget = unknownRecord.describe("Semantic selector, accessibility reference, or point");
+const stepTarget = z
+  .object({
+    identifier: z.string().min(1).optional(),
+    ref: z.string().min(1).optional(),
+    label: z.string().min(1).optional(),
+    text: z.string().min(1).optional(),
+    point: point.optional(),
+  })
+  .strict()
+  .refine(
+    ({ identifier, ref, label, text: targetText, point: targetPoint }) =>
+      Boolean(identifier || ref || label || targetText || targetPoint),
+    "Target needs an identifier, ref, label, text, or point",
+  )
+  .describe("Semantic selector, accessibility reference, or point");
 
 const authoringInteraction = z.discriminatedUnion("kind", [
   z
@@ -146,85 +191,6 @@ const connectionDestination = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("end") }).strict(),
 ]);
-
-const testStepPlacement = z
-  .object({
-    parentStepId: identifier("Stable parent Test step identifier").optional(),
-    branch: z.enum(["root", "then", "else", "steps"]).optional(),
-  })
-  .strict();
-
-const testSemanticEdit = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("test.patch"),
-      patch: z
-        .object({
-          name: text("New Test name").optional(),
-          capture: unknownRecord
-            .describe("Evidence capture policy; use null to remove it")
-            .nullable()
-            .optional(),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.add"),
-      step: unknownRecord.describe("Complete graph-native Test step with a new stable id"),
-      placement: testStepPlacement.optional(),
-      index: z.number().int().nonnegative().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.patch"),
-      stepId: identifier("Stable Test step identifier"),
-      patch: z
-        .object({
-          intent: text("Human-readable step intent").optional(),
-          note: z.string().nullable().optional(),
-          binding: unknownRecord.describe("Resolved or unresolved canonical binding").optional(),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.remove"),
-      stepId: identifier("Stable Test step identifier"),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.reorder"),
-      orderedStepIds: z.array(identifier("Stable sibling Test step identifier")),
-      placement: testStepPlacement.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.bind"),
-      stepId: identifier("Stable Test step identifier"),
-      binding: unknownRecord.describe("Resolved canonical binding"),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("step.unbind"),
-      stepId: identifier("Stable Test step identifier"),
-      reason: text("Why the binding is unresolved"),
-      candidates: z.array(unknownRecord).optional(),
-    })
-    .strict(),
-]);
-
-const testSemanticEdits = z
-  .array(testSemanticEdit)
-  .min(1)
-  .max(100)
-  .describe("Ordered atomic stable-ID Test edits");
 
 const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
@@ -577,6 +543,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       eventId: identifier("Optional idempotent activity event identifier").optional(),
     })
     .strict(),
+  "app-map.test.save": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Stable Test identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      test: z.union([graphTest, legacyTest]),
+    })
+    .strict(),
   "app-map.test.edit": z
     .object({
       appMapId: identifier("App Map identifier"),
@@ -604,6 +579,12 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       testId: identifier("Graph-native Test identifier"),
       expectedRevision: natural("Exact saved App Map revision to run"),
       target: authoringTarget.describe("Explicit device or managed browser target"),
+    })
+    .strict(),
+  "app-map.test.compile": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
     })
     .strict(),
   "app-map.proposal.submit": z
@@ -720,6 +701,69 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .object({ full: z.boolean().optional(), limit: z.number().int().positive().optional() })
     .strict(),
   "job.get": z.object({ jobId: identifier("Job identifier") }).strict(),
+  "job.combine.start": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Test identifier to run once").optional(),
+      combineId: identifier("Saved run matrix identifier").optional(),
+      flowId: identifier("Legacy Flow identifier").optional(),
+      variableIds: z.array(identifier("State set identifier")).optional(),
+      selected: z.record(z.string(), z.array(z.string())).optional(),
+      strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
+      serial: identifier("Connected device serial").optional(),
+      platform: z.enum(["android", "ios"]).optional(),
+      targetKind: z.enum(["device", "browser"]).optional(),
+      browserTargetId: identifier("Managed browser target identifier").optional(),
+      title: z.string().optional(),
+      seed: z.number().int().optional(),
+      sets: z.array(unknownRecord).optional(),
+      capture: testCapturePolicy.optional(),
+    })
+    .strict()
+    .superRefine((input, context) => {
+      if (!input.testId && !input.combineId && !input.flowId) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose exactly one testId, combineId, or flowId",
+          path: ["testId"],
+        });
+      }
+      if ([input.testId, input.combineId, input.flowId].filter(Boolean).length > 1) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose only one testId, combineId, or flowId",
+          path: ["testId"],
+        });
+      }
+      if (!input.serial && !input.browserTargetId) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose serial or browserTargetId",
+          path: ["serial"],
+        });
+      }
+      if (input.serial && input.browserTargetId) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose only one serial or browserTargetId",
+          path: ["serial"],
+        });
+      }
+      if (input.serial && input.targetKind === "browser") {
+        context.addIssue({
+          code: "custom",
+          message: "A serial target must use targetKind device",
+          path: ["targetKind"],
+        });
+      }
+      if (input.browserTargetId && input.targetKind === "device") {
+        context.addIssue({
+          code: "custom",
+          message: "A browserTargetId must use targetKind browser",
+          path: ["targetKind"],
+        });
+      }
+    }),
   "job.start": z
     .object({ action: identifier("Action or App Map identifier"), serial: z.string().optional() })
     .catchall(z.unknown()),

@@ -50,11 +50,14 @@ deliberately.
 
 Relay advertises a role-sized tool set instead of sending every operation to every agent. Select one
 with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `author` profile.
+Choose `test` when one agent should read, create, propose, compile, run, cancel, and inspect evidence
+for graph-native Tests without loading the 184-operation `full` catalog.
 
 | Profile   | Intended use                                                               |
 | --------- | -------------------------------------------------------------------------- |
 | `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection |
 | `author`  | Default App Map editing, device recording, and proposal creation           |
+| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence      |
 | `execute` | Device control, reusable actions, jobs, matrices, and individual steps     |
 | `review`  | Proposal/take repair, replay, approval, and run-baseline review            |
 | `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention    |
@@ -76,6 +79,8 @@ remain extensible objects and are still validated by the canonical protocol pars
   content plus safe metadata. It never exposes Relay host paths.
 - Curated prompts guide safe app mapping, failed-connection repair, and Take review. Every prompt
   requires the configured project and the relevant Target, App Map, session, connection, or Take IDs.
+- The `relay_author_this_graph_test` prompt keeps Test design, reviewable semantic edits, compiler
+  validation, one-pass execution, and immutable evidence inspection inside the compact `test` profile.
 - Observation is not mutation permission. Side-effecting and destructive operations require explicit
   user approval; confirmation-protected tools additionally require the literal `confirm: true` field.
 - MCP request cancellation is forwarded to the Relay client. A cancelled request does not grant

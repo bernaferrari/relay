@@ -9,6 +9,7 @@ export const relayMcpPromptNames = {
   repairFailedConnection: "relay_repair_this_failed_connection",
   reviewTake: "relay_review_this_take",
   planRunMatrix: "relay_plan_this_run_matrix",
+  authorGraphTest: "relay_author_this_graph_test",
 } as const;
 
 export type RelayMcpPromptDescriptor = {
@@ -83,6 +84,27 @@ export const relayMcpPrompts = [
       "job.get",
       "job.retry",
       "job.combine.export",
+    ],
+  },
+  {
+    name: relayMcpPromptNames.authorGraphTest,
+    title: "Author this graph Test",
+    description:
+      "Create or refine one graph-native Test, validate its compiled plan, run it once, and inspect evidence.",
+    requiredOperationIds: [
+      "target.devices.list",
+      "target.screenshot.capture",
+      "lease.list",
+      "lease.create",
+      "app-map.get",
+      "app-map.test.save",
+      "app-map.test.propose",
+      "app-map.test.compile",
+      "app-map.test.run",
+      "job.get",
+      "job.cancel",
+      "run.get",
+      "run.evidence.get",
     ],
   },
 ] as const satisfies readonly RelayMcpPromptDescriptor[];
@@ -164,7 +186,7 @@ function registerMapPrompt(server: McpServer, scope: RelayPromptScope): void {
           "Observation phase (no mutation):",
           `1. Read ${relayMcpResourceUris.project}, ${relayMcpResourceUris.targets}, relay://app-maps/${appMapId}, and relay://targets/${targetId}/observation. Verify every returned identifier matches this request.`,
           `2. Use relay_target_screenshot_capture with the explicit Target identity to receive the current screen as native image/png. Use relay_target_snapshot_capture only for bounded structure supplied by Relay.`,
-          "3. Describe the current unique screen, known outgoing connections, uncertainty, and a smallest-next-step exploration plan. Do not claim a screen or connection exists until Relay evidence supports it. Author only screens, connections, variables (lists like language), tests (a path or tour), and Combine (variable × test). Do not invent a second recipe library.",
+          "3. Describe the current unique screen, known outgoing connections, uncertainty, and a smallest-next-step exploration plan. Do not claim a screen or connection exists until Relay evidence supports it. Author only screens, connections, state sets (lists like language), graph-native Tests, and run matrices (state set × Test). Path and tour Tests are compatibility forms, not the primary authoring model. Do not invent a second recipe library.",
           "",
           "Bounded exploration and proposal:",
           `4. The user delegates at most ${actionBudget ?? 20} reversible Target interactions for this exploration. Check relay_lease_list and acquire only the required Target lease with relay_lease_create if needed. Do not take over or release another actor's lease.`,
@@ -298,6 +320,49 @@ function registerMatrixPrompt(server: McpServer, scope: RelayPromptScope): void 
   );
 }
 
+function registerGraphTestPrompt(server: McpServer, scope: RelayPromptScope): void {
+  const descriptor = relayMcpPrompts[4];
+  server.registerPrompt(
+    descriptor.name,
+    {
+      title: descriptor.title,
+      description: descriptor.description,
+      argsSchema: z
+        .object({
+          projectId: projectSchema(scope.projectId),
+          targetId: relayIdentifier.describe("Explicit Target ID used only for the approved run"),
+          appMapId: relayIdentifier.describe("Explicit App Map containing the Test"),
+          testId: relayIdentifier.describe("Stable Test identifier to create or refine"),
+          goal: z.string().min(3).max(500).describe("Plain-language behavior to verify"),
+        })
+        .strict(),
+    },
+    ({ projectId, targetId, appMapId, testId, goal }) =>
+      prompt(
+        [
+          `Author graph Test ${testId} for “${goal}” in App Map ${appMapId}, project ${projectId}, using Target ${targetId} only for an approved run.`,
+          "",
+          sharedSafety(projectId),
+          "",
+          "Read and design (no mutation):",
+          `1. Read relay://app-maps/${appMapId}/tests. If it contains ${testId}, read relay://app-maps/${appMapId}/tests/${testId}; if that detail is truncated, read relay://app-maps/${appMapId}/tests/${testId}/outline and continue with /outline/1, /outline/2, or /outline/3 only while remainingStepCount is positive. Verify the App Map, Test, stable step IDs, and revision match this request.`,
+          "2. Express the goal with the smallest clear graph using instruction, validation, extraction, manual, module, decision, loop, or script steps. Prefer mapped connections, screens, and routines over scripts. Keep unresolved bindings explicit; never invent an entity ID.",
+          "3. Present the proposed Test tree, evidence policy, unresolved bindings, and semantic edits. Ask for confirmation before creating or proposing changes.",
+          "",
+          "Create or propose (only after explicit confirmation):",
+          "4. Re-read the Test resource immediately before mutation. If the Test does not exist, create it once with relay_app_map_test_save and a stable eventId. If it exists, use relay_app_map_test_propose with stable-ID edits and the exact revision; do not replace the whole Test or approve your own proposal.",
+          "5. Compile with relay_app_map_test_compile. Report compiler errors against the authored step ID and stop if any binding is unresolved. Check that compiler provenance covers every executable Test step.",
+          "",
+          "Run and evidence (only after separate run confirmation):",
+          "6. Re-read the App Map revision, verify the explicit Target is connected, then inspect or acquire only its lease. Start exactly this Test with relay_app_map_test_run using appMapId, testId, expectedRevision, and target {kind, platform, targetId}. Never substitute a matrix or a different saved revision.",
+          "7. Follow the returned job ID with relay_job_get. Cancel only when asked or when the user-defined stopping condition is met. Do not infer success from transport success.",
+          "8. Read relay_run_get and relay_run_evidence_get with the terminal job ID. Report outcome, failed authored step/provenance, immutable evidence counts, and remaining uncertainty separately.",
+        ].join("\n"),
+        descriptor.description,
+      ),
+  );
+}
+
 export function registerRelayPrompts(
   server: McpServer,
   scope: RelayPromptScope,
@@ -309,4 +374,5 @@ export function registerRelayPrompts(
     registerRepairPrompt(server, scope);
   if (available.has(relayMcpPromptNames.reviewTake)) registerReviewPrompt(server, scope);
   if (available.has(relayMcpPromptNames.planRunMatrix)) registerMatrixPrompt(server, scope);
+  if (available.has(relayMcpPromptNames.authorGraphTest)) registerGraphTestPrompt(server, scope);
 }

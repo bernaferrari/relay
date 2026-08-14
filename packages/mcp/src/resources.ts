@@ -27,6 +27,10 @@ export const relayMcpResourceUris = {
   variables: "relay://workspace/variables",
   appMaps: "relay://app-maps",
   appMap: "relay://app-maps/{appMapId}",
+  tests: "relay://app-maps/{appMapId}/tests",
+  test: "relay://app-maps/{appMapId}/tests/{testId}",
+  testOutline: "relay://app-maps/{appMapId}/tests/{testId}/outline",
+  testOutlinePage: "relay://app-maps/{appMapId}/tests/{testId}/outline/{page}",
   runs: "relay://runs",
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
@@ -107,6 +111,7 @@ function resourceText(
   resource: string,
   value: unknown,
   byteLimit = relayMcpResourceByteLimit,
+  fallbackValue?: unknown,
 ): string {
   const envelope: ResourceEnvelope = {
     schemaVersion: 1,
@@ -124,18 +129,18 @@ function resourceText(
     projectId,
     resource,
     truncated: true,
-    data: null,
+    data: fallbackValue === undefined ? null : sanitize(fallbackValue),
     byteLimit,
     originalBytes,
   };
   const bounded = stableJson(truncated);
-  if (Buffer.byteLength(bounded, "utf8") > byteLimit) {
-    throw new ProtocolError(
-      ProtocolErrorCode.InternalError,
-      "Relay resource byte limit is too small",
-    );
-  }
-  return bounded;
+  if (Buffer.byteLength(bounded, "utf8") <= byteLimit) return bounded;
+  const metadataOnly = stableJson({ ...truncated, data: null });
+  if (Buffer.byteLength(metadataOnly, "utf8") <= byteLimit) return metadataOnly;
+  throw new ProtocolError(
+    ProtocolErrorCode.InternalError,
+    "Relay resource byte limit is too small",
+  );
 }
 
 function readResult(
@@ -143,13 +148,14 @@ function readResult(
   projectId: string,
   resource: string,
   value: unknown,
+  fallbackValue?: unknown,
 ): ReadResourceResult {
   return {
     contents: [
       {
         uri: uri.href,
         mimeType: relayMcpResourceMimeType,
-        text: resourceText(projectId, resource, value),
+        text: resourceText(projectId, resource, value, relayMcpResourceByteLimit, fallbackValue),
       },
     ],
   };
@@ -191,6 +197,124 @@ function object(value: unknown): Record<string, unknown> {
 function arrayField(value: unknown, field: string): unknown[] {
   const items = object(value)[field];
   return Array.isArray(items) ? items : [];
+}
+
+function testCollection(value: unknown): {
+  map: Record<string, unknown>;
+  tests: Record<string, unknown>;
+} {
+  const map = object(object(value).appMap);
+  return { map, tests: object(map.tests) };
+}
+
+function testSummary(value: unknown): Record<string, unknown> {
+  const test = object(value);
+  const steps = Array.isArray(test.steps) ? test.steps : [];
+  return {
+    id: test.id,
+    name:
+      typeof test.name === "string" && test.name.length > 160
+        ? `${test.name.slice(0, 157)}…`
+        : test.name,
+    kind: test.kind,
+    ...(test.capture ? { capture: test.capture } : {}),
+    ...(test.kind === "scenario"
+      ? { intentSchemaVersion: test.intentSchemaVersion, rootStepCount: steps.length }
+      : {}),
+    ...(test.kind === "path" && test.flowId ? { flowId: test.flowId } : {}),
+    ...(test.kind === "tour" && test.rootScreenId ? { rootScreenId: test.rootScreenId } : {}),
+    updatedAt: test.updatedAt,
+  };
+}
+
+type TestOutlineEntry = {
+  id: unknown;
+  kind: unknown;
+  intent: unknown;
+  parentStepId?: string;
+  branch: "root" | "then" | "else" | "steps";
+  index: number;
+  binding: {
+    status: unknown;
+    kind?: unknown;
+    reason?: string;
+    referencedEntityIds?: string[];
+  };
+  childCounts?: { thenSteps?: number; elseSteps?: number; steps?: number };
+};
+
+function testOutline(testValue: unknown, page = 0): Record<string, unknown> {
+  const test = object(testValue);
+  const entries: TestOutlineEntry[] = [];
+  const visit = (
+    stepsValue: unknown,
+    branch: TestOutlineEntry["branch"],
+    parentStepId?: string,
+  ) => {
+    const steps = Array.isArray(stepsValue) ? stepsValue : [];
+    steps.forEach((stepValue, index) => {
+      const step = object(stepValue);
+      const binding = object(step.binding);
+      const references = [
+        ...(Array.isArray(binding.connectionIds) ? binding.connectionIds : []),
+        ...(Array.isArray(binding.candidates)
+          ? binding.candidates.map((candidate) => object(candidate).id)
+          : []),
+        binding.routineId,
+        object(binding.assertion).screenId,
+      ].filter((value): value is string => typeof value === "string");
+      const id = typeof step.id === "string" ? step.id : undefined;
+      entries.push({
+        id: step.id,
+        kind: step.kind,
+        intent:
+          typeof step.intent === "string" && step.intent.length > 80
+            ? `${step.intent.slice(0, 77)}…`
+            : step.intent,
+        ...(parentStepId ? { parentStepId } : {}),
+        branch,
+        index,
+        binding: {
+          status: binding.status,
+          ...(binding.kind ? { kind: binding.kind } : {}),
+          ...(typeof binding.reason === "string"
+            ? {
+                reason:
+                  binding.reason.length > 160 ? `${binding.reason.slice(0, 157)}…` : binding.reason,
+              }
+            : {}),
+          ...(references.length ? { referencedEntityIds: references } : {}),
+        },
+        ...(step.kind === "decision"
+          ? {
+              childCounts: {
+                thenSteps: Array.isArray(step.thenSteps) ? step.thenSteps.length : 0,
+                elseSteps: Array.isArray(step.elseSteps) ? step.elseSteps.length : 0,
+              },
+            }
+          : step.kind === "loop"
+            ? { childCounts: { steps: Array.isArray(step.steps) ? step.steps.length : 0 } }
+            : {}),
+      });
+      if (!id) return;
+      if (step.kind === "decision") {
+        visit(step.thenSteps, "then", id);
+        visit(step.elseSteps, "else", id);
+      } else if (step.kind === "loop") visit(step.steps, "steps", id);
+    });
+  };
+  visit(test.steps, "root");
+  const offset = page * 50;
+  return {
+    test: testSummary(test),
+    stepCount: entries.length,
+    unresolvedCount: entries.filter(({ binding }) => binding.status === "unresolved").length,
+    page,
+    pageSize: 50,
+    returnedStepCount: Math.max(0, Math.min(entries.length - offset, 50)),
+    remainingStepCount: Math.max(0, entries.length - offset - 50),
+    steps: entries.slice(offset, offset + 50),
+  };
 }
 
 function resourceList(
@@ -449,6 +573,147 @@ export function registerRelayResources(
       } catch {
         throw new ResourceNotFoundError(uri.href);
       }
+    },
+  );
+
+  server.registerResource(
+    "tests",
+    new ResourceTemplate(relayMcpResourceUris.tests, { list: undefined }),
+    {
+      title: "Relay Tests",
+      description: "Compact Test summaries and the current App Map revision.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const appMapId = variable(variables, "appMapId", uri);
+      let result: unknown;
+      try {
+        result = await invoker.invoke(
+          "app-map.get",
+          { appMapId },
+          { signal: context.mcpReq.signal },
+        );
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      const { map, tests } = testCollection(result);
+      const summaries = Object.values(tests)
+        .map(testSummary)
+        .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+      const data = {
+        appMapId,
+        appMapRevision: map.revision,
+        tests: summaries,
+      };
+      return readResult(uri, scope.projectId, "tests", data, {
+        appMapId,
+        appMapRevision: map.revision,
+        testCount: summaries.length,
+        returnedTestCount: Math.min(summaries.length, 50),
+        remainingTestCount: Math.max(0, summaries.length - 50),
+        tests: summaries.slice(0, 50),
+      });
+    },
+  );
+
+  server.registerResource(
+    "test",
+    new ResourceTemplate(relayMcpResourceUris.test, { list: undefined }),
+    {
+      title: "Relay Test",
+      description:
+        "One canonical Test. Oversized Tests degrade to a stable-ID outline instead of disappearing.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const appMapId = variable(variables, "appMapId", uri);
+      const testId = variable(variables, "testId", uri);
+      let result: unknown;
+      try {
+        result = await invoker.invoke(
+          "app-map.get",
+          { appMapId },
+          { signal: context.mcpReq.signal },
+        );
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      const { map, tests } = testCollection(result);
+      const selected = tests[testId];
+      if (!selected) throw new ResourceNotFoundError(uri.href);
+      const detail = { appMapId, appMapRevision: map.revision, test: selected };
+      const fallback = { appMapId, appMapRevision: map.revision, ...testOutline(selected) };
+      return readResult(uri, scope.projectId, "test", detail, fallback);
+    },
+  );
+
+  server.registerResource(
+    "test-outline",
+    new ResourceTemplate(relayMcpResourceUris.testOutline, { list: undefined }),
+    {
+      title: "Relay Test Outline",
+      description:
+        "A compact stable-ID Test tree with placements, bindings, and unresolved counts.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const appMapId = variable(variables, "appMapId", uri);
+      const testId = variable(variables, "testId", uri);
+      let result: unknown;
+      try {
+        result = await invoker.invoke(
+          "app-map.get",
+          { appMapId },
+          { signal: context.mcpReq.signal },
+        );
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      const { map, tests } = testCollection(result);
+      const selected = tests[testId];
+      if (!selected) throw new ResourceNotFoundError(uri.href);
+      return readResult(uri, scope.projectId, "test-outline", {
+        appMapId,
+        appMapRevision: map.revision,
+        ...testOutline(selected),
+      });
+    },
+  );
+
+  server.registerResource(
+    "test-outline-page",
+    new ResourceTemplate(relayMcpResourceUris.testOutlinePage, { list: undefined }),
+    {
+      title: "Relay Test Outline Page",
+      description: "One 50-step page from a compact stable-ID Test outline.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const appMapId = variable(variables, "appMapId", uri);
+      const testId = variable(variables, "testId", uri);
+      const pageValue = variable(variables, "page", uri);
+      const page = Number(pageValue);
+      if (!Number.isSafeInteger(page) || page < 0 || page > 3) {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      let result: unknown;
+      try {
+        result = await invoker.invoke(
+          "app-map.get",
+          { appMapId },
+          { signal: context.mcpReq.signal },
+        );
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+      const { map, tests } = testCollection(result);
+      const selected = tests[testId];
+      if (!selected) throw new ResourceNotFoundError(uri.href);
+      return readResult(uri, scope.projectId, "test-outline-page", {
+        appMapId,
+        appMapRevision: map.revision,
+        ...testOutline(selected, page),
+      });
     },
   );
 
