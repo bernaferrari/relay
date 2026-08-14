@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { AppMap, AppMapScenarioTestStep } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { resolveScenarioBinding, scenarioBindingField } from "../lib/app-map-test-editor-model";
+import { observedTargetOptions, selectedTargetKey } from "../lib/app-map-test-binding-options";
 import { Icon } from "./icon";
 
 export const testEditorInput =
@@ -24,12 +25,15 @@ export function AppMapTestBindingEditor(props: {
         <ModuleBinding map={props.map} step={props.step} onChange={props.onChange} />
       </Show>
       <Show when={props.step.kind === "extraction"}>
-        <ExtractionBinding step={props.step} onChange={props.onChange} />
+        <ExtractionBinding map={props.map} step={props.step} onChange={props.onChange} />
+      </Show>
+      <Show when={props.step.kind === "validation"}>
+        <ValidationBinding map={props.map} step={props.step} onChange={props.onChange} />
       </Show>
       <Show when={props.step.kind === "decision"}>
         <DecisionBinding step={props.step} onChange={props.onChange} />
       </Show>
-      <Show when={field()}>
+      <Show when={props.step.kind !== "validation" && field()}>
         {(config) => (
           <label class="grid gap-1.5" for={`binding-${props.step.id}`}>
             <span class={testEditorLabel}>{config().label}</span>
@@ -91,6 +95,7 @@ export function AppMapTestBindingEditor(props: {
 }
 
 function ExtractionBinding(props: {
+  map: AppMap;
   step: AppMapScenarioTestStep;
   onChange: (step: AppMapScenarioTestStep) => void;
 }) {
@@ -117,6 +122,7 @@ function ExtractionBinding(props: {
     });
   let output = binding()?.as ?? "";
   let identifier = binding()?.target.identifier ?? "";
+  const options = () => observedTargetOptions(props.map);
   return (
     <div class="grid gap-3">
       <label class="grid gap-1.5" for={`binding-${props.step.id}-output`}>
@@ -133,18 +139,166 @@ function ExtractionBinding(props: {
         />
       </label>
       <label class="grid gap-1.5" for={`binding-${props.step.id}-target`}>
-        <span class={testEditorLabel}>Target identifier</span>
-        <input
+        <span class={testEditorLabel}>Observed element</span>
+        <select
           id={`binding-${props.step.id}-target`}
           class={testEditorInput}
-          value={identifier}
-          placeholder="confirmation-value"
-          spellcheck={false}
-          autocomplete="off"
-          onInput={(event) => (identifier = event.currentTarget.value)}
-          onBlur={() => commit(output, identifier)}
-        />
+          value={selectedTargetKey(options(), binding()?.target)}
+          onChange={(event) => {
+            const target = options().find(
+              (option) => option.key === event.currentTarget.value,
+            )?.target;
+            identifier = target?.identifier ?? "";
+            if (target && output.trim()) {
+              props.onChange({
+                ...step(),
+                binding: { status: "resolved", kind: "extract", as: output.trim(), target },
+              });
+            }
+          }}
+        >
+          <option value="">Choose from captured UI…</option>
+          <For each={options()}>
+            {(option) => (
+              <option value={option.key}>
+                {option.label} — {option.context}
+              </option>
+            )}
+          </For>
+        </select>
       </label>
+      <details class="rounded-lg border border-border-weak-base px-3 py-2">
+        <summary class="min-h-6 cursor-pointer text-[11px] font-semibold text-text-base">
+          Advanced target
+        </summary>
+        <label class="mt-2 grid gap-1.5" for={`binding-${props.step.id}-identifier`}>
+          <span class={testEditorLabel}>Stable identifier</span>
+          <input
+            id={`binding-${props.step.id}-identifier`}
+            class={testEditorInput}
+            value={identifier}
+            placeholder="confirmation-value"
+            spellcheck={false}
+            autocomplete="off"
+            onInput={(event) => (identifier = event.currentTarget.value)}
+            onBlur={() => commit(output, identifier)}
+          />
+        </label>
+      </details>
+    </div>
+  );
+}
+
+function ValidationBinding(props: {
+  map: AppMap;
+  step: AppMapScenarioTestStep;
+  onChange: (step: AppMapScenarioTestStep) => void;
+}) {
+  const step = () => props.step as Extract<AppMapScenarioTestStep, { kind: "validation" }>;
+  const binding = () => step().binding;
+  const assertion = () => {
+    const current = binding();
+    return current.status === "resolved" && current.kind === "assertion"
+      ? current.assertion
+      : undefined;
+  };
+  const options = () => observedTargetOptions(props.map);
+  const target = () => {
+    const current = assertion();
+    return current?.kind === "target" ? current.target : undefined;
+  };
+  const condition = () => {
+    const current = assertion();
+    return current?.kind === "target" ? current.condition : "visible";
+  };
+  let identifier = target()?.identifier ?? "";
+  const commitTarget = (nextTarget: { identifier: string } | { label: string }) =>
+    props.onChange({
+      ...step(),
+      binding: {
+        status: "resolved",
+        kind: "assertion",
+        assertion: { kind: "target", target: nextTarget, condition: condition() },
+      },
+    });
+  return (
+    <div class="grid gap-3">
+      <label class="grid gap-1.5" for={`binding-${props.step.id}-observed`}>
+        <span class={testEditorLabel}>Element to check</span>
+        <select
+          id={`binding-${props.step.id}-observed`}
+          class={testEditorInput}
+          value={selectedTargetKey(options(), target())}
+          onChange={(event) => {
+            const next = options().find(
+              (option) => option.key === event.currentTarget.value,
+            )?.target;
+            if (next && (next.identifier || next.label)) {
+              identifier = next.identifier ?? "";
+              commitTarget(
+                next.identifier ? { identifier: next.identifier } : { label: next.label! },
+              );
+            }
+          }}
+        >
+          <option value="">Choose from captured UI…</option>
+          <For each={options()}>
+            {(option) => (
+              <option value={option.key}>
+                {option.label} — {option.context}
+              </option>
+            )}
+          </For>
+        </select>
+      </label>
+      <label class="grid gap-1.5" for={`binding-${props.step.id}-condition`}>
+        <span class={testEditorLabel}>Expected state</span>
+        <select
+          id={`binding-${props.step.id}-condition`}
+          class={testEditorInput}
+          value={condition()}
+          disabled={!target()}
+          onChange={(event) => {
+            const current = target();
+            if (!current) return;
+            props.onChange({
+              ...step(),
+              binding: {
+                status: "resolved",
+                kind: "assertion",
+                assertion: {
+                  kind: "target",
+                  target: current,
+                  condition: event.currentTarget.value as "visible" | "gone",
+                },
+              },
+            });
+          }}
+        >
+          <option value="visible">Visible</option>
+          <option value="gone">Not visible</option>
+        </select>
+      </label>
+      <details class="rounded-lg border border-border-weak-base px-3 py-2">
+        <summary class="min-h-6 cursor-pointer text-[11px] font-semibold text-text-base">
+          Advanced target
+        </summary>
+        <label class="mt-2 grid gap-1.5" for={`binding-${props.step.id}-identifier`}>
+          <span class={testEditorLabel}>Stable identifier</span>
+          <input
+            id={`binding-${props.step.id}-identifier`}
+            class={testEditorInput}
+            value={identifier}
+            placeholder="continue-button"
+            spellcheck={false}
+            autocomplete="off"
+            onInput={(event) => (identifier = event.currentTarget.value)}
+            onBlur={() => {
+              if (identifier.trim()) commitTarget({ identifier: identifier.trim() });
+            }}
+          />
+        </label>
+      </details>
     </div>
   );
 }
@@ -235,45 +389,101 @@ function InstructionBinding(props: {
     const binding = step().binding;
     return binding.status === "resolved" ? binding.connectionIds : [];
   };
+  const screenTitle = (id: string) => props.map.screens[id]?.title ?? "Unknown screen";
   return (
-    <div class="grid gap-1">
-      <For
-        each={Object.values(props.map.connections)}
-        fallback={
-          <p class="m-0 text-[12px] text-text-weak">Record and review a map connection first.</p>
-        }
-      >
-        {(connection) => (
-          <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 hover:bg-surface-base-hover">
-            <input
-              type="checkbox"
-              checked={chosen().includes(connection.id)}
-              onChange={(event) => {
-                const ids = event.currentTarget.checked
-                  ? [...chosen(), connection.id]
-                  : chosen().filter((id) => id !== connection.id);
-                props.onChange({
-                  ...step(),
-                  binding: ids.length
-                    ? { status: "resolved", kind: "connections", connectionIds: ids }
-                    : {
-                        status: "unresolved",
-                        reason: "Choose one or more reviewed map connections.",
-                      },
-                });
-              }}
-            />
-            <span class="min-w-0 flex-1">
-              <strong class="block truncate text-[12px]">
-                {connection.label || connection.id}
-              </strong>
-              <small class="text-[10px] text-text-weak">
-                {connection.state === "ready" ? "Reviewed" : "Needs review"}
-              </small>
-            </span>
-          </label>
-        )}
-      </For>
+    <div class="grid gap-3">
+      <Show when={Object.values(props.map.flows).length > 0}>
+        <label class="grid gap-1.5" for={`binding-${props.step.id}-flow`}>
+          <span class={testEditorLabel}>Saved flow</span>
+          <select
+            id={`binding-${props.step.id}-flow`}
+            class={testEditorInput}
+            value={
+              Object.values(props.map.flows).find(
+                (flow) =>
+                  flow.connectionIds.length === chosen().length &&
+                  flow.connectionIds.every((id, index) => id === chosen()[index]),
+              )?.id ?? ""
+            }
+            onChange={(event) => {
+              const flow = props.map.flows[event.currentTarget.value];
+              if (!flow) return;
+              props.onChange({
+                ...step(),
+                binding: {
+                  status: "resolved",
+                  kind: "connections",
+                  connectionIds: [...flow.connectionIds],
+                },
+              });
+            }}
+          >
+            <option value="">Choose a saved flow…</option>
+            <For each={Object.values(props.map.flows)}>
+              {(flow) => (
+                <option value={flow.id}>
+                  {flow.name} · {flow.connectionIds.length} steps
+                </option>
+              )}
+            </For>
+          </select>
+          <small class="text-[10px] text-text-weak">
+            A flow fills the ordered navigation steps in one click.
+          </small>
+        </label>
+      </Show>
+      <div class="grid gap-1">
+        <p class="m-0 text-[11px] font-semibold text-text-base">Individual connections</p>
+        <For
+          each={Object.values(props.map.connections)}
+          fallback={
+            <p class="m-0 text-[12px] text-text-weak">Record and review a map connection first.</p>
+          }
+        >
+          {(connection) => (
+            <label
+              class={cn(
+                "flex min-h-11 items-center gap-3 rounded-lg px-2",
+                connection.state === "ready"
+                  ? "cursor-pointer hover:bg-surface-base-hover"
+                  : "cursor-not-allowed opacity-60",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={chosen().includes(connection.id)}
+                disabled={connection.state !== "ready"}
+                onChange={(event) => {
+                  const ids = event.currentTarget.checked
+                    ? [...chosen(), connection.id]
+                    : chosen().filter((id) => id !== connection.id);
+                  props.onChange({
+                    ...step(),
+                    binding: ids.length
+                      ? { status: "resolved", kind: "connections", connectionIds: ids }
+                      : {
+                          status: "unresolved",
+                          reason: "Choose one or more reviewed map connections.",
+                        },
+                  });
+                }}
+              />
+              <span class="min-w-0 flex-1">
+                <strong class="block truncate text-[12px]">
+                  {connection.label || connection.id}
+                </strong>
+                <small class="text-[10px] text-text-weak">
+                  {screenTitle(connection.fromScreenId)} →{" "}
+                  {connection.destination.kind === "screen"
+                    ? screenTitle(connection.destination.screenId)
+                    : "End"}
+                  {connection.state === "ready" ? "" : " · Needs review"}
+                </small>
+              </span>
+            </label>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

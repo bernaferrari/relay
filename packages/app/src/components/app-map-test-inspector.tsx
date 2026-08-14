@@ -113,8 +113,8 @@ function InspectorEmpty(props: { blockers: number }) {
       <p class="mt-1 text-[12px]/[1.5] text-text-weak">
         Choose any row, including nested branches, to edit its intent and binding.
         {props.blockers
-          ? `${props.blockers} blockers remain before this test can compile.`
-          : "This test is ready to compile."}
+          ? `${props.blockers} blockers remain before this test can run.`
+          : "This test is ready to run."}
       </p>
     </div>
   );
