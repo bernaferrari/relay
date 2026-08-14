@@ -14,7 +14,7 @@ export function useAppMapProposalReview(activeAppMap: () => AppMap | undefined) 
     reason?: string,
   ) => {
     const appMap = activeAppMap();
-    if (!appMap || proposalBusyId()) return;
+    if (!appMap || proposalBusyId()) return false;
     setProposalBusyId(proposalId);
     setProposalError();
     try {
@@ -33,8 +33,10 @@ export function useAppMapProposalReview(activeAppMap: () => AppMap | undefined) 
             : "Proposal rejected",
         "success",
       );
+      return true;
     } catch (error) {
       setProposalError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       setProposalBusyId();
     }

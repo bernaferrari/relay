@@ -11,7 +11,6 @@ import {
 import type { AppMap } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DevicePicker } from "./device-picker";
 import { AppMapPrimaryActionButton } from "./app-map-primary-action-button";
@@ -35,7 +34,6 @@ import {
   shellTopbarTitle,
   shellTopbarActions,
   shellStudio,
-  shellSaveState,
   shellMapWrap,
   shellDragStrip,
 } from "../lib/shell-layout";
@@ -76,7 +74,6 @@ function WorkspaceLoading(props: { label: string }) {
 
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
-  const draft = useRecipeDraft();
   const recorder = useRecorder();
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
@@ -110,7 +107,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   const selectedMap = createMemo(() => server.selectedAppMap());
   const [mapNameDraft, setMapNameDraft] = createSignal("");
-  createEffect(() => setMapNameDraft(selectedMap()?.name ?? (draft.title().trim() || "My map")));
+  createEffect(() => setMapNameDraft(selectedMap()?.name ?? "My map"));
   createEffect(() => {
     server.selectedAppMapId();
     setActiveTargetSetId();
@@ -382,7 +379,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   };
   const graphPrimaryAction = createMemo(() =>
     appMapPrimaryAction({
-      saveState: draft.saveState(),
+      saveState: "saved",
       run: graphRunReadiness(),
       serverOnline: server.health() === "online",
       device: selectedDeviceReadiness(),
@@ -451,6 +448,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       await server.refreshAppMaps();
       server.setSelectedAppMapId(captured.appMap.id);
       setArea("tests");
+      setAuthoringSurface("map");
       setSettingsOpen(false);
       setNavOpen(false);
       toast("Start screen saved · record a path or capture more screenshots", "success");
@@ -585,7 +583,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openMap(id: string): void {
     server.setSelectedAppMapId(id);
     setArea("tests");
-    setAuthoringSurface("test");
+    setAuthoringSurface("map");
     setSettingsOpen(false);
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.
@@ -593,13 +591,24 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   function openTest(id: string): void {
-    const map = server.appMaps().find((candidate) => candidate.id === id);
+    const map = server
+      .appMaps()
+      .find(
+        (candidate) =>
+          candidate.id === id ||
+          Boolean(candidate.tests[id]) ||
+          Boolean(candidate.flows[id]) ||
+          Boolean(candidate.routines[id]),
+      );
     if (map) {
-      openMap(id);
+      server.setSelectedAppMapId(map.id);
+      setArea("tests");
+      setAuthoringSurface("test");
+      setSettingsOpen(false);
+      setNavOpen(false);
       return;
     }
-    server.setSelectedRecipeId(id);
-    toast("Author this path on its map. Run reports stay in Runs.", "info");
+    toast("This saved run is no longer attached to an editable map Test.", "warning");
   }
 
   /** New Map is a local blank canvas. It becomes durable only after its first
@@ -692,7 +701,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onBlur={() => {
                   const name = mapNameDraft().trim() || "My map";
                   setMapNameDraft(name);
-                  draft.setTitle(name);
                   void renameCanonicalMap(name);
                 }}
                 onKeyDown={(event) => {
@@ -728,17 +736,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 }}
                 onManageTargets={() => props.onOpenSettings("targets")}
               />
-            </Show>
-            <Show
-              when={
-                area() === "tests" &&
-                selectedMap() &&
-                (draft.saveState() === "saving" || draft.saveState() === "invalid")
-              }
-            >
-              <span class={shellSaveState}>
-                {draft.saveState() === "saving" ? "Saving…" : `${draft.invalidCount()} incomplete`}
-              </span>
             </Show>
             <Show when={area() === "tests" && selectedMap()}>
               <div class="relative flex items-center gap-1.5">

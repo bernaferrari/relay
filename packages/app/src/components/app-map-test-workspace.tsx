@@ -1,13 +1,16 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   AppMapCompiledTest,
   AppMapScenarioTest,
   AppMapScenarioTestStep,
   AppMapTest,
+  Proposal,
 } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { planScenarioTestEdits } from "../lib/app-map-scenario-edit-plan";
+import { cn } from "../lib/cn";
+import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import {
   createScenarioStep,
   createScenarioTest,
@@ -37,8 +40,11 @@ import {
 } from "./app-map-test-run-control";
 import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
 import { Icon } from "./icon";
+import { confirmAction } from "./confirm-dialog";
+import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 
 type SaveState = "saved" | "saving" | "error";
+type MobilePane = "steps" | "edit" | "device" | "results";
 type UndoDelete = {
   message: string;
   test: AppMapScenarioTest;
@@ -67,12 +73,19 @@ export function AppMapTestWorkspace(props: {
   const [saveError, setSaveError] = createSignal("");
   const [retryAvailable, setRetryAvailable] = createSignal(false);
   const [undoDelete, setUndoDelete] = createSignal<UndoDelete>();
+  const [deletedTest, setDeletedTest] = createSignal<AppMapTest>();
   const [creating, setCreating] = createSignal(false);
   const [compiledPlan, setCompiledPlan] = createSignal<AppMapCompiledTest>();
   const [runJobId, setRunJobId] = createSignal<string>();
   const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
   const [runError, setRunError] = createSignal("");
   const [runAttributionMismatch, setRunAttributionMismatch] = createSignal(false);
+  const [mobile, setMobile] = createSignal(false);
+  const [mobilePane, setMobilePane] = createSignal<MobilePane>("steps");
+  const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
+  const { proposalBusyId, proposalError, decideProposal } = useAppMapProposalReview(
+    () => appMap() ?? undefined,
+  );
   let loadedKey = "";
   let optimisticRevision = 0;
   let saveQueue = Promise.resolve();
@@ -80,6 +93,14 @@ export function AppMapTestWorkspace(props: {
   let failedDraft: AppMapScenarioTest | undefined;
   let queuedDraft: AppMapScenarioTest | undefined;
   let runTestKey = "";
+
+  onMount(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    onCleanup(() => query.removeEventListener("change", update));
+  });
 
   const selectTest = (id: string) => {
     setLocalTestId(id);
@@ -148,6 +169,16 @@ export function AppMapTestWorkspace(props: {
   const selectedItem = createMemo(() =>
     flattenScenarioSteps(draft()?.steps ?? []).find((item) => item.step.id === selectedStepId()),
   );
+  const pendingTestProposals = createMemo(() => {
+    const id = selectedTestId();
+    return Object.values(appMap()?.proposals ?? {})
+      .filter(
+        (proposal): proposal is Proposal =>
+          proposal.status === "pending" &&
+          proposal.changes.some((change) => change.kind === "test.edit" && change.testId === id),
+      )
+      .sort((left, right) => left.createdAt - right.createdAt);
+  });
   const runJob = createMemo(() => {
     const id = runJobId();
     return id ? server.jobs().find((job) => job.id === id) : undefined;
@@ -296,6 +327,7 @@ export function AppMapTestWorkspace(props: {
     const step = createScenarioStep(kind);
     queueSave({ ...test, steps: [...test.steps, step], updatedAt: Date.now() });
     setSelectedStepId(step.id);
+    if (mobile()) setMobilePane("edit");
     focusStep(step.id, true);
   }
 
@@ -313,6 +345,7 @@ export function AppMapTestWorkspace(props: {
       updatedAt: Date.now(),
     });
     setSelectedStepId(step.id);
+    if (mobile()) setMobilePane("edit");
     focusStep(step.id, true);
   }
 
@@ -395,6 +428,150 @@ export function AppMapTestWorkspace(props: {
     }
   }
 
+  async function duplicateTest(): Promise<void> {
+    const map = appMap();
+    const test = selectedTest();
+    if (!map || !test || saveState() !== "saved") return;
+    const now = Date.now();
+    const copy: AppMapTest = {
+      ...structuredClone(test),
+      id: crypto.randomUUID(),
+      name: `${test.name} copy`,
+      ...(test.kind === "scenario" ? { steps: renewScenarioStepIds(test.steps) } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      const result = await server.saveTest({
+        appMapId: map.id,
+        expectedRevision: map.revision,
+        test: copy,
+      });
+      optimisticRevision = result.appMap.revision;
+      await server.refreshAppMaps();
+      selectTest(copy.id);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveState("error");
+    }
+  }
+
+  async function convertPathTest(test: AppMapTest): Promise<void> {
+    const map = appMap();
+    if (!map || test.kind !== "path" || !test.flowId) return;
+    const flow = map.flows[test.flowId];
+    if (!flow) {
+      setSaveError("The recorded path no longer references a saved flow.");
+      setSaveState("error");
+      return;
+    }
+    const next = createScenarioTest(map, `${test.name} editable`);
+    next.capture = test.capture;
+    next.steps = [
+      {
+        id: crypto.randomUUID(),
+        kind: "instruction",
+        intent: `Follow ${flow.name}`,
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: [...flow.connectionIds],
+        },
+      },
+    ];
+    try {
+      await server.saveTest({ appMapId: map.id, expectedRevision: map.revision, test: next });
+      await server.refreshAppMaps();
+      selectTest(next.id);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveState("error");
+    }
+  }
+
+  function deleteTest(): void {
+    const map = appMap();
+    const test = selectedTest();
+    if (!map || !test || saveState() !== "saved") return;
+    confirmAction({
+      title: `Delete “${test.name}”?`,
+      body: "This removes the Test from this map. Its existing run evidence is kept in Runs.",
+      confirmLabel: "Delete Test",
+      tone: "destructive",
+      onConfirm: async () => {
+        try {
+          await server.runAction("app-map.test.remove", {
+            appMapId: map.id,
+            testId: test.id,
+            expectedRevision: map.revision,
+          });
+          selectTest("");
+          await server.refreshAppMaps();
+          setDeletedTest(structuredClone(test));
+          if (mobile()) setMobilePane("edit");
+        } catch (error) {
+          setSaveError(error instanceof Error ? error.message : String(error));
+          setSaveState("error");
+        }
+      },
+    });
+  }
+
+  async function restoreDeletedTest(): Promise<void> {
+    const test = deletedTest();
+    const map = appMap();
+    if (!test || !map) return;
+    try {
+      await server.saveTest({
+        appMapId: map.id,
+        expectedRevision: map.revision,
+        test: { ...structuredClone(test), updatedAt: Date.now() },
+      });
+      setDeletedTest();
+      await server.refreshAppMaps();
+      selectTest(test.id);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveState("error");
+    }
+  }
+
+  function resolveRunBlocker(): void {
+    if (saveState() === "error") {
+      if (retryAvailable()) void retrySave();
+      else {
+        if (mobile()) setMobilePane("edit");
+        queueMicrotask(() => document.getElementById("test-save-error")?.focus());
+      }
+      return;
+    }
+    const first = blockers().find((item) => item.stepId);
+    if (first?.stepId) {
+      setSelectedStepId(first.stepId);
+      if (mobile()) setMobilePane("edit");
+      focusStep(first.stepId, true);
+      return;
+    }
+    if (blockers().length) {
+      if (mobile()) setMobilePane(draft()?.steps.length ? "edit" : "steps");
+      queueMicrotask(() => document.getElementById("scenario-test-name")?.focus());
+      return;
+    }
+    if (!selectedDevice()) {
+      window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+      return;
+    }
+  }
+
+  const runBlockerActionLabel = createMemo(() => {
+    if (server.isOffline() || saveState() === "saving") return undefined;
+    if (saveState() === "error") return retryAvailable() ? "Retry save" : "Review save error";
+    if (blockers().length)
+      return `Fix ${blockers().length} ${blockers().length === 1 ? "binding" : "bindings"}`;
+    if (!selectedDevice()) return "Choose target";
+    return undefined;
+  });
+
   async function runTest(): Promise<void> {
     const map = appMap();
     const test = draft();
@@ -447,7 +624,7 @@ export function AppMapTestWorkspace(props: {
 
   return (
     <section
-      class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--map-canvas)] text-text-strong"
+      class="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--map-canvas)] text-text-strong"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         if (
@@ -486,11 +663,23 @@ export function AppMapTestWorkspace(props: {
             <Icon name="map" size={13} /> Open map
           </Button>
           <Show when={draft()}>
+            <Show when={pendingTestProposals().length > 0}>
+              <Button
+                variant="secondary"
+                size="sm"
+                class="min-h-11"
+                onClick={() => setProposalReviewOpen(true)}
+              >
+                <Icon name="sparkle" size={13} /> {pendingTestProposals().length} proposed
+              </Button>
+            </Show>
             <AppMapTestRunControl
               launchState={runLaunchState()}
               job={runJob()}
               blockedReason={runBlockedReason()}
               error={runError()}
+              blockedActionLabel={runBlockerActionLabel()}
+              onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
               onRun={() => void runTest()}
               onCancel={() => void cancelRun()}
               onOpenResult={() => {
@@ -504,120 +693,186 @@ export function AppMapTestWorkspace(props: {
         </div>
       </header>
 
-      <div class="grid min-h-0 grid-cols-[minmax(260px,0.8fr)_minmax(320px,1fr)_minmax(300px,0.9fr)] max-[1180px]:grid-cols-[minmax(280px,0.9fr)_minmax(340px,1.1fr)] max-[1180px]:grid-rows-[minmax(0,1fr)_minmax(280px,42%)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(300px,auto)_minmax(360px,auto)_minmax(300px,auto)] max-[760px]:overflow-y-auto">
-        <div class="flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[760px]:border-r-0 max-[760px]:border-b">
-          <TestPicker
-            tests={tests()}
-            selectedTestId={selectedTestId()}
-            disabled={saveState() !== "saved"}
-            creating={creating()}
-            onSelect={selectTest}
-            onCreate={() => void createTest()}
-          />
-          <Show
-            when={selectedTest()}
-            fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
+      <div class="min-h-0 max-[760px]:flex max-[760px]:flex-col">
+        <MobilePaneNav value={mobilePane()} onChange={setMobilePane} />
+        <div class="grid min-h-0 h-full grid-cols-[minmax(260px,0.8fr)_minmax(320px,1fr)_minmax(300px,0.9fr)] max-[1180px]:grid-cols-[minmax(280px,0.9fr)_minmax(340px,1.1fr)] max-[1180px]:grid-rows-[minmax(0,1fr)_minmax(280px,42%)] max-[760px]:block max-[760px]:flex-1">
+          <div
+            class={cn(
+              "flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[760px]:h-full max-[760px]:border-r-0",
+              mobile() && mobilePane() !== "steps" && "hidden",
+            )}
+            inert={mobile() && mobilePane() !== "steps"}
           >
-            {(test) => (
-              <Show
-                when={test().kind === "scenario" && draft()}
-                fallback={<LegacyTest test={test()} onCreate={() => void createTest()} />}
-              >
-                <AppMapTestOutline
-                  map={appMap()!}
-                  test={draft()!}
-                  selectedStepId={selectedStepId()}
-                  diagnostics={diagnostics()}
-                  onSelect={setSelectedStepId}
-                  onAddRoot={addRootStep}
-                  onAddChild={addChildStep}
-                  onMove={moveStep}
-                  onDuplicate={duplicateStep}
-                  onDelete={deleteStep}
-                />
-              </Show>
-            )}
-          </Show>
-        </div>
-
-        <div class="min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha">
-          <Show when={undoDelete()}>
-            {(undo) => (
-              <AppMapTestUndo
-                message={undo().message}
-                onUndo={undoStepDelete}
-                onDismiss={() => setUndoDelete()}
-              />
-            )}
-          </Show>
-          <Show when={saveState() === "error"}>
-            <div
-              class="m-3 flex items-start justify-between gap-3 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[12px] text-text-critical-base"
-              role="alert"
+            <TestPicker
+              tests={tests()}
+              selectedTestId={selectedTestId()}
+              disabled={saveState() !== "saved"}
+              creating={creating()}
+              onSelect={selectTest}
+              onCreate={() => void createTest()}
+              onDuplicate={() => void duplicateTest()}
+              onDelete={deleteTest}
+            />
+            <Show
+              when={selectedTest()}
+              fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
             >
-              <span>
-                <strong>Changes are still local.</strong> {saveError()}
-              </span>
-              <Show
-                when={retryAvailable()}
-                fallback={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setSaveError("");
-                      setSaveState("saved");
+              {(test) => (
+                <Show
+                  when={test().kind === "scenario" && draft()}
+                  fallback={
+                    <LegacyTest
+                      test={test()}
+                      onCreate={() => void createTest()}
+                      onConvert={() => void convertPathTest(test())}
+                    />
+                  }
+                >
+                  <AppMapTestOutline
+                    map={appMap()!}
+                    test={draft()!}
+                    selectedStepId={selectedStepId()}
+                    diagnostics={diagnostics()}
+                    onSelect={(id) => {
+                      setSelectedStepId(id);
+                      if (mobile()) {
+                        setMobilePane("edit");
+                        focusStep(id, true);
+                      }
                     }}
-                  >
-                    Dismiss
-                  </Button>
-                }
+                    onAddRoot={addRootStep}
+                    onAddChild={addChildStep}
+                    onMove={moveStep}
+                    onDuplicate={duplicateStep}
+                    onDelete={deleteStep}
+                  />
+                </Show>
+              )}
+            </Show>
+          </div>
+
+          <div
+            class={cn(
+              "min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha max-[760px]:h-full",
+              mobile() && mobilePane() !== "edit" && "hidden",
+            )}
+            inert={mobile() && mobilePane() !== "edit"}
+          >
+            <Show when={deletedTest()}>
+              {(test) => (
+                <AppMapTestUndo
+                  message={`Deleted ${test().name}`}
+                  onUndo={() => void restoreDeletedTest()}
+                  onDismiss={() => setDeletedTest()}
+                />
+              )}
+            </Show>
+            <Show when={undoDelete()}>
+              {(undo) => (
+                <AppMapTestUndo
+                  message={undo().message}
+                  onUndo={undoStepDelete}
+                  onDismiss={() => setUndoDelete()}
+                />
+              )}
+            </Show>
+            <Show when={saveState() === "error"}>
+              <div
+                id="test-save-error"
+                tabindex={-1}
+                class="m-3 flex items-start justify-between gap-3 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[12px] text-text-critical-base"
+                role="alert"
               >
-                <Button variant="secondary" size="sm" onClick={() => void retrySave()}>
-                  Retry save
-                </Button>
-              </Show>
-            </div>
-          </Show>
+                <span>
+                  <strong>Changes are still local.</strong> {saveError()}
+                </span>
+                <Show
+                  when={retryAvailable()}
+                  fallback={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setSaveError("");
+                        setSaveState("saved");
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  }
+                >
+                  <Button variant="secondary" size="sm" onClick={() => void retrySave()}>
+                    Retry save
+                  </Button>
+                </Show>
+              </div>
+            </Show>
+            <Show when={draft()}>
+              {(test) => (
+                <div class="grid gap-5 p-4">
+                  <label class="grid gap-1.5" for="scenario-test-name">
+                    <span class={testEditorLabel}>Test name</span>
+                    <input
+                      id="scenario-test-name"
+                      class={testEditorInput}
+                      value={test().name}
+                      onInput={(event) => setDraft({ ...test(), name: event.currentTarget.value })}
+                      onBlur={() => draft() && queueSave({ ...draft()!, updatedAt: Date.now() })}
+                    />
+                  </label>
+                  <AppMapTestInspector
+                    map={appMap()!}
+                    item={selectedItem()}
+                    diagnostics={diagnostics()}
+                    blockers={blockers().length}
+                    onDraftChange={updateDraftStep}
+                    onCommit={commitStep}
+                  />
+                </div>
+              )}
+            </Show>
+          </div>
           <Show when={draft()}>
             {(test) => (
-              <div class="grid gap-5 p-4">
-                <label class="grid gap-1.5" for="scenario-test-name">
-                  <span class={testEditorLabel}>Test name</span>
-                  <input
-                    id="scenario-test-name"
-                    class={testEditorInput}
-                    value={test().name}
-                    onInput={(event) => setDraft({ ...test(), name: event.currentTarget.value })}
-                    onBlur={() => draft() && queueSave({ ...draft()!, updatedAt: Date.now() })}
-                  />
-                </label>
-                <AppMapTestInspector
-                  map={appMap()!}
-                  item={selectedItem()}
-                  diagnostics={diagnostics()}
-                  blockers={blockers().length}
-                  onDraftChange={updateDraftStep}
-                  onCommit={commitStep}
+              <div
+                class={cn(
+                  "min-h-0 border-l border-border-weak-base max-[1180px]:col-span-2 max-[1180px]:border-l-0 max-[760px]:h-full",
+                  mobile() && !["device", "results"].includes(mobilePane()) && "hidden",
+                )}
+                inert={mobile() && !["device", "results"].includes(mobilePane())}
+              >
+                <AppMapTestDeviceEvidence
+                  test={test()}
+                  selectedStepId={selectedStepId()}
+                  compiledPlan={compiledPlan()}
+                  onOpenRun={props.onOpenRun}
+                  onSelectStep={setSelectedStepId}
+                  selectedTab={mobilePane() === "results" ? "evidence" : "device"}
+                  onTabChange={(tab) =>
+                    mobile() && setMobilePane(tab === "evidence" ? "results" : "device")
+                  }
+                  hideTabs={mobile()}
                 />
               </div>
             )}
           </Show>
         </div>
-        <Show when={draft()}>
-          {(test) => (
-            <div class="min-h-0 border-l border-border-weak-base max-[1180px]:col-span-2 max-[1180px]:border-l-0 max-[760px]:col-span-1">
-              <AppMapTestDeviceEvidence
-                test={test()}
-                selectedStepId={selectedStepId()}
-                compiledPlan={compiledPlan()}
-                onOpenRun={props.onOpenRun}
-                onSelectStep={setSelectedStepId}
-              />
-            </div>
-          )}
-        </Show>
       </div>
+      <Show when={proposalReviewOpen() && draft() && pendingTestProposals().length > 0}>
+        <AppMapTestProposalReview
+          test={draft()!}
+          proposals={pendingTestProposals()}
+          busyId={proposalBusyId()}
+          error={proposalError()}
+          onApprove={(id) =>
+            void decideProposal(id, "approve").then((ok) => ok && setProposalReviewOpen(false))
+          }
+          onReject={(id) =>
+            void decideProposal(id, "reject").then((ok) => ok && setProposalReviewOpen(false))
+          }
+          onClose={() => setProposalReviewOpen(false)}
+        />
+      </Show>
     </section>
   );
 }
@@ -629,6 +884,8 @@ function TestPicker(props: {
   creating: boolean;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border-weak-base p-3">
@@ -650,15 +907,51 @@ function TestPicker(props: {
           </For>
         </select>
       </label>
-      <Button
-        variant="secondary"
-        size="sm"
-        class="mt-[19px] min-h-11"
-        disabled={props.creating}
-        onClick={props.onCreate}
-      >
-        <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
-      </Button>
+      <div class="flex items-end gap-1">
+        <Button
+          variant="secondary"
+          size="sm"
+          class="mt-[19px] min-h-11"
+          disabled={props.creating}
+          onClick={props.onCreate}
+        >
+          <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
+        </Button>
+        <Show when={props.selectedTestId}>
+          <details class="relative">
+            <summary
+              class="grid min-h-11 min-w-11 cursor-pointer list-none place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+              aria-label="Test options"
+            >
+              <Icon name="more" size={14} />
+            </summary>
+            <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-40 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
+              <button
+                type="button"
+                disabled={props.disabled}
+                class="min-h-11 rounded-md px-3 text-left text-[12px] hover:bg-surface-base-hover disabled:opacity-40"
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  props.onDuplicate();
+                }}
+              >
+                Duplicate Test
+              </button>
+              <button
+                type="button"
+                disabled={props.disabled}
+                class="min-h-11 rounded-md px-3 text-left text-[12px] text-text-critical-base hover:bg-surface-base-hover disabled:opacity-40"
+                onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  props.onDelete();
+                }}
+              >
+                Delete Test…
+              </button>
+            </div>
+          </details>
+        </Show>
+      </div>
     </div>
   );
 }
@@ -679,7 +972,7 @@ function FirstTestEmpty(props: { creating: boolean; onCreate: () => void }) {
   );
 }
 
-function LegacyTest(props: { test: AppMapTest; onCreate: () => void }) {
+function LegacyTest(props: { test: AppMapTest; onCreate: () => void; onConvert: () => void }) {
   return (
     <div class="grid flex-1 place-items-center p-6 text-center">
       <div class="max-w-[38ch]">
@@ -691,10 +984,71 @@ function LegacyTest(props: { test: AppMapTest; onCreate: () => void }) {
           This {props.test.kind === "path" ? "recorded path" : "screen tour"} keeps its existing
           behavior and stays read-only. Create a scenario to edit intent step by step.
         </p>
-        <Button class="mt-4" onClick={props.onCreate}>
-          Create editable scenario
-        </Button>
+        <Show
+          when={props.test.kind === "path" && props.test.flowId}
+          fallback={
+            <>
+              <p class="mt-3 text-[11px]/[1.5] text-text-weaker">
+                Screen tours remain read-only because their dynamic traversal has no equivalent
+                scenario binding yet.
+              </p>
+              <Button class="mt-4" onClick={props.onCreate}>
+                Create separate scenario
+              </Button>
+            </>
+          }
+        >
+          <Button class="mt-4" onClick={props.onConvert}>
+            Convert to editable scenario
+          </Button>
+        </Show>
       </div>
     </div>
+  );
+}
+
+function renewScenarioStepIds(steps: readonly AppMapScenarioTestStep[]): AppMapScenarioTestStep[] {
+  return steps.map((step) => {
+    const copy = { ...structuredClone(step), id: crypto.randomUUID() };
+    if (copy.kind === "decision") {
+      copy.thenSteps = renewScenarioStepIds(copy.thenSteps);
+      if (copy.elseSteps) copy.elseSteps = renewScenarioStepIds(copy.elseSteps);
+    }
+    if (copy.kind === "loop") copy.steps = renewScenarioStepIds(copy.steps);
+    return copy;
+  });
+}
+
+function MobilePaneNav(props: { value: MobilePane; onChange: (pane: MobilePane) => void }) {
+  const panes = [
+    ["steps", "Steps"],
+    ["edit", "Edit"],
+    ["device", "Device"],
+    ["results", "Results"],
+  ] as const;
+  return (
+    <nav
+      class="hidden min-h-12 shrink-0 grid-cols-4 border-b border-border-weak-base bg-background-base p-1 max-[760px]:grid"
+      aria-label="Test workspace"
+    >
+      <For each={panes}>
+        {([pane, label]) => (
+          <button
+            type="button"
+            data-test-mobile-tab={pane}
+            class={cn(
+              "min-h-11 rounded-lg px-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-border-strong-focus",
+              props.value === pane
+                ? "bg-surface-base-active text-text-strong"
+                : "text-text-weak hover:bg-surface-base-hover",
+            )}
+            aria-current={props.value === pane ? "page" : undefined}
+            onClick={() => props.onChange(pane)}
+          >
+            {label}
+          </button>
+        )}
+      </For>
+    </nav>
   );
 }

@@ -9,6 +9,8 @@ export type TestRunControlProps = {
   job?: JobInfo;
   blockedReason?: string;
   error?: string;
+  blockedActionLabel?: string;
+  onResolveBlocked?: () => void;
   onRun: () => void;
   onCancel: () => void;
   onOpenResult: () => void;
@@ -35,6 +37,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     if (active()) return props.job?.status === "queued" ? "Cancel queued run" : "Cancel run";
     if (props.launchState === "error") return "Try run again";
     if (finished()) return "Open result";
+    if (props.blockedReason && props.blockedActionLabel) return props.blockedActionLabel;
     return "Run test";
   };
   const status = () => {
@@ -53,6 +56,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     if (active()) props.onCancel();
     else if (props.launchState === "error") props.onRun();
     else if (finished()) props.onOpenResult();
+    else if (props.blockedReason) props.onResolveBlocked?.();
     else props.onRun();
   }
 
@@ -62,7 +66,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
         size="sm"
         class="min-h-11 min-w-[122px]"
         variant={active() ? "danger" : "primary"}
-        disabled={busy() || (!active() && !finished() && Boolean(props.blockedReason))}
+        disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
         aria-busy={busy()}
         aria-describedby="test-run-control-status"
         title={props.blockedReason || undefined}
@@ -73,7 +77,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       </Button>
       <span
         id="test-run-control-status"
-        class="max-w-[32ch] truncate text-[10px] text-text-weaker"
+        class="max-w-[38ch] text-right text-[10px]/[1.35] text-text-weaker"
         role="status"
         aria-live="polite"
       >

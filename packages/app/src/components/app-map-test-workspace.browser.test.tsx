@@ -97,6 +97,13 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   create.click();
   await settle();
   expect(root.textContent).toContain("Test 1");
+  root.querySelector<HTMLElement>("summary[aria-label='Test options']")!.click();
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "Duplicate Test")!
+    .click();
+  await settle();
+  expect(saves).toHaveLength(2);
+  expect(root.textContent).toContain("Test 1 copy");
 
   const add = root.querySelector<HTMLButtonElement>("button[aria-label='Add Next step']")!;
   add.click();
@@ -114,7 +121,9 @@ test("scenario editor creates and edits stable intent without inventing a runnab
       .flat()
       .some((edit) => edit.kind === "step.patch" && edit.patch.intent === "Open the reviewed cart"),
   ).toBe(true);
-  expect(root.querySelector<HTMLButtonElement>("button[title*='Resolve']")?.disabled).toBe(true);
+  const blockerAction = root.querySelector<HTMLButtonElement>("button[title*='Resolve']")!;
+  expect(blockerAction.disabled).toBe(false);
+  expect(blockerAction.textContent).toContain("Fix 1 binding");
 
   const rootKind = [...root.querySelectorAll<HTMLSelectElement>("select")].find((select) =>
     [...select.options].some((option) => option.value === "decision"),
@@ -507,5 +516,111 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   expect(opened).toEqual(["job-exact"]);
 
   dispose();
+  document.body.replaceChildren();
+});
+
+test("mobile Test authoring uses one focused pane and advances from Steps to Edit", async () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const originalMatchMedia = window.matchMedia;
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: true,
+    media: "(max-width: 760px)",
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }) as typeof window.matchMedia;
+  const scenario: AppMapScenarioTest = {
+    kind: "scenario",
+    id: "mobile-test",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: "checkout",
+    name: "Mobile checkout",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "mobile-step",
+        kind: "instruction",
+        intent: "Open checkout",
+        binding: { status: "unresolved", reason: "Choose a path" },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const map = fixture();
+  map.tests[scenario.id] = scenario;
+  map.proposals.mobileProposal = {
+    id: "mobileProposal",
+    organizationId: "org",
+    projectId: "project",
+    appMapId: map.id,
+    baseRevision: map.revision,
+    title: "Clarify checkout",
+    status: "pending",
+    changes: [
+      {
+        kind: "test.edit",
+        testId: scenario.id,
+        edits: [
+          {
+            kind: "step.patch",
+            stepId: "mobile-step",
+            patch: { intent: "Open the reviewed checkout" },
+          },
+        ],
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  serverMock.current = {
+    selectedAppMap: () => map,
+    isOffline: () => false,
+    health: () => "online",
+    devices: () => [],
+    selectedDevice: () => null,
+    liveFrame: () => null,
+    liveCaptureIssue: () => null,
+    appleDeviceSetup: () => null,
+    jobs: () => [],
+    persistedRuns: () => [],
+    pollLiveFrame: async () => undefined,
+    loadRunDetail: async () => undefined,
+    frameUrlForPersisted: () => "",
+    refreshAppMaps: async () => undefined,
+    editTest: async () => ({ appMap: { revision: 2 } }),
+    saveTest: async () => ({ appMap: { revision: 2 } }),
+    runAction: async () => undefined,
+  };
+
+  const dispose = render(
+    () => <AppMapTestWorkspace testId={scenario.id} onOpenMap={() => undefined} />,
+    root,
+  );
+  await settle();
+  const proposed = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("1 proposed"),
+  )!;
+  proposed.click();
+  expect(root.textContent).toContain("Open the reviewed checkout");
+  root.querySelector<HTMLButtonElement>("button[aria-label='Close Test proposal review']")!.click();
+  expect(root.querySelector("[data-test-mobile-tab='steps']")?.getAttribute("aria-current")).toBe(
+    "page",
+  );
+  root.querySelector<HTMLButtonElement>("#test-step-row-mobile-step")!.click();
+  await settle();
+  expect(root.querySelector("[data-test-mobile-tab='edit']")?.getAttribute("aria-current")).toBe(
+    "page",
+  );
+  expect(document.activeElement?.id).toBe("test-step-intent-mobile-step");
+  root.querySelector<HTMLButtonElement>("[data-test-mobile-tab='results']")!.click();
+  expect(root.querySelector("[data-test-mobile-tab='results']")?.getAttribute("aria-current")).toBe(
+    "page",
+  );
+
+  dispose();
+  window.matchMedia = originalMatchMedia;
   document.body.replaceChildren();
 });

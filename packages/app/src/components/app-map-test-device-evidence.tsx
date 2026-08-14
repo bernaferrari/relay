@@ -11,7 +11,7 @@ import { deviceReadiness } from "../lib/device-readiness";
 import { AppMapTestDevicePanel } from "./app-map-test-device-panel";
 import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
 
-type InspectorTab = "device" | "evidence";
+export type InspectorTab = "device" | "evidence";
 
 const tabClass =
   "min-h-11 flex-1 border-b-2 px-3 text-[11px] font-semibold transition-[border-color,color,background-color,transform] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-border-strong-focus";
@@ -22,6 +22,9 @@ export function AppMapTestDeviceEvidence(props: {
   compiledPlan?: AppMapCompiledTest;
   onOpenRun?: (runId: string) => void;
   onSelectStep?: (stepId: string) => void;
+  selectedTab?: InspectorTab;
+  onTabChange?: (tab: InspectorTab) => void;
+  hideTabs?: boolean;
 }) {
   const server = useServer();
   const [tab, setTab] = createSignal<InspectorTab>("device");
@@ -58,6 +61,10 @@ export function AppMapTestDeviceEvidence(props: {
   );
 
   createEffect(() => {
+    if (props.selectedTab && props.selectedTab !== tab()) setTab(props.selectedTab);
+  });
+
+  createEffect(() => {
     if (tab() !== "evidence") return;
     const run = latestRun();
     if (!run || requestedRunDetails.has(run.id)) return;
@@ -75,6 +82,7 @@ export function AppMapTestDeviceEvidence(props: {
 
   function selectTab(next: InspectorTab): void {
     setTab(next);
+    props.onTabChange?.(next);
     queueMicrotask(() => (next === "device" ? deviceTab : evidenceTab)?.focus());
   }
 
@@ -102,20 +110,25 @@ export function AppMapTestDeviceEvidence(props: {
       class="flex min-h-0 flex-col border-t border-border-weak-base bg-background-base"
       aria-label="Test device and evidence"
     >
-      <div class="flex" role="tablist" aria-label="Test context">
+      <div
+        class={props.hideTabs ? "hidden" : "flex"}
+        role="tablist"
+        aria-label="Test context"
+        aria-hidden={props.hideTabs ? "true" : undefined}
+      >
         <ContextTab
           ref={(element) => (deviceTab = element)}
           tab="device"
           selected={tab() === "device"}
           onKeyDown={onTabKeyDown}
-          onSelect={() => setTab("device")}
+          onSelect={() => selectTab("device")}
         />
         <ContextTab
           ref={(element) => (evidenceTab = element)}
           tab="evidence"
           selected={tab() === "evidence"}
           onKeyDown={onTabKeyDown}
-          onSelect={() => setTab("evidence")}
+          onSelect={() => selectTab("evidence")}
         />
       </div>
       <section
