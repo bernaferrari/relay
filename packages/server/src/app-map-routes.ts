@@ -1,7 +1,5 @@
 import type http from "node:http";
 import {
-  AppMapDomainError,
-  AppMapTestStepOperationError,
   addAppMapScreen,
   authoringSessions,
   approveAppMapProposal,
@@ -10,17 +8,13 @@ import {
   commitAppMapChanges,
   commitAppMapScreenCapture,
   createAppMap,
-  compileAppMapTest,
   currentOperationContext,
   deleteAppMap,
   duplicateAppMap,
-  editAppMapScenarioTest,
   findAppMapCaptureScreen,
   formatAppMapYaml,
   importAppMap,
   listAppMaps,
-  listDevices,
-  mutateStoredAppMap,
   now,
   proposalFromDiscovery,
   reviewAppMapScreenCapture,
@@ -28,14 +22,10 @@ import {
   readDiscoverySession,
   appMapYamlFilename,
   parseAppMapYaml,
-  preflightAppMapCombine,
-  proposalConflictsSince,
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
   removeAppMapVariable,
-  removeAppMapTest,
-  removeAppMapCombine,
   removeAppMapFlow,
   removeAppMapGroup,
   removeAppMapRoutine,
@@ -44,29 +34,38 @@ import {
   saveAppMapGroup,
   saveAppMapCaseStack,
   saveAppMapVariable,
-  saveAppMapTest,
-  saveAppMapCombine,
   saveAppMapRoutine,
   submitAppMapProposal,
   updateAppMap,
   updateAppMapConnection,
   updateAppMapScreen,
   type AppMap,
-  type AppMapMutationContext,
 } from "@relay/core";
-import type {
-  ActionSpec,
-  AuthoringInteraction,
-  AuthoringSession,
-  ConnectionSourceAnchor,
-  OperationInput,
-  ScreenVariant,
-  TargetProfile,
-} from "@relay/protocol";
+import type { AuthoringSession, OperationInput, ScreenVariant } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
 import { createAuthoringRuntime } from "./authoring-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
+import {
+  applyAppMapMutation as applyMutation,
+  applyRebasableAppMapMutation as applyRebasableMutation,
+} from "./app-map-route-mutations.js";
+import {
+  currentTakeRevision,
+  findEquivalentTeachConnection,
+  iosTeachObservationMatchesTitle,
+  profileForCapture,
+  sourceAnchorForTeachInteraction,
+  teachInteractionToAuthoringInteraction,
+} from "./app-map-capture-support.js";
+import { handleAppMapTestRoute } from "./app-map-test-routes.js";
+
+export {
+  findEquivalentTeachConnection,
+  iosTeachObservationMatchesTitle,
+  sourceAnchorForTeachInteraction,
+  teachInteractionToAuthoringInteraction,
+} from "./app-map-capture-support.js";
 
 type AppMapRouteInput = {
   method: string;
@@ -75,299 +74,6 @@ type AppMapRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
-
-/**
- * An iOS XCTest tree can briefly retain controls from the previous surface
- * after the pixels have moved.  A teaching request has an explicit intended
- * destination title, so use the fresh, visible tree as a cheap guard before
- * turning that transient state into a permanent map screen.
- *
- * We deliberately fail open for an empty tree: iOS can legitimately lose AX
- * for a moment, and the screenshot/evidence guard is still useful there.
- */
-export function iosTeachObservationMatchesTitle(
-  nodes: Array<Record<string, unknown>> | undefined,
-  title: string,
-): boolean {
-  if (!nodes?.length) return true;
-  // A capture title may append a viewport qualifier such as “Settings ·
-  // Lower”. The qualifier names the map state, not text expected in the app.
-  // Verify the live screen-title portion instead of rejecting valid scroll
-  // captures just because the author gave them a useful descriptive name.
-  const screenTitle = title.split(/\s*[·•]\s*/u, 1)[0] ?? title;
-  const words = screenTitle
-    .toLocaleLowerCase()
-    .split(/[^a-z0-9]+/u)
-    .filter((word) => word.length >= 4);
-  if (!words.length) return true;
-  const visibleText = nodes
-    .filter((node) => node.visibleToUser !== false)
-    .flatMap((node) => [node.label, node.identifier, node.value])
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .toLocaleLowerCase();
-  return words.every((word) => visibleText.includes(word));
-}
-
-/** A repeated teach request can have a new event id after a UI retry. Reuse
- * the already-recorded edge when its executable meaning is identical, but do
- * not collapse distinct controls that happen to lead to the same screen. */
-function teachActionSemantics(action: ActionSpec): unknown {
-  if (action.kind === "tap") return { kind: "tap", target: action.target };
-  if (action.kind === "gesture" && action.gesture.kind === "swipe") {
-    return { kind: "swipe", from: action.gesture.from, to: action.gesture.to };
-  }
-  return undefined;
-}
-
-export function findEquivalentTeachConnection(
-  map: AppMap,
-  input: { fromScreenId: string; destinationScreenId: string; action: ActionSpec },
-): string | undefined {
-  const action = teachActionSemantics(input.action);
-  if (!action) return undefined;
-  return Object.values(map.connections).find(
-    (connection) =>
-      connection.fromScreenId === input.fromScreenId &&
-      connection.destination.kind === "screen" &&
-      connection.destination.screenId === input.destinationScreenId &&
-      connection.actions.length === 1 &&
-      JSON.stringify(teachActionSemantics(connection.actions[0]!)) === JSON.stringify(action),
-  )?.id;
-}
-
-type TeachInteraction = NonNullable<OperationInput<"app-map.teach">["interaction"]>;
-type InteractionPoint = { x: number; y: number };
-
-/**
- * Teaching a destination is still a recording: verify the requested source
- * before touching the device, then retain the exact interaction in the Take.
- * Keeping this conversion here makes the one-click teach affordance use the
- * same source guard as the full Authoring Session rather than trusting the
- * caller-supplied source id after the fact.
- */
-export function teachInteractionToAuthoringInteraction(
-  interaction: TeachInteraction,
-): AuthoringInteraction {
-  switch (interaction.kind) {
-    case "point":
-      return { kind: "tap", target: { point: { x: interaction.x, y: interaction.y } } };
-    case "label":
-      return {
-        kind: "tap",
-        target: {
-          label: interaction.label,
-          ...(interaction.point ? { point: interaction.point } : {}),
-        },
-      };
-    case "identifier":
-      return {
-        kind: "tap",
-        target: {
-          identifier: interaction.identifier,
-          ...(interaction.point ? { point: interaction.point } : {}),
-        },
-      };
-    case "swipe":
-      return {
-        kind: "swipe",
-        from: interaction.from,
-        to: interaction.to,
-        ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
-      };
-  }
-}
-
-function finiteInteractionPoint(value: unknown): InteractionPoint | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const point = value as Partial<InteractionPoint>;
-  return Number.isFinite(point.x) && Number.isFinite(point.y)
-    ? { x: point.x!, y: point.y! }
-    : undefined;
-}
-
-/**
- * Preserve the actual interaction origin independently of the executable
- * action. A label/identifier remains stable when accessibility identifiers
- * shift, while its resolved control centre is retained as immutable visual
- * evidence for the canvas. Connections without a trustworthy point simply
- * use the source-edge centre at render time.
- */
-export function sourceAnchorForTeachInteraction(
-  map: AppMap,
-  fromScreenId: string,
-  interaction: TeachInteraction,
-  resolvedPoint?: InteractionPoint,
-  fallbackProfile?: TargetProfile,
-): ConnectionSourceAnchor | undefined {
-  const screen = map.screens[fromScreenId];
-  const viewport =
-    screen?.variantIds
-      .slice()
-      .reverse()
-      .map((variantId) => map.screenVariants[variantId]?.targetProfile.viewport)
-      .find((candidate) => candidate?.width && candidate.height) ?? fallbackProfile?.viewport;
-  if (!viewport?.width || !viewport.height) return undefined;
-
-  const rawPoint =
-    resolvedPoint ??
-    (interaction.kind === "swipe"
-      ? interaction.from
-      : interaction.kind === "point"
-        ? { x: interaction.x, y: interaction.y }
-        : interaction.point);
-  const point = finiteInteractionPoint(rawPoint);
-  if (!point) return undefined;
-  return {
-    point: {
-      x: Math.max(0, Math.min(1, point.x / viewport.width)),
-      y: Math.max(0, Math.min(1, point.y / viewport.height)),
-    },
-  };
-}
-
-function domainStatus(error: AppMapDomainError): number {
-  if (error.code === "missing-reference") return 404;
-  if (
-    error.code === "revision-conflict" ||
-    error.code === "in-use" ||
-    error.code === "proposal-state" ||
-    error.code === "duplicate-id"
-  ) {
-    return 409;
-  }
-  return 400;
-}
-
-async function applyMutation(
-  scope: RequestContext,
-  appMapId: string,
-  expectedRevision: number,
-  eventId: string | undefined,
-  transform: (map: AppMap, context: AppMapMutationContext) => AppMap,
-): Promise<AppMap> {
-  const operation = currentOperationContext();
-  if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
-  const stableEventId = eventId?.trim() || operation.requestId;
-  const current = await readAppMap(scope.projectId, appMapId);
-  if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
-  if (current.activity[stableEventId]) return current;
-  try {
-    return await mutateStoredAppMap(scope.projectId, appMapId, (map) =>
-      transform(map, {
-        expectedRevision,
-        eventId: stableEventId,
-        actorId: operation.actorId,
-        actorKind: operation.actorKind,
-        at: Math.max(now(), map.updatedAt),
-      }),
-    );
-  } catch (error) {
-    if (error instanceof AppMapDomainError) {
-      const body = {
-        code: error.code,
-        error: error.message,
-        recovery:
-          error.code === "revision-conflict"
-            ? "Reload the App Map and retry against its current revision."
-            : "Inspect the referenced App Map entities and retry.",
-        current,
-      };
-      throw new HttpError(domainStatus(error), error.message, body);
-    }
-    throw error;
-  }
-}
-
-/** Proposal work is optimistic and can safely move across unrelated revisions.
- * The domain layer performs the entity-level conflict check; this wrapper only
- * ensures the final write itself is atomic against the latest stored map. */
-async function applyRebasableMutation(
-  scope: RequestContext,
-  appMapId: string,
-  eventId: string | undefined,
-  transform: (map: AppMap, context: AppMapMutationContext) => AppMap,
-): Promise<AppMap> {
-  const operation = currentOperationContext();
-  if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
-  const stableEventId = eventId?.trim() || operation.requestId;
-  const current = await readAppMap(scope.projectId, appMapId);
-  if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
-  if (current.activity[stableEventId]) return current;
-  try {
-    return await mutateStoredAppMap(scope.projectId, appMapId, (map) =>
-      transform(map, {
-        expectedRevision: map.revision,
-        eventId: stableEventId,
-        actorId: operation.actorId,
-        actorKind: operation.actorKind,
-        at: Math.max(now(), map.updatedAt),
-      }),
-    );
-  } catch (error) {
-    if (error instanceof AppMapDomainError) {
-      throw new HttpError(domainStatus(error), error.message, {
-        code: error.code,
-        recovery:
-          error.code === "revision-conflict"
-            ? "Review the conflicting screen or connection, then update the proposal."
-            : "Inspect the referenced App Map entities and retry.",
-        current: await readAppMap(scope.projectId, appMapId),
-      });
-    }
-    throw error;
-  }
-}
-
-function currentTakeRevision(session: AuthoringSession) {
-  const take = session.take;
-  return take?.revisions.find((revision) => revision.revision === take.currentRevision);
-}
-
-async function profileForCapture(
-  target: OperationInput<"app-map.screen.capture">["target"],
-  observedAt: number,
-  bounds?: { width: number; height: number },
-): Promise<TargetProfile> {
-  const viewport =
-    bounds &&
-    Number.isFinite(bounds.width) &&
-    Number.isFinite(bounds.height) &&
-    bounds.width > 0 &&
-    bounds.height > 0
-      ? { width: Math.round(bounds.width), height: Math.round(bounds.height) }
-      : undefined;
-  // Orientation is a material rendering target. A portrait iPad capture must
-  // not replace the landscape screenshot/coordinates for the same logical
-  // screen (or vice versa), which was the source of stretched canvas cards
-  // and bad replay anchors after a device rotation.
-  const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
-  if (target.kind === "device") {
-    const device = (await listDevices()).find((item) => item.serial === target.targetId);
-    return {
-      id: `device:${target.targetId}${viewportKey}`,
-      targetId: target.targetId,
-      source: "device",
-      platform: target.platform,
-      name: device?.name?.trim() || target.targetId,
-      ...(device?.kind ? { model: device.kind } : {}),
-      ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
-      capabilities: ["snapshot", "screenshot"],
-      observedAt,
-      ...(viewport ? { viewport } : {}),
-    };
-  }
-  return {
-    id: `browser:${target.targetId}${viewportKey}`,
-    targetId: target.targetId,
-    source: "browser",
-    platform: "browser",
-    name: target.targetId,
-    capabilities: ["snapshot", "screenshot"],
-    observedAt,
-    ...(viewport ? { viewport } : {}),
-  };
-}
 
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
@@ -1249,252 +955,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     return true;
   }
 
-  const testSave = matchPath(pathname, "/app-maps/:appMapId/tests/:testId");
-  if (method === "PUT" && testSave) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.test.save">,
-      "appMapId" | "testId"
-    >;
-    const appMap = await applyMutation(
-      scope,
-      testSave.appMapId!,
-      body.expectedRevision,
-      body.eventId,
-      (map, context) => {
-        const id = testSave.testId!;
-        return saveAppMapTest(
-          map,
-          {
-            ...body.test,
-            id,
-            organizationId: map.organizationId,
-            projectId: map.projectId,
-            appMapId: map.id,
-            createdAt: map.tests[id]?.createdAt ?? context.at,
-            updatedAt: context.at,
-          },
-          context,
-        );
-      },
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
-
-  const testCompile = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/compile");
-  if (method === "GET" && testCompile) {
-    const appMap = await readAppMap(scope.projectId, testCompile.appMapId!);
-    if (!appMap) throw new HttpError(404, `App Map ${testCompile.appMapId} not found`);
-    const test = appMap.tests[testCompile.testId!];
-    if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
-    if (test.kind !== "scenario") {
-      throw new HttpError(400, `Test ${test.id} is a legacy ${test.kind} test`);
-    }
-    try {
-      json(response, 200, { plan: compileAppMapTest(appMap, test).plan });
-    } catch (error) {
-      throw new HttpError(400, error instanceof Error ? error.message : String(error));
-    }
-    return true;
-  }
-
-  const testRemove = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/remove");
-  if (method === "POST" && testRemove) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.test.remove">,
-      "appMapId" | "testId"
-    >;
-    const appMap = await applyMutation(
-      scope,
-      testRemove.appMapId!,
-      body.expectedRevision,
-      body.eventId,
-      (map, context) => removeAppMapTest(map, testRemove.testId!, context),
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
-
-  const testEdit = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/edit");
-  if (method === "POST" && testEdit) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.test.edit">,
-      "appMapId" | "testId"
-    >;
-    const appMap = await applyRebasableMutation(
-      scope,
-      testEdit.appMapId!,
-      body.eventId,
-      (map, context) => {
-        const id = testEdit.testId!;
-        const test = map.tests[id];
-        if (!test) throw new AppMapDomainError("missing-reference", `Test ${id} does not exist`);
-        if (test.kind !== "scenario") {
-          throw new AppMapDomainError(
-            "invalid-map",
-            `Test ${id} is a legacy ${test.kind} test and cannot accept graph-native edits`,
-          );
-        }
-        try {
-          if (body.expectedRevision > map.revision) {
-            throw new AppMapDomainError(
-              "revision-conflict",
-              `Expected App Map revision ${body.expectedRevision}, current revision is ${map.revision}`,
-            );
-          }
-          const conflicts = proposalConflictsSince(
-            map,
-            { changes: [{ kind: "test.edit", testId: id, edits: body.edits }] },
-            body.expectedRevision,
-          );
-          if (conflicts.conflict) {
-            throw new AppMapDomainError(
-              "revision-conflict",
-              `Test edits conflict with newer changes to ${conflicts.subjects.join(", ")}`,
-            );
-          }
-          return editAppMapScenarioTest(map, id, body.edits, context);
-        } catch (error) {
-          if (error instanceof AppMapTestStepOperationError) {
-            throw new AppMapDomainError("invalid-map", error.message);
-          }
-          throw error;
-        }
-      },
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
-
-  const testProposal = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/proposals");
-  if (method === "POST" && testProposal) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.test.propose">,
-      "appMapId" | "testId"
-    >;
-    const operation = currentOperationContext();
-    if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
-    const proposalId = body.proposalId?.trim() || `proposal:${operation.requestId}`;
-    const appMap = await applyRebasableMutation(
-      scope,
-      testProposal.appMapId!,
-      body.eventId,
-      (map, context) => {
-        const testId = testProposal.testId!;
-        const test = map.tests[testId];
-        if (!test)
-          throw new AppMapDomainError("missing-reference", `Test ${testId} does not exist`);
-        return submitAppMapProposal(
-          map,
-          {
-            id: proposalId,
-            organizationId: map.organizationId,
-            projectId: map.projectId,
-            appMapId: map.id,
-            title: body.title?.trim() || `Edit ${test.name}`,
-            ...(body.description?.trim() ? { description: body.description.trim() } : {}),
-            status: "pending",
-            baseRevision: body.expectedRevision,
-            changes: [{ kind: "test.edit", testId, edits: body.edits }],
-            createdAt: context.at,
-            updatedAt: context.at,
-          },
-          context,
-        );
-      },
-    );
-    json(response, 200, { appMap, proposalId });
-    return true;
-  }
-
-  const comboSave = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId");
-  if (method === "PUT" && comboSave) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.combine.save">,
-      "appMapId" | "combineId"
-    >;
-    const appMap = await applyMutation(
-      scope,
-      comboSave.appMapId!,
-      body.expectedRevision,
-      body.eventId,
-      (map, context) => {
-        const id = comboSave.combineId!;
-        return saveAppMapCombine(
-          map,
-          {
-            ...body.combine,
-            id,
-            organizationId: map.organizationId,
-            projectId: map.projectId,
-            appMapId: map.id,
-            createdAt: map.combines[id]?.createdAt ?? context.at,
-            updatedAt: context.at,
-          },
-          context,
-        );
-      },
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
-
-  const comboPreflight = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId/preflight");
-  if (method === "POST" && comboPreflight) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.combine.preflight">,
-      "appMapId" | "combineId"
-    >;
-    const appMap = await readAppMap(scope.projectId, comboPreflight.appMapId!);
-    if (!appMap) throw new HttpError(404, `App Map ${comboPreflight.appMapId} not found`);
-    const combine = appMap.combines[comboPreflight.combineId!];
-    if (!combine) throw new HttpError(404, `Run matrix ${comboPreflight.combineId} not found`);
-    const preflight = await preflightAppMapCombine(appMap, combine);
-    const serial = body.serial?.trim();
-    if (serial) {
-      const devices = await listDevices().catch(() => []);
-      const device = devices.find((candidate) => candidate.serial === serial);
-      const state = !device
-        ? "missing"
-        : device.connectionState === "offline" ||
-            device.connectionState === "unauthorized" ||
-            device.booted === false ||
-            device.developerMode === "disabled" ||
-            device.developerServicesAvailable === false
-          ? "not-ready"
-          : "connected";
-      preflight.target = { serial, state };
-      if (state !== "connected") {
-        preflight.blockers.push({
-          code: state === "missing" ? "target-missing" : "target-not-ready",
-          message:
-            state === "missing"
-              ? "The selected device is not connected."
-              : "The selected device must be unlocked and ready for control.",
-        });
-        preflight.ok = false;
-      }
-    }
-    json(response, 200, { preflight });
-    return true;
-  }
-
-  const comboRemove = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId/remove");
-  if (method === "POST" && comboRemove) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.combine.remove">,
-      "appMapId" | "combineId"
-    >;
-    const appMap = await applyMutation(
-      scope,
-      comboRemove.appMapId!,
-      body.expectedRevision,
-      body.eventId,
-      (map, context) => removeAppMapCombine(map, comboRemove.combineId!, context),
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
+  if (await handleAppMapTestRoute(input)) return true;
 
   const routineSave = matchPath(pathname, "/app-maps/:appMapId/routines/:routineId");
   if (method === "PUT" && routineSave) {

@@ -27,9 +27,6 @@ import {
   createDevice,
   enqueueJob,
   formatSnapshotTree,
-  formatRecipeYaml,
-  formatMatrixYaml,
-  parseMatrixYaml,
   getActiveJob,
   getActiveJobs,
   getJob,
@@ -45,17 +42,10 @@ import {
   requestAndroidAuthorization,
   listJobs,
   listTargetWorkers,
-  listRecipes,
-  readRecipe,
-  readRecipeEvidenceImage,
-  saveRecipe,
-  saveRecipeEvidenceImage,
-  deleteRecipe,
   runRecipeStep,
   validateRecipeSteps,
   now,
   publish,
-  parseRecipeYaml,
   runsRoot,
   runDoctor,
   doctorFailureMessage,
@@ -63,34 +53,9 @@ import {
   toJunitXml,
   type InteractInput,
   type JobReport,
-  generateValues,
-  DEVICE_LEASE_TTL_MS,
-  leaseDevice,
-  listBuilds,
   listDeviceLeases,
-  listDevicePools,
-  listCompatibilityMatrices,
-  readCompatibilityMatrix,
-  listProjects,
-  readProjectVariables,
   releaseDeviceLease,
-  takeOverDeviceLease,
-  saveBuild,
-  saveDevicePool,
-  saveCompatibilityMatrix,
-  saveProject,
-  writeProjectVariables,
-  listRecipeHistory,
-  restoreRecipeHistory,
-  recipeStability,
-  listSchedules,
-  saveSchedule,
-  deleteSchedule,
   listTargets,
-  deleteCompatibilityMatrix,
-  buildTargetProfiles,
-  resolveCompatibilityMatrix,
-  type RecipeParameter,
   loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
   loadDeviceSetup,
@@ -102,9 +67,7 @@ import {
   restartAgentDeviceDaemonForBuildDrift,
   restartAgentDeviceDaemonForSigningEnvDrift,
   authoringSessions,
-  listAppMaps,
   runWithOperationContext,
-  readAuthoringEvidence,
   reconcilePersistedAppMapRuns,
   type AuthoringRuntime,
 } from "@relay/core";
@@ -162,20 +125,14 @@ import { handlePresenceRoute } from "./presence-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target-routes.js";
+import { handleControlPlaneRoute } from "./control-plane-routes.js";
+import { handleRecipeRoute } from "./recipe-routes.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
 } from "./target-runtime-routes.js";
 import { createReadStream } from "node:fs";
-import type {
-  Build,
-  DevicePool,
-  GenerationRequest,
-  Project,
-  RevisionWrite,
-  TestData,
-  ActorKind,
-} from "@relay/protocol";
+import type { ActorKind } from "@relay/protocol";
 
 export type StartServerOptions = {
   port?: number;
@@ -535,279 +492,17 @@ async function handleRequest(
       return;
 
     // ---- Project-scoped control plane ----
-    if (method === "GET" && pathname === "/projects") {
-      json(res, 200, { projects: await listProjects(scope.organizationId) });
+    if (
+      await handleControlPlaneRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
       return;
-    }
-
-    if (method === "POST" && pathname === "/projects") {
-      const body = (await parseJsonBody(req)) as Partial<Project>;
-      if (!body.id?.trim() || !body.name?.trim())
-        throw new HttpError(400, "id and name are required");
-      const project = await saveProject({
-        id: body.id.trim(),
-        name: body.name.trim(),
-        organizationId: scope.organizationId,
-      });
-      json(res, 201, { project });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/builds") {
-      json(res, 200, { builds: await listBuilds(scope.projectId) });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/builds") {
-      const body = (await parseJsonBody(req)) as Partial<Build>;
-      if (!body.id || !body.name || (body.platform !== "android" && body.platform !== "ios")) {
-        throw new HttpError(400, "id, name, and a valid platform are required");
-      }
-      const build = await saveBuild({
-        id: body.id,
-        projectId: scope.projectId,
-        name: body.name,
-        platform: body.platform,
-        sourceUrl: body.sourceUrl,
-        status: body.status ?? "uploaded",
-      });
-      json(res, 201, { build });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/device-pools") {
-      json(res, 200, { pools: await listDevicePools(scope.projectId) });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/device-pools") {
-      const body = (await parseJsonBody(req)) as Partial<DevicePool>;
-      if (!body.id || !body.name || !Array.isArray(body.deviceSerials)) {
-        throw new HttpError(400, "id, name, and deviceSerials are required");
-      }
-      const pool = await saveDevicePool({
-        id: body.id,
-        projectId: scope.projectId,
-        name: body.name,
-        platform: body.platform ?? "mixed",
-        deviceSerials: body.deviceSerials.map(String),
-      });
-      json(res, 201, { pool });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/target-profiles") {
-      const devices = await listDevices().catch(() => []);
-      json(res, 200, { profiles: buildTargetProfiles({ devices, targets: await listTargets() }) });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/matrices") {
-      json(res, 200, { matrices: await listCompatibilityMatrices(scope.projectId) });
-      return;
-    }
-
-    const matrixYamlMatch = matchPath(pathname, "/matrices/:id/yaml");
-    if (method === "GET" && matrixYamlMatch) {
-      const matrix = await readCompatibilityMatrix(scope.projectId, matrixYamlMatch.id!);
-      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
-      json(res, 200, { yaml: formatMatrixYaml(matrix) });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/matrices/import") {
-      const body = (await parseJsonBody(req)) as {
-        yaml?: string;
-        conflict?: "reject" | "replace";
-      };
-      if (!body.yaml?.trim()) throw new HttpError(400, "yaml is required");
-      let parsed;
-      try {
-        parsed = parseMatrixYaml(body.yaml, {
-          projectId: scope.projectId,
-          createdAt: 0,
-          updatedAt: 0,
-        });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      const existing = await readCompatibilityMatrix(scope.projectId, parsed.id);
-      if (existing && body.conflict !== "replace") {
-        throw new HttpError(409, `Compatibility matrix “${parsed.id}” already exists`);
-      }
-      const matrix = await saveCompatibilityMatrix({
-        id: parsed.id,
-        projectId: scope.projectId,
-        name: parsed.name,
-        selectors: parsed.selectors,
-      });
-      json(res, existing ? 200 : 201, { matrix });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/matrices") {
-      const body = (await parseJsonBody(req)) as {
-        id?: string;
-        name?: string;
-        selectors?: import("@relay/protocol").TargetSelector[];
-      };
-      if (!body.id || !body.name || !Array.isArray(body.selectors)) {
-        throw new HttpError(400, "id, name, and selectors are required");
-      }
-      try {
-        const matrix = await saveCompatibilityMatrix({
-          id: body.id,
-          projectId: scope.projectId,
-          name: body.name,
-          selectors: body.selectors,
-        });
-        json(res, 201, { matrix });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const matrixMatch = matchPath(pathname, "/matrices/:id");
-    if (method === "PUT" && matrixMatch) {
-      const existing = await readCompatibilityMatrix(scope.projectId, matrixMatch.id!);
-      if (!existing) throw new HttpError(404, "Compatibility matrix not found");
-      const body = (await parseJsonBody(req)) as {
-        name?: string;
-        selectors?: import("@relay/protocol").TargetSelector[];
-      };
-      try {
-        const matrix = await saveCompatibilityMatrix({
-          id: existing.id,
-          projectId: scope.projectId,
-          name: body.name ?? existing.name,
-          selectors: body.selectors ?? existing.selectors,
-        });
-        json(res, 200, { matrix });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-    if (method === "DELETE" && matrixMatch) {
-      await deleteCompatibilityMatrix(scope.projectId, matrixMatch.id!);
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    const matrixResolveMatch = matchPath(pathname, "/matrices/:id/resolve");
-    if (method === "POST" && matrixResolveMatch) {
-      const matrix = await readCompatibilityMatrix(scope.projectId, matrixResolveMatch.id!);
-      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
-      const devices = await listDevices().catch(() => []);
-      json(res, 200, {
-        expansion: resolveCompatibilityMatrix(
-          matrix,
-          buildTargetProfiles({ devices, targets: await listTargets() }),
-        ),
-      });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/device-leases") {
-      const status = url.searchParams.get("status") ?? "active";
-      const leases = await listDeviceLeases(scope.projectId);
-      json(res, 200, {
-        leases: status === "all" ? leases : leases.filter((lease) => lease.status === "leased"),
-      });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/device-leases") {
-      const body = (await parseJsonBody(req)) as {
-        poolId?: string;
-        deviceSerial?: string;
-        expiresAt?: number;
-      };
-      if (!body.poolId || !body.deviceSerial)
-        throw new HttpError(400, "poolId and deviceSerial are required");
-      let lease;
-      try {
-        lease = await leaseDevice({
-          projectId: scope.projectId,
-          poolId: body.poolId,
-          deviceSerial: body.deviceSerial,
-          ownerId: currentOperationContext()!.actorId,
-          expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
-        });
-      } catch (error) {
-        throw new HttpError(409, error instanceof Error ? error.message : String(error));
-      }
-      json(res, 201, { lease });
-      return;
-    }
-
-    const takeoverLeaseMatch = matchPath(pathname, "/device-leases/:id/takeover");
-    if (method === "POST" && takeoverLeaseMatch) {
-      const body = (await parseJsonBody(req)) as {
-        expiresAt?: number;
-        reason?: string;
-        confirm?: boolean;
-      };
-      if (body.confirm !== true)
-        throw new HttpError(403, "Explicit takeover confirmation required");
-      if (!body.reason?.trim()) {
-        throw new HttpError(400, "A takeover reason is required");
-      }
-      try {
-        json(res, 200, {
-          lease: await takeOverDeviceLease(takeoverLeaseMatch.id!, {
-            projectId: scope.projectId,
-            ownerId: currentOperationContext()!.actorId,
-            expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
-            reason: body.reason,
-          }),
-        });
-      } catch (error) {
-        throw new HttpError(409, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
-    if (method === "POST" && releaseLeaseMatch) {
-      try {
-        json(res, 200, {
-          lease: await releaseDeviceLease(releaseLeaseMatch.id!, {
-            projectId: scope.projectId,
-            ownerId: currentOperationContext()!.actorId,
-          }),
-        });
-      } catch (error) {
-        throw new HttpError(404, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    if (method === "GET" && pathname === "/project/variables") {
-      json(res, 200, await readProjectVariables(scope.projectId));
-      return;
-    }
-
-    if (method === "PUT" && pathname === "/project/variables") {
-      const body = (await parseJsonBody(req)) as RevisionWrite<TestData[]>;
-      if (!Number.isInteger(body.expectedRevision) || !Array.isArray(body.value)) {
-        throw new HttpError(400, "expectedRevision and value are required");
-      }
-      body.idempotencyKey ||= req.headers["idempotency-key"] as string | undefined;
-      json(res, 200, await writeProjectVariables(scope.projectId, body));
-      return;
-    }
-
-    if (method === "POST" && pathname === "/generate") {
-      const body = (await parseJsonBody(req)) as GenerationRequest;
-      if (!body.prompt?.trim() || (body.purpose !== "variable" && body.purpose !== "test-plan")) {
-        throw new HttpError(400, "purpose and prompt are required");
-      }
-      json(res, 200, await generateValues(body));
-      return;
-    }
-
     if (method === "POST" && pathname === "/device/boot") {
       const body = (await parseJsonBody(req)) as {
         serial?: string;
@@ -854,312 +549,7 @@ async function handleRequest(
       return;
     }
 
-    if (method === "GET" && pathname === "/recipes") {
-      json(res, 200, { recipes: await listRecipes() });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/schedules") {
-      json(res, 200, {
-        schedules: await listSchedules(
-          scope.localTrusted ? undefined : { projectId: scope.projectId },
-        ),
-      });
-      return;
-    }
-    if (method === "POST" && pathname === "/schedules") {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Schedules can only be changed from a local Relay host");
-      }
-      try {
-        const body = (await parseJsonBody(req)) as Parameters<typeof saveSchedule>[0];
-        await assertTargetControl(scope, body.targetId);
-        json(res, 201, {
-          schedule: await saveSchedule({ ...body, projectId: scope.projectId }),
-        });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-    const scheduleMatch = matchPath(pathname, "/schedules/:id");
-    if (method === "DELETE" && scheduleMatch) {
-      if (!scope.localTrusted) {
-        throw new HttpError(403, "Schedules can only be changed from a local Relay host");
-      }
-      const removed = await deleteSchedule(scheduleMatch.id!, {
-        projectId: scope.projectId,
-      });
-      if (!removed) throw new HttpError(404, "Schedule not found");
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    const recipeEvidenceImageMatch = matchPath(pathname, "/recipes/:recipeId/evidence/:evidenceId");
-    if (method === "GET" && recipeEvidenceImageMatch) {
-      const image = await readRecipeEvidenceImage(
-        recipeEvidenceImageMatch.recipeId!,
-        recipeEvidenceImageMatch.evidenceId!,
-      );
-      if (!image) throw new HttpError(404, "Recording evidence not found");
-      res.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": image.byteLength,
-        "Cache-Control": "private, max-age=31536000, immutable",
-        ...CORS_HEADERS,
-      });
-      res.end(image);
-      return;
-    }
-
-    const authoringEvidenceMatch = matchPath(pathname, "/authoring-evidence/:sha256");
-    if (method === "GET" && authoringEvidenceMatch) {
-      const sha256 = authoringEvidenceMatch.sha256!;
-      const uri = `relay-evidence://${sha256}`;
-      const sessions = await authoringSessions.list(scope.projectId);
-      const permitted =
-        sessions.some((session) =>
-          session.take?.revisions.some((revision) =>
-            revision.evidence.some((evidence) => evidence.uri === uri),
-          ),
-        ) ||
-        sessions.some((session) =>
-          session.take?.replayAttempts.some((attempt) =>
-            attempt.evidence.some((evidence) => evidence.uri === uri),
-          ),
-        ) ||
-        (await listAppMaps(scope.projectId)).some((appMap) =>
-          Object.values(appMap.screenVariants).some(
-            (variant) =>
-              variant.screenshotUri === uri || variant.evidenceUris?.includes(uri) === true,
-          ),
-        );
-      if (!permitted) throw new HttpError(404, "Authoring evidence not found");
-      const artifact = await readAuthoringEvidence(sha256);
-      if (!artifact) throw new HttpError(404, "Authoring evidence not found");
-      const requestedMime = url.searchParams.get("mime") ?? "";
-      const contentType = requestedMime.startsWith("video/")
-        ? requestedMime
-        : requestedMime === "application/json"
-          ? requestedMime
-          : "image/png";
-      res.writeHead(200, {
-        "Content-Type": contentType,
-        "Content-Length": artifact.byteLength,
-        "Cache-Control": "private, max-age=31536000, immutable",
-        ...CORS_HEADERS,
-      });
-      res.end(artifact);
-      return;
-    }
-
-    const recipeHistoryMatch = matchPath(pathname, "/recipes/:recipeId/history");
-    if (method === "GET" && recipeHistoryMatch) {
-      json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.recipeId!) });
-      return;
-    }
-    if (method === "POST" && recipeHistoryMatch) {
-      const body = (await parseJsonBody(req)) as { updatedAt?: number };
-      if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
-      try {
-        json(res, 200, {
-          recipe: await restoreRecipeHistory(recipeHistoryMatch.recipeId!, body.updatedAt!),
-        });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const recipeStabilityMatch = matchPath(pathname, "/recipes/:recipeId/stability");
-    if (method === "GET" && recipeStabilityMatch) {
-      json(res, 200, { stability: await recipeStability(recipeStabilityMatch.recipeId!) });
-      return;
-    }
-
-    const recipeYamlMatch = matchPath(pathname, "/recipes/:recipeId/yaml");
-    if (method === "GET" && recipeYamlMatch) {
-      const recipe = await readRecipe(recipeYamlMatch.recipeId!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
-      const yaml = formatRecipeYaml(recipe);
-      // The HTTP API defaults to JSON while direct links, curl, and Git tooling
-      // receive the portable source file. Keeping both forms at one address
-      // avoids an app-only serialization format.
-      if (req.headers.accept?.includes("application/json")) json(res, 200, { yaml });
-      else text(res, 200, yaml, "application/yaml; charset=utf-8");
-      return;
-    }
-
-    if (method === "POST" && pathname === "/recipes/import") {
-      const body = (await parseJsonBody(req)) as {
-        yaml?: string;
-        dryRun?: boolean;
-        conflict?: "reject" | "replace" | "copy";
-      };
-      if (!body.yaml?.trim()) throw new HttpError(400, "yaml is required");
-      try {
-        const parsed = parseRecipeYaml(body.yaml);
-        const existing = await readRecipe(parsed.id);
-        if (body.dryRun) {
-          json(res, 200, {
-            preview: {
-              recipe: parsed,
-              exists: Boolean(existing),
-              canonicalYaml: formatRecipeYaml(parsed),
-            },
-          });
-          return;
-        }
-        const conflict = body.conflict ?? "reject";
-        if (existing && conflict === "reject") {
-          throw new HttpError(409, `Test “${parsed.id}” already exists`);
-        }
-        let id = parsed.id;
-        let title = parsed.title;
-        if (existing && conflict === "copy") {
-          let suffix = 2;
-          while (await readRecipe(`${parsed.id}-copy-${suffix}`)) suffix += 1;
-          id = `${parsed.id}-copy-${suffix}`;
-          title = `${parsed.title} copy`;
-        }
-        const recipe = await saveRecipe({
-          id,
-          expectedRevision: existing && conflict === "replace" ? existing.updatedAt : 0,
-          title,
-          description: parsed.description,
-          variables: parsed.variables,
-          parameters: parsed.parameters,
-          steps: parsed.steps,
-          quarantined: parsed.quarantined,
-          quarantineReason: parsed.quarantineReason,
-          recordingFormatVersion: parsed.recordingFormatVersion,
-        });
-        json(res, 201, { recipe });
-      } catch (error) {
-        if (error instanceof HttpError) throw error;
-        throw new HttpError(400, error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    const recipeEvidenceMatch = matchPath(pathname, "/recipes/:recipeId/evidence");
-    if (method === "POST" && recipeEvidenceMatch) {
-      const recipe = await readRecipe(recipeEvidenceMatch.recipeId!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
-      const body = (await parseJsonBody(req, 12 * 1024 * 1024)) as {
-        evidenceId?: string;
-        mime?: string;
-        base64?: string;
-      };
-      if (!body.evidenceId || body.mime !== "image/png" || !body.base64) {
-        throw new HttpError(400, "evidenceId, image/png mime, and base64 are required");
-      }
-      try {
-        const saved = await saveRecipeEvidenceImage({
-          recipeId: recipe.id,
-          evidenceId: body.evidenceId,
-          base64: body.base64,
-        });
-        json(res, 201, { ok: true, ...saved });
-      } catch (err) {
-        throw new HttpError(400, err instanceof Error ? err.message : String(err));
-      }
-      return;
-    }
-
-    const recipeMatch = matchPath(pathname, "/recipes/:recipeId");
-    if (method === "GET" && recipeMatch) {
-      const recipe = await readRecipe(recipeMatch.recipeId!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
-      json(res, 200, { recipe });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/recipes") {
-      const body = (await parseJsonBody(req)) as {
-        expectedRevision?: number;
-        title?: string;
-        description?: string;
-        variables?: Record<string, string>;
-        parameters?: RecipeParameter[];
-        steps?: unknown;
-        quarantined?: boolean;
-        quarantineReason?: string;
-      };
-      if (body.expectedRevision !== 0) throw new HttpError(409, "New recipes require revision 0");
-      if (!body.title || !body.title.trim()) throw new HttpError(400, "title is required");
-      let steps;
-      try {
-        steps = validateRecipeSteps(body.steps);
-      } catch (err) {
-        throw new HttpError(400, err instanceof Error ? err.message : String(err));
-      }
-      const recipe = await saveRecipe({
-        expectedRevision: 0,
-        title: body.title,
-        description: body.description,
-        variables: body.variables,
-        parameters: body.parameters,
-        steps,
-        quarantined: body.quarantined,
-        quarantineReason: body.quarantineReason,
-      });
-      json(res, 201, { recipe });
-      return;
-    }
-
-    if (method === "PUT" && recipeMatch) {
-      const id = recipeMatch.recipeId!;
-      // saveRecipe refuses builtin ids with a clear message.
-      const body = (await parseJsonBody(req)) as {
-        expectedRevision?: number;
-        title?: string;
-        description?: string;
-        variables?: Record<string, string>;
-        parameters?: RecipeParameter[];
-        steps?: unknown;
-        quarantined?: boolean;
-        quarantineReason?: string;
-      };
-      if (!Number.isFinite(body.expectedRevision) || body.expectedRevision! < 0) {
-        throw new HttpError(400, "expectedRevision is required");
-      }
-      let steps;
-      try {
-        steps = validateRecipeSteps(body.steps);
-      } catch (err) {
-        throw new HttpError(400, err instanceof Error ? err.message : String(err));
-      }
-      let recipe;
-      try {
-        recipe = await saveRecipe({
-          id,
-          expectedRevision: body.expectedRevision!,
-          title: body.title ?? id,
-          description: body.description,
-          variables: body.variables,
-          parameters: body.parameters,
-          steps,
-          quarantined: body.quarantined,
-          quarantineReason: body.quarantineReason,
-        });
-      } catch (err) {
-        if (err instanceof RevisionConflict || err instanceof IdempotencyConflict) throw err;
-        const message = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, message);
-      }
-      json(res, 200, { recipe });
-      return;
-    }
-
-    if (method === "DELETE" && recipeMatch) {
-      try {
-        await deleteRecipe(recipeMatch.recipeId!);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, message);
-      }
-      json(res, 200, { ok: true });
+    if (await handleRecipeRoute({ method, pathname, url, request: req, response: res, scope })) {
       return;
     }
 

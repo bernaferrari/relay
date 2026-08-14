@@ -1,0 +1,176 @@
+import { listDevices, type AppMap } from "@relay/core";
+import type {
+  ActionSpec,
+  AuthoringInteraction,
+  AuthoringSession,
+  ConnectionSourceAnchor,
+  OperationInput,
+  TargetProfile,
+} from "@relay/protocol";
+
+/** Fail open for an empty tree: iOS can legitimately lose AX briefly while
+ * screenshot evidence remains valid. */
+export function iosTeachObservationMatchesTitle(
+  nodes: Array<Record<string, unknown>> | undefined,
+  title: string,
+): boolean {
+  if (!nodes?.length) return true;
+  const screenTitle = title.split(/\s*[·•]\s*/u, 1)[0] ?? title;
+  const words = screenTitle
+    .toLocaleLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter((word) => word.length >= 4);
+  if (!words.length) return true;
+  const visibleText = nodes
+    .filter((node) => node.visibleToUser !== false)
+    .flatMap((node) => [node.label, node.identifier, node.value])
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLocaleLowerCase();
+  return words.every((word) => visibleText.includes(word));
+}
+
+function teachActionSemantics(action: ActionSpec): unknown {
+  if (action.kind === "tap") return { kind: "tap", target: action.target };
+  if (action.kind === "gesture" && action.gesture.kind === "swipe") {
+    return { kind: "swipe", from: action.gesture.from, to: action.gesture.to };
+  }
+  return undefined;
+}
+
+export function findEquivalentTeachConnection(
+  map: AppMap,
+  input: { fromScreenId: string; destinationScreenId: string; action: ActionSpec },
+): string | undefined {
+  const action = teachActionSemantics(input.action);
+  if (!action) return undefined;
+  return Object.values(map.connections).find(
+    (connection) =>
+      connection.fromScreenId === input.fromScreenId &&
+      connection.destination.kind === "screen" &&
+      connection.destination.screenId === input.destinationScreenId &&
+      connection.actions.length === 1 &&
+      JSON.stringify(teachActionSemantics(connection.actions[0]!)) === JSON.stringify(action),
+  )?.id;
+}
+
+export type TeachInteraction = NonNullable<OperationInput<"app-map.teach">["interaction"]>;
+type InteractionPoint = { x: number; y: number };
+
+export function teachInteractionToAuthoringInteraction(
+  interaction: TeachInteraction,
+): AuthoringInteraction {
+  switch (interaction.kind) {
+    case "point":
+      return { kind: "tap", target: { point: { x: interaction.x, y: interaction.y } } };
+    case "label":
+      return {
+        kind: "tap",
+        target: {
+          label: interaction.label,
+          ...(interaction.point ? { point: interaction.point } : {}),
+        },
+      };
+    case "identifier":
+      return {
+        kind: "tap",
+        target: {
+          identifier: interaction.identifier,
+          ...(interaction.point ? { point: interaction.point } : {}),
+        },
+      };
+    case "swipe":
+      return {
+        kind: "swipe",
+        from: interaction.from,
+        to: interaction.to,
+        ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
+      };
+  }
+}
+
+function finiteInteractionPoint(value: unknown): InteractionPoint | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const point = value as Partial<InteractionPoint>;
+  return Number.isFinite(point.x) && Number.isFinite(point.y)
+    ? { x: point.x!, y: point.y! }
+    : undefined;
+}
+
+export function sourceAnchorForTeachInteraction(
+  map: AppMap,
+  fromScreenId: string,
+  interaction: TeachInteraction,
+  resolvedPoint?: InteractionPoint,
+  fallbackProfile?: TargetProfile,
+): ConnectionSourceAnchor | undefined {
+  const screen = map.screens[fromScreenId];
+  const viewport =
+    screen?.variantIds
+      .slice()
+      .reverse()
+      .map((variantId) => map.screenVariants[variantId]?.targetProfile.viewport)
+      .find((candidate) => candidate?.width && candidate.height) ?? fallbackProfile?.viewport;
+  if (!viewport?.width || !viewport.height) return undefined;
+  const rawPoint =
+    resolvedPoint ??
+    (interaction.kind === "swipe"
+      ? interaction.from
+      : interaction.kind === "point"
+        ? { x: interaction.x, y: interaction.y }
+        : interaction.point);
+  const point = finiteInteractionPoint(rawPoint);
+  if (!point) return undefined;
+  return {
+    point: {
+      x: Math.max(0, Math.min(1, point.x / viewport.width)),
+      y: Math.max(0, Math.min(1, point.y / viewport.height)),
+    },
+  };
+}
+
+export function currentTakeRevision(session: AuthoringSession) {
+  const take = session.take;
+  return take?.revisions.find((revision) => revision.revision === take.currentRevision);
+}
+
+export async function profileForCapture(
+  target: OperationInput<"app-map.screen.capture">["target"],
+  observedAt: number,
+  bounds?: { width: number; height: number },
+): Promise<TargetProfile> {
+  const viewport =
+    bounds &&
+    Number.isFinite(bounds.width) &&
+    Number.isFinite(bounds.height) &&
+    bounds.width > 0 &&
+    bounds.height > 0
+      ? { width: Math.round(bounds.width), height: Math.round(bounds.height) }
+      : undefined;
+  const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
+  if (target.kind === "device") {
+    const device = (await listDevices()).find((item) => item.serial === target.targetId);
+    return {
+      id: `device:${target.targetId}${viewportKey}`,
+      targetId: target.targetId,
+      source: "device",
+      platform: target.platform,
+      name: device?.name?.trim() || target.targetId,
+      ...(device?.kind ? { model: device.kind } : {}),
+      ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
+      capabilities: ["snapshot", "screenshot"],
+      observedAt,
+      ...(viewport ? { viewport } : {}),
+    };
+  }
+  return {
+    id: `browser:${target.targetId}${viewportKey}`,
+    targetId: target.targetId,
+    source: "browser",
+    platform: "browser",
+    name: target.targetId,
+    capabilities: ["snapshot", "screenshot"],
+    observedAt,
+    ...(viewport ? { viewport } : {}),
+  };
+}
