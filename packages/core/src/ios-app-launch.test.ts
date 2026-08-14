@@ -51,6 +51,7 @@ test("devicectl launch is a short xcrun process launch, not XCTest", async () =>
 
 test("when devicectl times out, launch falls through to go-ios", async () => {
   const launched = await launchIosAppOutsideXctest("udid-1", "Grok", {
+    bin: "ios",
     run: runner((file, args) => {
       if (file === "xcrun") throw new Error("xcrun timed out after 10000ms");
       if (args[0] === "tunnel") return { exitCode: 0, stdout: '{"udid":"udid-1"}', stderr: "" };

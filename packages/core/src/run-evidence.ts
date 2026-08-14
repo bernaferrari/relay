@@ -779,7 +779,6 @@ export async function withTimeout<T>(
           timedOut = true;
           reject(new Error(`${label} timed out`));
         }, ms);
-        timer.unref?.();
       }),
     ]);
   } finally {

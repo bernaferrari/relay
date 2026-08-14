@@ -426,7 +426,7 @@ export async function captureIosPngViaGoIos(
 export async function launchIosAppOutsideXctest(
   serial: string,
   app: string,
-  input: { relaunch?: boolean; run?: CommandRunner; timeoutMs?: number } = {},
+  input: { relaunch?: boolean; run?: CommandRunner; timeoutMs?: number; bin?: string } = {},
 ): Promise<{ bundleId: string; method: "devicectl" | "go-ios" }> {
   try {
     return await launchIosAppViaDevicectl(serial, app, input);
