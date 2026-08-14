@@ -3,6 +3,19 @@ import * as z from "zod/v4";
 const text = (description: string) => z.string().min(1).describe(description);
 const natural = (description: string) => z.number().nonnegative().describe(description);
 const identifier = (description: string) => text(description);
+const pointAnchorTarget = z
+  .object({
+    identifier: z.string().min(1).optional(),
+    ref: z.string().min(1).optional(),
+    label: z.string().min(1).optional(),
+    text: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine(
+    ({ identifier: targetId, ref, label, text: targetText }) =>
+      Boolean(targetId || ref || label || targetText),
+    "Element-relative point needs a semantic anchor",
+  );
 const point = z
   .object({
     x: z.number(),
@@ -18,6 +31,15 @@ const point = z
       .object({ width: z.number().positive(), height: z.number().positive() })
       .strict()
       .optional(),
+    relativeTo: z
+      .object({
+        target: pointAnchorTarget,
+        xRatio: z.number().min(0).max(1),
+        yRatio: z.number().min(0).max(1),
+      })
+      .strict()
+      .optional()
+      .describe("Re-find an element and tap this fractional position inside its live bounds"),
   })
   .strict();
 

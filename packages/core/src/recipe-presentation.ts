@@ -9,6 +9,9 @@ export function describeTarget(t: StepTarget): string {
   if (t.ref) return `ref ${t.ref}`;
   if (t.label) return `label "${t.label}"`;
   if (t.text) return `text "${t.text}"`;
+  if (t.point?.relativeTo) {
+    return `point inside ${describeTarget(t.point.relativeTo.target)}`;
+  }
   if (t.point) return `point (${t.point.x}, ${t.point.y})`;
   return "<empty>";
 }

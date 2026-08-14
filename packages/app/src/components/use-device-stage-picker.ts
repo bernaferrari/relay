@@ -2,7 +2,13 @@ import { createMemo, createSignal, onCleanup, type Accessor } from "solid-js";
 import { useRecorder } from "../context/recorder";
 import { useServer, type SnapshotNode } from "../context/server";
 import { interactBodyForStrategy } from "../lib/stage-presentation";
-import { ancestryOf, nodeAtPoint, strategiesFor, type PickStrategy } from "../lib/snapshot";
+import {
+  ancestryOf,
+  nodeAtPoint,
+  stablePointAnchorForNode,
+  strategiesFor,
+  type PickStrategy,
+} from "../lib/snapshot";
 import type { HorizontalConstraint, VerticalConstraint } from "../lib/target-inspector";
 import {
   companionDisplayedPointToLogical,
@@ -34,6 +40,7 @@ export function useDeviceStagePicker(options: {
     createSignal<HorizontalConstraint>("left");
   const [verticalConstraint, setVerticalConstraint] = createSignal<VerticalConstraint>("top");
   const [manualPoint, setManualPoint] = createSignal<{ x: number; y: number } | null>(null);
+  const [coordinateSpace, setCoordinateSpace] = createSignal<"element" | "screen">("screen");
   let pickerElement: HTMLDivElement | undefined;
 
   const ancestry = () => picker()?.ancestry ?? [];
@@ -41,6 +48,7 @@ export function useDeviceStagePicker(options: {
     const value = picker();
     return value ? (value.ancestry[value.index] ?? null) : null;
   };
+  const elementAnchor = createMemo(() => stablePointAnchorForNode(pickerNode()));
   const strategies = createMemo(() => {
     const value = picker();
     return value
@@ -95,6 +103,7 @@ export function useDeviceStagePicker(options: {
     setManualPoint(null);
     setHorizontalConstraint("left");
     setVerticalConstraint("top");
+    setCoordinateSpace(elementAnchor() ? "element" : "screen");
   }
   function close(): void {
     setPicker(null);
@@ -127,7 +136,13 @@ export function useDeviceStagePicker(options: {
       vertical: verticalConstraint(),
     };
     if (mode === "select") {
-      void recorder.recordPick(strategy, value.fx, value.fy, constraints);
+      void recorder.recordPick(
+        strategy,
+        value.fx,
+        value.fy,
+        constraints,
+        coordinateSpace() === "element" ? elementAnchor() : undefined,
+      );
       return;
     }
 
@@ -146,7 +161,13 @@ export function useDeviceStagePicker(options: {
       );
     }
     if (succeeded && recorder.recording()) {
-      void recorder.recordPick(strategy, value.fx, value.fy, constraints);
+      void recorder.recordPick(
+        strategy,
+        value.fx,
+        value.fy,
+        constraints,
+        coordinateSpace() === "element" ? elementAnchor() : undefined,
+      );
     }
     if (succeeded && recorder.interacting()) options.onInteractionSuccess();
   }
@@ -166,8 +187,6 @@ export function useDeviceStagePicker(options: {
     const rawX = stageBounds ? clientX - stageBounds.left : clientX - imageBounds.left;
     const rawY = stageBounds ? clientY - stageBounds.top : clientY - imageBounds.top;
     const availableStrategies = strategiesFor(node, snapshot, logical.x, logical.y);
-    resetCoordinateAnchor();
-    setStrategyId(availableStrategies[0]?.id ?? "point");
     setPicker({
       fx: logical.x,
       fy: logical.y,
@@ -177,6 +196,8 @@ export function useDeviceStagePicker(options: {
       ancestry: nodeAncestry,
       index: 0,
     });
+    resetCoordinateAnchor();
+    setStrategyId(availableStrategies[0]?.id ?? "point");
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -225,6 +246,9 @@ export function useDeviceStagePicker(options: {
     setVerticalConstraint,
     constrainedPoint,
     setManualPoint,
+    coordinateSpace,
+    setCoordinateSpace,
+    elementAnchor,
     highlight,
   };
 }

@@ -21,6 +21,7 @@ export type {
   RecordedStepEvidence,
   StepTarget,
   StepPoint,
+  StepPointAnchorTarget,
   VerticalCoordinateAnchor,
 } from "@relay/protocol";
 

@@ -32,6 +32,7 @@ import {
 import {
   nodeMatchesTarget,
   refMatchesRecordedTarget,
+  resolveElementRelativePoint,
   textForTarget,
   sameTarget,
 } from "./recipe-target-match.js";
@@ -106,6 +107,10 @@ async function resolvePointForDevice(
   point: StepPoint,
   mirrorX = false,
 ): Promise<{ x: number; y: number }> {
+  if (point.relativeTo) {
+    const resolved = resolveElementRelativePoint(await snapshot(device), point.relativeTo);
+    return { x: resolved.x, y: resolved.y };
+  }
   const bounds = await runtimeBounds(device);
   const logicalPoint =
     point.anchor && point.referenceBounds
@@ -345,14 +350,15 @@ async function tapTarget(
           ...(repetitions === 2 ? { doubleTap: true } : {}),
         }
       : undefined;
-  const point = target.point
-    ? await resolvePointForDevice(device, target.point, mirrorPoints)
-    : undefined;
+  const literalPoint =
+    target.point && !target.point.relativeTo
+      ? await resolvePointForDevice(device, target.point, mirrorPoints)
+      : undefined;
   const namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(target.text ? { text: target.text } : {}),
-    ...(point ? { point } : {}),
+    ...(literalPoint ? { point: literalPoint } : {}),
   };
   const nodes = await snapshot(device);
   const named = resolveNamedControl(nodes, namedTarget);
@@ -374,6 +380,7 @@ async function tapTarget(
     };
   }
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
+  let attemptedPoint: { x: number; y: number } | undefined;
   if (target.identifier)
     attempts.push({
       strategy: "identifier",
@@ -417,19 +424,33 @@ async function tapTarget(
         repeated ? pressText(device, target.text!, repeated) : findClick(device, target.text!),
     });
   if (target.point) {
-    const p = point!;
-    attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y, repeated) });
+    attempts.push({
+      strategy: target.point.relativeTo ? "element-relative-point" : "point",
+      run: async () => {
+        const point = await resolvePointForDevice(device, target.point!, mirrorPoints);
+        attemptedPoint = point;
+        await pressPoint(device, point.x, point.y, repeated);
+      },
+    });
   }
   for (let i = 0; i < attempts.length; i++) {
     const a = attempts[i]!;
     try {
       await a.run();
-      return { strategy: a.strategy, method: a.strategy };
+      return {
+        strategy: a.strategy,
+        method: a.strategy,
+        ...(attemptedPoint ? { point: attemptedPoint } : {}),
+      };
     } catch (err) {
       if (isCancel(err)) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       if (i === attempts.length - 1) {
-        throw new Error(`tap failed: no strategy matched (${describeTarget(target)})`);
+        const reason =
+          target.point?.relativeTo && msg.startsWith("element-relative")
+            ? msg
+            : "no strategy matched";
+        throw new Error(`tap failed: ${reason} (${describeTarget(target)})`);
       }
       log(`tap: ${a.strategy} failed (${msg}) — trying next`);
     }
@@ -526,35 +547,62 @@ async function longPressRecordedTarget(
     ...(input.fallbackTargets ?? []),
     ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
   ];
-  const attempts = (
-    await Promise.all(
-      candidates.map(async (target) => [
-        ...(target.identifier ? [{ identifier: target.identifier }] : []),
-        ...(target.ref ? [{ ref: target.ref }] : []),
-        ...(target.label ? [{ label: target.label }] : []),
-        ...(target.text ? [{ text: target.text }] : []),
-        ...(target.point
-          ? [
-              {
-                point: await resolvePointForDevice(
-                  device,
-                  target.point,
-                  isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
-                ),
-              },
-            ]
-          : []),
-      ]),
-    )
-  ).flat();
+  const attempts = candidates.flatMap((target) => [
+    ...(target.identifier
+      ? [
+          {
+            key: `identifier:${target.identifier}`,
+            run: () => longPressTarget(device, { identifier: target.identifier }, input.durationMs),
+          },
+        ]
+      : []),
+    ...(target.ref
+      ? [
+          {
+            key: `ref:${target.ref}`,
+            run: () => longPressTarget(device, { ref: target.ref }, input.durationMs),
+          },
+        ]
+      : []),
+    ...(target.label
+      ? [
+          {
+            key: `label:${target.label}`,
+            run: () => longPressTarget(device, { label: target.label }, input.durationMs),
+          },
+        ]
+      : []),
+    ...(target.text
+      ? [
+          {
+            key: `text:${target.text}`,
+            run: () => longPressTarget(device, { text: target.text }, input.durationMs),
+          },
+        ]
+      : []),
+    ...(target.point
+      ? [
+          {
+            key: `point:${JSON.stringify(target.point)}`,
+            run: async () => {
+              const point = await resolvePointForDevice(
+                device,
+                target.point!,
+                isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+              );
+              await longPressTarget(device, { point }, input.durationMs);
+            },
+          },
+        ]
+      : []),
+  ]);
   const unique = attempts.filter(
-    (candidate, index) =>
-      attempts.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) === index,
+    (candidate, index) => attempts.findIndex((other) => other.key === candidate.key) === index,
   );
   const failures: string[] = [];
   for (const [index, candidate] of unique.entries()) {
     try {
-      await longPressTarget(device, candidate, input.durationMs);
+      await candidate.run();
       if (index > 0) ctx.log(`locator: used recorded hold fallback ${index + 1}/${unique.length}`);
       return;
     } catch (error) {

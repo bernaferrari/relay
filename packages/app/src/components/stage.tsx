@@ -184,6 +184,9 @@ export function DeviceStage(_props: {
     setVerticalConstraint,
     constrainedPoint,
     setManualPoint,
+    coordinateSpace,
+    setCoordinateSpace,
+    elementAnchor,
     highlight: pickedHighlight,
   } = useDeviceStagePicker({
     imageRotation: liveImageRotation,
@@ -200,11 +203,6 @@ export function DeviceStage(_props: {
     screenElement: () => deviceScreenEl,
   });
 
-  // ── Live control: auto-refresh the stage image + snapshot while controlling.
-  //    Skips a tick while a request is in flight, the tab is hidden, the server
-  //    went offline, or the picker popover is open (a mid-hover image swap is
-  //    disorienting). The createEffect owns the timers so they follow the Live
-  //    toggle and tear down on unmount.
   const [tabVisible, setTabVisible] = createSignal(
     typeof document !== "undefined" ? !document.hidden : true,
   );
@@ -1475,6 +1473,9 @@ export function DeviceStage(_props: {
           constrainedPoint={constrainedPoint()}
           setManualPoint={setManualPoint}
           hasPickerNodeRect={Boolean(pickerNode()?.rect)}
+          canAnchorToElement={Boolean(elementAnchor())}
+          coordinateSpace={coordinateSpace()}
+          setCoordinateSpace={setCoordinateSpace}
           onClose={closePicker}
           onRetarget={retarget}
           onAddStep={(strategy) => {
@@ -1486,8 +1487,6 @@ export function DeviceStage(_props: {
         />
       </Show>
 
-      {/* Device-only utilities stay outside embedded capture, where the
-          recording bar is the single source of control. */}
       <Show when={targetReady() && !embeddedRecordingControls()}>
         <StageRecordingControls
           stageView={stageView()}

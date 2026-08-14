@@ -25,6 +25,27 @@ function assertPoint(value: StepPoint, label: string): void {
   ) {
     appMapFail("invalid-map", `${label}.referenceBounds dimensions must be positive`);
   }
+  if (value.relativeTo) {
+    const { target, xRatio, yRatio } = value.relativeTo;
+    objectValue(target, `${label}.relativeTo.target`);
+    optionalText(target.identifier, `${label}.relativeTo.target.identifier`);
+    optionalText(target.ref, `${label}.relativeTo.target.ref`);
+    optionalText(target.label, `${label}.relativeTo.target.label`);
+    optionalText(target.text, `${label}.relativeTo.target.text`);
+    if (!target.identifier && !target.ref && !target.label && !target.text) {
+      appMapFail("invalid-map", `${label}.relativeTo.target must contain a semantic selector`);
+    }
+    if (
+      !Number.isFinite(xRatio) ||
+      xRatio < 0 ||
+      xRatio > 1 ||
+      !Number.isFinite(yRatio) ||
+      yRatio < 0 ||
+      yRatio > 1
+    ) {
+      appMapFail("invalid-map", `${label}.relativeTo ratios must be between 0 and 1`);
+    }
+  }
 }
 
 export function assertTarget(value: StepTarget, label: string): void {

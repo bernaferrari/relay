@@ -162,6 +162,35 @@ function parseStepPoint(raw: unknown, index: number, field: string): StepPoint {
       height: raw.referenceBounds.height,
     };
   }
+  if (raw.relativeTo !== undefined) {
+    if (
+      !isObject(raw.relativeTo) ||
+      !isObject(raw.relativeTo.target) ||
+      !isNumber(raw.relativeTo.xRatio) ||
+      !isNumber(raw.relativeTo.yRatio) ||
+      raw.relativeTo.xRatio < 0 ||
+      raw.relativeTo.xRatio > 1 ||
+      raw.relativeTo.yRatio < 0 ||
+      raw.relativeTo.yRatio > 1
+    ) {
+      throw stepErr(
+        index,
+        `${field}.relativeTo must contain a semantic target and xRatio/yRatio between 0 and 1`,
+      );
+    }
+    const target = parseTarget(raw.relativeTo.target, index, `${field}.relativeTo.target`);
+    if (target.point) {
+      throw stepErr(index, `${field}.relativeTo.target cannot contain a point`);
+    }
+    if (!target.identifier && !target.ref && !target.label && !target.text) {
+      throw stepErr(index, `${field}.relativeTo.target must contain a semantic selector`);
+    }
+    point.relativeTo = {
+      target,
+      xRatio: raw.relativeTo.xRatio,
+      yRatio: raw.relativeTo.yRatio,
+    };
+  }
   return point;
 }
 /** Parse a required { x, y } coordinate object. */

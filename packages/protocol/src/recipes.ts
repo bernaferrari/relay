@@ -3,6 +3,16 @@ import type { ScreenIdentityObservation } from "./app-map.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
+/** A semantic element used as the live coordinate system for a deliberate
+ * pixel tap. Keep this non-recursive: an anchor must stand on its own instead
+ * of silently falling through to another point. */
+export type StepPointAnchorTarget = {
+  identifier?: string;
+  ref?: string;
+  label?: string;
+  text?: string;
+};
+
 export type StepPoint = {
   /** Absolute coordinate in the recorded reference bounds. */
   x: number;
@@ -14,6 +24,14 @@ export type StepPoint = {
   };
   /** Device size against which x/y and their anchored offsets were authored. */
   referenceBounds?: { width: number; height: number };
+  /** Re-find this element and preserve the authored fractional position inside
+   * its current bounds. This is safer than a viewport coordinate when copy or
+   * layout reflows, and fails closed when the element is absent or ambiguous. */
+  relativeTo?: {
+    target: StepPointAnchorTarget;
+    xRatio: number;
+    yRatio: number;
+  };
 };
 
 /** Resolve an authored coordinate against a runtime viewport without changing its anchor. */

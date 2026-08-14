@@ -784,7 +784,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return false;
       }
     }
-
     async function recordPick(
       strategy: PickStrategy,
       fx: number,
@@ -793,6 +792,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         horizontal: "left" | "center" | "right";
         vertical: "top" | "center" | "bottom";
       } = { horizontal: "left", vertical: "top" },
+      relativeAnchor?: Parameters<typeof targetFromStrategy>[5],
     ): Promise<void> {
       const session = activeSession();
       if (!session || session.state !== "recording" || !ownsActiveSession()) return;
@@ -801,7 +801,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         server.snapshot() ??
         (await server.captureUiSnapshot());
       if (!hasUsableDeviceBounds(snapshot)) return;
-      const target = targetFromStrategy(strategy, fx, fy, snapshot.bounds, anchor);
+      const target = targetFromStrategy(strategy, fx, fy, snapshot.bounds, anchor, relativeAnchor);
       try {
         await server.interactAuthoringSession(session.id, { kind: "tap", target });
       } catch (error) {

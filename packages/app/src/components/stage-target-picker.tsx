@@ -35,6 +35,9 @@ export function StageTargetPicker(props: {
   constrainedPoint: { x: number; y: number } | undefined;
   setManualPoint: (point: { x: number; y: number } | null) => void;
   hasPickerNodeRect: boolean;
+  canAnchorToElement: boolean;
+  coordinateSpace: "element" | "screen";
+  setCoordinateSpace: (value: "element" | "screen") => void;
   onClose: () => void;
   onRetarget: (index: number) => void;
   onAddStep: (strategy: PickStrategy) => void;
@@ -80,7 +83,7 @@ export function StageTargetPicker(props: {
           </span>
           <button
             type="button"
-            class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+            class="grid size-11 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96]"
             aria-label="Close target picker"
             onClick={props.onClose}
           >
@@ -89,10 +92,10 @@ export function StageTargetPicker(props: {
         </header>
 
         <Show when={props.ancestryLength > 1}>
-          <div class="mx-2.5 flex h-8 items-center justify-between rounded-lg bg-[var(--surface-base)] px-1">
+          <div class="mx-2.5 flex min-h-11 items-center justify-between rounded-lg bg-[var(--surface-base)] px-1">
             <button
               type="button"
-              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index <= 0}
               onClick={() => props.onRetarget(props.picker().index - 1)}
             >
@@ -103,7 +106,7 @@ export function StageTargetPicker(props: {
             </span>
             <button
               type="button"
-              class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index >= props.ancestryLength - 1}
               onClick={() => props.onRetarget(props.picker().index + 1)}
             >
@@ -121,7 +124,7 @@ export function StageTargetPicker(props: {
                   type="button"
                   aria-pressed={selected()}
                   class={cn(
-                    "grid min-h-10 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
+                    "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
                     "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--surface-base-hover)] active:scale-[0.985]",
                     selected() &&
                       "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_28%,transparent)]",
@@ -191,18 +194,59 @@ export function StageTargetPicker(props: {
               </button>
             }
           >
-            <CoordinateConstraintPicker
-              horizontal={props.horizontalConstraint}
-              vertical={props.verticalConstraint}
-              point={props.constrainedPoint!}
-              active={props.strategyId === "point"}
-              onConstraint={({ horizontal, vertical }) => {
-                props.setHorizontalConstraint(horizontal);
-                props.setVerticalConstraint(vertical);
-              }}
-              onPoint={props.setManualPoint}
-              onActivate={() => props.setStrategyId("point")}
-            />
+            <div class="grid gap-2">
+              <CoordinateConstraintPicker
+                horizontal={props.horizontalConstraint}
+                vertical={props.verticalConstraint}
+                point={props.constrainedPoint!}
+                active={props.strategyId === "point"}
+                onConstraint={({ horizontal, vertical }) => {
+                  props.setHorizontalConstraint(horizontal);
+                  props.setVerticalConstraint(vertical);
+                }}
+                onPoint={props.setManualPoint}
+                onActivate={() => props.setStrategyId("point")}
+              />
+              <Show when={props.strategyId === "point" && props.canAnchorToElement}>
+                <div
+                  class="grid grid-cols-2 gap-1 rounded-lg bg-[var(--background-deep)] p-1"
+                  role="group"
+                  aria-label="Coordinate reference"
+                >
+                  <button
+                    type="button"
+                    class={cn(
+                      "min-h-11 rounded-md px-2 text-[10px] font-medium",
+                      props.coordinateSpace === "element"
+                        ? "bg-[var(--surface-base)] text-[var(--text-strong)] shadow-sm"
+                        : "text-[var(--text-weak)]",
+                    )}
+                    aria-pressed={props.coordinateSpace === "element"}
+                    onClick={() => props.setCoordinateSpace("element")}
+                  >
+                    Inside element
+                  </button>
+                  <button
+                    type="button"
+                    class={cn(
+                      "min-h-11 rounded-md px-2 text-[10px] font-medium",
+                      props.coordinateSpace === "screen"
+                        ? "bg-[var(--surface-base)] text-[var(--text-strong)] shadow-sm"
+                        : "text-[var(--text-weak)]",
+                    )}
+                    aria-pressed={props.coordinateSpace === "screen"}
+                    onClick={() => props.setCoordinateSpace("screen")}
+                  >
+                    On screen
+                  </button>
+                </div>
+                <p class="px-1 text-[9.5px] leading-4 text-[var(--text-weak)]">
+                  {props.coordinateSpace === "element"
+                    ? "Tracks this stable element when translated copy moves the layout."
+                    : "Keeps the point pinned to the viewport."}
+                </p>
+              </Show>
+            </div>
           </Show>
         </div>
 

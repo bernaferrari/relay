@@ -348,6 +348,7 @@ function registerGraphTestPrompt(server: McpServer, scope: RelayPromptScope): vo
           "Read and design (no mutation):",
           `1. Read relay://app-maps/${appMapId}/tests. If it contains ${testId}, read relay://app-maps/${appMapId}/tests/${testId}; if that detail is truncated, read relay://app-maps/${appMapId}/tests/${testId}/outline and continue with /outline/1, /outline/2, or /outline/3 only while remainingStepCount is positive. Verify the App Map, Test, stable step IDs, and revision match this request.`,
           "2. Express the goal with the smallest clear graph using instruction, validation, extraction, manual, module, decision, loop, or script steps. Prefer mapped connections, screens, and routines over scripts. Keep unresolved bindings explicit; never invent an entity ID.",
+          "   For target repair, prefer identifier, then label/text, then coordinates. When a pixel offset is intentional but the control can move, use point.relativeTo with a stable element identifier and 0..1 xRatio/yRatio; use a viewport-pinned point only when no stable element exists. Never use a translated label as the anchor for a locale matrix.",
           "3. Present the proposed Test tree, evidence policy, unresolved bindings, and semantic edits. Ask for confirmation before creating or proposing changes.",
           "",
           "Create or propose (only after explicit confirmation):",

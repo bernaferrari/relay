@@ -38,6 +38,7 @@ export type {
   RecordedSelectorCandidate,
   RecordedStepEvidence,
   StepPoint,
+  StepPointAnchorTarget,
   StepTarget,
   VerticalCoordinateAnchor,
 } from "@relay/protocol";

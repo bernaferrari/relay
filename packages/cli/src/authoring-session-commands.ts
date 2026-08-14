@@ -185,7 +185,8 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
             name: "interaction.target",
             type: "object",
             required: true,
-            description: "Semantic target or coordinates",
+            description:
+              "Semantic target or coordinates; point.relativeTo anchors an exact offset inside a stable element",
           },
         ],
       },

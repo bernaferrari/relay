@@ -1,7 +1,7 @@
 /**
  * Pure target/snapshot matching helpers for recipe execution.
  */
-import type { StepTarget } from "@relay/protocol";
+import type { StepPoint, StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 
 export function nodeText(node: SnapshotNode): string[] {
@@ -27,6 +27,67 @@ export function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boole
     return nodeText(node).some((value) => value.toLowerCase().includes(query));
   }
   return false;
+}
+
+/** Resolve a deliberate pixel position inside one live semantic element.
+ * Duplicate accessibility nodes with the same bounds are one physical anchor;
+ * distinct matches are ambiguous and must never turn into a guessed tap. */
+export function resolveElementRelativePoint(
+  nodes: SnapshotNode[],
+  relativeTo: NonNullable<StepPoint["relativeTo"]>,
+): { x: number; y: number; bounds: { x: number; y: number; width: number; height: number } } {
+  const { target, xRatio, yRatio } = relativeTo;
+  if (
+    !Number.isFinite(xRatio) ||
+    xRatio < 0 ||
+    xRatio > 1 ||
+    !Number.isFinite(yRatio) ||
+    yRatio < 0 ||
+    yRatio > 1
+  ) {
+    throw new Error("element-relative point ratios must be between 0 and 1");
+  }
+  const selector: StepTarget = target.identifier
+    ? { identifier: target.identifier }
+    : target.ref
+      ? { ref: target.ref }
+      : target.label
+        ? { label: target.label }
+        : target.text
+          ? { text: target.text }
+          : {};
+  if (!selector.identifier && !selector.ref && !selector.label && !selector.text) {
+    throw new Error("element-relative point requires a semantic anchor");
+  }
+  const candidates = nodes.filter(
+    (node) =>
+      node.enabled !== false &&
+      node.rect !== undefined &&
+      node.rect.width > 0 &&
+      node.rect.height > 0 &&
+      nodeMatchesTarget(node, selector),
+  );
+  const distinct = candidates.filter(
+    (candidate, index) =>
+      candidates.findIndex((other) => {
+        const left = candidate.rect!;
+        const right = other.rect!;
+        return (
+          Math.abs(left.x - right.x) <= 1 &&
+          Math.abs(left.y - right.y) <= 1 &&
+          Math.abs(left.width - right.width) <= 1 &&
+          Math.abs(left.height - right.height) <= 1
+        );
+      }) === index,
+  );
+  if (distinct.length === 0) throw new Error("element-relative anchor was not found");
+  if (distinct.length > 1) throw new Error("element-relative anchor was ambiguous");
+  const bounds = distinct[0]!.rect!;
+  return {
+    x: Math.round(bounds.x + bounds.width * xRatio),
+    y: Math.round(bounds.y + bounds.height * yRatio),
+    bounds,
+  };
 }
 
 /** XCTest element refs are snapshots of one moment, not durable selectors.

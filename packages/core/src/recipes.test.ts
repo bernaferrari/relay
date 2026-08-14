@@ -411,6 +411,11 @@ describe("validateRecipeSteps", () => {
             y: 20,
             anchor: { horizontal: "right", vertical: "bottom" },
             referenceBounds: { width: 1080, height: 2400 },
+            relativeTo: {
+              target: { identifier: "sign-in-button" },
+              xRatio: 0.8,
+              yRatio: 0.5,
+            },
           },
         },
         group: "Sign in",
@@ -462,6 +467,11 @@ describe("validateRecipeSteps", () => {
       horizontal: "right",
       vertical: "bottom",
     });
+    assert.deepEqual(step?.kind === "tap" ? step.target.point?.relativeTo : undefined, {
+      target: { identifier: "sign-in-button" },
+      xRatio: 0.8,
+      yRatio: 0.5,
+    });
     assert.equal(step?.kind === "tap" ? step.evidence?.node?.label : undefined, "Sign in");
     assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.length : undefined, 1);
     assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.[0]?.parentIndex : undefined, 1);
@@ -470,6 +480,41 @@ describe("validateRecipeSteps", () => {
     assert.equal(
       step?.kind === "tap" ? step.evidence?.candidates?.[0]?.strategy : undefined,
       "label",
+    );
+  });
+
+  it("rejects unsafe element-relative point anchors", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "tap",
+            target: {
+              point: {
+                x: 20,
+                y: 40,
+                relativeTo: { target: { identifier: "row" }, xRatio: 1.2, yRatio: 0.5 },
+              },
+            },
+          },
+        ]),
+      /xRatio\/yRatio between 0 and 1/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "tap",
+            target: {
+              point: {
+                x: 20,
+                y: 40,
+                relativeTo: { target: {}, xRatio: 0.5, yRatio: 0.5 },
+              },
+            },
+          },
+        ]),
+      /must contain a semantic selector/,
     );
   });
 

@@ -1,4 +1,4 @@
-import type { SnapshotNode, SnapshotState, StepTarget } from "./api-types";
+import type { SnapshotNode, SnapshotState, StepPointAnchorTarget, StepTarget } from "./api-types";
 
 /**
  * Snapshot geometry + addressing helpers. Pure functions of the snapshot and
@@ -249,6 +249,10 @@ export function targetFromStrategy(
     horizontal: "left" | "center" | "right";
     vertical: "top" | "center" | "bottom";
   } = { horizontal: "left", vertical: "top" },
+  relativeAnchor?: {
+    target: StepPointAnchorTarget;
+    rect: { x: number; y: number; width: number; height: number };
+  },
 ): StepTarget {
   const w = bounds?.width ?? 1;
   const h = bounds?.height ?? 1;
@@ -257,6 +261,21 @@ export function targetFromStrategy(
     y: strategy.kind === "point" ? strategy.y : Math.round(fy * h),
     anchor,
     ...(bounds ? { referenceBounds: { ...bounds } } : {}),
+    ...(strategy.kind === "point" && relativeAnchor
+      ? {
+          relativeTo: {
+            target: { ...relativeAnchor.target },
+            xRatio: Math.max(
+              0,
+              Math.min(1, (strategy.x - relativeAnchor.rect.x) / relativeAnchor.rect.width),
+            ),
+            yRatio: Math.max(
+              0,
+              Math.min(1, (strategy.y - relativeAnchor.rect.y) / relativeAnchor.rect.height),
+            ),
+          },
+        }
+      : {}),
   };
   switch (strategy.kind) {
     case "identifier":
@@ -270,4 +289,16 @@ export function targetFromStrategy(
     case "point":
       return { point };
   }
+}
+
+/** Only a stable identifier earns automatic element-relative targeting. Labels
+ * often translate and refs are frame-scoped; users can retarget an ancestor
+ * with an identifier when the leaf itself has none. */
+export function stablePointAnchorForNode(
+  node: SnapshotNode | null | undefined,
+): { target: StepPointAnchorTarget; rect: NonNullable<SnapshotNode["rect"]> } | undefined {
+  if (!node?.identifier?.trim() || !node.rect || node.rect.width <= 0 || node.rect.height <= 0) {
+    return undefined;
+  }
+  return { target: { identifier: node.identifier }, rect: { ...node.rect } };
 }

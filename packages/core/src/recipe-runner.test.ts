@@ -389,6 +389,135 @@ describe("runRecipeStep tap gestures", () => {
     ]);
   });
 
+  it("preserves an exact point inside a semantic element after localized reflow", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              identifier: "language-row",
+              rect: { x: 24, y: 610, width: 312, height: 96 },
+              enabled: true,
+            },
+          ],
+        }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: {
+          point: {
+            x: 280,
+            y: 220,
+            referenceBounds: { width: 360, height: 800 },
+            relativeTo: {
+              target: { identifier: "language-row" },
+              xRatio: 0.75,
+              yRatio: 0.25,
+            },
+          },
+        },
+      },
+      noLog,
+    );
+
+    assert.deepEqual(presses, [
+      { platform: "android", serial: "recipe-runner-test", x: 258, y: 634 },
+    ]);
+  });
+
+  it("fails closed when an element-relative anchor is ambiguous", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            { label: "More", rect: { x: 10, y: 100, width: 80, height: 44 } },
+            { label: "More", rect: { x: 220, y: 500, width: 80, height: 44 } },
+          ],
+        }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "tap",
+          target: {
+            point: {
+              x: 40,
+              y: 120,
+              relativeTo: { target: { label: "More" }, xRatio: 0.5, yRatio: 0.5 },
+            },
+          },
+        },
+        noLog,
+      ),
+      /element-relative anchor was ambiguous/,
+    );
+    assert.deepEqual(presses, []);
+  });
+
+  it("uses a primary semantic target without resolving its point fallback eagerly", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              identifier: "continue-button",
+              hittable: true,
+              enabled: true,
+              rect: { x: 120, y: 700, width: 120, height: 48 },
+            },
+          ],
+        }),
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: {
+          identifier: "continue-button",
+          point: {
+            x: 180,
+            y: 724,
+            relativeTo: {
+              target: { identifier: "missing-fallback-anchor" },
+              xRatio: 0.5,
+              yRatio: 0.5,
+            },
+          },
+        },
+      },
+      noLog,
+    );
+
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        selector: 'id="continue-button"',
+      },
+    ]);
+  });
+
   it("holds the same target for the configured duration", async () => {
     const holds: unknown[] = [];
     const device = stubDevice({
