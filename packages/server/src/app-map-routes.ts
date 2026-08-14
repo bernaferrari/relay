@@ -5,7 +5,6 @@ import {
   addAppMapScreen,
   authoringSessions,
   approveAppMapProposal,
-  applyScenarioTestStepEdits,
   attachAppMapCaseStack,
   connectAppMapScreens,
   commitAppMapChanges,
@@ -15,6 +14,7 @@ import {
   currentOperationContext,
   deleteAppMap,
   duplicateAppMap,
+  editAppMapScenarioTest,
   findAppMapCaptureScreen,
   formatAppMapYaml,
   importAppMap,
@@ -29,6 +29,7 @@ import {
   appMapYamlFilename,
   parseAppMapYaml,
   preflightAppMapCombine,
+  proposalConflictsSince,
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
@@ -1320,10 +1321,9 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.test.edit">,
       "appMapId" | "testId"
     >;
-    const appMap = await applyMutation(
+    const appMap = await applyRebasableMutation(
       scope,
       testEdit.appMapId!,
-      body.expectedRevision,
       body.eventId,
       (map, context) => {
         const id = testEdit.testId!;
@@ -1336,11 +1336,24 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
           );
         }
         try {
-          return saveAppMapTest(
+          if (body.expectedRevision > map.revision) {
+            throw new AppMapDomainError(
+              "revision-conflict",
+              `Expected App Map revision ${body.expectedRevision}, current revision is ${map.revision}`,
+            );
+          }
+          const conflicts = proposalConflictsSince(
             map,
-            { ...applyScenarioTestStepEdits(test, body.edits), updatedAt: context.at },
-            context,
+            { changes: [{ kind: "test.edit", testId: id, edits: body.edits }] },
+            body.expectedRevision,
           );
+          if (conflicts.conflict) {
+            throw new AppMapDomainError(
+              "revision-conflict",
+              `Test edits conflict with newer changes to ${conflicts.subjects.join(", ")}`,
+            );
+          }
+          return editAppMapScenarioTest(map, id, body.edits, context);
         } catch (error) {
           if (error instanceof AppMapTestStepOperationError) {
             throw new AppMapDomainError("invalid-map", error.message);

@@ -3,6 +3,7 @@ import type {
   AppMapCombine,
   AppMapPatch,
   AppMapMutationContext,
+  AppMapScenarioTestEdit,
   AppMapTest,
   CaseStack,
   Flow,
@@ -11,6 +12,8 @@ import type {
   Proposal,
   Routine,
 } from "./model.js";
+import { applyScenarioTestStepEdits } from "./test-step-operations.js";
+import { scenarioTestEditEntityKeys } from "./proposal-conflicts.js";
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
 import { proposalConflictsSince } from "./proposal-conflicts.js";
@@ -186,6 +189,43 @@ export function saveAppMapTest(
     },
     (draft) => {
       draft.tests = { ...draft.tests, [work.id]: structuredClone(work) };
+    },
+  );
+}
+
+/** Apply semantic Test edits without collapsing concurrency to a whole-Test
+ * replacement. The activity event carries stable touched subjects so proposal
+ * rebasing and future collaboration providers can distinguish independent
+ * step edits. */
+export function editAppMapScenarioTest(
+  map: AppMap,
+  testId: string,
+  edits: AppMapScenarioTestEdit[],
+  context: AppMapMutationContext,
+): AppMap {
+  const test = map.tests?.[testId];
+  if (!test) appMapFail("missing-reference", `Test ${testId} does not exist`);
+  if (test.kind !== "scenario") {
+    appMapFail(
+      "invalid-map",
+      `Test ${testId} is a legacy ${test.kind} test and cannot accept graph-native edits`,
+    );
+  }
+  const changed = applyScenarioTestStepEdits(test, edits);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "test.saved",
+      subject: { kind: "test", id: testId },
+      touched: scenarioTestEditEntityKeys(testId, edits),
+      summary: `Edited ${changed.name}`,
+    },
+    (draft) => {
+      draft.tests = {
+        ...draft.tests,
+        [testId]: { ...structuredClone(changed), updatedAt: context.at },
+      };
     },
   );
 }

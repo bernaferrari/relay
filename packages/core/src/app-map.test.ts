@@ -8,6 +8,7 @@ import {
   attachAppMapCaseStack,
   connectAppMapScreens,
   commitAppMapChanges,
+  editAppMapScenarioTest,
   previewRoutineImpact,
   rejectAppMapProposal,
   removeAppMapConnection,
@@ -998,6 +999,88 @@ test("reviews and atomically approves stable-ID graph Test edits", () => {
   );
   expectError("revision-conflict", () =>
     approveAppMapProposal(concurrent, proposal.id, context(concurrent, "approve-stale-test-edit")),
+  );
+});
+
+test("rebases proposals across semantic edits to independent Test steps", () => {
+  const input = mapFixture();
+  input.tests.checkout = {
+    ...entity("checkout"),
+    name: "Checkout",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "open-cart",
+        kind: "instruction",
+        intent: "Open cart",
+        binding: { status: "unresolved", reason: "Needs a mapped path" },
+      },
+      {
+        id: "submit-order",
+        kind: "instruction",
+        intent: "Submit order",
+        binding: { status: "unresolved", reason: "Needs a mapped path" },
+      },
+    ],
+  };
+  const proposal: Proposal = {
+    ...entity("proposal-submit-order"),
+    title: "Clarify submit",
+    status: "pending",
+    baseRevision: input.revision,
+    changes: [
+      {
+        kind: "test.edit",
+        testId: "checkout",
+        edits: [
+          {
+            kind: "step.patch",
+            stepId: "submit-order",
+            patch: { intent: "Submit the reviewed order" },
+          },
+        ],
+      },
+    ],
+  };
+  const submitted = submitAppMapProposal(
+    input,
+    proposal,
+    context(input, "submit-independent-test-edit"),
+  );
+  const concurrent = editAppMapScenarioTest(
+    submitted,
+    "checkout",
+    [{ kind: "step.patch", stepId: "open-cart", patch: { intent: "Open the cart" } }],
+    context(submitted, "edit-independent-step", submitted.updatedAt + 1),
+  );
+  const approved = approveAppMapProposal(
+    concurrent,
+    proposal.id,
+    context(concurrent, "approve-independent-step", concurrent.updatedAt + 1),
+  );
+  const scenario = approved.tests.checkout;
+  assert.ok(scenario?.kind === "scenario");
+  assert.equal(scenario.steps[0]?.intent, "Open the cart");
+  assert.equal(scenario.steps[1]?.intent, "Submit the reviewed order");
+
+  const sameStepProposal = submitAppMapProposal(
+    input,
+    proposal,
+    context(input, "submit-conflicting-test-edit"),
+  );
+  const sameStepEdit = editAppMapScenarioTest(
+    sameStepProposal,
+    "checkout",
+    [{ kind: "step.patch", stepId: "submit-order", patch: { note: "Human note" } }],
+    context(sameStepProposal, "edit-same-step", sameStepProposal.updatedAt + 1),
+  );
+  expectError("revision-conflict", () =>
+    approveAppMapProposal(
+      sameStepEdit,
+      proposal.id,
+      context(sameStepEdit, "approve-conflicting-step", sameStepEdit.updatedAt + 1),
+    ),
   );
 });
 

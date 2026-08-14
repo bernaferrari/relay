@@ -962,6 +962,13 @@ export function assertActivity(
   )
     appMapFail("invalid-map", `${label}.subject.kind is unsupported`);
   identifier(event.subject.id, `${label}.subject.id`);
+  if (event.touched !== undefined) {
+    stringArray(event.touched, `${label}.touched`);
+    if (!event.touched.length) appMapFail("invalid-map", `${label}.touched must not be empty`);
+    if (new Set(event.touched).size !== event.touched.length) {
+      appMapFail("duplicate-id", `${label}.touched contains duplicate subjects`);
+    }
+  }
   requiredText(event.summary, `${label}.summary`, 240);
   finiteTimestamp(event.at, `${label}.at`);
   safeInteger(event.beforeRevision, `${label}.beforeRevision`);

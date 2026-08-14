@@ -357,10 +357,50 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.equal(scenario.name, "Welcome smoke");
     assert.equal(scenario.steps[0]?.intent, "The Welcome screen is visible");
 
+    const addedIndependentStep = await human.invoke("app-map.test.edit", {
+      appMapId: "store",
+      testId: "welcome-scenario",
+      expectedRevision: 8,
+      edits: [
+        {
+          kind: "step.add",
+          step: {
+            id: "confirm-ready",
+            kind: "manual",
+            intent: "Confirm the device is ready",
+            binding: {
+              status: "resolved",
+              kind: "pause",
+              message: "Confirm the device is ready",
+            },
+          },
+        },
+      ],
+    });
+    assert.equal(addedIndependentStep.appMap.revision, 9);
+
+    const rebasedIndependentStep = await agent.invoke("app-map.test.edit", {
+      appMapId: "store",
+      testId: "welcome-scenario",
+      expectedRevision: 8,
+      edits: [
+        {
+          kind: "step.patch",
+          stepId: "check-welcome",
+          patch: { note: "Agent-reviewed assertion" },
+        },
+      ],
+    });
+    const rebasedScenario = rebasedIndependentStep.appMap.tests["welcome-scenario"];
+    assert.ok(rebasedScenario?.kind === "scenario");
+    assert.equal(rebasedScenario.steps[0]?.note, "Agent-reviewed assertion");
+    assert.equal(rebasedScenario.steps[1]?.id, "confirm-ready");
+    assert.equal(rebasedIndependentStep.appMap.revision, 10);
+
     const combineSaved = await human.invoke("app-map.combine.save", {
       appMapId: "store",
       combineId: "language-welcome",
-      expectedRevision: 8,
+      expectedRevision: 10,
       combine: {
         name: "Language × Welcome",
         variableIds: ["language"],

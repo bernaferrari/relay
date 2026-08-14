@@ -655,6 +655,10 @@ export type ActivityEvent = AppMapScope & {
     | "proposal.approved"
     | "proposal.rejected";
   subject: { kind: ActivitySubjectKind; id: string };
+  /** Optional stable semantic subjects changed by this event. Whole-entity
+   * writers omit this field; granular editors use it so independent fields can
+   * rebase without pretending the entire entity changed. */
+  touched?: string[];
   summary: string;
   at: number;
   beforeRevision: number;

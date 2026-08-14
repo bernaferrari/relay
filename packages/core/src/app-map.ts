@@ -24,7 +24,13 @@ export { recordAppMapRun, type RecordAppMapRunInput } from "./app-map/run-operat
 export { approveAppMapProposal, rejectAppMapProposal } from "./app-map/proposal-operations.js";
 export { deriveTestProposalReview, materializeProposalReviews } from "./app-map/proposal-review.js";
 export {
+  proposalConflictsSince,
+  proposalEntityKeys,
+  scenarioTestEditEntityKeys,
+} from "./app-map/proposal-conflicts.js";
+export {
   attachAppMapCaseStack,
+  editAppMapScenarioTest,
   removeAppMapFlow,
   removeAppMapCaseStack,
   removeAppMapVariable,

@@ -3,7 +3,7 @@ import type { ActivityEvent, AppMap, AppMapMutationContext } from "./model.js";
 import { validateAppMap } from "./validation.js";
 import { finiteTimestamp, identifier, safeInteger } from "./validation-shapes.js";
 
-type MutationEvent = Pick<ActivityEvent, "eventType" | "subject" | "summary">;
+type MutationEvent = Pick<ActivityEvent, "eventType" | "subject" | "summary" | "touched">;
 
 function assertContext(map: AppMap, context: AppMapMutationContext): void {
   safeInteger(context.expectedRevision, "mutation.expectedRevision");
@@ -57,6 +57,7 @@ export function mutateAppMap(
     actorKind: context.actorKind,
     eventType: event.eventType,
     subject: event.subject,
+    ...(event.touched?.length ? { touched: [...new Set(event.touched)].sort() } : {}),
     summary: event.summary,
     at: context.at,
     beforeRevision,
