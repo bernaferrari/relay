@@ -220,6 +220,67 @@ export function filterRunMatrixRows(
   });
 }
 
+export function matrixUsesLocaleDimension(review: RunMatrixReview): boolean {
+  return review.rows.some((row) =>
+    row.values.some((value) => /(?:language|locale)/i.test(value.name.trim())),
+  );
+}
+
+export function problemRetryLabel(review: RunMatrixReview): string {
+  const count = review.problemRuns;
+  if (matrixUsesLocaleDimension(review)) {
+    return `Retry ${count} problem ${count === 1 ? "locale" : "locales"}`;
+  }
+  return `Retry ${count} problem ${count === 1 ? "run" : "runs"}`;
+}
+
+export type CurrentLocaleRetry = {
+  appMapId: string;
+  combineId: string;
+  selected: Record<string, string[]>;
+};
+
+/** Build the narrow “fix → rerun current Test” request only when this is a
+ * one-dimensional locale matrix. Multi-dimensional problem cells need an
+ * exact case-list API; expanding unions here could silently run extra cells. */
+export function currentLocaleRetry(review: RunMatrixReview): CurrentLocaleRetry | null {
+  const problems = review.rows.filter(
+    (row) => row.missingCaptures > 0 || ["error", "cancelled"].includes(row.job.status),
+  );
+  if (!problems.length) return null;
+  const first = problems[0]!.job.matrixCase;
+  if (!first?.appMapId || !first.combineId) return null;
+  const selected = new Map<string, Set<string>>();
+  for (const row of problems) {
+    const matrixCase = row.job.matrixCase;
+    if (
+      !matrixCase ||
+      matrixCase.appMapId !== first.appMapId ||
+      matrixCase.combineId !== first.combineId
+    ) {
+      return null;
+    }
+    const dimensions = Object.entries(matrixCase.values).filter(
+      ([name, value]) =>
+        !/_((identifier)|(label)|(text))$/i.test(name) && typeof value === "string" && value.trim(),
+    );
+    if (dimensions.length !== 1 || !/(?:language|locale)/i.test(dimensions[0]![0])) return null;
+    const [name, value] = dimensions[0]!;
+    const values = selected.get(name) ?? new Set<string>();
+    values.add(value);
+    selected.set(name, values);
+  }
+  return {
+    appMapId: first.appMapId,
+    combineId: first.combineId,
+    selected: Object.fromEntries(
+      [...selected]
+        .map(([name, values]): [string, string[]] => [name, [...values]])
+        .sort(([left], [right]) => left.localeCompare(right)),
+    ),
+  };
+}
+
 /** Keeps large value sets calm in the UI without hiding evidence from export. */
 export function pageRunMatrixRows(
   rows: RunMatrixRow[],

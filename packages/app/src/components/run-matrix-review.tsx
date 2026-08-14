@@ -7,6 +7,7 @@ import {
   filterRunMatrixRows,
   matrixReviewPageSize,
   pageRunMatrixRows,
+  problemRetryLabel,
 } from "../lib/run-matrix-review";
 import { RunMatrixCaptureCard } from "./run-matrix-capture-card";
 import { modalPanel, modalScrim } from "../lib/ui";
@@ -26,6 +27,7 @@ export function RunMatrixReview(props: {
   const [selectedCaptureIndex, setSelectedCaptureIndex] = createSignal(0);
   const [visibleCount, setVisibleCount] = createSignal(matrixReviewPageSize);
   const [focusedRunId, setFocusedRunId] = createSignal<string | null>(null);
+  const [retrying, setRetrying] = createSignal(false);
   const visibleRows = createMemo(() =>
     filterRunMatrixRows(props.review, { query: query(), problemsOnly: problemsOnly() }),
   );
@@ -54,6 +56,15 @@ export function RunMatrixReview(props: {
     if (!nextRow) return;
     setSelectedCaptureIndex(nextCaptureIndex);
     setFocusedRunId(nextRow.job.id);
+  };
+  const retryProblems = async () => {
+    if (retrying()) return;
+    setRetrying(true);
+    try {
+      await props.onRetryProblems();
+    } finally {
+      setRetrying(false);
+    }
   };
   createEffect(() => {
     if (selectedCaptureIndex() >= props.review.captureLabels.length) {
@@ -111,8 +122,17 @@ export function RunMatrixReview(props: {
               </Button>
             </Show>
             <Show when={props.review.problemRuns > 0}>
-              <Button variant="secondary" size="sm" onClick={props.onRetryProblems}>
-                <Icon name="refresh" size={12} /> Retry {props.review.problemRuns}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={retrying()}
+                aria-busy={retrying()}
+                data-tip="Keeps passing results and queues only failed or incomplete cells"
+                aria-label={`${problemRetryLabel(props.review)}; keep passing results`}
+                onClick={() => void retryProblems()}
+              >
+                <Icon name="refresh" size={12} />
+                {retrying() ? "Queuing…" : problemRetryLabel(props.review)}
               </Button>
             </Show>
           </div>

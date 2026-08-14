@@ -51,6 +51,7 @@ function stubDevice(impl: {
   fill?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
   swipe?: (options: unknown) => Promise<unknown>;
+  scroll?: (options: unknown) => Promise<unknown>;
   pan?: (options: unknown) => Promise<unknown>;
   clipboard?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
@@ -65,6 +66,7 @@ function stubDevice(impl: {
       fill: impl.fill ?? (() => Promise.resolve({})),
       type: impl.type ?? (() => Promise.resolve({})),
       swipe: impl.swipe ?? (() => Promise.resolve({})),
+      scroll: impl.scroll ?? (() => Promise.reject(new Error("scroll unavailable in test"))),
       pan: impl.pan ?? (() => Promise.resolve({})),
     },
     command: {
@@ -2013,6 +2015,104 @@ describe("runRecipeStep tour", () => {
 
     assert.ok(presses.length > 0);
     assert.ok(!presses.some((selector) => selector.includes("Back")));
+  });
+
+  it("walks a reflowed translated list by semantic row checkpoints", async () => {
+    const english = [
+      "Profile",
+      "NSFW Preferences",
+      "Voice",
+      "Shared Conversations",
+      "Data Controls",
+    ];
+    const italian = [
+      "Profilo",
+      "Preferenze molto lunghe",
+      "Voce",
+      "Conversazioni condivise",
+      "Controllo dati",
+    ];
+    const viewports = [italian.slice(0, 2), italian.slice(1, 4), italian.slice(3)];
+    let viewport = 1;
+    let screen: "parent" | "child" = "parent";
+    const visited: string[] = [];
+    const parentNodes = () => [
+      {
+        type: "Application",
+        identifier: "ai.x.grok",
+        label: "Grok",
+        rect: { x: 0, y: 0, width: 412, height: 915 },
+      },
+      ...viewports[viewport]!.map((label, index) => ({
+        type: "Cell",
+        label,
+        hittable: true,
+        rect: { x: 24, y: 180 + index * (viewport === 0 ? 250 : 190), width: 360, height: 96 },
+      })),
+    ];
+    const childNodes = () => [
+      {
+        type: "Application",
+        identifier: "ai.x.grok",
+        label: "Grok",
+        rect: { x: 0, y: 0, width: 412, height: 915 },
+      },
+      {
+        type: "Button",
+        label: "Indietro",
+        hittable: true,
+        rect: { x: 20, y: 54, width: 64, height: 48 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({ nodes: screen === "parent" ? parentNodes() : childNodes() }),
+      scroll: (options) => {
+        if (screen !== "parent") throw new Error("refused to scroll child");
+        const direction = (options as { direction?: string }).direction;
+        viewport = Math.max(
+          0,
+          Math.min(viewports.length - 1, viewport + (direction === "down" ? 1 : -1)),
+        );
+        return Promise.resolve({});
+      },
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        const selected = italian.find((label) => selector.includes(label));
+        if (selected) {
+          visited.push(selected);
+          screen = "child";
+        } else if (typeof options === "object" && options && "x" in options && "y" in options) {
+          screen = "parent";
+        }
+        return Promise.resolve({});
+      },
+      back: () => {
+        screen = "parent";
+        return Promise.resolve({});
+      },
+      wait: () => Promise.resolve({}),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tour",
+        screenshot: false,
+        originVerifiedBySetup: true,
+        mappedStopsOnly: true,
+        fallbackStops: english.slice(1).map((label) => ({ label })),
+        landmarkStops: english.map((label) => ({ label })),
+        scrollSearch: { maxScrolls: 8, amount: 0.5 },
+      },
+      { log: () => {}, job: { resolvedInputs: { language: "it" } } as never },
+    );
+
+    assert.deepEqual(visited, italian.slice(1));
+    assert.equal(screen, "parent");
   });
 
   it("does not seek backwards after a setup flow has verified a localized origin", async () => {

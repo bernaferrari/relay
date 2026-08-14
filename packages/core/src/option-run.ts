@@ -698,6 +698,7 @@ export async function startOptionRecipeRun(input: {
           capturedAt: matrix.createdAt,
           data: {
             matrixId: matrix.id,
+            ...(input.map?.id ? { appMapId: input.map.id } : {}),
             ...(request.combineId?.trim() ? { combineId: request.combineId.trim() } : {}),
             optionRunBatchId: batchId,
             seed: matrix.seed,

@@ -19,6 +19,9 @@ function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
   );
   return {
     kind: "combine",
+    ...(typeof candidate.appMapId === "string" && candidate.appMapId.trim()
+      ? { appMapId: candidate.appMapId.trim() }
+      : {}),
     ...(typeof candidate.combineId === "string" && candidate.combineId.trim()
       ? { combineId: candidate.combineId.trim() }
       : {}),

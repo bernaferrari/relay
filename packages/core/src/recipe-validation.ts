@@ -11,6 +11,7 @@ import {
   parseStepMetadata,
   parseStepPoint,
   parseTarget,
+  parseTourRuntimeOptions,
   stepErr,
   targetHasStrategy,
 } from "./recipe-validation-support.js";
@@ -723,9 +724,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             { kind: "tap" | "key" | "swipe" | "scroll" }
           >[];
         }
-        if (raw.returnAfterLast !== undefined && typeof raw.returnAfterLast !== "boolean") {
-          throw stepErr(index, "tour.returnAfterLast must be a boolean");
-        }
+        const tourRuntimeOptions = parseTourRuntimeOptions(raw, index);
         const step: Extract<RecipeStep, { kind: "tour" }> = {
           kind: "tour",
           ...(isNumber(raw.depth) ? { depth: raw.depth } : {}),
@@ -758,7 +757,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(preludeSteps?.length ? { preludeSteps } : {}),
           ...(fallbackStops.length ? { fallbackStops } : {}),
           ...(landmarkStops.length ? { landmarkStops } : {}),
-          ...(raw.returnAfterLast === false ? { returnAfterLast: false } : {}),
+          ...tourRuntimeOptions,
           ...(note ? { note } : {}),
         };
         out.push(step);

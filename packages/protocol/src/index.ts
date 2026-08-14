@@ -126,6 +126,8 @@ export type JobSummary = {
    * Raw/private run inputs remain execution-only. */
   matrixCase?: {
     kind: "combine";
+    /** Durable App Map owning the saved matrix. */
+    appMapId?: string;
     /** Saved canvas matrix that produced this case. Lets live/result surfaces
      * reconnect execution to its authoring object without exposing raw inputs. */
     combineId?: string;

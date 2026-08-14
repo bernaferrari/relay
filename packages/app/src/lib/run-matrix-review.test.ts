@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { JobInfo } from "./api-types";
 import {
+  currentLocaleRetry,
   filterRunMatrixRows,
   isRunMatrixJob,
   matrixReviewPageSize,
   pageRunMatrixRows,
+  problemRetryLabel,
   projectRunMatrix,
   stepIndexForMatrixCapture,
 } from "./run-matrix-review";
@@ -81,12 +83,87 @@ test("projects one modifier row by screenshot column without exposing selector h
   assert.equal(review.failed, 1);
   assert.equal(review.missingCaptures, 1);
   assert.equal(review.problemRuns, 1);
+  assert.equal(problemRetryLabel(review), "Retry 1 problem locale");
   assert.deepEqual(review.insights, [
     { kind: "failure", label: "language: Italiano", count: 1, detail: "1 failed run" },
     { kind: "missing-capture", label: "Widget", count: 1, detail: "Missing in 1 run" },
   ]);
   assert.equal(isRunMatrixJob(first), true);
   assert.equal(stepIndexForMatrixCapture(first, 0), 0);
+});
+
+test("problem retry copy stays generic for non-locale matrices", () => {
+  const review = projectRunMatrix([
+    job({
+      id: "dark",
+      status: "error",
+      matrixCase: { kind: "combine", world: "Dark", values: { theme: "Dark" } },
+    }),
+  ]);
+  assert.ok(review);
+  assert.equal(problemRetryLabel(review), "Retry 1 problem run");
+});
+
+test("recompiles only problem locale values from one saved matrix", () => {
+  const review = projectRunMatrix([
+    job({
+      id: "en",
+      status: "ok",
+      matrixCase: {
+        kind: "combine",
+        appMapId: "settings",
+        combineId: "language-x-tour",
+        world: "English",
+        values: { language: "en", language_label: "English" },
+      },
+    }),
+    job({
+      id: "it",
+      status: "error",
+      matrixCase: {
+        kind: "combine",
+        appMapId: "settings",
+        combineId: "language-x-tour",
+        world: "Italiano",
+        values: { language: "it", language_label: "Italiano" },
+      },
+    }),
+    job({
+      id: "de",
+      status: "error",
+      matrixCase: {
+        kind: "combine",
+        appMapId: "settings",
+        combineId: "language-x-tour",
+        world: "Deutsch",
+        values: { language: "de", language_label: "Deutsch" },
+      },
+    }),
+  ]);
+  assert.ok(review);
+  assert.deepEqual(currentLocaleRetry(review), {
+    appMapId: "settings",
+    combineId: "language-x-tour",
+    selected: { language: ["it", "de"] },
+  });
+});
+
+test("does not expand multi-dimensional failures into unintended combinations", () => {
+  const review = projectRunMatrix([
+    job({
+      id: "it-dark",
+      status: "error",
+      matrixCase: {
+        kind: "combine",
+        appMapId: "settings",
+        combineId: "language-theme-tour",
+        world: "Italiano · Dark",
+        values: { language: "it", theme: "dark" },
+      },
+    }),
+  ]);
+  assert.ok(review);
+  assert.equal(currentLocaleRetry(review), null);
 });
 
 test("filters problems and modifier values without mutating the review", () => {

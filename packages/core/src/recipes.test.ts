@@ -310,6 +310,7 @@ describe("validateRecipeSteps", () => {
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
           fallbackStops: [{ label: "Appearance" }],
           landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
+          scrollSearch: { maxScrolls: 20, amount: 0.5 },
           excludeLanguageRows: true,
         },
       ]),
@@ -322,6 +323,7 @@ describe("validateRecipeSteps", () => {
           preludeSteps: [{ kind: "tap", target: { identifier: "sidebar.settings.button" } }],
           fallbackStops: [{ label: "Appearance" }],
           landmarkStops: [{ label: "Profile" }, { label: "Appearance" }],
+          scrollSearch: { maxScrolls: 20, amount: 0.5 },
           excludeLanguageRows: true,
         },
       ],
@@ -329,6 +331,10 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tour", originFingerprint: "not-a-fingerprint" }]),
       /originFingerprint/,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "tour", scrollSearch: { amount: 0.95 } }]),
+      /scrollSearch\.amount/,
     );
   });
 

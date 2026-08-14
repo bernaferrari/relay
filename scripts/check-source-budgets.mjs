@@ -15,7 +15,7 @@ export const COMPONENT_SOURCE_LIMIT = 700;
 export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/app-map-capture-review.tsx": 1001,
   "packages/app/src/components/app-map-workspace.tsx": 1193,
-  "packages/app/src/components/runs-workspace.tsx": 1080,
+  "packages/app/src/components/runs-workspace.tsx": 1078,
   "packages/app/src/components/stage.tsx": 1513,
   "packages/app/src/components/studio-shell.tsx": 1181,
   "packages/app/src/components/take-action-editor.tsx": 717,
@@ -26,7 +26,7 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/core/src/device.ts": 1663,
   "packages/core/src/locale-run.ts": 1051,
   "packages/core/src/recipe-runner.ts": 1056,
-  "packages/core/src/recipe-validation.ts": 1121,
+  "packages/core/src/recipe-validation.ts": 1120,
   "packages/core/src/session.ts": 1116,
   "packages/core/src/switcher-profiles.ts": 931,
   "packages/protocol/src/operations.ts": 2667,

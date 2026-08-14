@@ -21,6 +21,7 @@ import {
   tourFallbackOverlap,
   tourOriginFingerprintMatch,
 } from "./tour.js";
+import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import {
@@ -29,6 +30,15 @@ import {
   observeScreenIdentity,
 } from "./screen-identity.js";
 import { nodeMatchesTarget } from "./recipe-target-match.js";
+import {
+  alignTourRowsAcrossReflow,
+  matchesTourViewportCheckpoint,
+} from "./recipe-runner-tour-scroll.js";
+import {
+  collectSemanticTourRows,
+  readCompleteTourSurface,
+  seekSemanticTourRow,
+} from "./recipe-runner-tour-scroll-runtime.js";
 
 import {
   foregroundApplicationBundle,
@@ -63,6 +73,7 @@ async function returnToTourOrigin(
   stopLabel: string,
   rightToLeft = false,
   job?: TestJob,
+  parentCheckpoint: ReadonlyArray<TourStop> = [],
 ): Promise<void> {
   if (!step.fallbackStops?.length && !step.originFingerprint) {
     try {
@@ -103,6 +114,7 @@ async function returnToTourOrigin(
       ? [
           {
             name: "grok-back",
+            verifiedAppBack: true,
             run: async () => {
               await pressNamedControl(device, { identifier: "grok-arrow-left" });
             },
@@ -115,6 +127,7 @@ async function returnToTourOrigin(
       ? [
           {
             name: "label-back",
+            verifiedAppBack: true,
             run: async () => {
               await pressNamedControl(device, { label: "Back" });
             },
@@ -125,6 +138,7 @@ async function returnToTourOrigin(
       ? [
           {
             name: "label-close",
+            verifiedAppBack: true,
             run: async () => {
               await pressNamedControl(device, { label: "Close" });
             },
@@ -164,7 +178,29 @@ async function returnToTourOrigin(
     }
     await sleep(350, device);
     const surface = await readTourSurface(device, step);
-    if (liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job)) return;
+    if (
+      liveTourOrigin(surface.nodes, surface.stops, step, rightToLeft, job) ||
+      matchesTourViewportCheckpoint(surface.stops, parentCheckpoint)
+    ) {
+      if (parentCheckpoint.length)
+        log(`tour: returned to semantic row checkpoint after ${stopLabel}`);
+      return;
+    }
+    if (attempt.verifiedAppBack && parentCheckpoint.length) {
+      const anchor =
+        parentCheckpoint.find((candidate) => candidate.identifier) ??
+        parentCheckpoint[Math.floor(parentCheckpoint.length / 2)]!;
+      try {
+        const restored = await seekSemanticTourRow(device, step, anchor, surface, log);
+        if (matchesTourViewportCheckpoint(restored.surface.stops, parentCheckpoint)) {
+          log(`tour: restored semantic row checkpoint after ${stopLabel}`);
+          return;
+        }
+      } catch {
+        // Continue through the existing bounded origin recovery ladder. The
+        // semantic seek is an optimization, never weaker identity proof.
+      }
+    }
     if (
       mayRestoreTourViewportAfterReturn({
         interactionSucceeded,
@@ -588,6 +624,8 @@ export async function runTourStep(
     : await seekTourOrigin(device, step, log, rightToLeft, job);
   let nodes = sought.nodes;
   let stops = sought.stops;
+  let mappedRowsAligned = false;
+  let executionSurface = sought;
   // A setup Flow is compiled only when it terminates at this exact root, and
   // its own expect-screen verification has already completed. This is the
   // one safe point at which localized labels may not yet overlap the saved
@@ -603,6 +641,7 @@ export async function runTourStep(
     const recovered = await recoverMappedTourRows(device, step, { nodes, stops }, log);
     nodes = recovered.nodes;
     stops = recovered.stops;
+    executionSurface = recovered;
   }
   if (originReached && step.captureOrigin && step.screenshot !== false) {
     await captureScreenshot({
@@ -611,8 +650,37 @@ export async function runTourStep(
       device,
     });
   }
+  const shouldIndexScrollableRows = Boolean(
+    originReached &&
+    step.mappedStopsOnly &&
+    step.fallbackStops?.length &&
+    (step.scrollSearch || step.landmarkStops?.length || step.fallbackStops.length > stops.length),
+  );
+  if (shouldIndexScrollableRows) {
+    const indexed = await collectSemanticTourRows(device, step, { nodes, stops }, log);
+    const alignment = alignTourRowsAcrossReflow(
+      indexed.rows,
+      step.fallbackStops!,
+      step.landmarkStops,
+    );
+    if (alignment.missingOptional.length) {
+      log(
+        `tour: optional row(s) unavailable in this state — ${alignment.missingOptional.map((stop) => stop.label).join(", ")}`,
+      );
+    }
+    if (alignment.missingRequired.length) {
+      throw new Error(
+        `tour: mapped row(s) are absent from the complete live list on “${step.originTitle ?? "the mapped list"}”: ${alignment.missingRequired.map((stop) => stop.label).join(", ")}`,
+      );
+    }
+    stops = alignment.stops;
+    nodes = indexed.start.nodes;
+    executionSurface = indexed.start;
+    mappedRowsAligned = true;
+    log(`tour: aligned mapped rows by ${alignment.strategy}`);
+  }
   if (originReached && step.mappedStopsOnly && !step.fallbackStops?.length) return;
-  if (step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
+  if (!mappedRowsAligned && step.mappedStopsOnly && step.fallbackStops?.length && stops.length) {
     const liveStops = stops;
     const landmarkPairs =
       isLocalizedJob(job) && step.landmarkStops?.length
@@ -712,24 +780,42 @@ export async function runTourStep(
   }
   log(`tour: ${stops.length} stop(s)`);
   for (const [index, stop] of stops.entries()) {
-    log(`tour → ${stop.label}`);
+    const located = mappedRowsAligned
+      ? await seekSemanticTourRow(device, step, stop, executionSurface, log)
+      : { surface: executionSurface, stop };
+    const liveStop = {
+      ...located.stop,
+      ...(stop.capture === undefined ? {} : { capture: stop.capture }),
+      ...(stop.optional === undefined ? {} : { optional: stop.optional }),
+    };
+    executionSurface = located.surface;
+    log(`tour → ${liveStop.label}`);
     await pressNamedControl(device, {
-      ...(stop.identifier ? { identifier: stop.identifier } : {}),
-      label: stop.label,
-      ...(stop.point ? { point: stop.point } : {}),
+      ...(liveStop.identifier ? { identifier: liveStop.identifier } : {}),
+      label: liveStop.label,
+      ...(liveStop.point ? { point: liveStop.point } : {}),
     });
     await sleep(350, device);
-    if (step.screenshot !== false && stop.capture !== false) {
+    if (step.screenshot !== false && liveStop.capture !== false) {
       await captureScreenshot({
         jobId: job?.id,
-        caption: `tour:${stop.label}`,
+        caption: `tour:${liveStop.label}`,
         device,
       });
     }
     if (index < stops.length - 1 || step.returnAfterLast !== false) {
-      await returnToTourOrigin(device, step, log, stop.label, rightToLeft, job);
+      await returnToTourOrigin(
+        device,
+        step,
+        log,
+        liveStop.label,
+        rightToLeft,
+        job,
+        located.surface.stops,
+      );
+      if (mappedRowsAligned) executionSurface = await readCompleteTourSurface(device, step);
     } else {
-      log(`tour: completed on final child “${stop.label}” — next setup owns recovery`);
+      log(`tour: completed on final child “${liveStop.label}” — next setup owns recovery`);
     }
   }
 }

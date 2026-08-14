@@ -327,6 +327,15 @@ export type RecipeStep = RecipeStepMetadata &
         }>;
         /** Restrict a deterministic screen test to its mapped fallback stops. */
         mappedStopsOnly?: boolean;
+        /** Bounded semantic list search. The runner scans overlapping
+         * viewports and seeks live row identities, so translated multiline
+         * text never depends on a recorded scroll distance. */
+        scrollSearch?: {
+          /** Maximum viewports inspected in one direction. */
+          maxScrolls?: number;
+          /** Fraction of a viewport moved per search step. */
+          amount?: number;
+        };
         /** A generated coverage tour can finish on its final child. The next
          * warm setup owns returning to its own source. */
         returnAfterLast?: boolean;

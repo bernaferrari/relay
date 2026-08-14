@@ -461,7 +461,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           sets,
           ...(combine ? { combineId: combine.id } : {}),
           selected: body.selected ?? combine?.selected,
-          strategy: body.strategy,
+          strategy: body.strategy ?? combine?.strategy,
           // Tests and saved matrices own their evidence policy. The generic
           // before/after wrapper remains only for legacy raw-flow runs.
           screenshotEach: !(combine || body.testId?.trim()),

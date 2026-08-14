@@ -59,6 +59,42 @@ export function validateRecipeParameters(value: unknown): RecipeParameter[] | un
   return parameters.length ? parameters : undefined;
 }
 
+function parseTourRuntimeOptions(
+  raw: Record<string, unknown>,
+  index: number,
+): Pick<Extract<RecipeStep, { kind: "tour" }>, "returnAfterLast" | "scrollSearch"> {
+  if (raw.returnAfterLast !== undefined && typeof raw.returnAfterLast !== "boolean") {
+    throw stepErr(index, "tour.returnAfterLast must be a boolean");
+  }
+  if (raw.scrollSearch === undefined) {
+    return raw.returnAfterLast === false ? { returnAfterLast: false } : {};
+  }
+  if (!isObject(raw.scrollSearch)) {
+    throw stepErr(index, "tour.scrollSearch must be an object");
+  }
+  const maxScrolls = raw.scrollSearch.maxScrolls;
+  const amount = raw.scrollSearch.amount;
+  if (
+    maxScrolls !== undefined &&
+    (!Number.isInteger(maxScrolls) || Number(maxScrolls) < 1 || Number(maxScrolls) > 64)
+  ) {
+    throw stepErr(index, "tour.scrollSearch.maxScrolls must be an integer from 1 to 64");
+  }
+  if (
+    amount !== undefined &&
+    (!isNumber(amount) || Number(amount) < 0.25 || Number(amount) > 0.85)
+  ) {
+    throw stepErr(index, "tour.scrollSearch.amount must be between 0.25 and 0.85");
+  }
+  return {
+    ...(raw.returnAfterLast === false ? { returnAfterLast: false } : {}),
+    scrollSearch: {
+      ...(maxScrolls === undefined ? {} : { maxScrolls: Number(maxScrolls) }),
+      ...(amount === undefined ? {} : { amount: Number(amount) }),
+    },
+  };
+}
+
 function targetHasStrategy(t: StepTarget): boolean {
   return Boolean(t.identifier || t.ref || t.label || t.text || t.point);
 }
@@ -409,6 +445,7 @@ export {
   parseStepMetadata,
   parseStepPoint,
   parseTarget,
+  parseTourRuntimeOptions,
   stepErr,
   targetHasStrategy,
 };

@@ -15,6 +15,16 @@ test("other environment failures remain setup issues", () => {
   assert.equal(readableFailure("environment", "Xcode is not configured"), "Setup");
 });
 
+test("localized tour gaps explain the incremental repair loop", () => {
+  assert.equal(
+    friendlyError(
+      "tour: mapped row(s) are absent from the complete live list on Settings: Appearance",
+    ),
+    "This locale exposes a different list structure. Review the named missing row, update its map binding once, then retry only problem locales.",
+  );
+  assert.match(friendlyError("tour:row-not-found — could not find live row"), /Retry this locale/);
+});
+
 test("only editable test failures offer a test repair", () => {
   assert.equal(canFixFailureInTest("locator"), true);
   assert.equal(canFixFailureInTest("visual-assertion"), true);

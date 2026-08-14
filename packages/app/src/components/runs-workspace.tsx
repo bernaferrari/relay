@@ -53,6 +53,7 @@ import {
   projectRunMatrix,
   stepIndexForMatrixCapture,
 } from "../lib/run-matrix-review";
+import { matrixRetryToast, retryProblemMatrix } from "../lib/run-matrix-retry";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -311,16 +312,13 @@ export function RunsWorkspace(props: {
   };
   const retryProblemMatrixRuns = async () => {
     const review = selectedMatrixReview();
-    const problems = review?.rows.filter(
-      (row) =>
-        row.missingCaptures > 0 || row.job.status === "error" || row.job.status === "cancelled",
-    );
-    for (const row of problems ?? []) await server.retrySelectedJob(row.job.id);
-    if (problems?.length)
-      toast(
-        `Queued ${problems.length} ${problems.length === 1 ? "problem run" : "problem runs"}`,
-        "success",
-      );
+    if (!review) return;
+    const result = await retryProblemMatrix(review, {
+      runCurrent: server.runPathAcrossVariables,
+      retryFrozen: server.retrySelectedJob,
+    });
+    if (!result) return;
+    toast(matrixRetryToast(result), "success");
   };
   const exportSelectedMatrix = async () => {
     const batchId = selectedMatrixReview()?.batchId;

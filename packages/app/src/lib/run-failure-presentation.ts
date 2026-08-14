@@ -41,6 +41,12 @@ export function readableFailure(value: string, error?: string): string {
 
 export function friendlyError(value: string): string {
   const message = value.trim();
+  if (/tour: mapped row\(s\) are absent from the complete live list/i.test(message)) {
+    return "This locale exposes a different list structure. Review the named missing row, update its map binding once, then retry only problem locales.";
+  }
+  if (/tour:row-not-found/i.test(message)) {
+    return "Relay indexed this list but could not return to the row. Retry this locale; if it repeats, review that row’s map binding.";
+  }
   if (
     /already bound|already in use|session .* bound|lease acquisition failed|bound by session/i.test(
       message,
