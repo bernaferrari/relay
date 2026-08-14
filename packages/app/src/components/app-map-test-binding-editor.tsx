@@ -472,7 +472,7 @@ function InstructionBinding(props: {
             <label
               class={cn(
                 "flex min-h-11 items-center gap-3 rounded-lg px-2",
-                connection.state === "ready"
+                connection.state === "ready" || chosen().includes(connection.id)
                   ? "cursor-pointer hover:bg-surface-base-hover"
                   : "cursor-not-allowed opacity-60",
               )}
@@ -480,7 +480,7 @@ function InstructionBinding(props: {
               <input
                 type="checkbox"
                 checked={chosen().includes(connection.id)}
-                disabled={connection.state !== "ready"}
+                disabled={connection.state !== "ready" && !chosen().includes(connection.id)}
                 onChange={(event) => {
                   const ids = event.currentTarget.checked
                     ? [...chosen(), connection.id]
