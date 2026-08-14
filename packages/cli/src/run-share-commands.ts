@@ -1,4 +1,4 @@
-import type { CliOperationDescriptor } from "./commands.js";
+import type { CliOperationDescriptor } from "./command-descriptors.js";
 
 /** Keep external evidence sharing discoverable without making the already
  * broad command registry own another command family. */
