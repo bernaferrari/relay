@@ -20,28 +20,31 @@ Relay-owned Playwright profile.
 
 Relay uses five user-facing concepts:
 
-| Concept        | Meaning                                             | Example                                     |
-| -------------- | --------------------------------------------------- | ------------------------------------------- |
-| **Screen**     | A distinct product state                            | Settings, Appearance, Widget                |
-| **Connection** | Recorded actions between two screens                | Settings → tap Appearance → Appearance      |
-| **Modifier**   | A reusable way to change one dimension              | Language = English, Italian, Japanese       |
-| **Test**       | The path or group of screens to verify once         | Visit every mapped Settings screen          |
-| **Run matrix** | Every selected modifier state × every selected test | 45 languages × 10 screens = 450 screenshots |
+| Concept        | Meaning                                               | Example                                      |
+| -------------- | ----------------------------------------------------- | -------------------------------------------- |
+| **Screen**     | A distinct product state                              | Settings, Appearance, Widget                 |
+| **Connection** | Recorded actions between two screens                  | Settings → tap Appearance → Appearance       |
+| **Modifier**   | A reusable way to change one dimension                | Language = English, Italian, Japanese        |
+| **Test**       | Ordered intent, checks, decisions, and reusable flows | Sign in, verify Home, extract the account ID |
+| **Run matrix** | Every selected modifier state × every selected test   | 45 languages × 10 screens = 450 screenshots  |
 
 ```text
 Language modifier ─┐
-Theme modifier ────┼─ every selected state × Settings tour ──> Results
+Theme modifier ────┼─ every selected state × Settings test ──> Results
 Account modifier ──┘
 ```
 
 Modifiers are not magic labels. Each one stores how to apply a value and return to the test's start
 screen. Tests remain independent, so a new language or model can reuse every existing test without
-rerecording it. Screenshot policy belongs to each test: every screen, final screen, failures only,
-or none.
+rerecording it. A graph-native Test can navigate reviewed connections, validate or extract UI,
+pause for a person, call a reusable module, branch, loop, or run a constrained script. Screenshot
+policy belongs to each test: every screen, selected checkpoints, final screen, failures only, or
+none. Older recorded paths can be converted without losing their connection flow; tours remain
+read-only compatibility documents until they are deliberately rebuilt.
 
 ## Start the desktop app
 
-Requirements: Node.js 22 or newer, `pnpm`, and `vp` (Vite+). Android work also needs `adb`; physical
+Requirements: Node.js 24 or newer, `pnpm`, and `vp` (Vite+). Android work also needs `adb`; physical
 iOS control needs the local Apple developer tooling used by agent-device.
 
 ```bash
@@ -70,7 +73,8 @@ the CLI.
 5. Stop recording. Remove accidental actions in Take review, choose the destination, and replay the
    path.
 6. Choose **Add to map** only when the replay reaches the intended screen.
-7. Repeat, or group related screens into a reusable test.
+7. Open **Tests**, add readable intent steps, and bind navigation to the reviewed connections or a
+   saved flow. Relay shows unresolved steps before anything can run.
 
 An empty recording is discarded instead of asking to save. System confirmation controls such as a
 recorder's own **Done** button are not authored as app actions. Relay prefers accessibility identity,
@@ -85,7 +89,7 @@ overlay does not.
 
 The manual workflow does not require an agent:
 
-1. Record or group the screens that make up the test.
+1. Create a Test and bind its steps to reviewed connections, observed UI, or reusable modules.
 2. Open **Run matrix** and create a modifier such as Language.
 3. Teach Relay how to enter the language list, choose example rows, and return to the test start.
    Android app locales can be discovered dynamically when the app exposes them.

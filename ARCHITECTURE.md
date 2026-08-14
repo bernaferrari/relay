@@ -35,10 +35,15 @@ own a second product workspace. Their output is projected onto the frozen App Ma
 and Target Result evidence. A language sweep is therefore a matrix run of a mapped test—not a
 separate crawl document, gallery, or authoring model.
 
-**Variables** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
-optionally bind a recorded open/leave path. Inference never invents navigation. **Tests** are saved
-tours or paths. **Combine** is every selected variable value × those tests (one visible grid, one
-job). Case stacks remain typed **test data** expansion (emails, plans), not modes.
+**Modifiers** on the App Map are lists (language, theme, location): teach 1–2 rows, infer the rest,
+optionally bind a recorded open/leave path. Inference never invents navigation. The protocol keeps
+the historical `variables` collection name for compatibility, but product surfaces use Modifier.
+**Tests** are graph-native intent documents with stable step IDs. Instruction, validation,
+extraction, manual checkpoint, module, decision, loop, and constrained-script steps bind to reviewed
+App Map entities or remain explicitly unresolved. Recorded paths and tours are import compatibility
+forms, not a parallel editor. **Run matrix** is every selected modifier value × those Tests (one
+visible grid, one job). The protocol keeps the historical `combines` collection name. Case stacks
+remain typed **test data** expansion (emails, plans), not modes.
 
 **Recipes are compiled executable IR**, not a second authoring surface. A recipe is the
 target-neutral, step-oriented contract the runner executes: reusable modules, YAML import/export,
@@ -77,9 +82,11 @@ domain behavior. `GET /meta` is generated from the registry, so machine interfac
 contracts instead of scraping route documentation. MCP operations accept the direct canonical input
 shape only.
 
-Public automation authors App Maps through registered `app-map.*` operations. Flow and Connection
-runs compile into recipe IR inside the runner. That compile step is an implementation detail of
-execution. CLI and MCP do not expose recipe storage as a host-facing authoring API.
+Public automation authors App Maps through registered `app-map.*` operations. Tests, Flows, and
+Connections compile into recipe IR inside the runner. `app-map.test.run` checks the exact App Map
+revision, compiles once, and queues that immutable compiler root as one operation; callers never
+need to coordinate a compile result with a generic job request. CLI and MCP do not expose recipe
+storage as a host-facing authoring API.
 
 ## State, concurrency, and collaboration
 
