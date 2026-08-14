@@ -18,6 +18,57 @@ test("operation descriptors have unique IDs, transports, and complete safety met
   );
 });
 
+test("App Map descriptors keep their canonical contiguous order", () => {
+  assert.deepEqual(
+    operationDefinitions.filter(({ id }) => id.startsWith("app-map.")).map(({ id }) => id),
+    [
+      "app-map.list",
+      "app-map.get",
+      "app-map.remove",
+      "app-map.create",
+      "app-map.duplicate",
+      "app-map.export",
+      "app-map.import",
+      "app-map.update",
+      "app-map.commit",
+      "app-map.screen.add",
+      "app-map.screen.capture",
+      "app-map.teach",
+      "app-map.screen.update",
+      "app-map.screen.remove",
+      "app-map.connection.create",
+      "app-map.connection.update",
+      "app-map.connection.remove",
+      "app-map.group.save",
+      "app-map.group.remove",
+      "app-map.flow.save",
+      "app-map.flow.run",
+      "app-map.connection.run",
+      "app-map.flow.remove",
+      "app-map.case-stack.save",
+      "app-map.case-stack.attach",
+      "app-map.case-stack.remove",
+      "app-map.variable.save",
+      "app-map.variable.remove",
+      "app-map.test.save",
+      "app-map.test.remove",
+      "app-map.test.edit",
+      "app-map.test.propose",
+      "app-map.test.compile",
+      "app-map.test.run",
+      "app-map.combine.preflight",
+      "app-map.combine.save",
+      "app-map.combine.remove",
+      "app-map.routine.save",
+      "app-map.routine.remove",
+      "app-map.proposal.submit",
+      "app-map.observations.propose",
+      "app-map.proposal.approve",
+      "app-map.proposal.reject",
+    ],
+  );
+});
+
 test("project roles form one explicit least-privilege hierarchy", () => {
   assert.equal(projectRoleAllows("viewer", "viewer"), true);
   assert.equal(projectRoleAllows("viewer", "author"), false);
