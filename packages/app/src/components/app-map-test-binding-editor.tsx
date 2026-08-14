@@ -207,6 +207,12 @@ function ValidationBinding(props: {
     const current = assertion();
     return current?.kind === "target" ? current.target : undefined;
   };
+  const selectedChoice = () => {
+    const current = assertion();
+    return current?.kind === "screen"
+      ? `screen:${current.screenId}`
+      : selectedTargetKey(options(), target());
+  };
   const condition = () => {
     const current = assertion();
     return current?.kind === "target" ? current.condition : "visible";
@@ -224,15 +230,25 @@ function ValidationBinding(props: {
   return (
     <div class="grid gap-3">
       <label class="grid gap-1.5" for={`binding-${props.step.id}-observed`}>
-        <span class={testEditorLabel}>Element to check</span>
+        <span class={testEditorLabel}>Screen or element to check</span>
         <select
           id={`binding-${props.step.id}-observed`}
           class={testEditorInput}
-          value={selectedTargetKey(options(), target())}
+          value={selectedChoice()}
           onChange={(event) => {
-            const next = options().find(
-              (option) => option.key === event.currentTarget.value,
-            )?.target;
+            const value = event.currentTarget.value;
+            if (value.startsWith("screen:")) {
+              props.onChange({
+                ...step(),
+                binding: {
+                  status: "resolved",
+                  kind: "assertion",
+                  assertion: { kind: "screen", screenId: value.slice("screen:".length) },
+                },
+              });
+              return;
+            }
+            const next = options().find((option) => option.key === value)?.target;
             if (next && (next.identifier || next.label)) {
               identifier = next.identifier ?? "";
               commitTarget(
@@ -241,44 +257,52 @@ function ValidationBinding(props: {
             }
           }}
         >
-          <option value="">Choose from captured UI…</option>
-          <For each={options()}>
-            {(option) => (
-              <option value={option.key}>
-                {option.label} — {option.context}
-              </option>
-            )}
-          </For>
+          <option value="">Choose from the App Map…</option>
+          <optgroup label="Screens">
+            <For each={Object.values(props.map.screens)}>
+              {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
+            </For>
+          </optgroup>
+          <optgroup label="Observed elements">
+            <For each={options()}>
+              {(option) => (
+                <option value={option.key}>
+                  {option.label} — {option.context}
+                </option>
+              )}
+            </For>
+          </optgroup>
         </select>
       </label>
-      <label class="grid gap-1.5" for={`binding-${props.step.id}-condition`}>
-        <span class={testEditorLabel}>Expected state</span>
-        <select
-          id={`binding-${props.step.id}-condition`}
-          class={testEditorInput}
-          value={condition()}
-          disabled={!target()}
-          onChange={(event) => {
-            const current = target();
-            if (!current) return;
-            props.onChange({
-              ...step(),
-              binding: {
-                status: "resolved",
-                kind: "assertion",
-                assertion: {
-                  kind: "target",
-                  target: current,
-                  condition: event.currentTarget.value as "visible" | "gone",
+      <Show when={target()}>
+        <label class="grid gap-1.5" for={`binding-${props.step.id}-condition`}>
+          <span class={testEditorLabel}>Expected state</span>
+          <select
+            id={`binding-${props.step.id}-condition`}
+            class={testEditorInput}
+            value={condition()}
+            onChange={(event) => {
+              const current = target();
+              if (!current) return;
+              props.onChange({
+                ...step(),
+                binding: {
+                  status: "resolved",
+                  kind: "assertion",
+                  assertion: {
+                    kind: "target",
+                    target: current,
+                    condition: event.currentTarget.value as "visible" | "gone",
+                  },
                 },
-              },
-            });
-          }}
-        >
-          <option value="visible">Visible</option>
-          <option value="gone">Not visible</option>
-        </select>
-      </label>
+              });
+            }}
+          >
+            <option value="visible">Visible</option>
+            <option value="gone">Not visible</option>
+          </select>
+        </label>
+      </Show>
       <details class="rounded-lg border border-border-weak-base px-3 py-2">
         <summary class="min-h-6 cursor-pointer text-[11px] font-semibold text-text-base">
           Advanced target
@@ -390,6 +414,9 @@ function InstructionBinding(props: {
     return binding.status === "resolved" ? binding.connectionIds : [];
   };
   const screenTitle = (id: string) => props.map.screens[id]?.title ?? "Unknown screen";
+  const flowReady = (connectionIds: string[]) =>
+    connectionIds.length > 0 &&
+    connectionIds.every((connectionId) => props.map.connections[connectionId]?.state === "ready");
   return (
     <div class="grid gap-3">
       <Show when={Object.values(props.map.flows).length > 0}>
@@ -421,8 +448,9 @@ function InstructionBinding(props: {
             <option value="">Choose a saved flow…</option>
             <For each={Object.values(props.map.flows)}>
               {(flow) => (
-                <option value={flow.id}>
+                <option value={flow.id} disabled={!flowReady(flow.connectionIds)}>
                   {flow.name} · {flow.connectionIds.length} steps
+                  {flowReady(flow.connectionIds) ? "" : " · needs review"}
                 </option>
               )}
             </For>
@@ -469,9 +497,16 @@ function InstructionBinding(props: {
                 }}
               />
               <span class="min-w-0 flex-1">
-                <strong class="block truncate text-[12px]">
-                  {connection.label || connection.id}
-                </strong>
+                <span class="flex min-w-0 items-center gap-2">
+                  <Show when={chosen().indexOf(connection.id) >= 0}>
+                    <span class="grid size-5 shrink-0 place-items-center rounded-full bg-surface-info-weak text-[10px] font-semibold text-text-info-base">
+                      {chosen().indexOf(connection.id) + 1}
+                    </span>
+                  </Show>
+                  <strong class="block truncate text-[12px]">
+                    {connection.label || connection.id}
+                  </strong>
+                </span>
                 <small class="text-[10px] text-text-weak">
                   {screenTitle(connection.fromScreenId)} →{" "}
                   {connection.destination.kind === "screen"
