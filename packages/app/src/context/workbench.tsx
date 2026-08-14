@@ -4,13 +4,13 @@ import { useServer, type JobInfo, type PersistedRun, type TraceStep } from "./se
 import { useRecipeDraft } from "./recipe-draft";
 
 /**
- * The workbench: one step list that gets annotated. Building, running, and
- * reviewing are not separate views — rows carry an annotation layer whose
- * source is, in priority order:
+ * Internal execution/evidence state shared by the App Map stage and Runs.
+ * Recipe rows are compiled compatibility IR, not a product authoring model.
+ * Their annotation source is, in priority order:
  *   1. step-through results (the debugger: row ▶ / Auto-continue),
  *   2. an explicitly selected run chip (past job or disk run),
  *   3. the live job currently executing this recipe.
- * Any edit to the steps clears annotations back to idle.
+ * Any compatibility-buffer edit clears annotations back to idle.
  */
 
 export type RowAnno = {

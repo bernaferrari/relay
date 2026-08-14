@@ -31,6 +31,8 @@ export function AppBaseProviders(
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider>
+          {/* Temporary compiled-IR bridge for App Map stage evidence. Product
+              Test authoring reads/writes graph-native contracts instead. */}
           <RecipeDraftProvider>
             <WorkbenchProvider>
               <RecorderProvider>

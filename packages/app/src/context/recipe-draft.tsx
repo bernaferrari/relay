@@ -27,15 +27,20 @@ const HISTORY_LIMIT = 100;
 const HISTORY_COALESCE_MS = 750;
 
 /**
- * The run-pane's step list IS the test editor (no modal). This context owns a
- * local draft (title/description/steps) for whichever recipe is selected —
- * builtin or custom — autosaving 600ms after the last edit.
+ * Internal compatibility buffer for executable RecipeStep IR.
  *
- * Packaged defaults are editable in place. The server stores an override under
- * the same id, so the UI never exposes a protected-template exception.
+ * Product authoring belongs to graph-native App Map and Test documents. The
+ * active App Map stage still projects connection actions through RecipeInfo /
+ * RecipeStep for recorded evidence, coordinate editing, undo, and legacy
+ * execution endpoints. This context keeps that projection stable and
+ * autosaves it until those consumers move behind the graph compiler.
  *
- * The draft reseeds only when `selectedRecipeId` changes (not on background
- * polls), so mid-edit typing survives refreshes and our own auto-fork.
+ * Do not build a product Test editor on this context. New authoring operations
+ * must mutate the canonical App Map or Test contract and compile to recipes at
+ * the execution boundary.
+ *
+ * The buffer reseeds only when `selectedRecipeId` changes (not on background
+ * polls), so an in-flight stage edit survives refreshes and an automatic fork.
  */
 export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimpleContext({
   name: "RecipeDraft",
@@ -50,7 +55,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     const [saveState, setSaveState] = createSignal<SaveState>("saved");
     const [source, setSource] = createSignal<"custom" | "builtin" | null>(null);
     const [flashSteps, setFlashSteps] = createSignal<Set<RecipeStep>>(new Set());
-    /** Which step row is expanded in the editor — drives soft-invalid chrome. */
+    /** Compatibility selection used by the App Map stage/evidence bridge. */
     const [expandedStep, setExpandedStep] = createSignal<number | null>(null);
     /** When we auto-forked a library test, where to go “back”. */
     const [forkedFrom, setForkedFrom] = createSignal<{ id: string; title: string } | null>(null);
