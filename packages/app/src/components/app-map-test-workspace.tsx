@@ -1,21 +1,12 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type {
-  AppMapCompiledTest,
-  AppMapScenarioTest,
-  AppMapScenarioTestStep,
-  AppMapTest,
-  Proposal,
-} from "@relay/protocol";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { AppMapCompiledTest, AppMapScenarioTestStep, Proposal } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
-import { planScenarioTestEdits } from "../lib/app-map-scenario-edit-plan";
 import { cn } from "../lib/cn";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import {
   createScenarioStep,
-  createScenarioTest,
   scenarioDiagnostics,
-  testKindDescription,
   type ScenarioStepKind,
 } from "../lib/app-map-test-editor-model";
 import {
@@ -40,16 +31,15 @@ import {
 } from "./app-map-test-run-control";
 import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
 import { Icon } from "./icon";
-import { confirmAction } from "./confirm-dialog";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
-
-type SaveState = "saved" | "saving" | "error";
-type MobilePane = "steps" | "edit" | "device" | "results";
-type UndoDelete = {
-  message: string;
-  test: AppMapScenarioTest;
-  selectedStepId?: string;
-};
+import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
+import {
+  FirstTestEmpty,
+  LegacyTest,
+  MobilePaneNav,
+  TestPicker,
+  type MobileTestPane,
+} from "./app-map-test-workspace-chrome";
 
 export function AppMapTestWorkspace(props: {
   testId?: string;
@@ -58,40 +48,66 @@ export function AppMapTestWorkspace(props: {
   onOpenRun?: (runId: string) => void;
 }) {
   const server = useServer();
-  const appMap = createMemo(() => server.selectedAppMap());
-  const tests = createMemo(() =>
-    Object.values(appMap()?.tests ?? {}).toSorted(
-      (left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name),
-    ),
-  );
-  const [localTestId, setLocalTestId] = createSignal("");
-  const selectedTestId = () => props.testId ?? localTestId();
-  const selectedTest = createMemo(() => tests().find((test) => test.id === selectedTestId()));
-  const [draft, setDraft] = createSignal<AppMapScenarioTest>();
-  const [selectedStepId, setSelectedStepId] = createSignal<string>();
-  const [saveState, setSaveState] = createSignal<SaveState>("saved");
-  const [saveError, setSaveError] = createSignal("");
-  const [retryAvailable, setRetryAvailable] = createSignal(false);
-  const [undoDelete, setUndoDelete] = createSignal<UndoDelete>();
-  const [deletedTest, setDeletedTest] = createSignal<AppMapTest>();
-  const [creating, setCreating] = createSignal(false);
   const [compiledPlan, setCompiledPlan] = createSignal<AppMapCompiledTest>();
   const [runJobId, setRunJobId] = createSignal<string>();
   const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
   const [runError, setRunError] = createSignal("");
   const [runAttributionMismatch, setRunAttributionMismatch] = createSignal(false);
   const [mobile, setMobile] = createSignal(false);
-  const [mobilePane, setMobilePane] = createSignal<MobilePane>("steps");
+  const [mobilePane, setMobilePane] = createSignal<MobileTestPane>("steps");
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
+  const runJob = createMemo(() => {
+    const id = runJobId();
+    return id ? server.jobs().find((job) => job.id === id) : undefined;
+  });
+  const testDocument = createAppMapTestDocumentSession({
+    testId: () => props.testId,
+    onTestChange: (testId) => props.onTestChange?.(testId),
+    onCanonicalLoaded: () => setCompiledPlan(),
+    onDraftQueued: () => {
+      setCompiledPlan();
+      if (!isActiveTestRun(runJob())) {
+        setRunJobId();
+        setRunLaunchState("idle");
+        setRunError("");
+        setRunAttributionMismatch(false);
+      }
+    },
+    onTestDeleted: () => {
+      if (mobile()) setMobilePane("edit");
+    },
+  });
+  const {
+    appMap,
+    tests,
+    selectedTestId,
+    selectedTest,
+    selectTest,
+    draft,
+    setDraft,
+    selectedStepId,
+    setSelectedStepId,
+    saveState,
+    saveError,
+    retryAvailable,
+    undoDelete,
+    setUndoDelete,
+    deletedTest,
+    setDeletedTest,
+    creating,
+    queueSave,
+    retrySave,
+    dismissSaveError,
+    createTest,
+    duplicateTest,
+    convertPathTest,
+    deleteTest,
+    restoreDeletedTest,
+    awaitPendingSaves,
+  } = testDocument;
   const { proposalBusyId, proposalError, decideProposal } = useAppMapProposalReview(
     () => appMap() ?? undefined,
   );
-  let loadedKey = "";
-  let optimisticRevision = 0;
-  let saveQueue = Promise.resolve();
-  let pendingSaves = 0;
-  let failedDraft: AppMapScenarioTest | undefined;
-  let queuedDraft: AppMapScenarioTest | undefined;
   let runTestKey = "";
 
   onMount(() => {
@@ -102,30 +118,10 @@ export function AppMapTestWorkspace(props: {
     onCleanup(() => query.removeEventListener("change", update));
   });
 
-  const selectTest = (id: string) => {
-    setLocalTestId(id);
-    props.onTestChange?.(id);
-  };
-
-  createEffect(() => {
-    const map = appMap();
-    if (!map) return;
-    const current = selectedTestId();
-    if (!current || !map.tests[current]) {
-      const first = tests()[0];
-      if (first) selectTest(first.id);
-    }
-  });
-
   createEffect(() => {
     const map = appMap();
     const test = selectedTest();
     if (!map || !test) {
-      setDraft();
-      queuedDraft = undefined;
-      setUndoDelete();
-      setSelectedStepId();
-      loadedKey = "";
       runTestKey = "";
       setRunJobId();
       setRunLaunchState("idle");
@@ -140,23 +136,6 @@ export function AppMapTestWorkspace(props: {
       setRunLaunchState("idle");
       setRunError("");
       setRunAttributionMismatch(false);
-    }
-    const key = `${map.id}:${test.id}:${map.revision}`;
-    if (key === loadedKey || saveState() !== "saved") return;
-    loadedKey = key;
-    setCompiledPlan();
-    setUndoDelete();
-    optimisticRevision = map.revision;
-    if (test.kind === "scenario") {
-      const copy = structuredClone(test);
-      queuedDraft = copy;
-      setDraft(copy);
-      setSelectedStepId((id) =>
-        findScenarioStep(copy.steps, id) ? id : flattenScenarioSteps(copy.steps)[0]?.step.id,
-      );
-    } else {
-      setDraft();
-      setSelectedStepId();
     }
   });
 
@@ -179,10 +158,6 @@ export function AppMapTestWorkspace(props: {
       )
       .sort((left, right) => left.createdAt - right.createdAt);
   });
-  const runJob = createMemo(() => {
-    const id = runJobId();
-    return id ? server.jobs().find((job) => job.id === id) : undefined;
-  });
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
@@ -197,105 +172,6 @@ export function AppMapTestWorkspace(props: {
     if (!selectedDevice()?.platform) return "Refresh the selected target before running this Test.";
     return undefined;
   });
-
-  function queueSave(next: AppMapScenarioTest, options?: { preserveUndo?: boolean }): void {
-    const map = appMap();
-    if (!map) return;
-    const snapshot = structuredClone(next);
-    const previous = queuedDraft ?? draft();
-    if (!previous) return;
-    const edits = planScenarioTestEdits(previous, snapshot);
-    if (!options?.preserveUndo) setUndoDelete();
-    queuedDraft = snapshot;
-    setDraft(snapshot);
-    setCompiledPlan();
-    if (!isActiveTestRun(runJob())) {
-      setRunJobId();
-      setRunLaunchState("idle");
-      setRunError("");
-      setRunAttributionMismatch(false);
-    }
-    if (edits.length === 0) {
-      if (failedDraft) {
-        failedDraft = snapshot;
-        setRetryAvailable(true);
-        setSaveState("error");
-        return;
-      }
-      failedDraft = undefined;
-      setSaveError("");
-      setRetryAvailable(false);
-      setSaveState("saved");
-      return;
-    }
-    if (failedDraft) {
-      failedDraft = snapshot;
-      setRetryAvailable(true);
-      setSaveState("error");
-      return;
-    }
-    setSaveError("");
-    setRetryAvailable(false);
-    setSaveState("saving");
-    pendingSaves += 1;
-    saveQueue = saveQueue.then(async () => {
-      try {
-        if (failedDraft) {
-          failedDraft = snapshot;
-          setRetryAvailable(true);
-          setSaveState("error");
-          return;
-        }
-        const result = await server.editTest({
-          appMapId: map.id,
-          testId: snapshot.id,
-          expectedRevision: optimisticRevision,
-          edits,
-        });
-        optimisticRevision = result.appMap.revision;
-        await server.refreshAppMaps();
-      } catch (error) {
-        failedDraft = snapshot;
-        setRetryAvailable(true);
-        setSaveError(error instanceof Error ? error.message : String(error));
-        setSaveState("error");
-      } finally {
-        pendingSaves -= 1;
-        if (pendingSaves === 0 && !failedDraft) setSaveState("saved");
-      }
-    });
-  }
-
-  async function retrySave(): Promise<void> {
-    const snapshot = failedDraft;
-    if (!snapshot) return;
-    failedDraft = undefined;
-    setRetryAvailable(false);
-    setSaveError("");
-    try {
-      await server.refreshAppMaps();
-    } catch (error) {
-      failedDraft = snapshot;
-      setRetryAvailable(true);
-      setSaveState("error");
-      setSaveError(
-        `Could not refresh server truth. ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return;
-    }
-    const currentMap = server.selectedAppMap();
-    const canonical = currentMap?.tests[snapshot.id];
-    if (!currentMap || !canonical || canonical.kind !== "scenario") {
-      failedDraft = snapshot;
-      setRetryAvailable(true);
-      setSaveState("error");
-      setSaveError("The Test no longer exists as a graph-native scenario. Reload the editor.");
-      return;
-    }
-    optimisticRevision = currentMap.revision;
-    queuedDraft = structuredClone(canonical);
-    queueSave(snapshot);
-  }
 
   function updateDraftStep(next: AppMapScenarioTestStep): void {
     setDraft((test) =>
@@ -405,137 +281,6 @@ export function AppMapTestWorkspace(props: {
     focusStep(deleted.selectedStepId);
   }
 
-  async function createTest(): Promise<void> {
-    const map = appMap();
-    if (!map || creating()) return;
-    setCreating(true);
-    const next = createScenarioTest(map, `Test ${Object.keys(map.tests).length + 1}`);
-    try {
-      const result = await server.saveTest({
-        appMapId: map.id,
-        expectedRevision: map.revision,
-        test: next,
-      });
-      optimisticRevision = result.appMap.revision;
-      await server.refreshAppMaps();
-      selectTest(next.id);
-    } catch (error) {
-      setRetryAvailable(false);
-      setSaveError(error instanceof Error ? error.message : String(error));
-      setSaveState("error");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function duplicateTest(): Promise<void> {
-    const map = appMap();
-    const test = selectedTest();
-    if (!map || !test || saveState() !== "saved") return;
-    const now = Date.now();
-    const copy: AppMapTest = {
-      ...structuredClone(test),
-      id: crypto.randomUUID(),
-      name: `${test.name} copy`,
-      ...(test.kind === "scenario" ? { steps: renewScenarioStepIds(test.steps) } : {}),
-      createdAt: now,
-      updatedAt: now,
-    };
-    try {
-      const result = await server.saveTest({
-        appMapId: map.id,
-        expectedRevision: map.revision,
-        test: copy,
-      });
-      optimisticRevision = result.appMap.revision;
-      await server.refreshAppMaps();
-      selectTest(copy.id);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
-      setSaveState("error");
-    }
-  }
-
-  async function convertPathTest(test: AppMapTest): Promise<void> {
-    const map = appMap();
-    if (!map || test.kind !== "path" || !test.flowId) return;
-    const flow = map.flows[test.flowId];
-    if (!flow) {
-      setSaveError("The recorded path no longer references a saved flow.");
-      setSaveState("error");
-      return;
-    }
-    const next = createScenarioTest(map, `${test.name} editable`);
-    next.capture = test.capture;
-    next.steps = [
-      {
-        id: crypto.randomUUID(),
-        kind: "instruction",
-        intent: `Follow ${flow.name}`,
-        binding: {
-          status: "resolved",
-          kind: "connections",
-          connectionIds: [...flow.connectionIds],
-        },
-      },
-    ];
-    try {
-      await server.saveTest({ appMapId: map.id, expectedRevision: map.revision, test: next });
-      await server.refreshAppMaps();
-      selectTest(next.id);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
-      setSaveState("error");
-    }
-  }
-
-  function deleteTest(): void {
-    const map = appMap();
-    const test = selectedTest();
-    if (!map || !test || saveState() !== "saved") return;
-    confirmAction({
-      title: `Delete “${test.name}”?`,
-      body: "This removes the Test from this map. Its existing run evidence is kept in Runs.",
-      confirmLabel: "Delete Test",
-      tone: "destructive",
-      onConfirm: async () => {
-        try {
-          await server.runAction("app-map.test.remove", {
-            appMapId: map.id,
-            testId: test.id,
-            expectedRevision: map.revision,
-          });
-          selectTest("");
-          await server.refreshAppMaps();
-          setDeletedTest(structuredClone(test));
-          if (mobile()) setMobilePane("edit");
-        } catch (error) {
-          setSaveError(error instanceof Error ? error.message : String(error));
-          setSaveState("error");
-        }
-      },
-    });
-  }
-
-  async function restoreDeletedTest(): Promise<void> {
-    const test = deletedTest();
-    const map = appMap();
-    if (!test || !map) return;
-    try {
-      await server.saveTest({
-        appMapId: map.id,
-        expectedRevision: map.revision,
-        test: { ...structuredClone(test), updatedAt: Date.now() },
-      });
-      setDeletedTest();
-      await server.refreshAppMaps();
-      selectTest(test.id);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
-      setSaveState("error");
-    }
-  }
-
   function resolveRunBlocker(): void {
     if (saveState() === "error") {
       if (retryAvailable()) void retrySave();
@@ -582,7 +327,7 @@ export function AppMapTestWorkspace(props: {
     setRunAttributionMismatch(false);
     setRunJobId();
     try {
-      await saveQueue;
+      await awaitPendingSaves();
       const target =
         device.platform === "browser"
           ? ({ kind: "browser", platform: "browser", targetId: device.serial } as const)
@@ -789,14 +534,7 @@ export function AppMapTestWorkspace(props: {
                 <Show
                   when={retryAvailable()}
                   fallback={
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setSaveError("");
-                        setSaveState("saved");
-                      }}
-                    >
+                    <Button variant="secondary" size="sm" onClick={dismissSaveError}>
                       Dismiss
                     </Button>
                   }
@@ -874,181 +612,5 @@ export function AppMapTestWorkspace(props: {
         />
       </Show>
     </section>
-  );
-}
-
-function TestPicker(props: {
-  tests: AppMapTest[];
-  selectedTestId: string;
-  disabled: boolean;
-  creating: boolean;
-  onSelect: (id: string) => void;
-  onCreate: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border-weak-base p-3">
-      <label class="grid gap-1" for="app-map-test-picker">
-        <span class={testEditorLabel}>Test</span>
-        <select
-          id="app-map-test-picker"
-          class={testEditorInput}
-          value={props.selectedTestId}
-          disabled={props.disabled}
-          onChange={(event) => props.onSelect(event.currentTarget.value)}
-        >
-          <For each={props.tests}>
-            {(test) => (
-              <option value={test.id}>
-                {test.name} · {testKindDescription(test)}
-              </option>
-            )}
-          </For>
-        </select>
-      </label>
-      <div class="flex items-end gap-1">
-        <Button
-          variant="secondary"
-          size="sm"
-          class="mt-[19px] min-h-11"
-          disabled={props.creating}
-          onClick={props.onCreate}
-        >
-          <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
-        </Button>
-        <Show when={props.selectedTestId}>
-          <details class="relative">
-            <summary
-              class="grid min-h-11 min-w-11 cursor-pointer list-none place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
-              aria-label="Test options"
-            >
-              <Icon name="more" size={14} />
-            </summary>
-            <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-40 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDuplicate();
-                }}
-              >
-                Duplicate Test
-              </button>
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] text-text-critical-base hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDelete();
-                }}
-              >
-                Delete Test…
-              </button>
-            </div>
-          </details>
-        </Show>
-      </div>
-    </div>
-  );
-}
-
-function FirstTestEmpty(props: { creating: boolean; onCreate: () => void }) {
-  return (
-    <div class="grid flex-1 place-items-center p-6 text-center">
-      <div class="max-w-[32ch]">
-        <h2 class="m-0 text-[17px] font-semibold">Create the first test</h2>
-        <p class="mt-2 text-[12px]/[1.5] text-text-weak">
-          Start with readable intent, then bind each step to reviewed map truth.
-        </p>
-        <Button class="mt-4" disabled={props.creating} onClick={props.onCreate}>
-          Create scenario test
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function LegacyTest(props: { test: AppMapTest; onCreate: () => void; onConvert: () => void }) {
-  return (
-    <div class="grid flex-1 place-items-center p-6 text-center">
-      <div class="max-w-[38ch]">
-        <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-base text-text-weak">
-          <Icon name="folder" size={17} />
-        </span>
-        <h2 class="mt-3 text-[17px] font-semibold">{props.test.name}</h2>
-        <p class="mt-1 text-[12px]/[1.55] text-text-weak">
-          This {props.test.kind === "path" ? "recorded path" : "screen tour"} keeps its existing
-          behavior and stays read-only. Create a scenario to edit intent step by step.
-        </p>
-        <Show
-          when={props.test.kind === "path" && props.test.flowId}
-          fallback={
-            <>
-              <p class="mt-3 text-[11px]/[1.5] text-text-weaker">
-                Screen tours remain read-only because their dynamic traversal has no equivalent
-                scenario binding yet.
-              </p>
-              <Button class="mt-4" onClick={props.onCreate}>
-                Create separate scenario
-              </Button>
-            </>
-          }
-        >
-          <Button class="mt-4" onClick={props.onConvert}>
-            Convert to editable scenario
-          </Button>
-        </Show>
-      </div>
-    </div>
-  );
-}
-
-function renewScenarioStepIds(steps: readonly AppMapScenarioTestStep[]): AppMapScenarioTestStep[] {
-  return steps.map((step) => {
-    const copy = { ...structuredClone(step), id: crypto.randomUUID() };
-    if (copy.kind === "decision") {
-      copy.thenSteps = renewScenarioStepIds(copy.thenSteps);
-      if (copy.elseSteps) copy.elseSteps = renewScenarioStepIds(copy.elseSteps);
-    }
-    if (copy.kind === "loop") copy.steps = renewScenarioStepIds(copy.steps);
-    return copy;
-  });
-}
-
-function MobilePaneNav(props: { value: MobilePane; onChange: (pane: MobilePane) => void }) {
-  const panes = [
-    ["steps", "Steps"],
-    ["edit", "Edit"],
-    ["device", "Device"],
-    ["results", "Results"],
-  ] as const;
-  return (
-    <nav
-      class="hidden min-h-12 shrink-0 grid-cols-4 border-b border-border-weak-base bg-background-base p-1 max-[760px]:grid"
-      aria-label="Test workspace"
-    >
-      <For each={panes}>
-        {([pane, label]) => (
-          <button
-            type="button"
-            data-test-mobile-tab={pane}
-            class={cn(
-              "min-h-11 rounded-lg px-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-border-strong-focus",
-              props.value === pane
-                ? "bg-surface-base-active text-text-strong"
-                : "text-text-weak hover:bg-surface-base-hover",
-            )}
-            aria-current={props.value === pane ? "page" : undefined}
-            onClick={() => props.onChange(pane)}
-          >
-            {label}
-          </button>
-        )}
-      </For>
-    </nav>
   );
 }
