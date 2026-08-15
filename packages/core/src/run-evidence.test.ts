@@ -78,7 +78,7 @@ test("run evidence records video and performance without affecting the run", asy
     artifacts: [],
     resolvedInputs: {},
     evidencePolicy: { schemaVersion: 1, sensitive: {} },
-  } as TestJob;
+  } as unknown as TestJob;
 
   try {
     const handle = await startRunEvidence(job, device, () => undefined, undefined, {
@@ -100,6 +100,55 @@ test("run evidence records video and performance without affecting the run", asy
     else process.env.RELAY_RUNS_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("campaign runs keep step frames without paying for duplicate full-run video", async () => {
+  let videoCalls = 0;
+  const job = {
+    id: "campaign-evidence-run",
+    action: "app-map:test",
+    serial: testTarget.serial,
+    platform: "android",
+    targetContext: testTarget,
+    status: "running",
+    queuedAt: Date.now(),
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Campaign",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+    recipeSnapshot: {
+      schemaVersion: 1,
+      id: "campaign",
+      title: "Campaign",
+      steps: [{ kind: "screenshot", check: { id: "screen", title: "Screen" } }],
+    },
+  } as unknown as TestJob;
+  const device = {
+    capture: { snapshot: async () => ({ nodes: [] }) },
+    observability: { perf: async () => ({}) },
+    recording: {
+      record: async () => {
+        videoCalls += 1;
+        return {};
+      },
+    },
+  } as unknown as Device;
+
+  const handle = await startRunEvidence(job, device, () => undefined, undefined, {
+    foregroundAppResolver: async () => undefined,
+  });
+  await stopRunEvidence(handle, job, device, () => undefined);
+
+  assert.equal(videoCalls, 0);
+  assert.equal(handle.manifest.channels.video.status, "unsupported");
+  assert.match(handle.manifest.channels.video.message ?? "", /step-scoped campaign frames/);
 });
 
 test("run evidence capture failures remain warnings", async () => {

@@ -190,6 +190,10 @@ export type RunEvidenceOptions = {
   foregroundAppResolver?: (serial: string) => Promise<string | undefined>;
 };
 
+function hasStepScopedCampaignEvidence(job: TestJob): boolean {
+  return job.recipeSnapshot?.steps.some((step) => Boolean(step.check)) === true;
+}
+
 /**
  * Android observability is session-scoped in agent-device. A screenshot can
  * still work through the raw/device path when no SDK session exists, which
@@ -409,7 +413,7 @@ export async function startRunEvidence(
     }
   }
 
-  if (visualEvidenceAllowed() && !options.physicalIos) {
+  if (visualEvidenceAllowed() && !options.physicalIos && !hasStepScopedCampaignEvidence(job)) {
     try {
       const runDir = await ensureRunDir(job);
       const path = join(runDir, "video", "run.mp4");
@@ -455,6 +459,13 @@ export async function startRunEvidence(
     } catch (error) {
       failed(handle, "video", error, log);
     }
+  } else if (visualEvidenceAllowed() && hasStepScopedCampaignEvidence(job)) {
+    unsupported(
+      handle,
+      "video",
+      "step-scoped campaign frames already provide reviewable visual evidence",
+      log,
+    );
   } else if (visualEvidenceAllowed() && options.physicalIos) {
     unsupported(
       handle,
