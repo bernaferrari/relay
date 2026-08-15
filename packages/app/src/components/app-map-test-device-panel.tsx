@@ -1,19 +1,176 @@
-import { Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Button } from "@relay/ui/button";
+import type { SnapshotNode, SnapshotState } from "../context/server";
+import type { InteractiveStep } from "../lib/server-interaction";
 import { deviceReadiness } from "../lib/device-readiness";
+import {
+  companionAccessibilityHighlight,
+  companionFramePresentation,
+  companionImageLayout,
+  companionLogicalViewport,
+  companionOrientationEdge,
+  companionDisplayedPointToLogical,
+} from "./app-map-device-companion-geometry";
+import { liveImageStyleFromLayout } from "../lib/stage-presentation";
+import { nodeAtPoint } from "../lib/snapshot";
+import {
+  buildTapTarget,
+  logicalBoundsFromCapture,
+  semanticTapNode,
+  stableLiveTapStep,
+} from "../lib/recorder-tap-targeting";
 import { TestContextEmpty, formatTestContextTime } from "./app-map-test-context-primitives";
 import { Icon } from "./icon";
 
 export function AppMapTestDevicePanel(props: {
-  frame?: { base64: string; mime: string; caption: string; capturedAt: number };
+  frame?: {
+    base64: string;
+    mime: string;
+    caption: string;
+    capturedAt: number;
+    width?: number;
+    height?: number;
+  };
+  snapshot?: SnapshotState;
+  platform?: "android" | "ios" | "browser";
   deviceSelected: boolean;
   deviceName?: string;
   readiness: ReturnType<typeof deviceReadiness>;
   offline: boolean;
   refreshing: boolean;
+  interacting: boolean;
+  interactionBlocker?: string;
   error: string;
   onRefresh: () => void;
+  onInteract: (step: InteractiveStep) => Promise<boolean>;
 }) {
+  const [imageDimensions, setImageDimensions] = createSignal<
+    { width: number; height: number } | undefined
+  >();
+  const [hoverNode, setHoverNode] = createSignal<SnapshotNode | null>(null);
+  const [keyboardPoint, setKeyboardPoint] = createSignal({ x: 0.5, y: 0.5 });
+  const [keyboardActive, setKeyboardActive] = createSignal(false);
+  const [interactionError, setInteractionError] = createSignal("");
+  let pointerDown: { id: number; x: number; y: number } | undefined;
+
+  const presentation = createMemo(() => {
+    const frame = props.frame;
+    const dimensions =
+      frame?.width && frame.height
+        ? { width: frame.width, height: frame.height }
+        : imageDimensions();
+    if (!dimensions) return undefined;
+    const nodes = props.snapshot?.nodes;
+    const logicalViewport = companionLogicalViewport(nodes);
+    const pointScale = logicalViewport
+      ? Math.max(dimensions.width, dimensions.height) /
+        Math.max(logicalViewport.width, logicalViewport.height)
+      : 1;
+    return companionFramePresentation({
+      frame: dimensions,
+      logicalViewport:
+        logicalViewport && Number.isFinite(pointScale)
+          ? {
+              width: logicalViewport.width * pointScale,
+              height: logicalViewport.height * pointScale,
+            }
+          : undefined,
+      platform: props.platform,
+      edge: companionOrientationEdge(nodes, logicalViewport),
+    });
+  });
+  const rotation = () => presentation()?.rotation ?? "none";
+  const layout = createMemo(() => {
+    const value = presentation();
+    return value ? companionImageLayout(value) : undefined;
+  });
+  const surfaceAspectRatio = () => layout()?.aspectRatio ?? "9 / 16";
+  const hoverHighlight = createMemo(() =>
+    companionAccessibilityHighlight(hoverNode(), props.snapshot?.bounds, rotation()),
+  );
+
+  function displayedPoint(element: HTMLElement, clientX: number, clientY: number) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const displayed = {
+      x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+    };
+    return {
+      displayed,
+      logical: companionDisplayedPointToLogical(displayed, rotation()),
+    };
+  }
+
+  function interactionAt(fx: number, fy: number): InteractiveStep | null {
+    const bounds = logicalBoundsFromCapture({
+      snapshot: props.snapshot,
+      imageWidth: props.frame?.width ?? imageDimensions()?.width,
+      imageHeight: props.frame?.height ?? imageDimensions()?.height,
+    });
+    if (!bounds) return null;
+    const snapshot = props.snapshot ?? null;
+    const node = semanticTapNode(snapshot, nodeAtPoint(snapshot, fx, fy));
+    return stableLiveTapStep(buildTapTarget(bounds, node, fx, fy));
+  }
+
+  async function tapAt(fx: number, fy: number): Promise<void> {
+    if (props.interactionBlocker || props.interacting) return;
+    const step = interactionAt(fx, fy);
+    if (!step) {
+      setInteractionError("Relay needs current screen dimensions before it can aim this tap.");
+      return;
+    }
+    setInteractionError("");
+    if (!(await props.onInteract(step))) {
+      setInteractionError("The tap was not applied. Keep the device unlocked and try again.");
+    }
+  }
+
+  function updateHover(element: HTMLElement, clientX: number, clientY: number): void {
+    const point = displayedPoint(element, clientX, clientY);
+    if (!point || props.snapshot?.inspectable === false) {
+      setHoverNode(null);
+      return;
+    }
+    const snapshot = props.snapshot ?? null;
+    setHoverNode(
+      semanticTapNode(snapshot, nodeAtPoint(snapshot, point.logical.x, point.logical.y)),
+    );
+  }
+
+  function onScreenKeyDown(event: KeyboardEvent): void {
+    if (props.interactionBlocker || props.interacting) return;
+    const delta = event.shiftKey ? 0.1 : 0.02;
+    const current = keyboardPoint();
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      setKeyboardActive(true);
+      setKeyboardPoint({
+        x: Math.max(
+          0,
+          Math.min(
+            1,
+            current.x +
+              (event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0),
+          ),
+        ),
+        y: Math.max(
+          0,
+          Math.min(
+            1,
+            current.y + (event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0),
+          ),
+        ),
+      });
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setKeyboardActive(true);
+      void tapAt(current.x, current.y);
+    }
+  }
   const message = () =>
     props.readiness.kind === "ready"
       ? undefined
@@ -62,14 +219,116 @@ export function AppMapTestDevicePanel(props: {
         }
       >
         {(frame) => (
-          <figure class="m-0 grid min-h-[220px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-2">
-            <img
-              src={`data:${frame().mime || "image/png"};base64,${frame().base64}`}
-              alt={`${props.deviceName ?? "Selected device"}: ${frame().caption || "observed screen"}`}
-              class="max-h-[360px] max-w-full rounded-lg object-contain shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]"
-            />
+          <figure class="m-0 grid min-h-[300px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-2 sm:min-h-[420px]">
+            <div
+              role="application"
+              tabindex={props.interactionBlocker ? -1 : 0}
+              aria-label="Interactive device preview. Tap the screen, or use arrow keys to position the keyboard cursor and Enter to tap."
+              aria-disabled={Boolean(props.interactionBlocker)}
+              title={props.interactionBlocker ?? "Tap to interact with the device"}
+              data-testid="test-device-interaction-surface"
+              class={`relative max-h-[560px] w-full max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus ${
+                props.interactionBlocker
+                  ? "cursor-not-allowed opacity-80"
+                  : "touch-manipulation cursor-pointer"
+              }`}
+              style={{ "aspect-ratio": surfaceAspectRatio(), width: "min(100%, 420px)" }}
+              onKeyDown={onScreenKeyDown}
+              onFocus={() => setKeyboardActive(true)}
+              onBlur={() => setKeyboardActive(false)}
+              onPointerDown={(event) => {
+                if (props.interactionBlocker || props.interacting || event.button !== 0) return;
+                pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY };
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+              }}
+              onPointerMove={(event) =>
+                updateHover(event.currentTarget, event.clientX, event.clientY)
+              }
+              onPointerLeave={() => setHoverNode(null)}
+              onPointerCancel={() => (pointerDown = undefined)}
+              onPointerUp={(event) => {
+                const start = pointerDown;
+                pointerDown = undefined;
+                if (
+                  !start ||
+                  start.id !== event.pointerId ||
+                  props.interactionBlocker ||
+                  props.interacting
+                )
+                  return;
+                if (Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 8) return;
+                const point = displayedPoint(event.currentTarget, event.clientX, event.clientY);
+                if (point) void tapAt(point.logical.x, point.logical.y);
+              }}
+            >
+              <img
+                src={`data:${frame().mime || "image/png"};base64,${frame().base64}`}
+                alt={`${props.deviceName ?? "Selected device"}: ${frame().caption || "observed screen"}`}
+                draggable={false}
+                class="pointer-events-none block h-full w-full select-none object-contain"
+                style={liveImageStyleFromLayout(layout())}
+                onLoad={(event) =>
+                  setImageDimensions({
+                    width: event.currentTarget.naturalWidth,
+                    height: event.currentTarget.naturalHeight,
+                  })
+                }
+              />
+              <Show when={hoverHighlight()}>
+                {(highlight) => (
+                  <>
+                    <div
+                      class="pointer-events-none absolute z-[2] rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.14]"
+                      style={highlight().rect}
+                      aria-hidden="true"
+                    />
+                    <span
+                      class="pointer-events-none absolute z-[3] max-w-[78%] truncate rounded bg-surface-brand-base px-1.5 py-0.5 text-[10px] font-medium text-text-on-brand-base shadow-sm"
+                      style={{
+                        left: highlight().chip.left,
+                        ...(highlight().chip.below
+                          ? { top: highlight().chip.bottom }
+                          : { top: highlight().chip.top, transform: "translateY(-100%)" }),
+                      }}
+                      aria-hidden="true"
+                    >
+                      {highlight().chip.text}
+                    </span>
+                  </>
+                )}
+              </Show>
+              <Show when={keyboardActive() && !props.interactionBlocker}>
+                <span
+                  class="pointer-events-none absolute z-[3] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--text-interactive-base)] shadow-sm"
+                  style={{
+                    left: `${keyboardPoint().x * 100}%`,
+                    top: `${keyboardPoint().y * 100}%`,
+                  }}
+                  aria-hidden="true"
+                />
+              </Show>
+              <Show when={props.interacting}>
+                <span
+                  class="absolute inset-x-3 bottom-3 z-[4] rounded-md bg-surface-strong-base/90 px-2 py-1.5 text-center text-[11px] font-medium text-text-strong"
+                  role="status"
+                >
+                  Applying tap…
+                </span>
+              </Show>
+            </div>
           </figure>
         )}
+      </Show>
+      <Show when={props.interactionBlocker}>
+        {(blocker) => <p class="m-0 text-[11px]/[1.45] text-text-weak">View only · {blocker()}</p>}
+      </Show>
+      <Show when={interactionError()}>
+        <p
+          class="m-0 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[11px]/[1.5] text-text-critical-base"
+          role="alert"
+        >
+          {interactionError()}
+        </p>
       </Show>
       <Show when={props.error}>
         <p

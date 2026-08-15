@@ -29,6 +29,7 @@ export function AppMapTestDeviceEvidence(props: {
   const server = useServer();
   const [tab, setTab] = createSignal<InspectorTab>("device");
   const [refreshing, setRefreshing] = createSignal(false);
+  const [interacting, setInteracting] = createSignal(false);
   const [refreshError, setRefreshError] = createSignal("");
   const [detailError, setDetailError] = createSignal("");
   const requestedRunDetails = new Set<string>();
@@ -43,6 +44,12 @@ export function AppMapTestDeviceEvidence(props: {
     const device = selectedDevice();
     if (!frame?.base64 || !device) return undefined;
     return !frame.serial || frame.serial === device.serial ? frame : undefined;
+  });
+  const currentSnapshot = createMemo(() => {
+    const snapshot = server.snapshot?.();
+    const device = selectedDevice();
+    if (!snapshot || !device) return null;
+    return !snapshot.serial || snapshot.serial === device.serial ? snapshot : null;
   });
   const readiness = createMemo(() =>
     deviceReadiness(selectedDevice(), server.health() === "online", {
@@ -98,10 +105,37 @@ export function AppMapTestDeviceEvidence(props: {
     setRefreshError("");
     try {
       await server.pollLiveFrame();
+      await server.pollLiveSnapshot();
     } catch (error) {
       setRefreshError(error instanceof Error ? error.message : String(error));
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  const interactionBlocker = createMemo(() => {
+    if (server.health() !== "online") return "Relay is offline. Reconnect to control this device.";
+    if (!selectedDevice()) return "Choose a device before interacting with its screen.";
+    if (readiness().kind !== "ready") {
+      return "Keep the device connected and unlocked before interacting.";
+    }
+    const controlIssue = server.controlIssue?.();
+    if (controlIssue) return controlIssue;
+    if (!server.selectedLeaseId?.()) {
+      return "This preview is view-only until Relay has control of the selected device.";
+    }
+    return undefined;
+  });
+
+  async function interactWithDevice(
+    step: Parameters<typeof server.interactStep>[0],
+  ): Promise<boolean> {
+    if (interactionBlocker() || interacting()) return false;
+    setInteracting(true);
+    try {
+      return await server.interactStep(step, "test preview tap");
+    } finally {
+      setInteracting(false);
     }
   }
 
@@ -141,13 +175,18 @@ export function AppMapTestDeviceEvidence(props: {
       >
         <AppMapTestDevicePanel
           frame={currentFrame()}
+          snapshot={currentSnapshot()}
+          platform={selectedDevice()?.platform}
           deviceSelected={Boolean(selectedDevice())}
           deviceName={selectedDevice()?.name}
           readiness={readiness()}
           offline={server.health() !== "online"}
           refreshing={refreshing()}
+          interacting={interacting()}
+          interactionBlocker={interactionBlocker()}
           error={refreshError()}
           onRefresh={() => void refreshDevicePixels()}
+          onInteract={interactWithDevice}
         />
       </section>
       <section
