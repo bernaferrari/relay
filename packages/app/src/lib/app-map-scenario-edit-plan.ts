@@ -50,6 +50,7 @@ function planSiblingEdits(
     const patch: Extract<AppMapScenarioTestEdit, { kind: "step.patch" }>["patch"] = {};
     if (prior.intent !== step.intent) patch.intent = step.intent;
     if (prior.note !== step.note) patch.note = step.note ?? null;
+    if (prior.capture !== step.capture) patch.capture = step.capture === true;
     if (!same(prior.binding, step.binding)) patch.binding = structuredClone(step.binding);
     if (Object.keys(patch).length) edits.push({ kind: "step.patch", stepId: step.id, patch });
 

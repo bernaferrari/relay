@@ -251,7 +251,7 @@ export function patchScenarioTestStep(
 ): AppMapScenarioTest {
   assertScenarioTest(test, "test");
   const keys = Object.keys(patch);
-  const unknown = keys.find((key) => !["intent", "note", "binding"].includes(key));
+  const unknown = keys.find((key) => !["intent", "note", "capture", "binding"].includes(key));
   if (unknown) {
     fail(
       "invalid-patch",
@@ -277,6 +277,7 @@ export function patchScenarioTestStep(
     ...(patch.intent !== undefined ? { intent: patch.intent } : {}),
     ...(patch.binding !== undefined ? { binding: patch.binding } : {}),
     ...(patch.note !== undefined && patch.note !== null ? { note: patch.note } : {}),
+    ...(patch.capture !== undefined ? { capture: patch.capture } : {}),
   } as AppMapScenarioTestStep;
   return validated({ ...test, steps: replaceStep(test.steps, stepId, replacement) });
 }

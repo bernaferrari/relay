@@ -63,6 +63,7 @@ function summarizeEdit(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit): 
       const fields = [
         ...(edit.patch.intent !== undefined ? ["intent"] : []),
         ...(edit.patch.note !== undefined ? ["note"] : []),
+        ...(edit.patch.capture !== undefined ? ["evidence capture"] : []),
         ...(edit.patch.binding !== undefined ? ["binding"] : []),
       ];
       return `Update ${fields.join(", ")} for ${step.kind} step ${shortIntent(step)}`;

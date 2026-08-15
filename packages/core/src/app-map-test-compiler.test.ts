@@ -196,33 +196,126 @@ test("scenario tests compile all eight intent kinds deterministically with prove
 });
 
 test("scenario capture policy compiles explicit screen evidence", () => {
-  const presentedSteps = (work: AppMapScenarioTest) =>
-    compileAppMapTest(fixture(), work).root.steps.map((step) => [
-      step.kind,
-      step.kind === "screenshot" ? step.caption : undefined,
-    ]);
+  const screenshotCaptions = (work: AppMapScenarioTest) => {
+    const compiled = compileAppMapTest(fixture(), work);
+    return Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .flatMap((step) => (step.kind === "screenshot" ? [step.caption] : []));
+  };
   const every = scenario();
   every.steps = [every.steps[0]!];
   every.capture = { mode: "every-screen" };
-  assert.deepEqual(presentedSteps(every), [
-    ["screenshot", "screen:home"],
-    ["module", undefined],
-    ["screenshot", "screen:cart"],
-  ]);
+  assert.deepEqual(screenshotCaptions(every), ["screen:home", "screen:cart"]);
 
   const checkpoint = structuredClone(every);
   checkpoint.capture = { mode: "checkpoints", screenIds: ["cart"] };
-  assert.deepEqual(presentedSteps(checkpoint), [
-    ["module", undefined],
-    ["screenshot", "screen:cart"],
-  ]);
+  assert.deepEqual(screenshotCaptions(checkpoint), ["screen:cart"]);
 
   const final = structuredClone(every);
   final.capture = { mode: "final-screen" };
-  assert.deepEqual(presentedSteps(final), [
-    ["module", undefined],
-    ["screenshot", "final:Checkout smoke"],
-  ]);
+  assert.deepEqual(screenshotCaptions(final), ["final:Checkout smoke"]);
+});
+
+test("scenario steps capture one result frame without recapturing their bound path", () => {
+  const work = scenario();
+  work.steps = [{ ...work.steps[0]!, capture: true }];
+
+  const compiled = compileAppMapTest(fixture(), work);
+  assert.deepEqual(
+    compiled.root.steps.map((step) =>
+      step.kind === "screenshot" ? `${step.kind}:${step.caption}` : step.kind,
+    ),
+    ["module", "screenshot:step:navigate:Open the cart"],
+  );
+  assert.deepEqual(
+    Object.values(compiled.graph)
+      .filter((recipe) => recipe.id !== compiled.root.id)
+      .flatMap((recipe) => recipe.steps)
+      .filter((step) => step.kind === "screenshot"),
+    [],
+  );
+  assert.equal(
+    compiled.plan.stepProvenance.find(
+      ({ recipeId, testStepId, stepIndex }) =>
+        recipeId === compiled.root.id && testStepId === "navigate" && stepIndex === 1,
+    )?.bindingKind,
+    "connections",
+  );
+});
+
+test("scenario instruction paths reuse their nearest shared checkpoint", () => {
+  const map = fixture();
+  map.screens.first = {
+    ...screen("first"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.second = {
+    ...screen("second"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["open-first"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-first",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "first" },
+    actions: [{ id: "tap-first", kind: "tap", target: { label: "First" } }],
+  };
+  map.connections["open-second"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-second",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "second" },
+    actions: [{ id: "tap-second", kind: "tap", target: { label: "Second" } }],
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "coverage",
+    name: "Coverage",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "first",
+        kind: "instruction",
+        intent: "Open first",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-first"],
+        },
+      },
+      {
+        id: "second",
+        kind: "instruction",
+        intent: "Open second",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-second"],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const secondPath = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open second",
+  )!;
+  assert.equal(secondPath.steps[0]?.kind, "expect-screen");
+  assert.equal(
+    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].screenId : undefined,
+    "cart",
+  );
+  assert.deepEqual(
+    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].recovery : undefined,
+    { strategy: "back", maxAttempts: 8, restoreParentViewport: true },
+  );
+  assert.equal(
+    secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),
+    true,
+  );
 });
 
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
@@ -284,6 +377,10 @@ test("scenario validation rejects unknown fields and duplicate nested identities
   assert.ok(decision?.kind === "decision");
   decision.thenSteps[0]!.id = "navigate";
   assert.throws(() => compileAppMapTest(fixture(), duplicate), /duplicate step navigate/);
+
+  const invalidCapture = scenario();
+  invalidCapture.steps[0]!.capture = "yes" as unknown as boolean;
+  assert.throws(() => compileAppMapTest(fixture(), invalidCapture), /capture must be a boolean/);
 });
 
 test("scenario compilation rejects cross-map scope and invalid binding payloads", () => {

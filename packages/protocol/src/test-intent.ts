@@ -35,6 +35,8 @@ type TestStepBase = {
   /** Human-authored intent. It is never interpreted by the runtime. */
   intent: string;
   note?: string;
+  /** Capture one evidence frame after this authored step completes. */
+  capture?: boolean;
 };
 
 export type AppMapInstructionTestStep = TestStepBase & {
@@ -155,6 +157,7 @@ export type AppMapTestStepPatch = {
   intent?: string;
   /** `null` removes the note. */
   note?: string | null;
+  capture?: boolean;
   binding?: AppMapScenarioTestStep["binding"];
 };
 

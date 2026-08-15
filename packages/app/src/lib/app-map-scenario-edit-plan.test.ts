@@ -40,6 +40,7 @@ test("plans semantic metadata, nested patch, add, and complete sibling order", (
   const decision = next.steps[0];
   assert.ok(decision?.kind === "decision");
   decision.thenSteps[0]!.intent = "Continue without an account";
+  decision.thenSteps[0]!.capture = true;
   decision.thenSteps.unshift({
     id: "validate",
     kind: "validation",
@@ -58,7 +59,7 @@ test("plans semantic metadata, nested patch, add, and complete sibling order", (
     {
       kind: "step.patch",
       stepId: "guest",
-      patch: { intent: "Continue without an account" },
+      patch: { intent: "Continue without an account", capture: true },
     },
   ]);
 });

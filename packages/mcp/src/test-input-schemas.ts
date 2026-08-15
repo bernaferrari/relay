@@ -305,6 +305,7 @@ const testStepBase = {
   id: identifier("Stable Test step identifier"),
   intent: text("Human-readable Test step intent").max(2_000),
   note: z.string().max(4_000).optional(),
+  capture: z.boolean().optional().describe("Capture one evidence frame after this step completes"),
 };
 
 const graphTestStep: z.ZodType = z.lazy(() =>
@@ -446,6 +447,7 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
         .object({
           intent: text("Human-readable step intent").optional(),
           note: z.string().nullable().optional(),
+          capture: z.boolean().optional(),
           binding: anyTestBinding.optional(),
         })
         .strict(),

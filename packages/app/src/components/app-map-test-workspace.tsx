@@ -100,7 +100,6 @@ export function AppMapTestWorkspace(props: {
     dismissSaveError,
     createTest,
     duplicateTest,
-    convertPathTest,
     deleteTest,
     restoreDeletedTest,
     awaitPendingSaves,
@@ -465,13 +464,7 @@ export function AppMapTestWorkspace(props: {
               {(test) => (
                 <Show
                   when={test().kind === "scenario" && draft()}
-                  fallback={
-                    <LegacyTest
-                      test={test()}
-                      onCreate={() => void createTest()}
-                      onConvert={() => void convertPathTest(test())}
-                    />
-                  }
+                  fallback={<LegacyTest test={test()} onCreate={() => void createTest()} />}
                 >
                   <AppMapTestOutline
                     map={appMap()!}

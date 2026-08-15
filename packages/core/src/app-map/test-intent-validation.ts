@@ -191,6 +191,9 @@ function assertSteps(
       appMapFail("invalid-map", `${label} exceeds its step limit`);
     requiredText(step.intent, `${item}.intent`, APP_MAP_TEST_INTENT_LIMITS.maxIntentLength);
     optionalText(step.note, `${item}.note`, APP_MAP_TEST_INTENT_LIMITS.maxNoteLength);
+    if (step.capture !== undefined && typeof step.capture !== "boolean") {
+      appMapFail("invalid-map", `${item}.capture must be a boolean`);
+    }
     if (
       !(
         [
@@ -208,7 +211,7 @@ function assertSteps(
       appMapFail("invalid-map", `${item}.kind is unsupported`);
     const nested =
       step.kind === "decision" ? ["thenSteps", "elseSteps"] : step.kind === "loop" ? ["steps"] : [];
-    allowedKeys(step, ["id", "kind", "intent", "note", "binding", ...nested], item);
+    allowedKeys(step, ["id", "kind", "intent", "note", "capture", "binding", ...nested], item);
     assertBinding(step, item);
     if (step.kind === "decision") {
       assertSteps(step.thenSteps, `${item}.thenSteps`, seen, depth + 1, count);

@@ -243,39 +243,6 @@ export function createAppMapTestDocumentSession(options: TestDocumentSessionOpti
     }
   }
 
-  async function convertPathTest(test: AppMapTest): Promise<void> {
-    const map = appMap();
-    if (!map || test.kind !== "path" || !test.flowId) return;
-    const flow = map.flows[test.flowId];
-    if (!flow) {
-      setSaveError("The recorded path no longer references a saved flow.");
-      setSaveState("error");
-      return;
-    }
-    const next = createScenarioTest(map, `${test.name} editable`);
-    next.capture = test.capture;
-    next.steps = [
-      {
-        id: crypto.randomUUID(),
-        kind: "instruction",
-        intent: `Follow ${flow.name}`,
-        binding: {
-          status: "resolved",
-          kind: "connections",
-          connectionIds: [...flow.connectionIds],
-        },
-      },
-    ];
-    try {
-      await server.saveTest({ appMapId: map.id, expectedRevision: map.revision, test: next });
-      await server.refreshAppMaps();
-      selectTest(next.id);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
-      setSaveState("error");
-    }
-  }
-
   function deleteTest(): void {
     const map = appMap();
     const test = selectedTest();
@@ -346,7 +313,6 @@ export function createAppMapTestDocumentSession(options: TestDocumentSessionOpti
     dismissSaveError,
     createTest,
     duplicateTest,
-    convertPathTest,
     deleteTest,
     restoreDeletedTest,
     awaitPendingSaves: () => saveQueue,

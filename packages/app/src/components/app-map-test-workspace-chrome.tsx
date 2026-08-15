@@ -103,11 +103,7 @@ export function FirstTestEmpty(props: { creating: boolean; onCreate: () => void 
   );
 }
 
-export function LegacyTest(props: {
-  test: AppMapTest;
-  onCreate: () => void;
-  onConvert: () => void;
-}) {
+export function LegacyTest(props: { test: AppMapTest; onCreate: () => void }) {
   return (
     <div class="grid flex-1 place-items-center p-6 text-center">
       <div class="max-w-[38ch]">
@@ -119,24 +115,13 @@ export function LegacyTest(props: {
           This {props.test.kind === "path" ? "recorded path" : "screen tour"} keeps its existing
           behavior and stays read-only. Create a scenario to edit intent step by step.
         </p>
-        <Show
-          when={props.test.kind === "path" && props.test.flowId}
-          fallback={
-            <>
-              <p class="mt-3 text-[11px]/[1.5] text-text-weaker">
-                Screen tours remain read-only because their dynamic traversal has no equivalent
-                scenario binding yet.
-              </p>
-              <Button class="mt-4" onClick={props.onCreate}>
-                Create separate scenario
-              </Button>
-            </>
-          }
-        >
-          <Button class="mt-4" onClick={props.onConvert}>
-            Convert to editable scenario
-          </Button>
-        </Show>
+        <p class="mt-3 text-[11px]/[1.5] text-text-weaker">
+          Legacy Tests are reference-only and cannot be converted. Recreate the intended coverage as
+          a clean graph Test, then remove the old Test after verification.
+        </p>
+        <Button class="mt-4" onClick={props.onCreate}>
+          Create graph Test
+        </Button>
       </div>
     </div>
   );

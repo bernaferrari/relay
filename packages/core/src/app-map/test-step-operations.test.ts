@@ -113,6 +113,7 @@ test("patches only authorable fields and preserves identity and kind", () => {
   const changed = patchScenarioTestStep(source, "open-cart", {
     intent: "Open the shopping cart",
     note: "Starts from the product page",
+    capture: true,
   });
   const patched = selectScenarioTestStep(changed, "open-cart").step;
 
@@ -120,6 +121,7 @@ test("patches only authorable fields and preserves identity and kind", () => {
   assert.equal(patched.kind, "manual");
   assert.equal(patched.intent, "Open the shopping cart");
   assert.equal(patched.note, "Starts from the product page");
+  assert.equal(patched.capture, true);
   assert.equal(selectScenarioTestStep(source, "open-cart").step.note, undefined);
 
   const withoutNote = patchScenarioTestStep(changed, "open-cart", { note: null });

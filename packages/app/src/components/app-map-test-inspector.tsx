@@ -53,6 +53,21 @@ export function AppMapTestInspector(props: {
             />
           </label>
           <AppMapTestBindingEditor map={props.map} step={selected()} onChange={props.onCommit} />
+          <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border-weak-base px-3 py-2">
+            <input
+              type="checkbox"
+              checked={selected().capture === true}
+              onChange={(event) =>
+                props.onCommit({ ...selected(), capture: event.currentTarget.checked || undefined })
+              }
+            />
+            <span>
+              <span class="block text-[12px] font-medium">Capture evidence here</span>
+              <span class="block text-[11px] text-text-weaker">
+                Save one result frame after this step, without recapturing its whole path.
+              </span>
+            </span>
+          </label>
           <label class="grid gap-1.5" for={`test-step-note-${selected().id}`}>
             <span class={testEditorLabel}>
               Note <span class="font-normal text-text-weaker">· optional</span>

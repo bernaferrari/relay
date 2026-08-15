@@ -1,5 +1,6 @@
 import type {
   AppMap,
+  AppMapCompiledFlow,
   AppMapCompiledTest,
   AppMapScenarioTest,
   AppMapScenarioTestStep,
@@ -7,7 +8,8 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
-import { compileAppMapConnection, compileAppMapRoutine } from "./app-map-compiler.js";
+import { compileAppMapFlow, compileAppMapRoutine } from "./app-map-compiler.js";
+import { warmCompiledFlowGraphFromSharedPrefix } from "./app-map-itinerary.js";
 import { validateAppMap } from "./app-map.js";
 import type { Recipe } from "./recipes.js";
 
@@ -97,9 +99,15 @@ export function compileAppMapScenarioTest(
 
   const importRecipes = (
     step: AppMapScenarioTestStep,
-    recipes: ReturnType<typeof compileAppMapConnection>["recipes"],
-    referencedEntityId: string,
+    recipes: Record<
+      string,
+      { id: string; title: string; description?: string; steps: RecipeStep[] }
+    >,
+    referencedEntityIds: string | string[],
   ) => {
+    const references = Array.isArray(referencedEntityIds)
+      ? referencedEntityIds
+      : [referencedEntityIds];
     for (const compiled of Object.values(recipes)) {
       graph[compiled.id] = asRecipe(map, compiled);
       for (const [stepIndex, recipeStep] of compiled.steps.entries()) {
@@ -110,7 +118,7 @@ export function compileAppMapScenarioTest(
           testId: test.id,
           testStepId: step.id,
           bindingKind: step.binding.status === "resolved" ? step.binding.kind : "connections",
-          referencedEntityIds: [referencedEntityId],
+          referencedEntityIds: references,
         });
       }
       compiledCount += compiled.steps.length;
@@ -120,6 +128,8 @@ export function compileAppMapScenarioTest(
   const compileSequence = (steps: AppMapScenarioTestStep[], suffix: string): string => {
     const id = recipeId(map, test, suffix);
     const recipeSteps: RecipeStep[] = [];
+    let previousInstructionPlan: AppMapCompiledFlow | undefined;
+    let previousTerminalScreenId: string | undefined;
     for (const step of steps) {
       if (step.binding.status === "unresolved") {
         fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
@@ -127,27 +137,70 @@ export function compileAppMapScenarioTest(
       const start = recipeSteps.length;
       const referencedEntityIds: string[] = [];
       switch (step.kind) {
-        case "instruction":
-          for (const connectionId of step.binding.connectionIds) {
+        case "instruction": {
+          const connections = step.binding.connectionIds.map((connectionId) => {
             const connection = map.connections[connectionId];
             if (!connection)
               fail("missing-reference", test, step, `Connection ${connectionId} does not exist`);
             if (connection.state !== "ready")
               fail("draft-connection", test, step, `Connection ${connectionId} is not ready`);
-            const compiled = compileAppMapConnection(map, connectionId);
-            importRecipes(step, compiled.recipes, connectionId);
-            if (recipeSteps.length === 0) {
-              const sourceCapture = captureScreen(connection.fromScreenId);
-              if (sourceCapture) recipeSteps.push(sourceCapture);
-            }
-            recipeSteps.push({ kind: "module", recipeId: compiled.rootRecipeId });
-            if (connection.destination.kind === "screen") {
-              const destinationCapture = captureScreen(connection.destination.screenId);
-              if (destinationCapture) recipeSteps.push(destinationCapture);
-            }
-            referencedEntityIds.push(connectionId);
+            return connection;
+          });
+          const firstConnection = connections[0]!;
+          const flowId = `relay-test-${test.id}-${step.id}`;
+          const plan = compileAppMapFlow(
+            {
+              ...map,
+              flows: {
+                ...map.flows,
+                [flowId]: {
+                  organizationId: map.organizationId,
+                  projectId: map.projectId,
+                  appMapId: map.id,
+                  id: flowId,
+                  name: step.intent,
+                  startScreenId: firstConnection.fromScreenId,
+                  connectionIds: [...step.binding.connectionIds],
+                  createdAt: test.createdAt,
+                  updatedAt: test.updatedAt,
+                },
+              },
+            },
+            flowId,
+          );
+          let instructionGraph = Object.fromEntries(
+            Object.values(plan.recipes).map((compiled) => [compiled.id, asRecipe(map, compiled)]),
+          );
+          if (previousInstructionPlan) {
+            instructionGraph = warmCompiledFlowGraphFromSharedPrefix(
+              map,
+              instructionGraph,
+              plan,
+              previousInstructionPlan,
+              previousTerminalScreenId,
+            );
           }
+          if (test.capture?.mode === "every-screen" || test.capture?.mode === "checkpoints") {
+            for (const [recipeKey, recipe] of Object.entries(instructionGraph)) {
+              instructionGraph[recipeKey] = {
+                ...recipe,
+                steps: recipe.steps.flatMap((recipeStep) => {
+                  if (recipeStep.kind !== "expect-screen") return [recipeStep];
+                  const capture = captureScreen(recipeStep.screenId);
+                  return capture ? [recipeStep, capture] : [recipeStep];
+                }),
+              };
+            }
+          }
+          importRecipes(step, instructionGraph, step.binding.connectionIds);
+          recipeSteps.push({ kind: "module", recipeId: plan.rootRecipeId });
+          referencedEntityIds.push(...step.binding.connectionIds);
+          previousInstructionPlan = plan;
+          const terminal = plan.connections.at(-1)?.destination;
+          previousTerminalScreenId =
+            terminal?.kind === "screen" ? terminal.screenId : plan.flow.startScreenId;
           break;
+        }
         case "validation":
           recipeSteps.push(
             step.binding.kind === "assertion"
@@ -214,6 +267,9 @@ export function compileAppMapScenarioTest(
         case "script":
           recipeSteps.push({ kind: "script", source: step.binding.source });
           break;
+      }
+      if (step.capture) {
+        recipeSteps.push({ kind: "screenshot", caption: `step:${step.id}:${step.intent}` });
       }
       for (let index = start; index < recipeSteps.length; index += 1) {
         const recipeStep = recipeSteps[index]!;
