@@ -38,13 +38,13 @@ import {
   LegacyTest,
   MobilePaneNav,
   TestPicker,
+  TestWorkspaceActionBar,
   type MobileTestPane,
 } from "./app-map-test-workspace-chrome";
 
 export function AppMapTestWorkspace(props: {
   testId?: string;
   onTestChange?: (testId: string) => void;
-  onOpenMap: () => void;
   onOpenRun?: (runId: string) => void;
 }) {
   const server = useServer();
@@ -384,62 +384,63 @@ export function AppMapTestWorkspace(props: {
         undoStepDelete();
       }}
     >
-      <header class="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4 py-2">
-        <div class="min-w-0">
-          <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
-            Test editor
-          </p>
-          <p class="m-0 truncate text-[13px] font-semibold">{appMap()?.name ?? "App map"}</p>
-        </div>
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <span class="text-[11px] text-text-weak" role="status" aria-live="polite">
-            {saveState() === "saving"
-              ? "Saving…"
-              : saveState() === "error"
-                ? "Not saved"
-                : draft()
-                  ? blockers().length
-                    ? `${blockers().length} incomplete`
-                    : "Ready to run"
-                  : "Saved"}
-          </span>
-          <Button variant="secondary" size="sm" onClick={props.onOpenMap}>
-            <Icon name="map" size={13} /> Open map
-          </Button>
-          <Show when={draft()}>
-            <Show when={pendingTestProposals().length > 0}>
-              <Button
-                variant="secondary"
-                size="sm"
-                class="min-h-11"
-                onClick={() => setProposalReviewOpen(true)}
-              >
-                <Icon name="sparkle" size={13} /> {pendingTestProposals().length} proposed
-              </Button>
-            </Show>
-            <AppMapTestRunControl
-              launchState={runLaunchState()}
-              job={runJob()}
-              blockedReason={runBlockedReason()}
-              error={runError()}
-              blockedActionLabel={runBlockerActionLabel()}
-              onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
-              onRun={() => void runTest()}
-              onCancel={() => void cancelRun()}
-              onOpenResult={() => {
-                const id = runJobId();
-                if (!id) return;
-                props.onOpenRun?.(id);
-                setRunJobId();
-              }}
-            />
+      <TestWorkspaceActionBar
+        status={
+          saveState() === "saving"
+            ? "Saving changes…"
+            : saveState() === "error"
+              ? "Changes not saved"
+              : draft()
+                ? blockers().length
+                  ? `${blockers().length} incomplete ${blockers().length === 1 ? "binding" : "bindings"}`
+                  : "Ready to run"
+                : "Choose or create a Test"
+        }
+        statusTone={
+          saveState() === "saving"
+            ? "saving"
+            : saveState() === "error" || blockers().length
+              ? "attention"
+              : "ready"
+        }
+        stepCount={draft()?.steps.length}
+      >
+        <Show when={draft()}>
+          <Show when={pendingTestProposals().length > 0}>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="min-h-11"
+              onClick={() => setProposalReviewOpen(true)}
+            >
+              <Icon name="sparkle" size={13} /> {pendingTestProposals().length} proposed
+            </Button>
           </Show>
-        </div>
-      </header>
+          <AppMapTestRunControl
+            launchState={runLaunchState()}
+            job={runJob()}
+            blockedReason={runBlockedReason()}
+            error={runError()}
+            blockedActionLabel={runBlockerActionLabel()}
+            onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
+            onRun={() => void runTest()}
+            onCancel={() => void cancelRun()}
+            onOpenResult={() => {
+              const id = runJobId();
+              if (!id) return;
+              props.onOpenRun?.(id);
+              setRunJobId();
+            }}
+          />
+        </Show>
+      </TestWorkspaceActionBar>
 
       <div class="min-h-0 max-[760px]:flex max-[760px]:flex-col">
         <MobilePaneNav value={mobilePane()} onChange={setMobilePane} />
-        <div class="grid min-h-0 h-full grid-cols-[minmax(260px,0.8fr)_minmax(320px,1fr)_minmax(300px,0.9fr)] max-[1180px]:grid-cols-[minmax(280px,0.9fr)_minmax(340px,1.1fr)] max-[1180px]:grid-rows-[minmax(0,1fr)_minmax(280px,42%)] max-[760px]:block max-[760px]:flex-1">
+        <div
+          data-test-workspace-layout
+          class="grid h-full min-h-0 grid-cols-[clamp(280px,23vw,360px)_minmax(400px,1fr)_clamp(360px,29vw,500px)] max-[1120px]:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)] max-[1120px]:grid-rows-[minmax(0,1fr)_minmax(320px,44%)] max-[760px]:block max-[760px]:flex-1"
+        >
           <div
             class={cn(
               "flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[760px]:h-full max-[760px]:border-r-0",
@@ -567,7 +568,7 @@ export function AppMapTestWorkspace(props: {
             {(test) => (
               <div
                 class={cn(
-                  "min-h-0 border-l border-border-weak-base max-[1180px]:col-span-2 max-[1180px]:border-l-0 max-[760px]:h-full",
+                  "min-h-0 border-l border-border-weak-base max-[1120px]:col-span-2 max-[1120px]:border-l-0 max-[760px]:h-full",
                   mobile() && !["device", "results"].includes(mobilePane()) && "hidden",
                 )}
                 inert={mobile() && !["device", "results"].includes(mobilePane())}

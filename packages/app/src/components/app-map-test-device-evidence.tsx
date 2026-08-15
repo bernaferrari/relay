@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
 import { useServer } from "../context/server";
 import {
@@ -14,7 +14,7 @@ import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
 export type InspectorTab = "device" | "evidence";
 
 const tabClass =
-  "min-h-11 flex-1 border-b-2 px-3 text-[11px] font-semibold transition-[border-color,color,background-color,transform] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-border-strong-focus";
+  "relative min-h-11 flex-1 rounded-lg px-3 text-[11px] font-semibold transition-[color,background-color,box-shadow,transform] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus";
 
 export function AppMapTestDeviceEvidence(props: {
   test: AppMapScenarioTest;
@@ -141,11 +141,11 @@ export function AppMapTestDeviceEvidence(props: {
 
   return (
     <aside
-      class="flex min-h-0 flex-col border-t border-border-weak-base bg-background-base"
+      class="flex h-full min-h-0 flex-col border-t border-border-weak-base bg-background-base"
       aria-label="Test device and evidence"
     >
       <div
-        class={props.hideTabs ? "hidden" : "flex"}
+        class={props.hideTabs ? "hidden" : "flex gap-1 border-b border-border-weak-base p-1.5"}
         role="tablist"
         aria-label="Test context"
         aria-hidden={props.hideTabs ? "true" : undefined}
@@ -161,6 +161,7 @@ export function AppMapTestDeviceEvidence(props: {
           ref={(element) => (evidenceTab = element)}
           tab="evidence"
           selected={tab() === "evidence"}
+          count={latestRun() ? 1 : 0}
           onKeyDown={onTabKeyDown}
           onSelect={() => selectTab("evidence")}
         />
@@ -219,6 +220,7 @@ function ContextTab(props: {
   ref: (element: HTMLButtonElement) => void;
   tab: InspectorTab;
   selected: boolean;
+  count?: number;
   onKeyDown: (event: KeyboardEvent) => void;
   onSelect: () => void;
 }) {
@@ -234,13 +236,26 @@ function ContextTab(props: {
       class={cn(
         tabClass,
         props.selected
-          ? "border-border-interactive-base text-text-interactive-base"
-          : "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-strong",
+          ? "bg-surface-base-active text-text-strong shadow-[inset_0_0_0_1px_var(--border-strong-base)]"
+          : "text-text-weak hover:bg-surface-base-hover hover:text-text-strong",
       )}
       onKeyDown={props.onKeyDown}
       onClick={props.onSelect}
     >
-      {props.tab === "device" ? "Device" : "Results"}
+      <span>{props.tab === "device" ? "Device" : "Results"}</span>
+      <Show when={props.tab === "evidence" && props.count !== undefined}>
+        <span
+          class={cn(
+            "ml-1 inline-grid min-w-5 place-items-center rounded-full px-1.5 text-[9px] tabular-nums",
+            props.selected
+              ? "bg-background-base text-text-strong"
+              : "bg-surface-base text-text-weak",
+          )}
+          aria-label={`${props.count} ${props.count === 1 ? "result" : "results"}`}
+        >
+          {props.count}
+        </span>
+      </Show>
     </button>
   );
 }

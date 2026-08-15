@@ -42,13 +42,13 @@ export const shellMain =
   "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--background-deep)]";
 
 export const shellTopbar = cn(
-  "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--border-weak-base)]",
+  "shell-drag relative z-[70] grid min-h-[54px] shrink-0 grid-cols-[auto_minmax(120px,1fr)_auto] items-center gap-3 overflow-visible border-b border-[var(--border-weak-base)]",
   "bg-[color-mix(in_srgb,var(--background-base)_78%,var(--background-deep))] px-4",
 );
 
-export const shellTopbarContext = "flex min-w-0 flex-1 items-center gap-2";
+export const shellTopbarContext = "flex min-w-0 items-center gap-2";
 export const shellTopbarTitle =
-  "pointer-events-auto absolute left-1/2 top-1/2 flex max-w-[min(42vw,420px)] -translate-x-1/2 -translate-y-1/2 items-center justify-center max-[680px]:hidden";
+  "pointer-events-auto flex min-w-0 items-center justify-center overflow-hidden max-[1120px]:hidden";
 export const shellTopbarActions = "flex shrink-0 items-center gap-2.5 max-[680px]:gap-1";
 
 export const shellBreadcrumb = cn(

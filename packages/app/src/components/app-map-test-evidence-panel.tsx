@@ -1,6 +1,5 @@
 import { For, Show, createMemo } from "solid-js";
 import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
-import { Button } from "@relay/ui/button";
 import {
   failureForTestRun,
   outcomeForTestStep,
@@ -53,8 +52,8 @@ export function AppMapTestEvidencePanel(props: {
         fallback={
           <TestContextEmpty
             icon="command"
-            title="Compile to see results"
-            detail="Compilation creates a deterministic recipe. Relay attaches outcomes only after that exact recipe runs."
+            title="No results yet"
+            detail="Run this Test on a target to create its first result and step-by-step evidence."
           />
         }
       >
@@ -157,32 +156,33 @@ function RunResultCard(props: {
       class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-base"
       aria-label="Latest Test result"
     >
-      <header class="flex min-h-11 items-center justify-between gap-3 border-b border-border-weak-base px-3 py-2">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <strong class="truncate text-[12px] font-semibold text-text-strong">
-              Latest result
-            </strong>
-            <StatusChip tone={status().tone} label={status().label} />
-          </div>
-          <span class="mt-1 block truncate text-[10.5px] text-text-weak">
-            {runTargetLabel(props.run, props.devices)} ·{" "}
-            {observedAt() === undefined
-              ? "Time not recorded"
-              : formatTestContextDate(observedAt()!)}
+      <Show
+        when={props.onOpenRun}
+        fallback={
+          <RunResultHeader
+            status={status()}
+            target={runTargetLabel(props.run, props.devices)}
+            observedAt={observedAt()}
+          />
+        }
+      >
+        <button
+          type="button"
+          data-test-result-row={props.run.id}
+          class="flex min-h-16 w-full items-center justify-between gap-3 border-b border-border-weak-base px-3 py-2 text-left transition-[background-color,transform] hover:bg-surface-base-hover active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-border-strong-focus"
+          aria-label={`Open latest Test result: ${status().label}`}
+          onClick={() => props.onOpenRun?.(props.run.id)}
+        >
+          <RunResultHeaderContent
+            status={status()}
+            target={runTargetLabel(props.run, props.devices)}
+            observedAt={observedAt()}
+          />
+          <span class="shrink-0 text-[11px] font-semibold text-text-interactive-base">
+            Open <span aria-hidden="true">→</span>
           </span>
-        </div>
-        <Show when={props.onOpenRun}>
-          <Button
-            variant="secondary"
-            size="sm"
-            class="min-h-11 shrink-0"
-            onClick={() => props.onOpenRun?.(props.run.id)}
-          >
-            Open run
-          </Button>
-        </Show>
-      </header>
+        </button>
+      </Show>
       <div class="grid grid-cols-2 gap-px bg-border-weak-base sm:grid-cols-4">
         <TestContextMetric label="Duration" value={formatTestContextDuration(duration())} />
         <TestContextMetric label="Frames" value={String(props.counts.frames)} />
@@ -190,6 +190,39 @@ function RunResultCard(props: {
         <TestContextMetric label="Artifacts" value={String(props.counts.artifacts)} />
       </div>
     </section>
+  );
+}
+
+function RunResultHeader(props: {
+  status: { tone: StatusChipTone; label: string };
+  target: string;
+  observedAt?: number;
+}) {
+  return (
+    <header class="flex min-h-16 items-center border-b border-border-weak-base px-3 py-2">
+      <RunResultHeaderContent {...props} />
+    </header>
+  );
+}
+
+function RunResultHeaderContent(props: {
+  status: { tone: StatusChipTone; label: string };
+  target: string;
+  observedAt?: number;
+}) {
+  return (
+    <span class="min-w-0">
+      <span class="flex flex-wrap items-center gap-2">
+        <strong class="truncate text-[12px] font-semibold text-text-strong">Latest result</strong>
+        <StatusChip tone={props.status.tone} label={props.status.label} />
+      </span>
+      <span class="mt-1 block truncate text-[10.5px] text-text-weak">
+        {props.target} ·{" "}
+        {props.observedAt === undefined
+          ? "Time not recorded"
+          : formatTestContextDate(props.observedAt)}
+      </span>
+    </span>
   );
 }
 

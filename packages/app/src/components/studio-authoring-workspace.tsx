@@ -43,10 +43,7 @@ export function StudioAuthoringWorkspace(props: {
       }
     >
       <Suspense fallback={<Loading label="test editor" />}>
-        <AppMapTestWorkspace
-          onOpenMap={() => props.onOpenSurface("map")}
-          onOpenRun={props.onOpenRun}
-        />
+        <AppMapTestWorkspace onOpenRun={props.onOpenRun} />
       </Suspense>
     </Show>
   );

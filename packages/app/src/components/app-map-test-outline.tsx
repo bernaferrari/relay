@@ -19,7 +19,7 @@ import { Icon } from "./icon";
 import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
 
 const iconButton =
-  "grid min-h-11 min-w-11 place-items-center rounded-lg text-text-weak transition-[background-color,color,transform] hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:text-text-weaker";
+  "flex min-h-11 w-full items-center gap-2 rounded-md px-3 text-left text-[11px] text-text-weak transition-[background-color,color,transform] hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-border-strong-focus disabled:cursor-not-allowed disabled:text-text-weaker";
 
 export function AppMapTestOutline(props: {
   map: AppMap;
@@ -105,7 +105,7 @@ function OutlineRow(props: {
     <li class="grid gap-2" style={{ "padding-left": `${Math.min(props.item.depth, 3) * 16}px` }}>
       <div
         class={cn(
-          "rounded-[11px] border bg-surface-base transition-[border-color,background-color]",
+          "relative grid grid-cols-[minmax(0,1fr)_44px] rounded-[11px] border bg-surface-base transition-[border-color,background-color]",
           props.selected
             ? "border-border-interactive-base bg-[var(--product-accent-soft)]"
             : "border-border-weak-base",
@@ -115,7 +115,7 @@ function OutlineRow(props: {
           type="button"
           id={`test-step-row-${step().id}`}
           data-step-row={step().id}
-          class="grid min-h-11 w-full grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+          class="grid min-h-[62px] w-full grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-l-[10px] px-2.5 py-2 text-left focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
           aria-current={props.selected ? "step" : undefined}
           aria-label={`${rowLabel()}: ${SCENARIO_STEP_LABELS[step().kind]}`}
           onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
@@ -154,42 +154,72 @@ function OutlineRow(props: {
             </span>
           </span>
         </button>
-        <div class="flex justify-end border-t border-border-weak-base px-1">
-          <button
-            type="button"
-            class={iconButton}
-            aria-label={`Move ${rowLabel()} up within ${branchLabel(props.item.branch)}`}
-            disabled={props.item.index === 0}
-            onClick={() => props.onMove(step().id, -1)}
+        <details
+          class="group relative border-l border-border-weak-base"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.currentTarget.removeAttribute("open");
+            event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+          }}
+        >
+          <summary
+            class="grid min-h-[62px] min-w-11 cursor-pointer list-none place-items-center rounded-r-[10px] text-text-weak hover:bg-surface-base-hover hover:text-text-strong focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+            aria-label={`Actions for ${rowLabel()}`}
+            onClick={(event) =>
+              event.currentTarget.closest("li")?.scrollIntoView({ block: "center" })
+            }
           >
-            <Icon name="chevron-up" size={13} />
-          </button>
-          <button
-            type="button"
-            class={iconButton}
-            aria-label={`Move ${rowLabel()} down within ${branchLabel(props.item.branch)}`}
-            disabled={props.item.index === props.item.siblingCount - 1}
-            onClick={() => props.onMove(step().id, 1)}
-          >
-            <Icon name="chevron-down" size={13} />
-          </button>
-          <button
-            type="button"
-            class={iconButton}
-            aria-label={`Duplicate ${rowLabel()}`}
-            onClick={() => props.onDuplicate(step().id)}
-          >
-            <Icon name="copy" size={13} />
-          </button>
-          <button
-            type="button"
-            class={cn(iconButton, "hover:text-icon-critical-base")}
-            aria-label={`Delete ${rowLabel()}`}
-            onClick={() => props.onDelete(step().id)}
-          >
-            <Icon name="trash" size={13} />
-          </button>
-        </div>
+            <Icon name="more" size={14} />
+          </summary>
+          <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-48 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
+            <button
+              type="button"
+              class={iconButton}
+              aria-label={`Move ${rowLabel()} up within ${branchLabel(props.item.branch)}`}
+              disabled={props.item.index === 0}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                props.onMove(step().id, -1);
+              }}
+            >
+              <Icon name="chevron-up" size={13} /> Move up
+            </button>
+            <button
+              type="button"
+              class={iconButton}
+              aria-label={`Move ${rowLabel()} down within ${branchLabel(props.item.branch)}`}
+              disabled={props.item.index === props.item.siblingCount - 1}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                props.onMove(step().id, 1);
+              }}
+            >
+              <Icon name="chevron-down" size={13} /> Move down
+            </button>
+            <button
+              type="button"
+              class={iconButton}
+              aria-label={`Duplicate ${rowLabel()}`}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                props.onDuplicate(step().id);
+              }}
+            >
+              <Icon name="copy" size={13} /> Duplicate
+            </button>
+            <button
+              type="button"
+              class={cn(iconButton, "text-text-critical-base hover:text-icon-critical-base")}
+              aria-label={`Delete ${rowLabel()}`}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                props.onDelete(step().id);
+              }}
+            >
+              <Icon name="trash" size={13} /> Delete…
+            </button>
+          </div>
+        </details>
       </div>
       <Show when={canNest() && step().kind === "decision"}>
         <BranchAdd parentId={step().id} branch="then" onAdd={props.onAddChild} />

@@ -162,3 +162,35 @@ test("nested provenance stays explicit when no nested runtime trace exists", () 
   dispose();
   document.body.replaceChildren();
 });
+
+test("latest result row opens the exact run with pointer or keyboard semantics", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const onOpenRun = vi.fn();
+  const dispose = render(
+    () => (
+      <AppMapTestEvidencePanel
+        test={testFixture}
+        plan={plan}
+        run={failedRun}
+        counts={{ frames: 0, events: 0, artifacts: 0 }}
+        provenance={plan.stepProvenance}
+        detailError=""
+        devices={[]}
+        frameUrl={() => ""}
+        onOpenRun={onOpenRun}
+      />
+    ),
+    root,
+  );
+
+  const row = root.querySelector<HTMLButtonElement>("[data-test-result-row='run-1']")!;
+  expect(row).not.toBeNull();
+  expect(row.getAttribute("aria-label")).toContain("Failed");
+  row.click();
+  expect(onOpenRun).toHaveBeenCalledWith("run-1");
+
+  dispose();
+  document.body.replaceChildren();
+});

@@ -744,7 +744,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   aria-pressed={settingsOpen()}
                   class={cn(
                     productIconButton,
-                    "max-[680px]:hidden",
+                    "max-[760px]:hidden",
                     settingsOpen() && "bg-surface-base-active",
                   )}
                   aria-label="Map properties"
@@ -804,7 +804,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[680px]:flex"
+                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[760px]:flex"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:close-device-panel"));

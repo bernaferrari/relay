@@ -219,7 +219,7 @@ export function AppMapTestDevicePanel(props: {
         }
       >
         {(frame) => (
-          <figure class="m-0 grid min-h-[300px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-2 sm:min-h-[420px]">
+          <figure class="m-0 grid min-h-[360px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-3 max-[1120px]:min-h-[260px]">
             <div
               role="application"
               tabindex={props.interactionBlocker ? -1 : 0}
@@ -227,12 +227,12 @@ export function AppMapTestDevicePanel(props: {
               aria-disabled={Boolean(props.interactionBlocker)}
               title={props.interactionBlocker ?? "Tap to interact with the device"}
               data-testid="test-device-interaction-surface"
-              class={`relative max-h-[560px] w-full max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus ${
+              class={`relative h-[min(680px,calc(100dvh-245px))] max-h-[680px] max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus max-[1120px]:h-[360px] ${
                 props.interactionBlocker
                   ? "cursor-not-allowed opacity-80"
                   : "touch-manipulation cursor-pointer"
               }`}
-              style={{ "aspect-ratio": surfaceAspectRatio(), width: "min(100%, 420px)" }}
+              style={{ "aspect-ratio": surfaceAspectRatio() }}
               onKeyDown={onScreenKeyDown}
               onFocus={() => setKeyboardActive(true)}
               onBlur={() => setKeyboardActive(false)}

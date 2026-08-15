@@ -90,7 +90,10 @@ test("scenario editor creates and edits stable intent without inventing a runnab
     },
   };
 
-  const dispose = render(() => <AppMapTestWorkspace onOpenMap={() => undefined} />, root);
+  const dispose = render(() => <AppMapTestWorkspace />, root);
+  const desktopLayout = root.querySelector<HTMLElement>("[data-test-workspace-layout]")!;
+  expect(desktopLayout.className).toContain("grid-cols-[clamp(280px,23vw,360px)");
+  expect(root.textContent).not.toContain("Open map");
   const create = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Create scenario test"),
   )!;
@@ -231,10 +234,7 @@ test("revision conflict keeps the local Test draft and retries as semantic edits
     },
   };
 
-  const dispose = render(
-    () => <AppMapTestWorkspace testId="checkout-scenario" onOpenMap={() => undefined} />,
-    root,
-  );
+  const dispose = render(() => <AppMapTestWorkspace testId="checkout-scenario" />, root);
   await settle();
   const intent = root.querySelector<HTMLTextAreaElement>("#test-step-intent-open-cart")!;
   intent.value = "Open the reviewed cart";
@@ -341,10 +341,7 @@ test("a saved semantic edit settles after its projection refresh recovers", asyn
     },
   };
 
-  const dispose = render(
-    () => <AppMapTestWorkspace testId="checkout-refresh" onOpenMap={() => undefined} />,
-    root,
-  );
+  const dispose = render(() => <AppMapTestWorkspace testId="checkout-refresh" />, root);
   await settle();
   const intent = root.querySelector<HTMLTextAreaElement>("#test-step-intent-open-cart-refresh")!;
   intent.value = "Open the reviewed cart";
@@ -473,13 +470,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   };
 
   const dispose = render(
-    () => (
-      <AppMapTestWorkspace
-        testId={scenario.id}
-        onOpenMap={() => undefined}
-        onOpenRun={(id) => opened.push(id)}
-      />
-    ),
+    () => <AppMapTestWorkspace testId={scenario.id} onOpenRun={(id) => opened.push(id)} />,
     root,
   );
   await settle();
@@ -595,10 +586,7 @@ test("mobile Test authoring uses one focused pane and advances from Steps to Edi
     runAction: async () => undefined,
   };
 
-  const dispose = render(
-    () => <AppMapTestWorkspace testId={scenario.id} onOpenMap={() => undefined} />,
-    root,
-  );
+  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   await settle();
   const proposed = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("1 proposed"),
@@ -619,6 +607,8 @@ test("mobile Test authoring uses one focused pane and advances from Steps to Edi
   expect(root.querySelector("[data-test-mobile-tab='results']")?.getAttribute("aria-current")).toBe(
     "page",
   );
+  expect(root.querySelector("#test-context-device-panel")?.hasAttribute("inert")).toBe(true);
+  expect(root.querySelector("#test-context-evidence-panel")?.hasAttribute("inert")).toBe(false);
 
   dispose();
   window.matchMedia = originalMatchMedia;

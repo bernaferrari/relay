@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import type { AppMapTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
@@ -7,6 +7,42 @@ import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor"
 import { Icon } from "./icon";
 
 export type MobileTestPane = "steps" | "edit" | "device" | "results";
+
+export function TestWorkspaceActionBar(props: {
+  status: string;
+  statusTone?: "ready" | "attention" | "saving";
+  stepCount: number | undefined;
+  children: JSX.Element;
+}) {
+  return (
+    <header class="flex min-h-14 items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4 py-2">
+      <div class="min-w-0" aria-live="polite">
+        <div class="flex min-w-0 items-center gap-2">
+          <span
+            class={cn(
+              "size-2 shrink-0 rounded-full",
+              props.statusTone === "attention"
+                ? "bg-icon-warning-base"
+                : props.statusTone === "saving"
+                  ? "bg-icon-interactive-base"
+                  : "bg-icon-success-base",
+            )}
+            aria-hidden="true"
+          />
+          <strong class="truncate text-[12px] font-semibold text-text-strong">
+            {props.status}
+          </strong>
+        </div>
+        <Show when={props.stepCount !== undefined}>
+          <span class="mt-0.5 block pl-4 text-[10.5px] tabular-nums text-text-weak">
+            {props.stepCount} {props.stepCount === 1 ? "step" : "steps"}
+          </span>
+        </Show>
+      </div>
+      <div class="flex shrink-0 items-center gap-2">{props.children}</div>
+    </header>
+  );
+}
 
 export function TestPicker(props: {
   tests: AppMapTest[];
@@ -19,7 +55,7 @@ export function TestPicker(props: {
   onDelete: () => void;
 }) {
   return (
-    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border-weak-base p-3">
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-3">
       <label class="grid gap-1" for="app-map-test-picker">
         <span class={testEditorLabel}>Test</span>
         <select
