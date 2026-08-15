@@ -225,12 +225,10 @@ export function AppMapTestDevicePanel(props: {
               tabindex={props.interactionBlocker ? -1 : 0}
               aria-label="Interactive device preview. Tap the screen, or use arrow keys to position the keyboard cursor and Enter to tap."
               aria-disabled={Boolean(props.interactionBlocker)}
-              title={props.interactionBlocker ?? "Tap to interact with the device"}
+              title={props.interactionBlocker ? undefined : "Tap to interact with the device"}
               data-testid="test-device-interaction-surface"
               class={`relative h-[min(680px,calc(100dvh-245px))] max-h-[680px] max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus max-[1120px]:h-[360px] ${
-                props.interactionBlocker
-                  ? "cursor-not-allowed opacity-80"
-                  : "touch-manipulation cursor-pointer"
+                props.interactionBlocker ? "cursor-default" : "touch-manipulation cursor-pointer"
               }`}
               style={{ "aspect-ratio": surfaceAspectRatio() }}
               onKeyDown={onScreenKeyDown}

@@ -3,20 +3,20 @@ import type { AppMapTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { testKindDescription } from "../lib/app-map-test-editor-model";
-import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
+import { testEditorInput } from "./app-map-test-binding-editor";
 import { Icon } from "./icon";
 
 export type MobileTestPane = "steps" | "edit" | "device" | "results";
 
 export function TestWorkspaceActionBar(props: {
   status: string;
-  statusTone?: "ready" | "attention" | "saving";
+  statusTone?: "ready" | "attention" | "saving" | "neutral";
   stepCount: number | undefined;
   children: JSX.Element;
 }) {
   return (
-    <header class="flex min-h-14 items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4 py-2">
-      <div class="min-w-0" aria-live="polite">
+    <header class="flex min-h-[52px] items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-1.5">
+      <div class="flex min-w-0 items-center gap-2.5" aria-live="polite">
         <div class="flex min-w-0 items-center gap-2">
           <span
             class={cn(
@@ -25,7 +25,9 @@ export function TestWorkspaceActionBar(props: {
                 ? "bg-icon-warning-base"
                 : props.statusTone === "saving"
                   ? "bg-icon-interactive-base"
-                  : "bg-icon-success-base",
+                  : props.statusTone === "neutral"
+                    ? "bg-icon-disabled"
+                    : "bg-icon-success-base",
             )}
             aria-hidden="true"
           />
@@ -34,7 +36,7 @@ export function TestWorkspaceActionBar(props: {
           </strong>
         </div>
         <Show when={props.stepCount !== undefined}>
-          <span class="mt-0.5 block pl-4 text-[10.5px] tabular-nums text-text-weak">
+          <span class="shrink-0 border-l border-border-weak-base pl-2.5 text-[10.5px] tabular-nums text-text-weak">
             {props.stepCount} {props.stepCount === 1 ? "step" : "steps"}
           </span>
         </Show>
@@ -55,12 +57,12 @@ export function TestPicker(props: {
   onDelete: () => void;
 }) {
   return (
-    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-3">
-      <label class="grid gap-1" for="app-map-test-picker">
-        <span class={testEditorLabel}>Test</span>
+    <div class="flex items-center gap-1 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-2">
+      <label class="min-w-0 flex-1" for="app-map-test-picker">
+        <span class="sr-only">Test</span>
         <select
           id="app-map-test-picker"
-          class={testEditorInput}
+          class={cn(testEditorInput, "truncate")}
           value={props.selectedTestId}
           disabled={props.disabled}
           onChange={(event) => props.onSelect(event.currentTarget.value)}
@@ -74,11 +76,11 @@ export function TestPicker(props: {
           </For>
         </select>
       </label>
-      <div class="flex items-end gap-1">
+      <div class="flex items-center gap-1">
         <Button
           variant="secondary"
           size="sm"
-          class="mt-[19px] min-h-11"
+          class="min-h-11 shrink-0"
           disabled={props.creating}
           onClick={props.onCreate}
         >

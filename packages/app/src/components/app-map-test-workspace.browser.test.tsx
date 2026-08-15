@@ -92,7 +92,7 @@ test("scenario editor creates and edits stable intent without inventing a runnab
 
   const dispose = render(() => <AppMapTestWorkspace />, root);
   const desktopLayout = root.querySelector<HTMLElement>("[data-test-workspace-layout]")!;
-  expect(desktopLayout.className).toContain("grid-cols-[clamp(280px,23vw,360px)");
+  expect(desktopLayout.className).toContain("grid-cols-[clamp(290px,21vw,340px)");
   expect(root.textContent).not.toContain("Open map");
   const create = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Create scenario test"),
@@ -112,7 +112,7 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   add.click();
   await settle();
   expect(root.textContent).toContain("Instruction");
-  expect(root.textContent).toContain("incomplete");
+  expect(root.textContent).toContain("issue to fix");
 
   const intent = root.querySelector<HTMLTextAreaElement>("textarea[id^='test-step-intent-']")!;
   intent.value = "Open the reviewed cart";
@@ -126,7 +126,7 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   ).toBe(true);
   const blockerAction = root.querySelector<HTMLButtonElement>("button[title*='Resolve']")!;
   expect(blockerAction.disabled).toBe(false);
-  expect(blockerAction.textContent).toContain("Fix 1 binding");
+  expect(blockerAction.textContent).toContain("Fix 1 issue");
 
   const rootKind = [...root.querySelectorAll<HTMLSelectElement>("select")].find((select) =>
     [...select.options].some((option) => option.value === "decision"),
@@ -359,7 +359,7 @@ test("a saved semantic edit settles after its projection refresh recovers", asyn
   expect(editCalls).toBe(1);
   expect(refreshCalls).toBe(2);
   expect(root.textContent).not.toContain("Projection unavailable");
-  expect(root.textContent).toContain("1 incomplete");
+  expect(root.textContent).toContain("1 issue to fix");
   expect(
     root.querySelector<HTMLTextAreaElement>("#test-step-intent-open-cart-refresh")?.value,
   ).toBe("Open the reviewed cart");

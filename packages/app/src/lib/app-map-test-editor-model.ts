@@ -138,6 +138,8 @@ function inspectStep(map: AppMap, step: AppMapScenarioTestStep, out: ScenarioDia
           message: "A selected connection still needs review.",
         });
     }
+  } else if (step.kind === "module" && !step.binding.routineId.trim()) {
+    out.push({ stepId: step.id, tone: "blocker", message: "Choose a reusable module." });
   } else if (step.kind === "module" && !map.routines[step.binding.routineId]) {
     out.push({ stepId: step.id, tone: "blocker", message: "The selected module is missing." });
   } else if (step.kind === "script" && !step.binding.source.trim()) {
@@ -165,9 +167,23 @@ export function scenarioDiagnostics(map: AppMap, test: AppMapScenarioTest): Scen
 }
 
 export function testKindDescription(test: AppMapTest): string {
-  if (test.kind === "scenario")
-    return `${test.steps.length} ${test.steps.length === 1 ? "step" : "steps"}`;
+  if (test.kind === "scenario") {
+    const count = scenarioStepCount(test.steps);
+    return `${count} ${count === 1 ? "step" : "steps"}`;
+  }
   return test.kind === "path" ? "Recorded path · read-only" : "Screen tour · read-only";
+}
+
+export function scenarioStepCount(steps: readonly AppMapScenarioTestStep[]): number {
+  return steps.reduce((count, step) => {
+    if (step.kind === "decision") {
+      return (
+        count + 1 + scenarioStepCount(step.thenSteps) + scenarioStepCount(step.elseSteps ?? [])
+      );
+    }
+    if (step.kind === "loop") return count + 1 + scenarioStepCount(step.steps);
+    return count + 1;
+  }, 0);
 }
 
 export function scenarioStepSummary(map: AppMap, step: AppMapScenarioTestStep): string {

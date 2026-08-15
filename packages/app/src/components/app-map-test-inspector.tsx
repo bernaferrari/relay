@@ -25,20 +25,37 @@ export function AppMapTestInspector(props: {
   return (
     <Show when={step()} fallback={<InspectorEmpty blockers={props.blockers} />}>
       {(selected) => (
-        <div class="grid gap-5">
-          <header>
-            <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
-              {SCENARIO_STEP_LABELS[selected().kind]}
-            </p>
-            <h2 class="mt-1 text-[18px] font-semibold tracking-[-0.02em]">
-              {stepPosition(props.item!)}
-            </h2>
+        <div class="grid gap-4">
+          <header class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <h2 class="m-0 text-[17px] font-semibold tracking-[-0.02em]">
+                {stepPosition(props.item!)}
+              </h2>
+              <p class="mt-0.5 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
+                {SCENARIO_STEP_LABELS[selected().kind]}
+              </p>
+            </div>
+            <span
+              class={cn(
+                "shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold",
+                selected().binding.status === "resolved" &&
+                  !issues().some((item) => item.tone === "blocker")
+                  ? "bg-surface-success-weak text-text-success-base"
+                  : "bg-surface-warning-weak text-text-warning-base",
+              )}
+            >
+              {selected().binding.status === "unresolved"
+                ? "Needs binding"
+                : issues().some((item) => item.tone === "blocker")
+                  ? "Needs attention"
+                  : "Bound"}
+            </span>
           </header>
           <label class="grid gap-1.5" for={`test-step-intent-${selected().id}`}>
             <span class={testEditorLabel}>Intent</span>
             <textarea
               id={`test-step-intent-${selected().id}`}
-              class={cn(testEditorInput, "min-h-24 resize-y py-2.5")}
+              class={cn(testEditorInput, "min-h-[72px] resize-y py-2.5")}
               value={selected().intent}
               onInput={(event) =>
                 props.onDraftChange({ ...selected(), intent: event.currentTarget.value })
@@ -53,7 +70,7 @@ export function AppMapTestInspector(props: {
             />
           </label>
           <AppMapTestBindingEditor map={props.map} step={selected()} onChange={props.onCommit} />
-          <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border-weak-base px-3 py-2">
+          <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-1 py-1">
             <input
               type="checkbox"
               checked={selected().capture === true}
@@ -68,23 +85,33 @@ export function AppMapTestInspector(props: {
               </span>
             </span>
           </label>
-          <label class="grid gap-1.5" for={`test-step-note-${selected().id}`}>
-            <span class={testEditorLabel}>
-              Note <span class="font-normal text-text-weaker">· optional</span>
-            </span>
-            <textarea
-              id={`test-step-note-${selected().id}`}
-              class={cn(testEditorInput, "min-h-20 resize-y py-2.5")}
-              value={selected().note ?? ""}
-              onInput={(event) =>
-                props.onDraftChange({
-                  ...selected(),
-                  note: event.currentTarget.value || undefined,
-                })
-              }
-              onBlur={() => props.onCommit(selected())}
-            />
-          </label>
+          <details
+            class="rounded-lg border border-border-weak-base bg-background-base"
+            open={Boolean(selected().note)}
+          >
+            <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-[11px] font-semibold text-text-base focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus">
+              Note <span class="font-normal text-text-weaker">Optional</span>
+            </summary>
+            <label
+              class="grid gap-1.5 border-t border-border-weak-base p-3 pt-2"
+              for={`test-step-note-${selected().id}`}
+            >
+              <span class="sr-only">Note</span>
+              <textarea
+                id={`test-step-note-${selected().id}`}
+                class={cn(testEditorInput, "min-h-[72px] resize-y py-2.5")}
+                value={selected().note ?? ""}
+                placeholder="Add context for collaborators or agents…"
+                onInput={(event) =>
+                  props.onDraftChange({
+                    ...selected(),
+                    note: event.currentTarget.value || undefined,
+                  })
+                }
+                onBlur={() => props.onCommit(selected())}
+              />
+            </label>
+          </details>
           <Show when={issues().length}>
             <div
               class="grid gap-1 rounded-lg border border-border-weak-base bg-background-base p-3"

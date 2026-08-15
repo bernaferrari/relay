@@ -7,6 +7,7 @@ import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
 import {
   createScenarioStep,
   scenarioDiagnostics,
+  scenarioStepCount,
   type ScenarioStepKind,
 } from "../lib/app-map-test-editor-model";
 import {
@@ -165,7 +166,7 @@ export function AppMapTestWorkspace(props: {
     if (saveState() === "saving") return "Wait for the latest changes to finish saving.";
     if (saveState() === "error") return "Retry the local changes before running.";
     if (blockers().length) {
-      return `Resolve ${blockers().length} incomplete ${blockers().length === 1 ? "binding" : "bindings"} before running.`;
+      return `Resolve ${blockers().length} authoring ${blockers().length === 1 ? "issue" : "issues"} before running.`;
     }
     if (!selectedDevice()) return "Choose a target before running this Test.";
     if (!selectedDevice()?.platform) return "Refresh the selected target before running this Test.";
@@ -311,7 +312,7 @@ export function AppMapTestWorkspace(props: {
     if (server.isOffline() || saveState() === "saving") return undefined;
     if (saveState() === "error") return retryAvailable() ? "Retry save" : "Review save error";
     if (blockers().length)
-      return `Fix ${blockers().length} ${blockers().length === 1 ? "binding" : "bindings"}`;
+      return `Fix ${blockers().length} ${blockers().length === 1 ? "issue" : "issues"}`;
     if (!selectedDevice()) return "Choose target";
     return undefined;
   });
@@ -392,7 +393,7 @@ export function AppMapTestWorkspace(props: {
               ? "Changes not saved"
               : draft()
                 ? blockers().length
-                  ? `${blockers().length} incomplete ${blockers().length === 1 ? "binding" : "bindings"}`
+                  ? `${blockers().length} ${blockers().length === 1 ? "issue" : "issues"} to fix`
                   : "Ready to run"
                 : "Choose or create a Test"
         }
@@ -401,9 +402,11 @@ export function AppMapTestWorkspace(props: {
             ? "saving"
             : saveState() === "error" || blockers().length
               ? "attention"
-              : "ready"
+              : draft()
+                ? "ready"
+                : "neutral"
         }
-        stepCount={draft()?.steps.length}
+        stepCount={draft() ? scenarioStepCount(draft()!.steps) : undefined}
       >
         <Show when={draft()}>
           <Show when={pendingTestProposals().length > 0}>
@@ -439,7 +442,7 @@ export function AppMapTestWorkspace(props: {
         <MobilePaneNav value={mobilePane()} onChange={setMobilePane} />
         <div
           data-test-workspace-layout
-          class="grid h-full min-h-0 grid-cols-[clamp(280px,23vw,360px)_minmax(400px,1fr)_clamp(360px,29vw,500px)] max-[1120px]:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)] max-[1120px]:grid-rows-[minmax(0,1fr)_minmax(320px,44%)] max-[760px]:block max-[760px]:flex-1"
+          class="grid h-full min-h-0 grid-cols-[clamp(290px,21vw,340px)_minmax(380px,520px)_minmax(400px,1fr)] max-[1120px]:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)] max-[1120px]:grid-rows-[minmax(0,1fr)_minmax(320px,44%)] max-[760px]:block max-[760px]:flex-1"
         >
           <div
             class={cn(
@@ -541,7 +544,7 @@ export function AppMapTestWorkspace(props: {
             </Show>
             <Show when={draft()}>
               {(test) => (
-                <div class="grid gap-5 p-4">
+                <div class="mx-auto grid w-full max-w-[560px] gap-4 p-4">
                   <label class="grid gap-1.5" for="scenario-test-name">
                     <span class={testEditorLabel}>Test name</span>
                     <input

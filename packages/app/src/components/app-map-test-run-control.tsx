@@ -49,7 +49,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     if (props.job?.status === "running") return "Running on the selected target.";
     if (props.job?.status === "paused") return "Paused at a human checkpoint.";
     if (finished()) return `Run finished: ${props.job!.status}.`;
-    return "Runs the saved Test once on the selected target.";
+    return "";
   };
 
   function activate(): void {
@@ -68,21 +68,23 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
         variant={active() ? "danger" : "primary"}
         disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
         aria-busy={busy()}
-        aria-describedby="test-run-control-status"
+        aria-describedby={status() ? "test-run-control-status" : undefined}
         title={props.blockedReason || undefined}
         onClick={activate}
       >
         <Icon name={active() ? "square" : finished() ? "arrow-right" : "play"} size={13} />
         {label()}
       </Button>
-      <span
-        id="test-run-control-status"
-        class="max-w-[38ch] text-right text-[10px]/[1.35] text-text-weaker"
-        role="status"
-        aria-live="polite"
-      >
-        {status()}
-      </span>
+      {status() ? (
+        <span
+          id="test-run-control-status"
+          class="max-w-[38ch] text-right text-[10px]/[1.35] text-text-weaker"
+          role="status"
+          aria-live="polite"
+        >
+          {status()}
+        </span>
+      ) : null}
     </div>
   );
 }

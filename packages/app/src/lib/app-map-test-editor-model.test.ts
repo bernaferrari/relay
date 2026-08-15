@@ -7,6 +7,7 @@ import {
   duplicateScenarioStep,
   moveScenarioStep,
   scenarioDiagnostics,
+  scenarioStepCount,
 } from "./app-map-test-editor-model.js";
 import {
   addScenarioChild,
@@ -62,6 +63,17 @@ test("readiness distinguishes blockers from an honest empty loop warning", () =>
   ]);
 });
 
+test("readiness never calls a blank resolved module binding runnable", () => {
+  const scenario = createScenarioTest(map, "Settings", "settings-test", 42);
+  const module = createScenarioStep("module", "launch");
+  if (module.kind !== "module") throw new Error("expected module");
+  module.binding = { status: "resolved", kind: "routine", routineId: "" };
+  scenario.steps = [module];
+  assert.deepEqual(scenarioDiagnostics(map, scenario), [
+    { stepId: "launch", tone: "blocker", message: "Choose a reusable module." },
+  ]);
+});
+
 test("tree edits address nested steps by stable id and stay inside their sibling branch", () => {
   const decision = createScenarioStep("decision", "decision");
   if (decision.kind !== "decision") throw new Error("expected decision");
@@ -88,6 +100,14 @@ test("tree edits address nested steps by stable id and stay inside their sibling
   assert.equal(siblingFocusAfterDelete(steps, "then-second"), "then-first");
   steps = deleteScenarioStepTree(steps, "then-second");
   assert.equal(findScenarioStep(steps, "then-second"), undefined);
+});
+
+test("step counts include nested branches", () => {
+  const decision = createScenarioStep("decision", "decision-count");
+  if (decision.kind !== "decision") throw new Error("expected decision");
+  decision.thenSteps = [createScenarioStep("instruction", "then-count")];
+  decision.elseSteps = [createScenarioStep("manual", "else-count")];
+  assert.equal(scenarioStepCount([decision]), 3);
 });
 
 test("tree insertion and duplication renew every id in a nested subtree", () => {

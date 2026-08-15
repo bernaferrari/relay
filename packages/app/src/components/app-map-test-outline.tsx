@@ -38,13 +38,43 @@ export function AppMapTestOutline(props: {
   onDelete: (stepId: string) => void;
 }) {
   const [rootKind, setRootKind] = createSignal<ScenarioStepKind>("instruction");
+  const [query, setQuery] = createSignal("");
   const outline = () => flattenScenarioSteps(props.test.steps);
+  const visibleOutline = () => {
+    const needle = query().trim().toLocaleLowerCase();
+    if (!needle) return outline();
+    return outline().filter((item) =>
+      [
+        SCENARIO_STEP_LABELS[item.step.kind],
+        item.step.intent,
+        scenarioStepSummary(props.map, item.step),
+      ].some((value) => value.toLocaleLowerCase().includes(needle)),
+    );
+  };
 
   return (
     <>
-      <div class="min-h-0 flex-1 overflow-y-auto p-3">
-        <ol class="m-0 grid list-none gap-2 p-0" aria-label="Test steps">
-          <For each={outline()}>
+      <div class="border-b border-border-weak-base p-2">
+        <label class="relative block" for="test-step-search">
+          <span class="sr-only">Find a step</span>
+          <Icon
+            name="search"
+            size={13}
+            class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-weaker"
+          />
+          <input
+            id="test-step-search"
+            type="search"
+            class={cn(testEditorInput, "h-9 min-h-9 pl-8")}
+            value={query()}
+            placeholder={`Find in ${outline().length} steps…`}
+            onInput={(event) => setQuery(event.currentTarget.value)}
+          />
+        </label>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto p-2">
+        <ol class="m-0 grid list-none gap-1.5 p-0" aria-label="Test steps">
+          <For each={visibleOutline()}>
             {(item) => (
               <OutlineRow
                 item={item}
@@ -60,6 +90,12 @@ export function AppMapTestOutline(props: {
             )}
           </For>
         </ol>
+        <Show when={query() && !visibleOutline().length}>
+          <div class="px-4 py-8 text-center">
+            <h2 class="m-0 text-[14px] font-semibold">No matching steps</h2>
+            <p class="mt-1 text-[11px] text-text-weak">Try an intent, type, or binding name.</p>
+          </div>
+        </Show>
         <Show when={!props.test.steps.length}>
           <div class="px-4 py-8 text-center">
             <h2 class="m-0 text-[16px] font-semibold">Add the first intent</h2>
@@ -105,7 +141,7 @@ function OutlineRow(props: {
     <li class="grid gap-2" style={{ "padding-left": `${Math.min(props.item.depth, 3) * 16}px` }}>
       <div
         class={cn(
-          "relative grid grid-cols-[minmax(0,1fr)_44px] rounded-[11px] border bg-surface-base transition-[border-color,background-color]",
+          "relative grid grid-cols-[minmax(0,1fr)_44px] rounded-[10px] border bg-surface-base transition-[border-color,background-color]",
           props.selected
             ? "border-border-interactive-base bg-[var(--product-accent-soft)]"
             : "border-border-weak-base",
@@ -115,7 +151,7 @@ function OutlineRow(props: {
           type="button"
           id={`test-step-row-${step().id}`}
           data-step-row={step().id}
-          class="grid min-h-[62px] w-full grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-l-[10px] px-2.5 py-2 text-left focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+          class="grid min-h-[52px] w-full grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-l-[9px] px-2 py-1.5 text-left focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
           aria-current={props.selected ? "step" : undefined}
           aria-label={`${rowLabel()}: ${SCENARIO_STEP_LABELS[step().kind]}`}
           onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
@@ -126,7 +162,7 @@ function OutlineRow(props: {
             props.onMove(step().id, event.key === "ArrowUp" ? -1 : 1);
           }}
         >
-          <span class="grid size-8 place-items-center rounded-lg bg-background-base text-[10px] font-semibold tabular-nums text-text-interactive-base">
+          <span class="grid size-[30px] place-items-center rounded-md bg-background-base text-[10px] font-semibold tabular-nums text-text-interactive-base">
             {props.item.branch === "root" ? props.item.index + 1 : branchGlyph(props.item.branch)}
           </span>
           <span class="min-w-0">
@@ -163,7 +199,7 @@ function OutlineRow(props: {
           }}
         >
           <summary
-            class="grid min-h-[62px] min-w-11 cursor-pointer list-none place-items-center rounded-r-[10px] text-text-weak hover:bg-surface-base-hover hover:text-text-strong focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+            class="grid min-h-[52px] min-w-11 cursor-pointer list-none place-items-center rounded-r-[9px] text-text-weak hover:bg-surface-base-hover hover:text-text-strong focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
             aria-label={`Actions for ${rowLabel()}`}
             onClick={(event) =>
               event.currentTarget.closest("li")?.scrollIntoView({ block: "center" })

@@ -152,6 +152,8 @@ test("device preview blocks view-only taps and ignores drags and unmatched point
   await Promise.resolve();
   expect(blockedInteract).not.toHaveBeenCalled();
   expect(blocked.surface.getAttribute("aria-disabled")).toBe("true");
+  expect(blocked.surface.getAttribute("title")).toBeNull();
+  expect(blocked.surface.className).not.toContain("opacity-");
   expect(blocked.root.textContent).toContain("View only · Another user has control.");
   blocked.dispose();
 

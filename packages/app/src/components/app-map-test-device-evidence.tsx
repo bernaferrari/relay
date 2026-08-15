@@ -14,7 +14,7 @@ import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
 export type InspectorTab = "device" | "evidence";
 
 const tabClass =
-  "relative min-h-11 flex-1 rounded-lg px-3 text-[11px] font-semibold transition-[color,background-color,box-shadow,transform] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus";
+  "relative min-h-11 flex-1 border-b-2 border-transparent px-3 text-[11px] font-semibold transition-[color,border-color,background-color,transform] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus";
 
 export function AppMapTestDeviceEvidence(props: {
   test: AppMapScenarioTest;
@@ -145,7 +145,7 @@ export function AppMapTestDeviceEvidence(props: {
       aria-label="Test device and evidence"
     >
       <div
-        class={props.hideTabs ? "hidden" : "flex gap-1 border-b border-border-weak-base p-1.5"}
+        class={props.hideTabs ? "hidden" : "flex border-b border-border-weak-base px-2"}
         role="tablist"
         aria-label="Test context"
         aria-hidden={props.hideTabs ? "true" : undefined}
@@ -236,7 +236,7 @@ function ContextTab(props: {
       class={cn(
         tabClass,
         props.selected
-          ? "bg-surface-base-active text-text-strong shadow-[inset_0_0_0_1px_var(--border-strong-base)]"
+          ? "border-border-interactive-base text-text-strong"
           : "text-text-weak hover:bg-surface-base-hover hover:text-text-strong",
       )}
       onKeyDown={props.onKeyDown}
