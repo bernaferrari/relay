@@ -951,6 +951,8 @@ describe("runRecipeStep campaign check policy", () => {
 });
 
 describe("runRecipeStep semantic reveal", () => {
+  const revealContext = (): RecipeStepContext => ({ log: () => {}, runtime: {} });
+
   it("scrolls only until the mapped destination identity is visible", async () => {
     const before = [{ role: "button", identifier: "top", label: "Top" }];
     const middle = [{ role: "button", identifier: "middle", label: "Middle" }];
@@ -982,7 +984,7 @@ describe("runRecipeStep semantic reveal", () => {
         },
         maxAttempts: 8,
       },
-      noLog,
+      revealContext(),
     );
 
     assert.equal(scrolls, 2);
@@ -1026,7 +1028,7 @@ describe("runRecipeStep semantic reveal", () => {
         target: { identifier: "kids-mode", label: "Kids Mode" },
         direction: "auto",
       },
-      noLog,
+      revealContext(),
     );
     assert.equal(scrolls, 1);
   });
@@ -1085,12 +1087,52 @@ describe("runRecipeStep semantic reveal", () => {
           },
         ],
       },
-      noLog,
+      revealContext(),
     );
 
     assert.equal(movements.length, 1);
     assert.equal(movements[0]?.direction, "down");
     assert.equal(movements[0]?.amount, 0.85);
+  });
+
+  it("reuses the verified source observation before indexed navigation", async () => {
+    let snapshots = 0;
+    const nodes = [
+      {
+        role: "cell",
+        identifier: "appearance",
+        label: "Appearance",
+        hittable: true,
+        rect: { x: 0, y: 260, width: 300, height: 60 },
+      },
+    ];
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () => {
+          snapshots += 1;
+          return Promise.resolve({ nodes });
+        },
+      }),
+      {
+        kind: "reveal",
+        target: { identifier: "appearance" },
+        navigation: [
+          {
+            schemaVersion: 1,
+            surfaceId: "settings",
+            captureId: "settings-r1",
+            documentHeight: 2_400,
+            viewportHeight: 800,
+            targetOrder: 0,
+            targetDocumentY: 290,
+            anchors: [{ order: 0, documentY: 290, target: { identifier: "appearance" } }],
+          },
+        ],
+      },
+      { log: () => {}, runtime: { observation: { nodes, observedAt: 123 } } },
+    );
+
+    assert.equal(snapshots, 0);
   });
 
   it("fails closed when a compiled surface does not overlap the live viewport", async () => {
@@ -1129,7 +1171,7 @@ describe("runRecipeStep semantic reveal", () => {
             },
           ],
         },
-        noLog,
+        revealContext(),
       ),
       /does not overlap the compiled full-surface semantic index/,
     );

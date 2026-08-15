@@ -25,7 +25,7 @@ import {
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
 import type { RecipeStep } from "./recipes.js";
-import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { invalidateVerifiedScreen, type RecipeStepContext } from "./recipe-runner-context.js";
 import { semanticTargetKey } from "./scroll-surface-semantic-index.js";
 
 function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): string[] {
@@ -164,7 +164,10 @@ export async function runRevealStep(
     let repeated = 0;
     for (let attempts = 0; attempts <= maxAttempts; attempts += 1) {
       await cooperativeCheckpoint();
-      const nodes = await snapshot(device);
+      const nodes = ctx.runtime?.observation?.nodes ?? (await snapshot(device));
+      if (ctx.runtime && !ctx.runtime.observation) {
+        ctx.runtime.observation = { nodes, observedAt: now() };
+      }
       if (resolveSnapshotTargetPoint(nodes, step.target)) {
         ctx.log(
           `reveal: found semantic target after ${attempts} indexed scroll${attempts === 1 ? "" : "s"}`,
@@ -186,6 +189,10 @@ export async function runRevealStep(
       }
       const direction =
         step.direction && step.direction !== "auto" ? step.direction : movement.direction;
+      if (ctx.runtime) {
+        ctx.runtime.observation = undefined;
+        ctx.runtime.verifiedScreen = undefined;
+      }
       if (direction === "down") await scrollDown(device, movement.amount);
       else await scrollUp(device, movement.amount);
       ctx.log(
@@ -205,7 +212,10 @@ export async function runRevealStep(
     let repeated = 0;
     while (attempts <= maxAttempts) {
       await cooperativeCheckpoint();
-      const nodes = await snapshot(device);
+      const nodes = ctx.runtime?.observation?.nodes ?? (await snapshot(device));
+      if (ctx.runtime && !ctx.runtime.observation) {
+        ctx.runtime.observation = { nodes, observedAt: now() };
+      }
       if (resolveSnapshotTargetPoint(nodes, step.target)) {
         ctx.log(
           `reveal: found semantic target after ${attempts} scroll${attempts === 1 ? "" : "s"}`,
@@ -223,6 +233,10 @@ export async function runRevealStep(
           : undefined;
       const nextDirection = suggestedDirection ?? direction;
       const targetedAmount = suggestedDirection ? 0.18 : undefined;
+      if (ctx.runtime) {
+        ctx.runtime.observation = undefined;
+        ctx.runtime.verifiedScreen = undefined;
+      }
       if (nextDirection === "down") await scrollDown(device, targetedAmount);
       else await scrollUp(device, targetedAmount);
       attempts += 1;
@@ -237,7 +251,10 @@ export async function runScrollOrRevealStep(
   step: Extract<RecipeStep, { kind: "scroll" | "reveal" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  if (step.kind === "scroll") return runSemanticScrollStep(device, step, ctx);
+  if (step.kind === "scroll") {
+    invalidateVerifiedScreen(ctx);
+    return runSemanticScrollStep(device, step, ctx);
+  }
   return runRevealStep(device, step, ctx);
 }
 

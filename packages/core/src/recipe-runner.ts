@@ -183,7 +183,6 @@ async function runRequiredRecipeStep(
 
     case "scroll":
     case "reveal":
-      invalidateVerifiedScreen(ctx);
       await runScrollOrRevealStep(device, step, ctx);
       break;
 
