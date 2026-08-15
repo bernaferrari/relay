@@ -9,6 +9,7 @@ import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
 import { Icon } from "./icon";
 import { OrientedScreenshot, type ScreenshotOrientationEvidence } from "./oriented-screenshot";
 import { LogicalScrollSurfaceViewer } from "./logical-scroll-surface-viewer";
+import { ScrollSurfaceCaptureAction } from "./scroll-surface-capture-action";
 
 export function ScreenInspector(props: {
   node: MapTreeNode | null;
@@ -123,6 +124,13 @@ export function ScreenInspector(props: {
                 </div>
               </Show>
             </div>
+            <ScrollSurfaceCaptureAction
+              busy={scrollSurface.captureProps().busy}
+              disabledReason={scrollSurface.captureProps().disabledReason}
+              policy={scrollSurface.captureProps().policy}
+              hasSurface={Boolean(scrollSurface.surface())}
+              onCapture={scrollSurface.captureProps().onCapture}
+            />
           </section>
 
           <Show when={scrollSurface.captureProps()}>
@@ -151,20 +159,6 @@ export function ScreenInspector(props: {
                   {capture().policy?.reason ??
                     "Viewport only by default. Opt into a full surface for stable product UI."}
                 </p>
-                <button
-                  type="button"
-                  class="flex min-h-11 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[10.5px] font-medium text-[var(--text-strong)] outline-none transition-[background-color,border-color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] disabled:cursor-not-allowed disabled:text-[var(--text-weaker)] motion-reduce:active:scale-100"
-                  disabled={capture().busy || Boolean(capture().disabledReason)}
-                  aria-describedby={
-                    capture().disabledReason || capture().error
-                      ? "scroll-surface-capture-status"
-                      : undefined
-                  }
-                  onClick={capture().onCapture}
-                >
-                  <Icon name={capture().busy ? "refresh" : "camera"} size={12} />
-                  <span>{capture().busy ? "Capturing full surface…" : "Capture full surface"}</span>
-                </button>
                 <Show when={capture().disabledReason || capture().error}>
                   <p
                     id="scroll-surface-capture-status"
