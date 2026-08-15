@@ -429,4 +429,11 @@ test("keeps dynamic or private content viewport-only while recommending stable p
     recommendScrollSurfaceCapturePolicy({ title: "Unclassified page", decidedAt: 70 }).captureMode,
     "viewport",
   );
+  const licenses = recommendScrollSurfaceCapturePolicy({
+    title: "Open Source Licenses",
+    semanticLabels: ["AndroidX", "Kotlin", "Licenses"],
+    decidedAt: 80,
+  });
+  assert.equal(licenses.captureMode, "viewport");
+  assert.match(licenses.reason, /representative viewport/iu);
 });

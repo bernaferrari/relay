@@ -2,6 +2,8 @@ import type { ScrollSurfaceCapturePolicy } from "@relay/protocol";
 
 const dynamicContent =
   /\b(import|memory|feed|history|private|account|user|chat|message|conversation)\b/iu;
+const repetitiveCatalog =
+  /\b(open[\s-]?source licenses?|software licenses?|acknowledgements?|credits|legal notices?)\b/iu;
 const stableProductContent =
   /\b(settings|preferences|options|terms|privacy|subscription|billing|supergrok)\b/iu;
 
@@ -22,6 +24,15 @@ export function recommendScrollSurfaceCapturePolicy(input: {
       decidedAt: input.decidedAt,
     };
   }
+  if (repetitiveCatalog.test(input.title)) {
+    return {
+      captureMode: "viewport",
+      source: "recommended",
+      reason:
+        "A representative viewport plus semantic presence covers this repetitive catalog without redundant scrolling.",
+      decidedAt: input.decidedAt,
+    };
+  }
   if (stableProductContent.test(input.title)) {
     return {
       captureMode: "full-surface",
@@ -35,6 +46,15 @@ export function recommendScrollSurfaceCapturePolicy(input: {
       captureMode: "viewport",
       source: "recommended",
       reason: "Dynamic, private, account-specific, or user-generated content stays viewport-only.",
+      decidedAt: input.decidedAt,
+    };
+  }
+  if (repetitiveCatalog.test(labels)) {
+    return {
+      captureMode: "viewport",
+      source: "recommended",
+      reason:
+        "A representative viewport plus semantic presence covers this repetitive catalog without redundant scrolling.",
       decidedAt: input.decidedAt,
     };
   }
