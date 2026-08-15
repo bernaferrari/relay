@@ -3,18 +3,25 @@ import type { SnapshotNode } from "./device.js";
 import type { ScreenshotPayload } from "./workspace-capture.js";
 import type { TestJob } from "./session.js";
 
-export type VerifiedScreenCheckpoint = {
+export type FreshDeviceObservation = {
+  nodes?: SnapshotNode[];
+  observedAt: number;
+  screenshot?: ScreenshotPayload;
+};
+
+export type VerifiedScreenCheckpoint = FreshDeviceObservation & {
   screenId: string;
   screenTitle: string;
   nodes: SnapshotNode[];
   verifiedAt: number;
-  screenshot?: ScreenshotPayload;
 };
 
 /** Mutable, run-local state shared through nested reusable recipes. It is
  * deliberately never persisted: every mutation invalidates the proof and a
  * later run must establish its own checkpoint from the live target. */
 export type RecipeRuntimeState = {
+  /** Latest exact tree/raster observation, reusable only until a mutation. */
+  observation?: FreshDeviceObservation;
   verifiedScreen?: VerifiedScreenCheckpoint;
   deferredCampaignChecks?: Array<{
     check: NonNullable<RecipeStep["check"]>;
@@ -53,7 +60,10 @@ export function stepBreaksVerifiedScreen(step: RecipeStep): boolean {
 }
 
 export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
-  if (ctx.runtime) ctx.runtime.verifiedScreen = undefined;
+  if (ctx.runtime) {
+    ctx.runtime.observation = undefined;
+    ctx.runtime.verifiedScreen = undefined;
+  }
 }
 
 export type RecipeStepContext = {

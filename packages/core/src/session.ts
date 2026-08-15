@@ -658,7 +658,7 @@ async function runRecipeSteps(
       });
       const evidencePhases = automaticEvidencePhases(resolvedStep);
       if (evidencePhases.includes("before"))
-        await captureAutomaticState(job, device, ts, "before", pushLog);
+        await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
       await runRecipeStep(device, resolvedStep, {
         log: pushLog,
         job,
@@ -666,11 +666,11 @@ async function runRecipeSteps(
         runtime,
       });
       if (evidencePhases.includes("after"))
-        await captureAutomaticState(job, device, ts, "after", pushLog);
+        await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       finishStep(ts, "ok");
     } catch (err) {
       // A failure frame remains useful when passive-step evidence is suppressed.
-      await captureAutomaticState(job, device, ts, "after", pushLog);
+      await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(undefined);
       throw err;
@@ -680,21 +680,27 @@ async function runRecipeSteps(
   setCurrentStep(undefined);
 }
 
-async function captureAutomaticState(
+export async function captureAutomaticState(
   job: TestJob,
   device: Device,
   step: TraceStep,
   phase: "before" | "after",
   log: (line: string) => void,
+  runtime?: RecipeRuntimeState,
 ): Promise<void> {
   if (process.env.RELAY_AUTO_VISUAL_EVIDENCE === "0") return;
   if (!visualEvidenceAllowed()) return;
-  let snapshotNodes: import("./device.js").SnapshotNode[] | undefined;
+  const observation = runtime?.observation ?? runtime?.verifiedScreen;
+  let snapshotNodes: import("./device.js").SnapshotNode[] | undefined = observation?.nodes;
+  let observedAt = observation?.observedAt ?? now();
   try {
-    snapshotNodes = await snapshot(device);
+    if (!snapshotNodes) {
+      snapshotNodes = await snapshot(device);
+      observedAt = now();
+    }
     job.artifacts.push({
       kind: "ui-tree",
-      capturedAt: now(),
+      capturedAt: observedAt,
       data: { stepId: step.id, phase, nodes: snapshotNodes },
     });
   } catch (error) {
@@ -707,11 +713,30 @@ async function captureAutomaticState(
       log(`warn: ${phase} UI-tree capture failed: ${message}`);
     }
   }
+  if (runtime && !observation) {
+    runtime.observation = { observedAt, ...(snapshotNodes ? { nodes: snapshotNodes } : {}) };
+  }
 
   const runDir = await ensureRunDir(job);
   await mkdir(join(runDir, "frames"), { recursive: true });
   const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
   try {
+    const cachedScreenshot = observation?.screenshot;
+    if (cachedScreenshot) {
+      const existing = cachedScreenshot.framePath
+        ? job.frames.find((frame) => frame.path === cachedScreenshot.framePath)
+        : undefined;
+      if (existing) {
+        if (!step.frames.some((frame) => frame.path === existing.path)) {
+          step.frames.push({ ...existing });
+        }
+      } else {
+        const frame = await writeFramePng(job, cachedScreenshot.base64, `${phase} · ${step.title}`);
+        step.frames.push({ ...frame, base64: undefined });
+        cachedScreenshot.framePath = frame.path;
+      }
+      return;
+    }
     let bytes: Buffer;
     if (job.platform === "ios" && job.serial) {
       try {
@@ -743,6 +768,24 @@ async function captureAutomaticState(
     const encoded = bytes.toString("base64");
     const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`);
     step.frames.push({ ...frame, base64: undefined });
+    if (runtime) {
+      const screenshot = {
+        capturedAt: frame.capturedAt,
+        mime: "image/png" as const,
+        base64: encoded,
+        path: temporary,
+        bytes: bytes.byteLength,
+        ...(bytes.length > 24
+          ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+          : {}),
+        jobId: job.id,
+        framePath: frame.path,
+      };
+      const current = runtime.observation ?? { observedAt };
+      current.screenshot = screenshot;
+      runtime.observation = current;
+      if (runtime.verifiedScreen) runtime.verifiedScreen.screenshot = screenshot;
+    }
   } catch (error) {
     log(
       `warn: ${phase} screenshot capture failed: ${error instanceof Error ? error.message : String(error)}`,

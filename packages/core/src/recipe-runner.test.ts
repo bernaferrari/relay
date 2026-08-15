@@ -1698,6 +1698,54 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(snapshots, 1);
     assert.equal(presses, 1);
     assert.equal(tapContext.runtime?.verifiedScreen, undefined);
+    assert.equal(tapContext.runtime?.observation, undefined);
+  });
+
+  it("reuses one unchanged automatic observation for destination assertion and semantic tap", async () => {
+    const destinationNodes = [
+      {
+        role: "button",
+        label: "Continue",
+        enabled: true,
+        hittable: true,
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    ];
+    const fingerprint = observeScreenIdentity(destinationNodes).fingerprint;
+    let snapshots = 0;
+    let presses = 0;
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: destinationNodes });
+      },
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+    });
+    const ctx: RecipeStepContext = {
+      log: () => {},
+      runtime: {
+        observation: { nodes: destinationNodes, observedAt: 123 },
+      },
+    };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "expect-screen",
+        screenId: "destination",
+        screenTitle: "Destination",
+        fingerprint,
+      },
+      ctx,
+    );
+    await runRecipeStep(device, { kind: "tap", target: { label: "Continue" } }, ctx);
+
+    assert.equal(snapshots, 0);
+    assert.equal(presses, 1);
+    assert.equal(ctx.runtime?.observation, undefined);
   });
 
   it("does not reuse verified nodes after an intervening mutation", async () => {

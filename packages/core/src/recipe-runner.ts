@@ -213,14 +213,16 @@ async function runRequiredRecipeStep(
 
     case "screenshot": {
       const verified = ctx.runtime?.verifiedScreen;
+      const observation = ctx.runtime?.observation;
       const screenshot = await captureScreenshot({
         jobId: job?.id,
         caption: step.caption,
         device,
         // Preserve screenshot screen-match evidence while avoiding a second
         // Android tree walk after an immediately preceding semantic proof.
-        ...(verified ? { semanticNodes: verified.nodes } : {}),
+        ...(observation?.nodes ? { semanticNodes: observation.nodes } : {}),
       });
+      if (observation) observation.screenshot = screenshot;
       if (verified) verified.screenshot = screenshot;
       break;
     }

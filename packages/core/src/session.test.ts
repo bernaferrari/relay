@@ -6,7 +6,12 @@ import test from "node:test";
 import { JobRegistry } from "./job-registry.js";
 import { leaseDevice } from "./collaboration.js";
 import { runWithOperationContext } from "./operation-context.js";
-import { enqueueJob, waitForJobCompletion } from "./session.js";
+import type { Device } from "./device.js";
+import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import { captureAutomaticState, enqueueJob, waitForJobCompletion } from "./session.js";
+import type { TestJob } from "./session-contract.js";
+import { runWithTargetContext } from "./target-context.js";
+import type { TraceStep } from "./trace.js";
 
 type RegistryJob = {
   id: string;
@@ -74,6 +79,143 @@ test("retains terminal jobs until persistence succeeds", () => {
   registry.remember({ id: "durable-3", status: "ok", persisted: true });
   assert.equal(registry.size, 2);
   assert.equal(registry.get(failedWrite.id), undefined);
+});
+
+test("automatic evidence reuses one verified tree and raster without device latency", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-observation-cache-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    let snapshots = 0;
+    let screenshots = 0;
+    const device = {
+      capture: {
+        snapshot: async () => {
+          snapshots += 1;
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          return { nodes: [] };
+        },
+        screenshot: async () => {
+          screenshots += 1;
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          return { base64: Buffer.from("unexpected").toString("base64") };
+        },
+      },
+    } as unknown as Device;
+    const nodes = [
+      {
+        role: "button",
+        label: "Continue",
+        hittable: true,
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    ];
+    const raster = Buffer.from("one exact raster").toString("base64");
+    const runtime: RecipeRuntimeState = {
+      verifiedScreen: {
+        screenId: "source",
+        screenTitle: "Source",
+        nodes,
+        observedAt: 123,
+        verifiedAt: 123,
+        screenshot: {
+          capturedAt: 124,
+          mime: "image/png",
+          base64: raster,
+          path: join(root, "ephemeral.png"),
+          bytes: Buffer.byteLength(raster, "base64"),
+        },
+      },
+    };
+    const job = {
+      id: "observation-cache",
+      action: "test",
+      platform: "android",
+      queuedAt: Date.now(),
+      artifacts: [],
+      frames: [],
+    } as unknown as TestJob;
+    const step = {
+      id: "tap-source",
+      title: "Tap Continue",
+      frames: [],
+      glyphs: [],
+    } as unknown as TraceStep;
+
+    const startedAt = performance.now();
+    await captureAutomaticState(job, device, step, "before", () => {}, runtime);
+    const elapsedMs = performance.now() - startedAt;
+
+    assert.equal(snapshots, 0);
+    assert.equal(screenshots, 0);
+    assert.ok(elapsedMs < 500, `cached evidence should avoid device delays (took ${elapsedMs}ms)`);
+    assert.deepEqual(
+      job.artifacts.map((artifact) => [artifact.kind, artifact.capturedAt]),
+      [["ui-tree", 123]],
+    );
+    assert.equal(job.frames.length, 1);
+    assert.equal(step.frames.length, 1);
+    assert.equal(step.frames[0]?.path, job.frames[0]?.path);
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("automatic failure evidence captures a fresh tree and raster after invalidation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-observation-failure-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    let snapshots = 0;
+    let screenshots = 0;
+    const freshNodes = [{ role: "heading", label: "Failure destination" }];
+    const device = {
+      capture: {
+        snapshot: async () => {
+          snapshots += 1;
+          return { nodes: freshNodes };
+        },
+        screenshot: async ({ path }: { path: string }) => {
+          screenshots += 1;
+          const { writeFile } = await import("node:fs/promises");
+          await writeFile(path, Buffer.from("fresh failure raster"));
+          return {};
+        },
+      },
+    } as unknown as Device;
+    const job = {
+      id: "observation-failure",
+      action: "test",
+      platform: "android",
+      queuedAt: Date.now(),
+      artifacts: [],
+      frames: [],
+    } as unknown as TestJob;
+    const step = {
+      id: "failed-tap",
+      title: "Failed tap",
+      frames: [],
+      glyphs: [],
+    } as unknown as TraceStep;
+
+    const logs: string[] = [];
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "observation-failure" },
+      () => captureAutomaticState(job, device, step, "after", (line) => logs.push(line), {}),
+    );
+
+    assert.equal(snapshots, 1, logs.join("; "));
+    assert.equal(screenshots, 1, logs.join("; "));
+    assert.deepEqual((job.artifacts[0]?.data as { nodes: unknown }).nodes, freshNodes);
+    assert.equal(job.frames.length, 1);
+    assert.equal(step.frames.length, 1);
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("an expired frozen lease fails before device execution starts", async () => {
