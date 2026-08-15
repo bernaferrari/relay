@@ -224,6 +224,7 @@ export function ScreenCard(props: {
   position: { x: number; y: number };
   geometry: ScreenCardGeometry;
   src: () => string;
+  scrollSurface?: { viewportCount: number; complete: boolean };
   orientationEvidence?: ScreenshotOrientationEvidence;
   /** The exact recorded action that starts the selected connection, if known. */
   selectedConnectionOrigin?: CanvasInteractionAnchor;
@@ -278,7 +279,7 @@ export function ScreenCard(props: {
       role="group"
       aria-roledescription="screen"
       tabIndex={0}
-      aria-label={`${props.title} screen${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
+      aria-label={`${props.title} screen${props.scrollSurface ? `, ${props.scrollSurface.complete ? "full" : "partial"} page from ${props.scrollSurface.viewportCount} viewports` : ""}${props.connectionOrigin ? ", origin of selected path" : props.here ? ", here" : ""}${props.selected ? ", selected" : ""}`}
       data-app-map-screen-id={props.node.id}
       data-app-map-here={props.here ? "true" : undefined}
       data-app-map-connection-origin={props.connectionOrigin ? "true" : undefined}
@@ -453,6 +454,7 @@ export function ScreenCard(props: {
         fallback={
           <div
             data-screen-frame
+            data-logical-scroll-surface={props.scrollSurface ? "true" : undefined}
             class={cn(
               "grid min-h-0 place-items-center overflow-hidden rounded-[9px] bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-150",
               frameStateClass(),
@@ -539,6 +541,14 @@ export function ScreenCard(props: {
                     : undefined
                 }
               />
+              <Show when={props.scrollSurface}>
+                {(surface) => (
+                  <span class="pointer-events-none absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-full border border-[rgb(255_255_255/16%)] bg-[rgb(10_12_18/82%)] px-1.5 py-1 text-[8.5px] font-medium text-white shadow-[0_1px_5px_rgb(0_0_0/24%)] backdrop-blur-sm">
+                    <Icon name="grid" size={9} />
+                    {surface().complete ? "Full page" : "Partial page"} · {surface().viewportCount}
+                  </span>
+                )}
+              </Show>
             </div>
           </div>
         )}

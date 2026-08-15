@@ -98,7 +98,13 @@ export function ScreenInspector(props: {
                   )}
                   aria-hidden="true"
                 />
-                <span>{props.image ? "Screenshot saved" : "No screenshot"}</span>
+                <span>
+                  {scrollSurface.surface()
+                    ? `Full page · ${scrollSurface.surface()!.viewports.length} views`
+                    : props.image
+                      ? "Screenshot saved"
+                      : "No screenshot"}
+                </span>
               </div>
               <Show when={props.isFlowStart}>
                 <div class="flex items-center gap-2">

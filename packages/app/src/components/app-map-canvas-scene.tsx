@@ -47,6 +47,9 @@ export type AppMapCanvasSceneProps = {
   positionFor: (node: MapTreeNode) => CanvasPoint;
   titleFor: (node: MapTreeNode) => string;
   imageFor: (node: MapTreeNode) => string;
+  scrollSurfaceFor?: (
+    node: MapTreeNode,
+  ) => { viewportCount: number; complete: boolean } | undefined;
   orientationEvidenceFor: (node: MapTreeNode) => ScreenshotOrientationEvidence | undefined;
   isFlowStart: (node: MapTreeNode) => boolean;
   screenRunState: (screenId: string) => AppMapRunPresentationState | undefined;
@@ -552,6 +555,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               position={props.positionFor(node)}
               geometry={geometryForNode(node)}
               src={() => props.imageFor(node)}
+              scrollSurface={props.scrollSurfaceFor?.(node)}
               orientationEvidence={props.orientationEvidenceFor(node)}
               onNaturalSize={(size) => rememberNaturalSize(node.id, size)}
               selectedConnectionOrigin={selectedConnectionForNode()?.sourceAnchor}

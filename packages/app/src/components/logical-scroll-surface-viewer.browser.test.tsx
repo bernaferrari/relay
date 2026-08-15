@@ -72,7 +72,7 @@ const surface: LogicalScrollSurface = {
   manifest: { ...evidence("manifest", "application/json"), mime: "application/json" },
 };
 
-test("shows the composite first and decomposes it into raw screenshot/tree pairs", () => {
+test("shows one full-page screen first and keeps source evidence collapsed", () => {
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
@@ -92,17 +92,20 @@ test("shows the composite first and decomposes it into raw screenshot/tree pairs
 
   expect(root.querySelector("[data-scroll-surface-composite]")).not.toBeNull();
   expect(root.querySelectorAll("[data-scroll-surface-boundary]")).toHaveLength(1);
-  expect(root.querySelector("[data-scroll-surface-viewports]")).toBeNull();
+  expect(root.textContent).toContain("One mapped screen · 2 source viewports");
 
-  const raw = [...root.querySelectorAll("button")].find((button) => button.textContent === "Raw")!;
-  raw.click();
-  expect(root.querySelector("[data-scroll-surface-composite]")).toBeNull();
+  const evidenceDisclosure = root.querySelector<HTMLDetailsElement>(
+    "[data-scroll-surface-evidence]",
+  )!;
+  expect(evidenceDisclosure.open).toBe(false);
+  evidenceDisclosure.open = true;
+  evidenceDisclosure.dispatchEvent(new Event("toggle"));
   expect(root.querySelectorAll("[data-scroll-surface-viewports] li")).toHaveLength(2);
   expect(root.querySelectorAll('a[href*="application/json"]')).toHaveLength(4);
-  expect(root.textContent).toContain("Merged tree (42)");
-  expect(root.textContent).toContain("Regeneration manifest");
-  const regenerate = [...root.querySelectorAll("button")].find(
-    (button) => button.textContent === "Rebuild from raw viewports",
+  expect(root.textContent).toContain("Merged tree · 42 nodes");
+  expect(root.textContent).toContain("Capture manifest");
+  const regenerate = [...root.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Regenerate preview"),
   )!;
   regenerate.click();
   expect(regenerations).toBe(1);

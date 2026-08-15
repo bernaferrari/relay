@@ -4,6 +4,7 @@ import { Button } from "@relay/ui/button";
 import type { PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
 import { appMapIdForJob } from "../lib/run-presentation";
+import { variantScrollSurface } from "../lib/app-map-workspace-media";
 import {
   browseOutcomeLabel,
   deriveAppMapAreas,
@@ -266,6 +267,7 @@ export function AppMapBrowseView(props: {
                             screen={screen()}
                             image={props.imageForScreen(screenId)}
                             orientationEvidence={props.orientationEvidenceForScreen(screenId)}
+                            scrollSurface={variantScrollSurface(props.appMap, screenId)}
                             state={props.stateForScreen(screenId)}
                             incoming={incomingCount(props.appMap, screenId)}
                             outgoing={outgoingCount(props.appMap, screenId)}
@@ -293,6 +295,7 @@ function ScreenTile(props: {
   screen: Screen;
   image: string;
   orientationEvidence?: ScreenshotOrientationEvidence;
+  scrollSurface?: { viewports: readonly unknown[]; status: "completed" | "stopped" };
   state?: ScreenState;
   incoming: number;
   outgoing: number;
@@ -349,6 +352,15 @@ function ScreenTile(props: {
               title={`Owned by ${handoff().ownerApp} · returns with ${handoff().returnAction}`}
             >
               <Icon name="external" size={10} /> Handoff
+            </span>
+          )}
+        </Show>
+        <Show when={props.scrollSurface}>
+          {(surface) => (
+            <span class="pointer-events-none absolute bottom-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--background-base)_88%,transparent)] px-2 text-[9px] font-medium text-[var(--text-strong)] shadow-[0_1px_5px_rgb(0_0_0/12%)] backdrop-blur-sm">
+              <Icon name="grid" size={9} />
+              {surface().status === "completed" ? "Full page" : "Partial page"} ·{" "}
+              {surface().viewports.length}
             </span>
           )}
         </Show>

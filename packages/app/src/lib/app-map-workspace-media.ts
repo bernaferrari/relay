@@ -1,4 +1,4 @@
-import type { AppMap } from "@relay/protocol";
+import type { AppMap, LogicalScrollSurface } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import {
   companionLogicalViewport,
@@ -26,6 +26,17 @@ export function variantScreenshotUrl(
   const variant = latestScreenVariant(appMap, screenId);
   const uri = variant?.screenshotUri;
   return uri ? server.authoringEvidenceUrl(uri, "image/png") : "";
+}
+
+/** The newest decomposable full-page capture for one logical map screen. */
+export function variantScrollSurface(
+  appMap: AppMap | null | undefined,
+  screenId: string,
+): LogicalScrollSurface | undefined {
+  return latestScreenVariant(appMap, screenId)?.scrollSurfaces?.toSorted(
+    (left, right) =>
+      right.capturedAt - left.capturedAt || right.captureId.localeCompare(left.captureId),
+  )[0];
 }
 
 export function variantOrientationEvidence(
