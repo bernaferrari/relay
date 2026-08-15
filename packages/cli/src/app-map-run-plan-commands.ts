@@ -20,7 +20,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         {
           name: "variable",
           type: "object",
-          description: "Name, kind, values, and the recorded path that opens the value list",
+          description: "Name, kind, values, and reviewed actions that open the value list",
         },
       ],
       examples: [
@@ -93,12 +93,12 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        `relay run-matrix save settings language-x-tour --input '${JSON.stringify({
+        `relay run-matrix save settings language-x-coverage --input '${JSON.stringify({
           expectedRevision: 5,
           combine: {
-            name: "Language × Settings tour",
+            name: "Language × Settings coverage",
             variableIds: ["language"],
-            testIds: ["settings-tour"],
+            testIds: ["settings-coverage"],
             strategy: "cartesian",
           },
         })}'`,

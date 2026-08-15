@@ -126,7 +126,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
-      note: "The revision and target are mandatory. Device runs require control under the same --actor lease identity.",
+      note: "The revision and target are mandatory. Device runs require authorized server-managed control; active jobs serialize Target mutations.",
       behavior: "job-start-watch",
     }),
   ),

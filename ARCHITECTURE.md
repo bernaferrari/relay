@@ -40,8 +40,9 @@ optionally bind a recorded open/leave path. Inference never invents navigation. 
 the historical `variables` collection name for compatibility, but product surfaces use Modifier.
 **Tests** are graph-native intent documents with stable step IDs. Instruction, validation,
 extraction, manual checkpoint, module, decision, loop, and constrained-script steps bind to reviewed
-App Map entities or remain explicitly unresolved. Recorded paths and tours are import compatibility
-forms, not a parallel editor. **Run matrix** is every selected modifier value × those Tests (one
+App Map entities or remain explicitly unresolved. `scenario` is the only Test contract. Connections
+and Flows may satisfy navigation bindings, but neither is an alternate Test document or conversion
+source. **Run matrix** is every selected modifier value × those Tests (one
 visible grid, one job). The protocol keeps the historical `combines` collection name. Case stacks
 remain typed **test data** expansion (emails, plans), not modes.
 
@@ -105,8 +106,9 @@ document. Large screenshot matrices remain evidence references, not replicated b
 presence and cursors use a separate ephemeral awareness channel rather than persisted map state.
 
 Presence, cursors, viewport, and transient activity are ephemeral awareness data. They are never
-execution authority and are not persisted in App Maps. Device input and recording require explicit,
-visible, exclusive leases; observation remains shareable. Agent mutations default to attributed
+execution authority and are not persisted in App Maps. Device input and recording require a visible
+server-owned lease. Trusted same-project local clients share the local-project lease while mutations
+serialize per Target; remote actors remain exclusive. Observation remains shareable. Agent mutations default to attributed
 Proposals. Identity merges, approved baselines, and verified status require human approval.
 
 ## Authoring and execution
@@ -115,12 +117,14 @@ The canvas is the primary authoring surface. A recording creates an Authoring Se
 Take evidence. Review can trim, split, replace, replay, or rewrite the proposed Connection. Approval
 commits the reviewed Connection to the App Map and compiles its executable action projection.
 
-A run freezes the Flow revision, selected targets, variables, target profiles, comparison regions,
-baseline provenance, and evidence policy before enqueueing. Device groups execute independently per
+A Test run freezes the App Map and Test revision, compiled step provenance, selected targets,
+modifiers, target profiles, comparison regions, baseline provenance, and evidence policy before
+enqueueing. Device groups execute independently per
 target and retain every Target Result; one target can never overwrite another. Destination mismatch
 is a failure even when the input action itself succeeded.
 
-Project variables are shareable, typed values. Private actor values remain outside the shared App Map
+Project modifiers are shareable, typed values (stored under the protocol's `variables` field).
+Private actor values remain outside the shared App Map
 and resolve at run time. Matrices can expand values, targets, builds, models, and variants without
 duplicating a Flow.
 

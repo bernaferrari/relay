@@ -451,6 +451,8 @@ test("matrix prompt keeps authoring, preflight, execution, retry, and export on 
     assert.match(text, /variables as modifiers/);
     assert.match(text, /relay_app_map_combine_preflight/);
     assert.match(text, /retry only problem cells/i);
+    assert.match(text, /Pilot one representative cell first/);
+    assert.match(text, /App Language destinations that open OS Settings/);
     assert.match(text, /portable screenshot report/);
     assert.match(text, /absent from the canvas/);
   } finally {
@@ -483,6 +485,7 @@ test("graph Test prompt keeps authoring, compilation, execution, and evidence in
     assert.match(text, /relay_app_map_test_run/);
     assert.match(text, /expectedRevision/);
     assert.match(text, /relay_run_evidence_get/);
+    assert.match(text, /repair the source Test/);
     assert.match(text, /do not replace the whole Test or approve your own proposal/i);
   } finally {
     await session.close();

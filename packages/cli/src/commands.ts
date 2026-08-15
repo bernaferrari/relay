@@ -300,11 +300,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "job.locale-matrix.start",
     path("job locale-matrix start", [], undefined, {
-      summary: "Run a map path once per locale with screenshots",
+      summary: "Compatibility command: run a reviewed Flow once per locale",
       examples: [
         'relay job locale-matrix start --input \'{"appMapId":"<map>","flowId":"<flow>","serial":"<device>","locales":["en","pt-BR"]}\'',
       ],
-      note: "Language-only alias of a run matrix. Prefer `relay run-matrix run` or `relay test run`.",
+      note: "Prefer a saved graph-native Test in `relay run-matrix run`; use `relay test run` for one exact pass.",
     }),
   ),
   mapped(
@@ -368,7 +368,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay job locale-matrix infer --input \'{"appMapId":"<map>","flowId":"<flow>","examples":[{"locale":"en","identifier":"lang.en"}],"nodes":[]}\'',
       ],
-      note: "Click or pass 1–2 taught rows. Pass appMapId so a recorded path to the language list is reused.",
+      note: "Click or pass 1–2 taught rows. Pass appMapId so reviewed entry actions to the language list are reused.",
     }),
   ),
   mapped(

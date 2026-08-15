@@ -68,6 +68,23 @@ Tools advertise and take operation fields directly. For example, capture a scree
 contracts expose specific required fields, types, and enums; intentionally generic Relay operations
 remain extensible objects and are still validated by the canonical protocol parser before invocation.
 
+## Graph Test loop
+
+Agents and people use the same scenario-only Test contract:
+
+1. Read the current App Map and Test revision; express the goal as stable-ID intent steps.
+2. Create once or propose semantic edits for review. Keep missing bindings explicit.
+3. Compile and resolve every blocker against its authored step before running.
+4. Run the exact saved revision on an explicit Target, then inspect the terminal run and immutable
+   evidence rather than inferring success from the request.
+5. Repair the failed Test step or mapped Connection, compile again, and rerun only affected run-matrix
+   values when prior passing evidence remains valid.
+
+Connections and Flows are reusable navigation evidence, not alternate Test formats. Full-surface
+capture is reserved for stable product-owned pages and keeps its original viewport PNG/tree pairs.
+A cross-app App Language destination should be verified as a reversible OS handoff, captured once,
+and left with Back; it is not a language-list traversal.
+
 ## Surface and safety model
 
 - Resources expose bounded, sanitized project, App Map, Flow, Run, Authoring Session, Target, and

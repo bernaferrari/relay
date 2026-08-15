@@ -3,10 +3,11 @@
 Relay maps real products and replays meaningful tests across web, Android, and iOS—without needing
 their source code.
 
-Connect a target, capture the paths a person already knows, and Relay turns them into an executable
+Connect a target, capture the screens and connections a person already knows, and Relay turns them
+into an executable
 **App Map**. The same map can then answer questions such as:
 
-- Does every Settings screen render in all 45 languages?
+- Does every Settings screen render in all 40 languages?
 - Do low, medium, and high reasoning modes all complete the same conversation test?
 - Does a checkout still work on every supported device and app build?
 - Which screen changed, what action reached it, and what evidence proves the result?
@@ -26,7 +27,7 @@ Relay uses five user-facing concepts:
 | **Connection** | Recorded actions between two screens                  | Settings → tap Appearance → Appearance       |
 | **Modifier**   | A reusable way to change one dimension                | Language = English, Italian, Japanese        |
 | **Test**       | Ordered intent, checks, decisions, and reusable flows | Sign in, verify Home, extract the account ID |
-| **Run matrix** | Every selected modifier state × every selected test   | 45 languages × 10 screens = 450 screenshots  |
+| **Run matrix** | Every selected modifier state × every selected test   | 40 languages × 10 screens = 400 screenshots  |
 
 ```text
 Language modifier ─┐
@@ -39,8 +40,10 @@ screen. Tests remain independent, so a new language or model can reuse every exi
 rerecording it. A graph-native Test can navigate reviewed connections, validate or extract UI,
 pause for a person, call a reusable module, branch, loop, or run a constrained script. Screenshot
 policy belongs to each test: every screen, selected checkpoints, final screen, failures only, or
-none. Older recorded paths can be converted without losing their connection flow; tours remain
-read-only compatibility documents until they are deliberately rebuilt.
+none. Tests have one authoring contract: a graph-native `scenario` with stable step IDs. Create or
+propose semantic edits, compile them against the current App Map revision, run that exact revision,
+inspect its immutable results, then repair the failed authored step and compile again. Recorded
+Connections and Flows remain reusable navigation evidence; they are not alternate Test formats.
 
 ## Start the desktop app
 
@@ -69,9 +72,9 @@ the CLI.
 1. Enable USB debugging, connect the phone, and approve the computer on the device.
 2. Open **Device** and choose the connected Android target.
 3. Navigate to the first useful screen and choose **Save screen** in the device panel.
-4. Select the saved screen, start recording in the device panel, and perform one meaningful path.
+4. Select the saved screen, choose **Record connection**, and perform one meaningful transition.
 5. Stop recording. Remove accidental actions in Take review, choose the destination, and replay the
-   path.
+   proposed Connection.
 6. Choose **Add to map** only when the replay reaches the intended screen.
 7. Open **Tests**, add readable intent steps, and bind navigation to the reviewed connections or a
    saved flow. Relay shows unresolved steps before anything can run.
@@ -97,6 +100,19 @@ The manual workflow does not require an agent:
 5. Inspect the exact expansion. Run one cell to prove the setup, then run the matrix.
 6. Review Results by logical screen, with modifier variants grouped together.
 
+Treat long surfaces selectively. Opt stable, product-owned pages into full-surface capture when the
+content below the fold matters; Relay retains the original viewport screenshots and trees and derives
+a merged surface for review. Keep dynamic or user-generated content viewport-only. Repeated content
+that adds no new coverage, such as a uniform license list, also needs only a representative viewport.
+A language row
+that opens Android or iOS Settings is a reversible app handoff: verify the expected system package,
+capture that destination once, and return. It is not a list Relay should scroll or traverse.
+
+For a 40-locale set, keep the improvement loop small: compile once, pilot one representative
+locale, run the selected locale matrix, inspect failed cells by authored step, repair the Test or
+Connection once, then rerun only the affected locale values. Passing evidence remains useful unless
+the edit invalidates it.
+
 The expansion strategy is explicit:
 
 - **Every combination** for a true Cartesian product.
@@ -114,6 +130,9 @@ The root `relay` script is the canonical repository entry point:
 pnpm relay --help
 pnpm relay device list --json
 pnpm relay map list --json
+pnpm relay test compile <map-id> <test-id> --json
+pnpm relay test run <map-id> <test-id> \
+  --input '{"expectedRevision":42,"target":{"kind":"device","platform":"android","targetId":"<device-serial>"}}' --ndjson
 pnpm relay run-matrix preflight <map-id> <matrix-id> \
   --input '{"serial":"<device-serial>"}' --json
 pnpm relay run-matrix run <map-id> <matrix-id> \
@@ -241,7 +260,8 @@ and accessible controls.
 - Local desktop requests are trusted administrators; remote service tokens receive one explicit
   project role: `viewer`, `author`, `runner`, or `admin`.
 - Non-loopback HTTP requires both a bearer token and evidence redaction.
-- Control requires an exclusive device lease; observation remains shareable.
+- Trusted same-project local clients share one server-managed control lease; active jobs serialize
+  mutation. Remote actors remain exclusive. Observation is shareable.
 - Consequential operations append a payload-safe, attributed Activity event.
 - Activity export includes canonical NDJSON records and a SHA-256 integrity manifest.
 - Agent proposals cannot silently replace approved maps or visual baselines.
