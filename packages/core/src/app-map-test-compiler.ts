@@ -178,6 +178,7 @@ export function compileAppMapScenarioTest(
               plan,
               previousInstructionPlan,
               previousTerminalScreenId,
+              { restoreParentViewport: false },
             );
           }
           if (test.capture?.mode === "every-screen" || test.capture?.mode === "checkpoints") {

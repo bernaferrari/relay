@@ -310,7 +310,7 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   );
   assert.deepEqual(
     secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].recovery : undefined,
-    { strategy: "back", maxAttempts: 8, restoreParentViewport: true },
+    { strategy: "back", maxAttempts: 8 },
   );
   assert.equal(
     secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),

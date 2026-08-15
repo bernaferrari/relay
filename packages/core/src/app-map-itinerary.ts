@@ -64,14 +64,17 @@ function scrollFamilyExpectation(
 }
 
 /** Trim a cold path to the nearest proven shared checkpoint. The resulting
- * source assertion owns bounded Back recovery; semantic scroll edges remain
- * responsible for revealing their exact destination. */
+ * source assertion owns bounded Back recovery. It deliberately does not try
+ * to restore list position while still inside an unrelated child screen;
+ * semantic scroll edges reveal the next control after the checkpoint is
+ * reached. */
 export function warmCompiledFlowGraphFromSharedPrefix(
   map: AppMap,
   graph: Record<string, Recipe>,
   plan: AppMapCompiledFlow,
   previousPlan?: AppMapCompiledFlow,
   currentScreenId?: string,
+  options: { restoreParentViewport?: boolean } = { restoreParentViewport: true },
 ): Record<string, Recipe> {
   const root = graph[plan.rootRecipeId];
   if (!root) return graph;
@@ -132,7 +135,11 @@ export function warmCompiledFlowGraphFromSharedPrefix(
         {
           ...structuredClone(warmExpectation),
           id: `${warmExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
-          recovery: { strategy: "back", maxAttempts: 8, restoreParentViewport: true },
+          recovery: {
+            strategy: "back",
+            maxAttempts: 8,
+            ...(options.restoreParentViewport ? { restoreParentViewport: true } : {}),
+          },
         },
         ...root.steps.slice(suffixStart),
       ],
