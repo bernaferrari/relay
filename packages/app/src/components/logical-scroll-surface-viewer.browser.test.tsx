@@ -113,3 +113,35 @@ test("shows one full-page screen first and keeps source evidence collapsed", () 
   dispose();
   document.body.replaceChildren();
 });
+
+test("does not claim a stitched page when seam detection stopped", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const { composite: _, ...withoutComposite } = surface;
+  const partial: LogicalScrollSurface = {
+    ...withoutComposite,
+    status: "stopped",
+    reason: "seam-ambiguous",
+    message: "Raw viewports retained; no visual seam was claimed.",
+  };
+  const dispose = render(
+    () => (
+      <LogicalScrollSurfaceViewer
+        surface={partial}
+        evidenceUrl={(uri, mime) => `/evidence/${uri.slice(-8)}?mime=${mime}`}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Partial");
+  expect(root.textContent).toContain("Preview unavailable");
+  expect(root.textContent).toContain("source viewports below are intact");
+  expect(root.textContent).toContain("Capture stopped: seam ambiguous");
+  expect(root.querySelector("[data-scroll-surface-composite]")).toBeNull();
+  expect(root.querySelector<HTMLDetailsElement>("[data-scroll-surface-evidence]")?.open).toBe(true);
+
+  dispose();
+  document.body.replaceChildren();
+});

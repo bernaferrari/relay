@@ -1361,8 +1361,21 @@ test("opening a tall map keeps screen labels readable while Fit remains exact", 
   const opened = openCanvasViewport({ width: 1440, height: 716 }, content);
   assert.ok(fitted.scale < 0.55);
   assert.equal(opened.scale, 0.55);
-  assert.ok(Number.isFinite(opened.x));
-  assert.ok(Number.isFinite(opened.y));
+  assert.equal(opened.x, (1440 - content.width * opened.scale) / 2);
+  assert.equal(opened.y + content.top * opened.scale, 56);
+});
+
+test("opening a large hub starts at its first section instead of its empty midpoint", () => {
+  const content = { left: 0, top: 0, width: 2_000, height: 8_230 };
+  const opened = openCanvasViewport({ width: 1440, height: 716 }, content);
+
+  assert.equal(opened.scale, 0.55);
+  assert.equal(opened.x, (1440 - content.width * opened.scale) / 2);
+  assert.equal(opened.y, 56);
+  assert.ok(
+    content.height * opened.scale > 4_000,
+    "the test must exercise a map whose midpoint would hide the first section",
+  );
 });
 
 test("keyboard-created branches occupy the nearest open sibling row", () => {

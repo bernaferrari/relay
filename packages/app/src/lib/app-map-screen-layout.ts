@@ -242,9 +242,16 @@ export function openCanvasViewport(
   const fitted = fitCanvasViewport(client, content);
   const scale = clampCanvasScale(Math.max(fitted.scale, minimumReadableScale));
   if (scale === fitted.scale) return fitted;
+  const padding = 56;
+  const scaledWidth = content.width * scale;
+  const scaledHeight = content.height * scale;
+  const axisPosition = (clientSize: number, scaledContentSize: number, contentStart: number) =>
+    scaledContentSize <= clientSize - padding * 2
+      ? (clientSize - scaledContentSize) / 2 - contentStart * scale
+      : padding - contentStart * scale;
   return {
     scale,
-    x: client.width / 2 - ((content.left ?? 0) + content.width / 2) * scale,
-    y: client.height / 2 - ((content.top ?? 0) + content.height / 2) * scale,
+    x: axisPosition(client.width, scaledWidth, content.left ?? 0),
+    y: axisPosition(client.height, scaledHeight, content.top ?? 0),
   };
 }

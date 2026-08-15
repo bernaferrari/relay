@@ -100,7 +100,7 @@ export function ScreenInspector(props: {
                 />
                 <span>
                   {scrollSurface.surface()
-                    ? `Full page · ${scrollSurface.surface()!.viewports.length} views`
+                    ? `${scrollSurface.surface()!.status === "completed" ? "Full page" : "Partial page"} · ${scrollSurface.surface()!.viewports.length} views`
                     : props.image
                       ? "Screenshot saved"
                       : "No screenshot"}
