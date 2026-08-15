@@ -529,16 +529,17 @@ function ModuleBinding(props: {
   onChange: (step: AppMapScenarioTestStep) => void;
 }) {
   const step = () => props.step as Extract<AppMapScenarioTestStep, { kind: "module" }>;
+  const selectedRoutineId = () => {
+    const binding = step().binding;
+    return binding.status === "resolved" ? binding.routineId : "";
+  };
   return (
     <label class="grid gap-1.5" for={`binding-${props.step.id}`}>
       <span class={testEditorLabel}>Reusable module</span>
       <select
         id={`binding-${props.step.id}`}
         class={testEditorInput}
-        value={(() => {
-          const binding = step().binding;
-          return binding.status === "resolved" ? binding.routineId : "";
-        })()}
+        value={selectedRoutineId()}
         onChange={(event) =>
           props.onChange({
             ...step(),
@@ -548,9 +549,15 @@ function ModuleBinding(props: {
           })
         }
       >
-        <option value="">Choose a module…</option>
+        <option value="" selected={!selectedRoutineId()}>
+          Choose a module…
+        </option>
         <For each={Object.values(props.map.routines)}>
-          {(routine) => <option value={routine.id}>{routine.name}</option>}
+          {(routine) => (
+            <option value={routine.id} selected={routine.id === selectedRoutineId()}>
+              {routine.name}
+            </option>
+          )}
         </For>
       </select>
     </label>
