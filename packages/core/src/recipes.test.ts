@@ -801,6 +801,27 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("keeps a strict campaign check boundary separate from optional work", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        { kind: "module", recipeId: "settings", check: { id: "settings", title: "Settings" } },
+      ]),
+      [{ kind: "module", recipeId: "settings", check: { id: "settings", title: "Settings" } }],
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "module",
+            recipeId: "settings",
+            check: { id: "settings", title: "Settings" },
+            optional: true,
+          },
+        ]),
+      /check and optional cannot be combined/u,
+    );
+  });
+
   it("rejects swipe missing from/to", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "swipe", to: { x: 1, y: 2 } }]),

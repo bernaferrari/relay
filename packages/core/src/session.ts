@@ -966,6 +966,26 @@ async function executeJob(id: string): Promise<void> {
       await runRecipeSteps(job, device, pushLog, (step) => {
         currentRecipeStep = step;
       });
+      const failedChecks = job.artifacts.flatMap((artifact) => {
+        if (
+          artifact.kind !== "campaign-check-result" ||
+          !artifact.data ||
+          typeof artifact.data !== "object"
+        ) {
+          return [];
+        }
+        const data = artifact.data as Record<string, unknown>;
+        return data.status === "failed" && typeof data.title === "string"
+          ? [{ title: data.title, error: typeof data.error === "string" ? data.error : "failed" }]
+          : [];
+      });
+      if (failedChecks.length) {
+        throw new Error(
+          `${failedChecks.length} campaign ${failedChecks.length === 1 ? "check" : "checks"} failed: ${failedChecks
+            .map((check) => `${check.title}: ${check.error}`)
+            .join("; ")}`,
+        );
+      }
       if (pendingCancel) throw pendingCancel;
     } finally {
       clearInterval(heartbeat);

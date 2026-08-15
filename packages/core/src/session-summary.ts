@@ -1,4 +1,4 @@
-import type { JobSummary } from "@relay/protocol";
+import type { CampaignCheckSummary, JobSummary } from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
 
 function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
@@ -38,6 +38,36 @@ export function summarizeJob(job: TestJob): JobSummary {
   const lastLogs = job.logs.slice(-12);
   const frozenInputs = job.artifacts.find((artifact) => artifact.kind === "frozen-inputs")?.data;
   const matrixCase = summarizeMatrixCase(frozenInputs);
+  const checks = job.artifacts.flatMap((artifact): CampaignCheckSummary[] => {
+    if (
+      artifact.kind !== "campaign-check-result" ||
+      !artifact.data ||
+      typeof artifact.data !== "object"
+    ) {
+      return [];
+    }
+    const data = artifact.data as Record<string, unknown>;
+    if (
+      typeof data.id !== "string" ||
+      typeof data.title !== "string" ||
+      (data.status !== "passed" && data.status !== "failed") ||
+      typeof data.startedAt !== "number" ||
+      typeof data.finishedAt !== "number"
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: data.id,
+        title: data.title,
+        status: data.status,
+        startedAt: data.startedAt,
+        finishedAt: data.finishedAt,
+        durationMs: Math.max(0, data.finishedAt - data.startedAt),
+        ...(typeof data.error === "string" ? { error: data.error } : {}),
+      },
+    ];
+  });
   return {
     id: job.id,
     action: job.action,
@@ -60,6 +90,7 @@ export function summarizeJob(job: TestJob): JobSummary {
     ...(matrixCase ? { matrixCase } : {}),
     frameCount: job.frames.length,
     evidenceComplete: Boolean(job.evidence?.finishedAt),
+    ...(checks.length ? { checks } : {}),
     ...(lastLogs.length ? { lastLogs } : {}),
   };
 }

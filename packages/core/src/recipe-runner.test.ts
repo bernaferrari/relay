@@ -801,6 +801,56 @@ describe("runRecipeStep optional policy", () => {
   });
 });
 
+describe("runRecipeStep campaign check policy", () => {
+  it("retains a failed check and returns so the next check can run", async () => {
+    const logs: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({ press: () => Promise.reject(new Error("path changed")) });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "settings.customize" },
+        check: { id: "customize", title: "Customize Grok" },
+      },
+      { log: (line) => logs.push(line), job },
+    );
+
+    assert.match(logs.at(-1) ?? "", /check failed: Customize Grok/u);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { status?: string }).status === "failed",
+      ),
+      true,
+    );
+  });
+
+  it("records a passing check", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    await runRecipeStep(
+      stubDevice({}),
+      {
+        kind: "sleep",
+        ms: 0,
+        check: { id: "settings", title: "Settings" },
+      },
+      { ...noLog, job },
+    );
+
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { status?: string }).status === "passed",
+      ),
+      true,
+    );
+  });
+});
+
 describe("runRecipeStep conditional policy", () => {
   it("skips a step when its present condition is false", async () => {
     const logs: string[] = [];

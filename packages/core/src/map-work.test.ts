@@ -274,6 +274,13 @@ test("a combined tour returns only to its shared root instead of Home", () => {
     updatedAt: at,
   };
   const compiled = compileAppMapCombine(map, combine);
+  assert.deepEqual(
+    compiled.root.steps.map((step) => step.check),
+    [
+      { id: work.id, title: work.name },
+      { id: second.id, title: second.name },
+    ],
+  );
   const setup = compiled.graph["app-map:map-1:flow:open-settings-middle:r1"]!;
   // The Path captures its two verified checkpoints, but the executable
   // navigation is only shared Settings recovery → one remaining scroll.

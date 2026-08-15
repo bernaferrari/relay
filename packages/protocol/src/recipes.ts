@@ -153,6 +153,15 @@ export type RecipeStepMetadata = {
   note?: string;
   /** Best-effort setup/cleanup step. Cancellation always remains fatal. */
   optional?: boolean;
+  /**
+   * A compiled campaign check boundary. Failure is retained as a first-class
+   * result and execution continues with the next sibling check; the owning job
+   * still finishes failed after every check has had a chance to run.
+   */
+  check?: {
+    id: string;
+    title: string;
+  };
   /** Run this step only when the target is currently present or absent. */
   when?: {
     target: StepTarget;

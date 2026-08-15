@@ -751,7 +751,12 @@ export function compileAppMapCombine(
       },
     );
     Object.assign(graph, compiled.graph);
-    modules.push({ kind: "module", recipeId: compiled.root.id });
+    modules.push({
+      id: `relay-check-${testId}`,
+      kind: "module",
+      recipeId: compiled.root.id,
+      check: { id: testId, title: work.name },
+    });
     if (setupPlan) {
       previousSetupPlan = setupPlan;
     } else if (work.kind === "path" && work.flowId?.trim()) {
@@ -760,13 +765,6 @@ export function compileAppMapCombine(
       previousSetupPlan = compileAppMapFlow(map, work.flowId);
     } else {
       previousSetupPlan = undefined;
-    }
-  }
-  if (modules.length === 1) {
-    const only = modules[0];
-    if (only?.kind === "module") {
-      const root = graph[only.recipeId];
-      if (root) return { root, graph };
     }
   }
   const root: Recipe = {

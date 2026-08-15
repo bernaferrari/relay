@@ -46,6 +46,45 @@ test("job summaries expose only the safe matrix identity needed by live review",
   assert.equal(JSON.stringify(summarizeJob(job)).includes("must-not-leak"), false);
 });
 
+test("job summaries expose bounded campaign check outcomes", () => {
+  const job = {
+    id: "job-checks",
+    action: "settings",
+    status: "error",
+    queuedAt: 10,
+    platform: "android",
+    targetKind: "device",
+    serial: "pixel",
+    logs: [],
+    frames: [],
+    artifacts: [],
+  } as unknown as TestJob;
+  job.artifacts.push({
+    kind: "campaign-check-result",
+    capturedAt: 40,
+    data: {
+      id: "settings",
+      title: "Settings coverage",
+      status: "failed",
+      error: "path changed",
+      startedAt: 10,
+      finishedAt: 40,
+    },
+  });
+
+  assert.deepEqual(summarizeJob(job).checks, [
+    {
+      id: "settings",
+      title: "Settings coverage",
+      status: "failed",
+      error: "path changed",
+      startedAt: 10,
+      finishedAt: 40,
+      durationMs: 30,
+    },
+  ]);
+});
+
 test("job summaries discard malformed matrix values instead of trusting artifact casts", () => {
   const job = {
     id: "job-2",

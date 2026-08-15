@@ -392,6 +392,7 @@ function parseStepMetadata(
   evidence?: RecordedStepEvidence;
   note?: string;
   optional?: boolean;
+  check?: RecipeStep["check"];
   when?: RecipeStep["when"];
 } {
   const metadata: {
@@ -400,6 +401,7 @@ function parseStepMetadata(
     evidence?: RecordedStepEvidence;
     note?: string;
     optional?: boolean;
+    check?: RecipeStep["check"];
     when?: RecipeStep["when"];
   } = {};
   if (raw.id !== undefined) {
@@ -419,6 +421,23 @@ function parseStepMetadata(
   if (raw.optional !== undefined) {
     if (typeof raw.optional !== "boolean") throw stepErr(index, "optional must be a boolean");
     metadata.optional = raw.optional;
+  }
+  if (raw.check !== undefined) {
+    if (!isObject(raw.check)) throw stepErr(index, "check must be an object");
+    if (!isString(raw.check.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(raw.check.id)) {
+      throw stepErr(index, "check.id must use letters, numbers, hyphens, and underscores only");
+    }
+    if (
+      !isString(raw.check.title) ||
+      !raw.check.title.trim() ||
+      raw.check.title.trim().length > 160
+    ) {
+      throw stepErr(index, "check.title must be a non-empty string of at most 160 characters");
+    }
+    if (raw.optional === true) {
+      throw stepErr(index, "check and optional cannot be combined");
+    }
+    metadata.check = { id: raw.check.id, title: raw.check.title.trim() };
   }
   if (raw.when !== undefined) {
     if (!isObject(raw.when)) throw stepErr(index, "when must be an object");

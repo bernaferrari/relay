@@ -137,7 +137,18 @@ export type JobSummary = {
   };
   frameCount: number;
   evidenceComplete?: boolean;
+  checks?: CampaignCheckSummary[];
   lastLogs?: string[];
+};
+
+export type CampaignCheckSummary = {
+  id: string;
+  title: string;
+  status: "passed" | "failed";
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  error?: string;
 };
 
 export type TraceFrameDto = {

@@ -1037,6 +1037,60 @@ export async function runRecipeStep(
       return;
     }
   }
+  if (step.check) {
+    const startedAt = now();
+    try {
+      await runRequiredRecipeStep(device, step, ctx);
+      const finishedAt = now();
+      ctx.job?.artifacts.push({
+        kind: "campaign-check-result",
+        capturedAt: finishedAt,
+        data: {
+          id: step.check.id,
+          title: step.check.title,
+          status: "passed",
+          startedAt,
+          finishedAt,
+        },
+      });
+      ctx.log(`check passed: ${step.check.title}`);
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      const finishedAt = now();
+      if (ctx.job) {
+        try {
+          const nodes = await snapshot(device);
+          ctx.job.artifacts.push({
+            kind: "campaign-check-evidence",
+            capturedAt: finishedAt,
+            data: { checkId: step.check.id, nodes },
+          });
+        } catch {
+          // The error remains useful even if the target cannot provide a tree.
+        }
+        await captureScreenshot({
+          jobId: ctx.job.id,
+          caption: `failed:${step.check.title}`,
+          device,
+        }).catch(() => undefined);
+        ctx.job.artifacts.push({
+          kind: "campaign-check-result",
+          capturedAt: finishedAt,
+          data: {
+            id: step.check.id,
+            title: step.check.title,
+            status: "failed",
+            error: message,
+            startedAt,
+            finishedAt,
+          },
+        });
+      }
+      ctx.log(`check failed: ${step.check.title} — ${message}`);
+    }
+    return;
+  }
   if (!step.optional) {
     await runRequiredRecipeStep(device, step, ctx);
     return;
