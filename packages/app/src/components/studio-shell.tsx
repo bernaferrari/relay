@@ -687,8 +687,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <input
                 type="text"
                 size={Math.max(12, Math.min(34, displayTitle(mapNameDraft()).length + 1))}
-                class="h-8 max-w-full min-w-[120px] rounded-md bg-transparent px-2 text-center font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--border-strong-base)] max-[680px]:min-w-0"
+                class="h-8 max-w-full min-w-[120px] cursor-text bg-transparent px-2 text-center font-medium text-[var(--text-base)] outline-none transition-[box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:text-[var(--text-strong)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_-1px_0_var(--border-strong-base)] max-[680px]:min-w-0"
                 aria-label="Map name"
+                data-focus-contained
                 data-tip="Rename map"
                 value={displayTitle(mapNameDraft())}
                 placeholder="My map"
