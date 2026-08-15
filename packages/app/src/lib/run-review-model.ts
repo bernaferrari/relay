@@ -20,17 +20,19 @@ export function initialRunReviewStep(job: JobInfo): number {
 export function runReviewCounts(job: JobInfo): RunReviewCounts {
   const artifacts = job.artifacts ?? [];
   return {
-    checks: artifacts.filter((item) =>
-      [
-        "response-completion",
-        "conversation-turn",
-        "content-assertion",
-        "semantic-evaluation",
-        "judge-consensus",
-        "frozen-inputs",
-        "app-build",
-      ].includes(item.kind),
-    ).length,
+    checks:
+      (job.checks?.length ?? 0) +
+      artifacts.filter((item) =>
+        [
+          "response-completion",
+          "conversation-turn",
+          "content-assertion",
+          "semantic-evaluation",
+          "judge-consensus",
+          "frozen-inputs",
+          "app-build",
+        ].includes(item.kind),
+      ).length,
     network: artifacts.filter((item) => item.kind === "network").length,
     logs: job.logs?.length ?? 0,
   };

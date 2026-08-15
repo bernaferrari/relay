@@ -23,12 +23,7 @@ import type {
 } from "@relay/protocol";
 import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
 import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-readiness";
-import {
-  EvidenceList,
-  RunLogsEvidence,
-  RunNetworkEvidence,
-  RunPerformanceEvidence,
-} from "./run-evidence-panels";
+import { RunLogsEvidence, RunNetworkEvidence, RunPerformanceEvidence } from "./run-evidence-panels";
 import { RunBrowser } from "./run-browser";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunRow, RunStepList } from "./run-list-surfaces";
@@ -37,6 +32,7 @@ import { RunMatrixReview } from "./run-matrix-review";
 import { RunShareMenu } from "./run-share-menu";
 import { VisualDiffReview } from "./visual-diff-review";
 import { RunsRefreshControl } from "./runs-refresh-control";
+import { RunChecksPanel } from "./run-checks-panel";
 import {
   filterRunRows,
   dedupeLatestRunFlows,
@@ -1016,21 +1012,19 @@ export function RunsWorkspace(props: {
                   <RunNetworkEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
                 </Show>
                 <Show when={tab() === "evaluation"}>
-                  <EvidenceList
-                    items={
-                      job().artifacts?.filter((item) =>
-                        [
-                          "response-completion",
-                          "conversation-turn",
-                          "content-assertion",
-                          "semantic-evaluation",
-                          "judge-consensus",
-                          "frozen-inputs",
-                          "app-build",
-                        ].includes(item.kind),
-                      ) ?? []
+                  <RunChecksPanel
+                    job={job()}
+                    frameSource={({ frame }) =>
+                      frame.base64
+                        ? `data:${frame.mime || "image/png"};base64,${frame.base64}`
+                        : job().persisted || job().runDir
+                          ? server.frameUrlForPersisted(job() as PersistedRun, frame)
+                          : ""
                     }
-                    empty="No checks on this run. Add a screen or text check when you edit the path, then run again."
+                    onOpenFrame={(index) => {
+                      selectRunStep(stepIndexForMatrixCapture(job(), index));
+                      setTab("timeline");
+                    }}
                   />
                 </Show>
                 <Show when={tab() === "logs"}>
