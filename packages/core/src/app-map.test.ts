@@ -340,6 +340,7 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
   delete map.runs["run-1"];
   delete map.targetResults["result-1"];
   delete map.screenVariants["variant-home"]!.baseline;
+  map.screens.start!.title = "Settings · Top";
   map.screenVariants["variant-start"]!.evidenceIds.push(
     importedSurface.viewports[0]!.screenshot.id,
     importedSurface.viewports[0]!.accessibilityTree.id,
@@ -383,6 +384,12 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     fromScreenId: "start",
     destination: { kind: "screen", screenId: "middle" },
     actions: [{ id: "scroll", kind: "gesture", gesture: { kind: "scroll", direction: "down" } }],
+  });
+  map.connections["open-settings-top"] = connection({
+    id: "open-settings-top",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "start" },
+    actions: [{ id: "tap-settings", kind: "tap", target: { label: "Settings" } }],
   });
   map.connections["middle-bottom"] = connection({
     id: "middle-bottom",
@@ -452,15 +459,51 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     intentSchemaVersion: 1,
     steps: [
       {
+        id: "visit-03-settings-top",
+        kind: "instruction",
+        intent: "Visit Settings · Top",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-settings-top"],
+        },
+      },
+      {
+        id: "visit-19-settings-middle",
+        kind: "instruction",
+        intent: "Visit Settings · Middle",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-settings-top", "scroll-middle"],
+        },
+      },
+      {
         id: "open-kids-step",
         kind: "instruction",
         intent: "Reveal and open Kids Mode",
         binding: {
           status: "resolved",
           kind: "connections",
-          connectionIds: ["scroll-middle", "middle-bottom", "open-kids"],
+          connectionIds: ["open-settings-top", "scroll-middle", "middle-bottom", "open-kids"],
         },
       },
+      {
+        id: "visit-34-settings-bottom",
+        kind: "instruction",
+        intent: "Visit Settings · Bottom",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-settings-top", "scroll-middle", "middle-bottom"],
+        },
+      },
+      ...Array.from({ length: 37 }, (_, index) => ({
+        id: `unchanged-${index + 1}`,
+        kind: "instruction" as const,
+        intent: `Unchanged child ${index + 1}`,
+        binding: { status: "unresolved" as const, reason: "Not relevant to consolidation" },
+      })),
     ],
     surfaceBindings: [
       {
@@ -507,10 +550,35 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     {
       testId: "tour",
       stepId: "open-kids-step",
-      beforeConnectionIds: ["scroll-middle", "middle-bottom", "open-kids"],
-      afterConnectionIds: ["open-kids"],
+      beforeConnectionIds: ["open-settings-top", "scroll-middle", "middle-bottom", "open-kids"],
+      afterConnectionIds: ["open-settings-top", "open-kids"],
+    },
+    {
+      testId: "tour",
+      stepId: "visit-19-settings-middle",
+      beforeConnectionIds: ["open-settings-top", "scroll-middle"],
+      afterConnectionIds: [],
+    },
+    {
+      testId: "tour",
+      stepId: "visit-34-settings-bottom",
+      beforeConnectionIds: ["open-settings-top", "scroll-middle", "middle-bottom"],
+      afterConnectionIds: [],
     },
   ]);
+  assert.deepEqual(preview.removedTestStepIds, [
+    "visit-19-settings-middle",
+    "visit-34-settings-bottom",
+  ]);
+  assert.deepEqual(preview.renamedTestSteps, [
+    {
+      testId: "tour",
+      stepId: "visit-03-settings-top",
+      beforeIntent: "Visit Settings · Top",
+      afterIntent: "Visit Settings",
+    },
+  ]);
+  assert.equal(preview.resultingCounts.testSteps, 39);
   assert.equal(preview.resultingCounts.surfaceBindings, 1);
   assert.deepEqual(preview.connectionCollisions, [
     { connectionIds: ["open-kids", "open-kids-existing"] },
@@ -545,10 +613,20 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     merged.screenVariants["variant-start"]?.scrollSurfaces?.[0]?.reason,
     "seam-ambiguous",
   );
-  assert.deepEqual(merged.tests.tour?.steps[0]?.binding, {
+  assert.equal(merged.tests.tour?.steps.length, 39);
+  assert.equal(merged.tests.tour?.steps[0]?.intent, "Visit Settings");
+  assert.equal(
+    merged.tests.tour?.steps.some(({ id }) => id === "visit-19-settings-middle"),
+    false,
+  );
+  assert.equal(
+    merged.tests.tour?.steps.some(({ id }) => id === "visit-34-settings-bottom"),
+    false,
+  );
+  assert.deepEqual(merged.tests.tour?.steps[1]?.binding, {
     status: "resolved",
     kind: "connections",
-    connectionIds: ["open-kids"],
+    connectionIds: ["open-settings-top", "open-kids"],
   });
   assert.deepEqual(merged.tests.tour?.surfaceBindings, [
     {

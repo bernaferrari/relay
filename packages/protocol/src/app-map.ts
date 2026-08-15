@@ -3,6 +3,7 @@ import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.j
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity } from "./discovery-contract.js";
 import type { TargetProfile } from "./target-contract.js";
+import type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 import type { LogicalScrollSurface, ScrollSurfaceCapturePolicy } from "./scroll-surface.js";
 export type {
   LogicalScrollSurface,
@@ -13,6 +14,7 @@ export type {
   ScrollSurfaceTestBinding,
   ScrollSurfaceViewport,
 } from "./scroll-surface.js";
+export type { ScreenConsolidationPreview } from "./screen-consolidation.js";
 
 export const APP_MAP_SCHEMA_VERSION = 1 as const;
 /**
@@ -73,34 +75,6 @@ export type AppMapPoint = { x: number; y: number };
 export type AppMapNote = AppMapEntity & {
   text: string;
   position: AppMapPoint;
-};
-
-export type ScreenConsolidationPreview = {
-  targetScreenId: string;
-  sourceScreenIds: string[];
-  movedVariantIds: string[];
-  mergedVariantIds: Array<{ sourceVariantId: string; targetVariantId: string }>;
-  rewiredConnectionIds: string[];
-  removedSelfLoopConnectionIds: string[];
-  connectionCollisions: Array<{ connectionIds: string[] }>;
-  rewiredFlowIds: string[];
-  rewiredTestIds: string[];
-  rewiredVariableIds: string[];
-  rewiredGroupIds: string[];
-  semanticRevealConnectionIds: string[];
-  testPathEdits: Array<{
-    testId: string;
-    stepId: string;
-    beforeConnectionIds: string[];
-    afterConnectionIds: string[];
-  }>;
-  resultingCounts: {
-    screens: number;
-    variants: number;
-    connections: number;
-    surfaceBindings: number;
-  };
-  blockers: Array<{ code: string; message: string; entityIds: string[] }>;
 };
 
 /** Optional visual organization for the canvas and screen browser. A Group

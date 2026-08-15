@@ -121,11 +121,17 @@ function referencesSourceInPendingProposal(map: AppMap, sources: Set<string>): s
     .sort();
 }
 
-function collectTestPathEdits(
+function collectTestChanges(
+  map: AppMap,
   testId: string,
   steps: AppMapScenarioTestStep[],
   removed: Set<string>,
-  output: ScreenConsolidationPreview["testPathEdits"],
+  targetScreenId: string,
+  targetTitle: string | undefined,
+  output: Pick<
+    ScreenConsolidationPreview,
+    "testPathEdits" | "removedTestStepIds" | "renamedTestSteps"
+  >,
 ): void {
   for (const step of steps) {
     if (
@@ -134,16 +140,65 @@ function collectTestPathEdits(
       step.binding.kind === "connections"
     ) {
       const beforeConnectionIds = [...step.binding.connectionIds];
-      const afterConnectionIds = beforeConnectionIds.filter((id) => !removed.has(id));
+      const terminalConnectionId = beforeConnectionIds.at(-1);
+      const removesViewportDestination = Boolean(
+        terminalConnectionId && removed.has(terminalConnectionId),
+      );
+      const afterConnectionIds = removesViewportDestination
+        ? []
+        : beforeConnectionIds.filter((id) => !removed.has(id));
       if (afterConnectionIds.length !== beforeConnectionIds.length) {
-        output.push({ testId, stepId: step.id, beforeConnectionIds, afterConnectionIds });
+        output.testPathEdits.push({
+          testId,
+          stepId: step.id,
+          beforeConnectionIds,
+          afterConnectionIds,
+        });
+      }
+      if (removesViewportDestination) output.removedTestStepIds.push(step.id);
+      else if (targetTitle && terminalConnectionId) {
+        const terminal = map.connections[terminalConnectionId];
+        const oldTitle = map.screens[targetScreenId]!.title;
+        if (
+          terminal?.destination.kind === "screen" &&
+          terminal.destination.screenId === targetScreenId &&
+          step.intent === `Visit ${oldTitle}` &&
+          step.intent !== `Visit ${targetTitle}`
+        )
+          output.renamedTestSteps.push({
+            testId,
+            stepId: step.id,
+            beforeIntent: step.intent,
+            afterIntent: `Visit ${targetTitle}`,
+          });
       }
     }
     if (step.kind === "decision") {
-      collectTestPathEdits(testId, step.thenSteps, removed, output);
-      if (step.elseSteps) collectTestPathEdits(testId, step.elseSteps, removed, output);
-    } else if (step.kind === "loop") collectTestPathEdits(testId, step.steps, removed, output);
+      collectTestChanges(map, testId, step.thenSteps, removed, targetScreenId, targetTitle, output);
+      if (step.elseSteps)
+        collectTestChanges(
+          map,
+          testId,
+          step.elseSteps,
+          removed,
+          targetScreenId,
+          targetTitle,
+          output,
+        );
+    } else if (step.kind === "loop")
+      collectTestChanges(map, testId, step.steps, removed, targetScreenId, targetTitle, output);
   }
+}
+
+function countScenarioSteps(steps: AppMapScenarioTestStep[]): number {
+  return steps.reduce((count, step) => {
+    if (step.kind === "decision")
+      return (
+        count + 1 + countScenarioSteps(step.thenSteps) + countScenarioSteps(step.elseSteps ?? [])
+      );
+    if (step.kind === "loop") return count + 1 + countScenarioSteps(step.steps);
+    return count + 1;
+  }, 0);
 }
 
 function mapScenarioSteps(
@@ -151,10 +206,22 @@ function mapScenarioSteps(
   sources: Set<string>,
   target: string,
   removedConnections: Set<string>,
+  removedStepIds: Set<string>,
+  renamedIntents: ReadonlyMap<string, string>,
 ): boolean {
   let changed = false;
   for (let index = steps.length - 1; index >= 0; index -= 1) {
     const step = steps[index]!;
+    if (removedStepIds.has(step.id)) {
+      steps.splice(index, 1);
+      changed = true;
+      continue;
+    }
+    const renamedIntent = renamedIntents.get(step.id);
+    if (renamedIntent && step.intent !== renamedIntent) {
+      step.intent = renamedIntent;
+      changed = true;
+    }
     if (
       step.kind === "instruction" &&
       step.binding.status === "resolved" &&
@@ -163,9 +230,7 @@ function mapScenarioSteps(
       const filtered = step.binding.connectionIds.filter((id) => !removedConnections.has(id));
       if (filtered.length !== step.binding.connectionIds.length) {
         if (filtered.length === 0) {
-          steps.splice(index, 1);
-          changed = true;
-          continue;
+          appMapFail("invalid-map", `Test step ${step.id} lost its executable path unexpectedly`);
         }
         step.binding.connectionIds = filtered;
         changed = true;
@@ -190,11 +255,35 @@ function mapScenarioSteps(
       }
     }
     if (step.kind === "decision") {
-      changed = mapScenarioSteps(step.thenSteps, sources, target, removedConnections) || changed;
+      changed =
+        mapScenarioSteps(
+          step.thenSteps,
+          sources,
+          target,
+          removedConnections,
+          removedStepIds,
+          renamedIntents,
+        ) || changed;
       if (step.elseSteps)
-        changed = mapScenarioSteps(step.elseSteps, sources, target, removedConnections) || changed;
+        changed =
+          mapScenarioSteps(
+            step.elseSteps,
+            sources,
+            target,
+            removedConnections,
+            removedStepIds,
+            renamedIntents,
+          ) || changed;
     } else if (step.kind === "loop")
-      changed = mapScenarioSteps(step.steps, sources, target, removedConnections) || changed;
+      changed =
+        mapScenarioSteps(
+          step.steps,
+          sources,
+          target,
+          removedConnections,
+          removedStepIds,
+          renamedIntents,
+        ) || changed;
   }
   return changed;
 }
@@ -291,9 +380,21 @@ export function previewScreenConsolidation(
       entityIds: pending,
     });
   const removedConnections = new Set(removedSelfLoopConnectionIds);
-  const testPathEdits: ScreenConsolidationPreview["testPathEdits"] = [];
+  const testChanges = {
+    testPathEdits: [] as ScreenConsolidationPreview["testPathEdits"],
+    removedTestStepIds: [] as string[],
+    renamedTestSteps: [] as ScreenConsolidationPreview["renamedTestSteps"],
+  };
   for (const test of Object.values(map.tests))
-    collectTestPathEdits(test.id, test.steps, removedConnections, testPathEdits);
+    collectTestChanges(
+      map,
+      test.id,
+      test.steps,
+      removedConnections,
+      input.targetScreenId,
+      input.targetTitle,
+      testChanges,
+    );
   const evidenceBackedVariants = [...all]
     .flatMap((screenId) => map.screens[screenId]!.variantIds)
     .map((variantId) => map.screenVariants[variantId]!)
@@ -342,7 +443,8 @@ export function previewScreenConsolidation(
       )
       .map((test) => test.id),
   );
-  for (const edit of testPathEdits) rewiredTestIds.add(edit.testId);
+  for (const edit of testChanges.testPathEdits) rewiredTestIds.add(edit.testId);
+  for (const edit of testChanges.renamedTestSteps) rewiredTestIds.add(edit.testId);
   return {
     targetScreenId: input.targetScreenId,
     sourceScreenIds,
@@ -378,7 +480,11 @@ export function previewScreenConsolidation(
       .map((group) => group.id)
       .sort(),
     semanticRevealConnectionIds: semanticRevealConnectionIds.sort(),
-    testPathEdits: testPathEdits.sort(
+    testPathEdits: testChanges.testPathEdits.sort(
+      (a, b) => a.testId.localeCompare(b.testId) || a.stepId.localeCompare(b.stepId),
+    ),
+    removedTestStepIds: [...new Set(testChanges.removedTestStepIds)].sort(),
+    renamedTestSteps: testChanges.renamedTestSteps.sort(
       (a, b) => a.testId.localeCompare(b.testId) || a.stepId.localeCompare(b.stepId),
     ),
     resultingCounts: {
@@ -386,6 +492,11 @@ export function previewScreenConsolidation(
       variants: Object.keys(map.screenVariants).length - mergedVariantIds.length,
       connections: Object.keys(map.connections).length - removedSelfLoopConnectionIds.length,
       surfaceBindings: projectedSurfaceBindings,
+      testSteps:
+        Object.values(map.tests).reduce(
+          (count, test) => count + countScenarioSteps(test.steps),
+          0,
+        ) - testChanges.removedTestStepIds.length,
     },
     blockers,
   };
@@ -607,23 +718,43 @@ export function consolidateAppMapScreens(
             sources,
             input.targetScreenId,
             new Set(preview.removedSelfLoopConnectionIds),
+            new Set(
+              preview.testPathEdits
+                .filter(
+                  (edit) =>
+                    edit.testId === test.id && preview.removedTestStepIds.includes(edit.stepId),
+                )
+                .map(({ stepId }) => stepId),
+            ),
+            new Map(
+              preview.renamedTestSteps
+                .filter((edit) => edit.testId === test.id)
+                .map(({ stepId, afterIntent }) => [stepId, afterIntent]),
+            ),
           ) ||
           preview.rewiredTestIds.includes(test.id)
         )
           test.updatedAt = context.at;
       }
-      const danglingTestPaths: ScreenConsolidationPreview["testPathEdits"] = [];
+      const danglingTestChanges = {
+        testPathEdits: [] as ScreenConsolidationPreview["testPathEdits"],
+        removedTestStepIds: [] as string[],
+        renamedTestSteps: [] as ScreenConsolidationPreview["renamedTestSteps"],
+      };
       for (const test of Object.values(draft.tests))
-        collectTestPathEdits(
+        collectTestChanges(
+          draft,
           test.id,
           test.steps,
           new Set(preview.removedSelfLoopConnectionIds),
-          danglingTestPaths,
+          input.targetScreenId,
+          undefined,
+          danglingTestChanges,
         );
-      if (danglingTestPaths.length > 0)
+      if (danglingTestChanges.testPathEdits.length > 0)
         appMapFail(
           "invalid-map",
-          `Consolidation left deleted connections referenced by Test steps: ${danglingTestPaths.map(({ testId, stepId }) => `${testId}/${stepId}`).join(", ")}`,
+          `Consolidation left deleted connections referenced by Test steps: ${danglingTestChanges.testPathEdits.map(({ testId, stepId }) => `${testId}/${stepId}`).join(", ")}`,
         );
       for (const combine of Object.values(draft.combines))
         for (const capture of Object.values(combine.captures ?? {}))
