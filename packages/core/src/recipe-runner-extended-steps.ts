@@ -12,6 +12,7 @@ import {
   surfaceComparisonCacheKey,
   type SurfaceComparisonCacheProvenance,
 } from "./surface-comparison-cache.js";
+import { ensureAndroidSurfaceRuntimeFacts } from "./surface-comparison-runtime-facts.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 import {
   resolveSnapshotTargetPoint,
@@ -266,6 +267,7 @@ export async function runCaptureSurfaceStep(
   if (!job?.serial || !job.targetProfile) {
     throw new Error("capture-surface requires a frozen device target profile");
   }
+  await ensureAndroidSurfaceRuntimeFacts(job);
   const evaluatedAt = now();
   const cacheIdentity = surfaceComparisonCacheIdentity(job, step);
   const cacheKey = cacheIdentity ? surfaceComparisonCacheKey(cacheIdentity) : undefined;
