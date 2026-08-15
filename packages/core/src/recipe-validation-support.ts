@@ -287,6 +287,9 @@ function parseCaptureSurfaceStep(
   ) {
     throw stepErr(index, "capture-surface.maxScrolls must be an integer from 1 to 6");
   }
+  if (raw.forceRecapture !== undefined && typeof raw.forceRecapture !== "boolean") {
+    throw stepErr(index, "capture-surface.forceRecapture must be a boolean");
+  }
   const baseline =
     isObject(raw.baseline) && !Array.isArray(raw.baseline) ? raw.baseline : undefined;
   return {
@@ -298,6 +301,7 @@ function parseCaptureSurfaceStep(
     baselineCaptureId: raw.baselineCaptureId.trim(),
     reason: raw.reason.trim(),
     ...(isNumber(raw.maxScrolls) ? { maxScrolls: raw.maxScrolls } : {}),
+    ...(raw.forceRecapture === true ? { forceRecapture: true } : {}),
     ...(baseline && isNumber(baseline.semanticNodeCount)
       ? {
           baseline: {

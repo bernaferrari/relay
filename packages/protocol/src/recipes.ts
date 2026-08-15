@@ -346,6 +346,10 @@ export type RecipeStep = RecipeStepMetadata &
         baselineCaptureId: string;
         reason: string;
         maxScrolls?: number;
+        /** Bypass an otherwise eligible immutable surface-comparison cache.
+         * Authoring recaptures and investigations can therefore always obtain
+         * fresh device evidence. */
+        forceRecapture?: boolean;
         baseline?: {
           compositeWidth?: number;
           compositeHeight?: number;

@@ -5,6 +5,13 @@ import { now } from "./events.js";
 import { captureScreenshot } from "./workspace.js";
 import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
+import { listPersistedRuns } from "./runs.js";
+import {
+  findReusableSurfaceComparison,
+  surfaceComparisonCacheIdentity,
+  surfaceComparisonCacheKey,
+  type SurfaceComparisonCacheProvenance,
+} from "./surface-comparison-cache.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 import {
   resolveSnapshotTargetPoint,
@@ -153,6 +160,48 @@ export async function runCaptureSurfaceStep(
   if (!job?.serial || !job.targetProfile) {
     throw new Error("capture-surface requires a frozen device target profile");
   }
+  const evaluatedAt = now();
+  const cacheIdentity = surfaceComparisonCacheIdentity(job, step);
+  const cacheKey = cacheIdentity ? surfaceComparisonCacheKey(cacheIdentity) : undefined;
+  if (!step.forceRecapture && cacheIdentity) {
+    const cached = findReusableSurfaceComparison({
+      identity: cacheIdentity,
+      runs: await listPersistedRuns(200),
+      currentArtifacts: job.artifacts,
+      currentRunId: job.id,
+      at: evaluatedAt,
+    });
+    if (cached) {
+      job.artifacts.push({
+        kind: "logical-scroll-surface-result",
+        capturedAt: evaluatedAt,
+        data: { ...cached.data, cache: cached.provenance },
+      });
+      ctx.log(
+        `surface: ${step.screenTitle} · cache hit from run ${cached.provenance.sourceRunId} · ${cached.data.comparison.matches ? "matches baseline" : "repair proposed"}`,
+      );
+      return;
+    }
+  }
+  const cache: SurfaceComparisonCacheProvenance = step.forceRecapture
+    ? {
+        schemaVersion: 1,
+        status: "bypassed",
+        evaluatedAt,
+        reason: "Explicit forceRecapture requested fresh device evidence.",
+        ...(cacheKey ? { key: cacheKey } : {}),
+        ...(cacheIdentity ? { identity: cacheIdentity } : {}),
+      }
+    : {
+        schemaVersion: 1,
+        status: "miss",
+        evaluatedAt,
+        reason: cacheIdentity
+          ? "No completed comparison has the exact immutable cache identity."
+          : "Exact target, locale, and app build facts are required for reuse.",
+        ...(cacheKey ? { key: cacheKey } : {}),
+        ...(cacheIdentity ? { identity: cacheIdentity } : {}),
+      };
   const verified = ctx.runtime?.verifiedScreen;
   const screenshot = verified?.screenId === step.screenId ? verified.screenshot : undefined;
   const nodes = verified?.screenId === step.screenId ? verified.nodes : undefined;
@@ -245,6 +294,7 @@ export async function runCaptureSurfaceStep(
                 ? "Logical surface differs materially from its frozen baseline."
                 : surface.message,
           },
+      cache,
     },
   });
   ctx.log(

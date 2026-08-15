@@ -308,6 +308,7 @@ describe("validateRecipeSteps", () => {
       baselineCaptureId: "capture-v1",
       reason: "Stable settings content is compared as a complete surface.",
       maxScrolls: 3,
+      forceRecapture: true,
       baseline: { compositeWidth: 1080, compositeHeight: 4200, semanticNodeCount: 42 },
     };
     assert.deepEqual(validateRecipeSteps([step]), [step]);
@@ -316,6 +317,10 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ ...step, maxScrolls: 7 }]),
       /maxScrolls must be an integer from 1 to 6/,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ ...step, forceRecapture: "yes" }]),
+      /forceRecapture must be a boolean/,
     );
   });
 
