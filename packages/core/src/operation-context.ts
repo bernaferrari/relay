@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CommandIdentity } from "@relay/protocol";
 
-export type OperationContext = CommandIdentity & { leaseId?: string };
+export type OperationContext = CommandIdentity & { leaseId?: string; leaseOwnerId?: string };
 
 const operationContexts = new AsyncLocalStorage<OperationContext>();
 
@@ -31,6 +31,8 @@ export function requireOperationContext(): OperationContext {
   return context;
 }
 
-export function setOperationLease(leaseId: string): void {
-  requireOperationContext().leaseId = leaseId;
+export function setOperationLease(leaseId: string, leaseOwnerId?: string): void {
+  const context = requireOperationContext();
+  context.leaseId = leaseId;
+  if (leaseOwnerId) context.leaseOwnerId = leaseOwnerId;
 }

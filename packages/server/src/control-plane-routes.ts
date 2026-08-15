@@ -35,6 +35,7 @@ import type {
   RevisionWrite,
   TestData,
 } from "@relay/protocol";
+import { localControlSessionOwner } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -231,11 +232,28 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       throw new HttpError(400, "poolId and deviceSerial are required");
     }
     try {
+      const localOwner = scope.localTrusted ? localControlSessionOwner(scope) : undefined;
+      const joined = localOwner
+        ? (await listDeviceLeases(scope.projectId)).find(
+            (lease) =>
+              lease.deviceSerial === body.deviceSerial &&
+              lease.ownerId === localOwner &&
+              lease.controlScope === "local-project" &&
+              lease.status === "leased" &&
+              lease.expiresAt > now(),
+          )
+        : undefined;
+      if (joined) {
+        json(response, 200, { lease: joined });
+        return true;
+      }
       const lease = await leaseDevice({
+        organizationId: scope.organizationId,
         projectId: scope.projectId,
         poolId: body.poolId,
         deviceSerial: body.deviceSerial,
-        ownerId: currentOperationContext()!.actorId,
+        ownerId: localOwner ?? currentOperationContext()!.actorId,
+        ...(localOwner ? { controlScope: "local-project" as const } : {}),
         expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
       });
       json(response, 201, { lease });
@@ -256,8 +274,12 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     try {
       json(response, 200, {
         lease: await takeOverDeviceLease(takeoverLeaseMatch.id!, {
+          organizationId: scope.organizationId,
           projectId: scope.projectId,
-          ownerId: currentOperationContext()!.actorId,
+          ownerId: scope.localTrusted
+            ? localControlSessionOwner(scope)
+            : currentOperationContext()!.actorId,
+          ...(scope.localTrusted ? { controlScope: "local-project" as const } : {}),
           expiresAt: body.expiresAt ?? now() + DEVICE_LEASE_TTL_MS,
           reason: body.reason,
         }),
@@ -270,6 +292,19 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
   const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
   if (method === "POST" && releaseLeaseMatch) {
     try {
+      const shared = scope.localTrusted
+        ? (await listDeviceLeases(scope.projectId)).find(
+            (lease) =>
+              lease.id === releaseLeaseMatch.id &&
+              lease.ownerId === localControlSessionOwner(scope) &&
+              lease.controlScope === "local-project" &&
+              lease.status === "leased",
+          )
+        : undefined;
+      if (shared) {
+        json(response, 200, { lease: shared });
+        return true;
+      }
       json(response, 200, {
         lease: await releaseDeviceLease(releaseLeaseMatch.id!, {
           projectId: scope.projectId,

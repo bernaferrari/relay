@@ -21,7 +21,7 @@ import {
   type Recipe,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
-import { assertTargetControl } from "./access-control.js";
+import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -100,7 +100,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         ? (await listDeviceLeases(input.scope.projectId)).some(
             (lease) =>
               lease.deviceSerial === targetId &&
-              lease.ownerId === operation.actorId &&
+              targetLeaseBelongsToCaller(input.scope, lease, operation.actorId) &&
               lease.status === "leased" &&
               lease.expiresAt > Date.now(),
           )
@@ -224,7 +224,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ? (await listDeviceLeases(input.scope.projectId)).some(
           (lease) =>
             lease.deviceSerial === targetId &&
-            lease.ownerId === operation.actorId &&
+            targetLeaseBelongsToCaller(input.scope, lease, operation.actorId) &&
             lease.status === "leased" &&
             lease.expiresAt > Date.now(),
         )

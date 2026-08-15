@@ -51,6 +51,7 @@ import { createServerEventController } from "../lib/server-event-controller";
 import { createServerDeviceSetupController } from "../lib/server-device-setup-controller";
 import { createServerDeviceInventoryController } from "../lib/server-device-inventory-controller";
 import { createServerAppMapController } from "../lib/server-app-map-controller";
+import { leaseBelongsToConnection } from "../lib/device-control-session";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -637,11 +638,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const currentLeaseId = selectedLeaseId();
         const leases = (await client.leases()).leases;
+        const belongsToThisConnection = (lease: (typeof leases)[number]) =>
+          leaseBelongsToConnection(connection!, lease);
         const activeCurrentLease = currentLeaseId
           ? leases.find(
               (lease) =>
                 lease.id === currentLeaseId &&
-                lease.ownerId === connection!.actorId &&
+                belongsToThisConnection(lease) &&
                 lease.status === "leased" &&
                 lease.expiresAt > Date.now(),
             )
@@ -670,7 +673,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           const active = leases.find(
             (lease) =>
               lease.deviceSerial === serial &&
-              lease.ownerId === connection!.actorId &&
+              belongsToThisConnection(lease) &&
               lease.status === "leased" &&
               lease.expiresAt > Date.now(),
           );
@@ -681,7 +684,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
               lease.expiresAt > Date.now(),
           );
           if (!active && occupied) {
-            setControlIssue("This device is being controlled in another Relay window.");
+            setControlIssue("This device is reserved by another active controller.");
             setConflictingLeaseId(occupied.id);
             setSelectedLeaseId(null);
             return;

@@ -742,8 +742,8 @@ export function DeviceStage(_props: {
     return {
       title: canTakeControl ? "View only" : "Control unavailable",
       detail:
-        canTakeControl && /controlled in another Relay window/i.test(issue)
-          ? "Another Relay window has control. Taking control here will make it view-only."
+        canTakeControl && /another active controller/i.test(issue)
+          ? "Another controller has exclusive access. Taking control will interrupt it."
           : humanError(issue),
       actionLabel: canTakeControl ? "Take control" : "Reconnect",
       canTakeControl,

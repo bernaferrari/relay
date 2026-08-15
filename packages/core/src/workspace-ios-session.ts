@@ -33,6 +33,7 @@ import {
   remountIosDeveloperDiskImage,
 } from "./ios-app-launch.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
+import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
 
 /**
@@ -100,6 +101,15 @@ export type TargetRuntimeRecovery = IosRuntimeSessionRecovery;
 
 /** Shared UI/CLI/MCP recovery for attached devices. */
 export async function recoverTargetRuntime(
+  serial: string,
+  cause?: unknown,
+): Promise<TargetRuntimeRecovery> {
+  return runTargetMutation(serial, getExecutingJobId(), () =>
+    recoverTargetRuntimeReserved(serial, cause),
+  );
+}
+
+async function recoverTargetRuntimeReserved(
   serial: string,
   cause?: unknown,
 ): Promise<TargetRuntimeRecovery> {

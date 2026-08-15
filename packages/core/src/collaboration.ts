@@ -387,6 +387,7 @@ export async function listDeviceLeases(projectId: string): Promise<DeviceLease[]
 /** Read-only execution check. It never creates, renews, or changes a lease. */
 export async function isDeviceLeaseClaimActive(
   input: {
+    organizationId?: string;
     projectId: string;
     deviceSerial: string;
     ownerId: string;
@@ -397,11 +398,39 @@ export async function isDeviceLeaseClaimActive(
   const lease = (await readState()).leases.find((item) => item.id === input.leaseId);
   return Boolean(
     lease &&
+    (!input.organizationId ||
+      lease.organizationId === input.organizationId ||
+      (!lease.organizationId && lease.controlScope !== "local-project")) &&
     lease.projectId === input.projectId &&
     lease.deviceSerial === input.deviceSerial &&
     lease.ownerId === input.ownerId &&
     lease.status === "leased" &&
     lease.expiresAt > at,
+  );
+}
+
+/** Validate the exact lease owner frozen into an execution context. This is
+ * distinct from actor attribution because a trusted local project can share a
+ * server-owned control session while every command retains its real actor. */
+export async function isDeviceLeaseSessionActive(
+  input: {
+    organizationId?: string;
+    projectId: string;
+    deviceSerial: string;
+    leaseId: string;
+    leaseOwnerId: string;
+  },
+  at = now(),
+): Promise<boolean> {
+  return isDeviceLeaseClaimActive(
+    {
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+      projectId: input.projectId,
+      deviceSerial: input.deviceSerial,
+      ownerId: input.leaseOwnerId,
+      leaseId: input.leaseId,
+    },
+    at,
   );
 }
 
@@ -486,8 +515,10 @@ export async function releaseDeviceLease(
 export async function takeOverDeviceLease(
   id: string,
   input: {
+    organizationId?: string;
     projectId: string;
     ownerId: string;
+    controlScope?: DeviceLease["controlScope"];
     expiresAt: number;
     reason: string;
   },
@@ -498,6 +529,7 @@ export async function takeOverDeviceLease(
       (lease) =>
         lease.id === id &&
         lease.projectId === input.projectId &&
+        (!input.organizationId || lease.organizationId === input.organizationId) &&
         lease.status === "leased" &&
         lease.expiresAt > at,
     );
@@ -510,10 +542,12 @@ export async function takeOverDeviceLease(
     current.releasedAt = at;
     const lease: DeviceLease = {
       id: crypto.randomUUID(),
+      ...(current.organizationId ? { organizationId: current.organizationId } : {}),
       projectId: current.projectId,
       poolId: current.poolId,
       deviceSerial: current.deviceSerial,
       ownerId: input.ownerId,
+      ...(input.controlScope ? { controlScope: input.controlScope } : {}),
       status: "leased",
       leasedAt: at,
       expiresAt: input.expiresAt,

@@ -11,7 +11,13 @@ import {
 } from "agent-device/android-adb";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
+import {
+  cooperativeCheckpoint,
+  getExecutingJobId,
+  raceCancel,
+  throwIfCancelled,
+} from "./control.js";
+import { runTargetMutation } from "./target-control.js";
 import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
@@ -241,8 +247,47 @@ export function createDevice(explicitContext?: TargetContext): Device {
     const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
+    const mutate = <T>(operation: () => Promise<T>) =>
+      runTargetMutation(targetIdentity(context), getExecutingJobId(), operation);
     device = {
       ...native,
+      devices: {
+        ...native.devices,
+        boot: (options) => mutate(() => native.devices.boot(options)),
+      },
+      apps: {
+        ...native.apps,
+        open: (options) => mutate(() => native.apps.open(options)),
+        close: (options) => mutate(() => native.apps.close(options)),
+      },
+      interactions: {
+        ...native.interactions,
+        press: (options) => mutate(() => native.interactions.press(options)),
+        longPress: (options) => mutate(() => native.interactions.longPress(options)),
+        fill: (options) => mutate(() => native.interactions.fill(options)),
+        type: (options) => mutate(() => native.interactions.type(options)),
+        find: (options) => mutate(() => native.interactions.find(options)),
+        scroll: (options) => mutate(() => native.interactions.scroll(options)),
+        swipe: (options) => mutate(() => native.interactions.swipe(options)),
+        pan: (options) => mutate(() => native.interactions.pan(options)),
+      },
+      command: {
+        ...native.command,
+        back: (options) => mutate(() => native.command.back(options)),
+        home: (options) => mutate(() => native.command.home(options)),
+        clipboard: (options) => mutate(() => native.command.clipboard(options)),
+        keyboard: (options) => mutate(() => native.command.keyboard(options)),
+        alert: (options) => mutate(() => native.command.alert(options)),
+        appSwitcher: (options) => mutate(() => native.command.appSwitcher(options)),
+        rotate: (options) => mutate(() => native.command.rotate(options)),
+        prepare: (options) => mutate(() => native.command.prepare(options)),
+      },
+      settings: {
+        update: (options) => mutate(() => native.settings.update(options)),
+      },
+      recording: {
+        record: (options) => mutate(() => native.recording.record(options)),
+      },
       observability: {
         ...native.observability,
         crashes: ({ action, since }) =>
@@ -316,6 +361,10 @@ async function controlled<T>(op: () => Promise<T>): Promise<T> {
       baseDelayMs: Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
     },
   );
+}
+
+function mutateCurrentTarget<T>(operation: () => Promise<T>): Promise<T> {
+  return runTargetMutation(targetIdentity(), getExecutingJobId(), operation);
 }
 
 export async function sleep(ms: number, device: Device = createDevice()): Promise<void> {
@@ -468,9 +517,11 @@ export async function openApp(
 ): Promise<void> {
   const context = currentTargetContext();
   if (context.kind === "device" && context.platform === "ios") {
-    const launched = await launchIosAppOutsideXctest(context.serial, app, {
-      relaunch: opts?.relaunch ?? true,
-    });
+    const launched = await mutateCurrentTarget(() =>
+      launchIosAppOutsideXctest(context.serial, app, {
+        relaunch: opts?.relaunch ?? true,
+      }),
+    );
     await rememberTargetApplication(launched.bundleId);
     await primeIosAgentSession(() =>
       device.apps.open({
@@ -630,7 +681,9 @@ export async function clipboardWrite(device: Device, text: string): Promise<void
       throw error;
     }
     await controlled(() =>
-      writeAndroidClipboardWithAdb(androidAdbExecutor(targetIdentity()), text),
+      mutateCurrentTarget(() =>
+        writeAndroidClipboardWithAdb(androidAdbExecutor(targetIdentity()), text),
+      ),
     );
   }
 }
@@ -702,7 +755,7 @@ export async function clipboardPaste(
       throw error;
     }
     await focusClipboardTarget(device, target);
-    await pasteAndroidTextWithAdb(text, targetIdentity());
+    await mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, targetIdentity()));
     return text;
   }
 }
@@ -829,18 +882,20 @@ export async function setAndroidAppLocale(packageName: string, locale: string): 
   }
   await cooperativeCheckpoint();
   throwIfCancelled();
-  await raceCancel(
-    execFileAsync(
-      "adb",
-      androidAdbArgs([
-        "shell",
-        "cmd",
-        "locale",
-        "set-app-locales",
-        packageName,
-        "--locales",
-        locale,
-      ]),
+  await mutateCurrentTarget(() =>
+    raceCancel(
+      execFileAsync(
+        "adb",
+        androidAdbArgs([
+          "shell",
+          "cmd",
+          "locale",
+          "set-app-locales",
+          packageName,
+          "--locales",
+          locale,
+        ]),
+      ),
     ),
   );
 }
@@ -860,11 +915,13 @@ async function runAndroidInstall(
   await cooperativeCheckpoint();
   throwIfCancelled();
   if (action === "uninstall") {
-    await raceCancel(execFileAsync("adb", androidAdbArgs(["uninstall", packageName])));
+    await mutateCurrentTarget(() =>
+      raceCancel(execFileAsync("adb", androidAdbArgs(["uninstall", packageName]))),
+    );
     return { packageName, installed: false };
   }
   const args = action === "update" ? ["install", "-r", artifact!] : ["install", artifact!];
-  await raceCancel(execFileAsync("adb", androidAdbArgs(args)));
+  await mutateCurrentTarget(() => raceCancel(execFileAsync("adb", androidAdbArgs(args))));
   return await inspectAndroidApp(packageName);
 }
 
@@ -942,9 +999,11 @@ export async function setAndroidLockState(action: "lock" | "unlock"): Promise<vo
   const args = ["-s", serial, "shell", "input", "keyevent", action === "lock" ? "223" : "224"];
   await cooperativeCheckpoint();
   throwIfCancelled();
-  await raceCancel(execFileAsync("adb", args));
+  await mutateCurrentTarget(() => raceCancel(execFileAsync("adb", args)));
   if (action === "unlock") {
-    await raceCancel(execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "82"]));
+    await mutateCurrentTarget(() =>
+      raceCancel(execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "82"])),
+    );
   }
 }
 
@@ -1122,8 +1181,17 @@ async function typeAndroidShellTextExactly(
         .then(androidKeyboardShifted)
         .catch(() => undefined);
       if (shifted) {
-        await raceCancel(
-          execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_SHIFT_LEFT"]),
+        await mutateCurrentTarget(() =>
+          raceCancel(
+            execFileAsync("adb", [
+              "-s",
+              serial,
+              "shell",
+              "input",
+              "keyevent",
+              "KEYCODE_SHIFT_LEFT",
+            ]),
+          ),
         );
       }
     }
@@ -1131,8 +1199,10 @@ async function typeAndroidShellTextExactly(
       await device.interactions.type({ ...base(), text: escapeAndroidShellText(line) });
     }
     if (index < lines.length - 1) {
-      await raceCancel(
-        execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"]),
+      await mutateCurrentTarget(() =>
+        raceCancel(
+          execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"]),
+        ),
       );
     }
   }
@@ -1146,7 +1216,7 @@ export async function typeText(device: Device, text: string): Promise<void> {
     if (typeof device.command.clipboard !== "function") {
       const serial = targetIdentity();
       try {
-        await controlled(() => pasteAndroidTextWithAdb(text, serial));
+        await controlled(() => mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (!isAndroidClipboardTransportFailure(message)) throw error;
@@ -1171,8 +1241,10 @@ export async function typeText(device: Device, text: string): Promise<void> {
             await device.command.clipboard({ ...base(), action: "write", text: value });
           },
           paste: async () => {
-            await raceCancel(
-              execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+            await mutateCurrentTarget(() =>
+              raceCancel(
+                execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+              ),
             );
           },
         }),
@@ -1187,7 +1259,7 @@ export async function typeText(device: Device, text: string): Promise<void> {
       // cancellation and unrelated session errors.
       if (isAndroidProviderTextInjectionUnavailable(message)) {
         try {
-          await controlled(() => pasteAndroidTextWithAdb(text, serial));
+          await controlled(() => mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)));
           return;
         } catch (fallbackError) {
           const fallbackMessage =
@@ -1300,29 +1372,10 @@ async function clearAndroidFocusedText(serial: string): Promise<void> {
   // the end of the current line, which leaves later lines behind. Move to the
   // beginning of the current line, walk to the top, then move to the beginning
   // of the whole value before deleting forward.
-  await raceCancel(
-    execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
-  );
-  await raceCancel(
-    execFileAsync("adb", [
-      "-s",
-      serial,
-      "shell",
-      "input",
-      "keyevent",
-      ...Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"),
-    ]),
-  );
-  await raceCancel(
-    execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
-  );
-
-  // Keep each invocation comfortably below shell argument limits while still
-  // clearing long prompts and pasted multiline content in a bounded way.
-  const deleteCount = 4096;
-  const chunkSize = 128;
-  for (let remaining = deleteCount; remaining > 0; remaining -= chunkSize) {
-    const count = Math.min(chunkSize, remaining);
+  await mutateCurrentTarget(async () => {
+    await raceCancel(
+      execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
+    );
     await raceCancel(
       execFileAsync("adb", [
         "-s",
@@ -1330,10 +1383,31 @@ async function clearAndroidFocusedText(serial: string): Promise<void> {
         "shell",
         "input",
         "keyevent",
-        ...Array.from({ length: count }, () => "KEYCODE_FORWARD_DEL"),
+        ...Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"),
       ]),
     );
-  }
+    await raceCancel(
+      execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
+    );
+
+    // Keep each invocation comfortably below shell argument limits while still
+    // clearing long prompts and pasted multiline content in a bounded way.
+    const deleteCount = 4096;
+    const chunkSize = 128;
+    for (let remaining = deleteCount; remaining > 0; remaining -= chunkSize) {
+      const count = Math.min(chunkSize, remaining);
+      await raceCancel(
+        execFileAsync("adb", [
+          "-s",
+          serial,
+          "shell",
+          "input",
+          "keyevent",
+          ...Array.from({ length: count }, () => "KEYCODE_FORWARD_DEL"),
+        ]),
+      );
+    }
+  });
 }
 
 export type TextReplacementAdapter = {

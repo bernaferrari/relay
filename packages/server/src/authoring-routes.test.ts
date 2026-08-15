@@ -162,7 +162,7 @@ test("authoring rejects a blank device screenshot instead of saving a broken scr
   );
 });
 
-test("Authoring Sessions require an explicit actor-owned target lease and remain observable", async () => {
+test("Authoring Sessions share local target control but keep mutation actor-owned", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-authoring-server-"));
   const previous = {
     state: process.env.RELAY_STATE_DIR,
@@ -229,7 +229,7 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
 
     await assert.rejects(
       observer.cancelAuthoringSession(response.session.id),
-      (error) => error instanceof ApiError && error.status === 403,
+      (error) => error instanceof ApiError && error.status === 409,
     );
     const cancelled = await owner.cancelAuthoringSession(response.session.id);
     assert.equal(cancelled.session.state, "cancelled");

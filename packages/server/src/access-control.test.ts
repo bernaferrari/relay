@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { leaseDevice, runWithOperationContext } from "@relay/core";
-import { assertTargetControl } from "./access-control.js";
+import { currentOperationContext, leaseDevice, runWithOperationContext } from "@relay/core";
+import { assertTargetControl, localControlSessionOwner } from "./access-control.js";
 import { HttpError } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -59,8 +59,25 @@ test("target control failures provide safe, machine-actionable lease recovery", 
     );
 
     const minted = await asActor("agent:local", () => assertTargetControl(scope, "ipad-1"));
-    assert.equal(minted.ownerId, "agent:local");
+    assert.equal(minted.ownerId, localControlSessionOwner(scope));
+    assert.equal(minted.controlScope, "local-project");
     assert.equal(minted.deviceSerial, "ipad-1");
+    const joined = await asActor("human:second-window", () => assertTargetControl(scope, "ipad-1"));
+    assert.equal(joined.id, minted.id);
+    await asActor("agent:attributed", async () => {
+      const shared = await assertTargetControl(scope, "ipad-1");
+      assert.equal(currentOperationContext()?.actorId, "agent:attributed");
+      assert.equal(currentOperationContext()?.leaseOwnerId, shared.ownerId);
+    });
+
+    await assert.rejects(
+      asActor("configured-service", () => assertTargetControl(remoteScope, "ipad-1")),
+      (error) => {
+        assert.ok(error instanceof HttpError);
+        assert.equal(error.body?.code, "TARGET_CONTROL_LEASE_CONFLICT");
+        return true;
+      },
+    );
 
     const lease = await leaseDevice({
       projectId: scope.projectId,

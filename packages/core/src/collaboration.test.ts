@@ -367,6 +367,7 @@ test("device lease takeover is explicit, atomic, and preserves handoff provenanc
   process.env.RELAY_STATE_DIR = root;
   try {
     const original = await leaseDevice({
+      organizationId: "org-a",
       projectId: "p",
       poolId: "local",
       deviceSerial: "ABC",
@@ -375,6 +376,17 @@ test("device lease takeover is explicit, atomic, and preserves handoff provenanc
     });
     await assert.rejects(
       takeOverDeviceLease(original.id, {
+        organizationId: "org-b",
+        projectId: "p",
+        ownerId: "agent:other-org",
+        expiresAt: Date.now() + 60_000,
+        reason: "Cross-organization takeover",
+      }),
+      /Active device lease not found/u,
+    );
+    await assert.rejects(
+      takeOverDeviceLease(original.id, {
+        organizationId: "org-a",
         projectId: "p",
         ownerId: "agent:mapper",
         expiresAt: Date.now() + 60_000,
@@ -384,6 +396,7 @@ test("device lease takeover is explicit, atomic, and preserves handoff provenanc
     );
 
     const next = await takeOverDeviceLease(original.id, {
+      organizationId: "org-a",
       projectId: "p",
       ownerId: "agent:mapper",
       expiresAt: Date.now() + 120_000,

@@ -481,7 +481,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
   }
 });
 
-test("an explicitly confirmed lease takeover hands control to the requesting actor", async () => {
+test("an explicitly confirmed local takeover replaces the observed control session", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-lease-takeover-server-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
@@ -523,7 +523,8 @@ test("an explicitly confirmed lease takeover hands control to the requesting act
       reason: "User delegated this unattended run",
       confirm: true,
     });
-    assert.equal(handedOff.lease.ownerId, "agent:mapper");
+    assert.match(handedOff.lease.ownerId, /^system:local-control:/u);
+    assert.equal(handedOff.lease.controlScope, "local-project");
     assert.ok(handedOff.lease.expiresAt > Date.now());
     assert.equal(handedOff.lease.handoffFromLeaseId, original.lease.id);
     const history = await agent.invoke("lease.list", { status: "all" });
@@ -902,35 +903,11 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     assert.equal(connectionResult.jobs.length, 5);
     assert.equal(JSON.stringify(connectionResult).includes("person@example.test"), false);
 
-    // A lease is the explicit escape hatch used by remote workers and test
-    // doubles. Once it is gone, a stale serial must fail before the case stack
-    // expands or any child job is enqueued.
-    await client.invoke("lease.release", { leaseId: virtualLease.lease.id });
-    const jobsBeforeStaleTarget = await client.invoke("job.list", { limit: 100 });
-    await assert.rejects(
-      client.invoke("app-map.connection.run", {
-        appMapId: "store",
-        connectionId: "continue",
-        serial: "virtual-target",
-        platform: "android",
-        targetKind: "device",
-        variables: { login_email: "person@example.test" },
-      }),
-      (error: unknown) => {
-        assert.ok(error instanceof ApiError);
-        assert.ok(error.status === 409 || error.status === 503);
-        const body = error.body as { code?: string } | undefined;
-        assert.ok(
-          body?.code === "TARGET_NOT_CONNECTED" || body?.code === "TARGET_DISCOVERY_UNAVAILABLE",
-        );
-        return true;
-      },
-    );
-    const jobsAfterStaleTarget = await client.invoke("job.list", { limit: 100 });
-    assert.deepEqual(
-      jobsAfterStaleTarget.jobs.map((job) => job.id),
-      jobsBeforeStaleTarget.jobs.map((job) => job.id),
-    );
+    // A renderer cannot release the server-owned local control session out
+    // from under the other local windows and agents that joined it.
+    const retained = await client.invoke("lease.release", { leaseId: virtualLease.lease.id });
+    assert.equal(retained.lease.status, "leased");
+    assert.equal(retained.lease.id, virtualLease.lease.id);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

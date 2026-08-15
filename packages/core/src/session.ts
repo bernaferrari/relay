@@ -69,7 +69,8 @@ import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
-import { isDeviceLeaseClaimActive } from "./collaboration.js";
+import { isDeviceLeaseSessionActive } from "./collaboration.js";
+import { reserveTargetControl } from "./target-control.js";
 import type { EnqueueJobInput, JobErrorCode, TestJob } from "./session-contract.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
@@ -168,10 +169,11 @@ function jobLeaseValidator(job: TestJob): (() => Promise<void>) | undefined {
     };
   }
   return async () => {
-    const active = await isDeviceLeaseClaimActive({
+    const active = await isDeviceLeaseSessionActive({
+      organizationId: context.organizationId,
       projectId: context.projectId,
       deviceSerial: job.targetContext.kind === "device" ? job.targetContext.serial : "",
-      ownerId: context.actorId,
+      leaseOwnerId: context.leaseOwnerId ?? context.actorId,
       leaseId: context.leaseId!,
     }).catch(() => false);
     if (!active) throw new JobControlOwnershipError();
@@ -898,6 +900,10 @@ async function executeJob(id: string): Promise<void> {
   const primary = () => currentRecipeStep ?? job.steps[job.steps.length - 1];
   let device: Device | undefined;
   let evidence: RunEvidenceHandle | undefined = initializeRunEvidence(job);
+  const releaseTargetControl =
+    job.targetContext.kind === "device"
+      ? reserveTargetControl(job.targetContext.serial, job.id)
+      : () => undefined;
   const finishEvidence = async () => {
     await stopRunEvidence(evidence, job, device, pushLog);
   };
@@ -1088,10 +1094,14 @@ async function executeJob(id: string): Promise<void> {
     });
     await persistCompletedRun(job, pushLog);
   } finally {
-    await finishEvidence();
-    activeJobIds.delete(id);
-    clearControl(id);
-    jobRegistry.pruneTerminalHistory();
+    try {
+      await finishEvidence();
+    } finally {
+      releaseTargetControl();
+      activeJobIds.delete(id);
+      clearControl(id);
+      jobRegistry.pruneTerminalHistory();
+    }
   }
 }
 

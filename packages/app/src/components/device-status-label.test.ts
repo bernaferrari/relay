@@ -8,13 +8,13 @@ test("device status tells one authoritative story", () => {
       readiness: { kind: "ready" },
       deviceSelected: true,
       serverOnline: true,
-      controlIssue: "This device is being controlled in another Relay window.",
+      controlIssue: "This device is reserved by another active controller.",
       controlTakeoverAvailable: true,
     }),
     {
       label: "View only",
       kind: "view-only",
-      detail: "This device is being controlled in another Relay window.",
+      detail: "This device is reserved by another active controller.",
     },
   );
   assert.deepEqual(

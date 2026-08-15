@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createDevice, type Device, type DevicePlatform } from "./device.js";
+import { getExecutingJobId } from "./control.js";
+import { runTargetMutation } from "./target-control.js";
 import { now, publish } from "./events.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { resolveGoIosBinary } from "./ios-app-launch.js";
@@ -453,8 +455,12 @@ function mergeAdbObservation(
  * without leaving the app. Physical devices reject this server-side.
  */
 export async function bootDevice(serial: string, platform: DevicePlatform): Promise<void> {
-  const client = createDevice({ kind: "device", platform, serial });
-  await client.devices.boot(platform === "ios" ? { platform, udid: serial } : { platform, serial });
+  await runTargetMutation(serial, getExecutingJobId(), async () => {
+    const client = createDevice({ kind: "device", platform, serial });
+    await client.devices.boot(
+      platform === "ios" ? { platform, udid: serial } : { platform, serial },
+    );
+  });
   publish({ type: "device.booted", at: now(), serial });
 }
 
@@ -467,9 +473,11 @@ export async function requestAndroidAuthorization(serial: string): Promise<void>
   if (!attached) throw new Error("Android device is no longer attached");
   if (attached.connectionState === "connected") return;
 
-  await execFileAsync("adb", ["-s", target, "reconnect"], {
-    timeout: 8_000,
-    maxBuffer: 16 * 1024,
+  await runTargetMutation(target, getExecutingJobId(), async () => {
+    await execFileAsync("adb", ["-s", target, "reconnect"], {
+      timeout: 8_000,
+      maxBuffer: 16 * 1024,
+    });
   });
   publish({ type: "device.authorization-requested", at: now(), serial: target });
 }

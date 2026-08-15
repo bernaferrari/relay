@@ -543,10 +543,13 @@ export type DevicePool = {
 
 export type DeviceLease = {
   id: string;
+  organizationId?: string;
   projectId: string;
   poolId: string;
   deviceSerial: string;
   ownerId: string;
+  /** Local trusted clients in one project may join a server-owned control session. */
+  controlScope?: "actor" | "local-project";
   status: "leased" | "released" | "expired";
   leasedAt: number;
   expiresAt: number;

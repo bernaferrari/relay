@@ -2,6 +2,8 @@ import {
   currentOperationContext,
   DEVICE_LEASE_RENEW_UNDER_MS,
   DEVICE_LEASE_TTL_MS,
+  getActiveJob,
+  getExecutingJobId,
   leaseDevice,
   listDeviceLeases,
   now,
@@ -13,6 +15,38 @@ import type { DeviceLease } from "@relay/protocol";
 import { HttpError } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 
+export function localControlSessionOwner(scope: RequestContext): string {
+  const key = Buffer.from(`${scope.organizationId}\0${scope.projectId}`, "utf8").toString(
+    "base64url",
+  );
+  return `system:local-control:${key}`;
+}
+
+export function targetLeaseBelongsToCaller(
+  scope: RequestContext,
+  lease: DeviceLease,
+  actorId: string,
+): boolean {
+  return (
+    lease.ownerId === actorId ||
+    (scope.localTrusted &&
+      lease.controlScope === "local-project" &&
+      lease.ownerId === localControlSessionOwner(scope))
+  );
+}
+
+function admitsQueuedRun(operationId: string): boolean {
+  return (
+    operationId === "action.run" ||
+    operationId === "job.start" ||
+    operationId === "job.retry" ||
+    operationId === "run.replay" ||
+    operationId === "step.run" ||
+    (operationId.startsWith("app-map.") && operationId.endsWith(".run")) ||
+    (operationId.startsWith("job.") && operationId.endsWith(".start"))
+  );
+}
+
 export async function assertTargetControl(
   scope: RequestContext,
   targetId?: string,
@@ -21,11 +55,30 @@ export async function assertTargetControl(
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
   const at = now();
+  const activeJob = getActiveJob(targetId);
+  if (
+    activeJob &&
+    getExecutingJobId() !== activeJob.id &&
+    !admitsQueuedRun(operation.operationId)
+  ) {
+    recordAudit(scope, {
+      action: "target.control",
+      resource: "job",
+      target: targetId,
+      result: "deny",
+    });
+    throw new HttpError(409, "This target is reserved by an active automated run", {
+      code: "TARGET_CONTROL_RUN_RESERVED",
+      targetId,
+      jobId: activeJob.id,
+      recovery: "Wait for the active run to finish or cancel it before sending manual input.",
+    });
+  }
   const leases = await listDeviceLeases(scope.projectId);
   let active = leases.find(
     (lease) =>
       lease.deviceSerial === targetId &&
-      lease.ownerId === operation.actorId &&
+      targetLeaseBelongsToCaller(scope, lease, operation.actorId) &&
       lease.status === "leased" &&
       lease.expiresAt > at,
   );
@@ -60,10 +113,12 @@ export async function assertTargetControl(
     }
     if (scope.localTrusted) {
       active = await leaseDevice({
+        organizationId: scope.organizationId,
         projectId: scope.projectId,
         poolId: "local",
         deviceSerial: targetId,
-        ownerId: operation.actorId,
+        ownerId: localControlSessionOwner(scope),
+        controlScope: "local-project",
         expiresAt: at + DEVICE_LEASE_TTL_MS,
       });
     } else {
@@ -90,7 +145,7 @@ export async function assertTargetControl(
   if (active.expiresAt - at < DEVICE_LEASE_RENEW_UNDER_MS) {
     active = await renewDeviceLease(active.id, at + DEVICE_LEASE_TTL_MS);
   }
-  setOperationLease(active.id);
+  setOperationLease(active.id, active.ownerId);
   recordAudit(scope, {
     action: "target.control",
     resource: "lease",
@@ -132,12 +187,12 @@ export async function assertTargetLease(
     (lease) =>
       lease.id === leaseId &&
       lease.deviceSerial === targetId &&
-      lease.ownerId === operation.actorId &&
+      targetLeaseBelongsToCaller(scope, lease, operation.actorId) &&
       lease.status === "leased" &&
       lease.expiresAt > at,
   );
   if (!active) throw new HttpError(403, "The live-stream target lease is unavailable");
-  setOperationLease(active.id);
+  setOperationLease(active.id, active.ownerId);
 }
 
 export function assertJobAccess(
