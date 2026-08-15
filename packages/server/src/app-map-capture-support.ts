@@ -44,14 +44,34 @@ export function findEquivalentTeachConnection(
 ): string | undefined {
   const action = teachActionSemantics(input.action);
   if (!action) return undefined;
-  return Object.values(map.connections).find(
-    (connection) =>
-      connection.fromScreenId === input.fromScreenId &&
-      connection.destination.kind === "screen" &&
-      connection.destination.screenId === input.destinationScreenId &&
-      connection.actions.length === 1 &&
-      JSON.stringify(teachActionSemantics(connection.actions[0]!)) === JSON.stringify(action),
-  )?.id;
+  const semanticTap =
+    input.action.kind === "tap" &&
+    !input.action.target.point &&
+    (input.action.target.identifier?.trim() || input.action.target.label?.trim())
+      ? input.action.target
+      : undefined;
+  return Object.values(map.connections).find((connection) => {
+    if (
+      connection.fromScreenId !== input.fromScreenId ||
+      connection.destination.kind !== "screen" ||
+      connection.destination.screenId !== input.destinationScreenId ||
+      connection.actions.length !== 1
+    ) {
+      return false;
+    }
+    const existing = connection.actions[0]!;
+    if (JSON.stringify(teachActionSemantics(existing)) === JSON.stringify(action)) return true;
+    // Omitting a point is an intentional semantic repair: reconcile the
+    // reviewed label/identifier even if its old pixel fallback moved. A new
+    // explicit point stays exact so duplicate-label rows remain distinct.
+    return Boolean(
+      semanticTap &&
+      existing.kind === "tap" &&
+      (semanticTap.identifier?.trim()
+        ? existing.target.identifier?.trim() === semanticTap.identifier.trim()
+        : existing.target.label?.trim() === semanticTap.label?.trim()),
+    );
+  })?.id;
 }
 
 export type TeachInteraction = NonNullable<OperationInput<"app-map.teach">["interaction"]>;

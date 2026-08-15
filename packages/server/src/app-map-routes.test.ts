@@ -124,6 +124,32 @@ test("teaching the same action to the same screen reuses the existing connection
     }),
     undefined,
   );
+  assert.equal(
+    findEquivalentTeachConnection(
+      {
+        connections: {
+          "open-customize": {
+            id: "open-customize",
+            fromScreenId: "settings-middle",
+            destination: { kind: "screen", screenId: "customize" },
+            actions: [
+              {
+                id: "tap-old",
+                kind: "tap",
+                target: { label: "Customize Grok", point: { x: 540, y: 920 } },
+              },
+            ],
+          },
+        },
+      } as never,
+      {
+        fromScreenId: "settings-middle",
+        destinationScreenId: "customize",
+        action: { id: "tap-new", kind: "tap", target: { label: "Customize Grok" } },
+      },
+    ),
+    "open-customize",
+  );
 });
 
 test("teaching preserves the resolved source control point as canvas evidence", () => {
