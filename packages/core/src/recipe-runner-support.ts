@@ -52,12 +52,26 @@ function isLocalizedRecipeJob(job?: TestJob): boolean {
  * substitute.  Labels alone never qualify: that would make an unrelated
  * translated surface look like the recorded screen.
  */
-function localizedScreenIdentityMatch(
+function meaningfulStableIdentifiers(
+  observation: ReturnType<typeof observeScreenIdentity>,
+): Set<string> {
+  return new Set(
+    observation.nodes.flatMap((node) => {
+      const identifier = node.identifier;
+      if (!identifier) return [];
+      if (identifier === "android:id/content" || identifier.endsWith(":id/action_bar_root"))
+        return [];
+      return [identifier];
+    }),
+  );
+}
+
+function resilientScreenIdentityMatch(
   observed: ReturnType<typeof observeScreenIdentity>,
   observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
   job?: TestJob,
 ): boolean {
-  if (!isLocalizedRecipeJob(job)) return false;
+  const localized = isLocalizedRecipeJob(job);
   const structureSignature = localeNeutralStructureSignature(observed);
   return observations.some((observation) => {
     const comparison = compareScreenIdentity(observed, observation);
@@ -67,9 +81,26 @@ function localizedScreenIdentityMatch(
     const structure = comparison.signals.find(
       (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
     )?.strength;
+    const expectedIdentifiers = meaningfulStableIdentifiers(observation);
+    const observedIdentifiers = meaningfulStableIdentifiers(observed);
+    const sharedIdentifiers = [...expectedIdentifiers].filter((identifier) =>
+      observedIdentifiers.has(identifier),
+    );
+    // Dynamic lists can replace most visible copy while leaving the exact
+    // application-owned shell intact. Two reviewed, non-host identifiers plus
+    // the same substantial role structure are stronger proof than transient
+    // row labels, regardless of locale.
+    const stableApplicationShell =
+      expectedIdentifiers.size >= 2 &&
+      observedIdentifiers.size >= 2 &&
+      sharedIdentifiers.length === expectedIdentifiers.size &&
+      sharedIdentifiers.length === observedIdentifiers.size &&
+      (structure ?? 0) >= 0.95;
     return (
-      ((stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
-      (structureSignature !== undefined &&
+      stableApplicationShell ||
+      (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
+      (localized &&
+        structureSignature !== undefined &&
         structureSignature === localeNeutralStructureSignature(observation))
     );
   });
@@ -710,7 +741,7 @@ export {
   conditionalTargetPresent,
   isCancel,
   isNotFoundOrTimeout,
-  localizedScreenIdentityMatch,
+  resilientScreenIdentityMatch,
   longPressRecordedTarget,
   readInput,
   resolvePointForDevice,

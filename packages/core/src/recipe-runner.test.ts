@@ -1086,6 +1086,85 @@ describe("runRecipeStep expect-screen", () => {
     assert.deepEqual(lines, ["screen: reached Conversation"]);
   });
 
+  it("accepts a dynamic list when its reviewed application shell is unchanged", async () => {
+    const shell = [
+      { role: "view", identifier: "profile_section", depth: 10 },
+      { role: "view", identifier: "settings_button", depth: 12 },
+      { role: "view", identifier: "new_conversation_button", depth: 12 },
+    ];
+    const approved = observeScreenIdentity([
+      ...shell,
+      ...Array.from({ length: 12 }, (_, index) => ({
+        role: "text",
+        label: `Saved conversation ${index}`,
+        depth: 12,
+      })),
+    ]);
+    const current = [
+      ...shell,
+      ...Array.from({ length: 12 }, (_, index) => ({
+        role: "text",
+        label: `Entirely different conversation ${index}`,
+        depth: 12,
+      })),
+    ];
+    const lines: string[] = [];
+
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: current }) }),
+      {
+        kind: "expect-screen",
+        screenId: "menu",
+        screenTitle: "Menu",
+        fingerprint: "a".repeat(64),
+        observations: [approved],
+      },
+      { log: (line) => lines.push(line) },
+    );
+
+    assert.deepEqual(lines, ["screen: reached Menu"]);
+  });
+
+  it("does not let one generic identifier equate unrelated dynamic screens", async () => {
+    const approved = observeScreenIdentity([
+      { role: "view", identifier: "shared_root", depth: 1 },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        role: "text",
+        label: `Conversation ${index}`,
+        depth: 2,
+      })),
+    ]);
+
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({
+            snapshot: () =>
+              Promise.resolve({
+                nodes: [
+                  { role: "view", identifier: "shared_root", depth: 1 },
+                  ...Array.from({ length: 12 }, (_, index) => ({
+                    role: "button",
+                    label: `Unrelated action ${index}`,
+                    depth: 2,
+                  })),
+                ],
+              }),
+          }),
+          {
+            kind: "expect-screen",
+            screenId: "menu",
+            screenTitle: "Menu",
+            fingerprint: "a".repeat(64),
+            timeoutMs: 0,
+            observations: [approved],
+          },
+          { ...noLog, observeVisualFingerprint: () => Promise.resolve("b".repeat(64)) },
+        ),
+      /not “Menu”/u,
+    );
+  });
+
   it("accepts a translated screen only when stable identifiers and structure agree", async () => {
     const english = [
       { role: "button", identifier: "menu", label: "Menu" },

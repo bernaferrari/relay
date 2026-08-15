@@ -16,7 +16,7 @@ import {
   conditionalTargetPresent,
   isCancel,
   isNotFoundOrTimeout,
-  localizedScreenIdentityMatch,
+  resilientScreenIdentityMatch,
   longPressRecordedTarget,
   readInput,
   resolvePointForDevice,
@@ -395,7 +395,7 @@ async function runRequiredRecipeStep(
         const semanticMatch = (step.observations ?? []).some(
           (observation) => compareScreenIdentity(observed, observation).decision === "match",
         );
-        const localizedMatch = localizedScreenIdentityMatch(
+        const resilientMatch = resilientScreenIdentityMatch(
           observed,
           step.observations ?? [],
           ctx.job,
@@ -403,7 +403,7 @@ async function runRequiredRecipeStep(
         if (
           screenIdentityMatches(expected, observed.fingerprint) ||
           semanticMatch ||
-          localizedMatch
+          resilientMatch
         ) {
           reached = true;
           break;
