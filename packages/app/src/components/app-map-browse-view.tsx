@@ -342,6 +342,16 @@ function ScreenTile(props: {
             <i class="size-1.5 rounded-full bg-current" /> {stateLabel(props.state!)}
           </span>
         </Show>
+        <Show when={props.screen.handoff}>
+          {(handoff) => (
+            <span
+              class="absolute top-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[var(--surface-base)] px-2 text-[9.5px] font-semibold text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)]"
+              title={`Owned by ${handoff().ownerApp} · returns with ${handoff().returnAction}`}
+            >
+              <Icon name="external" size={10} /> Handoff
+            </span>
+          )}
+        </Show>
       </div>
       <div class="grid gap-2 px-1 pt-2.5 pb-1">
         <div class="flex min-w-0 items-start justify-between gap-2">
@@ -356,11 +366,13 @@ function ScreenTile(props: {
         </div>
         <div class="flex min-w-0 items-center gap-2 text-[10px] text-[var(--text-weak)]">
           <span class="tabular-nums">
-            {props.isStart
-              ? "Start screen"
-              : props.incoming
-                ? `${props.incoming} ${props.incoming === 1 ? "path" : "paths"} in`
-                : "No paths in"}
+            {props.screen.handoff
+              ? `External · ${props.screen.handoff.returnAction === "back" ? "Back to return" : "Relaunch to return"}`
+              : props.isStart
+                ? "Start screen"
+                : props.incoming
+                  ? `${props.incoming} ${props.incoming === 1 ? "path" : "paths"} in`
+                  : "No paths in"}
           </span>
           <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
           <span class="tabular-nums">

@@ -366,6 +366,7 @@ async function tapTarget(
   intervalMs = 90,
   region?: NonNullable<RecipeStep["when"]>["region"],
   mirrorPoints = false,
+  expectedApp?: string,
 ): Promise<{
   strategy: string;
   method?: string;
@@ -391,6 +392,7 @@ async function tapTarget(
     ...(target.label ? { label: target.label } : {}),
     ...(target.text ? { text: target.text } : {}),
     ...(literalPoint ? { point: literalPoint } : {}),
+    ...(expectedApp ? { expectedApp } : {}),
   };
   const nodes = await snapshot(device);
   const named = resolveNamedControl(nodes, namedTarget);
@@ -495,6 +497,7 @@ async function tapRecordedTarget(
   input: {
     target: StepTarget;
     fallbackTargets?: StepTarget[];
+    expectedApp?: string;
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
     region?: NonNullable<RecipeStep["when"]>["region"];
   },
@@ -524,6 +527,7 @@ async function tapRecordedTarget(
         intervalMs,
         input.region,
         isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+        input.expectedApp,
       );
       const resolution = {
         kind: "target-resolution" as const,

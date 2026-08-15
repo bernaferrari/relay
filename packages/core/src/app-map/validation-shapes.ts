@@ -142,6 +142,16 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
   assertEntity(screen, scope, label);
   requiredText(screen.title, `${label}.title`);
   optionalText(screen.description, `${label}.description`);
+  if (screen.handoff !== undefined) {
+    objectValue(screen.handoff, `${label}.handoff`);
+    requiredText(screen.handoff.ownerApp, `${label}.handoff.ownerApp`, 240);
+    if (
+      screen.handoff.returnAction !== "back" &&
+      screen.handoff.returnAction !== "relaunch-source"
+    ) {
+      appMapFail("invalid-map", `${label}.handoff.returnAction is unsupported`);
+    }
+  }
   if (screen.identity) assertIdentity(screen.identity, `${label}.identity`);
   if (screen.position) {
     if (!Number.isFinite(screen.position.x) || !Number.isFinite(screen.position.y)) {
@@ -687,6 +697,13 @@ export function assertScreenPatch(patch: ScreenPatch, label: string): void {
   if (patch.title !== undefined) requiredText(patch.title, `${label}.title`);
   if (patch.description !== undefined && patch.description !== null)
     requiredText(patch.description, `${label}.description`);
+  if (patch.handoff !== undefined && patch.handoff !== null) {
+    objectValue(patch.handoff, `${label}.handoff`);
+    requiredText(patch.handoff.ownerApp, `${label}.handoff.ownerApp`, 240);
+    if (patch.handoff.returnAction !== "back" && patch.handoff.returnAction !== "relaunch-source") {
+      appMapFail("invalid-map", `${label}.handoff.returnAction is unsupported`);
+    }
+  }
   if (patch.identity !== undefined && patch.identity !== null)
     assertIdentity(patch.identity, `${label}.identity`);
   if (

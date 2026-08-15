@@ -44,6 +44,8 @@ export type AuthoringObservation = {
   screen: AuthoringScreenObservation;
   evidenceIds: string[];
   bounds?: { width: number; height: number };
+  /** Exact foreground owner observed with the screenshot/tree. */
+  foregroundApp?: string;
   /** A bounded semantic snapshot retained for selector repair and screen identity. */
   nodes?: Array<Record<string, unknown>>;
 };
@@ -65,7 +67,7 @@ export type AuthoringAction = {
 };
 
 export type AuthoringInteraction =
-  | { kind: "tap"; target: StepTarget; applied?: boolean }
+  | { kind: "tap"; target: StepTarget; expectedApp?: string; applied?: boolean }
   | {
       kind: "type";
       text: string;

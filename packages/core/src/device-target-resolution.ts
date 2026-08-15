@@ -198,6 +198,8 @@ export type NamedControlTarget = {
   label?: string;
   text?: string;
   point?: { x: number; y: number };
+  /** Exact Android package allowed to replace the current foreground app. */
+  expectedApp?: string;
 };
 
 export type NamedControlMethod = "identifier" | "label" | "text" | "point";

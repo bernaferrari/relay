@@ -226,6 +226,12 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
         { name: "title", type: "string", description: "Destination screen title" },
         {
+          name: "handoff",
+          type: "{expectedApp,returnAction}",
+          description:
+            "Explicitly allow a semantic tap to enter another app and declare back or relaunch-source recovery.",
+        },
+        {
           name: "interaction",
           type: "object",
           description:
@@ -240,8 +246,9 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       examples: [
         'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"settings","title":"Connections","interaction":{"kind":"point","x":540,"y":1275}}\'',
         'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"settings-top","title":"Settings · Middle","label":"Scroll settings","interaction":{"kind":"swipe","from":{"x":540,"y":1720},"to":{"x":540,"y":620},"durationMs":280}}\'',
+        'relay map teach settings --input \'{"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>","fromScreenId":"widget","title":"Add to home screen","interaction":{"kind":"label","label":"Add widget"},"handoff":{"expectedApp":"bitpit.launcher","returnAction":"back"}}\'',
       ],
-      note: "One gesture: tap or swipe → capture destination → connect. expectedRevision is optional.",
+      note: "One gesture: tap or swipe → capture destination → connect. Cross-app surfaces require an exact, reversible handoff declaration.",
     }),
   ),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),

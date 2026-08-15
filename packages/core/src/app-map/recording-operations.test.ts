@@ -138,6 +138,24 @@ test("captures an entry screen without inventing a connection", () => {
   );
 });
 
+test("captures an explicitly owned handoff as a reversible test surface", () => {
+  const result = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "phone" },
+      observation: observation("launcher-dialog", "c".repeat(64), "evidence-dialog"),
+      title: "Add to home screen",
+      handoff: { ownerApp: "bitpit.launcher", returnAction: "back" },
+    },
+    context("capture-handoff"),
+  );
+
+  assert.deepEqual(result.appMap.screens[result.screenId]?.handoff, {
+    ownerApp: "bitpit.launcher",
+    returnAction: "back",
+  });
+});
+
 test("recapturing the same observed state refreshes its target variant", () => {
   const first = commitAppMapScreenCapture(
     mapFixture(),

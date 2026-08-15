@@ -65,6 +65,17 @@ test("teaching converts every supported interaction into a source-guarded Take a
     { kind: "tap", target: { identifier: "settings" } },
   );
   assert.deepEqual(
+    teachInteractionToAuthoringInteraction(
+      { kind: "label", label: "Add widget" },
+      "bitpit.launcher",
+    ),
+    {
+      kind: "tap",
+      target: { label: "Add widget" },
+      expectedApp: "bitpit.launcher",
+    },
+  );
+  assert.deepEqual(
     teachInteractionToAuthoringInteraction({
       kind: "swipe",
       from: { x: 500, y: 1800 },

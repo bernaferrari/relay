@@ -480,6 +480,13 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
         string(input.fromScreenId, "App Map teach fromScreenId");
       if (input.title !== undefined) string(input.title, "App Map teach title");
       if (input.label !== undefined) string(input.label, "App Map teach label");
+      if (input.handoff !== undefined) {
+        const handoff = record(input.handoff, "App Map teach handoff");
+        string(handoff.expectedApp, "App Map teach handoff expectedApp");
+        if (handoff.returnAction !== "back" && handoff.returnAction !== "relaunch-source") {
+          fail("App Map teach handoff returnAction", "must be back or relaunch-source");
+        }
+      }
       if (input.interaction !== undefined) {
         const interaction = record(input.interaction, "App Map teach interaction");
         const kind = string(interaction.kind, "App Map teach interaction kind");

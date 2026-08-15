@@ -44,6 +44,7 @@ export type CapturedAuthoringObservation = {
   capturedAt: number;
   targetId: string;
   fingerprint: string;
+  foregroundApp?: string;
   bounds?: { width: number; height: number };
   nodes?: Array<Record<string, unknown>>;
   screenshot?: { data: Uint8Array; mime: string };
@@ -609,6 +610,7 @@ async function persistObservation(
       },
       evidenceIds: evidence.map((item) => item.id),
       ...(captured.bounds ? { bounds: { ...captured.bounds } } : {}),
+      ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
       ...(captured.nodes ? { nodes: clone(captured.nodes.slice(0, 256)) } : {}),
     },
     evidence,
@@ -631,7 +633,13 @@ function stepsForInteraction(
   let steps: RecipeStep[];
   switch (interaction.kind) {
     case "tap":
-      steps = [{ kind: "tap", target: clone(interaction.target) }];
+      steps = [
+        {
+          kind: "tap",
+          target: clone(interaction.target),
+          ...(interaction.expectedApp ? { expectedApp: interaction.expectedApp } : {}),
+        },
+      ];
       break;
     case "type":
       steps = [

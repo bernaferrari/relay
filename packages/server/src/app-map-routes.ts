@@ -380,6 +380,18 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     if (body.fromScreenId && !current.screens[body.fromScreenId]) {
       throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
     }
+    if (body.handoff) {
+      if (
+        !body.interaction ||
+        body.interaction.kind === "point" ||
+        body.interaction.kind === "swipe"
+      ) {
+        throw new HttpError(400, "A handoff requires a semantic label or identifier interaction");
+      }
+      if (!body.fromScreenId?.trim() || !body.title?.trim()) {
+        throw new HttpError(400, "A handoff requires fromScreenId and a destination title");
+      }
+    }
     let session: AuthoringSession | undefined;
     try {
       if (body.interaction) {
@@ -405,7 +417,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         }
         session = await authoringSessions.interact(
           session.id,
-          teachInteractionToAuthoringInteraction(body.interaction),
+          teachInteractionToAuthoringInteraction(body.interaction, body.handoff?.expectedApp),
           runtime,
         );
         await runtime.settle?.(800);
@@ -431,6 +443,23 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       const destinationObservation = body.interaction ? take?.after : take?.before;
       if (!take || !destinationObservation) {
         throw new HttpError(502, "The target returned no destination screen observation");
+      }
+      const sourceApp = take.before?.foregroundApp;
+      const destinationApp = destinationObservation.foregroundApp;
+      if (body.handoff) {
+        if (!destinationApp || destinationApp !== body.handoff.expectedApp) {
+          throw new HttpError(
+            409,
+            `The interaction opened ${destinationApp ?? "an unknown application"}, not ${body.handoff.expectedApp}`,
+            { code: "unexpected-handoff" },
+          );
+        }
+      } else if (sourceApp && destinationApp && sourceApp !== destinationApp) {
+        throw new HttpError(409, `The interaction left ${sourceApp} and opened ${destinationApp}`, {
+          code: "undeclared-handoff",
+          recovery:
+            "Retry with an explicit handoff expectedApp and reversible returnAction if this transition is intentional.",
+        });
       }
       const intendedTitle = body.title?.trim();
       if (
@@ -479,6 +508,14 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
         evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
         evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
         ...(body.title?.trim() ? { title: body.title.trim() } : {}),
+        ...(body.handoff
+          ? {
+              handoff: {
+                ownerApp: body.handoff.expectedApp,
+                returnAction: body.handoff.returnAction,
+              },
+            }
+          : {}),
       };
       const operation = currentOperationContext();
       const initialReview = reviewAppMapScreenCapture(current, capture, {
@@ -586,6 +623,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
                           identifier: body.interaction.identifier,
                           ...(body.interaction.point ? { point: body.interaction.point } : {}),
                         },
+                ...(body.handoff ? { expectedApp: body.handoff.expectedApp } : {}),
               };
         const equivalentConnectionId = findEquivalentTeachConnection(appMap, {
           fromScreenId: body.fromScreenId,

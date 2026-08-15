@@ -563,7 +563,7 @@ describe("validateRecipeSteps", () => {
 
   it("accepts every step kind with valid fields", () => {
     const steps = [
-      { kind: "tap", target: { ref: "@e1" } },
+      { kind: "tap", target: { ref: "@e1" }, expectedApp: "bitpit.launcher" },
       { kind: "type", text: "hi", target: { label: "Field" } },
       { kind: "scroll", direction: "down", amount: 0.5 },
       { kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 }, durationMs: 300 },
@@ -608,6 +608,7 @@ describe("validateRecipeSteps", () => {
     const out = validateRecipeSteps(steps);
     assert.equal(out.length, steps.length);
     assert.equal(out[0]!.kind, "tap");
+    assert.equal(out[0]?.kind === "tap" ? out[0].expectedApp : undefined, "bitpit.launcher");
     assert.equal(out[3]!.kind, "swipe");
     assert.equal(out[16]!.kind, "flow");
     assert.equal((out[14] as { reason?: string }).reason, "consent");

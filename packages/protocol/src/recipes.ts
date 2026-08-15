@@ -175,6 +175,9 @@ export type RecipeStep = RecipeStepMetadata &
     | {
         kind: "tap";
         target: StepTarget;
+        /** Exact application package expected to own the foreground after
+         * this tap. Omitted taps must remain inside the current application. */
+        expectedApp?: string;
         /** Ordered semantic alternatives for the same intent. The runner only
          * tries these when the primary target cannot be acted on. */
         fallbackTargets?: StepTarget[];

@@ -134,6 +134,27 @@ test("map teach accepts a swipe as a replayable scroll gesture", () => {
   });
 });
 
+test("map teach accepts only an exact reversible handoff declaration", () => {
+  const input = {
+    appMapId: "grok",
+    leaseId: "lease-1",
+    target: { kind: "device" as const, platform: "android" as const, targetId: "phone-1" },
+    fromScreenId: "widget",
+    title: "Add to home screen",
+    interaction: { kind: "label" as const, label: "Add widget" },
+    handoff: { expectedApp: "bitpit.launcher", returnAction: "back" as const },
+  };
+  assert.deepEqual(operationDefinition("app-map.teach").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.teach").input.parse({
+        ...input,
+        handoff: { expectedApp: "bitpit.launcher", returnAction: "none" },
+      }),
+    /returnAction/u,
+  );
+});
+
 test("App Map flow runs accept an explicit replay boundary", () => {
   const input = {
     appMapId: "map-1",

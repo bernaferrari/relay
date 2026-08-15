@@ -400,6 +400,15 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       fromScreenId: identifier("Source screen when tapping a destination").optional(),
       title: text("Destination screen title").optional(),
       label: text("Connection label").optional(),
+      handoff: z
+        .object({
+          expectedApp: text("Exact foreground application package expected after the tap"),
+          returnAction: z
+            .enum(["back", "relaunch-source"])
+            .describe("Reversible way to leave the handoff surface"),
+        })
+        .strict()
+        .optional(),
       interaction: z
         .discriminatedUnion("kind", [
           z.object({ kind: z.literal("point"), x: z.number(), y: z.number() }).strict(),
@@ -415,6 +424,14 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
               kind: z.literal("identifier"),
               identifier: identifier("Accessibility identifier"),
               point: point.optional(),
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal("swipe"),
+              from: point,
+              to: point,
+              durationMs: z.number().int().positive().optional(),
             })
             .strict(),
         ])

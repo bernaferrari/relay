@@ -75,6 +75,13 @@ export type MapGroup = AppMapEntity & {
 export type Screen = AppMapEntity & {
   title: string;
   description?: string;
+  /** A surface intentionally owned outside the application under test. It is
+   * still a first-class test checkpoint, but can only be authored through an
+   * explicit expected handoff and has a declared reversible exit. */
+  handoff?: {
+    ownerApp: string;
+    returnAction: "back" | "relaunch-source";
+  };
   identity?: ScreenIdentity;
   position?: AppMapPoint;
   variantIds: string[];
@@ -161,7 +168,12 @@ export type ActionSpec = ActionMetadata &
         kind: "steps";
         steps: RecipeStep[];
       }
-    | { kind: "tap"; target: StepTarget; fallbackTargets?: StepTarget[] }
+    | {
+        kind: "tap";
+        target: StepTarget;
+        fallbackTargets?: StepTarget[];
+        expectedApp?: string;
+      }
     | { kind: "text"; text: string; target?: StepTarget }
     | { kind: "gesture"; gesture: GestureSpec }
     | { kind: "back" }
@@ -500,6 +512,7 @@ export type AddScreenInput = { screen: Screen; variants?: ScreenVariant[] };
 export type ScreenPatch = {
   title?: string;
   description?: string | null;
+  handoff?: Screen["handoff"] | null;
   identity?: ScreenIdentity | null;
   position?: AppMapPoint | null;
 };

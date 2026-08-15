@@ -194,7 +194,7 @@ test("point-only pressNamedControl does not snapshot", async () => {
   assert.equal((presses[0] as { y: number }).y, 45);
 });
 
-test("a named Android control may intentionally hand off to system Settings", async () => {
+test("a named Android control may intentionally hand off to an exact declared app", async () => {
   const device = {
     interactions: {
       press: () =>
@@ -220,9 +220,46 @@ test("a named Android control may intentionally hand off to system Settings", as
 
   const result = await runWithTargetContext(
     { kind: "device", platform: "android", serial: "named-handoff" },
-    () => pressNamedControl(device, { label: "App Language" }),
+    () =>
+      pressNamedControl(device, {
+        label: "App Language",
+        expectedApp: "com.android.settings",
+      }),
   );
   assert.equal(result.method, "label");
+});
+
+test("a named Android control rejects even system Settings when the handoff is undeclared", async () => {
+  const device = {
+    interactions: {
+      press: () =>
+        Promise.reject(
+          new Error(
+            "press coordinate tap left ai.x.grok and foregrounded com.android.settings. The tap likely escaped the app.",
+          ),
+        ),
+    },
+    capture: {
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              type: "android.widget.TextView",
+              label: "App Language",
+              rect: { x: 200, y: 1600, width: 300, height: 80 },
+            },
+          ],
+        }),
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    runWithTargetContext(
+      { kind: "device", platform: "android", serial: "undeclared-settings-handoff" },
+      () => pressNamedControl(device, { label: "App Language" }),
+    ),
+    /foregrounded com\.android\.settings/,
+  );
 });
 
 test("a named Android control still rejects a launcher escape", async () => {

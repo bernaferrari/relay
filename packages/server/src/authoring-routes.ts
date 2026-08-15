@@ -129,6 +129,7 @@ export async function captureAuthoringObservation(
       capturedAt: Math.max(snapshot.capturedAt, screenshot.capturedAt),
       targetId: session.target.targetId,
       fingerprint,
+      ...(snapshot.foregroundApp ? { foregroundApp: snapshot.foregroundApp } : {}),
       ...(snapshot.bounds ? { bounds: snapshot.bounds } : {}),
       nodes: snapshot.nodes.slice(0, 256) as Array<Record<string, unknown>>,
       screenshot: { data: screenshotBytes, mime: screenshot.mime },
@@ -139,7 +140,13 @@ export async function captureAuthoringObservation(
 function executableInteraction(interaction: AuthoringInteraction): RecipeStep[] {
   switch (interaction.kind) {
     case "tap":
-      return [{ kind: "tap", target: structuredClone(interaction.target) }];
+      return [
+        {
+          kind: "tap",
+          target: structuredClone(interaction.target),
+          ...(interaction.expectedApp ? { expectedApp: interaction.expectedApp } : {}),
+        },
+      ];
     case "type":
       return [
         {

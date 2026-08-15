@@ -132,6 +132,7 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
             id: `relay-action-${action.id}`,
             kind: "tap",
             target: structuredClone(action.target),
+            ...(action.expectedApp ? { expectedApp: action.expectedApp } : {}),
             ...(action.fallbackTargets?.length
               ? { fallbackTargets: structuredClone(action.fallbackTargets) }
               : {}),

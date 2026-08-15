@@ -31,7 +31,13 @@ export function iosTeachObservationMatchesTitle(
 }
 
 function teachActionSemantics(action: ActionSpec): unknown {
-  if (action.kind === "tap") return { kind: "tap", target: action.target };
+  if (action.kind === "tap") {
+    return {
+      kind: "tap",
+      target: action.target,
+      ...(action.expectedApp ? { expectedApp: action.expectedApp } : {}),
+    };
+  }
   if (action.kind === "gesture" && action.gesture.kind === "swipe") {
     return { kind: "swipe", from: action.gesture.from, to: action.gesture.to };
   }
@@ -50,6 +56,7 @@ export function findEquivalentTeachConnection(
     (input.action.target.identifier?.trim() || input.action.target.label?.trim())
       ? input.action.target
       : undefined;
+  const expectedApp = input.action.kind === "tap" ? input.action.expectedApp : undefined;
   return Object.values(map.connections).find((connection) => {
     if (
       connection.fromScreenId !== input.fromScreenId ||
@@ -67,6 +74,7 @@ export function findEquivalentTeachConnection(
     return Boolean(
       semanticTap &&
       existing.kind === "tap" &&
+      existing.expectedApp === expectedApp &&
       (semanticTap.identifier?.trim()
         ? existing.target.identifier?.trim() === semanticTap.identifier.trim()
         : existing.target.label?.trim() === semanticTap.label?.trim()),
@@ -79,10 +87,15 @@ type InteractionPoint = { x: number; y: number };
 
 export function teachInteractionToAuthoringInteraction(
   interaction: TeachInteraction,
+  expectedApp?: string,
 ): AuthoringInteraction {
   switch (interaction.kind) {
     case "point":
-      return { kind: "tap", target: { point: { x: interaction.x, y: interaction.y } } };
+      return {
+        kind: "tap",
+        target: { point: { x: interaction.x, y: interaction.y } },
+        ...(expectedApp ? { expectedApp } : {}),
+      };
     case "label":
       return {
         kind: "tap",
@@ -90,6 +103,7 @@ export function teachInteractionToAuthoringInteraction(
           label: interaction.label,
           ...(interaction.point ? { point: interaction.point } : {}),
         },
+        ...(expectedApp ? { expectedApp } : {}),
       };
     case "identifier":
       return {
@@ -98,6 +112,7 @@ export function teachInteractionToAuthoringInteraction(
           identifier: interaction.identifier,
           ...(interaction.point ? { point: interaction.point } : {}),
         },
+        ...(expectedApp ? { expectedApp } : {}),
       };
     case "swipe":
       return {

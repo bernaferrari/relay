@@ -153,7 +153,7 @@ describe("runRecipeStep tap gestures", () => {
     assert.deepEqual(recorded?.data.bounds, home.rect);
   });
 
-  it("accepts an intentional Android Settings handoff from a semantic tap", async () => {
+  it("accepts an exact declared Android handoff from a semantic tap", async () => {
     const language = {
       type: "android.widget.TextView",
       label: "Lingua App",
@@ -171,7 +171,15 @@ describe("runRecipeStep tap gestures", () => {
         ),
     });
 
-    await runRecipeStep(device, { kind: "tap", target: { label: "Lingua App" } }, noLog);
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { label: "Lingua App" },
+        expectedApp: "com.android.settings",
+      },
+      noLog,
+    );
   });
 
   it("uses a stable accessibility identifier before weaker fallbacks", async () => {

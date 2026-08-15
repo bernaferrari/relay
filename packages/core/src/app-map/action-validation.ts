@@ -138,6 +138,9 @@ export function assertActions(actions: ActionSpec[], label: string): void {
         break;
       case "tap":
         assertTarget(action.target, `${item}.target`);
+        if (action.expectedApp !== undefined) {
+          requiredText(action.expectedApp, `${item}.expectedApp`, 240);
+        }
         if (action.fallbackTargets !== undefined) {
           if (!Array.isArray(action.fallbackTargets) || action.fallbackTargets.length > 8) {
             appMapFail("invalid-map", `${item}.fallbackTargets must contain at most 8 targets`);

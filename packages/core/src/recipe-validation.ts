@@ -81,9 +81,13 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         ) {
           throw stepErr(index, "tap.durationMs must be between 100 and 10000");
         }
+        if (raw.expectedApp !== undefined && !isString(raw.expectedApp)) {
+          throw stepErr(index, "tap.expectedApp must be a string");
+        }
         const step: Extract<RecipeStep, { kind: "tap" }> = {
           kind: "tap",
           target,
+          ...(isString(raw.expectedApp) ? { expectedApp: raw.expectedApp } : {}),
           ...(fallbackTargets?.length ? { fallbackTargets } : {}),
           ...(raw.gesture !== undefined
             ? { gesture: raw.gesture as "single" | "multi" | "hold" }

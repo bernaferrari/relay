@@ -1520,10 +1520,8 @@ function semanticSelectorDidNotMatch(error: unknown): boolean {
 }
 
 /** agent-device reports every Android package transition after a coordinate
- * fallback as an escaped tap. A semantic settings control may intentionally
- * open Android Settings (App Language is one example). Accept only that
- * trusted system handoff; arbitrary apps, launchers, and raw points still fail
- * closed until a connection can declare its expected destination package. */
+ * fallback as an escaped tap. Accept one only when the authored semantic
+ * control declares the exact expected destination package. */
 export function androidNamedPressCompletedHandoff(
   error: unknown,
   target: NamedControlTarget,
@@ -1534,7 +1532,7 @@ export function androidNamedPressCompletedHandoff(
   const handoff = /press coordinate tap left\s+(\S+)\s+and foregrounded\s+(\S+)/i.exec(message);
   const destination = handoff?.[2]?.replace(/[.,;:]+$/, "");
   if (!destination || destination === handoff?.[1]) return false;
-  return destination === "com.android.settings";
+  return Boolean(target.expectedApp?.trim() && destination === target.expectedApp.trim());
 }
 
 /** Snapshot → resolveNamedControl → press. Used by recipe taps, mouse interact, and CLI. */

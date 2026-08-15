@@ -114,6 +114,10 @@ export type AppMapOperationMap = {
       fromScreenId?: string;
       title?: string;
       label?: string;
+      handoff?: {
+        expectedApp: string;
+        returnAction: "back" | "relaunch-source";
+      };
       interaction?:
         | { kind: "point"; x: number; y: number }
         | { kind: "label"; label: string; point?: { x: number; y: number } }

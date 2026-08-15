@@ -52,6 +52,7 @@ export type AppMapScreenCaptureInput = {
   evidenceUrisById?: Record<string, string>;
   evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
   title?: string;
+  handoff?: NonNullable<Screen["handoff"]>;
   position?: { x: number; y: number };
 };
 
@@ -379,6 +380,7 @@ export function commitAppMapScreenCapture(
           context.at,
         );
       if (created && input.position) screen.position = structuredClone(input.position);
+      if (input.handoff) screen.handoff = structuredClone(input.handoff);
       observeScreen({
         map,
         screen,
