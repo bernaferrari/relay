@@ -96,7 +96,11 @@ function resilientScreenIdentityMatch(
       observedIdentifiers.size >= 2 &&
       sharedIdentifiers.length === expectedIdentifiers.size &&
       sharedIdentifiers.length === observedIdentifiers.size &&
-      (structure ?? 0) >= 0.95;
+      // Scroll position and responsive headers can add or remove a handful of
+      // repeated roles without changing the screen. Exact agreement on the
+      // complete application-owned identifier set is the stronger anchor;
+      // retain a high, but not pixel-like, structural floor.
+      (structure ?? 0) >= 0.9;
     return (
       (options.allowDynamicShell !== false && stableApplicationShell) ||
       (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||

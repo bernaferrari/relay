@@ -1222,6 +1222,47 @@ describe("runRecipeStep expect-screen", () => {
     assert.deepEqual(lines, ["screen: reached Menu"]);
   });
 
+  it("keeps one logical list identity when scroll position changes repeated row counts", async () => {
+    const shell = [
+      { role: "view", identifier: "settings.action_bar", depth: 9 },
+      { role: "list", identifier: "settings.recycler", depth: 15 },
+      { role: "image", identifier: "settings.app_icon", depth: 16 },
+    ];
+    const approved = observeScreenIdentity([
+      ...shell,
+      ...Array.from({ length: 8 }, (_, index) => ({
+        role: "radio",
+        identifier: "settings.language_choice",
+        label: `Language ${index}`,
+        depth: 17,
+      })),
+    ]);
+    const current = [
+      ...shell,
+      ...Array.from({ length: 9 }, (_, index) => ({
+        role: "radio",
+        identifier: "settings.language_choice",
+        label: `Different visible language ${index}`,
+        depth: 17,
+      })),
+    ];
+    const lines: string[] = [];
+
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: current }) }),
+      {
+        kind: "expect-screen",
+        screenId: "languages",
+        screenTitle: "App languages",
+        fingerprint: "a".repeat(64),
+        observations: [approved],
+      },
+      { log: (line) => lines.push(line) },
+    );
+
+    assert.deepEqual(lines, ["screen: reached App languages"]);
+  });
+
   it("does not let one generic identifier equate unrelated dynamic screens", async () => {
     const approved = observeScreenIdentity([
       { role: "view", identifier: "shared_root", depth: 1 },
