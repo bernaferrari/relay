@@ -56,7 +56,6 @@ import {
 } from "./control.js";
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
-import { captureScreenshot } from "./workspace.js";
 import { describeTarget, readRecipe, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
@@ -66,7 +65,7 @@ import {
   labelsForScope,
 } from "./recipe-target-match.js";
 import { runTourStep } from "./recipe-runner-tour.js";
-import { runExpectScreenStep } from "./recipe-runner-screen.js";
+import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
 import {
   runCampaignCheck,
   runCaptureSurfaceStep,
@@ -212,18 +211,7 @@ async function runRequiredRecipeStep(
       break;
 
     case "screenshot": {
-      const verified = ctx.runtime?.verifiedScreen;
-      const observation = ctx.runtime?.observation;
-      const screenshot = await captureScreenshot({
-        jobId: job?.id,
-        caption: step.caption,
-        device,
-        // Preserve screenshot screen-match evidence while avoiding a second
-        // Android tree walk after an immediately preceding semantic proof.
-        ...(observation?.nodes ? { semanticNodes: observation.nodes } : {}),
-      });
-      if (observation) observation.screenshot = screenshot;
-      if (verified) verified.screenshot = screenshot;
+      await captureRecipeScreenshot(device, step.caption, ctx);
       break;
     }
 

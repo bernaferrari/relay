@@ -20,6 +20,23 @@ import { captureScreenshot } from "./workspace.js";
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
 
+export async function captureRecipeScreenshot(
+  device: Device,
+  caption: string | undefined,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const verified = ctx.runtime?.verifiedScreen;
+  const observation = ctx.runtime?.observation;
+  const screenshot = await captureScreenshot({
+    jobId: ctx.job?.id,
+    caption,
+    device,
+    ...(observation?.nodes ? { semanticNodes: observation.nodes } : {}),
+  });
+  if (observation) observation.screenshot = screenshot;
+  if (verified) verified.screenshot = screenshot;
+}
+
 export async function runExpectScreenStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
