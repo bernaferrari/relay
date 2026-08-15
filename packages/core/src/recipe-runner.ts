@@ -36,7 +36,6 @@ import {
   closeApp,
   inspectAndroidApp,
   setAndroidAppLocale,
-  openApp,
   openUrl,
   openAppSwitcher,
   rotateDevice,
@@ -48,6 +47,7 @@ import {
   setAndroidLockState,
   snapshot,
 } from "./device.js";
+import { openAppAndVerifyForeground } from "./recipe-runner-app.js";
 import {
   cooperativeCheckpointWithTimeout,
   cooperativeCheckpoint,
@@ -749,10 +749,11 @@ async function runRequiredRecipeStep(
       if (step.action === "open") {
         if (step.url) await openUrl(device, step.url);
         else
-          await openApp(
+          await openAppAndVerifyForeground(
             device,
             step.app!,
             step.relaunch === undefined ? undefined : { relaunch: step.relaunch },
+            log,
           );
         break;
       }
@@ -761,7 +762,6 @@ async function runRequiredRecipeStep(
         log(`app locale: ${step.app} → ${step.locale}`);
         break;
       }
-
       const build =
         step.action === "install" || step.action === "update" || step.action === "uninstall"
           ? await changeAndroidAppBuild({
