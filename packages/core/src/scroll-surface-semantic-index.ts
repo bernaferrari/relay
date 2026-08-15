@@ -84,11 +84,25 @@ export function compileScrollSurfaceSemanticIndex(input: {
       return [{ key, target, documentY: Math.round(node.rect.y + node.rect.height / 2) }];
     })
     .sort((left, right) => left.documentY - right.documentY || left.key.localeCompare(right.key));
-  const counts = new Map<string, number>();
-  for (const candidate of candidates)
-    counts.set(candidate.key, (counts.get(candidate.key) ?? 0) + 1);
+  const positions = new Map<string, number[]>();
+  for (const candidate of candidates) {
+    const ys = positions.get(candidate.key) ?? [];
+    if (!ys.some((y) => Math.abs(y - candidate.documentY) <= 4)) ys.push(candidate.documentY);
+    positions.set(candidate.key, ys);
+  }
   const anchors: ScrollSurfaceSemanticAnchor[] = candidates
-    .filter((candidate) => counts.get(candidate.key) === 1)
+    // Adjacent raw viewports legitimately duplicate one logical row at the
+    // same document coordinate. Collapse those copies, but reject selectors
+    // that still point to multiple distinct rows (for example a Voice section
+    // heading and a Voice preference row).
+    .filter((candidate) => positions.get(candidate.key)?.length === 1)
+    .filter(
+      (candidate, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.key === candidate.key && Math.abs(other.documentY - candidate.documentY) <= 4,
+        ) === index,
+    )
     .map((candidate, order) => ({
       order,
       documentY: candidate.documentY,

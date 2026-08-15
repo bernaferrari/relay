@@ -88,3 +88,35 @@ test("prefers durable labels over ephemeral native references", () => {
     { order: 0, documentY: 930, target: { label: "Data Controls" } },
   ]);
 });
+
+test("collapses viewport-overlap copies but rejects genuinely ambiguous rows", () => {
+  const merged: SnapshotNode[] = [
+    { label: "Data Controls", rect: { x: 0, y: 900, width: 300, height: 60 } },
+    { label: "Data Controls", rect: { x: 0, y: 900, width: 300, height: 60 } },
+    { label: "Voice", rect: { x: 0, y: 1_100, width: 300, height: 60 } },
+    { label: "Voice", rect: { x: 0, y: 1_300, width: 300, height: 60 } },
+  ];
+  const index = compileScrollSurfaceSemanticIndex({
+    nodes: merged,
+    frames: [
+      {
+        offsetY: 0,
+        screenshot: { base64: "", width: 400, height: 800, capturedAt: 1 },
+        snapshot: {
+          serial: "device",
+          capturedAt: 1,
+          nodes: merged,
+          interactive: [],
+          bounds: { width: 400, height: 800 },
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(index.anchors, [
+    { order: 0, documentY: 930, target: { label: "Data Controls" } },
+  ]);
+});
