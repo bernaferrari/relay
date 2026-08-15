@@ -1,12 +1,4 @@
-/**
- * Recipe step executor — thin glue over the device.ts helpers.
- *
- * One function, one switch per step kind. Cancel propagates as
- * JobCancelledError (rethrown, not swallowed by strategy fallbacks or retries).
- * The pause step drives the same cooperative pause/resume mechanics the job
- * engine uses: it sets job.status="paused" so `POST /jobs/:id/resume`
- * (resumeJob) unblocks the checkpoint.
- */
+/** Recipe execution glue; cancellation always escapes strategy fallbacks. */
 import type { Device } from "./device.js";
 import { describeSnapshotChrome } from "@relay/protocol";
 import {
@@ -18,14 +10,11 @@ import {
   isNotFoundOrTimeout,
   resilientScreenIdentityMatch,
   handoffShellIdentityMatch,
-  longPressRecordedTarget,
   readInput,
   resolvePointForDevice,
   resolveRecipeStep,
   runtimeBoundsCache,
   runVariableScript,
-  scrollUp,
-  tapRecordedTarget,
   targetPresent,
   waitForResponseCompletion,
 } from "./recipe-runner-support.js";
@@ -34,10 +23,8 @@ export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js"
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
   pressLabel,
-  replaceText,
-  typeText,
   pressKey,
-  scrollDown,
+  scrollUp,
   sleep,
   swipeGesture,
   waitFor,
@@ -72,8 +59,6 @@ import {
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureScreenshot } from "./workspace.js";
-import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
-import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { describeTarget, readRecipe, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
@@ -90,6 +75,13 @@ import {
 } from "./recipe-target-match.js";
 import { runTourStep } from "./recipe-runner-tour.js";
 import { foregroundApplicationBundle } from "./recipe-runner-tour-matching.js";
+import {
+  runCampaignCheck,
+  runCaptureSurfaceStep,
+  runSemanticScrollStep,
+  runTapStep,
+  runTypeStep,
+} from "./recipe-runner-extended-steps.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runReusableRecipe(
@@ -181,78 +173,16 @@ async function runRequiredRecipeStep(
   const { log, job } = ctx;
   switch (step.kind) {
     case "tap":
-      if (step.gesture === "hold") {
-        await longPressRecordedTarget(device, step, ctx);
-      } else {
-        const multi = step.gesture === "multi";
-        await tapRecordedTarget(
-          device,
-          { ...step, region: step.when?.region },
-          ctx,
-          multi ? (step.tapCount ?? 2) : 1,
-          multi ? (step.intervalMs ?? 100) : 0,
-        );
-      }
+      await runTapStep(device, step, ctx);
       break;
 
     case "type": {
-      if (step.mode === "replace") {
-        if (!step.target) throw new Error("replace text requires a target");
-        await replaceText(device, step.target, step.text);
-      } else {
-        if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
-        await typeText(device, step.text);
-      }
+      await runTypeStep(device, step, ctx);
       break;
     }
 
     case "scroll": {
-      const performScroll = async () => {
-        if (step.direction === "down") await scrollDown(device, step.amount);
-        else await scrollUp(device, step.amount);
-      };
-      if (!step.until) {
-        await performScroll();
-        break;
-      }
-      const expected = new Set([step.until.fingerprint, ...(step.until.aliases ?? [])]);
-      const maxAttempts = step.maxAttempts ?? 12;
-      let previousFingerprint: string | undefined;
-      let repeated = 0;
-      for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
-        await cooperativeCheckpoint();
-        const observed = observeScreenIdentity(await snapshot(device));
-        if (
-          screenIdentityMatches(expected, observed.fingerprint) ||
-          (step.until.observations ?? []).some(
-            (observation) => compareScreenIdentity(observed, observation).decision === "match",
-          ) ||
-          resilientScreenIdentityMatch(observed, step.until.observations ?? [], ctx.job, {
-            allowDynamicShell: false,
-          })
-        ) {
-          ctx.log(
-            attempt
-              ? `scroll: revealed ${step.until.screenTitle} after ${attempt} semantic scroll${attempt === 1 ? "" : "s"}`
-              : `scroll: ${step.until.screenTitle} already visible`,
-          );
-          break;
-        }
-        if (attempt === maxAttempts) {
-          throw new Error(
-            `reveal-screen: could not reveal “${step.until.screenTitle}” after ${maxAttempts} scrolls`,
-          );
-        }
-        repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
-        if (repeated >= 2) {
-          throw new Error(
-            `reveal-screen: reached the list edge before “${step.until.screenTitle}”`,
-          );
-        }
-        previousFingerprint = observed.fingerprint;
-        await performScroll();
-        await sleep(250, device);
-      }
+      await runSemanticScrollStep(device, step, ctx);
       break;
     }
 
@@ -280,75 +210,7 @@ async function runRequiredRecipeStep(
       break;
 
     case "capture-surface": {
-      if (!job?.serial || !job.targetProfile) {
-        throw new Error("capture-surface requires a frozen device target profile");
-      }
-      const survey = await captureScrollableSurveyForTarget({
-        serial: job.serial,
-        ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
-      });
-      const surface = await persistLogicalScrollSurface({
-        survey,
-        targetProfile: job.targetProfile,
-        surfaceId: step.surfaceId,
-        capturePolicy: {
-          captureMode: "full-surface",
-          source: "explicit",
-          reason: step.reason,
-          decidedAt: survey.frames[0]?.screenshot.capturedAt ?? now(),
-        },
-      });
-      const baseline = step.baseline;
-      const heightRatio =
-        baseline?.compositeHeight && surface.composite
-          ? surface.composite.height / baseline.compositeHeight
-          : undefined;
-      const semanticRatio = baseline?.semanticNodeCount
-        ? surface.mergedTree.nodeCount / baseline.semanticNodeCount
-        : undefined;
-      const visualMatches =
-        surface.status === "completed" &&
-        Boolean(surface.composite) &&
-        (baseline?.compositeWidth === undefined ||
-          surface.composite?.width === baseline.compositeWidth) &&
-        (heightRatio === undefined || (heightRatio >= 0.7 && heightRatio <= 1.3));
-      const semanticMatches =
-        semanticRatio === undefined || (semanticRatio >= 0.65 && semanticRatio <= 1.35);
-      const matches = visualMatches && semanticMatches;
-      job.artifacts.push({
-        kind: "logical-scroll-surface-result",
-        capturedAt: surface.capturedAt,
-        data: {
-          schemaVersion: 1,
-          screenId: step.screenId,
-          screenTitle: step.screenTitle,
-          variantId: step.variantId,
-          surfaceId: step.surfaceId,
-          baselineCaptureId: step.baselineCaptureId,
-          capture: surface,
-          comparison: {
-            policy: "visual-and-semantic",
-            matches,
-            visualMatches,
-            semanticMatches,
-            ...(heightRatio === undefined ? {} : { heightRatio }),
-            ...(semanticRatio === undefined ? {} : { semanticRatio }),
-          },
-          repair: matches
-            ? { status: "not-needed" }
-            : {
-                status: "proposed",
-                action: "propose-recapture",
-                reason:
-                  surface.status === "completed"
-                    ? "Logical surface differs materially from its frozen baseline."
-                    : surface.message,
-              },
-        },
-      });
-      log(
-        `surface: ${step.screenTitle} · ${surface.viewports.length} viewport(s) · ${matches ? "matches baseline" : "repair proposed"}`,
-      );
+      await runCaptureSurfaceStep(step, ctx);
       break;
     }
 
@@ -1162,57 +1024,12 @@ export async function runRecipeStep(
     }
   }
   if (step.check) {
-    const startedAt = now();
-    try {
-      await runRequiredRecipeStep(device, step, ctx);
-      const finishedAt = now();
-      ctx.job?.artifacts.push({
-        kind: "campaign-check-result",
-        capturedAt: finishedAt,
-        data: {
-          id: step.check.id,
-          title: step.check.title,
-          status: "passed",
-          startedAt,
-          finishedAt,
-        },
-      });
-      ctx.log(`check passed: ${step.check.title}`);
-    } catch (error) {
-      if (isCancel(error)) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      const finishedAt = now();
-      if (ctx.job) {
-        try {
-          const nodes = await snapshot(device);
-          ctx.job.artifacts.push({
-            kind: "campaign-check-evidence",
-            capturedAt: finishedAt,
-            data: { checkId: step.check.id, nodes },
-          });
-        } catch {
-          // The error remains useful even if the target cannot provide a tree.
-        }
-        await captureScreenshot({
-          jobId: ctx.job.id,
-          caption: `failed:${step.check.title}`,
-          device,
-        }).catch(() => undefined);
-        ctx.job.artifacts.push({
-          kind: "campaign-check-result",
-          capturedAt: finishedAt,
-          data: {
-            id: step.check.id,
-            title: step.check.title,
-            status: "failed",
-            error: message,
-            startedAt,
-            finishedAt,
-          },
-        });
-      }
-      ctx.log(`check failed: ${step.check.title} — ${message}`);
-    }
+    await runCampaignCheck(
+      device,
+      step as RecipeStep & { check: NonNullable<RecipeStep["check"]> },
+      ctx,
+      () => runRequiredRecipeStep(device, step, ctx),
+    );
     return;
   }
   if (!step.optional) {

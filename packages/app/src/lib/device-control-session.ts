@@ -11,3 +11,18 @@ export function leaseBelongsToConnection(
     (connection.auth.type === "none" && lease.controlScope === "local-project")
   );
 }
+
+export function findActiveConnectionLease(
+  connection: Pick<ServerConnection, "actorId" | "auth">,
+  leases: DeviceLease[],
+  matches: (lease: DeviceLease) => boolean,
+): DeviceLease | undefined {
+  const currentTime = Date.now();
+  return leases.find(
+    (lease) =>
+      matches(lease) &&
+      leaseBelongsToConnection(connection, lease) &&
+      lease.status === "leased" &&
+      lease.expiresAt > currentTime,
+  );
+}

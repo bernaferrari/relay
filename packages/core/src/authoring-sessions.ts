@@ -15,6 +15,8 @@ import type {
   RecipeStep,
   ScreenIdentityObservation,
 } from "@relay/protocol";
+import { recordedPauseDuration } from "./authoring-recorded-pause.js";
+export { recordedPauseDuration } from "./authoring-recorded-pause.js";
 import { describeSnapshotChrome, serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
@@ -89,26 +91,6 @@ const TRANSITIONS: Record<AuthoringSessionState, readonly AuthoringSessionState[
   failed: ["ready", "reviewing", "cancelled"],
   cancelled: [],
 };
-
-const RECORDED_PAUSE_THRESHOLD_MS = 200;
-const RECORDED_PAUSE_QUANTUM_MS = 50;
-// Recorded timing should preserve the cadence of a deliberate interaction,
-// not turn the time somebody spent inspecting the canvas into a very slow
-// replay. Longer waits remain available as explicit editable steps.
-const RECORDED_PAUSE_MAX_MS = 10_000;
-
-/**
- * Human timing is part of a recording, but sub-frame scheduling noise is not.
- * Keep meaningful pauses explicit and editable while bounding accidental idle
- * time so a forgotten recording cannot produce an unusably long replay.
- */
-export function recordedPauseDuration(durationMs: number): number {
-  if (!Number.isFinite(durationMs) || durationMs < RECORDED_PAUSE_THRESHOLD_MS) return 0;
-  return Math.min(
-    RECORDED_PAUSE_MAX_MS,
-    Math.round(durationMs / RECORDED_PAUSE_QUANTUM_MS) * RECORDED_PAUSE_QUANTUM_MS,
-  );
-}
 
 export function assertAuthoringTransition(
   from: AuthoringSessionState,

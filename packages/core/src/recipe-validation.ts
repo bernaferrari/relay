@@ -11,6 +11,9 @@ import {
   parseStepMetadata,
   parseStepPoint,
   parseTarget,
+  parseCaptureSurfaceStep,
+  parseScrollRuntimeOptions,
+  parseTapRuntimeOptions,
   parseTourRuntimeOptions,
   stepErr,
   targetHasStrategy,
@@ -37,64 +40,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             "tap requires target with at least one of identifier/ref/label/text/point",
           );
         }
-        let fallbackTargets: StepTarget[] | undefined;
-        if (raw.fallbackTargets !== undefined) {
-          if (!Array.isArray(raw.fallbackTargets) || raw.fallbackTargets.length > 8) {
-            throw stepErr(index, "tap.fallbackTargets must contain at most 8 targets");
-          }
-          fallbackTargets = raw.fallbackTargets.map((fallback, fallbackIndex) => {
-            const parsed = parseTarget(fallback, index, `fallbackTargets[${fallbackIndex}]`);
-            if (!targetHasStrategy(parsed)) {
-              throw stepErr(
-                index,
-                `tap.fallbackTargets[${fallbackIndex}] must contain a semantic or coordinate target`,
-              );
-            }
-            return parsed;
-          });
-        }
-        if (
-          raw.gesture !== undefined &&
-          raw.gesture !== "single" &&
-          raw.gesture !== "multi" &&
-          raw.gesture !== "hold"
-        ) {
-          throw stepErr(index, 'tap.gesture must be "single", "multi", or "hold"');
-        }
-        if (
-          raw.tapCount !== undefined &&
-          (!Number.isInteger(raw.tapCount) ||
-            (raw.tapCount as number) < 2 ||
-            (raw.tapCount as number) > 10)
-        ) {
-          throw stepErr(index, "tap.tapCount must be an integer between 2 and 10");
-        }
-        if (
-          raw.intervalMs !== undefined &&
-          (!isNumber(raw.intervalMs) || raw.intervalMs < 20 || raw.intervalMs > 2_000)
-        ) {
-          throw stepErr(index, "tap.intervalMs must be between 20 and 2000");
-        }
-        if (
-          raw.durationMs !== undefined &&
-          (!isNumber(raw.durationMs) || raw.durationMs < 100 || raw.durationMs > 10_000)
-        ) {
-          throw stepErr(index, "tap.durationMs must be between 100 and 10000");
-        }
-        if (raw.expectedApp !== undefined && !isString(raw.expectedApp)) {
-          throw stepErr(index, "tap.expectedApp must be a string");
-        }
+        const tapRuntimeOptions = parseTapRuntimeOptions(raw, index);
         const step: Extract<RecipeStep, { kind: "tap" }> = {
           kind: "tap",
           target,
-          ...(isString(raw.expectedApp) ? { expectedApp: raw.expectedApp } : {}),
-          ...(fallbackTargets?.length ? { fallbackTargets } : {}),
-          ...(raw.gesture !== undefined
-            ? { gesture: raw.gesture as "single" | "multi" | "hold" }
-            : {}),
-          ...(raw.tapCount !== undefined ? { tapCount: raw.tapCount as number } : {}),
-          ...(raw.intervalMs !== undefined ? { intervalMs: raw.intervalMs as number } : {}),
-          ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
+          ...tapRuntimeOptions,
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -122,52 +72,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (raw.direction !== "down" && raw.direction !== "up") {
           throw stepErr(index, 'scroll requires direction: "down" | "up"');
         }
-        if (
-          raw.maxAttempts !== undefined &&
-          (!isNumber(raw.maxAttempts) ||
-            !Number.isInteger(raw.maxAttempts) ||
-            raw.maxAttempts < 1 ||
-            raw.maxAttempts > 48)
-        ) {
-          throw stepErr(index, "scroll.maxAttempts must be an integer from 1 to 48");
-        }
-        let until: Extract<RecipeStep, { kind: "scroll" }>["until"];
-        if (raw.until !== undefined) {
-          if (!isObject(raw.until)) throw stepErr(index, "scroll.until must be an object");
-          if (
-            !isString(raw.until.screenId) ||
-            !raw.until.screenId.trim() ||
-            !isString(raw.until.screenTitle) ||
-            !raw.until.screenTitle.trim() ||
-            !isString(raw.until.fingerprint) ||
-            !/^[a-f0-9]{64}$/u.test(raw.until.fingerprint)
-          ) {
-            throw stepErr(index, "scroll.until needs a mapped screen identity");
-          }
-          if (
-            raw.until.aliases !== undefined &&
-            (!Array.isArray(raw.until.aliases) ||
-              !raw.until.aliases.every((alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias)))
-          ) {
-            throw stepErr(index, "scroll.until.aliases must be SHA-256 fingerprints");
-          }
-          if (
-            raw.until.observations !== undefined &&
-            (!Array.isArray(raw.until.observations) ||
-              raw.until.observations.length > 256 ||
-              !raw.until.observations.every(
-                (observation) =>
-                  isObject(observation) &&
-                  isString(observation.fingerprint) &&
-                  /^[a-f0-9]{64}$/u.test(observation.fingerprint) &&
-                  Array.isArray(observation.nodes) &&
-                  Array.isArray(observation.volatileSignals),
-              ))
-          ) {
-            throw stepErr(index, "scroll.until.observations must be semantic observations");
-          }
-          until = structuredClone(raw.until) as NonNullable<typeof until>;
-        }
+        const scrollRuntimeOptions = parseScrollRuntimeOptions(raw, index);
         const step: Extract<RecipeStep, { kind: "scroll" }> = {
           kind: "scroll",
           direction: raw.direction,
@@ -178,8 +83,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                   throw stepErr(index, "scroll.amount must be a number");
                 })()
             : {}),
-          ...(until ? { until } : {}),
-          ...(raw.maxAttempts !== undefined ? { maxAttempts: raw.maxAttempts } : {}),
+          ...scrollRuntimeOptions,
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -668,63 +572,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "capture-surface": {
-        if (
-          !isString(raw.screenId) ||
-          !raw.screenId.trim() ||
-          !isString(raw.screenTitle) ||
-          !raw.screenTitle.trim() ||
-          !isString(raw.variantId) ||
-          !raw.variantId.trim() ||
-          !isString(raw.surfaceId) ||
-          !raw.surfaceId.trim() ||
-          !isString(raw.baselineCaptureId) ||
-          !raw.baselineCaptureId.trim() ||
-          !isString(raw.reason) ||
-          !raw.reason.trim()
-        ) {
-          throw stepErr(
-            index,
-            "capture-surface requires screen, variant, surface, baseline, and reason",
-          );
-        }
-        if (
-          raw.maxScrolls !== undefined &&
-          (!isNumber(raw.maxScrolls) ||
-            !Number.isInteger(raw.maxScrolls) ||
-            raw.maxScrolls < 1 ||
-            raw.maxScrolls > 6)
-        ) {
-          throw stepErr(index, "capture-surface.maxScrolls must be an integer from 1 to 6");
-        }
-        const baseline =
-          raw.baseline && typeof raw.baseline === "object" && !Array.isArray(raw.baseline)
-            ? (raw.baseline as Record<string, unknown>)
-            : undefined;
-        const step: Extract<RecipeStep, { kind: "capture-surface" }> = {
-          kind: "capture-surface",
-          screenId: raw.screenId.trim(),
-          screenTitle: raw.screenTitle.trim(),
-          variantId: raw.variantId.trim(),
-          surfaceId: raw.surfaceId.trim(),
-          baselineCaptureId: raw.baselineCaptureId.trim(),
-          reason: raw.reason.trim(),
-          ...(isNumber(raw.maxScrolls) ? { maxScrolls: raw.maxScrolls } : {}),
-          ...(baseline && isNumber(baseline.semanticNodeCount)
-            ? {
-                baseline: {
-                  ...(isNumber(baseline.compositeWidth)
-                    ? { compositeWidth: baseline.compositeWidth }
-                    : {}),
-                  ...(isNumber(baseline.compositeHeight)
-                    ? { compositeHeight: baseline.compositeHeight }
-                    : {}),
-                  semanticNodeCount: baseline.semanticNodeCount,
-                },
-              }
-            : {}),
-          ...(note ? { note } : {}),
-        };
-        out.push(step);
+        out.push(parseCaptureSurfaceStep(raw, index, note));
         break;
       }
       case "tour": {

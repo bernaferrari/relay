@@ -18,6 +18,7 @@ import {
   throwIfCancelled,
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
+import { bindNativeDeviceMutations, clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
 import { withRetry } from "./retry.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 import {
@@ -247,47 +248,9 @@ export function createDevice(explicitContext?: TargetContext): Device {
     const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
-    const mutate = <T>(operation: () => Promise<T>) =>
-      runTargetMutation(targetIdentity(context), getExecutingJobId(), operation);
     device = {
       ...native,
-      devices: {
-        ...native.devices,
-        boot: (options) => mutate(() => native.devices.boot(options)),
-      },
-      apps: {
-        ...native.apps,
-        open: (options) => mutate(() => native.apps.open(options)),
-        close: (options) => mutate(() => native.apps.close(options)),
-      },
-      interactions: {
-        ...native.interactions,
-        press: (options) => mutate(() => native.interactions.press(options)),
-        longPress: (options) => mutate(() => native.interactions.longPress(options)),
-        fill: (options) => mutate(() => native.interactions.fill(options)),
-        type: (options) => mutate(() => native.interactions.type(options)),
-        find: (options) => mutate(() => native.interactions.find(options)),
-        scroll: (options) => mutate(() => native.interactions.scroll(options)),
-        swipe: (options) => mutate(() => native.interactions.swipe(options)),
-        pan: (options) => mutate(() => native.interactions.pan(options)),
-      },
-      command: {
-        ...native.command,
-        back: (options) => mutate(() => native.command.back(options)),
-        home: (options) => mutate(() => native.command.home(options)),
-        clipboard: (options) => mutate(() => native.command.clipboard(options)),
-        keyboard: (options) => mutate(() => native.command.keyboard(options)),
-        alert: (options) => mutate(() => native.command.alert(options)),
-        appSwitcher: (options) => mutate(() => native.command.appSwitcher(options)),
-        rotate: (options) => mutate(() => native.command.rotate(options)),
-        prepare: (options) => mutate(() => native.command.prepare(options)),
-      },
-      settings: {
-        update: (options) => mutate(() => native.settings.update(options)),
-      },
-      recording: {
-        record: (options) => mutate(() => native.recording.record(options)),
-      },
+      ...bindNativeDeviceMutations(native, targetIdentity(context), getExecutingJobId()),
       observability: {
         ...native.observability,
         crashes: ({ action, since }) =>
@@ -1372,42 +1335,7 @@ async function clearAndroidFocusedText(serial: string): Promise<void> {
   // the end of the current line, which leaves later lines behind. Move to the
   // beginning of the current line, walk to the top, then move to the beginning
   // of the whole value before deleting forward.
-  await mutateCurrentTarget(async () => {
-    await raceCancel(
-      execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
-    );
-    await raceCancel(
-      execFileAsync("adb", [
-        "-s",
-        serial,
-        "shell",
-        "input",
-        "keyevent",
-        ...Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"),
-      ]),
-    );
-    await raceCancel(
-      execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_MOVE_HOME"]),
-    );
-
-    // Keep each invocation comfortably below shell argument limits while still
-    // clearing long prompts and pasted multiline content in a bounded way.
-    const deleteCount = 4096;
-    const chunkSize = 128;
-    for (let remaining = deleteCount; remaining > 0; remaining -= chunkSize) {
-      const count = Math.min(chunkSize, remaining);
-      await raceCancel(
-        execFileAsync("adb", [
-          "-s",
-          serial,
-          "shell",
-          "input",
-          "keyevent",
-          ...Array.from({ length: count }, () => "KEYCODE_FORWARD_DEL"),
-        ]),
-      );
-    }
-  });
+  await clearAndroidTextWithAdb(serial, getExecutingJobId());
 }
 
 export type TextReplacementAdapter = {

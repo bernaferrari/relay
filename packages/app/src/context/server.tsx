@@ -51,7 +51,7 @@ import { createServerEventController } from "../lib/server-event-controller";
 import { createServerDeviceSetupController } from "../lib/server-device-setup-controller";
 import { createServerDeviceInventoryController } from "../lib/server-device-inventory-controller";
 import { createServerAppMapController } from "../lib/server-app-map-controller";
-import { leaseBelongsToConnection } from "../lib/device-control-session";
+import { findActiveConnectionLease } from "../lib/device-control-session";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -638,16 +638,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const currentLeaseId = selectedLeaseId();
         const leases = (await client.leases()).leases;
-        const belongsToThisConnection = (lease: (typeof leases)[number]) =>
-          leaseBelongsToConnection(connection!, lease);
         const activeCurrentLease = currentLeaseId
-          ? leases.find(
-              (lease) =>
-                lease.id === currentLeaseId &&
-                belongsToThisConnection(lease) &&
-                lease.status === "leased" &&
-                lease.expiresAt > Date.now(),
-            )
+          ? findActiveConnectionLease(connection, leases, (lease) => lease.id === currentLeaseId)
           : undefined;
 
         // Re-selecting a target is the normal way taps, recording, and replay
@@ -670,12 +662,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           serial && /simulator|emulator/i.test(selectedTarget?.kind ?? ""),
         );
         if (serial && (selectedDeviceAvailable() || claimableVirtualTarget)) {
-          const active = leases.find(
-            (lease) =>
-              lease.deviceSerial === serial &&
-              belongsToThisConnection(lease) &&
-              lease.status === "leased" &&
-              lease.expiresAt > Date.now(),
+          const active = findActiveConnectionLease(
+            connection,
+            leases,
+            (lease) => lease.deviceSerial === serial,
           );
           const occupied = leases.find(
             (lease) =>

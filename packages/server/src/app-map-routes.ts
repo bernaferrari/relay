@@ -1,4 +1,3 @@
-import type http from "node:http";
 import {
   addAppMapScreen,
   authoringSessions,
@@ -45,7 +44,7 @@ import type { AuthoringSession, OperationInput, ScreenVariant } from "@relay/pro
 import { assertTargetLease } from "./access-control.js";
 import { createAuthoringRuntime } from "./authoring-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
-import type { RequestContext } from "./security.js";
+import type { AppMapRouteInput } from "./app-map-route-input.js";
 import {
   applyAppMapMutation as applyMutation,
   applyRebasableAppMapMutation as applyRebasableMutation,
@@ -60,6 +59,7 @@ import {
 } from "./app-map-capture-support.js";
 import { handleAppMapTestRoute } from "./app-map-test-routes.js";
 import { handleAppMapScrollSurfaceRoute } from "./app-map-scroll-surface-route.js";
+import * as teachHandoff from "./app-map-handoff-support.js";
 
 export {
   findEquivalentTeachConnection,
@@ -67,14 +67,6 @@ export {
   sourceAnchorForTeachInteraction,
   teachInteractionToAuthoringInteraction,
 } from "./app-map-capture-support.js";
-
-type AppMapRouteInput = {
-  method: string;
-  pathname: string;
-  request: http.IncomingMessage;
-  response: http.ServerResponse;
-  scope: RequestContext;
-};
 
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
@@ -380,18 +372,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     if (body.fromScreenId && !current.screens[body.fromScreenId]) {
       throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
     }
-    if (body.handoff) {
-      if (
-        !body.interaction ||
-        body.interaction.kind === "point" ||
-        body.interaction.kind === "swipe"
-      ) {
-        throw new HttpError(400, "A handoff requires a semantic label or identifier interaction");
-      }
-      if (!body.fromScreenId?.trim() || !body.title?.trim()) {
-        throw new HttpError(400, "A handoff requires fromScreenId and a destination title");
-      }
-    }
+    teachHandoff.assertValidTeachHandoff(body);
     let session: AuthoringSession | undefined;
     try {
       if (body.interaction) {
@@ -444,23 +425,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       if (!take || !destinationObservation) {
         throw new HttpError(502, "The target returned no destination screen observation");
       }
-      const sourceApp = take.before?.foregroundApp;
-      const destinationApp = destinationObservation.foregroundApp;
-      if (body.handoff) {
-        if (!destinationApp || destinationApp !== body.handoff.expectedApp) {
-          throw new HttpError(
-            409,
-            `The interaction opened ${destinationApp ?? "an unknown application"}, not ${body.handoff.expectedApp}`,
-            { code: "unexpected-handoff" },
-          );
-        }
-      } else if (sourceApp && destinationApp && sourceApp !== destinationApp) {
-        throw new HttpError(409, `The interaction left ${sourceApp} and opened ${destinationApp}`, {
-          code: "undeclared-handoff",
-          recovery:
-            "Retry with an explicit handoff expectedApp and reversible returnAction if this transition is intentional.",
-        });
-      }
+      teachHandoff.assertTeachHandoffDestination(body, take, destinationObservation);
       const intendedTitle = body.title?.trim();
       if (
         body.target.kind === "device" &&
@@ -501,22 +466,12 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       let created = false;
       let reviewProposalId: string | undefined;
       let proposedVariant: ScreenVariant | undefined;
-      const capture = {
-        target: body.target,
-        targetProfile: profile,
-        observation: destinationObservation,
-        evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
-        evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
-        ...(body.title?.trim() ? { title: body.title.trim() } : {}),
-        ...(body.handoff
-          ? {
-              handoff: {
-                ownerApp: body.handoff.expectedApp,
-                returnAction: body.handoff.returnAction,
-              },
-            }
-          : {}),
-      };
+      const capture = teachHandoff.buildTeachScreenCapture(
+        body,
+        profile,
+        destinationObservation,
+        take,
+      );
       const operation = currentOperationContext();
       const initialReview = reviewAppMapScreenCapture(current, capture, {
         expectedRevision: current.revision,

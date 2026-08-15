@@ -45,6 +45,7 @@ import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run
 import type { SettingsSection } from "../pages/settings";
 import { AuthoringSurfaceSwitch, type AuthoringSurface } from "./authoring-surface-switch";
 import { StudioAuthoringWorkspace } from "./studio-authoring-workspace";
+import { nextMapTitle, readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 
 type ProductArea = "tests" | "runs";
 type MapLibraryArea = ProductArea;
@@ -1163,20 +1164,4 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       </Show>
     </div>
   );
-}
-
-function nextMapTitle(maps: Array<{ name: string }>): string {
-  const used = new Set(maps.map((map) => map.name));
-  if (!used.has("My map")) return "My map";
-  let index = 2;
-  while (used.has(`My map ${index}`)) index++;
-  return `My map ${index}`;
-}
-
-function readRememberedDevicePanelPreference(): boolean {
-  try {
-    return localStorage.getItem("relay:device-panel-open") !== "false";
-  } catch {
-    return true;
-  }
 }

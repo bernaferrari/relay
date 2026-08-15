@@ -1,6 +1,4 @@
-/**
- * Test-run sessions with action traces, heal retries, and disk persistence.
- */
+/** Test-run sessions with action traces, heal retries, and disk persistence. */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,13 +11,11 @@ import {
   resetDeviceClient,
   snapshot,
   type Device,
-  type DevicePlatform,
 } from "./device.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
 import { inferDevicePlatformFromSerial } from "./target-context.js";
 import { glyphsFromLogLine, type Glyph, type TraceFrameRef, type TraceStep } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
-import { classifyJobError } from "./report.js";
 import {
   JobCancelledError,
   JobControlOwnershipError,
@@ -69,43 +65,16 @@ import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
-import { isDeviceLeaseSessionActive } from "./collaboration.js";
 import { reserveTargetControl } from "./target-control.js";
-import type { EnqueueJobInput, JobErrorCode, TestJob } from "./session-contract.js";
+import {
+  classifySessionError,
+  createJobLeaseValidator,
+  failedCampaignChecks,
+  resolveSessionDeviceMeta,
+} from "./session-job-support.js";
+import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
-
-function classifyError(message: string): JobErrorCode {
-  return classifyJobError(message) as JobErrorCode;
-}
-
-/** Avoid importing workspace (session↔workspace cycle). */
-async function resolveDeviceMeta(
-  serial?: string,
-  _platform?: DevicePlatform,
-): Promise<{ deviceName?: string; deviceAvailable?: boolean; physicalIos?: boolean }> {
-  if (!serial) return {};
-  try {
-    const client = createDevice();
-    // Some SDK backends apply platform filters before normalizing attached
-    // physical devices. Discover once, then match the canonical identifiers
-    // ourselves so execution and the device picker cannot disagree.
-    const devices = await client.devices.list();
-    const match = devices.find((d) => {
-      const s =
-        d.android?.serial ?? d.ios?.udid ?? d.identifiers?.serial ?? d.identifiers?.udid ?? d.id;
-      return s === serial || d.id === serial;
-    });
-    return {
-      deviceName: match?.name,
-      deviceAvailable: Boolean(match),
-      physicalIos:
-        _platform === "ios" && Boolean(match) && !/simulator|emulator/i.test(String(match?.kind)),
-    };
-  } catch {
-    return {};
-  }
-}
 
 const MAX_JOBS = 100;
 const jobRegistry = new JobRegistry<TestJob>(MAX_JOBS);
@@ -153,31 +122,6 @@ function setOutcome(job: TestJob): void {
   const classified = classifyRunOutcome(job);
   job.outcome = classified.outcome;
   job.failureCategory = classified.failureCategory;
-}
-
-function jobLeaseValidator(job: TestJob): (() => Promise<void>) | undefined {
-  const context = job.operationContext;
-  if (job.targetContext.kind !== "device" || !context?.leaseId) return undefined;
-  if (
-    !context.projectId ||
-    !context.actorId ||
-    (job.projectId !== undefined && job.projectId !== context.projectId) ||
-    (job.ownerId !== undefined && job.ownerId !== context.actorId)
-  ) {
-    return async () => {
-      throw new JobControlOwnershipError();
-    };
-  }
-  return async () => {
-    const active = await isDeviceLeaseSessionActive({
-      organizationId: context.organizationId,
-      projectId: context.projectId,
-      deviceSerial: job.targetContext.kind === "device" ? job.targetContext.serial : "",
-      leaseOwnerId: context.leaseOwnerId ?? context.actorId,
-      leaseId: context.leaseId!,
-    }).catch(() => false);
-    if (!active) throw new JobControlOwnershipError();
-  };
 }
 
 /**
@@ -821,7 +765,7 @@ async function executeJob(id: string): Promise<void> {
   if (job.status === "cancelled") return;
 
   ensureControl(id);
-  const validateLease = jobLeaseValidator(job);
+  const validateLease = createJobLeaseValidator(job);
   if (validateLease) {
     setControlValidator(id, validateLease);
     try {
@@ -842,7 +786,7 @@ async function executeJob(id: string): Promise<void> {
         job.finishedAt = job.startedAt;
         job.status = "error";
         job.error = message;
-        job.errorCode = classifyError(message);
+        job.errorCode = classifySessionError(message);
         job.logs.push(`==> FAIL: ${message}`);
         setOutcome(job);
         publish({
@@ -868,7 +812,7 @@ async function executeJob(id: string): Promise<void> {
   const meta =
     job.targetKind === "browser"
       ? { deviceName: browserTarget?.name, deviceAvailable: Boolean(browserTarget) }
-      : await resolveDeviceMeta(job.serial, job.platform);
+      : await resolveSessionDeviceMeta(job.serial, job.platform);
   if (meta.deviceName) job.deviceName = meta.deviceName;
   await ensureRunDir(job).catch(() => undefined);
 
@@ -973,19 +917,7 @@ async function executeJob(id: string): Promise<void> {
       await runRecipeSteps(job, device, pushLog, (step) => {
         currentRecipeStep = step;
       });
-      const failedChecks = job.artifacts.flatMap((artifact) => {
-        if (
-          artifact.kind !== "campaign-check-result" ||
-          !artifact.data ||
-          typeof artifact.data !== "object"
-        ) {
-          return [];
-        }
-        const data = artifact.data as Record<string, unknown>;
-        return data.status === "failed" && typeof data.title === "string"
-          ? [{ title: data.title, error: typeof data.error === "string" ? data.error : "failed" }]
-          : [];
-      });
+      const failedChecks = failedCampaignChecks(job);
       if (failedChecks.length) {
         throw new Error(
           `${failedChecks.length} campaign ${failedChecks.length === 1 ? "check" : "checks"} failed: ${failedChecks
@@ -1076,7 +1008,7 @@ async function executeJob(id: string): Promise<void> {
     job.finishedAt = now();
     job.status = "error";
     job.error = message;
-    job.errorCode = classifyError(message);
+    job.errorCode = classifySessionError(message);
     setOutcome(job);
     for (const s of job.steps) {
       if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
