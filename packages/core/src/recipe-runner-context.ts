@@ -1,5 +1,51 @@
-import type { Recipe } from "./recipes.js";
+import type { Recipe, RecipeStep } from "./recipes.js";
+import type { SnapshotNode } from "./device.js";
+import type { ScreenshotPayload } from "./workspace-capture.js";
 import type { TestJob } from "./session.js";
+
+export type VerifiedScreenCheckpoint = {
+  screenId: string;
+  screenTitle: string;
+  nodes: SnapshotNode[];
+  verifiedAt: number;
+  screenshot?: ScreenshotPayload;
+};
+
+/** Mutable, run-local state shared through nested reusable recipes. It is
+ * deliberately never persisted: every mutation invalidates the proof and a
+ * later run must establish its own checkpoint from the live target. */
+export type RecipeRuntimeState = {
+  verifiedScreen?: VerifiedScreenCheckpoint;
+};
+
+const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
+  "tour",
+  "wait-for",
+  "wait-response",
+  "expect",
+  "expect-set",
+  "extract",
+  "evaluate-semantic",
+  "pause",
+  "review",
+  "flow",
+  "clipboard",
+  "app",
+  "device",
+  "rotate",
+  "settings",
+  "location",
+  "permission",
+  "alert",
+]);
+
+export function stepBreaksVerifiedScreen(step: RecipeStep): boolean {
+  return checkpointBreakingSteps.has(step.kind);
+}
+
+export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
+  if (ctx.runtime) ctx.runtime.verifiedScreen = undefined;
+}
 
 export type RecipeStepContext = {
   log: (line: string) => void;
@@ -18,6 +64,7 @@ export type RecipeStepContext = {
   artifacts?: { kind: string; capturedAt: number; data: unknown }[];
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
+  runtime?: RecipeRuntimeState;
   /** Test seam and provider override for pixel-only destination identity. */
   observeVisualFingerprint?: () => Promise<string | undefined>;
 };

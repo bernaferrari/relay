@@ -218,7 +218,14 @@ export function compileAppMapScenarioTest(
               ...recipe,
               steps: recipe.steps.flatMap((recipeStep) => {
                 if (recipeStep.kind !== "expect-screen") return [recipeStep];
-                const capture = captureScreen(recipeStep.screenId);
+                const sourceExpectation =
+                  recipeStep.id?.startsWith("relay-source-") === true ||
+                  recipeStep.id?.endsWith(":warm") === true ||
+                  recipeStep.recovery !== undefined;
+                // Source assertions guide navigation; they are not product
+                // evidence. Destination assertions remain mandatory and own
+                // the reviewable frame for every visited target.
+                const capture = sourceExpectation ? undefined : captureScreen(recipeStep.screenId);
                 const logicalSurface =
                   terminalConnectionId &&
                   recipeStep.id === `relay-destination-${terminalConnectionId}`

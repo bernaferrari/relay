@@ -395,6 +395,7 @@ async function tapTarget(
   region?: NonNullable<RecipeStep["when"]>["region"],
   mirrorPoints = false,
   expectedApp?: string,
+  verifiedNodes?: SnapshotNode[],
 ): Promise<{
   strategy: string;
   method?: string;
@@ -422,11 +423,18 @@ async function tapTarget(
     ...(literalPoint ? { point: literalPoint } : {}),
     ...(expectedApp ? { expectedApp } : {}),
   };
-  const nodes = await snapshot(device);
+  // An immediately preceding expect-screen already paid for and verified this
+  // exact tree. Reuse it until the first mutation; fallback strategies still
+  // take a fresh snapshot when the cached tree cannot resolve the target.
+  const nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
   const named = resolveNamedControl(nodes, namedTarget);
   if (named) {
     try {
-      await pressResolvedControl(device, named, namedTarget, repeated);
+      if (verifiedNodes && selectedPlatform() === "android") {
+        await pressPoint(device, named.point.x, named.point.y, repeated);
+      } else {
+        await pressResolvedControl(device, named, namedTarget, repeated);
+      }
     } catch (error) {
       // A semantic control may intentionally open a system surface (for
       // example Grok's App Language row opens Android Settings). Keep the
@@ -533,6 +541,7 @@ async function tapRecordedTarget(
   repetitions = 1,
   intervalMs = 90,
 ): Promise<void> {
+  const verifiedNodes = ctx.runtime?.verifiedScreen?.nodes;
   const candidates = [
     input.target,
     ...(input.fallbackTargets ?? []),
@@ -556,6 +565,7 @@ async function tapRecordedTarget(
         input.region,
         isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
         input.expectedApp,
+        verifiedNodes,
       );
       const resolution = {
         kind: "target-resolution" as const,

@@ -371,7 +371,7 @@ test("scenario capture policy compiles explicit screen evidence", () => {
   const every = scenario();
   every.steps = [every.steps[0]!];
   every.capture = { mode: "every-screen" };
-  assert.deepEqual(screenshotCaptions(every), ["screen:home", "screen:cart"]);
+  assert.deepEqual(screenshotCaptions(every), ["screen:cart"]);
 
   const checkpoint = structuredClone(every);
   checkpoint.capture = { mode: "checkpoints", screenIds: ["cart"] };
@@ -469,18 +469,72 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   const secondPath = Object.values(compiled.graph).find(
     (recipe) => recipe.title === "Checkout · Open second",
   )!;
-  assert.equal(secondPath.steps[0]?.kind, "expect-screen");
+  assert.deepEqual(
+    secondPath.steps.slice(0, 2).map((step) => step.kind),
+    ["key", "expect-screen"],
+  );
+  assert.deepEqual(secondPath.steps[0], {
+    kind: "key",
+    key: "back",
+    id: "relay-recover-back-1",
+  });
   assert.equal(
-    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].screenId : undefined,
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
     "cart",
   );
-  assert.deepEqual(
-    secondPath.steps[0]?.kind === "expect-screen" ? secondPath.steps[0].recovery : undefined,
-    { strategy: "back", maxAttempts: 8 },
+  assert.equal(
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].recovery : undefined,
+    undefined,
   );
   assert.equal(
     secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),
     true,
+  );
+});
+
+test("scenario instruction paths carry an exact contiguous destination checkpoint", () => {
+  const map = fixture();
+  map.screens.first = {
+    ...screen("first"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.connections["open-first"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-first",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "first" },
+    actions: [{ id: "tap-first", kind: "tap", target: { label: "First" } }],
+  };
+  const work: AppMapScenarioTest = {
+    ...scenario(),
+    capture: { mode: "every-screen" },
+    steps: [
+      scenario().steps[0]!,
+      {
+        id: "first",
+        kind: "instruction",
+        intent: "Open first",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-first"],
+        },
+      },
+    ],
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const secondPath = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open first",
+  )!;
+  assert.equal(secondPath.steps[0]?.kind, "tap");
+  assert.deepEqual(
+    secondPath.steps.flatMap((step) => (step.kind === "screenshot" ? [step.caption] : [])),
+    ["screen:first"],
+  );
+  assert.equal(
+    secondPath.steps.some((step) => step.kind === "expect-screen" && step.screenId === "cart"),
+    false,
   );
 });
 

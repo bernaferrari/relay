@@ -16,6 +16,16 @@ test("automatic evidence preserves causal frames without duplicating passive ste
     }),
     ["after"],
   );
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "expect-screen",
+      id: "relay-source-settings:warm",
+      screenId: "settings",
+      screenTitle: "Settings",
+      fingerprint: "b".repeat(64),
+    }),
+    [],
+  );
   assert.deepEqual(automaticEvidencePhases({ kind: "sleep", ms: 500 }), []);
   assert.deepEqual(automaticEvidencePhases({ kind: "screenshot" }), []);
   assert.deepEqual(

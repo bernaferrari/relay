@@ -99,9 +99,40 @@ export async function runCaptureSurfaceStep(
   if (!job?.serial || !job.targetProfile) {
     throw new Error("capture-surface requires a frozen device target profile");
   }
+  const verified = ctx.runtime?.verifiedScreen;
+  const screenshot = verified?.screenId === step.screenId ? verified.screenshot : undefined;
+  const nodes = verified?.screenId === step.screenId ? verified.nodes : undefined;
+  const bounds = nodes?.reduce(
+    (current, node) =>
+      node.rect
+        ? {
+            width: Math.max(current.width, node.rect.x + node.rect.width),
+            height: Math.max(current.height, node.rect.y + node.rect.height),
+          }
+        : current,
+    { width: 0, height: 0 },
+  );
+  const initialCapture =
+    screenshot && nodes?.length && screenshot.width && screenshot.height
+      ? {
+          screenshot,
+          snapshot: {
+            serial: job.serial,
+            capturedAt: screenshot.capturedAt,
+            nodes,
+            interactive: nodes.filter((node) => node.hittable === true),
+            ...(bounds && bounds.width > 0 && bounds.height > 0 ? { bounds } : {}),
+            inspectable: true,
+            source: "sdk" as const,
+            ...(screenshot.foregroundApp ? { foregroundApp: screenshot.foregroundApp } : {}),
+            screenIdentity: observeScreenIdentity(nodes),
+          },
+        }
+      : undefined;
   const survey = await captureScrollableSurveyForTarget({
     serial: job.serial,
     ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
+    ...(initialCapture ? { initialCapture } : {}),
   });
   const surface = await persistLogicalScrollSurface({
     survey,

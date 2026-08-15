@@ -54,7 +54,15 @@ export type ScrollSurveyDriver = {
   settle(): Promise<void>;
 };
 
-export type ScrollSurveyOptions = { maxScrolls?: number };
+export type ScrollSurveyCapture = Awaited<ReturnType<ScrollSurveyDriver["capture"]>>;
+
+export type ScrollSurveyOptions = {
+  maxScrolls?: number;
+  /** Fresh PNG/tree pair already verified before this survey. The caller owns
+   * freshness; captureScrollableSurvey still applies every normal anchor,
+   * seam, screen-boundary, and restoration check. */
+  initialCapture?: ScrollSurveyCapture;
+};
 
 type Seam = { shiftY: number; confidence: number };
 
@@ -456,6 +464,7 @@ function result(
 export async function captureScrollableSurveyForTarget(input: {
   serial: string;
   maxScrolls?: number;
+  initialCapture?: ScrollSurveyCapture;
 }): Promise<ScrollSurveyResult> {
   const platform = await devicePlatformForSerial(input.serial);
   if (platform !== "android" && platform !== "ios") {
@@ -500,7 +509,10 @@ export async function captureScrollableSurveyForTarget(input: {
       },
       settle,
     },
-    { maxScrolls: input.maxScrolls },
+    {
+      maxScrolls: input.maxScrolls,
+      ...(input.initialCapture ? { initialCapture: input.initialCapture } : {}),
+    },
   );
 }
 
@@ -509,7 +521,7 @@ export async function captureScrollableSurvey(
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
   const maxScrolls = Math.max(1, Math.min(6, options.maxScrolls ?? 4));
-  const first = await driver.capture();
+  const first = options.initialCapture ?? (await driver.capture());
   const initial: ScrollSurveyFrame = {
     index: 0,
     offsetY: 0,

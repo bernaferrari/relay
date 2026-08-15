@@ -438,6 +438,8 @@ export async function captureScreenshot(opts?: {
   ephemeral?: boolean;
   /** skip the additional semantic snapshot when the caller only needs pixels */
   includeScreenMatch?: boolean;
+  /** Fresh semantic proof supplied by the caller to avoid a second tree walk. */
+  semanticNodes?: readonly SnapshotNode[];
   /** Draw a tap preview ring; does not touch the device. */
   previewTap?: { x: number; y: number };
 }): Promise<ScreenshotPayload> {
@@ -470,7 +472,7 @@ export async function captureScreenshot(opts?: {
       await withSession(target.device, () => target.device.capture.screenshot({ ...base(), path }));
     }
     let buf = await readFile(path);
-    let semanticNodes: SnapshotNode[] | undefined;
+    let semanticNodes: readonly SnapshotNode[] | undefined = opts?.semanticNodes;
     if (context.kind === "device" && context.platform === "ios" && context.serial) {
       // UIImage.pngData() drops imageOrientation. Bake from CoreDevice orientation:
       // portrait transport + landscape interface → one 90°; same-aspect landscape →

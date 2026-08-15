@@ -1,0 +1,133 @@
+import { describeSnapshotChrome } from "@relay/protocol";
+import type { Device } from "./device.js";
+import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
+import { now } from "./events.js";
+import type { RecipeStepContext } from "./recipe-runner-context.js";
+import {
+  handoffShellIdentityMatch,
+  resilientScreenIdentityMatch,
+} from "./recipe-runner-support.js";
+import { screenIdentityMatches } from "./recipe-target-match.js";
+import { foregroundApplicationBundle } from "./recipe-runner-tour-matching.js";
+import type { RecipeStep } from "./recipes.js";
+import {
+  compareScreenIdentity,
+  observeScreenIdentity,
+  observeVisualScreenFingerprint,
+} from "./screen-identity.js";
+import { captureScreenshot } from "./workspace.js";
+
+const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
+const MAX_WAIT_MS = 15 * 60 * 1_000;
+
+export async function runExpectScreenStep(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "expect-screen" }>,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  if (ctx.runtime) ctx.runtime.verifiedScreen = undefined;
+  const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
+  const recoveryMaxAttempts =
+    step.recovery?.strategy === "back" ? (step.recovery.maxAttempts ?? 6) : 0;
+  let parentViewportRecoveryAttempts =
+    step.recovery?.strategy === "back" && step.recovery.restoreParentViewport === true ? 2 : 0;
+  const timeout = Math.min(
+    Math.max(
+      step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS,
+      recoveryMaxAttempts ? recoveryMaxAttempts * 2_500 : 0,
+    ),
+    MAX_WAIT_MS,
+  );
+  const deadline = Date.now() + timeout;
+  let recoveryAttempts = recoveryMaxAttempts;
+  let observedTitle = "unknown";
+  let reached = false;
+  let verifiedNodes: SnapshotNode[] | undefined;
+  do {
+    let nodes: SnapshotNode[] = [];
+    try {
+      nodes = await snapshot(device);
+    } catch {
+      nodes = [];
+    }
+    const chrome = describeSnapshotChrome(nodes);
+    observedTitle = chrome.header ?? chrome.app ?? "unknown";
+    const observed = observeScreenIdentity(nodes);
+    const semanticMatch = (step.observations ?? []).some(
+      (observation) => compareScreenIdentity(observed, observation).decision === "match",
+    );
+    const resilientMatch = resilientScreenIdentityMatch(observed, step.observations ?? [], ctx.job);
+    const handoffShellMatch =
+      Boolean(step.expectedApp) &&
+      foregroundApplicationBundle(nodes) === step.expectedApp &&
+      handoffShellIdentityMatch(observed, step.observations ?? []);
+    if (
+      screenIdentityMatches(expected, observed.fingerprint) ||
+      semanticMatch ||
+      resilientMatch ||
+      handoffShellMatch
+    ) {
+      reached = true;
+      verifiedNodes = nodes;
+      break;
+    }
+
+    const visualFingerprint = ctx.observeVisualFingerprint
+      ? await ctx.observeVisualFingerprint()
+      : observeVisualScreenFingerprint(
+          Buffer.from(
+            (
+              await captureScreenshot({
+                device,
+                caption: `Verify ${step.screenTitle}`,
+                ephemeral: true,
+                includeScreenMatch: false,
+              })
+            ).base64,
+            "base64",
+          ),
+        );
+    if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
+      reached = true;
+      break;
+    }
+    if (recoveryAttempts < recoveryMaxAttempts && parentViewportRecoveryAttempts > 0) {
+      const attempt = 3 - parentViewportRecoveryAttempts;
+      parentViewportRecoveryAttempts -= 1;
+      ctx.log(`screen: restoring parent list viewport (${attempt})`);
+      try {
+        await scrollUp(device, 0.7);
+        await sleep(350, device);
+      } catch {
+        // Explicit Back remains available when the adapter cannot scroll.
+      }
+      continue;
+    }
+    if (recoveryAttempts > 0) {
+      const attempt = recoveryMaxAttempts - recoveryAttempts + 1;
+      recoveryAttempts -= 1;
+      ctx.log(`screen: not ${step.screenTitle} yet — recovering with Back (${attempt})`);
+      try {
+        await pressLabel(device, "Back");
+      } catch {
+        await pressKey(device, "back");
+      }
+      await sleep(350, device);
+      continue;
+    }
+    if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
+  } while (Date.now() < deadline);
+
+  if (!reached) {
+    throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
+  }
+  if (verifiedNodes && ctx.runtime) {
+    ctx.runtime.verifiedScreen = {
+      screenId: step.screenId,
+      screenTitle: step.screenTitle,
+      nodes: verifiedNodes,
+      verifiedAt: now(),
+    };
+  }
+  ctx.log(`screen: reached ${step.screenTitle}`);
+}

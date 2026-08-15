@@ -31,6 +31,53 @@ function isScrollAction(action: ActionSpec): boolean {
   );
 }
 
+function reversibleBackCost(connection: Connection): 0 | 1 | undefined {
+  if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) return 0;
+  const mutations = connection.actions.flatMap((action) => {
+    if (action.kind === "tap") return ["tap"];
+    if (action.kind === "recorded" || action.kind === "steps") {
+      return action.steps.flatMap((step) =>
+        step.kind === "tap"
+          ? ["tap"]
+          : step.kind === "expect-screen" || step.kind === "screenshot" || step.kind === "sleep"
+            ? []
+            : [step.kind],
+      );
+    }
+    return action.kind === "wait" || action.kind === "passive" ? [] : [action.kind];
+  });
+  return mutations.length === 1 && mutations[0] === "tap" ? 1 : undefined;
+}
+
+function knownBackCount(
+  map: AppMap,
+  previousPlan: AppMapCompiledFlow | undefined,
+  currentScreenId: string | undefined,
+  targetScreenId: string | undefined,
+): number | undefined {
+  if (!previousPlan || !currentScreenId || !targetScreenId) return undefined;
+  const screenAt = (screenId: string): number | undefined => {
+    if (screenId === previousPlan.flow.startScreenId) return -1;
+    const index = previousPlan.connections.findIndex(
+      (connection) =>
+        connection.destination.kind === "screen" && connection.destination.screenId === screenId,
+    );
+    return index < 0 ? undefined : index;
+  };
+  const current = screenAt(currentScreenId);
+  const target = screenAt(targetScreenId);
+  if (current === undefined || target === undefined || current <= target) return undefined;
+  let count = 0;
+  for (const compiled of previousPlan.connections.slice(target + 1, current + 1)) {
+    const connection = map.connections[compiled.connectionId];
+    if (!connection) return undefined;
+    const cost = reversibleBackCost(connection);
+    if (cost === undefined) return undefined;
+    count += cost;
+  }
+  return count > 0 ? count : undefined;
+}
+
 function scrollFamilyScreenIds(map: AppMap, startScreenId: string): Set<string> {
   const family = new Set([startScreenId]);
   let changed = true;
@@ -94,6 +141,23 @@ export function warmCompiledFlowGraphFromSharedPrefix(
 ): Record<string, Recipe> {
   const root = graph[plan.rootRecipeId];
   if (!root) return graph;
+  const sourceIndex = root.steps.findIndex(
+    (step) => step.kind === "expect-screen" && step.id === `relay-source-${plan.flow.id}`,
+  );
+  if (sourceIndex < 0) return graph;
+  // The preceding destination assertion is the live proof for this exact
+  // source, and nothing executes between sibling modules. Carry it forward
+  // instead of taking the same tree and screenshot again.
+  if (currentScreenId === plan.flow.startScreenId) {
+    return {
+      ...graph,
+      [plan.rootRecipeId]: {
+        ...root,
+        title: root.title.replace(/cold start/iu, "verified checkpoint"),
+        steps: root.steps.slice(sourceIndex + 1),
+      },
+    };
+  }
   const sharesStart = previousPlan?.flow.startScreenId === plan.flow.startScreenId;
   let sharedConnectionCount = 0;
   if (sharesStart) {
@@ -106,9 +170,7 @@ export function warmCompiledFlowGraphFromSharedPrefix(
       sharedConnectionCount += 1;
     }
   }
-  if (currentScreenId === plan.flow.startScreenId) {
-    sharedConnectionCount = 0;
-  } else if (currentScreenId) {
+  if (currentScreenId) {
     const currentConnectionIndex = plan.connections.findIndex(
       (connection) =>
         connection.destination.kind === "screen" &&
@@ -124,9 +186,6 @@ export function warmCompiledFlowGraphFromSharedPrefix(
       : sharedConnection?.destination.kind === "screen"
         ? sharedConnection.destination.screenId
         : undefined;
-  const sourceIndex = root.steps.findIndex(
-    (step) => step.kind === "expect-screen" && step.id === `relay-source-${plan.flow.id}`,
-  );
   const suffixStart =
     sharedConnectionCount === 0 ? sourceIndex + 1 : sharedConnection?.compiledStepRange[1];
   const terminalExpectation =
@@ -142,20 +201,40 @@ export function warmCompiledFlowGraphFromSharedPrefix(
   if (sourceIndex < 0 || !terminalExpectation) return graph;
 
   const warmExpectation = scrollFamilyExpectation(map, terminalExpectation);
+  const backCount = knownBackCount(map, previousPlan, currentScreenId, sharedScreenId);
+  const recoverySteps: RecipeStep[] = backCount
+    ? Array.from({ length: backCount }, (_, index) => [
+        { kind: "key" as const, key: "back" as const, id: `relay-recover-back-${index + 1}` },
+        ...(index < backCount - 1
+          ? [
+              {
+                kind: "sleep" as const,
+                ms: 350,
+                id: `relay-recover-back-settle-${index + 1}`,
+              },
+            ]
+          : []),
+      ]).flat()
+    : [];
   return {
     ...graph,
     [plan.rootRecipeId]: {
       ...root,
       title: root.title.replace(/cold start/iu, "warm recovery"),
       steps: [
+        ...recoverySteps,
         {
           ...structuredClone(warmExpectation),
           id: `${warmExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
-          recovery: {
-            strategy: "back",
-            maxAttempts: 8,
-            ...(options.restoreParentViewport ? { restoreParentViewport: true } : {}),
-          },
+          ...(backCount
+            ? {}
+            : {
+                recovery: {
+                  strategy: "back" as const,
+                  maxAttempts: 8,
+                  ...(options.restoreParentViewport ? { restoreParentViewport: true } : {}),
+                },
+              }),
         },
         ...root.steps.slice(suffixStart),
       ],

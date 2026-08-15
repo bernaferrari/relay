@@ -16,6 +16,7 @@ it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ language: "pt-BR" }), false);
 });
 import type { Device } from "./device.js";
+import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
@@ -1419,6 +1420,116 @@ describe("runRecipeStep expect-screen", () => {
     );
     assert.equal(backs, 4);
     assert.deepEqual(lines.at(-1), "screen: reached Home");
+  });
+
+  it("reuses fresh verified nodes for the immediate tap and invalidates after mutation", async () => {
+    const sourceNodes = [
+      {
+        role: "button",
+        label: "Continue",
+        enabled: true,
+        hittable: true,
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    ];
+    const fingerprint = observeScreenIdentity(sourceNodes).fingerprint;
+    let snapshots = 0;
+    let presses = 0;
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: sourceNodes });
+      },
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+    });
+    const job = { artifacts: [], resolvedInputs: {} } as unknown as TestJob;
+    const runtime = {};
+    const verifyContext: RecipeStepContext = { log: () => {}, job, runtime };
+    const tapContext: RecipeStepContext = { log: () => {}, job, runtime };
+
+    await runRecipeStep(
+      device,
+      { kind: "expect-screen", screenId: "source", screenTitle: "Source", fingerprint },
+      verifyContext,
+    );
+    await runRecipeStep(device, { kind: "tap", target: { label: "Continue" } }, tapContext);
+
+    assert.equal(snapshots, 1);
+    assert.equal(presses, 1);
+    assert.equal(tapContext.runtime?.verifiedScreen, undefined);
+  });
+
+  it("does not reuse verified nodes after an intervening mutation", async () => {
+    const sourceNodes = [
+      {
+        role: "button",
+        label: "Continue",
+        enabled: true,
+        hittable: true,
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    ];
+    const fingerprint = observeScreenIdentity(sourceNodes).fingerprint;
+    let snapshots = 0;
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: sourceNodes });
+      },
+    });
+    const ctx: RecipeStepContext = { log: () => {}, runtime: {} };
+
+    await runRecipeStep(
+      device,
+      { kind: "expect-screen", screenId: "source", screenTitle: "Source", fingerprint },
+      ctx,
+    );
+    await runRecipeStep(device, { kind: "key", key: "back" }, ctx);
+    await runRecipeStep(device, { kind: "tap", target: { label: "Continue" } }, ctx);
+
+    // One expect snapshot, then the normal uncached target resolution and
+    // native-label fallback snapshots after Back invalidated the proof.
+    assert.equal(snapshots, 3);
+  });
+
+  it("falls back to a fresh tree when verified nodes do not contain the target", async () => {
+    const verifiedNodes = [{ role: "heading", label: "Source", enabled: true }];
+    const targetNodes = [
+      {
+        type: "Button",
+        label: "Continue",
+        enabled: true,
+        hittable: true,
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+      },
+    ];
+    const fingerprint = observeScreenIdentity(verifiedNodes).fingerprint;
+    let snapshots = 0;
+    let presses = 0;
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: snapshots === 1 ? verifiedNodes : targetNodes });
+      },
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+    });
+    const ctx: RecipeStepContext = { log: () => {}, runtime: {} };
+
+    await runRecipeStep(
+      device,
+      { kind: "expect-screen", screenId: "source", screenTitle: "Source", fingerprint },
+      ctx,
+    );
+    await runRecipeStep(device, { kind: "tap", target: { label: "Continue" } }, ctx);
+
+    assert.equal(snapshots, 2);
+    assert.equal(presses, 1);
   });
 });
 

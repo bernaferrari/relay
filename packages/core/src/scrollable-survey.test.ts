@@ -107,6 +107,33 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
   };
 }
 
+test("uses a verified initial PNG/tree pair without recapturing the first viewport", async () => {
+  const initial = androidScrollableFrame(0, 1);
+  let captures = 0;
+  const survey = await captureScrollableSurvey(
+    {
+      capture: () => {
+        captures += 1;
+        return Promise.resolve({
+          screenshot: initial.frame.screenshot,
+          snapshot: initial.snapshot,
+        });
+      },
+      scrollDown: () => Promise.resolve(),
+      scrollUp: () => Promise.resolve(),
+      settle: () => Promise.resolve(),
+    },
+    {
+      maxScrolls: 1,
+      initialCapture: { screenshot: initial.frame.screenshot, snapshot: initial.snapshot },
+    },
+  );
+
+  assert.equal(captures, 1);
+  assert.equal(survey.frames[0]?.screenshot.capturedAt, 1);
+  assert.equal(survey.reason, "end-of-content");
+});
+
 test("composes Android chrome once using the corroborated semantic body translation", () => {
   const first = androidScrollableFrame(0, 0);
   const second = androidScrollableFrame(152, 1);

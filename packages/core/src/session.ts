@@ -38,6 +38,7 @@ import {
   type RecipeStep,
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
+import type { RecipeRuntimeState } from "./recipe-runner-context.js";
 import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
 import { REDACTED } from "./redaction.js";
 import { classifyRunOutcome } from "./outcomes.js";
@@ -604,11 +605,10 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
       // the settled application surface; failures still receive a frame.
       if (step.action === "keyboard-dismiss") return [];
       return ["after"];
-    // Assertions and waits need the resulting state, not an identical frame
-    // before the check. Interaction steps retain both sides of the causal
-    // boundary.
-    case "expect":
+    // Assertions need resulting state; interactions retain both sides.
     case "expect-screen":
+      return step.id?.startsWith("relay-source-") || step.id?.endsWith(":warm") ? [] : ["after"];
+    case "expect":
     case "assert-content":
     case "extract":
     case "evaluate-semantic":
@@ -639,6 +639,7 @@ async function runRecipeSteps(
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
   if (!job.recipeSnapshot) job.recipeSnapshot = structuredClone(recipe);
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
+  const runtime: RecipeRuntimeState = {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   for (const step of recipe.steps) {
     await cooperativeCheckpoint(job.id);
@@ -651,8 +652,6 @@ async function runRecipeSteps(
     });
     setCurrentStep(ts);
     try {
-      // The command is now being attempted. Record it here—not when the plan
-      // was created—so the timeline distinguishes intent from observation.
       observeStepActions(ts, glyphsForStep(step));
       const resolvedStep = resolveRecipeStep(step, job.resolvedInputs);
       job.artifacts.push({
@@ -667,13 +666,13 @@ async function runRecipeSteps(
         log: pushLog,
         job,
         recipeGraph: job.recipeGraph,
+        runtime,
       });
       if (evidencePhases.includes("after"))
         await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "ok");
     } catch (err) {
-      // A failure frame is always useful, including when the normal policy
-      // suppresses redundant evidence for a passive step.
+      // A failure frame remains useful when passive-step evidence is suppressed.
       await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(undefined);

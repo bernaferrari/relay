@@ -1,6 +1,5 @@
 /** Recipe execution glue; cancellation always escapes strategy fallbacks. */
 import type { Device } from "./device.js";
-import { describeSnapshotChrome } from "@relay/protocol";
 import {
   DEFAULT_EXPECT_TIMEOUT_MS,
   MAX_WAIT_MS,
@@ -8,8 +7,6 @@ import {
   conditionalTargetPresent,
   isCancel,
   isNotFoundOrTimeout,
-  resilientScreenIdentityMatch,
-  handoffShellIdentityMatch,
   readInput,
   resolvePointForDevice,
   resolveRecipeStep,
@@ -18,13 +15,15 @@ import {
   targetPresent,
   waitForResponseCompletion,
 } from "./recipe-runner-support.js";
-import type { RecipeStepContext } from "./recipe-runner-context.js";
+import {
+  invalidateVerifiedScreen,
+  stepBreaksVerifiedScreen,
+  type RecipeStepContext,
+} from "./recipe-runner-context.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
-  pressLabel,
   pressKey,
-  scrollUp,
   sleep,
   swipeGesture,
   waitFor,
@@ -48,7 +47,6 @@ import {
   manageLogs,
   setAndroidLockState,
   snapshot,
-  type SnapshotNode,
 } from "./device.js";
 import {
   cooperativeCheckpointWithTimeout,
@@ -62,19 +60,13 @@ import { captureScreenshot } from "./workspace.js";
 import { describeTarget, readRecipe, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
-  compareScreenIdentity,
-  observeScreenIdentity,
-  observeVisualScreenFingerprint,
-} from "./screen-identity.js";
-import {
   nodeText,
   nodeMatchesTarget,
-  screenIdentityMatches,
   labelsForIdentifierPrefix,
   labelsForScope,
 } from "./recipe-target-match.js";
 import { runTourStep } from "./recipe-runner-tour.js";
-import { foregroundApplicationBundle } from "./recipe-runner-tour-matching.js";
+import { runExpectScreenStep } from "./recipe-runner-screen.js";
 import {
   runCampaignCheck,
   runCaptureSurfaceStep,
@@ -171,22 +163,33 @@ async function runRequiredRecipeStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   const { log, job } = ctx;
+  if (stepBreaksVerifiedScreen(step)) invalidateVerifiedScreen(ctx);
   switch (step.kind) {
     case "tap":
-      await runTapStep(device, step, ctx);
+      try {
+        await runTapStep(device, step, ctx);
+      } finally {
+        invalidateVerifiedScreen(ctx);
+      }
       break;
 
     case "type": {
-      await runTypeStep(device, step, ctx);
+      try {
+        await runTypeStep(device, step, ctx);
+      } finally {
+        invalidateVerifiedScreen(ctx);
+      }
       break;
     }
 
     case "scroll": {
+      invalidateVerifiedScreen(ctx);
       await runSemanticScrollStep(device, step, ctx);
       break;
     }
 
     case "swipe": {
+      invalidateVerifiedScreen(ctx);
       const { from, to, durationMs } = step;
       await swipeGesture(
         device,
@@ -198,19 +201,36 @@ async function runRequiredRecipeStep(
     }
 
     case "key":
+      invalidateVerifiedScreen(ctx);
       await pressKey(device, step.key);
       break;
 
     case "sleep":
+      // Time alone can make an asynchronous UI tree stale.
+      invalidateVerifiedScreen(ctx);
       await sleep(step.ms, device);
       break;
 
-    case "screenshot":
-      await captureScreenshot({ jobId: job?.id, caption: step.caption, device });
+    case "screenshot": {
+      const verified = ctx.runtime?.verifiedScreen;
+      const screenshot = await captureScreenshot({
+        jobId: job?.id,
+        caption: step.caption,
+        device,
+        // Preserve screenshot screen-match evidence while avoiding a second
+        // Android tree walk after an immediately preceding semantic proof.
+        ...(verified ? { semanticNodes: verified.nodes } : {}),
+      });
+      if (verified) verified.screenshot = screenshot;
       break;
+    }
 
     case "capture-surface": {
-      await runCaptureSurfaceStep(step, ctx);
+      try {
+        await runCaptureSurfaceStep(step, ctx);
+      } finally {
+        invalidateVerifiedScreen(ctx);
+      }
       break;
     }
 
@@ -344,122 +364,7 @@ async function runRequiredRecipeStep(
     }
 
     case "expect-screen": {
-      const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
-      const recoveryMaxAttempts =
-        step.recovery?.strategy === "back" ? (step.recovery.maxAttempts ?? 6) : 0;
-      let parentViewportRecoveryAttempts =
-        step.recovery?.strategy === "back" && step.recovery.restoreParentViewport === true ? 2 : 0;
-      // A warm source recovery is intentional navigation, not just a render
-      // settle. Reserve time for every bounded Back + accessibility snapshot;
-      // otherwise a configured eight-step recovery can time out after three.
-      const timeout = Math.min(
-        Math.max(
-          step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS,
-          recoveryMaxAttempts ? recoveryMaxAttempts * 2_500 : 0,
-        ),
-        MAX_WAIT_MS,
-      );
-      const deadline = Date.now() + timeout;
-      let recoveryAttempts = recoveryMaxAttempts;
-      let observedTitle = "unknown";
-      let reached = false;
-      do {
-        let nodes: SnapshotNode[] = [];
-        try {
-          nodes = await snapshot(device);
-        } catch {
-          nodes = [];
-        }
-        const chrome = describeSnapshotChrome(nodes);
-        observedTitle = chrome.header ?? chrome.app ?? "unknown";
-        const observed = observeScreenIdentity(nodes);
-        const semanticMatch = (step.observations ?? []).some(
-          (observation) => compareScreenIdentity(observed, observation).decision === "match",
-        );
-        const resilientMatch = resilientScreenIdentityMatch(
-          observed,
-          step.observations ?? [],
-          ctx.job,
-        );
-        const handoffShellMatch =
-          Boolean(step.expectedApp) &&
-          foregroundApplicationBundle(nodes) === step.expectedApp &&
-          handoffShellIdentityMatch(observed, step.observations ?? []);
-        if (
-          screenIdentityMatches(expected, observed.fingerprint) ||
-          semanticMatch ||
-          resilientMatch ||
-          handoffShellMatch
-        ) {
-          reached = true;
-          break;
-        }
-
-        // Custom-rendered and some system screens can expose an empty or
-        // unstable accessibility tree. Authoring records a stable visual alias
-        // for exactly that case, so replay consults the same modality while the
-        // destination settles instead of sampling one transition frame.
-        const visualFingerprint = ctx.observeVisualFingerprint
-          ? await ctx.observeVisualFingerprint()
-          : observeVisualScreenFingerprint(
-              Buffer.from(
-                (
-                  await captureScreenshot({
-                    device,
-                    caption: `Verify ${step.screenTitle}`,
-                    ephemeral: true,
-                    includeScreenMatch: false,
-                  })
-                ).base64,
-                "base64",
-              ),
-            );
-        if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
-          reached = true;
-          break;
-        }
-        // A warm run commonly starts inside a child page. One Back returns to
-        // the correct parent list, but its scroll offset may belong to a
-        // lower checkpoint. Normalize that known parent before taking another
-        // Back—otherwise we leave the app's tree merely because a list is
-        // scrolled.
-        if (recoveryAttempts < recoveryMaxAttempts && parentViewportRecoveryAttempts > 0) {
-          const attempt = 3 - parentViewportRecoveryAttempts;
-          parentViewportRecoveryAttempts -= 1;
-          log(`screen: restoring parent list viewport (${attempt})`);
-          try {
-            await scrollUp(device, 0.7);
-            await sleep(350, device);
-          } catch {
-            // Keep the explicit Back recovery available on targets that do
-            // not expose scroll through their automation adapter.
-          }
-          continue;
-        }
-        if (recoveryAttempts > 0) {
-          const attempt = recoveryMaxAttempts - recoveryAttempts + 1;
-          recoveryAttempts -= 1;
-          log(`screen: not ${step.screenTitle} yet — recovering with Back (${attempt})`);
-          // Prefer an application's explicit semantic control. Hardware Back
-          // is the safe fallback for native navigation chrome that does not
-          // expose a named control. This is source-only generated recovery;
-          // destination assertions never opt in and therefore preserve their
-          // failure evidence.
-          try {
-            await pressLabel(device, "Back");
-          } catch {
-            await pressKey(device, "back");
-          }
-          await sleep(350, device);
-          continue;
-        }
-        if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
-      } while (Date.now() < deadline);
-
-      if (!reached) {
-        throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
-      }
-      log(`screen: reached ${step.screenTitle}`);
+      await runExpectScreenStep(device, step, ctx);
       break;
     }
 
@@ -1003,7 +908,9 @@ export async function runRecipeStep(
   step: RecipeStep,
   ctx: RecipeStepContext,
 ): Promise<void> {
+  ctx.runtime ??= {};
   if (step.when) {
+    invalidateVerifiedScreen(ctx);
     const present = await conditionalTargetPresent(device, step.when);
     const shouldRun = step.when.condition === "present" ? present : !present;
     if (!shouldRun) {
