@@ -187,6 +187,8 @@ export function ScreenInspector(props: {
             <LogicalScrollSurfaceViewer
               surface={scrollSurface.surface()!}
               evidenceUrl={scrollSurface.evidenceUrl}
+              regenerating={scrollSurface.regenerateProps().busy}
+              onRegenerate={scrollSurface.regenerateProps().onRegenerate}
             />
           </Show>
 

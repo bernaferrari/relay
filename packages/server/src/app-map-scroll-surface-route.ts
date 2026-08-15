@@ -6,11 +6,16 @@ import {
   logicalScrollSurfaceId,
   persistLogicalScrollSurface,
   readAppMap,
+  regenerateLogicalScrollSurface,
+  replaceAppMapScrollSurfaceDerived,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
-import { resolveScrollSurfaceCaptureSelection } from "./app-map-scroll-surface-support.js";
+import {
+  resolveScrollSurfaceCaptureSelection,
+  resolveScrollSurfaceRegenerationSelection,
+} from "./app-map-scroll-surface-support.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
 
@@ -21,6 +26,52 @@ export async function handleAppMapScrollSurfaceRoute(input: {
   response: http.ServerResponse;
   scope: RequestContext;
 }): Promise<boolean> {
+  const regenerationMatch = matchPath(
+    input.pathname,
+    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/regenerate",
+  );
+  if (input.method === "POST" && regenerationMatch) {
+    const body = (await parseJsonBody(input.request)) as Pick<
+      OperationInput<"app-map.scroll-surface.regenerate">,
+      "expectedRevision" | "eventId"
+    >;
+    const appMapId = regenerationMatch.appMapId!;
+    const screenId = regenerationMatch.screenId!;
+    const variantId = regenerationMatch.variantId!;
+    const captureId = regenerationMatch.captureId!;
+    const current = await readAppMap(input.scope.projectId, appMapId);
+    if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
+    const { variant, surface } = resolveScrollSurfaceRegenerationSelection({
+      appMap: current,
+      expectedRevision: body.expectedRevision,
+      screenId,
+      variantId,
+      captureId,
+    });
+    const regenerated = await regenerateLogicalScrollSurface({
+      surface,
+      targetProfile: variant.targetProfile,
+    });
+    const appMap = await applyAppMapMutation(
+      input.scope,
+      appMapId,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) =>
+        replaceAppMapScrollSurfaceDerived(
+          map,
+          { screenId, variantId, surface: regenerated },
+          context,
+        ),
+    );
+    json(input.response, 200, {
+      appMap,
+      screen: appMap.screens[screenId],
+      variant: appMap.screenVariants[variantId],
+      scrollSurface: regenerated,
+    });
+    return true;
+  }
   const match = matchPath(
     input.pathname,
     "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/capture",

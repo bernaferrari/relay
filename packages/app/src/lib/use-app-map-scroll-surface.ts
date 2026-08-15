@@ -12,6 +12,7 @@ export function useAppMapScrollSurface(input: {
 }) {
   const server = useServer();
   const [busy, setBusy] = createSignal(false);
+  const [regenerating, setRegenerating] = createSignal(false);
   const [error, setError] = createSignal("");
   const [selectedVariantId, setSelectedVariantId] = createSignal("");
   let previousScreenId: string | undefined;
@@ -115,11 +116,39 @@ export function useAppMapScrollSurface(input: {
     }
   };
 
+  const regenerate = async () => {
+    const map = input.activeAppMap();
+    const screenId = input.screenId();
+    const selected = variant();
+    const currentSurface = surface();
+    if (!map || !screenId || !selected || !currentSurface) return;
+    setRegenerating(true);
+    setError("");
+    try {
+      await server.runAction("app-map.scroll-surface.regenerate", {
+        appMapId: map.id,
+        screenId,
+        variantId: selected.id,
+        captureId: currentSurface.captureId,
+        expectedRevision: map.revision,
+      });
+      await server.refreshAppMaps();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return {
     variant,
     surface,
     evidenceUrl: (uri: string, mime: "image/png" | "application/json") =>
       server.authoringEvidenceUrl(uri, mime),
+    regenerateProps: createMemo(() => ({
+      busy: regenerating(),
+      onRegenerate: () => void regenerate(),
+    })),
     captureProps: createMemo(() => ({
       busy: busy(),
       disabledReason: disabledReason(),

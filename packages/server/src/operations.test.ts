@@ -40,6 +40,13 @@ test("dynamic canonical routes resolve to their registered operation", () => {
     )?.id,
     "app-map.scroll-surface.capture",
   );
+  assert.equal(
+    findOperationHandler(
+      "POST",
+      "/app-maps/onboarding/screens/settings/variants/settings-ja/scroll-surfaces/capture-1/regenerate",
+    )?.id,
+    "app-map.scroll-surface.regenerate",
+  );
   assert.equal(findOperationHandler("POST", "/app-maps/onboarding/teach")?.id, "app-map.teach");
   assert.equal(findOperationHandler("GET", "/events")?.id, "event.stream");
 });

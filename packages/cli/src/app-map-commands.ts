@@ -242,6 +242,35 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
   ),
   mapped(
+    "app-map.scroll-surface.regenerate",
+    path(
+      "screen regenerate-scroll",
+      ["appMapId", "screenId", "variantId", "captureId"],
+      undefined,
+      {
+        summary: "Rebuild derived scroll views from canonical raw evidence",
+        argumentHelp: [
+          { name: "appMapId", type: "string", description: "App Map identifier" },
+          { name: "screenId", type: "string", description: "Selected logical screen" },
+          { name: "variantId", type: "string", description: "Target/locale-specific variant" },
+          { name: "captureId", type: "string", description: "Immutable scroll capture" },
+        ],
+        inputHelp: [
+          {
+            name: "expectedRevision",
+            type: "number",
+            required: true,
+            description: "Current App Map revision",
+          },
+        ],
+        examples: [
+          "relay screen regenerate-scroll grok settings settings-ja scroll-surface-capture --input '{\"expectedRevision\":13}'",
+        ],
+        note: "Does not control or re-scroll the device. Raw viewport PNG/tree evidence and capture identity remain unchanged.",
+      },
+    ),
+  ),
+  mapped(
     "app-map.teach",
     path("map teach", ["appMapId"], undefined, {
       summary: "Perform one tap or swipe, capture the destination, and connect it",

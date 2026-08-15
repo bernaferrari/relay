@@ -11,6 +11,8 @@ import {
   attachAppMapScrollSurface,
   logicalScrollSurfaceId,
   persistLogicalScrollSurface,
+  regenerateLogicalScrollSurface,
+  replaceAppMapScrollSurfaceDerived,
 } from "./logical-scroll-surface.js";
 import { recommendScrollSurfaceCapturePolicy } from "./scroll-surface-policy.js";
 import type { ScrollSurveyResult } from "./scrollable-survey.js";
@@ -69,6 +71,76 @@ function survey(): ScrollSurveyResult {
     ],
     restoredStartViewport: true,
     message: "Relay reached the configured survey limit.",
+  };
+}
+
+function patternedPng(documentOffset: number): Buffer {
+  const image = new PNG({ width: 64, height: 160 });
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      const value = (y + documentOffset + x * 7) % 255;
+      image.data[offset] = value;
+      image.data[offset + 1] = (value * 3) % 255;
+      image.data[offset + 2] = (value * 5) % 255;
+      image.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(image);
+}
+
+const regenerationProfile: TargetProfile = {
+  ...profile,
+  id: "android-en",
+  targetId: "android-1",
+  platform: "android",
+  name: "Android · English",
+  viewport: { width: 64, height: 160 },
+};
+
+function regenerableSurvey(): ScrollSurveyResult {
+  const frame = (index: number, documentOffset: number) => {
+    const screenshot = patternedPng(documentOffset);
+    return {
+      index,
+      offsetY: index === 0 ? 0 : 93,
+      appendedHeight: index === 0 ? 0 : 93,
+      screenshot: {
+        base64: screenshot.toString("base64"),
+        width: 64,
+        height: 160,
+        capturedAt: 100 + index,
+      },
+      snapshot: {
+        serial: "android-1",
+        capturedAt: 100 + index,
+        foregroundApp: "app.relay.fixture",
+        nodes: Array.from({ length: 4 }, (_, nodeIndex) => ({
+          label: `Stable row ${nodeIndex}`,
+          type: "TextView",
+          rect: { x: 4, y: 60 + nodeIndex * 20 - documentOffset, width: 40, height: 12 },
+        })),
+        interactive: [],
+        bounds: { width: 64, height: 160 },
+        inspectable: true,
+        source: "sdk" as const,
+        screenIdentity: {
+          fingerprint: "regenerable-surface",
+          nodes: [],
+          volatileSignals: [],
+        },
+      },
+    };
+  };
+  return {
+    status: "completed",
+    reason: "end-of-content",
+    frames: [frame(0, 0), frame(1, 40)],
+    // Deliberately stale derived artifacts. Regeneration must ignore them.
+    stitched: { base64: png(91), width: 4, height: 4, mime: "image/png" },
+    mergedNodes: [{ label: "Stale node", type: "StaticText" }],
+    restoredStartViewport: true,
+    message: "Fixture contains stale derived views.",
   };
 }
 
@@ -244,6 +316,91 @@ test("rejects attaching a surface to another target/locale variant", async () =>
         ),
       /another target profile/u,
     );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(state, { recursive: true, force: true });
+  }
+});
+
+test("regenerates derived views deterministically while retaining all raw capture evidence", async () => {
+  const state = await mkdtemp(join(tmpdir(), "relay-scroll-surface-regenerate-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = state;
+  try {
+    const initial = await persistLogicalScrollSurface({
+      survey: regenerableSurvey(),
+      targetProfile: regenerationProfile,
+      surfaceId: logicalScrollSurfaceId("settings", "settings-ja"),
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "Stable product-owned fixture.",
+        decidedAt: 100,
+      },
+    });
+    const rawIdentity = (surface: typeof initial) =>
+      surface.viewports.map((viewport) => ({
+        screenshot: viewport.screenshot,
+        accessibilityTree: viewport.accessibilityTree,
+      }));
+    const regenerated = await regenerateLogicalScrollSurface({
+      surface: initial,
+      targetProfile: regenerationProfile,
+    });
+    assert.equal(regenerated.id, initial.id);
+    assert.equal(regenerated.captureId, initial.captureId);
+    assert.deepEqual(rawIdentity(regenerated), rawIdentity(initial));
+    assert.equal(regenerated.viewports[1]?.offsetY, 40);
+    assert.equal(regenerated.viewports[1]?.appendedHeight, 40);
+    assert.equal(regenerated.composite?.width, 64);
+    assert.equal(regenerated.composite?.height, 200);
+    assert.notEqual(regenerated.composite?.sha256, initial.composite?.sha256);
+    assert.notEqual(regenerated.mergedTree.sha256, initial.mergedTree.sha256);
+    assert.notEqual(regenerated.manifest.sha256, initial.manifest.sha256);
+
+    const repeated = await regenerateLogicalScrollSurface({
+      surface: regenerated,
+      targetProfile: regenerationProfile,
+    });
+    assert.deepEqual(rawIdentity(repeated), rawIdentity(initial));
+    assert.deepEqual(repeated.viewports, regenerated.viewports);
+    assert.equal(repeated.composite?.sha256, regenerated.composite?.sha256);
+    assert.equal(repeated.mergedTree.sha256, regenerated.mergedTree.sha256);
+    assert.equal(repeated.manifest.sha256, regenerated.manifest.sha256);
+
+    const fixture = mapFixture();
+    fixture.screenVariants["settings-ja"]!.targetProfile = regenerationProfile;
+    const attached = attachAppMapScrollSurface(
+      fixture,
+      { screenId: "settings", variantId: "settings-ja", surface: initial },
+      {
+        expectedRevision: 0,
+        eventId: "initial-capture",
+        actorId: "human:designer",
+        actorKind: "human",
+        at: 200,
+      },
+    );
+    const replaced = replaceAppMapScrollSurfaceDerived(
+      attached,
+      { screenId: "settings", variantId: "settings-ja", surface: regenerated },
+      {
+        expectedRevision: 1,
+        eventId: "regenerate-capture",
+        actorId: "human:designer",
+        actorKind: "human",
+        at: 210,
+      },
+    );
+    const stored = replaced.screenVariants["settings-ja"]!.scrollSurfaces?.[0];
+    assert.deepEqual(stored, regenerated);
+    assert.deepEqual(rawIdentity(stored!), rawIdentity(initial));
+    assert.equal(replaced.activity["regenerate-capture"]?.subject.id, "settings");
+    assert.ok(
+      replaced.screenVariants["settings-ja"]!.evidenceIds.includes(regenerated.manifest.id),
+    );
+    assert.ok(!replaced.screenVariants["settings-ja"]!.evidenceIds.includes(initial.manifest.id));
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;

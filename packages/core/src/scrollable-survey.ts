@@ -58,6 +58,12 @@ export type ScrollSurveyOptions = { maxScrolls?: number };
 
 type Seam = { shiftY: number; confidence: number };
 
+type Composition = {
+  frames: ScrollSurveyFrame[];
+  stitched?: ScrollSurveyResult["stitched"];
+  mergedNodes: SnapshotNode[];
+};
+
 function decodeFrame(frame: ScrollSurveyFrame): PNG | undefined {
   try {
     return PNG.sync.read(Buffer.from(frame.screenshot.base64, "base64"));
@@ -91,7 +97,58 @@ function sampleDifference(left: PNG, right: PNG, shiftY: number): number {
 }
 
 /** Estimate scroll distance from the overlap of two native screenshots. */
-export function verticalScrollSeam(previous: Buffer, current: Buffer): Seam | undefined {
+function semanticNodeKey(node: SnapshotNode): string | undefined {
+  const stable = normalizedSemanticPart(node.identifier ?? node.ref);
+  const role = normalizedSemanticPart(node.role ?? node.type);
+  if (stable) return `${role}:id:${stable}`;
+  const label = normalizedSemanticPart(node.label);
+  const value = normalizedSemanticPart(node.value);
+  return label || value ? `${role}:text:${label}:${value}` : undefined;
+}
+
+function semanticScrollShift(
+  previous: SnapshotPayload,
+  current: SnapshotPayload,
+): { shiftY: number; support: number } | undefined {
+  const currentByKey = new Map<string, SnapshotNode>();
+  const duplicateKeys = new Set<string>();
+  for (const node of current.nodes) {
+    const key = node.rect && node.visibleToUser !== false ? semanticNodeKey(node) : undefined;
+    if (!key) continue;
+    if (currentByKey.has(key)) duplicateKeys.add(key);
+    else currentByKey.set(key, node);
+  }
+  const shifts = new Map<number, number>();
+  const matchedKeys = new Set<string>();
+  for (const node of previous.nodes) {
+    const key = node.rect && node.visibleToUser !== false ? semanticNodeKey(node) : undefined;
+    if (!key || duplicateKeys.has(key) || matchedKeys.has(key)) continue;
+    const match = currentByKey.get(key);
+    if (!match?.rect) continue;
+    matchedKeys.add(key);
+    const shift = Math.round(node.rect!.y - match.rect.y);
+    if (
+      shift < 12 ||
+      shift > Math.min(previous.bounds?.height ?? 0, current.bounds?.height ?? 0) * 0.85
+    )
+      continue;
+    shifts.set(shift, (shifts.get(shift) ?? 0) + 1);
+  }
+  const best = [...shifts.entries()].sort(
+    ([leftShift, left], [rightShift, right]) => right - left || leftShift - rightShift,
+  )[0];
+  return best && best[1] >= 3 ? { shiftY: best[0], support: best[1] } : undefined;
+}
+
+/** Pixel agreement remains mandatory. Accessibility translation only selects
+ * the meaningful body alignment when a sparse/dark screenshot admits a false
+ * visual minimum. */
+export function verticalScrollSeam(
+  previous: Buffer,
+  current: Buffer,
+  previousSnapshot?: SnapshotPayload,
+  currentSnapshot?: SnapshotPayload,
+): Seam | undefined {
   let left: PNG;
   let right: PNG;
   try {
@@ -104,6 +161,16 @@ export function verticalScrollSeam(previous: Buffer, current: Buffer): Seam | un
     return undefined;
   const unchanged = sampleDifference(left, right, 0);
   if (unchanged < 2.5) return { shiftY: 0, confidence: 1 };
+  const semantic =
+    previousSnapshot && currentSnapshot
+      ? semanticScrollShift(previousSnapshot, currentSnapshot)
+      : undefined;
+  if (semantic) {
+    const score = sampleDifference(left, right, semantic.shiftY);
+    const confidence = Math.max(0, Math.min(1, 1 - score / 32));
+    if (confidence >= 0.7) return { shiftY: semantic.shiftY, confidence };
+    return undefined;
+  }
   const minimum = Math.max(24, Math.round(left.height * 0.07));
   const maximum = Math.floor(left.height * 0.82);
   const stride = Math.max(8, Math.round(left.height * 0.009));
@@ -225,12 +292,53 @@ function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boole
   return meaningfulOverlap && structural.count > 0;
 }
 
+function bottomSystemChromeTop(frame: ScrollSurveyFrame): number | undefined {
+  const labels = new Set<string>();
+  let top = frame.screenshot.height;
+  for (const node of frame.snapshot.nodes) {
+    if (!node.rect || node.rect.y < frame.screenshot.height * 0.8) continue;
+    const label = normalizedSemanticPart(node.label);
+    const identifier = normalizedSemanticPart(node.identifier);
+    const navigationSemantic = /^(back|home|recents|overview)$/u.test(label)
+      ? label
+      : /com\.android\.systemui:id\/(?:navigationbar|navigation_bar|nav_buttons|back|home|recent_apps)$/u.test(
+            identifier,
+          )
+        ? identifier
+        : undefined;
+    if (!navigationSemantic) continue;
+    labels.add(navigationSemantic);
+    top = Math.min(top, node.rect.y);
+  }
+  return labels.size >= 2 ? Math.max(0, Math.floor(top)) : undefined;
+}
+
 function mergedSurveyNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
   const seen = new Set<string>();
   const merged: SnapshotNode[] = [];
-  for (const frame of frames) {
+  const sticky = new Map<string, number>();
+  for (const node of frames[0]?.snapshot.nodes ?? []) {
+    const key = node.rect ? semanticNodeKey(node) : undefined;
+    if (key && node.rect) sticky.set(key, node.rect.y);
+  }
+  for (const [frameIndex, frame] of frames.entries()) {
+    const bottomChrome = bottomSystemChromeTop(frame);
     for (const node of frame.snapshot.nodes) {
       if (!node.rect || node.visibleToUser === false) continue;
+      if (
+        bottomChrome !== undefined &&
+        frameIndex < frames.length - 1 &&
+        node.rect.y >= bottomChrome
+      )
+        continue;
+      const semanticKey = semanticNodeKey(node);
+      if (
+        frameIndex > 0 &&
+        semanticKey &&
+        sticky.has(semanticKey) &&
+        Math.abs(sticky.get(semanticKey)! - node.rect.y) <= 4
+      )
+        continue;
       const rect = { ...node.rect, y: node.rect.y + frame.offsetY };
       const key = [
         node.identifier ?? node.ref ?? node.label ?? node.value ?? node.type ?? node.role ?? "node",
@@ -258,16 +366,21 @@ function stitchSurveyFrames(
   ) {
     return undefined;
   }
-  const height = frames.reduce(
-    (total, frame, index) => total + (index === 0 ? frame.screenshot.height : frame.appendedHeight),
-    0,
-  );
+  const pieces = frames.map((frame, index) => {
+    const bottomChrome = bottomSystemChromeTop(frame) ?? frame.screenshot.height;
+    if (index === 0) {
+      return { sourceY: 0, height: frames.length === 1 ? frame.screenshot.height : bottomChrome };
+    }
+    const sourceY = Math.max(0, bottomChrome - frame.appendedHeight);
+    const end = index === frames.length - 1 ? frame.screenshot.height : bottomChrome;
+    return { sourceY, height: Math.max(0, end - sourceY) };
+  });
+  const height = pieces.reduce((total, piece) => total + piece.height, 0);
   if (first.width * height > 28_000_000) return undefined;
   const output = new PNG({ width: first.width, height });
   let targetY = 0;
   for (const [index, image] of decoded.entries()) {
-    const sourceY = index === 0 ? 0 : image!.height - frames[index]!.appendedHeight;
-    const copyHeight = index === 0 ? image!.height : frames[index]!.appendedHeight;
+    const { sourceY, height: copyHeight } = pieces[index]!;
     for (let y = 0; y < copyHeight; y += 1) {
       image!.data.copy(
         output.data,
@@ -286,6 +399,33 @@ function stitchSurveyFrames(
   };
 }
 
+/** Recalculate all derived geometry from canonical raw PNG/tree pairs. Stored
+ * offsets are hints only; regeneration and new captures share this path. */
+export function composeScrollSurveyFrames(
+  inputFrames: ScrollSurveyFrame[],
+): Composition | undefined {
+  const frames = inputFrames.map((frame, index) => ({
+    ...frame,
+    index,
+    offsetY: 0,
+    appendedHeight: 0,
+  }));
+  for (let index = 1; index < frames.length; index += 1) {
+    const previous = frames[index - 1]!;
+    const current = frames[index]!;
+    const seam = verticalScrollSeam(
+      Buffer.from(previous.screenshot.base64, "base64"),
+      Buffer.from(current.screenshot.base64, "base64"),
+      previous.snapshot,
+      current.snapshot,
+    );
+    if (!seam || seam.shiftY <= 0) return undefined;
+    current.appendedHeight = seam.shiftY;
+    current.offsetY = previous.offsetY + seam.shiftY;
+  }
+  return { frames, stitched: stitchSurveyFrames(frames), mergedNodes: mergedSurveyNodes(frames) };
+}
+
 function result(
   frames: ScrollSurveyFrame[],
   status: ScrollSurveyResult["status"],
@@ -293,13 +433,15 @@ function result(
   message: string,
   restoredStartViewport: boolean,
 ): ScrollSurveyResult {
-  const stitched = stitchSurveyFrames(frames);
+  const composition = composeScrollSurveyFrames(frames);
+  const composedFrames = composition?.frames ?? frames;
+  const stitched = composition?.stitched;
   return {
     status,
     reason,
-    frames,
+    frames: composedFrames,
     ...(stitched ? { stitched } : {}),
-    mergedNodes: mergedSurveyNodes(frames),
+    mergedNodes: composition?.mergedNodes ?? mergedSurveyNodes(frames),
     restoredStartViewport,
     message,
   };
@@ -482,6 +624,8 @@ export async function captureScrollableSurvey(
       const seam = verticalScrollSeam(
         Buffer.from(previous.screenshot.base64, "base64"),
         Buffer.from(next.screenshot.base64, "base64"),
+        previous.snapshot,
+        next.snapshot,
       );
       if (!seam) {
         decision = {

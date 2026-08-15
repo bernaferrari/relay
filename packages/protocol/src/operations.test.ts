@@ -34,6 +34,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.screen.add",
       "app-map.screen.capture",
       "app-map.scroll-surface.capture",
+      "app-map.scroll-surface.regenerate",
       "app-map.teach",
       "app-map.screen.update",
       "app-map.screen.remove",
@@ -340,6 +341,18 @@ test("durable scroll surfaces target exactly one App Map Screen Variant", () => 
     /Android or iOS device/u,
   );
   assert.throws(() => definition.input.parse({ ...input, maxScrolls: 7 }), /between 1 and 6/u);
+
+  const regenerate = operationDefinition("app-map.scroll-surface.regenerate");
+  assert.equal(regenerate.lease, "none");
+  assert.equal(regenerate.targetCapabilities.length, 0);
+  const regenerationInput = {
+    appMapId: "map-1",
+    screenId: "settings",
+    variantId: "settings-ja",
+    captureId: "capture-1",
+    expectedRevision: 13,
+  };
+  assert.deepEqual(regenerate.input.parse(regenerationInput), regenerationInput);
 });
 
 test("runtime parsers reject malformed input and output", () => {

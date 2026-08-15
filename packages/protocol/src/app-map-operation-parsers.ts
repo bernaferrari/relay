@@ -490,6 +490,27 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     record(output.scrollSurface, "App Map scroll surface capture response scrollSurface");
   });
 
+  const appMapScrollSurfaceRegenerateParser = objectParser<
+    AppMapOperationInput<"app-map.scroll-surface.regenerate">
+  >("App Map scroll surface regeneration", (input) => {
+    string(input.appMapId, "App Map scroll surface regeneration appMapId");
+    string(input.screenId, "App Map scroll surface regeneration screenId");
+    string(input.variantId, "App Map scroll surface regeneration variantId");
+    string(input.captureId, "App Map scroll surface regeneration captureId");
+    number(input.expectedRevision, "App Map scroll surface regeneration expectedRevision");
+    if (input.eventId !== undefined)
+      string(input.eventId, "App Map scroll surface regeneration eventId");
+  });
+
+  const appMapScrollSurfaceRegenerateOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.scroll-surface.regenerate">
+  >("App Map scroll surface regeneration response", (output) => {
+    record(output.appMap, "App Map scroll surface regeneration response appMap");
+    record(output.screen, "App Map scroll surface regeneration response screen");
+    record(output.variant, "App Map scroll surface regeneration response variant");
+    record(output.scrollSurface, "App Map scroll surface regeneration response scrollSurface");
+  });
+
   const appMapTeachParser = objectParser<AppMapOperationInput<"app-map.teach">>(
     "App Map teach",
     (input) => {
@@ -657,6 +678,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScreenCaptureParser,
     appMapScrollSurfaceCaptureOutputParser,
     appMapScrollSurfaceCaptureParser,
+    appMapScrollSurfaceRegenerateOutputParser,
+    appMapScrollSurfaceRegenerateParser,
     appMapTeachOutputParser,
     appMapTeachParser,
     appMapTestCompileInputParser,

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
-import { captureScrollableSurvey, verticalScrollSeam } from "./scrollable-survey.js";
+import {
+  captureScrollableSurvey,
+  composeScrollSurveyFrames,
+  verticalScrollSeam,
+} from "./scrollable-survey.js";
 import type { SnapshotPayload } from "./workspace-capture.js";
 
 function image(offset: number): Buffer {
@@ -24,6 +28,111 @@ test("finds a vertical overlap and detects an unchanged terminal viewport", () =
   const seam = verticalScrollSeam(image(0), image(40));
   assert.ok(seam);
   assert.ok(Math.abs(seam!.shiftY - 40) <= 2);
+});
+
+function androidScrollableFrame(shiftY: number, capturedAt: number) {
+  const width = 1080;
+  const height = 2340;
+  const bodyTop = 280;
+  const navigationTop = 2205;
+  const png = new PNG({ width, height });
+  const paint = (top: number, bottom: number, red: number, green: number, blue: number) => {
+    for (let y = Math.max(0, top); y < Math.min(height, bottom); y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        png.data[offset] = red;
+        png.data[offset + 1] = green;
+        png.data[offset + 2] = blue;
+        png.data[offset + 3] = 255;
+      }
+    }
+  };
+  paint(0, height, 23, 23, 23);
+  paint(0, 95, 35, 35, 35); // fixed status bar
+  paint(95, bodyTop, 45, 45, 45); // sticky product header
+  const nodes: SnapshotPayload["nodes"] = [
+    { identifier: "app-root", type: "Application", rect: { x: 0, y: 0, width, height } },
+    { label: "Data Controls", type: "Toolbar", rect: { x: 40, y: 150, width: 500, height: 60 } },
+  ];
+  for (let index = 0; index < 12; index += 1) {
+    const documentY = 330 + index * 190;
+    const viewportY = documentY - shiftY;
+    if (viewportY + 70 <= bodyTop || viewportY >= navigationTop) continue;
+    paint(viewportY, viewportY + 70, 70 + index * 8, 90 + index * 5, 110 + index * 3);
+    nodes.push({
+      label: `Product row ${index}`,
+      type: "TextView",
+      rect: { x: 45, y: viewportY, width: 760, height: 70 },
+    });
+  }
+  paint(navigationTop, height, 8, 8, 8);
+  nodes.push(
+    {
+      label: "Back",
+      type: "ImageView",
+      rect: { x: 100, y: navigationTop, width: 150, height: 135 },
+    },
+    {
+      label: "Home",
+      type: "ImageView",
+      rect: { x: 465, y: navigationTop, width: 150, height: 135 },
+    },
+    {
+      label: "Recents",
+      type: "ImageView",
+      rect: { x: 820, y: navigationTop, width: 150, height: 135 },
+    },
+  );
+  const bytes = PNG.sync.write(png);
+  const snapshot: SnapshotPayload = {
+    capturedAt,
+    foregroundApp: "ai.x.GrokApp",
+    nodes,
+    interactive: [],
+    bounds: { width, height },
+    inspectable: true,
+    source: "sdk",
+    screenIdentity: { fingerprint: "data-controls", nodes: [], volatileSignals: [] },
+  };
+  return {
+    bytes,
+    snapshot,
+    frame: {
+      index: capturedAt,
+      offsetY: capturedAt ? 1697 : 0,
+      appendedHeight: capturedAt ? 1697 : 0,
+      screenshot: { base64: bytes.toString("base64"), width, height, capturedAt },
+      snapshot,
+    },
+  };
+}
+
+test("composes Android chrome once using the corroborated semantic body translation", () => {
+  const first = androidScrollableFrame(0, 0);
+  const second = androidScrollableFrame(152, 1);
+  assert.equal(
+    verticalScrollSeam(first.bytes, second.bytes, first.snapshot, second.snapshot)?.shiftY,
+    152,
+  );
+  const composition = composeScrollSurveyFrames([first.frame, second.frame]);
+  assert.ok(composition?.stitched);
+  assert.equal(composition!.frames[1]?.offsetY, 152);
+  assert.equal(composition!.frames[1]?.appendedHeight, 152);
+  assert.equal(composition!.stitched?.height, 2492);
+  const stitched = PNG.sync.read(Buffer.from(composition!.stitched!.base64, "base64"));
+  const centerRed = (y: number) => stitched.data[(y * stitched.width + 540) * 4];
+  assert.notEqual(centerRed(2205), 8, "navigation chrome must not remain at the seam");
+  assert.equal(centerRed(stitched.height - 1), 8, "navigation chrome belongs at the final edge");
+  assert.equal(
+    Array.from({ length: stitched.height }, (_, y) => centerRed(y)).filter((red) => red === 8)
+      .length,
+    135,
+  );
+  assert.equal(
+    composition!.mergedNodes.filter((node) => node.label === "Data Controls").length,
+    1,
+    "sticky product chrome must appear once",
+  );
 });
 
 function snapshot(anchor = "toolbar", capturedAt = 0): SnapshotPayload {

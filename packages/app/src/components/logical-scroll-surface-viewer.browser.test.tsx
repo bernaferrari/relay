@@ -76,11 +76,15 @@ test("shows the composite first and decomposes it into raw screenshot/tree pairs
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
+  let regenerations = 0;
   const dispose = render(
     () => (
       <LogicalScrollSurfaceViewer
         surface={surface}
         evidenceUrl={(uri, mime) => `/evidence/${uri.slice(-8)}?mime=${mime}`}
+        onRegenerate={() => {
+          regenerations += 1;
+        }}
       />
     ),
     root,
@@ -97,6 +101,11 @@ test("shows the composite first and decomposes it into raw screenshot/tree pairs
   expect(root.querySelectorAll('a[href*="application/json"]')).toHaveLength(4);
   expect(root.textContent).toContain("Merged tree (42)");
   expect(root.textContent).toContain("Regeneration manifest");
+  const regenerate = [...root.querySelectorAll("button")].find(
+    (button) => button.textContent === "Rebuild from raw viewports",
+  )!;
+  regenerate.click();
+  expect(regenerations).toBe(1);
 
   dispose();
   document.body.replaceChildren();

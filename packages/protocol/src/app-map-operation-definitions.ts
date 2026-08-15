@@ -39,6 +39,8 @@ export function createAppMapOperationDefinitions(
     appMapScreenCaptureParser,
     appMapScrollSurfaceCaptureOutputParser,
     appMapScrollSurfaceCaptureParser,
+    appMapScrollSurfaceRegenerateOutputParser,
+    appMapScrollSurfaceRegenerateParser,
     appMapTeachOutputParser,
     appMapTeachParser,
     appMapTestCompileInputParser,
@@ -134,6 +136,17 @@ export function createAppMapOperationDefinitions(
         lease: "exclusive",
         input: appMapScrollSurfaceCaptureParser,
         output: appMapScrollSurfaceCaptureOutputParser,
+      },
+    ),
+    command(
+      "app-map.scroll-surface.regenerate",
+      "Regenerate one logical scroll surface from its raw evidence",
+      "POST",
+      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/:captureId/regenerate",
+      {
+        category: "authoring",
+        input: appMapScrollSurfaceRegenerateParser,
+        output: appMapScrollSurfaceRegenerateOutputParser,
       },
     ),
     command(

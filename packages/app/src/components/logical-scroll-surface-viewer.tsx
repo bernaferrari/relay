@@ -5,6 +5,8 @@ import { cn } from "../lib/cn";
 export function LogicalScrollSurfaceViewer(props: {
   surface: LogicalScrollSurface;
   evidenceUrl: (uri: string, mime: "image/png" | "application/json") => string;
+  regenerating?: boolean;
+  onRegenerate?: () => void;
 }) {
   const [view, setView] = createSignal<"composite" | "viewports">(
     props.surface.composite ? "composite" : "viewports",
@@ -144,6 +146,17 @@ export function LogicalScrollSurfaceViewer(props: {
           Regeneration manifest
         </a>
       </div>
+      <Show when={props.onRegenerate}>
+        <button
+          type="button"
+          class="min-h-11 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[9.5px] font-medium text-[var(--text-strong)] outline-none transition-[background-color,border-color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] disabled:cursor-not-allowed disabled:text-[var(--text-weaker)] motion-reduce:active:scale-100"
+          disabled={props.regenerating}
+          aria-busy={props.regenerating}
+          onClick={props.onRegenerate}
+        >
+          {props.regenerating ? "Rebuilding derived views…" : "Rebuild from raw viewports"}
+        </button>
+      </Show>
     </section>
   );
 }

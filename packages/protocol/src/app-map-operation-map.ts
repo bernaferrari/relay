@@ -123,6 +123,22 @@ export type AppMapOperationMap = {
       scrollSurface: LogicalScrollSurface;
     };
   };
+  "app-map.scroll-surface.regenerate": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      variantId: string;
+      captureId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: {
+      appMap: AppMap;
+      screen: Screen;
+      variant: ScreenVariant;
+      scrollSurface: LogicalScrollSurface;
+    };
+  };
   "app-map.teach": {
     input: {
       appMapId: string;

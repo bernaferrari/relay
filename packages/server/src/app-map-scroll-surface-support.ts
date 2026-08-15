@@ -1,4 +1,10 @@
-import type { AppMap, AuthoringTarget, Screen, ScreenVariant } from "@relay/protocol";
+import type {
+  AppMap,
+  AuthoringTarget,
+  LogicalScrollSurface,
+  Screen,
+  ScreenVariant,
+} from "@relay/protocol";
 import { HttpError } from "./http.js";
 
 /** Resolve the exact logical screen + target/locale variant before any device
@@ -47,4 +53,34 @@ export function resolveScrollSurfaceCaptureSelection(input: {
     );
   }
   return { screen, variant };
+}
+
+export function resolveScrollSurfaceRegenerationSelection(input: {
+  appMap: AppMap;
+  expectedRevision: number;
+  screenId: string;
+  variantId: string;
+  captureId: string;
+}): { screen: Screen; variant: ScreenVariant; surface: LogicalScrollSurface } {
+  if (input.appMap.revision !== input.expectedRevision) {
+    throw new HttpError(
+      409,
+      `Expected App Map revision ${input.expectedRevision}, current revision is ${input.appMap.revision}`,
+      {
+        code: "revision-conflict",
+        recovery: "Reload the App Map and retry against its current revision.",
+        current: input.appMap,
+      },
+    );
+  }
+  const screen = input.appMap.screens[input.screenId];
+  const variant = input.appMap.screenVariants[input.variantId];
+  if (!screen || !variant || variant.screenId !== screen.id) {
+    throw new HttpError(404, `Screen ${input.screenId} does not own variant ${input.variantId}`);
+  }
+  const surface = variant.scrollSurfaces?.find(
+    (candidate) => candidate.captureId === input.captureId,
+  );
+  if (!surface) throw new HttpError(404, `Scroll capture ${input.captureId} not found`);
+  return { screen, variant, surface };
 }

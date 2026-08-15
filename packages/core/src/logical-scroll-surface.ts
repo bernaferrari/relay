@@ -7,8 +7,12 @@ import type {
   ScrollSurfaceEvidence,
   TargetProfile,
 } from "@relay/protocol";
-import { persistAuthoringEvidence } from "./authoring-evidence.js";
-import type { ScrollSurveyResult } from "./scrollable-survey.js";
+import { persistAuthoringEvidence, readAuthoringEvidence } from "./authoring-evidence.js";
+import {
+  composeScrollSurveyFrames,
+  type ScrollSurveyFrame,
+  type ScrollSurveyResult,
+} from "./scrollable-survey.js";
 import { appMapFail } from "./app-map/errors.js";
 import { mutateAppMap } from "./app-map/mutation.js";
 
@@ -179,6 +183,110 @@ function surfaceEvidence(surface: LogicalScrollSurface): ScrollSurfaceEvidence[]
   ];
 }
 
+function derivedSurfaceEvidence(surface: LogicalScrollSurface): ScrollSurfaceEvidence[] {
+  return [...(surface.composite ? [surface.composite] : []), surface.mergedTree, surface.manifest];
+}
+
+async function requireRawEvidence(reference: ScrollSurfaceEvidence): Promise<Buffer> {
+  const bytes = await readAuthoringEvidence(reference.sha256);
+  if (!bytes || createHash("sha256").update(bytes).digest("hex") !== reference.sha256) {
+    appMapFail("missing-reference", `Raw scroll evidence ${reference.id} is missing or corrupt`);
+  }
+  return bytes;
+}
+
+/** Rebuild every derived view from immutable raw viewport PNG/tree evidence.
+ * No target interaction is performed and capture identity is retained. */
+export async function regenerateLogicalScrollSurface(input: {
+  surface: LogicalScrollSurface;
+  targetProfile: TargetProfile;
+}): Promise<LogicalScrollSurface> {
+  const frames: ScrollSurveyFrame[] = [];
+  for (const viewport of input.surface.viewports) {
+    const [screenshot, treeBytes] = await Promise.all([
+      requireRawEvidence(viewport.screenshot),
+      requireRawEvidence(viewport.accessibilityTree),
+    ]);
+    let snapshot: ScrollSurveyFrame["snapshot"];
+    try {
+      snapshot = JSON.parse(treeBytes.toString("utf8")) as ScrollSurveyFrame["snapshot"];
+    } catch {
+      appMapFail("invalid-map", `Raw scroll tree ${viewport.accessibilityTree.id} is invalid JSON`);
+    }
+    frames.push({
+      index: viewport.index,
+      offsetY: viewport.offsetY,
+      appendedHeight: viewport.appendedHeight,
+      screenshot: {
+        base64: screenshot.toString("base64"),
+        width: viewport.width,
+        height: viewport.height,
+        capturedAt: viewport.capturedAt,
+      },
+      snapshot,
+    });
+  }
+  const composition = composeScrollSurveyFrames(frames);
+  if (!composition?.stitched) {
+    appMapFail("invalid-map", `Raw scroll evidence no longer yields one verified visual seam`);
+  }
+  const capturedAt = input.surface.capturedAt;
+  const mergedTreeEvidence = await persistAuthoringEvidence({
+    kind: "snapshot",
+    capturedAt,
+    data: JSON.stringify({
+      schemaVersion: 1,
+      coordinateSpace: "logical-scroll-surface",
+      nodes: composition.mergedNodes,
+    }),
+    mime: "application/json",
+  });
+  const compositeEvidence = await persistAuthoringEvidence({
+    kind: "screenshot",
+    capturedAt,
+    data: Buffer.from(composition.stitched.base64, "base64"),
+    mime: "image/png",
+  });
+  const { manifest: _previousManifest, ...surfaceIdentity } = structuredClone(input.surface);
+  const withoutManifest: SurfaceWithoutManifest = {
+    ...surfaceIdentity,
+    viewports: input.surface.viewports.map((viewport, index) => ({
+      ...structuredClone(viewport),
+      offsetY: composition.frames[index]!.offsetY,
+      appendedHeight: composition.frames[index]!.appendedHeight,
+    })),
+    composite: {
+      ...evidenceReference(compositeEvidence, "image/png"),
+      mime: "image/png",
+      width: composition.stitched.width,
+      height: composition.stitched.height,
+    },
+    mergedTree: {
+      ...evidenceReference(mergedTreeEvidence, "application/json"),
+      mime: "application/json",
+      nodeCount: composition.mergedNodes.length,
+    },
+  };
+  const manifestEvidence = await persistAuthoringEvidence({
+    kind: "snapshot",
+    capturedAt,
+    data: JSON.stringify({
+      schemaVersion: 1,
+      kind: "relay.logical-scroll-surface",
+      targetProfile: input.targetProfile,
+      surface: withoutManifest,
+    }),
+    mime: "application/json",
+  });
+  return {
+    ...withoutManifest,
+    manifest: {
+      ...evidenceReference(manifestEvidence, "application/json"),
+      mime: "application/json",
+    },
+  };
+}
+
 /** Atomically attach one immutable logical surface to exactly one selected
  * Screen Variant. Other target/locale variants remain untouched. */
 export function attachAppMapScrollSurface(
@@ -224,6 +332,85 @@ export function attachAppMapScrollSurface(
         ];
       }
       variant.scrollCapturePolicy = structuredClone(input.surface.capturePolicy);
+      variant.updatedAt = context.at;
+      screen.updatedAt = context.at;
+    },
+  );
+}
+
+/** Atomically replace only derived refs/geometry for one immutable capture. */
+export function replaceAppMapScrollSurfaceDerived(
+  map: AppMap,
+  input: { screenId: string; variantId: string; surface: LogicalScrollSurface },
+  context: AppMapMutationContext,
+): AppMap {
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "screen.updated",
+      subject: { kind: "screen", id: input.screenId },
+      touched: [`screenVariants.${input.variantId}.scrollSurfaces`],
+      summary: `Regenerated scroll surface for screen ${input.screenId}`,
+    },
+    (draft) => {
+      const screen = draft.screens[input.screenId];
+      const variant = draft.screenVariants[input.variantId];
+      if (!screen || !variant || variant.screenId !== screen.id) {
+        appMapFail(
+          "missing-reference",
+          `Screen ${input.screenId} does not own variant ${input.variantId}`,
+        );
+      }
+      const index = variant.scrollSurfaces?.findIndex(
+        (surface) => surface.captureId === input.surface.captureId,
+      );
+      if (index === undefined || index < 0) {
+        appMapFail("missing-reference", `Scroll capture ${input.surface.captureId} does not exist`);
+      }
+      const existing = variant.scrollSurfaces![index]!;
+      const rawIdentity = (surface: LogicalScrollSurface) =>
+        surface.viewports.map((viewport) => ({
+          index: viewport.index,
+          capturedAt: viewport.capturedAt,
+          width: viewport.width,
+          height: viewport.height,
+          screenshot: viewport.screenshot,
+          accessibilityTree: viewport.accessibilityTree,
+        }));
+      if (
+        existing.id !== input.surface.id ||
+        existing.captureId !== input.surface.captureId ||
+        JSON.stringify(rawIdentity(existing)) !== JSON.stringify(rawIdentity(input.surface))
+      ) {
+        appMapFail("scope-mismatch", `Regeneration cannot replace logical or raw capture identity`);
+      }
+      const oldDerived = derivedSurfaceEvidence(existing);
+      variant.scrollSurfaces![index] = structuredClone(input.surface);
+      const retained = new Set(
+        variant
+          .scrollSurfaces!.flatMap((surface) => surfaceEvidence(surface))
+          .map((item) => item.id),
+      );
+      const retired = new Set(
+        oldDerived.filter((item) => !retained.has(item.id)).map((item) => item.id),
+      );
+      const retiredUris = new Set(
+        oldDerived.filter((item) => retired.has(item.id)).map((item) => item.uri),
+      );
+      const nextEvidence = surfaceEvidence(input.surface);
+      variant.evidenceIds = [
+        ...new Set([
+          ...variant.evidenceIds.filter((id) => !retired.has(id)),
+          ...nextEvidence.map((item) => item.id),
+        ]),
+      ];
+      variant.evidenceUris = [
+        ...new Set([
+          ...(variant.evidenceUris ?? []).filter((uri) => !retiredUris.has(uri)),
+          ...nextEvidence.map((item) => item.uri),
+        ]),
+      ];
       variant.updatedAt = context.at;
       screen.updatedAt = context.at;
     },

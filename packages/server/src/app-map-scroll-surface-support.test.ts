@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap } from "@relay/protocol";
 import { HttpError } from "./http.js";
-import { resolveScrollSurfaceCaptureSelection } from "./app-map-scroll-surface-support.js";
+import {
+  resolveScrollSurfaceCaptureSelection,
+  resolveScrollSurfaceRegenerationSelection,
+} from "./app-map-scroll-surface-support.js";
 
 const map = {
   revision: 7,
@@ -12,6 +15,7 @@ const map = {
       id: "settings-ja",
       screenId: "settings",
       targetProfile: { targetId: "ipad-1", platform: "ios" },
+      scrollSurfaces: [{ id: "surface-1", captureId: "capture-1" }],
     },
   },
 } as unknown as AppMap;
@@ -25,6 +29,28 @@ test("resolves only the selected target/locale Screen Variant", () => {
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
   });
   assert.equal(result.variant.id, "settings-ja");
+});
+
+test("regeneration resolves one immutable capture without a device target", () => {
+  const result = resolveScrollSurfaceRegenerationSelection({
+    appMap: map,
+    expectedRevision: 7,
+    screenId: "settings",
+    variantId: "settings-ja",
+    captureId: "capture-1",
+  });
+  assert.equal(result.surface.id, "surface-1");
+  assert.throws(
+    () =>
+      resolveScrollSurfaceRegenerationSelection({
+        appMap: map,
+        expectedRevision: 7,
+        screenId: "settings",
+        variantId: "settings-ja",
+        captureId: "missing",
+      }),
+    (error: unknown) => error instanceof HttpError && error.status === 404,
+  );
 });
 
 test("rejects stale and target-mismatched selections before device control", () => {

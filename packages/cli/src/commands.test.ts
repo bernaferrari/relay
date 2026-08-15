@@ -198,6 +198,26 @@ test("screen capture-scroll targets one durable Screen Variant", () => {
   assert.match(help?.note ?? "", /should remain viewport-only/u);
 });
 
+test("screen regenerate-scroll rebuilds derived views without device input", () => {
+  assert.deepEqual(
+    resolveCommand(
+      ["screen", "regenerate-scroll", "map-1", "settings", "settings-ja", "capture-1"],
+      { expectedRevision: 13 },
+    ),
+    {
+      operationId: "app-map.scroll-surface.regenerate",
+      commandPath: "screen regenerate-scroll",
+      input: {
+        appMapId: "map-1",
+        screenId: "settings",
+        variantId: "settings-ja",
+        captureId: "capture-1",
+        expectedRevision: 13,
+      },
+    },
+  );
+});
+
 test("persisted run replay has one friendly watched command", () => {
   assert.deepEqual(resolveCommand(["run", "replay", "run-1"]), {
     operationId: "run.replay",
