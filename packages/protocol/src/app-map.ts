@@ -6,6 +6,7 @@ import type { TargetProfile } from "./target-contract.js";
 import type { LogicalScrollSurface, ScrollSurfaceCapturePolicy } from "./scroll-surface.js";
 export type {
   LogicalScrollSurface,
+  LogicalScrollSurfaceImport,
   ScrollSurfaceCapturePolicy,
   ScrollSurfaceEvidence,
   ScrollSurfaceStopReason,

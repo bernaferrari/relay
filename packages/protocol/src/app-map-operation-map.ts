@@ -15,6 +15,7 @@ import type {
   CreateScreenInput,
   MapGroup,
   LogicalScrollSurface,
+  LogicalScrollSurfaceImport,
   Proposal,
   SaveFlowInput,
   SaveRoutineInput,
@@ -198,7 +199,7 @@ export type AppMapOperationMap = {
       eventId?: string;
       dryRun?: boolean;
       targetTitle?: string;
-      importedSurface?: LogicalScrollSurface;
+      surfaceImport?: LogicalScrollSurfaceImport;
     };
     output: {
       appMap: AppMap;

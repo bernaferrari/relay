@@ -363,6 +363,12 @@ function mergedSurveyNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
   return merged;
 }
 
+/** Merge accessibility nodes using already-validated explicit document
+ * offsets. Unlike visual composition, this never guesses or changes seams. */
+export function mergeScrollSurfaceNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
+  return mergedSurveyNodes(frames);
+}
+
 function stitchSurveyFrames(
   frames: ScrollSurveyFrame[],
 ): ScrollSurveyResult["stitched"] | undefined {

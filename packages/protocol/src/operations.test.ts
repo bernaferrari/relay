@@ -115,6 +115,12 @@ test("map teach accepts a point tap without expectedRevision", () => {
 });
 
 test("screen consolidation validates a read-only preview request", () => {
+  const evidence = {
+    id: "evidence",
+    uri: `relay-evidence://${"a".repeat(64)}`,
+    sha256: "a".repeat(64),
+    bytes: 1,
+  };
   const parsed = operationDefinition("app-map.screen.consolidate").input.parse({
     appMapId: "grok",
     targetScreenId: "settings",
@@ -122,12 +128,34 @@ test("screen consolidation validates a read-only preview request", () => {
     expectedRevision: 12,
     dryRun: true,
     targetTitle: "Settings",
-    importedSurface: { schemaVersion: 1 },
+    surfaceImport: {
+      schemaVersion: 1,
+      id: "settings-surface",
+      targetProfileId: "pixel",
+      capturePolicy: {
+        captureMode: "full-surface",
+        source: "explicit",
+        reason: "Imported viewports",
+        decidedAt: 1,
+      },
+      message: "Seam remains ambiguous",
+      restoredStartViewport: true,
+      viewports: [0, 1].map((index) => ({
+        index,
+        offsetY: index,
+        appendedHeight: 1,
+        capturedAt: index + 1,
+        width: 1,
+        height: 1,
+        screenshot: { ...evidence, mime: "image/png" },
+        accessibilityTree: { ...evidence, mime: "application/json" },
+      })),
+    },
   });
   assert.deepEqual(parsed.sourceScreenIds, ["settings-middle", "settings-bottom"]);
   assert.equal(parsed.dryRun, true);
   assert.equal(parsed.targetTitle, "Settings");
-  assert.equal(parsed.importedSurface?.schemaVersion, 1);
+  assert.equal(parsed.surfaceImport?.schemaVersion, 1);
   assert.throws(
     () =>
       operationDefinition("app-map.screen.consolidate").input.parse({

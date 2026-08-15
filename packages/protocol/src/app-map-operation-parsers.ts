@@ -459,8 +459,56 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     if (input.dryRun !== undefined) boolean(input.dryRun, "screen consolidation dryRun");
     if (input.targetTitle !== undefined)
       string(input.targetTitle, "screen consolidation targetTitle");
-    if (input.importedSurface !== undefined)
-      record(input.importedSurface, "screen consolidation importedSurface");
+    if (input.surfaceImport !== undefined) {
+      const surface = record(input.surfaceImport, "screen consolidation surfaceImport");
+      number(surface.schemaVersion, "screen consolidation surfaceImport schemaVersion");
+      string(surface.id, "screen consolidation surfaceImport id");
+      string(surface.targetProfileId, "screen consolidation surfaceImport targetProfileId");
+      string(surface.message, "screen consolidation surfaceImport message");
+      boolean(
+        surface.restoredStartViewport,
+        "screen consolidation surfaceImport restoredStartViewport",
+      );
+      const policy = record(
+        surface.capturePolicy,
+        "screen consolidation surfaceImport capturePolicy",
+      );
+      string(policy.captureMode, "screen consolidation surfaceImport captureMode");
+      string(policy.source, "screen consolidation surfaceImport source");
+      string(policy.reason, "screen consolidation surfaceImport reason");
+      number(policy.decidedAt, "screen consolidation surfaceImport decidedAt");
+      if (!Array.isArray(surface.viewports) || surface.viewports.length < 2) {
+        fail("screen consolidation surfaceImport viewports", "must contain at least two items");
+      }
+      const parseEvidence = (value: unknown, label: string) => {
+        const evidence = record(value, label);
+        string(evidence.id, `${label} id`);
+        string(evidence.uri, `${label} uri`);
+        string(evidence.sha256, `${label} sha256`);
+        string(evidence.mime, `${label} mime`);
+        number(evidence.bytes, `${label} bytes`);
+      };
+      (surface.viewports as unknown[]).forEach((value, index) => {
+        const viewport = record(value, `screen consolidation surfaceImport viewport ${index}`);
+        for (const field of [
+          "index",
+          "offsetY",
+          "appendedHeight",
+          "capturedAt",
+          "width",
+          "height",
+        ] as const)
+          number(viewport[field], `screen consolidation surfaceImport viewport ${index} ${field}`);
+        parseEvidence(
+          viewport.screenshot,
+          `screen consolidation surfaceImport viewport ${index} screenshot`,
+        );
+        parseEvidence(
+          viewport.accessibilityTree,
+          `screen consolidation surfaceImport viewport ${index} accessibilityTree`,
+        );
+      });
+    }
   });
 
   const appMapScreenConsolidateOutputParser = objectParser<

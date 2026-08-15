@@ -3,13 +3,16 @@ import type {
   AppMap,
   AppMapMutationContext,
   LogicalScrollSurface,
+  LogicalScrollSurfaceImport,
   ScrollSurfaceCapturePolicy,
   ScrollSurfaceEvidence,
   TargetProfile,
 } from "@relay/protocol";
+import { PNG } from "pngjs";
 import { persistAuthoringEvidence, readAuthoringEvidence } from "./authoring-evidence.js";
 import {
   composeScrollSurveyFrames,
+  mergeScrollSurfaceNodes,
   type ScrollSurveyFrame,
   type ScrollSurveyResult,
 } from "./scrollable-survey.js";
@@ -29,6 +32,20 @@ function evidenceReference(
     sha256: evidence.sha256,
     mime,
     bytes: evidence.bytes ?? 0,
+  };
+}
+
+function evidenceReferenceForBytes(
+  bytes: Buffer,
+  mime: ScrollSurfaceEvidence["mime"],
+): ScrollSurfaceEvidence {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return {
+    id: `evidence-${sha256.slice(0, 24)}`,
+    uri: `relay-evidence://${sha256}`,
+    sha256,
+    mime,
+    bytes: bytes.byteLength,
   };
 }
 
@@ -188,11 +205,163 @@ function derivedSurfaceEvidence(surface: LogicalScrollSurface): ScrollSurfaceEvi
 }
 
 async function requireRawEvidence(reference: ScrollSurfaceEvidence): Promise<Buffer> {
+  if (reference.uri !== `relay-evidence://${reference.sha256}`) {
+    appMapFail("invalid-map", `Raw scroll evidence ${reference.id} has an invalid URI`);
+  }
   const bytes = await readAuthoringEvidence(reference.sha256);
-  if (!bytes || createHash("sha256").update(bytes).digest("hex") !== reference.sha256) {
+  if (
+    !bytes ||
+    bytes.byteLength !== reference.bytes ||
+    createHash("sha256").update(bytes).digest("hex") !== reference.sha256
+  ) {
     appMapFail("missing-reference", `Raw scroll evidence ${reference.id} is missing or corrupt`);
   }
   return bytes;
+}
+
+/** Materialize an imported seam-ambiguous logical surface from existing raw
+ * CAS evidence. Derived refs are computed in memory for previews and written
+ * only when requested; callers never supply authoritative derived artifacts. */
+export async function materializeLogicalScrollSurfaceImport(input: {
+  surfaceImport: LogicalScrollSurfaceImport;
+  targetProfile: TargetProfile;
+  ownedEvidenceIds: ReadonlySet<string>;
+  ownedEvidenceUris: ReadonlySet<string>;
+  persist: boolean;
+}): Promise<LogicalScrollSurface> {
+  const imported = input.surfaceImport;
+  if (
+    imported.schemaVersion !== 1 ||
+    imported.targetProfileId !== input.targetProfile.id ||
+    imported.capturePolicy?.captureMode !== "full-surface" ||
+    !Array.isArray(imported.viewports) ||
+    imported.viewports.length < 2 ||
+    imported.viewports.length > 7
+  ) {
+    appMapFail("invalid-map", "Logical surface import metadata is invalid");
+  }
+  const frames: ScrollSurveyFrame[] = [];
+  for (const viewport of imported.viewports) {
+    for (const reference of [viewport.screenshot, viewport.accessibilityTree]) {
+      if (
+        !input.ownedEvidenceIds.has(reference.id) ||
+        !input.ownedEvidenceUris.has(reference.uri)
+      ) {
+        appMapFail("scope-mismatch", `Raw viewport evidence ${reference.id} is not map-owned`);
+      }
+    }
+    if (viewport.screenshot.mime !== "image/png") {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} screenshot must be PNG`);
+    }
+    if (viewport.accessibilityTree.mime !== "application/json") {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} tree must be JSON`);
+    }
+    const [screenshotBytes, treeBytes] = await Promise.all([
+      requireRawEvidence(viewport.screenshot),
+      requireRawEvidence(viewport.accessibilityTree),
+    ]);
+    let decoded: PNG;
+    try {
+      decoded = PNG.sync.read(screenshotBytes);
+    } catch {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} screenshot is not a valid PNG`);
+    }
+    if (decoded.width !== viewport.width || decoded.height !== viewport.height) {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} dimensions do not match its PNG`);
+    }
+    let snapshot: ScrollSurveyFrame["snapshot"];
+    try {
+      snapshot = JSON.parse(treeBytes.toString("utf8")) as ScrollSurveyFrame["snapshot"];
+    } catch {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} tree is invalid JSON`);
+    }
+    if (!snapshot || !Array.isArray(snapshot.nodes)) {
+      appMapFail("invalid-map", `Raw viewport ${viewport.index} tree has no nodes`);
+    }
+    frames.push({
+      index: viewport.index,
+      offsetY: viewport.offsetY,
+      appendedHeight: viewport.appendedHeight,
+      screenshot: {
+        base64: screenshotBytes.toString("base64"),
+        width: viewport.width,
+        height: viewport.height,
+        capturedAt: viewport.capturedAt,
+      },
+      snapshot,
+    });
+  }
+  const capturedAt = imported.viewports[0]!.capturedAt;
+  const mergedNodes = mergeScrollSurfaceNodes(frames);
+  const mergedTreeBytes = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      coordinateSpace: "logical-scroll-surface",
+      nodes: mergedNodes,
+    }),
+  );
+  const mergedTree = {
+    ...evidenceReferenceForBytes(mergedTreeBytes, "application/json"),
+    mime: "application/json" as const,
+    nodeCount: mergedNodes.length,
+  };
+  const withoutManifest: SurfaceWithoutManifest = {
+    schemaVersion: 1,
+    id: imported.id,
+    captureId: stableCaptureId({
+      targetProfileId: input.targetProfile.id,
+      capturedAt,
+      evidence: [
+        ...imported.viewports.flatMap((viewport) => [
+          viewport.screenshot,
+          viewport.accessibilityTree,
+        ]),
+        mergedTree,
+      ],
+    }),
+    targetProfileId: input.targetProfile.id,
+    capturePolicy: structuredClone(imported.capturePolicy),
+    capturedAt,
+    status: "stopped",
+    reason: "seam-ambiguous",
+    message: imported.message,
+    restoredStartViewport: imported.restoredStartViewport,
+    viewports: structuredClone(imported.viewports),
+    mergedTree,
+  };
+  const manifestBytes = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "relay.logical-scroll-surface",
+      targetProfile: input.targetProfile,
+      surface: withoutManifest,
+    }),
+  );
+  const manifest = {
+    ...evidenceReferenceForBytes(manifestBytes, "application/json"),
+    mime: "application/json" as const,
+  };
+  if (input.persist) {
+    const persistedMergedTree = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt,
+      data: mergedTreeBytes,
+      mime: "application/json",
+    });
+    const persistedManifest = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt,
+      data: manifestBytes,
+      mime: "application/json",
+    });
+    if (
+      persistedMergedTree.sha256 !== mergedTree.sha256 ||
+      persistedManifest.sha256 !== manifest.sha256
+    ) {
+      throw new Error("Persisted logical surface artifacts do not match their derivation");
+    }
+  }
+  return { ...withoutManifest, manifest };
 }
 
 /** Rebuild every derived view from immutable raw viewport PNG/tree evidence.
@@ -201,6 +370,27 @@ export async function regenerateLogicalScrollSurface(input: {
   surface: LogicalScrollSurface;
   targetProfile: TargetProfile;
 }): Promise<LogicalScrollSurface> {
+  if (input.surface.reason === "seam-ambiguous" && !input.surface.composite) {
+    const rawEvidence = input.surface.viewports.flatMap((viewport) => [
+      viewport.screenshot,
+      viewport.accessibilityTree,
+    ]);
+    return materializeLogicalScrollSurfaceImport({
+      surfaceImport: {
+        schemaVersion: 1,
+        id: input.surface.id,
+        targetProfileId: input.surface.targetProfileId,
+        capturePolicy: structuredClone(input.surface.capturePolicy),
+        message: input.surface.message,
+        restoredStartViewport: input.surface.restoredStartViewport,
+        viewports: structuredClone(input.surface.viewports),
+      },
+      targetProfile: input.targetProfile,
+      ownedEvidenceIds: new Set(rawEvidence.map(({ id }) => id)),
+      ownedEvidenceUris: new Set(rawEvidence.map(({ uri }) => uri)),
+      persist: true,
+    });
+  }
   const frames: ScrollSurveyFrame[] = [];
   for (const viewport of input.surface.viewports) {
     const [screenshot, treeBytes] = await Promise.all([

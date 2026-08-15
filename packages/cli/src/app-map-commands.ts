@@ -354,10 +354,10 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           description: "Optional canonical title applied atomically",
         },
         {
-          name: "importedSurface",
-          type: "LogicalScrollSurface",
+          name: "surfaceImport",
+          type: "LogicalScrollSurfaceImport",
           description:
-            "Ordered, content-addressed raw viewport evidence for one decomposable logical surface",
+            "Ordered raw viewport evidence and offsets; Relay derives the merged tree and manifest",
         },
       ],
       examples: [

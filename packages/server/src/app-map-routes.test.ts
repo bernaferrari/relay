@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   createDiscoverySession,
+  materializeLogicalScrollSurfaceImport,
+  mutateStoredAppMap,
+  persistAuthoringEvidence,
+  readAuthoringEvidence,
   recordObservedScreen,
   recordObservedTransition,
+  regenerateLogicalScrollSurface,
   setDiscoveryStatus,
 } from "@relay/core";
 import { startServer } from "./index.js";
@@ -979,6 +984,280 @@ test("screen consolidation previews without writing, then applies one revision",
     });
     assert.equal(repeated.appMap.revision, 4);
     assert.deepEqual(repeated.preview, applied.preview);
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("screen consolidation materializes only server-derived surface artifacts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-screen-consolidate-evidence-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:mapper",
+      actorKind: "human",
+    });
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const saveRaw = async (kind: "screenshot" | "snapshot", data: Buffer | string) =>
+      persistAuthoringEvidence({
+        kind,
+        capturedAt: 10,
+        data,
+        mime: kind === "screenshot" ? "image/png" : "application/json",
+      });
+    const screenshot = await saveRaw("screenshot", png);
+    const topTree = await saveRaw(
+      "snapshot",
+      JSON.stringify({
+        inspectable: true,
+        nodes: [{ role: "cell", label: "Appearance", rect: { x: 0, y: 0, width: 1, height: 1 } }],
+      }),
+    );
+    const bottomTree = await saveRaw(
+      "snapshot",
+      JSON.stringify({
+        inspectable: true,
+        nodes: [{ role: "cell", label: "Kids Mode", rect: { x: 0, y: 0, width: 1, height: 1 } }],
+      }),
+    );
+    const ref = <T extends "image/png" | "application/json">(
+      evidence: typeof screenshot,
+      mime: T,
+    ) => ({
+      id: evidence.id,
+      uri: evidence.uri,
+      sha256: evidence.sha256!,
+      bytes: evidence.bytes!,
+      mime,
+    });
+    const screenshotRef = ref(screenshot, "image/png");
+    const topTreeRef = ref(topTree, "application/json");
+    const bottomTreeRef = ref(bottomTree, "application/json");
+    await client.invoke("app-map.create", { appMapId: "settings-evidence", name: "Settings" });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "settings-evidence",
+      expectedRevision: 0,
+      screen: { id: "settings", title: "Settings top" },
+    });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "settings-evidence",
+      expectedRevision: 1,
+      screen: { id: "settings-bottom", title: "Settings bottom" },
+    });
+    const targetProfile = {
+      id: "pixel",
+      targetId: "phone",
+      source: "device" as const,
+      platform: "android" as const,
+      name: "Pixel",
+      capabilities: ["snapshot" as const, "screenshot" as const],
+      observedAt: 10,
+    };
+    await mutateStoredAppMap("mobile", "settings-evidence", (current) => {
+      const next = structuredClone(current);
+      const mutationAt = current.updatedAt + 1;
+      const variantEntity = (id: string) => ({
+        id,
+        organizationId: current.organizationId,
+        projectId: current.projectId,
+        appMapId: current.id,
+        createdAt: mutationAt,
+        updatedAt: mutationAt,
+      });
+      next.screenVariants.top = {
+        ...variantEntity("top"),
+        screenId: "settings",
+        targetProfile,
+        observation: { fingerprint: "1".repeat(64), nodes: [], volatileSignals: [] },
+        evidenceIds: [screenshotRef.id, topTreeRef.id],
+        evidenceUris: [screenshotRef.uri, topTreeRef.uri],
+      };
+      next.screenVariants.bottom = {
+        ...variantEntity("bottom"),
+        screenId: "settings-bottom",
+        targetProfile,
+        observation: { fingerprint: "2".repeat(64), nodes: [], volatileSignals: [] },
+        evidenceIds: [screenshotRef.id, bottomTreeRef.id],
+        evidenceUris: [screenshotRef.uri, bottomTreeRef.uri],
+      };
+      next.screens.settings!.variantIds = ["top"];
+      next.screens["settings-bottom"]!.variantIds = ["bottom"];
+      next.revision += 1;
+      next.updatedAt = mutationAt;
+      return next;
+    });
+    await client.invoke("app-map.connection.create", {
+      appMapId: "settings-evidence",
+      expectedRevision: 3,
+      connection: {
+        id: "kids",
+        fromScreenId: "settings-bottom",
+        destination: { kind: "end" },
+        actions: [{ id: "tap-kids", kind: "tap", target: { label: "Kids Mode" } }],
+      },
+    });
+    const surfaceImport = {
+      schemaVersion: 1 as const,
+      id: "settings-surface",
+      targetProfileId: "pixel",
+      capturePolicy: {
+        captureMode: "full-surface" as const,
+        source: "explicit" as const,
+        reason: "Settings is one logical surface",
+        decidedAt: 10,
+      },
+      message: "Offsets were imported; no visual seam was claimed",
+      restoredStartViewport: true,
+      viewports: [
+        {
+          index: 0,
+          offsetY: 0,
+          appendedHeight: 1,
+          capturedAt: 10,
+          width: 1,
+          height: 1,
+          screenshot: screenshotRef,
+          accessibilityTree: topTreeRef,
+        },
+        {
+          index: 1,
+          offsetY: 1,
+          appendedHeight: 1,
+          capturedAt: 11,
+          width: 1,
+          height: 1,
+          screenshot: screenshotRef,
+          accessibilityTree: bottomTreeRef,
+        },
+      ],
+    };
+    const evidenceDirectory = join(root, "authoring-evidence");
+    const beforeDryRun = (await readdir(evidenceDirectory)).sort();
+    const dryRun = await client.invoke("app-map.screen.consolidate", {
+      appMapId: "settings-evidence",
+      targetScreenId: "settings",
+      sourceScreenIds: ["settings-bottom"],
+      expectedRevision: 4,
+      dryRun: true,
+      surfaceImport,
+    });
+    assert.equal(dryRun.applied, false);
+    assert.deepEqual((await readdir(evidenceDirectory)).sort(), beforeDryRun);
+
+    await assert.rejects(
+      client.invoke("app-map.screen.consolidate", {
+        appMapId: "settings-evidence",
+        targetScreenId: "settings",
+        sourceScreenIds: ["settings-bottom"],
+        expectedRevision: 4,
+        surfaceImport: {
+          ...surfaceImport,
+          viewports: [
+            surfaceImport.viewports[0]!,
+            {
+              ...surfaceImport.viewports[1]!,
+              accessibilityTree: {
+                ...surfaceImport.viewports[1]!.accessibilityTree,
+                sha256: "f".repeat(64),
+                uri: `relay-evidence://${"f".repeat(64)}`,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    assert.equal(
+      (await client.invoke("app-map.get", { appMapId: "settings-evidence" })).appMap.revision,
+      4,
+    );
+    assert.deepEqual((await readdir(evidenceDirectory)).sort(), beforeDryRun);
+
+    const planned = await materializeLogicalScrollSurfaceImport({
+      surfaceImport,
+      targetProfile,
+      ownedEvidenceIds: new Set([screenshotRef.id, topTreeRef.id, bottomTreeRef.id]),
+      ownedEvidenceUris: new Set([screenshotRef.uri, topTreeRef.uri, bottomTreeRef.uri]),
+      persist: false,
+    });
+    const corruptManifestPath = join(evidenceDirectory, planned.manifest.sha256);
+    await writeFile(corruptManifestPath, "partial manifest");
+    await assert.rejects(
+      client.invoke("app-map.screen.consolidate", {
+        appMapId: "settings-evidence",
+        targetScreenId: "settings",
+        sourceScreenIds: ["settings-bottom"],
+        expectedRevision: 4,
+        eventId: "failed-materialization",
+        surfaceImport,
+      }),
+      /corrupt/,
+    );
+    assert.equal(
+      (await client.invoke("app-map.get", { appMapId: "settings-evidence" })).appMap.revision,
+      4,
+    );
+    await unlink(corruptManifestPath);
+
+    const applied = await client.invoke("app-map.screen.consolidate", {
+      appMapId: "settings-evidence",
+      targetScreenId: "settings",
+      sourceScreenIds: ["settings-bottom"],
+      expectedRevision: 4,
+      eventId: "materialize-settings",
+      targetTitle: "Settings",
+      surfaceImport,
+    });
+    const surface = applied.appMap.screenVariants.top!.scrollSurfaces![0]!;
+    assert.equal(surface.composite, undefined);
+    assert.deepEqual(
+      surface.viewports.map(({ offsetY }) => offsetY),
+      [0, 1],
+    );
+    const mergedTree = JSON.parse(
+      (await readAuthoringEvidence(surface.mergedTree.sha256))!.toString("utf8"),
+    );
+    assert.deepEqual(
+      mergedTree.nodes.map(({ label }: { label: string }) => label),
+      ["Appearance", "Kids Mode"],
+    );
+    const manifest = JSON.parse(
+      (await readAuthoringEvidence(surface.manifest.sha256))!.toString("utf8"),
+    );
+    assert.equal(manifest.surface.captureId, surface.captureId);
+    assert.equal(manifest.surface.manifest, undefined);
+    const resource = await fetch(
+      `http://127.0.0.1:${server.port}/authoring-evidence/${surface.manifest.sha256}?mime=application/json`,
+      { headers: { "X-Organization-Id": "acme", "X-Project-Id": "mobile" } },
+    );
+    assert.equal(resource.status, 200);
+    const regenerated = await materializeLogicalScrollSurfaceImport({
+      surfaceImport,
+      targetProfile,
+      ownedEvidenceIds: new Set([screenshotRef.id, topTreeRef.id, bottomTreeRef.id]),
+      ownedEvidenceUris: new Set([screenshotRef.uri, topTreeRef.uri, bottomTreeRef.uri]),
+      persist: false,
+    });
+    assert.equal(regenerated.mergedTree.sha256, surface.mergedTree.sha256);
+    assert.equal(regenerated.manifest.sha256, surface.manifest.sha256);
+    const regeneratedFromSavedSurface = await regenerateLogicalScrollSurface({
+      surface,
+      targetProfile,
+    });
+    assert.equal(regeneratedFromSavedSurface.captureId, surface.captureId);
+    assert.equal(regeneratedFromSavedSurface.manifest.sha256, surface.manifest.sha256);
+    assert.equal(applied.appMap.revision, 5);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

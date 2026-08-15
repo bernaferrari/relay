@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, open, readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { AuthoringEvidence } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
@@ -43,11 +43,22 @@ export async function persistAuthoringEvidence(input: {
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   await mkdir(evidenceDirectory(), { recursive: true, mode: 0o700 });
   const destination = join(evidenceDirectory(), sha256);
+  const temporary = join(evidenceDirectory(), `.${sha256}.${randomUUID()}.tmp`);
   try {
-    await writeDurably(destination, bytes);
+    await writeDurably(temporary, bytes);
+    await link(temporary, destination);
     await syncDirectory(evidenceDirectory());
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    const existing = await readFile(destination);
+    if (
+      existing.byteLength !== bytes.byteLength ||
+      createHash("sha256").update(existing).digest("hex") !== sha256
+    ) {
+      throw new Error(`Existing authoring evidence ${sha256} is corrupt`);
+    }
+  } finally {
+    await unlink(temporary).catch(() => undefined);
   }
   return {
     id: `evidence-${sha256.slice(0, 24)}`,

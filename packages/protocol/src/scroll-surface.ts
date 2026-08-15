@@ -82,3 +82,17 @@ export type LogicalScrollSurface = {
    * surface without loading the entire App Map. */
   manifest: ScrollSurfaceEvidence & { mime: "application/json" };
 };
+
+/** Public import boundary for viewport captures that already exist in Relay's
+ * evidence store. Callers provide only immutable raw evidence and explicit
+ * document offsets; Relay derives and owns the merged tree, capture identity,
+ * and manifest. */
+export type LogicalScrollSurfaceImport = {
+  schemaVersion: 1;
+  id: string;
+  targetProfileId: string;
+  capturePolicy: ScrollSurfaceCapturePolicy & { captureMode: "full-surface" };
+  message: string;
+  restoredStartViewport: boolean;
+  viewports: ScrollSurfaceViewport[];
+};
