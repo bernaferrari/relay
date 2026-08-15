@@ -70,6 +70,7 @@ function resilientScreenIdentityMatch(
   observed: ReturnType<typeof observeScreenIdentity>,
   observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
   job?: TestJob,
+  options: { allowDynamicShell?: boolean } = {},
 ): boolean {
   const localized = isLocalizedRecipeJob(job);
   const structureSignature = localeNeutralStructureSignature(observed);
@@ -97,7 +98,7 @@ function resilientScreenIdentityMatch(
       sharedIdentifiers.length === observedIdentifiers.size &&
       (structure ?? 0) >= 0.95;
     return (
-      stableApplicationShell ||
+      (options.allowDynamicShell !== false && stableApplicationShell) ||
       (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
       (localized &&
         structureSignature !== undefined &&

@@ -223,7 +223,9 @@ async function runRequiredRecipeStep(
           (step.until.observations ?? []).some(
             (observation) => compareScreenIdentity(observed, observation).decision === "match",
           ) ||
-          resilientScreenIdentityMatch(observed, step.until.observations ?? [], ctx.job)
+          resilientScreenIdentityMatch(observed, step.until.observations ?? [], ctx.job, {
+            allowDynamicShell: false,
+          })
         ) {
           ctx.log(
             attempt
@@ -238,8 +240,10 @@ async function runRequiredRecipeStep(
           );
         }
         repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
-        if (repeated >= 1) {
-          throw new Error(`reveal-screen: reached the list edge before “${step.until.screenTitle}”`);
+        if (repeated >= 2) {
+          throw new Error(
+            `reveal-screen: reached the list edge before “${step.until.screenTitle}”`,
+          );
         }
         previousFingerprint = observed.fingerprint;
         await performScroll();

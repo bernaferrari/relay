@@ -143,9 +143,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           if (
             raw.until.aliases !== undefined &&
             (!Array.isArray(raw.until.aliases) ||
-              !raw.until.aliases.every(
-                (alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias),
-              ))
+              !raw.until.aliases.every((alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias)))
           ) {
             throw stepErr(index, "scroll.until.aliases must be SHA-256 fingerprints");
           }

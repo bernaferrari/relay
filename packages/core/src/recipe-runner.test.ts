@@ -851,6 +851,45 @@ describe("runRecipeStep campaign check policy", () => {
   });
 });
 
+describe("runRecipeStep semantic reveal", () => {
+  it("scrolls only until the mapped destination identity is visible", async () => {
+    const before = [{ role: "button", identifier: "top", label: "Top" }];
+    const middle = [{ role: "button", identifier: "middle", label: "Middle" }];
+    const destination = [{ role: "button", identifier: "advanced", label: "Advanced" }];
+    const destinationIdentity = observeScreenIdentity(destination);
+    let viewport = 0;
+    let scrolls = 0;
+
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: viewport === 0 ? before : viewport === 1 ? middle : destination,
+          }),
+        scroll: () => {
+          viewport += 1;
+          scrolls += 1;
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "scroll",
+        direction: "down",
+        until: {
+          screenId: "advanced",
+          screenTitle: "Advanced",
+          fingerprint: destinationIdentity.fingerprint,
+          observations: [destinationIdentity],
+        },
+        maxAttempts: 8,
+      },
+      noLog,
+    );
+
+    assert.equal(scrolls, 2);
+  });
+});
+
 describe("runRecipeStep conditional policy", () => {
   it("skips a step when its present condition is false", async () => {
     const logs: string[] = [];

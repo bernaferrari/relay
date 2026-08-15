@@ -152,6 +152,29 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.equal(root.stepProvenance[3]!.origin, "destination");
 });
 
+test("compiles mapped scroll navigation as a semantic reveal", () => {
+  const map = fixture();
+  map.connections["open-home"] = {
+    ...map.connections["open-home"]!,
+    actions: [
+      {
+        id: "scroll-home",
+        kind: "gesture",
+        gesture: { kind: "scroll", direction: "down", amount: 1 },
+      },
+    ],
+  };
+  const root = compileAppMapFlow(map, "checkout").recipes["app-map:map-1:flow:checkout:r7"]!;
+  const scroll = root.steps.find(
+    (step): step is Extract<(typeof root.steps)[number], { kind: "scroll" }> =>
+      step.kind === "scroll",
+  );
+
+  assert.equal(scroll?.until?.screenId, "home");
+  assert.equal(scroll?.until?.fingerprint, "b".repeat(64));
+  assert.equal(scroll?.maxAttempts, 12);
+});
+
 test("compiles a saved flow only through the selected connection", () => {
   const map = fixture();
   map.screens.receipt = {

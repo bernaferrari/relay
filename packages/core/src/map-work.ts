@@ -80,7 +80,60 @@ function recipeGraphFromCompiledFlow(
  * menu navigation. The cold Flow remains authoritative for the first test in
  * a world and whenever a tour is run on its own.
  */
+function scrollFamilyScreenIds(map: AppMap, startScreenId: string): Set<string> {
+  const family = new Set([startScreenId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const connection of Object.values(map.connections ?? {}) as Connection[]) {
+      if (connection.destination.kind !== "screen") continue;
+      const isScroll = connection.actions.some(
+        (action) =>
+          (action.kind === "gesture" && action.gesture.kind === "scroll") ||
+          recordedOrAuthoredSteps(action).some((step) => step.kind === "scroll"),
+      );
+      if (!isScroll) continue;
+      const destinationId = connection.destination.screenId;
+      if (family.has(connection.fromScreenId) && !family.has(destinationId)) {
+        family.add(destinationId);
+        changed = true;
+      } else if (family.has(destinationId) && !family.has(connection.fromScreenId)) {
+        family.add(connection.fromScreenId);
+        changed = true;
+      }
+    }
+  }
+  return family;
+}
+
+function scrollFamilyExpectation(
+  map: AppMap,
+  expectation: Extract<RecipeStep, { kind: "expect-screen" }>,
+): Extract<RecipeStep, { kind: "expect-screen" }> {
+  const screenIds = scrollFamilyScreenIds(map, expectation.screenId);
+  if (screenIds.size === 1) return expectation;
+  const aliases = new Set(expectation.aliases ?? []);
+  const observations = [...(expectation.observations ?? [])];
+  for (const screenId of screenIds) {
+    if (screenId === expectation.screenId) continue;
+    const screen = map.screens[screenId];
+    if (!screen?.identity) continue;
+    aliases.add(screen.identity.fingerprint);
+    for (const alias of screen.identity.aliases ?? []) aliases.add(alias);
+    for (const variantId of screen.variantIds) {
+      const observation = map.screenVariants[variantId]?.observation;
+      if (observation?.nodes.length) observations.push(structuredClone(observation));
+    }
+  }
+  return {
+    ...expectation,
+    ...(aliases.size ? { aliases: [...aliases] } : {}),
+    ...(observations.length ? { observations } : {}),
+  };
+}
+
 function warmCompiledFlowGraphFromSharedPrefix(
+  map: AppMap,
   graph: Record<string, Recipe>,
   plan: AppMapCompiledFlow,
   previousPlan?: AppMapCompiledFlow,
@@ -138,6 +191,7 @@ function warmCompiledFlowGraphFromSharedPrefix(
   // rather than manufacture an unverifiable recovery target.
   if (sourceIndex < 0 || !terminalExpectation) return graph;
 
+  const warmExpectation = scrollFamilyExpectation(map, terminalExpectation);
   return {
     ...graph,
     [plan.rootRecipeId]: {
@@ -145,8 +199,8 @@ function warmCompiledFlowGraphFromSharedPrefix(
       title: root.title.replace(/cold start/iu, "warm recovery"),
       steps: [
         {
-          ...structuredClone(terminalExpectation),
-          id: `${terminalExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
+          ...structuredClone(warmExpectation),
+          id: `${warmExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
           recovery: { strategy: "back", maxAttempts: 8, restoreParentViewport: true },
         },
         ...root.steps.slice(suffixStart),
@@ -555,6 +609,7 @@ export function compileAppMapTest(
     let graph = recipeGraphFromCompiledFlow(map, plan);
     if (options.warmSetup) {
       graph = warmCompiledFlowGraphFromSharedPrefix(
+        map,
         graph,
         plan,
         options.warmSetupFrom,
@@ -775,6 +830,7 @@ export function compileAppMapTest(
       ...(setupGraph
         ? options.warmSetup
           ? warmCompiledFlowGraphFromSharedPrefix(
+              map,
               setupGraph,
               setupPlan!,
               options.warmSetupFrom,

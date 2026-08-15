@@ -293,6 +293,10 @@ test("a combined tour returns only to its shared root instead of Home", () => {
     maxAttempts: 8,
     restoreParentViewport: true,
   });
+  assert.equal(
+    source?.kind === "expect-screen" ? source.aliases?.includes("c".repeat(64)) : false,
+    true,
+  );
   assert.equal(setup.steps[2]?.kind, "scroll");
   assert.equal(
     setup.steps[3]?.kind === "expect-screen" ? setup.steps[3].screenId : undefined,
