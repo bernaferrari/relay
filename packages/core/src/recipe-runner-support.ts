@@ -600,7 +600,19 @@ async function tapRecordedTarget(
       return;
     } catch (error) {
       if (isCancel(error)) throw error;
-      failures.push(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(message);
+      const attempt = {
+        kind: "target-resolution-attempt" as const,
+        capturedAt: now(),
+        data: {
+          status: "failed",
+          target: candidate,
+          error: message,
+        },
+      };
+      ctx.job?.artifacts.push(attempt);
+      ctx.artifacts?.push(attempt);
     }
   }
   throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);

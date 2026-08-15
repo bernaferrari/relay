@@ -807,7 +807,10 @@ describe("runRecipeStep optional policy", () => {
     );
 
     assert.match(logs[0] ?? "", /optional tap: skipped/);
-    assert.equal(job.artifacts[0]?.kind, "optional-step-skipped");
+    assert.equal(
+      job.artifacts.some((artifact) => artifact.kind === "optional-step-skipped"),
+      true,
+    );
   });
 });
 
@@ -815,7 +818,19 @@ describe("runRecipeStep campaign check policy", () => {
   it("retains a failed check and returns so the next check can run", async () => {
     const logs: string[] = [];
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
-    const device = stubDevice({ press: () => Promise.reject(new Error("path changed")) });
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("path changed")),
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              role: "button",
+              label: "Settings",
+              rect: { x: 20, y: 80, width: 200, height: 48 },
+            },
+          ],
+        }),
+    });
 
     await runRecipeStep(
       device,
@@ -836,6 +851,17 @@ describe("runRecipeStep campaign check policy", () => {
       ),
       true,
     );
+    const evidence = job.artifacts.find((artifact) => artifact.kind === "campaign-check-evidence");
+    assert.ok(evidence);
+    const evidenceData = evidence.data as {
+      attempts?: Array<{ kind: string }>;
+      nodes?: Array<{ label?: string }>;
+    };
+    assert.deepEqual(
+      evidenceData.attempts?.map((attempt) => attempt.kind),
+      ["target-resolution-attempt"],
+    );
+    assert.equal(evidenceData.nodes?.[0]?.label, "Settings");
   });
 
   it("records a passing check", async () => {
@@ -906,6 +932,14 @@ describe("runRecipeStep campaign check policy", () => {
       ["passed", "passed"],
     );
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-evidence" &&
+          (artifact.data as { checkId?: string }).checkId === "missing",
+      ),
+      true,
+    );
   });
 
   it("blocks only a dependency group after its canonical recovery fails", async () => {
@@ -1741,6 +1775,74 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(presses, 1);
     assert.equal(tapContext.runtime?.verifiedScreen, undefined);
     assert.equal(tapContext.runtime?.observation, undefined);
+  });
+
+  it("refreshes a stale off-screen label instead of dispatching its cached point", async () => {
+    const staleNodes = [
+      {
+        role: "application",
+        enabled: true,
+        rect: { x: -1080, y: 0, width: 1080, height: 2340 },
+      },
+      {
+        role: "button",
+        label: "Privacy Policy",
+        enabled: true,
+        hittable: true,
+        rect: { x: -760, y: 1256, width: 890, height: 143 },
+      },
+    ];
+    const freshNodes = [
+      {
+        role: "application",
+        enabled: true,
+        rect: { x: 0, y: 0, width: 1080, height: 2340 },
+      },
+      {
+        role: "button",
+        label: "Privacy Policy",
+        enabled: true,
+        hittable: true,
+        rect: { x: 45, y: 1266, width: 990, height: 158 },
+      },
+    ];
+    let snapshots = 0;
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: freshNodes });
+      },
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+    const job = { artifacts: [], resolvedInputs: {} } as unknown as TestJob;
+    const ctx: RecipeStepContext = {
+      log: () => {},
+      job,
+      runtime: {
+        verifiedScreen: {
+          screenId: "settings",
+          screenTitle: "Settings",
+          nodes: staleNodes,
+          observedAt: 100,
+          verifiedAt: 100,
+        },
+      },
+    };
+
+    await runRecipeStep(device, { kind: "tap", target: { label: "Privacy Policy" } }, ctx);
+
+    assert.equal(snapshots, 1);
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        selector: 'label="Privacy Policy"',
+      },
+    ]);
   });
 
   it("reuses one unchanged automatic observation for destination assertion and semantic tap", async () => {

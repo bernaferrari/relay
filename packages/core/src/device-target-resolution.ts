@@ -185,7 +185,17 @@ function resolveSnapshotTarget(
       const activationNode = closestHittableAncestor(node);
       const activationRect = activationNode?.rect ?? node.rect!;
       const point = center(activationRect);
-      if (viewport && (point.x < viewport.x || point.x > viewport.x + viewport.width)) {
+      // Device input coordinates are always expressed in the current viewport.
+      // A reused Compose tree can retain translated document geometry after a
+      // scroll; never let that stale geometry become a negative device tap.
+      if (point.x < 0 || point.y < 0) return undefined;
+      if (
+        viewport &&
+        (point.x < Math.max(0, viewport.x) ||
+          point.x > viewport.x + viewport.width ||
+          point.y < Math.max(0, viewport.y) ||
+          point.y > viewport.y + viewport.height)
+      ) {
         return undefined;
       }
       return {
@@ -314,7 +324,9 @@ export function resolveNamedControl(
   ): NamedControlResolution | undefined => {
     if (!value?.trim()) return undefined;
     const hit = resolveSnapshotTarget(nodes, { [method]: value });
-    if (!hit) return undefined;
+    // Named control activation is not a reveal operation. Off-screen semantic
+    // matches must be revealed first or resolved again from a fresh tree.
+    if (!hit || hit.revealDirection) return undefined;
     const hasVerifiedCurrentPoint =
       (hit.node.hittable === false && hit.usesActivationAncestor) ||
       (hit.node.hittable === undefined && explicitPointResolution(target.point) !== undefined);

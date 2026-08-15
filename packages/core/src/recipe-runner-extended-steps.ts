@@ -1,3 +1,4 @@
+import { describeSnapshotChrome } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "./device.js";
 import { cooperativeCheckpoint } from "./control.js";
@@ -36,6 +37,51 @@ function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): s
     node.label ? semanticTargetKey({ label: node.label }) : undefined,
     node.value ? semanticTargetKey({ text: node.value }) : undefined,
   ].flatMap((key) => (key ? [key] : []));
+}
+
+async function captureCampaignFailureEvidence(
+  device: Device,
+  check: NonNullable<RecipeStep["check"]>,
+  ctx: RecipeStepContext,
+  startedAt: number,
+  error: string,
+): Promise<void> {
+  const job = ctx.job;
+  if (!job) return;
+  const attempts = job.artifacts.flatMap((artifact) =>
+    artifact.capturedAt >= startedAt &&
+    ["target-resolution", "target-resolution-attempt", "locator-fallback", "locator-heal"].includes(
+      artifact.kind,
+    )
+      ? [{ kind: artifact.kind, capturedAt: artifact.capturedAt, data: artifact.data }]
+      : [],
+  );
+  let nodes: Awaited<ReturnType<typeof snapshot>> = [];
+  try {
+    nodes = await snapshot(device);
+  } catch {
+    // The action error and screenshot remain useful when AX is unavailable.
+  }
+  const capturedAt = now();
+  job.artifacts.push({
+    kind: "campaign-check-evidence",
+    capturedAt,
+    data: {
+      checkId: check.id,
+      checkTitle: check.title,
+      error,
+      attempts,
+      chrome: describeSnapshotChrome(nodes),
+      screenIdentity: observeScreenIdentity(nodes),
+      nodes,
+    },
+  });
+  await captureScreenshot({
+    jobId: job.id,
+    caption: `failed:${check.title}`,
+    device,
+    ...(nodes.length ? { semanticNodes: nodes } : {}),
+  }).catch(() => undefined);
 }
 
 function semanticRevealMovement(
@@ -458,6 +504,7 @@ export async function runCampaignCheck(
     if (isCancel(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     const finishedAt = now();
+    await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message);
     if (recovery && options.allowDefer !== false) {
       ctx.runtime!.campaignItineraryDirty = true;
       (ctx.runtime!.deferredCampaignChecks ??= []).push({
@@ -475,21 +522,6 @@ export async function runCampaignCheck(
     }
     if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
     if (ctx.job) {
-      try {
-        const nodes = await snapshot(device);
-        ctx.job.artifacts.push({
-          kind: "campaign-check-evidence",
-          capturedAt: finishedAt,
-          data: { checkId: step.check.id, nodes },
-        });
-      } catch {
-        // The error remains useful even if the target cannot provide a tree.
-      }
-      await captureScreenshot({
-        jobId: ctx.job.id,
-        caption: `failed:${step.check.title}`,
-        device,
-      }).catch(() => undefined);
       ctx.job.artifacts.push({
         kind: "campaign-check-result",
         capturedAt: finishedAt,
