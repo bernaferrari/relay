@@ -55,3 +55,36 @@ test("compiles unique semantic document order while excluding sticky chrome", ()
   assert.equal(index.documentHeight, 1_511);
   assert.equal(index.viewportHeight, 800);
 });
+
+test("prefers durable labels over ephemeral native references", () => {
+  const nodes: SnapshotNode[] = [
+    {
+      ref: "@e80",
+      label: "Data Controls",
+      rect: { x: 0, y: 900, width: 300, height: 60 },
+    },
+  ];
+  const index = compileScrollSurfaceSemanticIndex({
+    nodes,
+    frames: [
+      {
+        offsetY: 0,
+        screenshot: { base64: "", width: 400, height: 800, capturedAt: 1 },
+        snapshot: {
+          serial: "device",
+          capturedAt: 1,
+          nodes,
+          interactive: [],
+          bounds: { width: 400, height: 800 },
+          inspectable: true,
+          source: "sdk",
+          screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(index.anchors, [
+    { order: 0, documentY: 930, target: { label: "Data Controls" } },
+  ]);
+});

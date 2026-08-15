@@ -14,12 +14,14 @@ function normalized(value?: string): string | undefined {
 function semanticTarget(node: SnapshotNode): StepTarget | undefined {
   const identifier = node.identifier?.trim();
   if (identifier) return { identifier };
-  const ref = node.ref?.replace(/^@/u, "").trim();
-  if (ref) return { ref };
   const label = node.label?.trim().replace(/\s+/gu, " ");
   if (label) return { label };
   const text = node.value?.trim().replace(/\s+/gu, " ");
-  return text ? { text } : undefined;
+  if (text) return { text };
+  // Native refs are session-local implementation details. Keep them only as
+  // a last-resort anchor when a node has no durable human semantic value.
+  const ref = node.ref?.replace(/^@/u, "").trim();
+  return ref ? { ref } : undefined;
 }
 
 export function semanticTargetKey(target: StepTarget): string | undefined {
