@@ -55,12 +55,20 @@ export function campaignCheckResults(job: JobInfo): CampaignCheckResult[] {
     return [{ artifact, data, status: checkStatus }];
   });
   const summaryById = new Map((job.checks ?? []).map((check) => [check.id, check]));
+  const authoredIds =
+    job.recipeSnapshot?.steps.flatMap((step) => (step.check ? [step.check.id] : [])) ?? [];
   const ids = [
-    ...new Set([...resultArtifacts.map(({ data }) => String(data.id)), ...summaryById.keys()]),
+    ...new Set([
+      ...authoredIds,
+      ...resultArtifacts.map(({ data }) => String(data.id)),
+      ...summaryById.keys(),
+    ]),
   ];
+  const latestResultById = new Map<string, (typeof resultArtifacts)[number]>();
+  for (const result of resultArtifacts) latestResultById.set(String(result.data.id), result);
 
   return ids.flatMap((id): CampaignCheckResult[] => {
-    const detailed = resultArtifacts.find(({ data }) => data.id === id);
+    const detailed = latestResultById.get(id);
     const summary = summaryById.get(id);
     const checkStatus = detailed?.status ?? status(summary?.status);
     const title = text(detailed?.data.title, summary?.title);

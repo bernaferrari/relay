@@ -123,3 +123,66 @@ test("bounded summary checks remain visible before detailed artifacts load", () 
   assert.equal(checks[0]?.error, "screen changed");
   assert.equal(checks[0]?.durationMs, 80);
 });
+
+test("authored order survives deferred completion and the latest terminal result wins", () => {
+  const checks = campaignCheckResults(
+    job({
+      recipeSnapshot: {
+        id: "campaign",
+        title: "Settings campaign",
+        source: "custom",
+        createdAt: 1,
+        updatedAt: 1,
+        steps: [
+          {
+            kind: "module",
+            recipeId: "terms",
+            check: { id: "terms", title: "Terms of Use" },
+          },
+          {
+            kind: "module",
+            recipeId: "privacy",
+            check: { id: "privacy", title: "Privacy Policy" },
+          },
+          {
+            kind: "module",
+            recipeId: "help",
+            check: { id: "help", title: "Help & Support" },
+          },
+        ],
+      },
+      artifacts: [
+        {
+          kind: "campaign-check-result",
+          capturedAt: 100,
+          data: { id: "terms", title: "Terms of Use", status: "passed" },
+        },
+        {
+          kind: "campaign-check-result",
+          capturedAt: 120,
+          data: { id: "privacy", title: "Privacy Policy", status: "failed", error: "Transient" },
+        },
+        {
+          kind: "campaign-check-result",
+          capturedAt: 130,
+          data: { id: "help", title: "Help & Support", status: "passed" },
+        },
+        {
+          kind: "campaign-check-result",
+          capturedAt: 140,
+          data: { id: "privacy", title: "Privacy Policy", status: "passed" },
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    checks.map(({ id, status }) => ({ id, status })),
+    [
+      { id: "terms", status: "passed" },
+      { id: "privacy", status: "passed" },
+      { id: "help", status: "passed" },
+    ],
+  );
+  assert.equal(checks[1]?.error, undefined);
+});
