@@ -298,6 +298,39 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  it("validates compiled semantic reveal navigation", () => {
+    const step = {
+      kind: "reveal" as const,
+      target: { identifier: "kids-mode" },
+      navigation: [
+        {
+          schemaVersion: 1 as const,
+          surfaceId: "settings",
+          captureId: "settings-r1",
+          documentHeight: 2_400,
+          viewportHeight: 800,
+          targetOrder: 1,
+          targetDocumentY: 2_000,
+          anchors: [
+            { order: 0, documentY: 200, target: { identifier: "appearance" } },
+            { order: 1, documentY: 2_000, target: { identifier: "kids-mode" } },
+          ],
+        },
+      ],
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            ...step,
+            navigation: [{ ...step.navigation[0]!, targetOrder: 4 }],
+          },
+        ]),
+      /targetOrder is not indexed/,
+    );
+  });
+
   it("validates executable logical-surface captures", () => {
     const step = {
       kind: "capture-surface" as const,

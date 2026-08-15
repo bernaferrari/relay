@@ -1,5 +1,6 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
 import type { ScreenIdentityObservation } from "./app-map.js";
+import type { SemanticRevealPlan } from "./scroll-surface.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -220,6 +221,9 @@ export type RecipeStep = RecipeStepMetadata &
         target: StepTarget;
         direction?: "up" | "down" | "auto";
         maxAttempts?: number;
+        /** Full-surface semantic plans frozen by the App Map compiler. The
+         * runtime selects the plan that overlaps the live locale/variant. */
+        navigation?: SemanticRevealPlan[];
       }
     | {
         kind: "swipe";

@@ -215,6 +215,10 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(surface.viewports.length, 2);
     assert.equal(surface.composite?.height, 6);
     assert.equal(surface.mergedTree.nodeCount, 2);
+    assert.deepEqual(surface.semanticIndex?.anchors, [
+      { order: 0, documentY: 1, target: { label: "Row 0" } },
+      { order: 1, documentY: 5, target: { label: "Row 1" } },
+    ]);
     assert.match(surface.manifest.uri, /^relay-evidence:\/\/[a-f0-9]{64}$/u);
 
     const firstTree = await readAuthoringEvidence(surface.viewports[0]!.accessibilityTree.sha256);
@@ -224,6 +228,7 @@ test("persists every raw viewport and attaches only durable evidence URIs", asyn
     assert.equal(parsedManifest.kind, "relay.logical-scroll-surface");
     assert.equal(parsedManifest.targetProfile.id, "ipad-ja");
     assert.equal(parsedManifest.surface.viewports.length, 2);
+    assert.deepEqual(parsedManifest.surface.semanticIndex, surface.semanticIndex);
 
     const attached = attachAppMapScrollSurface(
       mapFixture(),

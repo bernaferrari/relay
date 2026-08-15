@@ -10,6 +10,8 @@ export type {
   LogicalScrollSurfaceImport,
   ScrollSurfaceCapturePolicy,
   ScrollSurfaceEvidence,
+  ScrollSurfaceSemanticAnchor,
+  ScrollSurfaceSemanticIndex,
   ScrollSurfaceStopReason,
   ScrollSurfaceTestBinding,
   ScrollSurfaceViewport,

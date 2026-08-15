@@ -38,6 +38,30 @@ export type ScrollSurfaceCapturePolicy = {
   decidedAt: number;
 };
 
+/** Compact, derived navigation geometry compiled from the raw viewport trees.
+ * The raw screenshot/tree pairs remain authoritative; this index can always be
+ * regenerated and exists only so execution can navigate by semantic position. */
+export type ScrollSurfaceSemanticAnchor = {
+  order: number;
+  documentY: number;
+  target: StepTarget;
+};
+
+export type ScrollSurfaceSemanticIndex = {
+  schemaVersion: 1;
+  documentHeight: number;
+  viewportHeight: number;
+  anchors: ScrollSurfaceSemanticAnchor[];
+};
+
+/** Frozen subset of one captured surface carried by an executable reveal. */
+export type SemanticRevealPlan = ScrollSurfaceSemanticIndex & {
+  surfaceId: string;
+  captureId: string;
+  targetOrder: number;
+  targetDocumentY: number;
+};
+
 /** Stable graph-Test binding. A viewport is the conservative default; a full
  * surface pins an immutable baseline capture while retaining the logical id
  * used by later recaptures and repair proposals. */
@@ -78,6 +102,8 @@ export type LogicalScrollSurface = {
     mime: "application/json";
     nodeCount: number;
   };
+  /** Regenerable semantic ordering for viewport-independent reveal steps. */
+  semanticIndex?: ScrollSurfaceSemanticIndex;
   /** Self-contained JSON manifest for tools that need to reconstruct this
    * surface without loading the entire App Map. */
   manifest: ScrollSurfaceEvidence & { mime: "application/json" };
@@ -96,3 +122,4 @@ export type LogicalScrollSurfaceImport = {
   restoredStartViewport: boolean;
   viewports: ScrollSurfaceViewport[];
 };
+import type { StepTarget } from "./recipes.js";

@@ -18,6 +18,7 @@ import {
 } from "./scrollable-survey.js";
 import { appMapFail } from "./app-map/errors.js";
 import { mutateAppMap } from "./app-map/mutation.js";
+import { compileScrollSurfaceSemanticIndex } from "./scroll-surface-semantic-index.js";
 
 type SurfaceWithoutManifest = Omit<LogicalScrollSurface, "manifest">;
 
@@ -170,6 +171,11 @@ export async function persistLogicalScrollSurface(input: {
     viewports,
     ...(composite ? { composite } : {}),
     mergedTree,
+    semanticIndex: compileScrollSurfaceSemanticIndex({
+      nodes: input.survey.mergedNodes,
+      frames: input.survey.frames,
+      ...(input.survey.stitched ? { compositeHeight: input.survey.stitched.height } : {}),
+    }),
   };
   const manifestEvidence = await persistAuthoringEvidence({
     kind: "snapshot",
@@ -328,6 +334,10 @@ export async function materializeLogicalScrollSurfaceImport(input: {
     restoredStartViewport: imported.restoredStartViewport,
     viewports: structuredClone(imported.viewports),
     mergedTree,
+    semanticIndex: compileScrollSurfaceSemanticIndex({
+      nodes: mergedNodes,
+      frames,
+    }),
   };
   const manifestBytes = Buffer.from(
     JSON.stringify({
@@ -456,6 +466,11 @@ export async function regenerateLogicalScrollSurface(input: {
       mime: "application/json",
       nodeCount: composition.mergedNodes.length,
     },
+    semanticIndex: compileScrollSurfaceSemanticIndex({
+      nodes: composition.mergedNodes,
+      frames: composition.frames,
+      compositeHeight: composition.stitched.height,
+    }),
   };
   const manifestEvidence = await persistAuthoringEvidence({
     kind: "snapshot",

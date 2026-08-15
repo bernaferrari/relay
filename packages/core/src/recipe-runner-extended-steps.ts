@@ -26,6 +26,57 @@ import {
 import { screenIdentityMatches } from "./recipe-target-match.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { semanticTargetKey } from "./scroll-surface-semantic-index.js";
+
+function liveSemanticKeys(node: Awaited<ReturnType<typeof snapshot>>[number]): string[] {
+  return [
+    node.identifier ? semanticTargetKey({ identifier: node.identifier }) : undefined,
+    node.ref ? semanticTargetKey({ ref: node.ref }) : undefined,
+    node.label ? semanticTargetKey({ label: node.label }) : undefined,
+    node.value ? semanticTargetKey({ text: node.value }) : undefined,
+  ].flatMap((key) => (key ? [key] : []));
+}
+
+function semanticRevealMovement(
+  nodes: Awaited<ReturnType<typeof snapshot>>,
+  plans: NonNullable<Extract<RecipeStep, { kind: "reveal" }>["navigation"]>,
+): { direction: "up" | "down"; amount: number; surfaceId: string } | undefined {
+  const candidates = plans.flatMap((plan) => {
+    const byKey = new Map(
+      plan.anchors.flatMap((anchor) => {
+        const key = semanticTargetKey(anchor.target);
+        return key ? [[key, anchor] as const] : [];
+      }),
+    );
+    const estimates: number[] = [];
+    const seen = new Set<string>();
+    for (const node of nodes) {
+      if (!node.rect || node.visibleToUser === false) continue;
+      for (const key of liveSemanticKeys(node)) {
+        const anchor = byKey.get(key);
+        if (!anchor || seen.has(key)) continue;
+        seen.add(key);
+        estimates.push(anchor.documentY - (node.rect.y + node.rect.height / 2));
+        break;
+      }
+    }
+    if (estimates.length === 0) return [];
+    estimates.sort((left, right) => left - right);
+    const viewportTop = estimates[Math.floor(estimates.length / 2)]!;
+    const currentCenter = viewportTop + plan.viewportHeight / 2;
+    const delta = plan.targetDocumentY - currentCenter;
+    return [{ plan, overlap: estimates.length, delta }];
+  });
+  const selected = candidates.sort(
+    (left, right) => right.overlap - left.overlap || Math.abs(left.delta) - Math.abs(right.delta),
+  )[0];
+  if (!selected) return undefined;
+  return {
+    direction: selected.delta < 0 ? "up" : "down",
+    amount: Math.max(0.18, Math.min(0.85, Math.abs(selected.delta) / selected.plan.viewportHeight)),
+    surfaceId: selected.plan.surfaceId,
+  };
+}
 
 export async function runTapStep(
   device: Device,
@@ -108,6 +159,44 @@ export async function runRevealStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   const maxAttempts = step.maxAttempts ?? 12;
+  if (step.navigation?.length) {
+    let previousFingerprint: string | undefined;
+    let repeated = 0;
+    for (let attempts = 0; attempts <= maxAttempts; attempts += 1) {
+      await cooperativeCheckpoint();
+      const nodes = await snapshot(device);
+      if (resolveSnapshotTargetPoint(nodes, step.target)) {
+        ctx.log(
+          `reveal: found semantic target after ${attempts} indexed scroll${attempts === 1 ? "" : "s"}`,
+        );
+        return;
+      }
+      if (attempts === maxAttempts) break;
+      const movement = semanticRevealMovement(nodes, step.navigation);
+      if (!movement) {
+        throw new Error(
+          "reveal-control: live viewport does not overlap the compiled full-surface semantic index",
+        );
+      }
+      const observed = observeScreenIdentity(nodes);
+      repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
+      previousFingerprint = observed.fingerprint;
+      if (repeated >= 2) {
+        throw new Error("reveal-control: indexed navigation reached the surface edge");
+      }
+      const direction =
+        step.direction && step.direction !== "auto" ? step.direction : movement.direction;
+      if (direction === "down") await scrollDown(device, movement.amount);
+      else await scrollUp(device, movement.amount);
+      ctx.log(
+        `reveal: ${direction} ${movement.amount.toFixed(2)} from semantic surface ${movement.surfaceId}`,
+      );
+      await sleep(250, device);
+    }
+    throw new Error(
+      `reveal-control: semantic target was not found after ${maxAttempts} indexed scrolls`,
+    );
+  }
   const directions =
     step.direction === "up" ? ["up"] : step.direction === "down" ? ["down"] : ["down", "up"];
   let attempts = 0;

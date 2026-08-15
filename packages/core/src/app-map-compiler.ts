@@ -9,8 +9,11 @@ import type {
   RecipeStep,
   Routine,
   Screen,
+  SemanticRevealPlan,
+  StepTarget,
 } from "@relay/protocol";
 import { validateAppMap } from "./app-map.js";
+import { semanticTargetMatches } from "./scroll-surface-semantic-index.js";
 
 export type AppMapCompileErrorCode =
   | "missing-flow"
@@ -137,7 +140,40 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
   };
 }
 
-function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
+function semanticRevealPlans(
+  map: AppMap,
+  screenId: string | undefined,
+  target: StepTarget,
+): SemanticRevealPlan[] {
+  const screen = screenId ? map.screens[screenId] : undefined;
+  if (!screen) return [];
+  const plans: SemanticRevealPlan[] = [];
+  for (const variantId of screen.variantIds) {
+    const surfaces = [...(map.screenVariants[variantId]?.scrollSurfaces ?? [])].sort(
+      (left, right) => right.capturedAt - left.capturedAt,
+    );
+    const surface = surfaces.find((candidate) =>
+      candidate.semanticIndex?.anchors.some((anchor) =>
+        semanticTargetMatches(target, anchor.target),
+      ),
+    );
+    if (!surface?.semanticIndex) continue;
+    const targetAnchor = surface.semanticIndex.anchors.find((anchor) =>
+      semanticTargetMatches(target, anchor.target),
+    );
+    if (!targetAnchor) continue;
+    plans.push({
+      ...structuredClone(surface.semanticIndex),
+      surfaceId: surface.id,
+      captureId: surface.captureId,
+      targetOrder: targetAnchor.order,
+      targetDocumentY: targetAnchor.documentY,
+    });
+  }
+  return plans;
+}
+
+function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): RecipeStep[] {
   const steps: RecipeStep[] = (() => {
     switch (action.kind) {
       case "recorded":
@@ -186,7 +222,8 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
                 ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
               },
             ];
-      case "reveal":
+      case "reveal": {
+        const navigation = semanticRevealPlans(map, sourceScreenId, action.target);
         return [
           {
             id: `relay-action-${action.id}`,
@@ -194,8 +231,10 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
             target: structuredClone(action.target),
             ...(action.direction ? { direction: action.direction } : {}),
             ...(action.maxAttempts === undefined ? {} : { maxAttempts: action.maxAttempts }),
+            ...(navigation.length ? { navigation } : {}),
           },
         ];
+      }
       case "back":
       case "home":
         return [{ id: `relay-action-${action.id}`, kind: "key", key: action.kind }];
@@ -231,11 +270,18 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
         return [];
     }
   })();
-  return steps.map((step) => ({
-    ...step,
-    ...(action.optional ? { optional: true as const } : {}),
-    ...(action.when ? { when: structuredClone(action.when) } : {}),
-  }));
+  return steps.map((step) => {
+    const navigation =
+      step.kind === "reveal" && !step.navigation?.length
+        ? semanticRevealPlans(map, sourceScreenId, step.target)
+        : [];
+    return {
+      ...step,
+      ...(navigation.length ? { navigation } : {}),
+      ...(action.optional ? { optional: true as const } : {}),
+      ...(action.when ? { when: structuredClone(action.when) } : {}),
+    };
+  });
 }
 
 function compileRecipe(input: {
@@ -246,6 +292,7 @@ function compileRecipe(input: {
   parameters?: Routine["parameters"];
   ownerKind: "connection" | "routine";
   ownerId: string;
+  sourceScreenId?: string;
   actions: ActionSpec[];
   ensureRoutine?: (routineId: string) => void;
 }): AppMapCompiledRecipe {
@@ -253,7 +300,7 @@ function compileRecipe(input: {
   const stepProvenance: AppMapCompiledStepProvenance[] = [];
   for (const action of input.actions) {
     if (action.kind === "routine") input.ensureRoutine?.(action.routineId);
-    for (const step of actionSteps(input.map, action)) {
+    for (const step of actionSteps(input.map, action, input.sourceScreenId)) {
       const stepIndex = steps.length;
       steps.push(step);
       stepProvenance.push({
@@ -360,6 +407,7 @@ export function compileAppMapFlow(
       title: root.title,
       ownerKind: "connection",
       ownerId: connection.id,
+      sourceScreenId: connection.fromScreenId,
       actions: connection.actions,
       ensureRoutine,
     });
@@ -481,6 +529,7 @@ export function compileAppMapConnection(
     title: root.title,
     ownerKind: "connection",
     ownerId: connection.id,
+    sourceScreenId: connection.fromScreenId,
     actions: connection.actions,
     ensureRoutine,
   });

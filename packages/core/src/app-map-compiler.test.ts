@@ -194,6 +194,98 @@ test("compiles reveal-to-control as a first-class viewport-independent step", ()
   });
 });
 
+test("compiles source full-surface semantic order into reveal navigation", () => {
+  const map = fixture();
+  const evidence = (id: string, digit: string, mime: "image/png" | "application/json") => ({
+    id,
+    uri: `relay-evidence://${digit.repeat(64)}`,
+    sha256: digit.repeat(64),
+    mime,
+    bytes: 10,
+  });
+  const owned = [
+    evidence("top-shot", "1", "image/png"),
+    evidence("top-tree", "2", "application/json"),
+    evidence("merged", "3", "application/json"),
+    evidence("manifest", "4", "application/json"),
+  ];
+  map.screens.welcome!.variantIds = ["welcome-fr"];
+  map.screenVariants["welcome-fr"] = {
+    ...entity("welcome-fr"),
+    screenId: "welcome",
+    targetProfile: {
+      id: "ipad-fr",
+      targetId: "ipad-1",
+      source: "device",
+      platform: "ios",
+      name: "iPad · Français",
+      capabilities: ["scroll", "snapshot", "screenshot"],
+      observedAt: at,
+    },
+    evidenceIds: owned.map(({ id }) => id),
+    evidenceUris: owned.map(({ uri }) => uri),
+    scrollSurfaces: [
+      {
+        schemaVersion: 1,
+        id: "welcome-surface",
+        captureId: "welcome-fr-r1",
+        targetProfileId: "ipad-fr",
+        capturePolicy: {
+          captureMode: "full-surface",
+          source: "explicit",
+          reason: "Capture the complete settings list.",
+          decidedAt: at,
+        },
+        capturedAt: at,
+        status: "completed",
+        reason: "end-of-content",
+        message: "Complete surface",
+        restoredStartViewport: true,
+        viewports: [
+          {
+            index: 0,
+            offsetY: 0,
+            appendedHeight: 0,
+            capturedAt: at,
+            width: 1_000,
+            height: 800,
+            screenshot: { ...owned[0]!, mime: "image/png" },
+            accessibilityTree: { ...owned[1]!, mime: "application/json" },
+          },
+        ],
+        mergedTree: { ...owned[2]!, mime: "application/json", nodeCount: 2 },
+        semanticIndex: {
+          schemaVersion: 1,
+          documentHeight: 2_400,
+          viewportHeight: 800,
+          anchors: [
+            { order: 0, documentY: 240, target: { identifier: "appearance" } },
+            { order: 1, documentY: 2_040, target: { identifier: "kids-mode" } },
+          ],
+        },
+        manifest: { ...owned[3]!, mime: "application/json" },
+      },
+    ],
+  };
+  map.connections["open-home"]!.actions.unshift({
+    id: "reveal-kids-mode",
+    kind: "reveal",
+    target: { identifier: "kids-mode", label: "Mode Enfant" },
+    direction: "auto",
+  });
+
+  const root = compileAppMapFlow(map, "checkout").recipes["app-map:map-1:flow:checkout:r7"]!;
+  const reveal = root.steps.find((step) => step.kind === "reveal");
+  assert.equal(reveal?.kind, "reveal");
+  if (reveal?.kind !== "reveal") return;
+  assert.equal(reveal.navigation?.[0]?.surfaceId, "welcome-surface");
+  assert.equal(reveal.navigation?.[0]?.targetOrder, 1);
+  assert.deepEqual(
+    reveal.navigation?.[0]?.anchors.map((anchor) => anchor.target),
+    [{ identifier: "appearance" }, { identifier: "kids-mode" }],
+  );
+});
+
 test("compiles a saved flow only through the selected connection", () => {
   const map = fixture();
   map.screens.receipt = {

@@ -1030,6 +1030,111 @@ describe("runRecipeStep semantic reveal", () => {
     );
     assert.equal(scrolls, 1);
   });
+
+  it("uses full-surface semantic geometry to choose direction and distance", async () => {
+    let viewport: "appearance" | "kids" = "appearance";
+    const movements: Array<{ direction?: string; amount?: number }> = [];
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes:
+              viewport === "appearance"
+                ? [
+                    {
+                      role: "cell",
+                      identifier: "appearance",
+                      label: "Apparence",
+                      hittable: true,
+                      rect: { x: 0, y: 260, width: 300, height: 60 },
+                    },
+                  ]
+                : [
+                    {
+                      role: "cell",
+                      identifier: "kids-mode",
+                      label: "Mode Enfant",
+                      hittable: true,
+                      rect: { x: 0, y: 340, width: 300, height: 60 },
+                    },
+                  ],
+          }),
+        scroll: (options) => {
+          movements.push(options as { direction?: string; amount?: number });
+          viewport = "kids";
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "reveal",
+        target: { identifier: "kids-mode", label: "Mode Enfant" },
+        direction: "auto",
+        navigation: [
+          {
+            schemaVersion: 1,
+            surfaceId: "settings-fr",
+            captureId: "settings-fr-r1",
+            documentHeight: 2_400,
+            viewportHeight: 800,
+            targetOrder: 1,
+            targetDocumentY: 2_040,
+            anchors: [
+              { order: 0, documentY: 290, target: { identifier: "appearance" } },
+              { order: 1, documentY: 2_040, target: { identifier: "kids-mode" } },
+            ],
+          },
+        ],
+      },
+      noLog,
+    );
+
+    assert.equal(movements.length, 1);
+    assert.equal(movements[0]?.direction, "down");
+    assert.equal(movements[0]?.amount, 0.85);
+  });
+
+  it("fails closed when a compiled surface does not overlap the live viewport", async () => {
+    let scrolls = 0;
+    await assert.rejects(
+      runRecipeStep(
+        stubDevice({
+          snapshot: () =>
+            Promise.resolve({
+              nodes: [
+                {
+                  identifier: "unrelated",
+                  label: "Other page",
+                  rect: { x: 0, y: 100, width: 300, height: 60 },
+                },
+              ],
+            }),
+          scroll: () => {
+            scrolls += 1;
+            return Promise.resolve({});
+          },
+        }),
+        {
+          kind: "reveal",
+          target: { identifier: "kids-mode" },
+          navigation: [
+            {
+              schemaVersion: 1,
+              surfaceId: "settings",
+              captureId: "settings-r1",
+              documentHeight: 2_400,
+              viewportHeight: 800,
+              targetOrder: 0,
+              targetDocumentY: 2_000,
+              anchors: [{ order: 0, documentY: 2_000, target: { identifier: "kids-mode" } }],
+            },
+          ],
+        },
+        noLog,
+      ),
+      /does not overlap the compiled full-surface semantic index/,
+    );
+    assert.equal(scrolls, 0);
+  });
 });
 
 describe("runRecipeStep conditional policy", () => {

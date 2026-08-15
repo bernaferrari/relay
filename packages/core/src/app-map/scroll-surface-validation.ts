@@ -125,6 +125,51 @@ export function assertLogicalScrollSurface(
   }
   assertEvidence(surface.mergedTree, "application/json", `${label}.mergedTree`);
   safeInteger(surface.mergedTree.nodeCount, `${label}.mergedTree.nodeCount`);
+  if (surface.semanticIndex !== undefined) {
+    objectValue(surface.semanticIndex, `${label}.semanticIndex`);
+    if (surface.semanticIndex.schemaVersion !== 1) {
+      appMapFail("invalid-map", `${label}.semanticIndex.schemaVersion must be 1`);
+    }
+    assertPositiveInteger(
+      surface.semanticIndex.documentHeight,
+      `${label}.semanticIndex.documentHeight`,
+    );
+    assertPositiveInteger(
+      surface.semanticIndex.viewportHeight,
+      `${label}.semanticIndex.viewportHeight`,
+    );
+    if (
+      !Array.isArray(surface.semanticIndex.anchors) ||
+      surface.semanticIndex.anchors.length > 2_048
+    ) {
+      appMapFail("invalid-map", `${label}.semanticIndex.anchors must contain at most 2048 items`);
+    }
+    let previousY = -1;
+    surface.semanticIndex.anchors.forEach((anchor, index) => {
+      objectValue(anchor, `${label}.semanticIndex.anchors[${index}]`);
+      safeInteger(anchor.order, `${label}.semanticIndex.anchors[${index}].order`);
+      safeInteger(anchor.documentY, `${label}.semanticIndex.anchors[${index}].documentY`);
+      if (anchor.order !== index || anchor.documentY < previousY) {
+        appMapFail(
+          "invalid-map",
+          `${label}.semanticIndex.anchors must have sequential order and increasing geometry`,
+        );
+      }
+      if (
+        !anchor.target ||
+        typeof anchor.target !== "object" ||
+        ![
+          anchor.target.identifier,
+          anchor.target.ref,
+          anchor.target.label,
+          anchor.target.text,
+        ].some((value) => typeof value === "string" && value.trim().length > 0)
+      ) {
+        appMapFail("invalid-map", `${label}.semanticIndex.anchors[${index}] needs a target`);
+      }
+      previousY = anchor.documentY;
+    });
+  }
   assertEvidence(surface.manifest, "application/json", `${label}.manifest`);
   const evidence = [
     ...surface.viewports.flatMap((viewport) => [viewport.screenshot, viewport.accessibilityTree]),

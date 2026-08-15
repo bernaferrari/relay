@@ -191,11 +191,86 @@ function parseRevealStep(
   if (raw.maxAttempts !== undefined && (!isNumber(raw.maxAttempts) || raw.maxAttempts < 1)) {
     throw stepErr(index, "reveal.maxAttempts must be a positive number");
   }
+  let navigation: Extract<RecipeStep, { kind: "reveal" }>["navigation"];
+  if (raw.navigation !== undefined) {
+    if (
+      !Array.isArray(raw.navigation) ||
+      raw.navigation.length === 0 ||
+      raw.navigation.length > 32
+    ) {
+      throw stepErr(index, "reveal.navigation must contain between 1 and 32 semantic plans");
+    }
+    navigation = raw.navigation.map((candidate, planIndex) => {
+      if (!isObject(candidate))
+        throw stepErr(index, `reveal.navigation[${planIndex}] must be an object`);
+      if (
+        candidate.schemaVersion !== 1 ||
+        !isString(candidate.surfaceId) ||
+        !candidate.surfaceId.trim() ||
+        !isString(candidate.captureId) ||
+        !candidate.captureId.trim() ||
+        !Number.isInteger(candidate.documentHeight) ||
+        Number(candidate.documentHeight) < 1 ||
+        !Number.isInteger(candidate.viewportHeight) ||
+        Number(candidate.viewportHeight) < 1 ||
+        !Number.isInteger(candidate.targetOrder) ||
+        !Number.isInteger(candidate.targetDocumentY) ||
+        !Array.isArray(candidate.anchors) ||
+        candidate.anchors.length > 2_048
+      ) {
+        throw stepErr(index, `reveal.navigation[${planIndex}] is invalid`);
+      }
+      const anchors = candidate.anchors.map((rawAnchor, anchorIndex) => {
+        if (
+          !isObject(rawAnchor) ||
+          rawAnchor.order !== anchorIndex ||
+          !Number.isInteger(rawAnchor.documentY) ||
+          Number(rawAnchor.documentY) < 0
+        ) {
+          throw stepErr(
+            index,
+            `reveal.navigation[${planIndex}].anchors[${anchorIndex}] is invalid`,
+          );
+        }
+        const anchorTarget = parseTarget(
+          rawAnchor.target,
+          index,
+          `navigation[${planIndex}].anchors[${anchorIndex}].target`,
+        );
+        if (
+          !anchorTarget.identifier &&
+          !anchorTarget.ref &&
+          !anchorTarget.label &&
+          !anchorTarget.text
+        ) {
+          throw stepErr(
+            index,
+            `reveal.navigation[${planIndex}].anchors[${anchorIndex}] needs a semantic target`,
+          );
+        }
+        return { order: anchorIndex, documentY: Number(rawAnchor.documentY), target: anchorTarget };
+      });
+      if (!anchors.some((anchor) => anchor.order === candidate.targetOrder)) {
+        throw stepErr(index, `reveal.navigation[${planIndex}].targetOrder is not indexed`);
+      }
+      return {
+        schemaVersion: 1 as const,
+        surfaceId: candidate.surfaceId.trim(),
+        captureId: candidate.captureId.trim(),
+        documentHeight: Number(candidate.documentHeight),
+        viewportHeight: Number(candidate.viewportHeight),
+        targetOrder: Number(candidate.targetOrder),
+        targetDocumentY: Number(candidate.targetDocumentY),
+        anchors,
+      };
+    });
+  }
   return {
     kind: "reveal",
     target,
     ...(raw.direction !== undefined ? { direction: raw.direction } : {}),
     ...(raw.maxAttempts !== undefined ? { maxAttempts: raw.maxAttempts } : {}),
+    ...(navigation ? { navigation } : {}),
     ...(note ? { note } : {}),
   };
 }
