@@ -16,6 +16,7 @@ import {
   waitForResponseCompletion,
 } from "./recipe-runner-support.js";
 import {
+  campaignExecutionStep,
   invalidateVerifiedScreen,
   stepBreaksVerifiedScreen,
   type RecipeStepContext,
@@ -204,7 +205,6 @@ async function runRequiredRecipeStep(
       break;
 
     case "sleep":
-      // Time alone can make an asynchronous UI tree stale.
       invalidateVerifiedScreen(ctx);
       await sleep(step.ms, device);
       break;
@@ -628,7 +628,6 @@ async function runRequiredRecipeStep(
     }
 
     case "flow": {
-      // validateRecipeSteps guarantees step.flow is a known ActionId; narrow to satisfy types.
       if (!isActionId(step.flow)) {
         throw new Error(`flow step references unknown action: ${step.flow}`);
       }
@@ -924,7 +923,8 @@ export async function runRecipeStep(
       device,
       step as RecipeStep & { check: NonNullable<RecipeStep["check"]> },
       ctx,
-      () => runRequiredRecipeStep(device, step, ctx),
+      (recoveryRecipeId) =>
+        runRequiredRecipeStep(device, campaignExecutionStep(step, recoveryRecipeId), ctx),
     );
     return;
   }

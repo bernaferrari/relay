@@ -497,7 +497,7 @@ test("later instruction checks compile one canonical cold recovery path", () => 
     recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
     true,
   );
-  assert.equal(secondCheck.check.recovery.groupId, "checkout-smoke:root:shared-origin");
+  assert.equal(secondCheck.check.recovery.groupId, "checkout-smoke:root:check:navigate-again");
 });
 
 test("scenario capture policy compiles explicit screen evidence", () => {

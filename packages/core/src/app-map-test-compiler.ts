@@ -169,7 +169,6 @@ export function compileAppMapScenarioTest(
     let previousInstructionPlan: AppMapCompiledFlow | undefined;
     let previousTerminalScreenId: string | undefined;
     let campaignSetupSteps: RecipeStep[] | undefined;
-    const recoveryGroupId = `${test.id}:${suffix}:shared-origin`;
     for (const step of steps) {
       if (step.binding.status === "unresolved") {
         fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
@@ -274,7 +273,12 @@ export function compileAppMapScenarioTest(
               id: step.id,
               title: step.intent,
               ...(recoveryRecipeId
-                ? { recovery: { groupId: recoveryGroupId, recipeId: recoveryRecipeId } }
+                ? {
+                    recovery: {
+                      groupId: `${test.id}:${suffix}:check:${step.id}`,
+                      recipeId: recoveryRecipeId,
+                    },
+                  }
                 : {}),
             },
           });

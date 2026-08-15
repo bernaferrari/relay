@@ -28,6 +28,7 @@ export type RecipeRuntimeState = {
     error: string;
     deferredAt: number;
   }>;
+  campaignItineraryDirty?: boolean;
   campaignRecoveryGroups?: Record<
     string,
     { status: "healthy" | "needs-recovery" | "blocked"; reason?: string }
@@ -64,6 +65,12 @@ export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
     ctx.runtime.observation = undefined;
     ctx.runtime.verifiedScreen = undefined;
   }
+}
+
+export function campaignExecutionStep(step: RecipeStep, recoveryRecipeId?: string): RecipeStep {
+  return recoveryRecipeId && step.kind === "module"
+    ? { ...step, recipeId: recoveryRecipeId }
+    : step;
 }
 
 export type RecipeStepContext = {

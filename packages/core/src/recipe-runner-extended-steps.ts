@@ -414,7 +414,7 @@ export async function runCampaignCheck(
   device: Device,
   step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
   ctx: RecipeStepContext,
-  execute: () => Promise<void>,
+  execute: (recoveryRecipeId?: string) => Promise<void>,
   options: { allowDefer?: boolean } = {},
 ): Promise<void> {
   const startedAt = now();
@@ -440,7 +440,12 @@ export async function runCampaignCheck(
     return;
   }
   try {
-    await execute();
+    const restoreItinerary = Boolean(recovery && ctx.runtime?.campaignItineraryDirty);
+    if (restoreItinerary) {
+      ctx.log(`check reset: ${step.check.title} — using canonical recovery path`);
+    }
+    await execute(restoreItinerary ? recovery?.recipeId : undefined);
+    if (restoreItinerary && ctx.runtime) ctx.runtime.campaignItineraryDirty = false;
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
     ctx.job?.artifacts.push({
@@ -454,6 +459,7 @@ export async function runCampaignCheck(
     const message = error instanceof Error ? error.message : String(error);
     const finishedAt = now();
     if (recovery && options.allowDefer !== false) {
+      ctx.runtime!.campaignItineraryDirty = true;
       (ctx.runtime!.deferredCampaignChecks ??= []).push({
         check: structuredClone(step.check),
         error: message,
@@ -528,7 +534,7 @@ export async function retryDeferredCampaignChecks(
       device,
       { kind: "module", recipeId: recovery.recipeId, check: deferred.check },
       ctx,
-      () => executeRecipe(recovery.recipeId),
+      (recipeId) => executeRecipe(recipeId ?? recovery.recipeId),
       { allowDefer: false },
     );
   }
