@@ -11,6 +11,26 @@ function authoredSteps(action: ActionSpec): RecipeStep[] {
   return action.kind === "recorded" || action.kind === "steps" ? action.steps : [];
 }
 
+function isVerticalSwipe(
+  swipe:
+    | Extract<RecipeStep, { kind: "swipe" }>
+    | Extract<ActionSpec, { kind: "gesture" }>["gesture"],
+): boolean {
+  if (swipe.kind !== "swipe") return false;
+  const horizontalDistance = Math.abs(swipe.to.x - swipe.from.x);
+  const verticalDistance = Math.abs(swipe.to.y - swipe.from.y);
+  return verticalDistance > 0 && verticalDistance >= horizontalDistance * 1.5;
+}
+
+function isScrollAction(action: ActionSpec): boolean {
+  if (action.kind === "gesture") {
+    return action.gesture.kind === "scroll" || isVerticalSwipe(action.gesture);
+  }
+  return authoredSteps(action).some(
+    (step) => step.kind === "scroll" || (step.kind === "swipe" && isVerticalSwipe(step)),
+  );
+}
+
 function scrollFamilyScreenIds(map: AppMap, startScreenId: string): Set<string> {
   const family = new Set([startScreenId]);
   let changed = true;
@@ -18,11 +38,7 @@ function scrollFamilyScreenIds(map: AppMap, startScreenId: string): Set<string> 
     changed = false;
     for (const connection of Object.values(map.connections ?? {}) as Connection[]) {
       if (connection.destination.kind !== "screen") continue;
-      const isScroll = connection.actions.some(
-        (action) =>
-          (action.kind === "gesture" && action.gesture.kind === "scroll") ||
-          authoredSteps(action).some((step) => step.kind === "scroll"),
-      );
+      const isScroll = connection.actions.some(isScrollAction);
       if (!isScroll) continue;
       const destinationId = connection.destination.screenId;
       if (family.has(connection.fromScreenId) && !family.has(destinationId)) {

@@ -318,6 +318,152 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   );
 });
 
+test("scenario recovery treats vertical swipe observations as one logical scroll surface", () => {
+  const map = fixture();
+  map.screens["cart-bottom"] = {
+    ...screen("cart-bottom"),
+    identity: { schemaVersion: 1, fingerprint: "e".repeat(64), aliases: ["f".repeat(64)] },
+  };
+  map.screens.second = {
+    ...screen("second"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["scroll-cart"] = {
+    ...map.connections["open-cart"]!,
+    id: "scroll-cart",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "cart-bottom" },
+    actions: [
+      {
+        id: "swipe-cart",
+        kind: "gesture",
+        gesture: { kind: "swipe", from: { x: 500, y: 1_600 }, to: { x: 500, y: 600 } },
+      },
+    ],
+  };
+  map.connections["open-second"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-second",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "second" },
+    actions: [{ id: "tap-second", kind: "tap", target: { label: "Second" } }],
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "scroll-coverage",
+    name: "Scroll coverage",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "bottom",
+        kind: "instruction",
+        intent: "Reveal the bottom of the cart",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "scroll-cart"],
+        },
+      },
+      {
+        id: "second",
+        kind: "instruction",
+        intent: "Open second",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-second"],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const secondPath = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open second",
+  )!;
+  const expectation = secondPath.steps[0];
+  assert.equal(expectation?.kind, "expect-screen");
+  assert.equal(expectation?.kind === "expect-screen" ? expectation.screenId : undefined, "cart");
+  assert.deepEqual(
+    expectation?.kind === "expect-screen" ? new Set(expectation.aliases) : undefined,
+    new Set(["e".repeat(64), "f".repeat(64)]),
+  );
+});
+
+test("scenario recovery does not merge horizontal swipe destinations", () => {
+  const map = fixture();
+  map.screens["cart-page-two"] = {
+    ...screen("cart-page-two"),
+    identity: { schemaVersion: 1, fingerprint: "e".repeat(64) },
+  };
+  map.screens.second = {
+    ...screen("second"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["page-cart"] = {
+    ...map.connections["open-cart"]!,
+    id: "page-cart",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "cart-page-two" },
+    actions: [
+      {
+        id: "swipe-cart",
+        kind: "gesture",
+        gesture: { kind: "swipe", from: { x: 900, y: 800 }, to: { x: 200, y: 800 } },
+      },
+    ],
+  };
+  map.connections["open-second"] = {
+    ...map.connections["open-cart"]!,
+    id: "open-second",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "second" },
+    actions: [{ id: "tap-second", kind: "tap", target: { label: "Second" } }],
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "paged-coverage",
+    name: "Paged coverage",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "page-two",
+        kind: "instruction",
+        intent: "Show page two",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "page-cart"],
+        },
+      },
+      {
+        id: "second",
+        kind: "instruction",
+        intent: "Open second",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "open-second"],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const secondPath = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open second",
+  )!;
+  const expectation = secondPath.steps[0];
+  assert.equal(expectation?.kind, "expect-screen");
+  assert.equal(expectation?.kind === "expect-screen" ? expectation.aliases : undefined, undefined);
+});
+
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
   const work = scenario();
   work.steps[0] = {
