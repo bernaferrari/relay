@@ -71,6 +71,8 @@ import {
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureScreenshot } from "./workspace.js";
+import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
+import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { describeTarget, readRecipe, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import {
@@ -274,6 +276,79 @@ async function runRequiredRecipeStep(
     case "screenshot":
       await captureScreenshot({ jobId: job?.id, caption: step.caption, device });
       break;
+
+    case "capture-surface": {
+      if (!job?.serial || !job.targetProfile) {
+        throw new Error("capture-surface requires a frozen device target profile");
+      }
+      const survey = await captureScrollableSurveyForTarget({
+        serial: job.serial,
+        ...(step.maxScrolls === undefined ? {} : { maxScrolls: step.maxScrolls }),
+      });
+      const surface = await persistLogicalScrollSurface({
+        survey,
+        targetProfile: job.targetProfile,
+        surfaceId: step.surfaceId,
+        capturePolicy: {
+          captureMode: "full-surface",
+          source: "explicit",
+          reason: step.reason,
+          decidedAt: survey.frames[0]?.screenshot.capturedAt ?? now(),
+        },
+      });
+      const baseline = step.baseline;
+      const heightRatio =
+        baseline?.compositeHeight && surface.composite
+          ? surface.composite.height / baseline.compositeHeight
+          : undefined;
+      const semanticRatio = baseline?.semanticNodeCount
+        ? surface.mergedTree.nodeCount / baseline.semanticNodeCount
+        : undefined;
+      const visualMatches =
+        surface.status === "completed" &&
+        Boolean(surface.composite) &&
+        (baseline?.compositeWidth === undefined ||
+          surface.composite?.width === baseline.compositeWidth) &&
+        (heightRatio === undefined || (heightRatio >= 0.7 && heightRatio <= 1.3));
+      const semanticMatches =
+        semanticRatio === undefined || (semanticRatio >= 0.65 && semanticRatio <= 1.35);
+      const matches = visualMatches && semanticMatches;
+      job.artifacts.push({
+        kind: "logical-scroll-surface-result",
+        capturedAt: surface.capturedAt,
+        data: {
+          schemaVersion: 1,
+          screenId: step.screenId,
+          screenTitle: step.screenTitle,
+          variantId: step.variantId,
+          surfaceId: step.surfaceId,
+          baselineCaptureId: step.baselineCaptureId,
+          capture: surface,
+          comparison: {
+            policy: "visual-and-semantic",
+            matches,
+            visualMatches,
+            semanticMatches,
+            ...(heightRatio === undefined ? {} : { heightRatio }),
+            ...(semanticRatio === undefined ? {} : { semanticRatio }),
+          },
+          repair: matches
+            ? { status: "not-needed" }
+            : {
+                status: "proposed",
+                action: "propose-recapture",
+                reason:
+                  surface.status === "completed"
+                    ? "Logical surface differs materially from its frozen baseline."
+                    : surface.message,
+              },
+        },
+      });
+      log(
+        `surface: ${step.screenTitle} · ${surface.viewports.length} viewport(s) · ${matches ? "matches baseline" : "repair proposed"}`,
+      );
+      break;
+    }
 
     case "tour":
       await runTourStep(device, step, log, job);

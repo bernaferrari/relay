@@ -660,6 +660,66 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "capture-surface": {
+        if (
+          !isString(raw.screenId) ||
+          !raw.screenId.trim() ||
+          !isString(raw.screenTitle) ||
+          !raw.screenTitle.trim() ||
+          !isString(raw.variantId) ||
+          !raw.variantId.trim() ||
+          !isString(raw.surfaceId) ||
+          !raw.surfaceId.trim() ||
+          !isString(raw.baselineCaptureId) ||
+          !raw.baselineCaptureId.trim() ||
+          !isString(raw.reason) ||
+          !raw.reason.trim()
+        ) {
+          throw stepErr(
+            index,
+            "capture-surface requires screen, variant, surface, baseline, and reason",
+          );
+        }
+        if (
+          raw.maxScrolls !== undefined &&
+          (!isNumber(raw.maxScrolls) ||
+            !Number.isInteger(raw.maxScrolls) ||
+            raw.maxScrolls < 1 ||
+            raw.maxScrolls > 6)
+        ) {
+          throw stepErr(index, "capture-surface.maxScrolls must be an integer from 1 to 6");
+        }
+        const baseline =
+          raw.baseline && typeof raw.baseline === "object" && !Array.isArray(raw.baseline)
+            ? (raw.baseline as Record<string, unknown>)
+            : undefined;
+        const step: Extract<RecipeStep, { kind: "capture-surface" }> = {
+          kind: "capture-surface",
+          screenId: raw.screenId.trim(),
+          screenTitle: raw.screenTitle.trim(),
+          variantId: raw.variantId.trim(),
+          surfaceId: raw.surfaceId.trim(),
+          baselineCaptureId: raw.baselineCaptureId.trim(),
+          reason: raw.reason.trim(),
+          ...(isNumber(raw.maxScrolls) ? { maxScrolls: raw.maxScrolls } : {}),
+          ...(baseline && isNumber(baseline.semanticNodeCount)
+            ? {
+                baseline: {
+                  ...(isNumber(baseline.compositeWidth)
+                    ? { compositeWidth: baseline.compositeWidth }
+                    : {}),
+                  ...(isNumber(baseline.compositeHeight)
+                    ? { compositeHeight: baseline.compositeHeight }
+                    : {}),
+                  semanticNodeCount: baseline.semanticNodeCount,
+                },
+              }
+            : {}),
+          ...(note ? { note } : {}),
+        };
+        out.push(step);
+        break;
+      }
       case "tour": {
         if (raw.depth !== undefined && (!isNumber(raw.depth) || raw.depth < 0 || raw.depth > 3)) {
           throw stepErr(index, "tour.depth must be 0–3");

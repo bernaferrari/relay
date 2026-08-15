@@ -96,6 +96,37 @@ export function compileAppMapScenarioTest(
       caption: `screen:${map.screens[screenId]?.title ?? screenId}`,
     };
   };
+  const captureLogicalSurface = (screenId: string): RecipeStep | undefined => {
+    const binding = test.surfaceBindings?.find(
+      (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
+    );
+    if (!binding?.surfaceId || !binding.baselineCaptureId) return undefined;
+    const variant = map.screenVariants[binding.variantId];
+    const baseline = variant?.scrollSurfaces?.find(
+      (surface) =>
+        surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
+    );
+    if (!baseline) return undefined;
+    return {
+      kind: "capture-surface",
+      screenId,
+      screenTitle: map.screens[screenId]?.title ?? screenId,
+      variantId: binding.variantId,
+      surfaceId: binding.surfaceId,
+      baselineCaptureId: binding.baselineCaptureId,
+      reason: binding.reason,
+      maxScrolls: Math.max(1, Math.min(6, baseline.viewports.length + 1)),
+      baseline: {
+        ...(baseline.composite
+          ? {
+              compositeWidth: baseline.composite.width,
+              compositeHeight: baseline.composite.height,
+            }
+          : {}),
+        semanticNodeCount: baseline.mergedTree.nodeCount,
+      },
+    };
+  };
 
   const importRecipes = (
     step: AppMapScenarioTestStep,
@@ -181,17 +212,25 @@ export function compileAppMapScenarioTest(
               { restoreParentViewport: false },
             );
           }
-          if (test.capture?.mode === "every-screen" || test.capture?.mode === "checkpoints") {
-            for (const [recipeKey, recipe] of Object.entries(instructionGraph)) {
-              instructionGraph[recipeKey] = {
-                ...recipe,
-                steps: recipe.steps.flatMap((recipeStep) => {
-                  if (recipeStep.kind !== "expect-screen") return [recipeStep];
-                  const capture = captureScreen(recipeStep.screenId);
-                  return capture ? [recipeStep, capture] : [recipeStep];
-                }),
-              };
-            }
+          const terminalConnectionId = plan.connections.at(-1)?.connectionId;
+          for (const [recipeKey, recipe] of Object.entries(instructionGraph)) {
+            instructionGraph[recipeKey] = {
+              ...recipe,
+              steps: recipe.steps.flatMap((recipeStep) => {
+                if (recipeStep.kind !== "expect-screen") return [recipeStep];
+                const capture = captureScreen(recipeStep.screenId);
+                const logicalSurface =
+                  terminalConnectionId &&
+                  recipeStep.id === `relay-destination-${terminalConnectionId}`
+                    ? captureLogicalSurface(recipeStep.screenId)
+                    : undefined;
+                return [
+                  recipeStep,
+                  ...(capture ? [capture] : []),
+                  ...(logicalSurface ? [logicalSurface] : []),
+                ];
+              }),
+            };
           }
           importRecipes(step, instructionGraph, step.binding.connectionIds);
           recipeSteps.push({ kind: "module", recipeId: plan.rootRecipeId });

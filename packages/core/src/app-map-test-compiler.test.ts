@@ -236,6 +236,131 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
   assert.deepEqual(compiled.plan.surfaceBindings, work.surfaceBindings);
 });
 
+test("full-surface bindings compile one executable capture after reaching the destination", () => {
+  const current = fixture();
+  const digest = "c".repeat(64);
+  const evidence = (id: string, mime: "image/png" | "application/json") => ({
+    id,
+    uri: `relay-evidence://${digest}`,
+    sha256: digest,
+    mime,
+    bytes: 10,
+  });
+  current.screens.cart!.variantIds = ["cart-en"];
+  current.screenVariants["cart-en"] = {
+    ...scope,
+    id: "cart-en",
+    screenId: "cart",
+    targetProfile: {
+      id: "iphone-en",
+      targetId: "iphone-1",
+      source: "device",
+      platform: "ios",
+      name: "iPhone · English",
+      capabilities: ["screenshot", "snapshot", "scroll"],
+      observedAt: at,
+    },
+    scrollCapturePolicy: {
+      captureMode: "full-surface",
+      source: "explicit",
+      reason: "Stable settings content should be captured completely.",
+      decidedAt: at,
+    },
+    scrollSurfaces: [
+      {
+        schemaVersion: 1,
+        id: "cart-surface",
+        captureId: "cart-baseline",
+        targetProfileId: "iphone-en",
+        capturePolicy: {
+          captureMode: "full-surface",
+          source: "explicit",
+          reason: "Stable settings content should be captured completely.",
+          decidedAt: at,
+        },
+        capturedAt: at,
+        status: "completed",
+        reason: "end-of-content",
+        message: "Reached the end of the cart.",
+        restoredStartViewport: true,
+        viewports: [
+          {
+            index: 0,
+            offsetY: 0,
+            appendedHeight: 0,
+            capturedAt: at,
+            width: 100,
+            height: 200,
+            screenshot: { ...evidence("shot", "image/png"), mime: "image/png" },
+            accessibilityTree: {
+              ...evidence("tree", "application/json"),
+              mime: "application/json",
+            },
+          },
+        ],
+        composite: {
+          ...evidence("composite", "image/png"),
+          mime: "image/png",
+          width: 100,
+          height: 200,
+        },
+        mergedTree: {
+          ...evidence("merged", "application/json"),
+          mime: "application/json",
+          nodeCount: 12,
+        },
+        manifest: {
+          ...evidence("manifest", "application/json"),
+          mime: "application/json",
+        },
+      },
+    ],
+    evidenceIds: ["shot", "tree", "composite", "merged", "manifest"],
+    evidenceUris: [`relay-evidence://${digest}`],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.steps = [work.steps[0]!];
+  work.surfaceBindings = [
+    {
+      screenId: "cart",
+      variantId: "cart-en",
+      captureMode: "full-surface",
+      reason: "Stable settings content should be captured completely.",
+      surfaceId: "cart-surface",
+      baselineCaptureId: "cart-baseline",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+  ];
+
+  const compiled = compileAppMapTest(current, work);
+  const captures = Object.values(compiled.graph)
+    .flatMap((recipe) => recipe.steps)
+    .filter((step) => step.kind === "capture-surface");
+  assert.deepEqual(captures, [
+    {
+      kind: "capture-surface",
+      screenId: "cart",
+      screenTitle: "cart",
+      variantId: "cart-en",
+      surfaceId: "cart-surface",
+      baselineCaptureId: "cart-baseline",
+      reason: "Stable settings content should be captured completely.",
+      maxScrolls: 2,
+      baseline: { compositeWidth: 100, compositeHeight: 200, semanticNodeCount: 12 },
+    },
+  ]);
+  const destinationRecipe = Object.values(compiled.graph).find((recipe) =>
+    recipe.steps.some((step) => step.kind === "expect-screen" && step.screenId === "cart"),
+  );
+  assert.deepEqual(
+    destinationRecipe?.steps.slice(-2).map((step) => step.kind),
+    ["expect-screen", "capture-surface"],
+  );
+});
+
 test("scenario capture policy compiles explicit screen evidence", () => {
   const screenshotCaptions = (work: AppMapScenarioTest) => {
     const compiled = compileAppMapTest(fixture(), work);

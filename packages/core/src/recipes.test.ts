@@ -298,6 +298,27 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  it("validates executable logical-surface captures", () => {
+    const step = {
+      kind: "capture-surface" as const,
+      screenId: "settings",
+      screenTitle: "Settings",
+      variantId: "settings-it",
+      surfaceId: "settings-surface",
+      baselineCaptureId: "capture-v1",
+      reason: "Stable settings content is compared as a complete surface.",
+      maxScrolls: 3,
+      baseline: { compositeWidth: 1080, compositeHeight: 4200, semanticNodeCount: 42 },
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+    assert.equal(describeRecipeStep(step), "Capture full surface · Settings");
+    assert.deepEqual(glyphsForStep(step), ["swipe", "shot", "store"]);
+    assert.throws(
+      () => validateRecipeSteps([{ ...step, maxScrolls: 7 }]),
+      /maxScrolls must be an integer from 1 to 6/,
+    );
+  });
+
   it("keeps tour origin identity and prelude inside the walk", () => {
     const originFingerprint = "a".repeat(64);
     assert.deepEqual(

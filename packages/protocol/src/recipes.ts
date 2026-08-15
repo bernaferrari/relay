@@ -318,6 +318,24 @@ export type RecipeStep = RecipeStepMetadata &
       }
     | { kind: "screenshot"; caption?: string }
     | {
+        /** Capture and compare one durable logical scroll surface after its
+         * mapped destination has been reached. Raw viewports remain the
+         * source of truth; the stitched image and merged tree are derived. */
+        kind: "capture-surface";
+        screenId: string;
+        screenTitle: string;
+        variantId: string;
+        surfaceId: string;
+        baselineCaptureId: string;
+        reason: string;
+        maxScrolls?: number;
+        baseline?: {
+          compositeWidth?: number;
+          compositeHeight?: number;
+          semanticNodeCount: number;
+        };
+      }
+    | {
         /** Walk live child rows on the current screen (depth 0 today). */
         kind: "tour";
         depth?: number;

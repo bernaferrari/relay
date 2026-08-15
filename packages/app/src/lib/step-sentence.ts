@@ -141,6 +141,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return `Swipe ${swipeDirection(step.from, step.to)}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
+    case "capture-surface":
+      return `Capture full surface · ${step.screenTitle}`;
     case "flow":
       // Human title only — "Built-in:" was opaque jargon in the step list.
       return titleize(step.flow, recipes);
@@ -258,6 +260,7 @@ export function stepValid(step: RecipeStep): boolean {
     case "key":
     case "swipe":
     case "screenshot":
+    case "capture-surface":
     case "device":
     case "rotate":
     case "settings":

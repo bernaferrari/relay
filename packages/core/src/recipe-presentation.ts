@@ -74,6 +74,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Needs review · ${step.capability}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
+    case "capture-surface":
+      return `Capture full surface · ${step.screenTitle}`;
     case "tour":
       return step.originTitle
         ? `Tour ${step.originTitle} rows${step.depth ? ` depth ${step.depth}` : ""}`
@@ -168,6 +170,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["wait"];
     case "screenshot":
       return ["shot"];
+    case "capture-surface":
+      return ["swipe", "shot", "store"];
     case "tour":
       return ["tap", "shot"];
     case "flow":

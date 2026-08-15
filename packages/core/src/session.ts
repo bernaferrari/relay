@@ -636,6 +636,7 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     // duplicate frames without improving diagnosis.
     case "sleep":
     case "screenshot":
+    case "capture-surface":
     case "tour":
     case "logs":
     case "network":
