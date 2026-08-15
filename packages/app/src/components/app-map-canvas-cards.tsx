@@ -259,6 +259,13 @@ export function ScreenCard(props: {
     onCleanup(() => document.removeEventListener("pointerdown", finishEditing, true));
   });
   const visibleSrc = () => (props.src() && !imageFailed() ? props.src() : "");
+  const showsStart = () =>
+    !props.editing &&
+    !props.connectionOrigin &&
+    !props.here &&
+    screenCardStartMarkerVisible(props.title, props.isFlowStart);
+  const showsLeftStatus = () => !props.editing && (Boolean(props.here) || showsStart());
+  const showsRunStatus = () => !props.editing && props.runState && props.runState !== "idle";
   const frameStateClass = () =>
     props.runState === "failed"
       ? "ring-2 ring-[var(--icon-critical-base)]"
@@ -358,7 +365,7 @@ export function ScreenCard(props: {
         </div>
       </Show>
       <header
-        class="relative flex min-w-0 items-center justify-center gap-1.5 px-0.5"
+        class="relative grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 px-0.5"
         style={{
           width: `${props.geometry.frameWidth}px`,
           "justify-self": "center",
@@ -369,7 +376,10 @@ export function ScreenCard(props: {
           when={props.editing}
           fallback={
             <strong
-              class="min-w-0 max-w-full cursor-grab truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing"
+              class={cn(
+                "col-start-2 min-w-0 cursor-grab truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing",
+                showsLeftStatus() || showsRunStatus() ? "max-w-[148px]" : "max-w-[228px]",
+              )}
               data-tip="Drag to move · Double-click to rename · F2"
               onClick={(event) => {
                 event.stopPropagation();
@@ -387,7 +397,7 @@ export function ScreenCard(props: {
         >
           <input
             ref={(element) => (titleInput = element)}
-            class="box-border h-6 min-w-0 w-full rounded-[5px] border border-[var(--text-interactive-base)] bg-[var(--map-control-surface)] px-1.5 text-center text-[12px]/[1.4625] font-medium tracking-[-0.01em] text-[var(--text-strong)] outline-none shadow-[0_0_0_1px_var(--text-interactive-base)]"
+            class="col-span-3 box-border h-6 min-w-0 w-full rounded-[5px] border border-[var(--text-interactive-base)] bg-[var(--map-control-surface)] px-1.5 text-center text-[12px]/[1.4625] font-medium tracking-[-0.01em] text-[var(--text-strong)] outline-none shadow-[0_0_0_1px_var(--text-interactive-base)]"
             aria-label="Screen name"
             data-focus-contained
             value={props.title}
@@ -413,27 +423,20 @@ export function ScreenCard(props: {
           </span>
         </Show>
         <Show when={!props.editing && !props.connectionOrigin && props.here}>
-          <span class="absolute left-0 inline-flex shrink-0 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--icon-success-base)]">
+          <span class="col-start-1 row-start-1 inline-flex items-center justify-self-start gap-1 whitespace-nowrap rounded-[5px] bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--icon-success-base)]">
             <i class="size-1.5 rounded-full bg-current motion-safe:animate-pulse" />
             Here
           </span>
         </Show>
-        <Show
-          when={
-            !props.editing &&
-            !props.connectionOrigin &&
-            !props.here &&
-            screenCardStartMarkerVisible(props.title, props.isFlowStart)
-          }
-        >
-          <span class="absolute left-0 shrink-0 rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
+        <Show when={showsStart()}>
+          <span class="col-start-1 row-start-1 justify-self-start whitespace-nowrap rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
             Start
           </span>
         </Show>
-        <Show when={!props.editing && props.runState && props.runState !== "idle"}>
+        <Show when={showsRunStatus()}>
           <span
             class={cn(
-              "absolute right-0 inline-flex shrink-0 items-center gap-1 text-[9px] font-medium capitalize",
+              "col-start-3 row-start-1 inline-flex items-center justify-self-end gap-1 whitespace-nowrap text-[9px] font-medium capitalize",
               props.runState === "failed"
                 ? "text-[var(--icon-critical-base)]"
                 : props.runState === "running"

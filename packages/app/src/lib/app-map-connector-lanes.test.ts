@@ -166,6 +166,47 @@ test("a same-source fan-in keeps target-side routing hints in source action orde
   assert.deepEqual(lanes.get("bottom-action"), { sourceOffset: 0.8, targetOffset: 0.8 });
 });
 
+test("reciprocal paths use separate lanes instead of drawing doubled arrows", () => {
+  const positions = {
+    settings: { x: 0, y: 0 },
+    birthYear: { x: 640, y: 0 },
+  };
+  const lanes = connectorAutoLanes(
+    [
+      { id: "open-birth-year", fromScreenId: "settings", toScreenId: "birthYear" },
+      { id: "close-birth-year", fromScreenId: "birthYear", toScreenId: "settings" },
+    ],
+    (screenId) => positions[screenId as keyof typeof positions],
+  );
+
+  assert.deepEqual(lanes.get("close-birth-year"), {
+    sourceOffset: 0.42,
+    targetOffset: 0.42,
+  });
+  assert.deepEqual(lanes.get("open-birth-year"), {
+    sourceOffset: 0.58,
+    targetOffset: 0.58,
+  });
+});
+
+test("reciprocal lanes never replace explicit endpoint placement", () => {
+  const lanes = connectorAutoLanes(
+    [
+      {
+        id: "open",
+        fromScreenId: "a",
+        toScreenId: "b",
+        presentation: { sourceOffset: 0.25 },
+      },
+      { id: "close", fromScreenId: "b", toScreenId: "a" },
+    ],
+    (screenId) => (screenId === "a" ? { x: 0, y: 0 } : { x: 640, y: 0 }),
+  );
+
+  assert.deepEqual(lanes.get("open"), { targetOffset: 0.58 });
+  assert.deepEqual(lanes.get("close"), { sourceOffset: 0.42, targetOffset: 0.42 });
+});
+
 test("a selected top-side fan follows destination geometry left-to-right", () => {
   const positions = {
     root: { x: 0, y: 0 },

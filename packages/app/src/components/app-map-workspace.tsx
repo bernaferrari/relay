@@ -64,7 +64,7 @@ import { useAppMapDocumentProjection } from "../lib/use-app-map-document-project
 import { useAppMapGraphEdits } from "../lib/use-app-map-graph-edits";
 import { useAppMapTransitionReplay } from "../lib/use-app-map-transition-replay";
 import { useAppMapPresence } from "../lib/use-app-map-presence";
-import { canvasCombineCards, type CanvasCombineSection } from "../lib/app-map-combine-canvas";
+import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import {
   screenshotOrientationEvidence,
   screenshotUrl,
@@ -326,18 +326,6 @@ export function AppMapWorkspace(props: {
     const node = id ? tree().nodes.find((candidate) => candidate.id === id) : undefined;
     return node ? titleFor(node) : undefined;
   });
-  const combineCards = createMemo(() => {
-    const map = activeAppMap();
-    if (!map) return [];
-    return canvasCombineCards(
-      map,
-      (screenId) => {
-        const node = tree().nodes.find((candidate) => candidate.id === screenId);
-        return node ? { position: positionFor(node), title: titleFor(node) } : undefined;
-      },
-      server.jobs(),
-    );
-  });
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
   );
@@ -384,7 +372,6 @@ export function AppMapWorkspace(props: {
     nodes: () => tree().nodes,
     notes: () => canvasState().notes ?? [],
     connections,
-    combines: combineCards,
     positionFor,
     geometryForNode,
     rotations: canvasScreenRotations,
@@ -937,13 +924,6 @@ export function AppMapWorkspace(props: {
                     )
                   }
                   hereScreenId={hereScreenId()}
-                  combines={combineCards()}
-                  onOpenCombine={(combineId, section) => props.onOpenCombine?.(combineId, section)}
-                  onOpenCombineResults={(jobId) =>
-                    window.dispatchEvent(
-                      new CustomEvent("relay:open-run-history", { detail: { jobId } }),
-                    )
-                  }
                 />
               </AppMapCanvasWorld>
               <Show when={!captureOpen()}>

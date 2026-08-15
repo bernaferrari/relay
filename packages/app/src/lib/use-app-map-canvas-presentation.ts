@@ -22,11 +22,6 @@ import {
   buildPresenceGeometry,
   visibleCanvasBoundsFromViewport,
 } from "./app-map-workspace-helpers";
-import {
-  CANVAS_COMBINE_CARD_HEIGHT,
-  CANVAS_COMBINE_CARD_WIDTH,
-  type CanvasCombineCardModel,
-} from "./app-map-combine-canvas";
 import type { useAppMapCanvasGestures } from "../components/use-app-map-canvas-gestures";
 import type { AppMapRunPresentationState } from "./app-map-run-projection";
 
@@ -39,7 +34,6 @@ export function useAppMapCanvasPresentation(options: {
   nodes: Accessor<MapTreeNode[]>;
   notes: Accessor<CanvasNote[]>;
   connections: Accessor<CanvasConnection[]>;
-  combines: Accessor<CanvasCombineCardModel[]>;
   positionFor: (node: MapTreeNode) => CanvasPoint;
   geometryForNode: (node: MapTreeNode) => ScreenCardGeometry;
   rotations: Accessor<Record<string, CanvasScreenRotation>>;
@@ -55,16 +49,7 @@ export function useAppMapCanvasPresentation(options: {
   companionOrientation: Accessor<"portrait" | "landscape" | "square" | "unknown">;
 }) {
   const bounds = createMemo(() =>
-    canvasBounds(
-      options.nodes(),
-      options.notes(),
-      options.positionFor,
-      options.combines().map((card) => ({
-        ...card.position,
-        width: CANVAS_COMBINE_CARD_WIDTH,
-        height: CANVAS_COMBINE_CARD_HEIGHT,
-      })),
-    ),
+    canvasBounds(options.nodes(), options.notes(), options.positionFor),
   );
   const usableClientSize = () => {
     const observed = options.gestures.canvasClientSize();
@@ -88,7 +73,6 @@ export function useAppMapCanvasPresentation(options: {
     buildMinimapNodes({
       nodes: options.nodes(),
       notes: options.notes(),
-      matrices: options.combines().map((card) => ({ id: card.id, position: card.position })),
       bounds: bounds(),
       positionFor: options.positionFor,
       selectedNodeIds: options.selectedNodeIds(),

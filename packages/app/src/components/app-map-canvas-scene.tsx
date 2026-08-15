@@ -22,10 +22,9 @@ import {
   connectorPresentationWithAutoLane,
 } from "../lib/app-map-connector-lanes";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
-import type { CanvasCombineCardModel, CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
-import { CanvasCombineCard, CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
+import { CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapCurveControl } from "./app-map-curve-control";
 import { AppMapConnectionToolbar } from "./app-map-connection-toolbar";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
@@ -72,9 +71,6 @@ export type AppMapCanvasSceneProps = {
   onDeleteNote: (note: CanvasNote) => void;
   onScreenRotationChange?: (nodeId: string, rotation: CanvasScreenRotation) => void;
   hereScreenId?: string | null;
-  combines?: readonly CanvasCombineCardModel[];
-  onOpenCombine?: (combineId: string, section: CanvasCombineSection) => void;
-  onOpenCombineResults?: (jobId: string) => void;
 };
 
 type ConnectionControlPreview = {
@@ -330,25 +326,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         height={props.height}
         aria-label="Map paths"
       >
-        <For each={props.combines?.filter((combine) => combine.startsAt) ?? []}>
-          {(combine) => {
-            const start = combine.startsAt!;
-            const x1 = start.position.x + SCREEN_CARD_WIDTH;
-            const y1 = start.position.y + 22;
-            const x2 = combine.position.x;
-            const y2 = combine.position.y + 22;
-            const bend = Math.max(12, (x2 - x1) / 2);
-            return (
-              <path
-                d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
-                class="fill-none stroke-[var(--text-interactive-base)] opacity-55 [stroke-dasharray:3_4]"
-                stroke-width="1.25"
-                stroke-linecap="round"
-                aria-hidden="true"
-              />
-            );
-          }}
-        </For>
         <For each={visibleConnections()}>
           {(connection) => {
             const geometry = () => geometryFor(connection);
@@ -626,23 +603,6 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             onText={(text) => props.onNoteText(note, text)}
             onCommit={(previousText) => props.onCommitNote(note, previousText)}
             onDelete={() => props.onDeleteNote(note)}
-          />
-        )}
-      </For>
-
-      <For each={props.combines ?? []}>
-        {(combine) => (
-          <CanvasCombineCard
-            id={combine.id}
-            name={combine.name}
-            position={combine.position}
-            startsAt={combine.startsAt}
-            modifiers={combine.modifiers}
-            tests={combine.tests}
-            cellCount={combine.cellCount}
-            run={combine.run}
-            onOpen={(section) => props.onOpenCombine?.(combine.id, section)}
-            onOpenResults={props.onOpenCombineResults}
           />
         )}
       </For>

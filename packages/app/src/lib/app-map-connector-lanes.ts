@@ -231,7 +231,52 @@ export function connectorAutoLanes(
   const lanes = new Map<string, ConnectorAutoLane>();
   distributeLaneOffsets(sourceGroups, "source", positionFor, geometryFor, lanes);
   distributeLaneOffsets(targetGroups, "target", positionFor, geometryFor, lanes);
+  distributeReciprocalLanes(connections, lanes);
   return lanes;
+}
+
+/**
+ * Opposing paths between the same two screens are not siblings in either the
+ * source or target fan, so the ordinary lane pass cannot see that they would
+ * occupy the exact same route. Give the pair opposite, subtle offsets. This
+ * keeps open/return paths and their arrowheads individually legible without
+ * persisting presentation noise into the shared document.
+ */
+function distributeReciprocalLanes(
+  connections: readonly LaneConnection[],
+  lanes: Map<string, ConnectorAutoLane>,
+) {
+  const byDirection = new Map<string, LaneConnection[]>();
+  for (const connection of connections) {
+    const key = `${connection.fromScreenId}\u0000${connection.toScreenId}`;
+    const group = byDirection.get(key);
+    if (group) group.push(connection);
+    else byDirection.set(key, [connection]);
+  }
+
+  const visited = new Set<string>();
+  for (const connection of connections) {
+    if (visited.has(connection.id)) continue;
+    const reverse = byDirection.get(`${connection.toScreenId}\u0000${connection.fromScreenId}`);
+    const forward = byDirection.get(`${connection.fromScreenId}\u0000${connection.toScreenId}`);
+    if (forward?.length !== 1 || reverse?.length !== 1 || forward === reverse) continue;
+
+    const pair = [connection, reverse[0]!].sort((left, right) => left.id.localeCompare(right.id));
+    for (const [index, member] of pair.entries()) {
+      visited.add(member.id);
+      const reciprocalOffset = index === 0 ? 0.42 : 0.58;
+      const current = lanes.get(member.id) ?? {};
+      lanes.set(member.id, {
+        ...current,
+        ...(supportsAutomaticLane(member, "source") && current.sourceOffset === undefined
+          ? { sourceOffset: reciprocalOffset }
+          : {}),
+        ...(supportsAutomaticLane(member, "target") && current.targetOffset === undefined
+          ? { targetOffset: reciprocalOffset }
+          : {}),
+      });
+    }
+  }
 }
 
 /** Merge a computed lane beneath explicit user presentation values. */
