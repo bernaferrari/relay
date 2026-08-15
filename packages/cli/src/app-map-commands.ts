@@ -323,6 +323,39 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
   mapped(
+    "app-map.screen.consolidate",
+    path("screen consolidate", ["appMapId", "targetScreenId"], undefined, {
+      summary: "Merge viewport cards into one scroll-aware logical screen",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "targetScreenId", type: "string", description: "Canonical logical screen" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "sourceScreenIds",
+          type: "string[]",
+          required: true,
+          description: "Viewport screens to absorb",
+        },
+        {
+          name: "dryRun",
+          type: "boolean",
+          description: "Preview rewiring and blockers without mutation",
+        },
+      ],
+      examples: [
+        'relay screen consolidate grok settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
+      ],
+      note: "Outgoing edges receive semantic reveal-to-control actions. Point-only or otherwise viewport-dependent edges block consolidation.",
+    }),
+  ),
+  mapped(
     "app-map.connection.create",
     path("connect create", ["appMapId"], undefined, {
       summary: "Connect two screens with optional replayable actions",

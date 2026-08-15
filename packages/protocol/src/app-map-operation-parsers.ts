@@ -443,6 +443,30 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     },
   );
 
+  const appMapScreenConsolidateParser = objectParser<
+    AppMapOperationInput<"app-map.screen.consolidate">
+  >("screen consolidation", (input) => {
+    string(input.appMapId, "screen consolidation appMapId");
+    string(input.targetScreenId, "screen consolidation targetScreenId");
+    number(input.expectedRevision, "screen consolidation expectedRevision");
+    if (!Array.isArray(input.sourceScreenIds) || input.sourceScreenIds.length === 0) {
+      fail("screen consolidation sourceScreenIds", "must be a non-empty array");
+    }
+    (input.sourceScreenIds as unknown[]).forEach((id, index) =>
+      string(id, `screen consolidation sourceScreenIds ${index}`),
+    );
+    if (input.eventId !== undefined) string(input.eventId, "screen consolidation eventId");
+    if (input.dryRun !== undefined) boolean(input.dryRun, "screen consolidation dryRun");
+  });
+
+  const appMapScreenConsolidateOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.screen.consolidate">
+  >("screen consolidation response", (output) => {
+    record(output.appMap, "screen consolidation App Map");
+    boolean(output.applied, "screen consolidation applied");
+    record(output.preview, "screen consolidation preview");
+  });
+
   const appMapScreenCaptureOutputParser = objectParser<
     AppMapOperationOutput<"app-map.screen.capture">
   >("App Map screen capture response", (output) => {
@@ -676,6 +700,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapScreenConsolidateParser,
+    appMapScreenConsolidateOutputParser,
     appMapScrollSurfaceCaptureOutputParser,
     appMapScrollSurfaceCaptureParser,
     appMapScrollSurfaceRegenerateOutputParser,

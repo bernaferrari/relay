@@ -208,6 +208,13 @@ export type RecipeStep = RecipeStepMetadata &
         maxAttempts?: number;
       }
     | {
+        /** Scroll only until a stable accessibility target is present. */
+        kind: "reveal";
+        target: StepTarget;
+        direction?: "up" | "down" | "auto";
+        maxAttempts?: number;
+      }
+    | {
         kind: "swipe";
         from: StepPoint;
         to: StepPoint;

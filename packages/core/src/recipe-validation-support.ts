@@ -151,6 +151,55 @@ function parseScrollRuntimeOptions(
   };
 }
 
+function parseScrollStep(
+  raw: Record<string, unknown>,
+  index: number,
+  note?: string,
+): Extract<RecipeStep, { kind: "scroll" }> {
+  if (raw.direction !== "down" && raw.direction !== "up") {
+    throw stepErr(index, 'scroll requires direction: "down" | "up"');
+  }
+  if (raw.amount !== undefined && !isNumber(raw.amount)) {
+    throw stepErr(index, "scroll.amount must be a number");
+  }
+  return {
+    kind: "scroll",
+    direction: raw.direction,
+    ...(raw.amount !== undefined ? { amount: raw.amount } : {}),
+    ...parseScrollRuntimeOptions(raw, index),
+    ...(note ? { note } : {}),
+  };
+}
+
+function parseRevealStep(
+  raw: Record<string, unknown>,
+  index: number,
+  note?: string,
+): Extract<RecipeStep, { kind: "reveal" }> {
+  const target = parseTarget(raw.target, index, "target");
+  if (!target.identifier && !target.ref && !target.label && !target.text) {
+    throw stepErr(index, "reveal requires a semantic identifier/ref/label/text target");
+  }
+  if (
+    raw.direction !== undefined &&
+    raw.direction !== "up" &&
+    raw.direction !== "down" &&
+    raw.direction !== "auto"
+  ) {
+    throw stepErr(index, 'reveal.direction must be "up", "down", or "auto"');
+  }
+  if (raw.maxAttempts !== undefined && (!isNumber(raw.maxAttempts) || raw.maxAttempts < 1)) {
+    throw stepErr(index, "reveal.maxAttempts must be a positive number");
+  }
+  return {
+    kind: "reveal",
+    target,
+    ...(raw.direction !== undefined ? { direction: raw.direction } : {}),
+    ...(raw.maxAttempts !== undefined ? { maxAttempts: raw.maxAttempts } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
 function parseTapRuntimeOptions(
   raw: Record<string, unknown>,
   index: number,
@@ -666,6 +715,8 @@ export {
   parseTarget,
   parseCaptureSurfaceStep,
   parseScrollRuntimeOptions,
+  parseScrollStep,
+  parseRevealStep,
   parseTapRuntimeOptions,
   parseTourRuntimeOptions,
   stepErr,

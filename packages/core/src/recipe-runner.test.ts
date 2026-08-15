@@ -897,6 +897,49 @@ describe("runRecipeStep semantic reveal", () => {
 
     assert.equal(scrolls, 2);
   });
+
+  it("reveals a semantic control instead of relying on a fixed viewport offset", async () => {
+    let viewport = 0;
+    let scrolls = 0;
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes:
+              viewport === 0
+                ? [
+                    {
+                      role: "cell",
+                      label: "Appearance",
+                      hittable: true,
+                      rect: { x: 0, y: 100, width: 300, height: 60 },
+                    },
+                  ]
+                : [
+                    {
+                      role: "cell",
+                      identifier: "kids-mode",
+                      label: "Kids Mode",
+                      hittable: true,
+                      rect: { x: 0, y: 300, width: 300, height: 60 },
+                    },
+                  ],
+          }),
+        scroll: () => {
+          viewport += 1;
+          scrolls += 1;
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "reveal",
+        target: { identifier: "kids-mode", label: "Kids Mode" },
+        direction: "auto",
+      },
+      noLog,
+    );
+    assert.equal(scrolls, 1);
+  });
 });
 
 describe("runRecipeStep conditional policy", () => {

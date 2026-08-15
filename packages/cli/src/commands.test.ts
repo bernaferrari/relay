@@ -106,6 +106,24 @@ test("screen and connection commands use granular App Map operations", () => {
     }).operationId,
     "app-map.connection.update",
   );
+  assert.deepEqual(
+    resolveCommand(["screen", "consolidate", "map-1", "settings"], {
+      expectedRevision: 8,
+      sourceScreenIds: ["settings-middle", "settings-bottom"],
+      dryRun: true,
+    }),
+    {
+      operationId: "app-map.screen.consolidate",
+      commandPath: "screen consolidate",
+      input: {
+        appMapId: "map-1",
+        targetScreenId: "settings",
+        expectedRevision: 8,
+        sourceScreenIds: ["settings-middle", "settings-bottom"],
+        dryRun: true,
+      },
+    },
+  );
 });
 
 test("matrix authoring vocabulary exposes modifiers, tests, and saved matrices", () => {

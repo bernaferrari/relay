@@ -7,9 +7,11 @@ import {
   approveAppMapProposal,
   attachAppMapCaseStack,
   connectAppMapScreens,
+  consolidateAppMapScreens,
   commitAppMapChanges,
   editAppMapScenarioTest,
   previewRoutineImpact,
+  previewScreenConsolidation,
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
@@ -255,6 +257,211 @@ function expectError(code: AppMapErrorCode, run: () => unknown, message?: RegExp
     return true;
   });
 }
+
+test("screen consolidation previews and atomically rewires a scroll surface", () => {
+  const map = mapFixture();
+  delete map.connections["open-home"];
+  delete map.flows.main;
+  delete map.runs["run-1"];
+  delete map.targetResults["result-1"];
+  delete map.screenVariants["variant-home"]!.baseline;
+  const middleVariant = {
+    ...variant("variant-middle", "middle"),
+    evidenceIds: ["middle-evidence"],
+    evidenceUris: ["relay-evidence://captures/middle-evidence"],
+  };
+  const bottomVariant = {
+    ...variant("variant-bottom", "bottom"),
+    evidenceIds: ["bottom-evidence"],
+    evidenceUris: ["relay-evidence://captures/bottom-evidence"],
+  };
+  map.screens.middle = screen("middle", [middleVariant.id]);
+  map.screens.bottom = screen("bottom", [bottomVariant.id]);
+  map.screenVariants[middleVariant.id] = middleVariant;
+  map.screenVariants[bottomVariant.id] = bottomVariant;
+  map.connections["scroll-middle"] = connection({
+    id: "scroll-middle",
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "middle" },
+    actions: [{ id: "scroll", kind: "gesture", gesture: { kind: "scroll", direction: "down" } }],
+  });
+  map.connections["middle-bottom"] = connection({
+    id: "middle-bottom",
+    fromScreenId: "middle",
+    destination: { kind: "screen", screenId: "bottom" },
+    actions: [{ id: "scroll", kind: "gesture", gesture: { kind: "scroll", direction: "down" } }],
+  });
+  map.connections["open-kids"] = connection({
+    id: "open-kids",
+    fromScreenId: "bottom",
+    destination: { kind: "end" },
+    label: "Kids Mode",
+    actions: [
+      { id: "tap-kids", kind: "tap", target: { identifier: "kids-mode", label: "Kids Mode" } },
+    ],
+  });
+  map.connections["open-kids-existing"] = connection({
+    id: "open-kids-existing",
+    fromScreenId: "start",
+    destination: { kind: "end" },
+    label: "Kids Mode",
+    actions: [
+      {
+        id: "tap-kids-existing",
+        kind: "tap",
+        target: { identifier: "kids-mode", label: "Kids Mode" },
+      },
+    ],
+  });
+  map.flows.settings = {
+    ...entity("settings"),
+    name: "Settings",
+    startScreenId: "start",
+    connectionIds: ["scroll-middle", "middle-bottom", "open-kids"],
+  };
+  map.runs["settings-run"] = {
+    ...entity("settings-run"),
+    flowId: "settings",
+    appMapRevision: 2,
+    targetResultIds: ["settings-result"],
+    startedAt: at,
+    finishedAt: at + 10,
+  };
+  map.targetResults["settings-result"] = {
+    ...entity("settings-result"),
+    runId: "settings-run",
+    targetProfile: profile(),
+    outcome: "passed",
+    connectionId: "middle-bottom",
+    evidenceIds: ["historical-scroll"],
+    finishedAt: at + 10,
+  };
+  map.tests.tour = {
+    ...entity("tour"),
+    name: "Settings tour",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [],
+    surfaceBindings: [
+      {
+        screenId: "bottom",
+        variantId: bottomVariant.id,
+        captureMode: "viewport",
+        reason: "Settings viewport",
+        compare: "visual-and-semantic",
+        repair: "propose-recapture",
+      },
+    ],
+  };
+
+  const input = { targetScreenId: "start", sourceScreenIds: ["middle", "bottom"] };
+  const preview = previewScreenConsolidation(map, input);
+  assert.deepEqual(preview.removedSelfLoopConnectionIds, ["middle-bottom", "scroll-middle"]);
+  assert.deepEqual(preview.semanticRevealConnectionIds, ["open-kids", "open-kids-existing"]);
+  assert.deepEqual(preview.connectionCollisions, [
+    { connectionIds: ["open-kids", "open-kids-existing"] },
+  ]);
+  assert.deepEqual(preview.mergedVariantIds, [
+    { sourceVariantId: "variant-bottom", targetVariantId: "variant-start" },
+    { sourceVariantId: "variant-middle", targetVariantId: "variant-start" },
+  ]);
+  assert.deepEqual(map.screens.start?.variantIds, ["variant-start"], "preview is read-only");
+
+  const merged = consolidateAppMapScreens(map, input, context(map, "merge-settings"));
+  assert.equal(merged.revision, map.revision + 1);
+  assert.equal(merged.screens.middle, undefined);
+  assert.equal(merged.screens.bottom, undefined);
+  assert.equal(merged.connections["scroll-middle"], undefined);
+  assert.equal(merged.connections["middle-bottom"], undefined);
+  assert.equal(merged.connections["open-kids"]?.fromScreenId, "start");
+  assert.deepEqual(merged.connections["open-kids"]?.actions[0], {
+    id: "merge-settings-reveal-open-kids",
+    kind: "reveal",
+    target: { identifier: "kids-mode", label: "Kids Mode" },
+    direction: "auto",
+    maxAttempts: 16,
+  });
+  assert.deepEqual(merged.screenVariants["variant-start"]?.evidenceIds.sort(), [
+    "bottom-evidence",
+    "evidence-screen",
+    "middle-evidence",
+  ]);
+  assert.equal(merged.tests.tour?.surfaceBindings?.[0]?.screenId, "start");
+  assert.equal(merged.activity["merge-settings"]?.eventType, "screen.consolidated");
+  assert.deepEqual(
+    merged.screens.start?.consolidations?.[0]?.sourceScreens.map(({ id }) => id),
+    ["bottom", "middle"],
+  );
+  assert.deepEqual(
+    merged.screens.start?.consolidations?.[0]?.internalConnections.map(({ id }) => id),
+    ["middle-bottom", "scroll-middle"],
+  );
+  assert.deepEqual(merged.screens.start?.consolidations?.[0]?.preview, preview);
+  assert.equal(merged.targetResults["settings-result"]?.connectionId, "middle-bottom");
+});
+
+test("screen consolidation fails closed for viewport-dependent point taps", () => {
+  const map = mapFixture();
+  delete map.connections["open-home"];
+  delete map.flows.main;
+  delete map.runs["run-1"];
+  delete map.targetResults["result-1"];
+  delete map.screenVariants["variant-home"]!.baseline;
+  map.screens.bottom = screen("bottom");
+  map.connections["point-only"] = connection({
+    id: "point-only",
+    fromScreenId: "bottom",
+    destination: { kind: "end" },
+    actions: [{ id: "tap", kind: "tap", target: { point: { x: 10, y: 20 } } }],
+  });
+  const input = { targetScreenId: "start", sourceScreenIds: ["bottom"] };
+  assert.equal(
+    previewScreenConsolidation(map, input).blockers[0]?.code,
+    "semantic-reveal-required",
+  );
+  expectError(
+    "in-use",
+    () => consolidateAppMapScreens(map, input, context(map, "unsafe-merge")),
+    /viewport-independent/,
+  );
+});
+
+test("screen consolidation distinguishes one tappable Voice row from its section heading", () => {
+  const map = mapFixture();
+  delete map.connections["open-home"];
+  const voiceVariant = variant("variant-voice", "bottom");
+  voiceVariant.observation = {
+    fingerprint,
+    volatileSignals: [],
+    nodes: [
+      { role: "text", label: "Voice", hittable: false },
+      { role: "cell", label: "Voice", hittable: true },
+    ],
+  };
+  map.screens.bottom = screen("bottom", [voiceVariant.id]);
+  map.screenVariants[voiceVariant.id] = voiceVariant;
+  map.connections.voice = connection({
+    id: "voice",
+    fromScreenId: "bottom",
+    destination: { kind: "end" },
+    actions: [{ id: "tap-voice", kind: "tap", target: { label: "Voice" } }],
+  });
+  assert.deepEqual(
+    previewScreenConsolidation(map, {
+      targetScreenId: "start",
+      sourceScreenIds: ["bottom"],
+    }).blockers,
+    [],
+  );
+  voiceVariant.observation.nodes.push({ role: "cell", label: "Voice", hittable: true });
+  assert.equal(
+    previewScreenConsolidation(map, {
+      targetScreenId: "start",
+      sourceScreenIds: ["bottom"],
+    }).blockers.at(-1)?.code,
+    "semantic-reveal-ambiguous",
+  );
+});
 
 test("validates a normalized project map containing every action kind and returns a clone", () => {
   const input = mapFixture();

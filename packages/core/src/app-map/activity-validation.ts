@@ -30,6 +30,7 @@ export function assertActivity(
     "screen.added",
     "screen.updated",
     "screen.removed",
+    "screen.consolidated",
     "connection.connected",
     "connection.updated",
     "connection.removed",

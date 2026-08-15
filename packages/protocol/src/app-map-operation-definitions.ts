@@ -37,6 +37,8 @@ export function createAppMapOperationDefinitions(
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapScreenConsolidateParser,
+    appMapScreenConsolidateOutputParser,
     appMapScrollSurfaceCaptureOutputParser,
     appMapScrollSurfaceCaptureParser,
     appMapScrollSurfaceRegenerateOutputParser,
@@ -187,6 +189,17 @@ export function createAppMapOperationDefinitions(
         ]),
         output: appMapOutputParser,
         confirmation: "confirm",
+      },
+    ),
+    command(
+      "app-map.screen.consolidate",
+      "Consolidate viewport screens into one logical screen",
+      "POST",
+      "/app-maps/:appMapId/screens/:targetScreenId/consolidate",
+      {
+        category: "authoring",
+        input: appMapScreenConsolidateParser,
+        output: appMapScreenConsolidateOutputParser,
       },
     ),
     command(

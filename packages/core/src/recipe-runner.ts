@@ -70,7 +70,7 @@ import { runExpectScreenStep } from "./recipe-runner-screen.js";
 import {
   runCampaignCheck,
   runCaptureSurfaceStep,
-  runSemanticScrollStep,
+  runScrollOrRevealStep,
   runTapStep,
   runTypeStep,
 } from "./recipe-runner-extended-steps.js";
@@ -182,11 +182,11 @@ async function runRequiredRecipeStep(
       break;
     }
 
-    case "scroll": {
+    case "scroll":
+    case "reveal":
       invalidateVerifiedScreen(ctx);
-      await runSemanticScrollStep(device, step, ctx);
+      await runScrollOrRevealStep(device, step, ctx);
       break;
-    }
 
     case "swipe": {
       invalidateVerifiedScreen(ctx);

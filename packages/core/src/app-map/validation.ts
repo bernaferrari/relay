@@ -377,6 +377,13 @@ function assertFlows(map: AppMap): void {
 }
 
 function assertRunReferences(map: AppMap): void {
+  const archivedConnectionIds = new Set(
+    Object.values(map.screens).flatMap((screen) =>
+      (screen.consolidations ?? []).flatMap((record) =>
+        record.internalConnections.map((connection) => connection.id),
+      ),
+    ),
+  );
   for (const run of Object.values(map.runs)) {
     if (run.flowId && !map.flows[run.flowId]) {
       appMapFail("missing-reference", `Run ${run.id} references missing flow ${run.flowId}`);
@@ -402,7 +409,11 @@ function assertRunReferences(map: AppMap): void {
         `Target result ${result.id} is not owned by run ${result.runId}`,
       );
     }
-    if (result.connectionId && !map.connections[result.connectionId]) {
+    if (
+      result.connectionId &&
+      !map.connections[result.connectionId] &&
+      !archivedConnectionIds.has(result.connectionId)
+    ) {
       appMapFail(
         "missing-reference",
         `Target result ${result.id} references missing connection ${result.connectionId}`,

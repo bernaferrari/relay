@@ -74,6 +74,22 @@ export type AppMapNote = AppMapEntity & {
   position: AppMapPoint;
 };
 
+export type ScreenConsolidationPreview = {
+  targetScreenId: string;
+  sourceScreenIds: string[];
+  movedVariantIds: string[];
+  mergedVariantIds: Array<{ sourceVariantId: string; targetVariantId: string }>;
+  rewiredConnectionIds: string[];
+  removedSelfLoopConnectionIds: string[];
+  connectionCollisions: Array<{ connectionIds: string[] }>;
+  rewiredFlowIds: string[];
+  rewiredTestIds: string[];
+  rewiredVariableIds: string[];
+  rewiredGroupIds: string[];
+  semanticRevealConnectionIds: string[];
+  blockers: Array<{ code: string; message: string; entityIds: string[] }>;
+};
+
 /** Optional visual organization for the canvas and screen browser. A Group
  * never changes execution, identity, or connection semantics. */
 export type MapGroup = AppMapEntity & {
@@ -94,6 +110,18 @@ export type Screen = AppMapEntity & {
   identity?: ScreenIdentity;
   position?: AppMapPoint;
   variantIds: string[];
+  /** Lossless audit trail for viewport cards absorbed into this logical
+   * surface. Raw variants and removed internal edges remain available for
+   * regeneration even though they no longer participate in execution. */
+  consolidations?: Array<{
+    eventId: string;
+    actorId: string;
+    at: number;
+    sourceScreens: Screen[];
+    sourceVariants: ScreenVariant[];
+    internalConnections: Connection[];
+    preview: ScreenConsolidationPreview;
+  }>;
 };
 
 export type AppMapPatch = {
@@ -190,6 +218,15 @@ export type ActionSpec = ActionMetadata &
       }
     | { kind: "text"; text: string; target?: StepTarget }
     | { kind: "gesture"; gesture: GestureSpec }
+    | {
+        /** Locate a semantic control on a logical scroll surface before the
+         * following interaction. Unlike a fixed swipe count this survives
+         * locale reflow, font scaling, and different viewport heights. */
+        kind: "reveal";
+        target: StepTarget;
+        direction?: "up" | "down" | "auto";
+        maxAttempts?: number;
+      }
     | { kind: "back" }
     | { kind: "home" }
     | { kind: "app"; action: "open"; app?: string; url?: string; relaunch?: boolean }
@@ -632,6 +669,7 @@ export type ActivityEvent = AppMapScope & {
     | "screen.added"
     | "screen.updated"
     | "screen.removed"
+    | "screen.consolidated"
     | "connection.connected"
     | "connection.updated"
     | "connection.removed"

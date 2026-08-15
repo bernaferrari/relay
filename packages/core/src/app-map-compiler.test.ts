@@ -174,6 +174,26 @@ test("compiles mapped scroll navigation as a semantic reveal", () => {
   assert.equal(scroll?.maxAttempts, 12);
 });
 
+test("compiles reveal-to-control as a first-class viewport-independent step", () => {
+  const map = fixture();
+  map.connections["open-home"]!.actions.unshift({
+    id: "reveal-continue",
+    kind: "reveal",
+    target: { identifier: "continue-button", label: "Continue" },
+    direction: "auto",
+    maxAttempts: 16,
+  });
+  const root = compileAppMapFlow(map, "checkout").recipes["app-map:map-1:flow:checkout:r7"]!;
+  const reveal = root.steps.find((step) => step.kind === "reveal");
+  assert.deepEqual(reveal, {
+    id: "relay-action-reveal-continue",
+    kind: "reveal",
+    target: { identifier: "continue-button", label: "Continue" },
+    direction: "auto",
+    maxAttempts: 16,
+  });
+});
+
 test("compiles a saved flow only through the selected connection", () => {
   const map = fixture();
   map.screens.receipt = {

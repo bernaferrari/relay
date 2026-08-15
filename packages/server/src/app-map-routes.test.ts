@@ -908,3 +908,81 @@ test("a saved App Map flow runs without an auxiliary canvas document", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("screen consolidation previews without writing, then applies one revision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-screen-consolidate-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:mapper",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "settings-map", name: "Settings" });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "settings-map",
+      expectedRevision: 0,
+      screen: { id: "settings", title: "Settings" },
+    });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "settings-map",
+      expectedRevision: 1,
+      screen: { id: "settings-bottom", title: "Settings · Bottom" },
+    });
+    await client.invoke("app-map.connection.create", {
+      appMapId: "settings-map",
+      expectedRevision: 2,
+      connection: {
+        id: "kids",
+        fromScreenId: "settings-bottom",
+        destination: { kind: "end" },
+        actions: [
+          { id: "tap-kids", kind: "tap", target: { identifier: "kids", label: "Kids Mode" } },
+        ],
+      },
+    });
+    const dryRun = await client.invoke("app-map.screen.consolidate", {
+      appMapId: "settings-map",
+      targetScreenId: "settings",
+      sourceScreenIds: ["settings-bottom"],
+      expectedRevision: 3,
+      dryRun: true,
+    });
+    assert.equal(dryRun.applied, false);
+    assert.equal(dryRun.appMap.revision, 3);
+    assert.ok(dryRun.appMap.screens["settings-bottom"]);
+    assert.deepEqual(dryRun.preview.semanticRevealConnectionIds, ["kids"]);
+
+    const applied = await client.invoke("app-map.screen.consolidate", {
+      appMapId: "settings-map",
+      targetScreenId: "settings",
+      sourceScreenIds: ["settings-bottom"],
+      expectedRevision: 3,
+      eventId: "merge-settings",
+    });
+    assert.equal(applied.applied, true);
+    assert.equal(applied.appMap.revision, 4);
+    assert.equal(applied.appMap.screens["settings-bottom"], undefined);
+    assert.equal(applied.appMap.connections.kids?.fromScreenId, "settings");
+    assert.equal(applied.appMap.connections.kids?.actions[0]?.kind, "reveal");
+    const repeated = await client.invoke("app-map.screen.consolidate", {
+      appMapId: "settings-map",
+      targetScreenId: "settings",
+      sourceScreenIds: ["settings-bottom"],
+      expectedRevision: 3,
+      eventId: "merge-settings",
+    });
+    assert.equal(repeated.appMap.revision, 4);
+    assert.deepEqual(repeated.preview, applied.preview);
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

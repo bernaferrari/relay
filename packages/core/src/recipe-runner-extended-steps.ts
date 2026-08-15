@@ -6,6 +6,7 @@ import { captureScreenshot } from "./workspace.js";
 import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
+import { resolveSnapshotTargetPoint } from "./device-target-resolution.js";
 import {
   resilientScreenIdentityMatch,
   isCancel,
@@ -89,6 +90,50 @@ export async function runSemanticScrollStep(
     await performScroll();
     await sleep(250, device);
   }
+}
+
+export async function runRevealStep(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "reveal" }>,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const maxAttempts = step.maxAttempts ?? 12;
+  const directions =
+    step.direction === "up" ? ["up"] : step.direction === "down" ? ["down"] : ["down", "up"];
+  let attempts = 0;
+  for (const direction of directions) {
+    let previousFingerprint: string | undefined;
+    let repeated = 0;
+    while (attempts <= maxAttempts) {
+      await cooperativeCheckpoint();
+      const nodes = await snapshot(device);
+      if (resolveSnapshotTargetPoint(nodes, step.target)) {
+        ctx.log(
+          `reveal: found semantic target after ${attempts} scroll${attempts === 1 ? "" : "s"}`,
+        );
+        return;
+      }
+      if (attempts === maxAttempts) break;
+      const observed = observeScreenIdentity(nodes);
+      repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
+      previousFingerprint = observed.fingerprint;
+      if (repeated >= 2) break;
+      if (direction === "down") await scrollDown(device);
+      else await scrollUp(device);
+      attempts += 1;
+      await sleep(250, device);
+    }
+  }
+  throw new Error(`reveal-control: semantic target was not found after ${maxAttempts} scrolls`);
+}
+
+export async function runScrollOrRevealStep(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "scroll" | "reveal" }>,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  if (step.kind === "scroll") return runSemanticScrollStep(device, step, ctx);
+  return runRevealStep(device, step, ctx);
 }
 
 export async function runCaptureSurfaceStep(

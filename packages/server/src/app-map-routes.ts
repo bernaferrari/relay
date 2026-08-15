@@ -28,7 +28,6 @@ import {
   removeAppMapFlow,
   removeAppMapGroup,
   removeAppMapRoutine,
-  removeAppMapScreen,
   saveAppMapFlow,
   saveAppMapGroup,
   saveAppMapCaseStack,
@@ -49,6 +48,10 @@ import {
   applyAppMapMutation as applyMutation,
   applyRebasableAppMapMutation as applyRebasableMutation,
 } from "./app-map-route-mutations.js";
+import {
+  handleScreenConsolidationRoute,
+  handleScreenRemovalRoute,
+} from "./app-map-screen-consolidation-route.js";
 import {
   currentTakeRevision,
   findEquivalentTeachConnection,
@@ -657,22 +660,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     return true;
   }
 
-  const screenRemove = matchPath(pathname, "/app-maps/:appMapId/screens/:screenId/remove");
-  if (method === "POST" && screenRemove) {
-    const body = (await parseJsonBody(request)) as Omit<
-      OperationInput<"app-map.screen.remove">,
-      "appMapId" | "screenId"
-    >;
-    const appMap = await applyMutation(
-      scope,
-      screenRemove.appMapId!,
-      body.expectedRevision,
-      body.eventId,
-      (map, context) => removeAppMapScreen(map, screenRemove.screenId!, context),
-    );
-    json(response, 200, { appMap });
-    return true;
-  }
+  if (await handleScreenRemovalRoute(input)) return true;
+  if (await handleScreenConsolidationRoute(input)) return true;
 
   const connectionCreate = matchPath(pathname, "/app-maps/:appMapId/connections");
   if (method === "POST" && connectionCreate) {

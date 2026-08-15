@@ -12,7 +12,8 @@ import {
   parseStepPoint,
   parseTarget,
   parseCaptureSurfaceStep,
-  parseScrollRuntimeOptions,
+  parseScrollStep,
+  parseRevealStep,
   parseTapRuntimeOptions,
   parseTourRuntimeOptions,
   stepErr,
@@ -69,24 +70,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "scroll": {
-        if (raw.direction !== "down" && raw.direction !== "up") {
-          throw stepErr(index, 'scroll requires direction: "down" | "up"');
-        }
-        const scrollRuntimeOptions = parseScrollRuntimeOptions(raw, index);
-        const step: Extract<RecipeStep, { kind: "scroll" }> = {
-          kind: "scroll",
-          direction: raw.direction,
-          ...(raw.amount !== undefined
-            ? isNumber(raw.amount)
-              ? { amount: raw.amount }
-              : (() => {
-                  throw stepErr(index, "scroll.amount must be a number");
-                })()
-            : {}),
-          ...scrollRuntimeOptions,
-          ...(note ? { note } : {}),
-        };
-        out.push(step);
+        out.push(parseScrollStep(raw, index, note));
+        break;
+      }
+      case "reveal": {
+        out.push(parseRevealStep(raw, index, note));
         break;
       }
       case "swipe": {

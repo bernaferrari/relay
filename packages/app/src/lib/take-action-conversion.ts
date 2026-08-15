@@ -5,7 +5,7 @@ import type { RecipeStep, RecordedStepEvidence, StepTarget } from "./api-types";
 /** Action kinds that can be edited before a Take is committed. */
 export type EditableActionKind = Exclude<
   RecipeStep["kind"],
-  "expect-screen" | "capture-surface" | "tour"
+  "expect-screen" | "capture-surface" | "tour" | "reveal"
 >;
 
 export type TapGesture = "single" | "multi" | "hold";

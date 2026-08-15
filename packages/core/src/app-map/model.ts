@@ -53,6 +53,7 @@ export {
   type RunReference,
   type Screen,
   type ScreenPatch,
+  type ScreenConsolidationPreview,
   type ScreenVariant,
   type ScrollSurfaceEvidence,
   type ScrollSurfaceViewport,

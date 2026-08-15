@@ -168,6 +168,16 @@ function actionSteps(map: AppMap, action: ActionSpec): RecipeStep[] {
                 ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
               },
             ];
+      case "reveal":
+        return [
+          {
+            id: `relay-action-${action.id}`,
+            kind: "reveal",
+            target: structuredClone(action.target),
+            ...(action.direction ? { direction: action.direction } : {}),
+            ...(action.maxAttempts === undefined ? {} : { maxAttempts: action.maxAttempts }),
+          },
+        ];
       case "back":
       case "home":
         return [{ id: `relay-action-${action.id}`, kind: "key", key: action.kind }];

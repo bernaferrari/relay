@@ -19,6 +19,7 @@ import type {
   SaveFlowInput,
   SaveRoutineInput,
   Screen,
+  ScreenConsolidationPreview,
   ScreenVariant,
   UpdateScreenInput,
 } from "./app-map.js";
@@ -187,6 +188,21 @@ export type AppMapOperationMap = {
   "app-map.screen.remove": {
     input: { appMapId: string; screenId: string; expectedRevision: number; eventId?: string };
     output: { appMap: AppMap };
+  };
+  "app-map.screen.consolidate": {
+    input: {
+      appMapId: string;
+      targetScreenId: string;
+      sourceScreenIds: string[];
+      expectedRevision: number;
+      eventId?: string;
+      dryRun?: boolean;
+    };
+    output: {
+      appMap: AppMap;
+      applied: boolean;
+      preview: ScreenConsolidationPreview;
+    };
   };
   "app-map.connection.create": {
     input: {

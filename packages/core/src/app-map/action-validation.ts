@@ -169,6 +169,27 @@ export function assertActions(actions: ActionSpec[], label: string): void {
             safeInteger(action.gesture.amount, `${item}.gesture.amount`);
         } else appMapFail("invalid-map", `${item}.gesture.kind is unsupported`);
         break;
+      case "reveal":
+        assertTarget(action.target, `${item}.target`);
+        if (
+          !action.target.identifier &&
+          !action.target.ref &&
+          !action.target.label &&
+          !action.target.text
+        ) {
+          appMapFail("invalid-map", `${item}.target requires a semantic selector`);
+        }
+        if (
+          action.direction !== undefined &&
+          action.direction !== "up" &&
+          action.direction !== "down" &&
+          action.direction !== "auto"
+        ) {
+          appMapFail("invalid-map", `${item}.direction is unsupported`);
+        }
+        if (action.maxAttempts !== undefined)
+          safeInteger(action.maxAttempts, `${item}.maxAttempts`);
+        break;
       case "back":
       case "home":
         break;

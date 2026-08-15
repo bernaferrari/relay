@@ -137,6 +137,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return `Press ${step.key === "back" ? "Back" : "Home"}`;
     case "scroll":
       return `Scroll ${cap(step.direction)}${step.amount === 1 ? " · full screen" : ""}`;
+    case "reveal":
+      return `Reveal ${targetPhrase(step.target)}`;
     case "swipe":
       return `Swipe ${swipeDirection(step.from, step.to)}`;
     case "screenshot":
@@ -257,6 +259,7 @@ export function stepValid(step: RecipeStep): boolean {
     case "location":
       return Number.isFinite(step.latitude) && Number.isFinite(step.longitude);
     case "scroll":
+    case "reveal":
     case "key":
     case "swipe":
     case "screenshot":

@@ -15,6 +15,11 @@ export {
   updateAppMapScreen,
 } from "./app-map/screen-operations.js";
 export {
+  consolidateAppMapScreens,
+  previewScreenConsolidation,
+  type ConsolidateScreensInput,
+} from "./app-map/screen-consolidation.js";
+export {
   connectAppMapScreens,
   removeAppMapConnection,
   updateAppMapConnection,

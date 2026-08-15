@@ -163,6 +163,27 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
     }
   }
   stringArray(screen.variantIds, `${label}.variantIds`);
+  if (screen.consolidations !== undefined) {
+    if (!Array.isArray(screen.consolidations))
+      appMapFail("invalid-map", `${label}.consolidations must be an array`);
+    for (const [index, record] of screen.consolidations.entries()) {
+      objectValue(record, `${label}.consolidations[${index}]`);
+      identifier(record.eventId, `${label}.consolidations[${index}].eventId`);
+      identifier(record.actorId, `${label}.consolidations[${index}].actorId`);
+      finiteTimestamp(record.at, `${label}.consolidations[${index}].at`);
+      if (
+        !Array.isArray(record.sourceScreens) ||
+        !Array.isArray(record.sourceVariants) ||
+        !Array.isArray(record.internalConnections)
+      ) {
+        appMapFail(
+          "invalid-map",
+          `${label}.consolidations[${index}] must retain screens, variants, and internal connections`,
+        );
+      }
+      objectValue(record.preview, `${label}.consolidations[${index}].preview`);
+    }
+  }
 }
 
 export function assertAppMapNote(note: AppMapNote, scope: AppMapScope, label: string): void {

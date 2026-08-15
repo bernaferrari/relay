@@ -38,6 +38,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.teach",
       "app-map.screen.update",
       "app-map.screen.remove",
+      "app-map.screen.consolidate",
       "app-map.connection.create",
       "app-map.connection.update",
       "app-map.connection.remove",
@@ -111,6 +112,28 @@ test("map teach accepts a point tap without expectedRevision", () => {
   });
   assert.equal(parsed.appMapId, "android-settings-now");
   assert.equal(parsed.fromScreenId, "settings");
+});
+
+test("screen consolidation validates a read-only preview request", () => {
+  const parsed = operationDefinition("app-map.screen.consolidate").input.parse({
+    appMapId: "grok",
+    targetScreenId: "settings",
+    sourceScreenIds: ["settings-middle", "settings-bottom"],
+    expectedRevision: 12,
+    dryRun: true,
+  });
+  assert.deepEqual(parsed.sourceScreenIds, ["settings-middle", "settings-bottom"]);
+  assert.equal(parsed.dryRun, true);
+  assert.throws(
+    () =>
+      operationDefinition("app-map.screen.consolidate").input.parse({
+        appMapId: "grok",
+        targetScreenId: "settings",
+        sourceScreenIds: [],
+        expectedRevision: 12,
+      }),
+    /non-empty array/,
+  );
 });
 
 test("map teach accepts a swipe as a replayable scroll gesture", () => {
