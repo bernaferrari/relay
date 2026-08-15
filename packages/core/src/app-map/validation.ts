@@ -168,6 +168,30 @@ function assertCombines(map: AppMap): void {
 
 function assertTests(map: AppMap): void {
   for (const work of Object.values(map.tests ?? {})) {
+    if (work.kind === "scenario") {
+      for (const binding of work.surfaceBindings ?? []) {
+        const screen = map.screens[binding.screenId];
+        const variant = map.screenVariants[binding.variantId];
+        if (!screen || !variant || variant.screenId !== screen.id) {
+          appMapFail(
+            "missing-reference",
+            `Test ${work.id} binds missing Screen Variant ${binding.variantId}`,
+          );
+        }
+        if (binding.captureMode === "full-surface") {
+          const baseline = variant.scrollSurfaces?.find(
+            (surface) =>
+              surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
+          );
+          if (!baseline) {
+            appMapFail(
+              "missing-reference",
+              `Test ${work.id} binds missing logical surface baseline ${binding.baselineCaptureId}`,
+            );
+          }
+        }
+      }
+    }
     if (work.kind === "path" && !map.flows[work.flowId!]) {
       appMapFail(
         "missing-reference",

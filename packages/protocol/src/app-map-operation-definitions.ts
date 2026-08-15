@@ -37,6 +37,8 @@ export function createAppMapOperationDefinitions(
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapScrollSurfaceCaptureOutputParser,
+    appMapScrollSurfaceCaptureParser,
     appMapTeachOutputParser,
     appMapTeachParser,
     appMapTestCompileInputParser,
@@ -119,6 +121,19 @@ export function createAppMapOperationDefinitions(
         lease: "exclusive",
         input: appMapScreenCaptureParser,
         output: appMapScreenCaptureOutputParser,
+      },
+    ),
+    command(
+      "app-map.scroll-surface.capture",
+      "Capture and attach a durable scrollable logical screen",
+      "POST",
+      "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/capture",
+      {
+        category: "authoring",
+        targetCapabilities: ["scroll", "snapshot", "screenshot"],
+        lease: "exclusive",
+        input: appMapScrollSurfaceCaptureParser,
+        output: appMapScrollSurfaceCaptureOutputParser,
       },
     ),
     command(

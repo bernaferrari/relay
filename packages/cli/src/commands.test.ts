@@ -168,6 +168,36 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   assert.match(help?.note ?? "", /exclusive lease/u);
 });
 
+test("screen capture-scroll targets one durable Screen Variant", () => {
+  assert.deepEqual(
+    resolveCommand(["screen", "capture-scroll", "map-1", "settings", "settings-ja"], {
+      expectedRevision: 12,
+      target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+      leaseId: "lease-1",
+      maxScrolls: 6,
+    }),
+    {
+      operationId: "app-map.scroll-surface.capture",
+      commandPath: "screen capture-scroll",
+      input: {
+        appMapId: "map-1",
+        screenId: "settings",
+        variantId: "settings-ja",
+        expectedRevision: 12,
+        target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+        leaseId: "lease-1",
+        maxScrolls: 6,
+      },
+    },
+  );
+  const descriptor = mappedCommandDescriptors.find(
+    (candidate) => candidate.operationId === "app-map.scroll-surface.capture",
+  );
+  const help = descriptor?.paths.find((candidate) => candidate.command === "screen capture-scroll");
+  assert.match(help?.note ?? "", /Explicitly opts/u);
+  assert.match(help?.note ?? "", /should remain viewport-only/u);
+});
+
 test("persisted run replay has one friendly watched command", () => {
   assert.deepEqual(resolveCommand(["run", "replay", "run-1"]), {
     operationId: "run.replay",

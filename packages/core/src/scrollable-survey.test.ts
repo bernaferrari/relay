@@ -102,6 +102,105 @@ test("restores after a screen change on the first captured movement", async () =
   assert.equal(result.restoredStartViewport, true);
 });
 
+test("keeps a scrollable surface when its identifier-less header shifts but semantics overlap", async () => {
+  const shared = Array.from({ length: 33 }, (_, index) => ({
+    label: `Control ${index}`,
+    type: "Button",
+    rect: { x: 0, y: 28 + index * 3, width: 20, height: 3 },
+    visibleToUser: true,
+  }));
+  const surfaceSnapshot = (page: number): SnapshotPayload => ({
+    ...snapshot(page === 0 ? "header-top" : "header-bottom", page),
+    foregroundApp: "ai.x.GrokApp",
+    nodes: [
+      {
+        identifier: "app-root",
+        type: "Application",
+        depth: 0,
+        rect: { x: 0, y: 0, width: 64, height: 160 },
+        visibleToUser: true,
+      },
+      {
+        identifier: page === 0 ? "compose-header-top" : "compose-header-bottom",
+        type: "NavigationBar",
+        rect: { x: 0, y: 0, width: 64, height: 24 },
+        visibleToUser: true,
+      },
+      ...shared,
+      ...Array.from({ length: page === 0 ? 22 : 21 }, (_, index) => ({
+        label: `Page ${page} item ${index}`,
+        type: "StaticText",
+        rect: { x: 20, y: 30 + index * 4, width: 30, height: 3 },
+        visibleToUser: true,
+      })),
+    ],
+  });
+  let page = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => ({
+        ...captured(image(page * 40), page),
+        snapshot: surfaceSnapshot(page),
+      }),
+      scrollDown: async () => {
+        page += 1;
+      },
+      scrollUp: async () => {
+        page -= 1;
+      },
+      settle: async () => {},
+    },
+    { maxScrolls: 1 },
+  );
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.frames.length, 2);
+  assert.ok(result.stitched);
+});
+
+test("rejects another screen in the same app when only generic chrome overlaps", async () => {
+  const surfaceSnapshot = (page: number): SnapshotPayload => ({
+    ...snapshot(`header-${page}`, page),
+    foregroundApp: "ai.x.GrokApp",
+    nodes: [
+      {
+        identifier: "app-root",
+        type: "Application",
+        depth: 0,
+        rect: { x: 0, y: 0, width: 64, height: 160 },
+        visibleToUser: true,
+      },
+      {
+        identifier: page === 0 ? "compose-header" : "account-header",
+        type: "NavigationBar",
+        rect: { x: 0, y: 0, width: 64, height: 24 },
+        visibleToUser: true,
+      },
+      { label: "Close", type: "Button", visibleToUser: true },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        label: `${page === 0 ? "Compose" : "Account"} ${index}`,
+        type: "StaticText",
+        visibleToUser: true,
+      })),
+    ],
+  });
+  let page = 0;
+  const result = await captureScrollableSurvey({
+    capture: async () => ({
+      ...captured(image(page * 40), page),
+      snapshot: surfaceSnapshot(page),
+    }),
+    scrollDown: async () => {
+      page = 1;
+    },
+    scrollUp: async () => {
+      page = 0;
+    },
+    settle: async () => {},
+  });
+  assert.equal(result.reason, "screen-changed");
+  assert.equal(result.frames.length, 1);
+});
+
 test("restores all movements after a later screen change", async () => {
   const pages = [captured(image(0), 0), captured(image(40), 1), captured(image(80), 2, "other")];
   let page = 0;

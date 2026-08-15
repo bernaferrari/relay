@@ -455,6 +455,41 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       string(output.reviewProposalId, "App Map screen capture response reviewProposalId");
   });
 
+  const appMapScrollSurfaceCaptureParser = objectParser<
+    AppMapOperationInput<"app-map.scroll-surface.capture">
+  >("App Map scroll surface capture", (input) => {
+    string(input.appMapId, "App Map scroll surface capture appMapId");
+    string(input.screenId, "App Map scroll surface capture screenId");
+    string(input.variantId, "App Map scroll surface capture variantId");
+    number(input.expectedRevision, "App Map scroll surface capture expectedRevision");
+    if (input.eventId !== undefined)
+      string(input.eventId, "App Map scroll surface capture eventId");
+    string(input.leaseId, "App Map scroll surface capture leaseId");
+    const target = record(input.target, "App Map scroll surface capture target");
+    if (target.kind !== "device" || (target.platform !== "android" && target.platform !== "ios")) {
+      fail("App Map scroll surface capture target", "must be an Android or iOS device");
+    }
+    string(target.targetId, "App Map scroll surface capture targetId");
+    if (
+      input.maxScrolls !== undefined &&
+      (typeof input.maxScrolls !== "number" ||
+        !Number.isInteger(input.maxScrolls) ||
+        input.maxScrolls < 1 ||
+        input.maxScrolls > 6)
+    ) {
+      fail("App Map scroll surface capture maxScrolls", "must be an integer between 1 and 6");
+    }
+  });
+
+  const appMapScrollSurfaceCaptureOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.scroll-surface.capture">
+  >("App Map scroll surface capture response", (output) => {
+    record(output.appMap, "App Map scroll surface capture response appMap");
+    record(output.screen, "App Map scroll surface capture response screen");
+    record(output.variant, "App Map scroll surface capture response variant");
+    record(output.scrollSurface, "App Map scroll surface capture response scrollSurface");
+  });
+
   const appMapTeachParser = objectParser<AppMapOperationInput<"app-map.teach">>(
     "App Map teach",
     (input) => {
@@ -620,6 +655,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     appMapScreenAddParser,
     appMapScreenCaptureOutputParser,
     appMapScreenCaptureParser,
+    appMapScrollSurfaceCaptureOutputParser,
+    appMapScrollSurfaceCaptureParser,
     appMapTeachOutputParser,
     appMapTeachParser,
     appMapTestCompileInputParser,

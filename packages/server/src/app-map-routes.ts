@@ -59,6 +59,7 @@ import {
   teachInteractionToAuthoringInteraction,
 } from "./app-map-capture-support.js";
 import { handleAppMapTestRoute } from "./app-map-test-routes.js";
+import { handleAppMapScrollSurfaceRoute } from "./app-map-scroll-surface-route.js";
 
 export {
   findEquivalentTeachConnection,
@@ -77,6 +78,8 @@ type AppMapRouteInput = {
 
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
+
+  if (await handleAppMapScrollSurfaceRoute(input)) return true;
 
   if (method === "GET" && pathname === "/app-maps") {
     json(response, 200, { appMaps: await listAppMaps(scope.projectId) });
@@ -347,11 +350,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       });
     } finally {
       if (session) {
-        // Screenshot-only capture borrows the Authoring Session observation
-        // boundary, but it is not a path proposal. Make the temporary review
-        // terminal before removing it; cleanup intentionally rejects live
-        // sessions and previously left every Save screen action behind as a
-        // phantom review in the desktop app.
+        // Screenshot-only capture borrows the Authoring Session observation boundary, but it is
+        // not a path proposal. Finish its temporary review before cleanup to avoid phantom reviews.
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
           await authoringSessions
             .cancel(session.id, createAuthoringRuntime())

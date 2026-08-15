@@ -150,6 +150,62 @@ function pageAnchor(snapshot: SnapshotPayload): string | undefined {
   return anchors.length ? anchors.join("|") : undefined;
 }
 
+function normalizedSemanticPart(value?: string): string {
+  return (value ?? "").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+function isSystemSemantic(node: SnapshotNode): boolean {
+  const role = normalizedSemanticPart(node.role ?? node.type);
+  return /status.?bar|keyboard|input.?method|system.?window/u.test(role);
+}
+
+function structuralAnchors(snapshot: SnapshotPayload): Set<string> {
+  const anchors = new Set<string>();
+  for (const node of snapshot.nodes) {
+    if (node.visibleToUser === false || isSystemSemantic(node)) continue;
+    const role = normalizedSemanticPart(node.role ?? node.type);
+    const stable = normalizedSemanticPart(node.identifier ?? node.ref);
+    if (
+      stable &&
+      (/application|scroll|list|table|collection|web.?view/u.test(role) || (node.depth ?? 99) <= 1)
+    ) {
+      anchors.add(`${role}:${stable}`);
+    } else if (/application|scroll|list|table|collection|web.?view/u.test(role)) {
+      const label = normalizedSemanticPart(node.label);
+      if (label) anchors.add(`${role}:text:${label}`);
+    }
+  }
+  return anchors;
+}
+
+function meaningfulSemantics(snapshot: SnapshotPayload): Set<string> {
+  const semantics = new Set<string>();
+  for (const node of snapshot.nodes) {
+    if (node.visibleToUser === false || isSystemSemantic(node)) continue;
+    const role = normalizedSemanticPart(node.role ?? node.type) || "node";
+    const stable = normalizedSemanticPart(node.identifier ?? node.ref);
+    const label = normalizedSemanticPart(node.label);
+    const value = normalizedSemanticPart(node.value);
+    if (stable) semantics.add(`${role}:id:${stable}`);
+    else if (label || value) semantics.add(`${role}:text:${label}:${value}`);
+  }
+  return semantics;
+}
+
+function overlap(left: Set<string>, right: Set<string>): { count: number; ratio: number } {
+  let count = 0;
+  for (const value of left) if (right.has(value)) count += 1;
+  return { count, ratio: count / Math.max(1, Math.min(left.size, right.size)) };
+}
+
+function surveySurfaceIsIdentifiable(snapshot: SnapshotPayload): boolean {
+  return Boolean(
+    pageAnchor(snapshot) ||
+    structuralAnchors(snapshot).size > 0 ||
+    meaningfulSemantics(snapshot).size >= 3,
+  );
+}
+
 function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boolean {
   if (!next.inspectable) return false;
   if (first.foregroundApp && next.foregroundApp && first.foregroundApp !== next.foregroundApp) {
@@ -157,7 +213,16 @@ function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boole
   }
   const initialAnchor = pageAnchor(first);
   const nextAnchor = pageAnchor(next);
-  return Boolean(initialAnchor && nextAnchor && initialAnchor === nextAnchor);
+  if (initialAnchor && nextAnchor && initialAnchor === nextAnchor) return true;
+
+  const structural = overlap(structuralAnchors(first), structuralAnchors(next));
+  const semantic = overlap(meaningfulSemantics(first), meaningfulSemantics(next));
+  // Some native sheets expose no identifier on their fixed header. Preserve
+  // the conservative screen boundary by requiring several independent,
+  // non-system semantics in addition to the same foreground app/root. The
+  // visual seam remains a separate mandatory check before a frame is accepted.
+  const meaningfulOverlap = semantic.count >= 3 && semantic.ratio >= 0.35;
+  return meaningfulOverlap && structural.count > 0;
 }
 
 function mergedSurveyNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
@@ -325,12 +390,12 @@ export async function captureScrollableSurvey(
       true,
     );
   }
-  if (!pageAnchor(first.snapshot)) {
+  if (!surveySurfaceIsIdentifiable(first.snapshot)) {
     return result(
       frames,
       "stopped",
       "missing-page-anchor",
-      "The visible page has no stable accessibility anchor, so Relay did not scroll it.",
+      "The visible page has no stable accessibility structure, so Relay did not scroll it.",
       true,
     );
   }

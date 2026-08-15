@@ -202,6 +202,46 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
   ),
   mapped(
+    "app-map.scroll-surface.capture",
+    path("screen capture-scroll", ["appMapId", "screenId", "variantId"], undefined, {
+      summary: "Capture one durable, decomposable full scrollable screen",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "screenId", type: "string", description: "Selected logical screen" },
+        { name: "variantId", type: "string", description: "Target/locale-specific variant" },
+      ],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "target",
+          type: "object",
+          required: true,
+          description: "Android or iOS device matching the selected variant",
+        },
+        {
+          name: "leaseId",
+          type: "string",
+          required: true,
+          description: "Exclusive control lease",
+        },
+        {
+          name: "maxScrolls",
+          type: "integer (1-6)",
+          description: "Maximum downward scrolls; defaults to 4",
+        },
+      ],
+      examples: [
+        'relay screen capture-scroll grok settings settings-ja --input \'{"expectedRevision":12,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>","maxScrolls":6}\'',
+      ],
+      note: "Explicitly opts this stable product-owned variant into full-surface coverage. Dynamic, private, imported, feed, and history content should remain viewport-only. Raw PNG/tree pairs are canonical; the composite, merged tree, and manifest are derived without storing base64 in the App Map.",
+    }),
+  ),
+  mapped(
     "app-map.teach",
     path("map teach", ["appMapId"], undefined, {
       summary: "Perform one tap or swipe, capture the destination, and connect it",

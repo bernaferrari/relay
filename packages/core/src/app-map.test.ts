@@ -566,6 +566,13 @@ test("adds a screen and variants without mutating input and records one revision
   assert.equal(input.screens.help, undefined);
   assert.equal(next.screens.help?.title, "help");
   assert.equal(next.screenVariants[addedVariant.id]?.screenId, "help");
+  assert.deepEqual(next.screenVariants[addedVariant.id]?.scrollCapturePolicy, {
+    captureMode: "viewport",
+    source: "default",
+    reason:
+      "Viewport is the conservative default until full-surface coverage is explicitly authored.",
+    decidedAt: addedVariant.updatedAt,
+  });
   assert.equal(next.revision, 4);
   assert.deepEqual(next.activity["event-add"], {
     ...scope,
@@ -579,6 +586,27 @@ test("adds a screen and variants without mutating input and records one revision
     beforeRevision: 3,
     afterRevision: 4,
   });
+});
+
+test("persists conservative capture policy recommendations on new Screen Variants", () => {
+  const input = mapFixture();
+  const imported = variant("variant-memory", "import-memory", profile("iphone-15"));
+  imported.observation = {
+    fingerprint: "f".repeat(64),
+    nodes: [{ role: "StaticText", label: "Your memories" }],
+    volatileSignals: [],
+  };
+  const next = addAppMapScreen(
+    input,
+    {
+      screen: { ...screen("import-memory", [imported.id]), title: "Import memory" },
+      variants: [imported],
+    },
+    context(input, "event-add-memory"),
+  );
+  assert.equal(next.screenVariants[imported.id]?.scrollCapturePolicy?.captureMode, "viewport");
+  assert.equal(next.screenVariants[imported.id]?.scrollCapturePolicy?.source, "recommended");
+  assert.match(next.screenVariants[imported.id]?.scrollCapturePolicy?.reason ?? "", /private/u);
 });
 
 test("updates screen fields and normalized variants, including explicit field removal", () => {

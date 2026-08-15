@@ -33,6 +33,10 @@ import { assertActions } from "./action-validation.js";
 import { assertEntity } from "./entity-validation.js";
 import { assertScenarioTest } from "./test-intent-validation.js";
 import {
+  assertLogicalScrollSurface,
+  assertScrollSurfaceCapturePolicy,
+} from "./scroll-surface-validation.js";
+import {
   finiteTimestamp,
   identifier,
   objectValue,
@@ -210,9 +214,8 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
   if (variant.observation) assertObservation(variant.observation, `${label}.observation`);
   stringArray(variant.evidenceIds, `${label}.evidenceIds`);
   if (variant.evidenceUris !== undefined) {
-    if (!Array.isArray(variant.evidenceUris) || variant.evidenceUris.length > 32) {
-      appMapFail("invalid-map", `${label}.evidenceUris must be an array of at most 32 items`);
-    }
+    if (!Array.isArray(variant.evidenceUris))
+      appMapFail("invalid-map", `${label}.evidenceUris must be an array`);
     const seen = new Set<string>();
     variant.evidenceUris.forEach((uri, index) => {
       requiredText(uri, `${label}.evidenceUris[${index}]`, 2_048);
@@ -234,6 +237,25 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
     if (!variant.evidenceUris?.includes(variant.screenshotUri)) {
       appMapFail("invalid-map", `${label}.screenshotUri must be included in evidenceUris`);
     }
+  }
+  if (variant.scrollSurfaces !== undefined) {
+    if (!Array.isArray(variant.scrollSurfaces)) {
+      appMapFail("invalid-map", `${label}.scrollSurfaces must be an array`);
+    }
+    const surfaceIds = new Set<string>();
+    variant.scrollSurfaces.forEach((surface, index) => {
+      assertLogicalScrollSurface(surface, variant, `${label}.scrollSurfaces[${index}]`);
+      if (surfaceIds.has(surface.captureId)) {
+        appMapFail(
+          "duplicate-id",
+          `${label}.scrollSurfaces contains duplicate ${surface.captureId}`,
+        );
+      }
+      surfaceIds.add(surface.captureId);
+    });
+  }
+  if (variant.scrollCapturePolicy !== undefined) {
+    assertScrollSurfaceCapturePolicy(variant.scrollCapturePolicy, `${label}.scrollCapturePolicy`);
   }
   if (variant.baseline) assertBaseline(variant.baseline, `${label}.baseline`);
 }

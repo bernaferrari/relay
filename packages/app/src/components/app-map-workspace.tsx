@@ -952,6 +952,7 @@ export function AppMapWorkspace(props: {
                   fallback={
                     <ScreenInspector
                       node={screenInspectorOpen() ? selectedNode() : null}
+                      appMap={activeAppMap()}
                       title={selectedNode() ? titleFor(selectedNode()!) : ""}
                       image={
                         selectedNode()
@@ -960,8 +961,7 @@ export function AppMapWorkspace(props: {
                               draft.steps()[selectedNode()!.representativeStepIndex],
                             ) ||
                             capturedScreenUrls()[selectedNode()!.id] ||
-                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id) ||
-                            undefined
+                            variantScreenshotUrl(server, activeAppMap(), selectedNode()!.id)
                           : undefined
                       }
                       orientationEvidence={

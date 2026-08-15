@@ -195,6 +195,47 @@ test("scenario tests compile all eight intent kinds deterministically with prove
   );
 });
 
+test("compiled graph Tests retain a conservative logical-surface capture policy", () => {
+  const current = fixture();
+  current.screens.cart!.variantIds = ["cart-en"];
+  current.screenVariants["cart-en"] = {
+    ...scope,
+    id: "cart-en",
+    screenId: "cart",
+    targetProfile: {
+      id: "iphone-en",
+      targetId: "iphone-1",
+      source: "device",
+      platform: "ios",
+      name: "iPhone · English",
+      capabilities: ["screenshot"],
+      observedAt: at,
+    },
+    scrollCapturePolicy: {
+      captureMode: "viewport",
+      source: "recommended",
+      reason: "Account-specific content stays viewport-only.",
+      decidedAt: at,
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.surfaceBindings = [
+    {
+      screenId: "cart",
+      variantId: "cart-en",
+      captureMode: "viewport",
+      reason: "Account-specific content stays viewport-only.",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+  ];
+  const compiled = compileAppMapTest(current, work);
+  assert.deepEqual(compiled.plan.surfaceBindings, work.surfaceBindings);
+});
+
 test("scenario capture policy compiles explicit screen evidence", () => {
   const screenshotCaptions = (work: AppMapScenarioTest) => {
     const compiled = compileAppMapTest(fixture(), work);

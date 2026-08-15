@@ -9,9 +9,28 @@ import type {
 import { mutateAppMap } from "./mutation.js";
 import { actionOwners } from "./validation.js";
 import { assertAddScreenInput, assertUpdateScreenInput, identifier } from "./validation-shapes.js";
+import { recommendScrollSurfaceCapturePolicy } from "../scroll-surface-policy.js";
 
 function scopeFor(map: AppMap) {
   return { organizationId: map.organizationId, projectId: map.projectId, appMapId: map.id };
+}
+
+function withScrollCapturePolicy<T extends NonNullable<AddScreenInput["variants"]>[number]>(
+  variant: T,
+  title: string,
+): T {
+  if (variant.scrollCapturePolicy) return variant;
+  return {
+    ...variant,
+    scrollCapturePolicy: recommendScrollSurfaceCapturePolicy({
+      title,
+      semanticLabels: variant.observation?.nodes.flatMap((node) => [
+        ...(node.label ? [node.label] : []),
+        ...(node.value ? [node.value] : []),
+      ]),
+      decidedAt: variant.updatedAt,
+    }),
+  };
 }
 
 export function putScreen(draft: AppMap, input: AddScreenInput): void {
@@ -26,7 +45,9 @@ export function putScreen(draft: AppMap, input: AddScreenInput): void {
   }
   draft.screens[input.screen.id] = structuredClone(input.screen);
   for (const variant of input.variants ?? []) {
-    draft.screenVariants[variant.id] = structuredClone(variant);
+    draft.screenVariants[variant.id] = structuredClone(
+      withScrollCapturePolicy(variant, input.screen.title),
+    );
   }
 }
 
@@ -61,7 +82,7 @@ export function patchScreen(
     // the whole value here could silently discard its canonical preview,
     // baseline, or older evidence. Removing a variant remains the explicit
     // way to discard that record.
-    draft.screenVariants[variant.id] = existing
+    const next = existing
       ? {
           ...structuredClone(existing),
           ...structuredClone(variant),
@@ -77,8 +98,21 @@ export function patchScreen(
           ...(variant.baseline === undefined && existing.baseline
             ? { baseline: structuredClone(existing.baseline) }
             : {}),
+          ...((existing.scrollSurfaces?.length || variant.scrollSurfaces?.length) && {
+            scrollSurfaces: [
+              ...new Map(
+                [...(existing.scrollSurfaces ?? []), ...(variant.scrollSurfaces ?? [])].map(
+                  (surface) => [surface.captureId, structuredClone(surface)] as const,
+                ),
+              ).values(),
+            ],
+          }),
         }
       : structuredClone(variant);
+    draft.screenVariants[variant.id] = withScrollCapturePolicy(
+      next,
+      input.patch.title ?? screen.title,
+    );
     variantIds.add(variant.id);
   }
   screen.title = input.patch.title ?? screen.title;
@@ -147,6 +181,14 @@ export function dropScreen(
       "in-use",
       `Screen ${screenId} is asserted by ${assertionOwner.ownerKind} ${assertionOwner.ownerId}`,
     );
+  }
+  const surfaceOwner = Object.values(draft.tests ?? {}).find(
+    (test) =>
+      test.kind === "scenario" &&
+      test.surfaceBindings?.some((binding) => binding.screenId === screenId),
+  );
+  if (surfaceOwner) {
+    appMapFail("in-use", `Screen ${screenId} is bound by Test ${surfaceOwner.id}`);
   }
   const proposal = Object.values(draft.proposals).find(
     (item) =>

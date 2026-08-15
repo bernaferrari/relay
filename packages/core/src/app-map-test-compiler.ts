@@ -322,6 +322,7 @@ export function compileAppMapScenarioTest(
       kind: "scenario",
       intentSchemaVersion: test.intentSchemaVersion,
     },
+    surfaceBindings: structuredClone(test.surfaceBindings ?? []),
     rootRecipeId,
     recipes: Object.fromEntries(
       Object.values(graph).map((recipe) => [

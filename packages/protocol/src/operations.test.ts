@@ -33,6 +33,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.commit",
       "app-map.screen.add",
       "app-map.screen.capture",
+      "app-map.scroll-surface.capture",
       "app-map.teach",
       "app-map.screen.update",
       "app-map.screen.remove",
@@ -312,6 +313,33 @@ test("scroll survey has one strict target-operation contract", () => {
     () => definition.output.parse({ ...validOutput, reason: "unknown" }),
     /scroll survey reason/u,
   );
+});
+
+test("durable scroll surfaces target exactly one App Map Screen Variant", () => {
+  const definition = operationDefinition("app-map.scroll-surface.capture");
+  assert.equal(definition.transport.method, "POST");
+  assert.equal(
+    definition.transport.path,
+    "/app-maps/:appMapId/screens/:screenId/variants/:variantId/scroll-surfaces/capture",
+  );
+  assert.equal(definition.category, "authoring");
+  assert.equal(definition.lease, "exclusive");
+  assert.deepEqual(definition.targetCapabilities, ["scroll", "snapshot", "screenshot"]);
+  const input = {
+    appMapId: "map-1",
+    screenId: "settings",
+    variantId: "settings-ja",
+    expectedRevision: 12,
+    target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+    leaseId: "lease-1",
+    maxScrolls: 6,
+  };
+  assert.deepEqual(definition.input.parse(input), input);
+  assert.throws(
+    () => definition.input.parse({ ...input, target: { ...input.target, kind: "browser" } }),
+    /Android or iOS device/u,
+  );
+  assert.throws(() => definition.input.parse({ ...input, maxScrolls: 7 }), /between 1 and 6/u);
 });
 
 test("runtime parsers reject malformed input and output", () => {

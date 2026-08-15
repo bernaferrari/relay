@@ -3,6 +3,15 @@ import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.j
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity } from "./discovery-contract.js";
 import type { TargetProfile } from "./target-contract.js";
+import type { LogicalScrollSurface, ScrollSurfaceCapturePolicy } from "./scroll-surface.js";
+export type {
+  LogicalScrollSurface,
+  ScrollSurfaceCapturePolicy,
+  ScrollSurfaceEvidence,
+  ScrollSurfaceStopReason,
+  ScrollSurfaceTestBinding,
+  ScrollSurfaceViewport,
+} from "./scroll-surface.js";
 
 export const APP_MAP_SCHEMA_VERSION = 1 as const;
 /**
@@ -119,6 +128,11 @@ export type ScreenVariant = AppMapEntity & {
   /** The canonical visual preview. Evidence lists may also contain semantic
    * snapshots or video, so renderers must never guess from array order. */
   screenshotUri?: string;
+  /** Immutable capture history for this target/locale-specific variant. The
+   * newest item is the default logical-screen presentation. */
+  scrollSurfaces?: LogicalScrollSurface[];
+  /** Missing means the conservative viewport-only default. */
+  scrollCapturePolicy?: ScrollSurfaceCapturePolicy;
   baseline?: BaselineProvenance;
 };
 

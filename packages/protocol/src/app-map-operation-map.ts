@@ -14,6 +14,7 @@ import type {
   CreateConnectionInput,
   CreateScreenInput,
   MapGroup,
+  LogicalScrollSurface,
   Proposal,
   SaveFlowInput,
   SaveRoutineInput,
@@ -102,6 +103,24 @@ export type AppMapOperationMap = {
       /** A changed semantic capture is pending human comparison; the map still
        * renders its prior approved variant until this proposal is accepted. */
       reviewProposalId?: string;
+    };
+  };
+  "app-map.scroll-surface.capture": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      variantId: string;
+      expectedRevision: number;
+      eventId?: string;
+      target: AuthoringTarget;
+      leaseId: string;
+      maxScrolls?: number;
+    };
+    output: {
+      appMap: AppMap;
+      screen: Screen;
+      variant: ScreenVariant;
+      scrollSurface: LogicalScrollSurface;
     };
   };
   "app-map.teach": {

@@ -241,6 +241,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "intentSchemaVersion",
       "steps",
       "capture",
+      "surfaceBindings",
       "createdAt",
       "updatedAt",
     ],
@@ -274,6 +275,47 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
     } else if (capture.screenIds !== undefined) {
       appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
     }
+  }
+  if (test.surfaceBindings !== undefined) {
+    if (!Array.isArray(test.surfaceBindings) || test.surfaceBindings.length > 50) {
+      appMapFail("invalid-map", `${label}.surfaceBindings must be an array of at most 50 items`);
+    }
+    const seen = new Set<string>();
+    test.surfaceBindings.forEach((binding, index) => {
+      const item = `${label}.surfaceBindings[${index}]`;
+      objectValue(binding, item);
+      allowedKeys(
+        binding,
+        [
+          "screenId",
+          "variantId",
+          "captureMode",
+          "reason",
+          "surfaceId",
+          "baselineCaptureId",
+          "compare",
+          "repair",
+        ],
+        item,
+      );
+      identifier(binding.screenId, `${item}.screenId`);
+      identifier(binding.variantId, `${item}.variantId`);
+      requiredText(binding.reason, `${item}.reason`, 512);
+      if (binding.compare !== "visual-and-semantic" || binding.repair !== "propose-recapture") {
+        appMapFail("invalid-map", `${item} comparison or repair policy is unsupported`);
+      }
+      const key = `${binding.screenId}\0${binding.variantId}`;
+      if (seen.has(key)) appMapFail("duplicate-id", `${item} duplicates a surface binding`);
+      seen.add(key);
+      if (binding.captureMode === "full-surface") {
+        identifier(binding.surfaceId ?? "", `${item}.surfaceId`);
+        identifier(binding.baselineCaptureId ?? "", `${item}.baselineCaptureId`);
+      } else if (binding.captureMode !== "viewport") {
+        appMapFail("invalid-map", `${item}.captureMode is unsupported`);
+      } else if (binding.surfaceId !== undefined || binding.baselineCaptureId !== undefined) {
+        appMapFail("invalid-map", `${item} viewport bindings cannot pin a full-surface baseline`);
+      }
+    });
   }
   assertSteps(test.steps, `${label}.steps`, new Set(), 0, { value: 0 });
 }

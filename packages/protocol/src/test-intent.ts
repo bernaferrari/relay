@@ -1,5 +1,6 @@
 import type { AppMapCapturePolicy, AppMapEntity, AssertionSpec } from "./app-map.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
+import type { ScrollSurfaceTestBinding } from "./scroll-surface.js";
 
 export const APP_MAP_TEST_INTENT_SCHEMA_VERSION = 1 as const;
 
@@ -142,6 +143,8 @@ export type AppMapScenarioTest = AppMapEntity & {
   intentSchemaVersion: typeof APP_MAP_TEST_INTENT_SCHEMA_VERSION;
   steps: AppMapScenarioTestStep[];
   capture?: AppMapCapturePolicy;
+  /** Logical surface coverage is independent from graph navigation. */
+  surfaceBindings?: ScrollSurfaceTestBinding[];
 };
 
 /** Semantic, stable-ID edits are the collaboration boundary for Tests.
@@ -212,6 +215,7 @@ export type AppMapCompiledTest = {
   appMapId: string;
   appMapRevision: number;
   test: Pick<AppMapScenarioTest, "id" | "name" | "kind" | "intentSchemaVersion">;
+  surfaceBindings?: ScrollSurfaceTestBinding[];
   rootRecipeId: string;
   recipes: Record<
     string,
