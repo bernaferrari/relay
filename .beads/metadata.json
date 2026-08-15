@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "agent_device",
+  "project_id": "3ecbfeda-2d56-4fd6-abee-7e6191e2fbe3"
+}
