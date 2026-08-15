@@ -251,9 +251,16 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   );
   const selectedCurveConnection = createMemo(() => {
     const connection = selectedConnection();
+    // A generated collision-safe fan curve is initially marked non-editable
+    // because its backbone has no single canonical midpoint. Hiding the
+    // control in that state creates a dead end: the person cannot supply the
+    // first meaningful offset that turns it into an authored free curve.
+    // Explicit Curve selection therefore owns the affordance; the geometry
+    // remains responsible for clamping or falling back while it is dragged.
     return connection &&
       visibleConnections().some((candidate) => candidate.id === connection.id) &&
-      geometryFor(connection).isEditableCurve
+      connection.presentation?.route === "curve" &&
+      geometryFor(connection).path
       ? connection
       : undefined;
   });
