@@ -35,6 +35,7 @@ function reversibleBackCost(connection: Connection): 0 | 1 | undefined {
   if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) return 0;
   const mutations = connection.actions.flatMap((action) => {
     if (action.kind === "tap") return ["tap"];
+    if (action.kind === "reveal") return [];
     if (action.kind === "recorded" || action.kind === "steps") {
       return action.steps.flatMap((step) =>
         step.kind === "tap"

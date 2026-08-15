@@ -361,6 +361,145 @@ test("full-surface bindings compile one executable capture after reaching the de
   );
 });
 
+test("a logical surface is captured once even when a later path returns to it", () => {
+  const current = fixture();
+  const digest = "d".repeat(64);
+  const evidence = (id: string, mime: "image/png" | "application/json") => ({
+    id,
+    uri: `relay-evidence://${digest}`,
+    sha256: digest,
+    mime,
+    bytes: 10,
+  });
+  current.screens.cart!.variantIds = ["cart-en"];
+  current.screenVariants["cart-en"] = {
+    ...scope,
+    id: "cart-en",
+    screenId: "cart",
+    targetProfile: {
+      id: "iphone-en",
+      targetId: "iphone-1",
+      source: "device",
+      platform: "ios",
+      name: "iPhone · English",
+      capabilities: ["screenshot", "snapshot", "scroll"],
+      observedAt: at,
+    },
+    scrollSurfaces: [
+      {
+        schemaVersion: 1,
+        id: "cart-surface",
+        captureId: "cart-baseline",
+        targetProfileId: "iphone-en",
+        capturePolicy: {
+          captureMode: "full-surface",
+          source: "explicit",
+          reason: "Stable product content.",
+          decidedAt: at,
+        },
+        capturedAt: at,
+        status: "completed",
+        reason: "end-of-content",
+        message: "Reached the end.",
+        restoredStartViewport: true,
+        viewports: [
+          {
+            index: 0,
+            offsetY: 0,
+            appendedHeight: 0,
+            capturedAt: at,
+            width: 100,
+            height: 200,
+            screenshot: { ...evidence("shot", "image/png"), mime: "image/png" },
+            accessibilityTree: {
+              ...evidence("tree", "application/json"),
+              mime: "application/json",
+            },
+          },
+        ],
+        composite: {
+          ...evidence("composite", "image/png"),
+          mime: "image/png",
+          width: 100,
+          height: 200,
+        },
+        mergedTree: {
+          ...evidence("merged", "application/json"),
+          mime: "application/json",
+          nodeCount: 12,
+        },
+        manifest: { ...evidence("manifest", "application/json"), mime: "application/json" },
+      },
+    ],
+    evidenceIds: ["shot", "tree", "composite", "merged", "manifest"],
+    evidenceUris: [`relay-evidence://${digest}`],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.steps = [structuredClone(work.steps[0]!), structuredClone(work.steps[0]!)];
+  work.steps[1]!.id = "return-to-cart";
+  work.steps[1]!.intent = "Return to cart";
+  work.surfaceBindings = [
+    {
+      screenId: "cart",
+      variantId: "cart-en",
+      captureMode: "full-surface",
+      reason: "Stable product content.",
+      surfaceId: "cart-surface",
+      baselineCaptureId: "cart-baseline",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+  ];
+
+  const compiled = compileAppMapTest(current, work);
+  assert.equal(
+    Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .filter((step) => step.kind === "capture-surface").length,
+    1,
+  );
+});
+
+test("instruction branches compile as isolated campaign checks", () => {
+  const map = fixture();
+  const testDefinition = scenario();
+  const compiled = compileAppMapTest(map, testDefinition);
+  const instruction = testDefinition.steps.find((step) => step.kind === "instruction");
+  assert.ok(instruction);
+  const moduleStep = compiled.root.steps.find(
+    (step) => step.kind === "module" && step.check?.id === instruction.id,
+  );
+  assert.deepEqual(moduleStep?.check, { id: instruction.id, title: instruction.intent });
+});
+
+test("later instruction checks compile one canonical cold recovery path", () => {
+  const map = fixture();
+  const work = scenario();
+  const setup = work.steps.find((step) => step.id === "module")!;
+  const first = structuredClone(work.steps[0]!);
+  const second = structuredClone(first);
+  second.id = "navigate-again";
+  second.intent = "Open the cart again";
+  work.steps = [setup, first, second];
+
+  const compiled = compileAppMapTest(map, work);
+  const secondCheck = compiled.root.steps.find(
+    (step) => step.kind === "module" && step.check?.id === second.id,
+  );
+  assert.equal(secondCheck?.kind, "module");
+  assert.ok(secondCheck.check?.recovery);
+  const recovery = compiled.graph[secondCheck.check.recovery.recipeId];
+  assert.ok(recovery);
+  assert.equal(recovery.steps[0]?.kind, "module");
+  assert.equal(
+    recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
+    true,
+  );
+  assert.equal(secondCheck.check.recovery.groupId, "checkout-smoke:root:shared-origin");
+});
+
 test("scenario capture policy compiles explicit screen evidence", () => {
   const screenshotCaptions = (work: AppMapScenarioTest) => {
     const compiled = compileAppMapTest(fixture(), work);
@@ -424,7 +563,10 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
     id: "open-first",
     fromScreenId: "cart",
     destination: { kind: "screen", screenId: "first" },
-    actions: [{ id: "tap-first", kind: "tap", target: { label: "First" } }],
+    actions: [
+      { id: "reveal-first", kind: "reveal", target: { label: "First" }, direction: "auto" },
+      { id: "tap-first", kind: "tap", target: { label: "First" } },
+    ],
   };
   map.connections["open-second"] = {
     ...map.connections["open-cart"]!,

@@ -16,6 +16,15 @@ export type VerifiedScreenCheckpoint = {
  * later run must establish its own checkpoint from the live target. */
 export type RecipeRuntimeState = {
   verifiedScreen?: VerifiedScreenCheckpoint;
+  deferredCampaignChecks?: Array<{
+    check: NonNullable<RecipeStep["check"]>;
+    error: string;
+    deferredAt: number;
+  }>;
+  campaignRecoveryGroups?: Record<
+    string,
+    { status: "healthy" | "needs-recovery" | "blocked"; reason?: string }
+  >;
 };
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([

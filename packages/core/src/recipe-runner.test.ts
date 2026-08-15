@@ -9,6 +9,7 @@ import {
   resolveRecipeStep,
   runRecipeStep as runRecipeStepWithoutContext,
 } from "./recipe-runner.js";
+import { retryDeferredCampaignChecks } from "./recipe-runner-extended-steps.js";
 
 it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ language: "ar" }), true);
@@ -857,6 +858,95 @@ describe("runRecipeStep campaign check policy", () => {
       ),
       true,
     );
+  });
+
+  it("defers one failed leaf while independent siblings continue", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const recipeGraph = {
+      recover: {
+        id: "recover",
+        title: "Recover and visit next leaf",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 0 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = { groupId: "settings", recipeId: "recover" };
+    const device = stubDevice({ press: () => Promise.reject(new Error("row disappeared")) });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      { ...noLog, job, runtime, recipeGraph },
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "sleep",
+        ms: 0,
+        check: { id: "next", title: "Next leaf", recovery },
+      },
+      { ...noLog, job, runtime, recipeGraph },
+    );
+    const context = { ...noLog, job, runtime, recipeGraph };
+    await retryDeferredCampaignChecks(device, context, (recipeId) =>
+      runRecipeStep(device, { kind: "module", recipeId }, context),
+    );
+
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status: string }).status),
+      ["passed", "passed"],
+    );
+    assert.equal(runtime.deferredCampaignChecks?.length, 0);
+  });
+
+  it("blocks only a dependency group after its canonical recovery fails", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const recovery = { groupId: "settings", recipeId: "recover" };
+    const failingTap = { kind: "tap" as const, target: { identifier: "missing" } };
+    const recipeGraph = {
+      recover: {
+        id: "recover",
+        title: "Broken recovery",
+        source: "custom" as const,
+        steps: [failingTap],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({ press: () => Promise.reject(new Error("origin unavailable")) });
+    const context = { ...noLog, job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      { ...failingTap, check: { id: "first", title: "First leaf", recovery } },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      { ...failingTap, check: { id: "second", title: "Second leaf", recovery } },
+      context,
+    );
+    await retryDeferredCampaignChecks(device, context, (recipeId) =>
+      runRecipeStep(device, { kind: "module", recipeId }, context),
+    );
+
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status: string }).status),
+      ["failed", "blocked"],
+    );
+    assert.equal(runtime.campaignRecoveryGroups?.settings?.status, "blocked");
   });
 });
 

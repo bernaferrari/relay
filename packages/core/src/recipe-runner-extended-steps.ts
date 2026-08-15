@@ -6,7 +6,10 @@ import { captureScreenshot } from "./workspace.js";
 import { captureScrollableSurveyForTarget } from "./scrollable-survey.js";
 import { persistLogicalScrollSurface } from "./logical-scroll-surface.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
-import { resolveSnapshotTargetPoint } from "./device-target-resolution.js";
+import {
+  resolveSnapshotTargetPoint,
+  resolveSnapshotTargetRevealDirection,
+} from "./device-target-resolution.js";
 import {
   resilientScreenIdentityMatch,
   isCancel,
@@ -118,8 +121,14 @@ export async function runRevealStep(
       repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) break;
-      if (direction === "down") await scrollDown(device);
-      else await scrollUp(device);
+      const suggestedDirection =
+        step.direction === "auto"
+          ? resolveSnapshotTargetRevealDirection(nodes, step.target)
+          : undefined;
+      const nextDirection = suggestedDirection ?? direction;
+      const targetedAmount = suggestedDirection ? 0.18 : undefined;
+      if (nextDirection === "down") await scrollDown(device, targetedAmount);
+      else await scrollUp(device, targetedAmount);
       attempts += 1;
       await sleep(250, device);
     }
@@ -248,11 +257,34 @@ export async function runCampaignCheck(
   step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
   ctx: RecipeStepContext,
   execute: () => Promise<void>,
+  options: { allowDefer?: boolean } = {},
 ): Promise<void> {
   const startedAt = now();
+  const recovery = step.check.recovery;
+  const groups = ((ctx.runtime ??= {}).campaignRecoveryGroups ??= {});
+  const group = recovery ? groups[recovery.groupId] : undefined;
+  if (group?.status === "blocked") {
+    const finishedAt = now();
+    const dependencyReason = group.reason ?? "Shared origin recovery failed.";
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "blocked",
+        error: `Blocked: ${dependencyReason}`,
+        dependencyReason,
+        startedAt,
+        finishedAt,
+      },
+    });
+    ctx.log(`check blocked: ${step.check.title} — ${dependencyReason}`);
+    return;
+  }
   try {
     await execute();
     const finishedAt = now();
+    if (recovery) groups[recovery.groupId] = { status: "healthy" };
     ctx.job?.artifacts.push({
       kind: "campaign-check-result",
       capturedAt: finishedAt,
@@ -263,6 +295,21 @@ export async function runCampaignCheck(
     if (isCancel(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     const finishedAt = now();
+    if (recovery && options.allowDefer !== false) {
+      (ctx.runtime!.deferredCampaignChecks ??= []).push({
+        check: structuredClone(step.check),
+        error: message,
+        deferredAt: finishedAt,
+      });
+      ctx.job?.artifacts.push({
+        kind: "campaign-check-deferred",
+        capturedAt: finishedAt,
+        data: { ...step.check, status: "deferred", error: message },
+      });
+      ctx.log(`check deferred: ${step.check.title} — ${message}`);
+      return;
+    }
+    if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
     if (ctx.job) {
       try {
         const nodes = await snapshot(device);
@@ -286,5 +333,45 @@ export async function runCampaignCheck(
       });
     }
     ctx.log(`check failed: ${step.check.title} — ${message}`);
+  }
+}
+
+export async function retryDeferredCampaignChecks(
+  device: Device,
+  ctx: RecipeStepContext,
+  executeRecipe: (recipeId: string) => Promise<void>,
+  budgetMs = 30_000,
+): Promise<void> {
+  const queue = ctx.runtime?.deferredCampaignChecks?.splice(0) ?? [];
+  if (queue.length === 0) return;
+  const startedAt = Date.now();
+  ctx.log(`retrying ${queue.length} deferred campaign check${queue.length === 1 ? "" : "s"}`);
+  for (const deferred of queue) {
+    const recovery = deferred.check.recovery;
+    if (!recovery) continue;
+    if (Date.now() - startedAt >= budgetMs) {
+      const at = Date.now();
+      ctx.job?.artifacts.push({
+        kind: "campaign-check-result",
+        capturedAt: at,
+        data: {
+          ...deferred.check,
+          status: "blocked",
+          error: "Blocked: deferred retry budget exhausted",
+          dependencyReason: `Deferred retry budget exhausted after ${budgetMs}ms.`,
+          startedAt: at,
+          finishedAt: at,
+        },
+      });
+      ctx.log(`check blocked: ${deferred.check.title} — retry budget exhausted`);
+      continue;
+    }
+    await runCampaignCheck(
+      device,
+      { kind: "module", recipeId: recovery.recipeId, check: deferred.check },
+      ctx,
+      () => executeRecipe(recovery.recipeId),
+      { allowDefer: false },
+    );
   }
 }

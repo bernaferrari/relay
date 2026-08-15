@@ -39,6 +39,7 @@ import {
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import { retryDeferredChecksForJob } from "./session-campaign-retry.js";
 import { PRIVATE_INPUT, redactPrivateValue } from "./private-inputs.js";
 import { REDACTED } from "./redaction.js";
 import { classifyRunOutcome } from "./outcomes.js";
@@ -622,11 +623,7 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
   }
 }
 
-/**
- * Load the frozen recipe and run each action as a real TraceStep. Cancel
- * propagates from device ops (controlled/raceCancel) and is rethrown so the
- * shared catch path finalizes the job. `setCurrentStep` routes per-step logs.
- */
+/** Run a frozen recipe as traced, cancellable device actions. */
 async function runRecipeSteps(
   job: TestJob,
   device: Device,
@@ -679,6 +676,7 @@ async function runRecipeSteps(
       throw err;
     }
   }
+  await retryDeferredChecksForJob(device, job, pushLog, runtime);
   setCurrentStep(undefined);
 }
 

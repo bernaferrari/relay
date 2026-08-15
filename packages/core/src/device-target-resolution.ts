@@ -59,6 +59,7 @@ type SnapshotTargetResolution = {
   point: { x: number; y: number };
   bounds: { x: number; y: number; width: number; height: number };
   usesActivationAncestor: boolean;
+  revealDirection?: "up" | "down";
 };
 
 /**
@@ -94,15 +95,62 @@ function resolveSnapshotTarget(
     }
     return undefined;
   };
-  const viewport = region
-    ? (nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")
-        ?.rect ??
-      nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window")?.rect)
-    : undefined;
+  const explicitViewport =
+    nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "application")?.rect ??
+    nodes.find((node) => (node.type ?? node.role)?.toLocaleLowerCase() === "window")?.rect;
+  const inferredViewport = nodes
+    .filter(
+      (node) =>
+        node.rect &&
+        node.rect.x <= 0 &&
+        node.rect.y <= 0 &&
+        node.rect.width >= 320 &&
+        node.rect.height >= 480,
+    )
+    .sort(
+      (left, right) =>
+        right.rect!.width * right.rect!.height - left.rect!.width * left.rect!.height,
+    )[0]?.rect;
+  const viewport = explicitViewport ?? inferredViewport;
+  const fixedChrome = viewport
+    ? nodes.flatMap((node) => {
+        const rect = node.rect;
+        if (
+          !rect ||
+          rect.width < viewport.width * 0.9 ||
+          rect.height < 36 ||
+          rect.height > viewport.height * 0.3
+        ) {
+          return [];
+        }
+        const spansLeftEdge = rect.x <= viewport.x;
+        const atTop = spansLeftEdge && rect.y <= viewport.y;
+        const atBottom = spansLeftEdge && rect.y + rect.height >= viewport.y + viewport.height;
+        return atTop || atBottom ? [rect] : [];
+      })
+    : [];
+  const safeTop = Math.max(
+    viewport?.y ?? Number.NEGATIVE_INFINITY,
+    ...fixedChrome
+      .filter((rect) => rect.y <= (viewport?.y ?? 0))
+      .map((rect) => rect.y + rect.height),
+  );
+  const safeBottom = Math.min(
+    viewport ? viewport.y + viewport.height : Number.POSITIVE_INFINITY,
+    ...fixedChrome
+      .filter((rect) => viewport && rect.y + rect.height >= viewport.y + viewport.height)
+      .map((rect) => rect.y),
+  );
   if (region && (!viewport || viewport.width <= 0 || viewport.height <= 0)) return undefined;
   const candidates = nodes
     .filter((node) => {
-      if (!node.rect || node.rect.width <= 0 || node.rect.height <= 0 || node.enabled === false) {
+      if (
+        !node.rect ||
+        node.rect.width <= 0 ||
+        node.rect.height <= 0 ||
+        node.enabled === false ||
+        node.visibleToUser === false
+      ) {
         return false;
       }
       if (!isUsableTapTarget(node)) return false;
@@ -137,11 +185,19 @@ function resolveSnapshotTarget(
       const activationNode = closestHittableAncestor(node);
       const activationRect = activationNode?.rect ?? node.rect!;
       const point = center(activationRect);
+      if (viewport && (point.x < viewport.x || point.x > viewport.x + viewport.width)) {
+        return undefined;
+      }
       return {
         node,
         point,
         bounds: activationRect,
         usesActivationAncestor: activationNode !== undefined,
+        ...(point.y < safeTop
+          ? { revealDirection: "up" as const }
+          : point.y > safeBottom
+            ? { revealDirection: "down" as const }
+            : {}),
         // Compose often places the title inside an unlabeled tappable row.
         // Prefer that row over an identically named section heading or
         // caption, while retaining the child label for semantic matching.
@@ -151,7 +207,8 @@ function resolveSnapshotTarget(
           (activationNode ? 3 : 0),
         area: activationRect.width * activationRect.height,
       };
-    });
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined);
   if (candidates.length === 0) return undefined;
 
   const bestRank = Math.max(...candidates.map((candidate) => candidate.rank));
@@ -181,6 +238,9 @@ function resolveSnapshotTarget(
         point: selected.point,
         bounds: selected.bounds,
         usesActivationAncestor: selected.usesActivationAncestor,
+        ...("revealDirection" in selected && selected.revealDirection
+          ? { revealDirection: selected.revealDirection }
+          : {}),
       }
     : undefined;
 }
@@ -190,7 +250,15 @@ export function resolveSnapshotTargetPoint(
   target: SemanticSnapshotTarget,
   region?: SnapshotTargetRegion,
 ): { x: number; y: number } | undefined {
-  return resolveSnapshotTarget(nodes, target, region)?.point;
+  const resolution = resolveSnapshotTarget(nodes, target, region);
+  return resolution?.revealDirection ? undefined : resolution?.point;
+}
+
+export function resolveSnapshotTargetRevealDirection(
+  nodes: SnapshotNode[],
+  target: SemanticSnapshotTarget,
+): "up" | "down" | undefined {
+  return resolveSnapshotTarget(nodes, target)?.revealDirection;
 }
 
 export type NamedControlTarget = {

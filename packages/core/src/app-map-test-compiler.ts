@@ -81,6 +81,7 @@ export function compileAppMapScenarioTest(
   }
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
+  const scheduledLogicalSurfaces = new Set<string>();
   let compiledCount = 0;
   const captureScreen = (screenId: string): RecipeStep | undefined => {
     const capture = test.capture;
@@ -96,7 +97,12 @@ export function compileAppMapScenarioTest(
       caption: `screen:${map.screens[screenId]?.title ?? screenId}`,
     };
   };
-  const captureLogicalSurface = (screenId: string): RecipeStep | undefined => {
+  const captureLogicalSurface = (
+    screenId: string,
+    options: { schedule?: boolean } = { schedule: true },
+  ): RecipeStep | undefined => {
+    const schedule = options.schedule !== false;
+    if (schedule && scheduledLogicalSurfaces.has(screenId)) return undefined;
     const binding = test.surfaceBindings?.find(
       (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
     );
@@ -107,6 +113,7 @@ export function compileAppMapScenarioTest(
         surface.id === binding.surfaceId && surface.captureId === binding.baselineCaptureId,
     );
     if (!baseline) return undefined;
+    if (schedule) scheduledLogicalSurfaces.add(screenId);
     return {
       kind: "capture-surface",
       screenId,
@@ -161,6 +168,8 @@ export function compileAppMapScenarioTest(
     const recipeSteps: RecipeStep[] = [];
     let previousInstructionPlan: AppMapCompiledFlow | undefined;
     let previousTerminalScreenId: string | undefined;
+    let campaignSetupSteps: RecipeStep[] | undefined;
+    const recoveryGroupId = `${test.id}:${suffix}:shared-origin`;
     for (const step of steps) {
       if (step.binding.status === "unresolved") {
         fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
@@ -169,6 +178,7 @@ export function compileAppMapScenarioTest(
       const referencedEntityIds: string[] = [];
       switch (step.kind) {
         case "instruction": {
+          campaignSetupSteps ??= structuredClone(recipeSteps);
           const connections = step.binding.connectionIds.map((connectionId) => {
             const connection = map.connections[connectionId];
             if (!connection)
@@ -202,6 +212,9 @@ export function compileAppMapScenarioTest(
           let instructionGraph = Object.fromEntries(
             Object.values(plan.recipes).map((compiled) => [compiled.id, asRecipe(map, compiled)]),
           );
+          const coldRoot = instructionGraph[plan.rootRecipeId]
+            ? structuredClone(instructionGraph[plan.rootRecipeId])
+            : undefined;
           if (previousInstructionPlan) {
             instructionGraph = warmCompiledFlowGraphFromSharedPrefix(
               map,
@@ -213,34 +226,58 @@ export function compileAppMapScenarioTest(
             );
           }
           const terminalConnectionId = plan.connections.at(-1)?.connectionId;
+          const decorateRecipe = (recipe: Recipe, recoveryAlternative = false): Recipe => ({
+            ...recipe,
+            steps: recipe.steps.flatMap((recipeStep) => {
+              if (recipeStep.kind !== "expect-screen") return [recipeStep];
+              const sourceExpectation =
+                recipeStep.id?.startsWith("relay-source-") === true ||
+                recipeStep.id?.endsWith(":warm") === true ||
+                recipeStep.recovery !== undefined;
+              // Source assertions guide navigation; they are not product
+              // evidence. Destination assertions remain mandatory and own
+              // the reviewable frame for every visited target.
+              const capture = sourceExpectation ? undefined : captureScreen(recipeStep.screenId);
+              const logicalSurface =
+                terminalConnectionId &&
+                recipeStep.id === `relay-destination-${terminalConnectionId}`
+                  ? captureLogicalSurface(recipeStep.screenId, {
+                      schedule: !recoveryAlternative,
+                    })
+                  : undefined;
+              return [
+                recipeStep,
+                ...(capture ? [capture] : []),
+                ...(logicalSurface ? [logicalSurface] : []),
+              ];
+            }),
+          });
           for (const [recipeKey, recipe] of Object.entries(instructionGraph)) {
-            instructionGraph[recipeKey] = {
-              ...recipe,
-              steps: recipe.steps.flatMap((recipeStep) => {
-                if (recipeStep.kind !== "expect-screen") return [recipeStep];
-                const sourceExpectation =
-                  recipeStep.id?.startsWith("relay-source-") === true ||
-                  recipeStep.id?.endsWith(":warm") === true ||
-                  recipeStep.recovery !== undefined;
-                // Source assertions guide navigation; they are not product
-                // evidence. Destination assertions remain mandatory and own
-                // the reviewable frame for every visited target.
-                const capture = sourceExpectation ? undefined : captureScreen(recipeStep.screenId);
-                const logicalSurface =
-                  terminalConnectionId &&
-                  recipeStep.id === `relay-destination-${terminalConnectionId}`
-                    ? captureLogicalSurface(recipeStep.screenId)
-                    : undefined;
-                return [
-                  recipeStep,
-                  ...(capture ? [capture] : []),
-                  ...(logicalSurface ? [logicalSurface] : []),
-                ];
-              }),
+            instructionGraph[recipeKey] = decorateRecipe(recipe);
+          }
+          let recoveryRecipeId: string | undefined;
+          if (previousInstructionPlan && campaignSetupSteps.length > 0 && coldRoot) {
+            recoveryRecipeId = `${plan.rootRecipeId}:recover`;
+            const decoratedColdRoot = decorateRecipe(coldRoot, true);
+            instructionGraph[recoveryRecipeId] = {
+              ...decoratedColdRoot,
+              id: recoveryRecipeId,
+              title: `${decoratedColdRoot.title} · canonical recovery`,
+              steps: [...structuredClone(campaignSetupSteps), ...decoratedColdRoot.steps],
             };
           }
           importRecipes(step, instructionGraph, step.binding.connectionIds);
-          recipeSteps.push({ kind: "module", recipeId: plan.rootRecipeId });
+          recipeSteps.push({
+            kind: "module",
+            recipeId: plan.rootRecipeId,
+            check: {
+              id: step.id,
+              title: step.intent,
+              ...(recoveryRecipeId
+                ? { recovery: { groupId: recoveryGroupId, recipeId: recoveryRecipeId } }
+                : {}),
+            },
+          });
           referencedEntityIds.push(...step.binding.connectionIds);
           previousInstructionPlan = plan;
           const terminal = plan.connections.at(-1)?.destination;

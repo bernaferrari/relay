@@ -80,10 +80,28 @@ function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeS
       `Screen "${screen.title}" cannot be verified until it has an approved identity`,
     );
   }
-  const observations = screen.variantIds.flatMap((variantId) => {
-    const observation = map.screenVariants[variantId]?.observation;
-    return observation?.nodes.length ? [structuredClone(observation)] : [];
-  });
+  const archivedVariants = screen.consolidations?.flatMap(
+    (consolidation) => consolidation.sourceVariants,
+  );
+  const observationsByFingerprint = new Map(
+    [
+      ...screen.variantIds.map((variantId) => map.screenVariants[variantId]),
+      ...(archivedVariants ?? []),
+    ]
+      .flatMap((variant) =>
+        variant?.observation?.nodes.length ? [structuredClone(variant.observation)] : [],
+      )
+      .map((observation) => [observation.fingerprint, observation]),
+  );
+  const aliases = new Set(screen.identity.aliases ?? []);
+  for (const consolidation of screen.consolidations ?? []) {
+    for (const source of consolidation.sourceScreens) {
+      if (!source.identity) continue;
+      aliases.add(source.identity.fingerprint);
+      for (const alias of source.identity.aliases ?? []) aliases.add(alias);
+    }
+  }
+  const observations = [...observationsByFingerprint.values()];
   return {
     id: stepId,
     kind: "expect-screen",
@@ -92,7 +110,7 @@ function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeS
     fingerprint: screen.identity.fingerprint,
     timeoutMs: 5000,
     ...(screen.handoff?.ownerApp ? { expectedApp: screen.handoff.ownerApp } : {}),
-    ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
+    ...(aliases.size ? { aliases: [...aliases] } : {}),
     ...(observations.length ? { observations } : {}),
   };
 }

@@ -10,6 +10,7 @@ import {
   resolveNamedControl,
   resolveSnapshotTargetPoint,
 } from "./device.js";
+import { resolveSnapshotTargetRevealDirection } from "./device-target-resolution.js";
 
 test("parses immutable Android app build facts from dumpsys output", () => {
   assert.deepEqual(
@@ -175,6 +176,73 @@ test("prefers a Compose row over an identically named section heading", () => {
     ),
     { x: 540, y: 1001 },
   );
+});
+
+test("does not resolve an off-screen Compose row exposed by the accessibility tree", () => {
+  assert.equal(
+    resolveSnapshotTargetPoint(
+      [
+        {
+          index: 0,
+          type: "android.widget.FrameLayout",
+          enabled: true,
+          rect: { x: 0, y: 0, width: 1080, height: 2340 },
+        },
+        {
+          index: 1,
+          parentIndex: 0,
+          type: "android.view.View",
+          hittable: true,
+          visibleToUser: true,
+          rect: { x: 45, y: -150, width: 990, height: 158 },
+        },
+        {
+          index: 2,
+          parentIndex: 1,
+          type: "android.widget.TextView",
+          label: "Customize Grok",
+          enabled: true,
+          visibleToUser: true,
+          rect: { x: 203, y: -105, width: 320, height: 53 },
+        },
+      ],
+      { label: "Customize Grok" },
+    ),
+    undefined,
+  );
+});
+
+test("does not resolve a Compose row hidden beneath fixed app chrome", () => {
+  const nodes = [
+    {
+      index: 0,
+      type: "android.widget.FrameLayout",
+      rect: { x: 0, y: 0, width: 1080, height: 2340 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "android.view.View",
+      rect: { x: 0, y: 0, width: 1080, height: 283 },
+    },
+    {
+      index: 2,
+      parentIndex: 0,
+      type: "android.view.View",
+      hittable: true,
+      rect: { x: 45, y: 70, width: 990, height: 158 },
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      type: "android.widget.TextView",
+      label: "Customize Grok",
+      enabled: true,
+      rect: { x: 203, y: 123, width: 320, height: 53 },
+    },
+  ];
+  assert.equal(resolveSnapshotTargetPoint(nodes, { label: "Customize Grok" }), undefined);
+  assert.equal(resolveSnapshotTargetRevealDirection(nodes, { label: "Customize Grok" }), "up");
 });
 
 test("refuses to guess between distinct controls with the same semantic label", () => {

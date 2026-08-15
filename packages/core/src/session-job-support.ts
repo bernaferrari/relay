@@ -71,7 +71,7 @@ export function failedCampaignChecks(job: TestJob): Array<{ title: string; error
       return [];
     }
     const data = artifact.data as Record<string, unknown>;
-    return data.status === "failed" && typeof data.title === "string"
+    return (data.status === "failed" || data.status === "blocked") && typeof data.title === "string"
       ? [{ title: data.title, error: typeof data.error === "string" ? data.error : "failed" }]
       : [];
   });

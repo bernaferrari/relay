@@ -419,6 +419,72 @@ test("compiles approved semantic variants for dynamic destination matching", () 
   }
 });
 
+test("compiled expectations retain every raw viewport absorbed into a logical screen", () => {
+  const map = fixture();
+  const currentObservation = {
+    fingerprint: "c".repeat(64),
+    nodes: [{ role: "button", label: "Top row" }],
+    volatileSignals: [],
+  };
+  const archivedObservation = {
+    fingerprint: "d".repeat(64),
+    nodes: [{ role: "button", label: "Bottom row" }],
+    volatileSignals: [],
+  };
+  const variant = {
+    ...entity("home-phone"),
+    screenId: "home",
+    targetProfile: {
+      id: "pixel",
+      targetId: "pixel",
+      source: "device" as const,
+      platform: "android" as const,
+      name: "Pixel",
+      capabilities: [],
+      observedAt: at,
+    },
+    observation: currentObservation,
+    evidenceIds: [],
+  };
+  const archivedVariant = {
+    ...variant,
+    id: "home-phone-bottom",
+    screenId: "home-bottom",
+    observation: archivedObservation,
+  };
+  map.screens.home!.variantIds = [variant.id];
+  map.screenVariants[variant.id] = variant;
+  map.screens.home!.consolidations = [
+    {
+      eventId: "merge-home",
+      actorId: "agent",
+      at,
+      sourceScreens: [
+        {
+          ...screen("home-bottom", "Home · Bottom"),
+          identity: {
+            schemaVersion: 1,
+            fingerprint: "e".repeat(64),
+            aliases: ["f".repeat(64)],
+          },
+          variantIds: [archivedVariant.id],
+        },
+      ],
+      sourceVariants: [archivedVariant],
+      internalConnections: [],
+      preview: {} as NonNullable<Screen["consolidations"]>[number]["preview"],
+    },
+  ];
+
+  const plan = compileAppMapFlow(map, "checkout");
+  const destination = plan.recipes[plan.rootRecipeId]!.steps.at(-1);
+  assert.equal(destination?.kind, "expect-screen");
+  if (destination?.kind === "expect-screen") {
+    assert.deepEqual(destination.observations, [currentObservation, archivedObservation]);
+    assert.deepEqual(new Set(destination.aliases), new Set(["e".repeat(64), "f".repeat(64)]));
+  }
+});
+
 test("preserves best-effort action policy in compiled recipes", () => {
   const map = fixture();
   map.connections["open-home"]!.actions = [

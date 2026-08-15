@@ -17,7 +17,7 @@ function summarizeJob(value: unknown): unknown {
       artifact?.kind !== "campaign-check-result" ||
       typeof data?.id !== "string" ||
       typeof data.title !== "string" ||
-      (data.status !== "passed" && data.status !== "failed") ||
+      (data.status !== "passed" && data.status !== "failed" && data.status !== "blocked") ||
       typeof data.startedAt !== "number" ||
       typeof data.finishedAt !== "number"
     ) {
@@ -32,6 +32,9 @@ function summarizeJob(value: unknown): unknown {
         finishedAt: data.finishedAt,
         durationMs: Math.max(0, data.finishedAt - data.startedAt),
         ...(typeof data.error === "string" ? { error: data.error } : {}),
+        ...(typeof data.dependencyReason === "string"
+          ? { dependencyReason: data.dependencyReason }
+          : {}),
       },
     ];
   });

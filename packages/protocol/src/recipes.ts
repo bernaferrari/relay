@@ -161,6 +161,13 @@ export type RecipeStepMetadata = {
   check?: {
     id: string;
     title: string;
+    /** Canonical cold path used after a sibling check leaves the shared
+     * origin uncertain. One failed recovery blocks only this dependency
+     * group instead of cascading misleading failures through the campaign. */
+    recovery?: {
+      groupId: string;
+      recipeId: string;
+    };
   };
   /** Run this step only when the target is currently present or absent. */
   when?: {

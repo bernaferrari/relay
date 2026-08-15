@@ -657,7 +657,41 @@ function parseStepMetadata(
     if (raw.optional === true) {
       throw stepErr(index, "check and optional cannot be combined");
     }
-    metadata.check = { id: raw.check.id, title: raw.check.title.trim() };
+    let recovery: NonNullable<RecipeStep["check"]>["recovery"];
+    if (raw.check.recovery !== undefined) {
+      if (!isObject(raw.check.recovery)) {
+        throw stepErr(index, "check.recovery must be an object");
+      }
+      if (
+        !isString(raw.check.recovery.groupId) ||
+        !raw.check.recovery.groupId.trim() ||
+        raw.check.recovery.groupId.trim().length > 256
+      ) {
+        throw stepErr(
+          index,
+          "check.recovery.groupId must be a non-empty string of at most 256 characters",
+        );
+      }
+      if (
+        !isString(raw.check.recovery.recipeId) ||
+        !raw.check.recovery.recipeId.trim() ||
+        raw.check.recovery.recipeId.trim().length > 512
+      ) {
+        throw stepErr(
+          index,
+          "check.recovery.recipeId must be a non-empty string of at most 512 characters",
+        );
+      }
+      recovery = {
+        groupId: raw.check.recovery.groupId.trim(),
+        recipeId: raw.check.recovery.recipeId.trim(),
+      };
+    }
+    metadata.check = {
+      id: raw.check.id,
+      title: raw.check.title.trim(),
+      ...(recovery ? { recovery } : {}),
+    };
   }
   if (raw.when !== undefined) {
     if (!isObject(raw.when)) throw stepErr(index, "when must be an object");

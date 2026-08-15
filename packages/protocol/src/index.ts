@@ -146,11 +146,12 @@ export type JobSummary = {
 export type CampaignCheckSummary = {
   id: string;
   title: string;
-  status: "passed" | "failed";
+  status: "passed" | "failed" | "blocked";
   startedAt: number;
   finishedAt: number;
   durationMs: number;
   error?: string;
+  dependencyReason?: string;
 };
 
 export type TraceFrameDto = {
