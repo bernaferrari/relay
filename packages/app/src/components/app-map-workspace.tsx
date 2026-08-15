@@ -70,7 +70,6 @@ import {
   screenshotUrl,
   variantOrientationEvidence,
   variantScreenshotUrl,
-  variantScrollSurface,
 } from "../lib/app-map-workspace-media";
 import { AppMapLoadFeedback } from "./app-map-load-feedback";
 import { connectionActionSummaries } from "../lib/connection-action-presentation";
@@ -771,15 +770,6 @@ export function AppMapWorkspace(props: {
                     variantScreenshotUrl(server, activeAppMap(), node.id) ||
                     ""
                   }
-                  scrollSurfaceFor={(node) => {
-                    const surface = variantScrollSurface(activeAppMap(), node.id);
-                    return surface
-                      ? {
-                          viewportCount: surface.viewports.length,
-                          complete: surface.status === "completed",
-                        }
-                      : undefined;
-                  }}
                   orientationEvidenceFor={orientationEvidenceForNode}
                   onScreenRotationChange={(nodeId, rotation) =>
                     setCanvasScreenRotations((current) =>
