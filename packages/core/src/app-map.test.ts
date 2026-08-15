@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMapCombine, AppMapTest, AppMapVariable, TargetProfile } from "@relay/protocol";
+import type {
+  AppMapCombine,
+  AppMapTest,
+  AppMapVariable,
+  LogicalScrollSurface,
+  TargetProfile,
+} from "@relay/protocol";
 import {
   AppMapDomainError,
   addAppMapScreen,
@@ -81,6 +87,74 @@ function variant(id: string, screenId: string, target = profile()): ScreenVarian
     observation: { fingerprint, nodes: [], volatileSignals: [] },
     evidenceIds: ["evidence-screen"],
     evidenceUris: ["relay-evidence://captures/evidence-screen"],
+  };
+}
+
+function importedSettingsSurface(): LogicalScrollSurface {
+  const evidence = <T extends "image/png" | "application/json">(
+    id: string,
+    hash: string,
+    mime: T,
+  ) => ({
+    id,
+    uri: `relay-evidence://${hash}`,
+    sha256: hash,
+    mime,
+    bytes: 1,
+  });
+  return {
+    schemaVersion: 1,
+    id: "settings-surface",
+    captureId: "settings-capture-r104",
+    targetProfileId: "pixel-8",
+    capturePolicy: {
+      captureMode: "full-surface",
+      source: "explicit",
+      reason: "Settings is one scrollable logical screen",
+      decidedAt: at,
+    },
+    capturedAt: at,
+    status: "stopped",
+    reason: "seam-ambiguous",
+    message: "Raw viewports are lossless; a visual seam was not proven",
+    restoredStartViewport: true,
+    viewports: [
+      {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 1_858,
+        capturedAt: at,
+        width: 1_080,
+        height: 2_400,
+        screenshot: evidence("settings-top-png", "1".repeat(64), "image/png"),
+        accessibilityTree: evidence("settings-top-tree", "2".repeat(64), "application/json"),
+      },
+      {
+        index: 1,
+        offsetY: 1_858,
+        appendedHeight: 1_285,
+        capturedAt: at + 1,
+        width: 1_080,
+        height: 2_400,
+        screenshot: evidence("settings-middle-png", "3".repeat(64), "image/png"),
+        accessibilityTree: evidence("settings-middle-tree", "4".repeat(64), "application/json"),
+      },
+      {
+        index: 2,
+        offsetY: 3_143,
+        appendedHeight: 1_200,
+        capturedAt: at + 2,
+        width: 1_080,
+        height: 2_400,
+        screenshot: evidence("settings-bottom-png", "5".repeat(64), "image/png"),
+        accessibilityTree: evidence("settings-bottom-tree", "6".repeat(64), "application/json"),
+      },
+    ],
+    mergedTree: {
+      ...evidence("settings-merged-tree", "a".repeat(64), "application/json"),
+      nodeCount: 42,
+    },
+    manifest: evidence("settings-manifest", "b".repeat(64), "application/json"),
   };
 }
 
@@ -260,20 +334,45 @@ function expectError(code: AppMapErrorCode, run: () => unknown, message?: RegExp
 
 test("screen consolidation previews and atomically rewires a scroll surface", () => {
   const map = mapFixture();
+  const importedSurface = importedSettingsSurface();
   delete map.connections["open-home"];
   delete map.flows.main;
   delete map.runs["run-1"];
   delete map.targetResults["result-1"];
   delete map.screenVariants["variant-home"]!.baseline;
+  map.screenVariants["variant-start"]!.evidenceIds.push(
+    importedSurface.viewports[0]!.screenshot.id,
+    importedSurface.viewports[0]!.accessibilityTree.id,
+  );
+  map.screenVariants["variant-start"]!.evidenceUris!.push(
+    importedSurface.viewports[0]!.screenshot.uri,
+    importedSurface.viewports[0]!.accessibilityTree.uri,
+  );
   const middleVariant = {
     ...variant("variant-middle", "middle"),
-    evidenceIds: ["middle-evidence"],
-    evidenceUris: ["relay-evidence://captures/middle-evidence"],
+    evidenceIds: [
+      "middle-evidence",
+      importedSurface.viewports[1]!.screenshot.id,
+      importedSurface.viewports[1]!.accessibilityTree.id,
+    ],
+    evidenceUris: [
+      "relay-evidence://captures/middle-evidence",
+      importedSurface.viewports[1]!.screenshot.uri,
+      importedSurface.viewports[1]!.accessibilityTree.uri,
+    ],
   };
   const bottomVariant = {
     ...variant("variant-bottom", "bottom"),
-    evidenceIds: ["bottom-evidence"],
-    evidenceUris: ["relay-evidence://captures/bottom-evidence"],
+    evidenceIds: [
+      "bottom-evidence",
+      importedSurface.viewports[2]!.screenshot.id,
+      importedSurface.viewports[2]!.accessibilityTree.id,
+    ],
+    evidenceUris: [
+      "relay-evidence://captures/bottom-evidence",
+      importedSurface.viewports[2]!.screenshot.uri,
+      importedSurface.viewports[2]!.accessibilityTree.uri,
+    ],
   };
   map.screens.middle = screen("middle", [middleVariant.id]);
   map.screens.bottom = screen("bottom", [bottomVariant.id]);
@@ -313,6 +412,16 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
       },
     ],
   });
+  map.connections["open-choose-app-language"] = connection({
+    id: "open-choose-app-language",
+    fromScreenId: "bottom",
+    destination: { kind: "end" },
+    label: "App Language",
+    actions: [
+      { id: "close-settings", kind: "app", action: "close", app: "com.android.settings" },
+      { id: "tap-language", kind: "tap", target: { label: "App Language" } },
+    ],
+  });
   map.flows.settings = {
     ...entity("settings"),
     name: "Settings",
@@ -341,8 +450,35 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     name: "Settings tour",
     kind: "scenario",
     intentSchemaVersion: 1,
-    steps: [],
+    steps: [
+      {
+        id: "open-kids-step",
+        kind: "instruction",
+        intent: "Reveal and open Kids Mode",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["scroll-middle", "middle-bottom", "open-kids"],
+        },
+      },
+    ],
     surfaceBindings: [
+      {
+        screenId: "start",
+        variantId: "variant-start",
+        captureMode: "viewport",
+        reason: "Settings top viewport",
+        compare: "visual-and-semantic",
+        repair: "propose-recapture",
+      },
+      {
+        screenId: "middle",
+        variantId: middleVariant.id,
+        captureMode: "viewport",
+        reason: "Settings middle viewport",
+        compare: "visual-and-semantic",
+        repair: "propose-recapture",
+      },
       {
         screenId: "bottom",
         variantId: bottomVariant.id,
@@ -354,10 +490,28 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     ],
   };
 
-  const input = { targetScreenId: "start", sourceScreenIds: ["middle", "bottom"] };
+  const input = {
+    targetScreenId: "start",
+    sourceScreenIds: ["middle", "bottom"],
+    targetTitle: "Settings",
+    importedSurface,
+  };
   const preview = previewScreenConsolidation(map, input);
   assert.deepEqual(preview.removedSelfLoopConnectionIds, ["middle-bottom", "scroll-middle"]);
-  assert.deepEqual(preview.semanticRevealConnectionIds, ["open-kids", "open-kids-existing"]);
+  assert.deepEqual(preview.semanticRevealConnectionIds, [
+    "open-choose-app-language",
+    "open-kids",
+    "open-kids-existing",
+  ]);
+  assert.deepEqual(preview.testPathEdits, [
+    {
+      testId: "tour",
+      stepId: "open-kids-step",
+      beforeConnectionIds: ["scroll-middle", "middle-bottom", "open-kids"],
+      afterConnectionIds: ["open-kids"],
+    },
+  ]);
+  assert.equal(preview.resultingCounts.surfaceBindings, 1);
   assert.deepEqual(preview.connectionCollisions, [
     { connectionIds: ["open-kids", "open-kids-existing"] },
   ]);
@@ -381,12 +535,33 @@ test("screen consolidation previews and atomically rewires a scroll surface", ()
     direction: "auto",
     maxAttempts: 16,
   });
-  assert.deepEqual(merged.screenVariants["variant-start"]?.evidenceIds.sort(), [
-    "bottom-evidence",
-    "evidence-screen",
-    "middle-evidence",
+  assert.deepEqual(
+    merged.connections["open-choose-app-language"]?.actions.map(({ kind }) => kind),
+    ["app", "reveal", "tap"],
+  );
+  assert.equal(merged.screens.start?.title, "Settings");
+  assert.equal(merged.screenVariants["variant-start"]?.scrollSurfaces?.[0]?.composite, undefined);
+  assert.equal(
+    merged.screenVariants["variant-start"]?.scrollSurfaces?.[0]?.reason,
+    "seam-ambiguous",
+  );
+  assert.deepEqual(merged.tests.tour?.steps[0]?.binding, {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: ["open-kids"],
+  });
+  assert.deepEqual(merged.tests.tour?.surfaceBindings, [
+    {
+      screenId: "start",
+      variantId: "variant-start",
+      captureMode: "full-surface",
+      reason: "Settings is one scrollable logical screen",
+      surfaceId: "settings-surface",
+      baselineCaptureId: "settings-capture-r104",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
   ]);
-  assert.equal(merged.tests.tour?.surfaceBindings?.[0]?.screenId, "start");
   assert.equal(merged.activity["merge-settings"]?.eventType, "screen.consolidated");
   assert.deepEqual(
     merged.screens.start?.consolidations?.[0]?.sourceScreens.map(({ id }) => id),
@@ -423,6 +598,59 @@ test("screen consolidation fails closed for viewport-dependent point taps", () =
     "in-use",
     () => consolidateAppMapScreens(map, input, context(map, "unsafe-merge")),
     /viewport-independent/,
+  );
+});
+
+test("screen consolidation rejects lossy or unowned logical surface imports", () => {
+  const map = mapFixture();
+  const surface = importedSettingsSurface();
+  const bottomVariant = variant("variant-bottom", "bottom");
+  map.screens.bottom = screen("bottom", [bottomVariant.id]);
+  map.screenVariants[bottomVariant.id] = bottomVariant;
+  for (const [index, viewport] of surface.viewports.entries()) {
+    const owner = index === 0 ? map.screenVariants["variant-start"]! : bottomVariant;
+    owner.evidenceIds.push(viewport.screenshot.id, viewport.accessibilityTree.id);
+    owner.evidenceUris!.push(viewport.screenshot.uri, viewport.accessibilityTree.uri);
+  }
+  const input = { targetScreenId: "start", sourceScreenIds: ["bottom"], importedSurface: surface };
+  assert.deepEqual(previewScreenConsolidation(map, input).blockers, []);
+
+  const badOffset = structuredClone(surface);
+  badOffset.viewports[1]!.offsetY = 0;
+  expectError(
+    "invalid-map",
+    () => previewScreenConsolidation(map, { ...input, importedSurface: badOffset }),
+    /strictly ordered/,
+  );
+
+  const badHash = structuredClone(surface);
+  badHash.manifest.sha256 = "c".repeat(64);
+  expectError(
+    "invalid-map",
+    () => previewScreenConsolidation(map, { ...input, importedSurface: badHash }),
+    /content-addressed/,
+  );
+
+  const unowned = structuredClone(map);
+  unowned.screenVariants[bottomVariant.id]!.evidenceIds = unowned.screenVariants[
+    bottomVariant.id
+  ]!.evidenceIds.filter((id) => id !== surface.viewports[2]!.screenshot.id);
+  expectError("scope-mismatch", () => previewScreenConsolidation(unowned, input), /not owned/);
+
+  const fakeComposite = structuredClone(surface);
+  fakeComposite.composite = {
+    id: "settings-fake-composite",
+    uri: `relay-evidence://${"d".repeat(64)}`,
+    sha256: "d".repeat(64),
+    mime: "image/png",
+    bytes: 1,
+    width: 1_080,
+    height: 4_343,
+  };
+  expectError(
+    "invalid-map",
+    () => previewScreenConsolidation(map, { ...input, importedSurface: fakeComposite }),
+    /cannot claim a composite/,
   );
 });
 

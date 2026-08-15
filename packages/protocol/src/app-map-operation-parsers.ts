@@ -457,6 +457,10 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     );
     if (input.eventId !== undefined) string(input.eventId, "screen consolidation eventId");
     if (input.dryRun !== undefined) boolean(input.dryRun, "screen consolidation dryRun");
+    if (input.targetTitle !== undefined)
+      string(input.targetTitle, "screen consolidation targetTitle");
+    if (input.importedSurface !== undefined)
+      record(input.importedSurface, "screen consolidation importedSurface");
   });
 
   const appMapScreenConsolidateOutputParser = objectParser<

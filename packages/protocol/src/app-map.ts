@@ -87,6 +87,18 @@ export type ScreenConsolidationPreview = {
   rewiredVariableIds: string[];
   rewiredGroupIds: string[];
   semanticRevealConnectionIds: string[];
+  testPathEdits: Array<{
+    testId: string;
+    stepId: string;
+    beforeConnectionIds: string[];
+    afterConnectionIds: string[];
+  }>;
+  resultingCounts: {
+    screens: number;
+    variants: number;
+    connections: number;
+    surfaceBindings: number;
+  };
   blockers: Array<{ code: string; message: string; entityIds: string[] }>;
 };
 

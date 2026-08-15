@@ -40,7 +40,12 @@ export async function handleScreenConsolidationRoute({
       { code: "revision-conflict", current },
     );
   }
-  const input = { targetScreenId: route.targetScreenId!, sourceScreenIds: body.sourceScreenIds };
+  const input = {
+    targetScreenId: route.targetScreenId!,
+    sourceScreenIds: body.sourceScreenIds,
+    targetTitle: body.targetTitle,
+    importedSurface: body.importedSurface,
+  };
   const preview = previewScreenConsolidation(current, input);
   if (body.dryRun) {
     json(response, 200, { appMap: current, applied: false, preview });

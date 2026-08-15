@@ -197,6 +197,8 @@ export type AppMapOperationMap = {
       expectedRevision: number;
       eventId?: string;
       dryRun?: boolean;
+      targetTitle?: string;
+      importedSurface?: LogicalScrollSurface;
     };
     output: {
       appMap: AppMap;

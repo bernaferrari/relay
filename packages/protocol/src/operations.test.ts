@@ -121,9 +121,13 @@ test("screen consolidation validates a read-only preview request", () => {
     sourceScreenIds: ["settings-middle", "settings-bottom"],
     expectedRevision: 12,
     dryRun: true,
+    targetTitle: "Settings",
+    importedSurface: { schemaVersion: 1 },
   });
   assert.deepEqual(parsed.sourceScreenIds, ["settings-middle", "settings-bottom"]);
   assert.equal(parsed.dryRun, true);
+  assert.equal(parsed.targetTitle, "Settings");
+  assert.equal(parsed.importedSurface?.schemaVersion, 1);
   assert.throws(
     () =>
       operationDefinition("app-map.screen.consolidate").input.parse({

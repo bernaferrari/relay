@@ -348,11 +348,22 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           type: "boolean",
           description: "Preview rewiring and blockers without mutation",
         },
+        {
+          name: "targetTitle",
+          type: "string",
+          description: "Optional canonical title applied atomically",
+        },
+        {
+          name: "importedSurface",
+          type: "LogicalScrollSurface",
+          description:
+            "Ordered, content-addressed raw viewport evidence for one decomposable logical surface",
+        },
       ],
       examples: [
         'relay screen consolidate grok settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
       ],
-      note: "Outgoing edges receive semantic reveal-to-control actions. Point-only or otherwise viewport-dependent edges block consolidation.",
+      note: "Outgoing edges receive semantic reveal-to-control actions. Evidence-backed viewport cards require a seam-honest imported surface; point-only edges block consolidation.",
     }),
   ),
   mapped(

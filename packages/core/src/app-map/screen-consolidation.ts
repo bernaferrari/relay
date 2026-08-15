@@ -1,4 +1,4 @@
-import type { ScreenConsolidationPreview, StepTarget } from "@relay/protocol";
+import type { LogicalScrollSurface, ScreenConsolidationPreview, StepTarget } from "@relay/protocol";
 import { appMapFail } from "./errors.js";
 import type {
   ActionSpec,
@@ -9,32 +9,45 @@ import type {
   ScreenVariant,
 } from "./model.js";
 import { mutateAppMap } from "./mutation.js";
-import { identifier } from "./validation-shapes.js";
+import {
+  logicalSurfaceEvidence,
+  validateConsolidationSurface,
+} from "./screen-consolidation-surface.js";
+import { identifier, requiredText } from "./validation-shapes.js";
 
 export type ConsolidateScreensInput = {
   targetScreenId: string;
   sourceScreenIds: string[];
+  targetTitle?: string;
+  importedSurface?: LogicalScrollSurface;
 };
 
-function semanticTarget(connection: Connection): StepTarget | undefined {
-  for (const action of connection.actions) {
-    if (action.kind === "passive" || action.kind === "wait") continue;
+function revealPlan(
+  connection: Connection,
+): { target: StepTarget; actionIndex: number } | undefined {
+  for (const [actionIndex, action] of connection.actions.entries()) {
+    if (action.kind === "passive" || action.kind === "wait" || action.kind === "reveal") continue;
+    if (action.kind === "app" && action.action === "close") continue;
     if (action.kind === "tap") {
       const target = action.target;
       return target.identifier || target.ref || target.label || target.text
-        ? structuredClone(target)
+        ? { target: structuredClone(target), actionIndex }
         : undefined;
     }
     if (action.kind === "recorded" || action.kind === "steps") {
       const first = action.steps.find((step) => step.kind !== "sleep");
       if (first?.kind !== "tap") return undefined;
       return first.target.identifier || first.target.ref || first.target.label || first.target.text
-        ? structuredClone(first.target)
+        ? { target: structuredClone(first.target), actionIndex }
         : undefined;
     }
     return undefined;
   }
   return undefined;
+}
+
+function semanticTarget(connection: Connection): StepTarget | undefined {
+  return revealPlan(connection)?.target;
 }
 
 function targetAmbiguousInEvidence(map: AppMap, screenId: string, target: StepTarget): boolean {
@@ -108,13 +121,56 @@ function referencesSourceInPendingProposal(map: AppMap, sources: Set<string>): s
     .sort();
 }
 
+function collectTestPathEdits(
+  testId: string,
+  steps: AppMapScenarioTestStep[],
+  removed: Set<string>,
+  output: ScreenConsolidationPreview["testPathEdits"],
+): void {
+  for (const step of steps) {
+    if (
+      step.kind === "instruction" &&
+      step.binding.status === "resolved" &&
+      step.binding.kind === "connections"
+    ) {
+      const beforeConnectionIds = [...step.binding.connectionIds];
+      const afterConnectionIds = beforeConnectionIds.filter((id) => !removed.has(id));
+      if (afterConnectionIds.length !== beforeConnectionIds.length) {
+        output.push({ testId, stepId: step.id, beforeConnectionIds, afterConnectionIds });
+      }
+    }
+    if (step.kind === "decision") {
+      collectTestPathEdits(testId, step.thenSteps, removed, output);
+      if (step.elseSteps) collectTestPathEdits(testId, step.elseSteps, removed, output);
+    } else if (step.kind === "loop") collectTestPathEdits(testId, step.steps, removed, output);
+  }
+}
+
 function mapScenarioSteps(
   steps: AppMapScenarioTestStep[],
   sources: Set<string>,
   target: string,
+  removedConnections: Set<string>,
 ): boolean {
   let changed = false;
-  for (const step of steps) {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]!;
+    if (
+      step.kind === "instruction" &&
+      step.binding.status === "resolved" &&
+      step.binding.kind === "connections"
+    ) {
+      const filtered = step.binding.connectionIds.filter((id) => !removedConnections.has(id));
+      if (filtered.length !== step.binding.connectionIds.length) {
+        if (filtered.length === 0) {
+          steps.splice(index, 1);
+          changed = true;
+          continue;
+        }
+        step.binding.connectionIds = filtered;
+        changed = true;
+      }
+    }
     if (
       step.kind === "validation" &&
       step.binding.status === "resolved" &&
@@ -134,10 +190,11 @@ function mapScenarioSteps(
       }
     }
     if (step.kind === "decision") {
-      changed = mapScenarioSteps(step.thenSteps, sources, target) || changed;
-      if (step.elseSteps) changed = mapScenarioSteps(step.elseSteps, sources, target) || changed;
+      changed = mapScenarioSteps(step.thenSteps, sources, target, removedConnections) || changed;
+      if (step.elseSteps)
+        changed = mapScenarioSteps(step.elseSteps, sources, target, removedConnections) || changed;
     } else if (step.kind === "loop")
-      changed = mapScenarioSteps(step.steps, sources, target) || changed;
+      changed = mapScenarioSteps(step.steps, sources, target, removedConnections) || changed;
   }
   return changed;
 }
@@ -147,6 +204,8 @@ export function previewScreenConsolidation(
   input: ConsolidateScreensInput,
 ): ScreenConsolidationPreview {
   identifier(input.targetScreenId, "screen consolidation targetScreenId");
+  if (input.targetTitle !== undefined)
+    requiredText(input.targetTitle, "screen consolidation targetTitle", 240);
   if (!map.screens[input.targetScreenId])
     appMapFail("missing-reference", `Screen ${input.targetScreenId} does not exist`);
   const sourceScreenIds = [...new Set(input.sourceScreenIds)].sort();
@@ -160,6 +219,7 @@ export function previewScreenConsolidation(
   }
   const sources = new Set(sourceScreenIds);
   const all = new Set([input.targetScreenId, ...sourceScreenIds]);
+  if (input.importedSurface) validateConsolidationSurface(map, all, input.importedSurface);
   const targetProfiles = new Map(
     map.screens[input.targetScreenId]!.variantIds.map((id) => [
       map.screenVariants[id]!.targetProfile.id,
@@ -230,6 +290,59 @@ export function previewScreenConsolidation(
       message: "Pending proposals reference source screens and must be resolved first",
       entityIds: pending,
     });
+  const removedConnections = new Set(removedSelfLoopConnectionIds);
+  const testPathEdits: ScreenConsolidationPreview["testPathEdits"] = [];
+  for (const test of Object.values(map.tests))
+    collectTestPathEdits(test.id, test.steps, removedConnections, testPathEdits);
+  const evidenceBackedVariants = [...all]
+    .flatMap((screenId) => map.screens[screenId]!.variantIds)
+    .map((variantId) => map.screenVariants[variantId]!)
+    .filter((variant) => variant.evidenceIds.length > 0);
+  const distinctViewportEvidence = new Set(
+    evidenceBackedVariants.map((variant) => [...variant.evidenceIds].sort().join("\u0000")),
+  );
+  if (!input.importedSurface && distinctViewportEvidence.size > 1)
+    blockers.push({
+      code: "logical-surface-required",
+      message:
+        "Evidence-backed viewport screens require an explicit ordered logical surface import so their raw captures remain decomposable",
+      entityIds: evidenceBackedVariants.map((variant) => variant.id).sort(),
+    });
+  const replacementVariant = new Map(
+    mergedVariantIds.map(({ sourceVariantId, targetVariantId }) => [
+      sourceVariantId,
+      targetVariantId,
+    ]),
+  );
+  const projectedSurfaceBindings = Object.values(map.tests).reduce((count, test) => {
+    const bindings = test.surfaceBindings ?? [];
+    const merged = bindings.filter((binding) => all.has(binding.screenId));
+    const retained = bindings.filter((binding) => !all.has(binding.screenId));
+    if (input.importedSurface && merged.length > 0) return count + retained.length + 1;
+    const keys = new Set(
+      [...retained, ...merged].map((binding) =>
+        JSON.stringify({
+          ...binding,
+          screenId: all.has(binding.screenId) ? input.targetScreenId : binding.screenId,
+          variantId: replacementVariant.get(binding.variantId) ?? binding.variantId,
+        }),
+      ),
+    );
+    return count + keys.size;
+  }, 0);
+  const rewiredTestIds = new Set(
+    Object.values(map.tests)
+      .filter(
+        (test) =>
+          test.surfaceBindings?.some((binding) =>
+            input.importedSurface ? all.has(binding.screenId) : sources.has(binding.screenId),
+          ) ||
+          (test.capture?.mode === "checkpoints" &&
+            test.capture.screenIds.some((id) => sources.has(id))),
+      )
+      .map((test) => test.id),
+  );
+  for (const edit of testPathEdits) rewiredTestIds.add(edit.testId);
   return {
     targetScreenId: input.targetScreenId,
     sourceScreenIds,
@@ -250,15 +363,7 @@ export function previewScreenConsolidation(
       )
       .map((flow) => flow.id)
       .sort(),
-    rewiredTestIds: Object.values(map.tests)
-      .filter(
-        (test) =>
-          test.surfaceBindings?.some((binding) => sources.has(binding.screenId)) ||
-          (test.capture?.mode === "checkpoints" &&
-            test.capture.screenIds.some((id) => sources.has(id))),
-      )
-      .map((test) => test.id)
-      .sort(),
+    rewiredTestIds: [...rewiredTestIds].sort(),
     rewiredVariableIds: Object.values(map.variables)
       .filter(
         (variable) =>
@@ -273,6 +378,15 @@ export function previewScreenConsolidation(
       .map((group) => group.id)
       .sort(),
     semanticRevealConnectionIds: semanticRevealConnectionIds.sort(),
+    testPathEdits: testPathEdits.sort(
+      (a, b) => a.testId.localeCompare(b.testId) || a.stepId.localeCompare(b.stepId),
+    ),
+    resultingCounts: {
+      screens: Object.keys(map.screens).length - sourceScreenIds.length,
+      variants: Object.keys(map.screenVariants).length - mergedVariantIds.length,
+      connections: Object.keys(map.connections).length - removedSelfLoopConnectionIds.length,
+      surfaceBindings: projectedSurfaceBindings,
+    },
     blockers,
   };
 }
@@ -339,6 +453,7 @@ export function consolidateAppMapScreens(
         ]),
       );
       const targetScreen = draft.screens[input.targetScreenId]!;
+      if (input.targetTitle !== undefined) targetScreen.title = input.targetTitle.trim();
       targetScreen.consolidations = [
         ...(targetScreen.consolidations ?? []),
         {
@@ -379,6 +494,27 @@ export function consolidateAppMapScreens(
         }
       }
       targetScreen.variantIds = [...new Set(targetScreen.variantIds)].sort();
+      if (input.importedSurface) {
+        const surface = structuredClone(input.importedSurface);
+        const surfaceVariant = byProfile.get(surface.targetProfileId)!;
+        const evidence = logicalSurfaceEvidence(surface);
+        surfaceVariant.evidenceIds = [
+          ...new Set([...surfaceVariant.evidenceIds, ...evidence.map(({ id }) => id)]),
+        ];
+        surfaceVariant.evidenceUris = [
+          ...new Set([...(surfaceVariant.evidenceUris ?? []), ...evidence.map(({ uri }) => uri)]),
+        ];
+        surfaceVariant.scrollSurfaces = [
+          ...new Map(
+            [...(surfaceVariant.scrollSurfaces ?? []), surface].map((entry) => [
+              entry.captureId,
+              entry,
+            ]),
+          ).values(),
+        ];
+        surfaceVariant.scrollCapturePolicy = structuredClone(surface.capturePolicy);
+        surfaceVariant.updatedAt = context.at;
+      }
       targetScreen.updatedAt = context.at;
       for (const connection of Object.values(draft.connections)) {
         if (
@@ -391,13 +527,18 @@ export function consolidateAppMapScreens(
         }
         if (all.has(connection.fromScreenId)) {
           if (sources.has(connection.fromScreenId)) connection.fromScreenId = input.targetScreenId;
-          connection.actions.unshift({
-            id: `${context.eventId}-reveal-${connection.id}`,
-            kind: "reveal",
-            target: semanticTarget(connection)!,
-            direction: "auto",
-            maxAttempts: 16,
-          });
+          const plan = revealPlan(connection)!;
+          const alreadyRevealed = connection.actions
+            .slice(0, plan.actionIndex)
+            .some((action) => action.kind === "reveal");
+          if (!alreadyRevealed)
+            connection.actions.splice(plan.actionIndex, 0, {
+              id: `${context.eventId}-reveal-${connection.id}`,
+              kind: "reveal",
+              target: plan.target,
+              direction: "auto",
+              maxAttempts: 16,
+            });
           connection.updatedAt = context.at;
         }
         if (
@@ -417,12 +558,43 @@ export function consolidateAppMapScreens(
         if (preview.rewiredFlowIds.includes(flow.id)) flow.updatedAt = context.at;
       }
       for (const test of Object.values(draft.tests)) {
-        if (test.surfaceBindings)
-          for (const binding of test.surfaceBindings)
-            if (sources.has(binding.screenId)) {
-              binding.screenId = input.targetScreenId;
-              binding.variantId = variantReplacements.get(binding.variantId) ?? binding.variantId;
-            }
+        if (test.surfaceBindings) {
+          const mergedBindings = test.surfaceBindings.filter((binding) =>
+            all.has(binding.screenId),
+          );
+          const retainedBindings = test.surfaceBindings.filter(
+            (binding) => !all.has(binding.screenId),
+          );
+          if (input.importedSurface && mergedBindings.length > 0) {
+            const targetVariant = byProfile.get(input.importedSurface.targetProfileId)!;
+            test.surfaceBindings = [
+              ...retainedBindings,
+              {
+                screenId: input.targetScreenId,
+                variantId: targetVariant.id,
+                captureMode: "full-surface",
+                reason: input.importedSurface.capturePolicy.reason,
+                surfaceId: input.importedSurface.id,
+                baselineCaptureId: input.importedSurface.captureId,
+                compare: "visual-and-semantic",
+                repair: "propose-recapture",
+              },
+            ];
+          } else {
+            test.surfaceBindings = [
+              ...new Map(
+                [...retainedBindings, ...mergedBindings].map((binding) => {
+                  const rewritten = {
+                    ...binding,
+                    screenId: all.has(binding.screenId) ? input.targetScreenId : binding.screenId,
+                    variantId: variantReplacements.get(binding.variantId) ?? binding.variantId,
+                  };
+                  return [JSON.stringify(rewritten), rewritten] as const;
+                }),
+              ).values(),
+            ];
+          }
+        }
         if (test.capture?.mode === "checkpoints")
           test.capture.screenIds = [
             ...new Set(
@@ -430,11 +602,29 @@ export function consolidateAppMapScreens(
             ),
           ];
         if (
-          mapScenarioSteps(test.steps, sources, input.targetScreenId) ||
+          mapScenarioSteps(
+            test.steps,
+            sources,
+            input.targetScreenId,
+            new Set(preview.removedSelfLoopConnectionIds),
+          ) ||
           preview.rewiredTestIds.includes(test.id)
         )
           test.updatedAt = context.at;
       }
+      const danglingTestPaths: ScreenConsolidationPreview["testPathEdits"] = [];
+      for (const test of Object.values(draft.tests))
+        collectTestPathEdits(
+          test.id,
+          test.steps,
+          new Set(preview.removedSelfLoopConnectionIds),
+          danglingTestPaths,
+        );
+      if (danglingTestPaths.length > 0)
+        appMapFail(
+          "invalid-map",
+          `Consolidation left deleted connections referenced by Test steps: ${danglingTestPaths.map(({ testId, stepId }) => `${testId}/${stepId}`).join(", ")}`,
+        );
       for (const combine of Object.values(draft.combines))
         for (const capture of Object.values(combine.captures ?? {}))
           if (capture.mode === "checkpoints")
