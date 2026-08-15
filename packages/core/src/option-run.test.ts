@@ -553,6 +553,47 @@ test("run matrix preflight reports the exact device and screenshot expansion", a
   assert.equal(preflight.modifiers[0]?.selectedCount, 2);
 });
 
+test("run matrix preflight previews the requested pilot selection", async () => {
+  const base = sandwichMap();
+  const variable = {
+    ...entity("language"),
+    name: "Language",
+    kind: "language" as const,
+    apply: { kind: "appLocale" as const, app: "com.example" },
+    options: [
+      { id: "en", label: "English" },
+      { id: "it", label: "Italian" },
+    ],
+  };
+  const work = {
+    ...entity("settings-tour"),
+    name: "Settings tour",
+    kind: "tour" as const,
+    rootScreenId: "home",
+    screenIds: ["home"],
+  };
+  const combine = {
+    ...entity("language-x-settings"),
+    name: "Language × Settings",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    selected: { [variable.id]: ["en", "it"] },
+  };
+  const map: AppMap = {
+    ...base,
+    variables: { [variable.id]: variable },
+    tests: { [work.id]: work },
+    combines: { [combine.id]: combine },
+  };
+
+  const preflight = await preflightAppMapCombine(map, combine, {
+    selected: { [variable.id]: ["it"] },
+  });
+  assert.equal(preflight.worlds, 1);
+  assert.equal(preflight.deviceRuns, 1);
+  assert.equal(preflight.modifiers[0]?.selectedCount, 1);
+});
+
 test("run matrix preflight blocks a deliberately empty modifier", async () => {
   const base = sandwichMap();
   const variable = {

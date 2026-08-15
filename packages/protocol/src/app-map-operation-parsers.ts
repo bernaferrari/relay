@@ -401,6 +401,15 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     string(input.appMapId, "Run matrix preflight appMapId");
     string(input.combineId, "Run matrix preflight combineId");
     if (input.serial !== undefined) string(input.serial, "Run matrix preflight serial");
+    if (input.selected !== undefined) record(input.selected, "Run matrix preflight selected");
+    if (
+      input.strategy !== undefined &&
+      input.strategy !== "zip" &&
+      input.strategy !== "cartesian" &&
+      input.strategy !== "pairwise"
+    ) {
+      fail("Run matrix preflight strategy", "must be zip, cartesian, or pairwise");
+    }
   });
   const appMapCombinePreflightOutputParser = objectFieldParser<
     AppMapOperationOutput<"app-map.combine.preflight">

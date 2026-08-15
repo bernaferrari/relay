@@ -345,6 +345,25 @@ export function compileAppMapFlow(
       const destination = map.screens[connection.destination.screenId]!;
       const stepIndex = root.steps.length;
       const step = screenExpectation(map, destination, `relay-destination-${connection.id}`);
+      const scrollIndex = root.steps.findLastIndex(
+        (candidate, index) => index >= rangeStart && candidate.kind === "scroll",
+      );
+      const scrollStep = root.steps[scrollIndex];
+      if (scrollStep?.kind === "scroll" && step.kind === "expect-screen") {
+        root.steps[scrollIndex] = {
+          ...scrollStep,
+          until: {
+            screenId: step.screenId,
+            screenTitle: step.screenTitle,
+            fingerprint: step.fingerprint,
+            ...(step.aliases?.length ? { aliases: [...step.aliases] } : {}),
+            ...(step.observations?.length
+              ? { observations: structuredClone(step.observations) }
+              : {}),
+          },
+          maxAttempts: 12,
+        };
+      }
       root.steps.push(step);
       root.stepProvenance.push({
         recipeId: rootRecipeId,

@@ -79,7 +79,16 @@ function estimateRecipeDuration(
 export async function preflightAppMapCombine(
   map: AppMap,
   combine: AppMapCombine,
+  overrides: {
+    selected?: Record<string, string[]>;
+    strategy?: "zip" | "cartesian" | "pairwise";
+  } = {},
 ): Promise<AppMapCombinePreflight> {
+  const effectiveCombine: AppMapCombine = {
+    ...combine,
+    ...(overrides.selected ? { selected: overrides.selected } : {}),
+    ...(overrides.strategy ? { strategy: overrides.strategy } : {}),
+  };
   const blockers: AppMapCombinePreflightIssue[] = [];
   const warnings: AppMapCombinePreflightIssue[] = [];
   const variables = combine.variableIds.flatMap((id) => {
@@ -105,7 +114,7 @@ export async function preflightAppMapCombine(
 
   const sets: OptionRunSet[] = variables.map((variable) => {
     const available = variable.options.map((option) => option.id);
-    const selected = selectedIds(combine, variable.id, available);
+    const selected = selectedIds(effectiveCombine, variable.id, available);
     if (!selected.length) {
       blockers.push(issue("empty-selection", `Choose at least one ${variable.name} value.`));
     }
@@ -150,22 +159,28 @@ export async function preflightAppMapCombine(
   if (!blockers.length) {
     try {
       for (const set of sets) assertOptionSandwichReady(set, map);
-      const strategy = combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
+      const strategy = effectiveCombine.strategy ?? defaultOptionMatrixStrategy(sets.length);
       const matrix = await prepareOptionRunMatrix({
         sets,
-        selected: combine.selected,
+        selected: effectiveCombine.selected,
         strategy,
         map,
       });
       worlds = matrix.cases.length;
-      const compiled = compileAppMapCombine(map, combine);
+      const compiled = compileAppMapCombine(map, effectiveCombine);
       const composed = composeOptionRunRecipes({
         body: compiled.root,
         bodyGraph: compiled.graph,
         // Saved tests own their evidence policy. Match the execution route;
         // otherwise a dry run would incorrectly invent legacy before/after
         // screenshots around a capture-free matrix.
-        request: { sets, selected: combine.selected, strategy, map, screenshotEach: false },
+        request: {
+          sets,
+          selected: effectiveCombine.selected,
+          strategy,
+          map,
+          screenshotEach: false,
+        },
         batchId: `preflight-${combine.id}`,
       });
       const perWorld = expectedRecipeScreenshotCount(composed.root, composed.graph);
@@ -200,7 +215,7 @@ export async function preflightAppMapCombine(
       ),
     );
   }
-  const strategy = combine.strategy ?? defaultOptionMatrixStrategy(variables.length);
+  const strategy = effectiveCombine.strategy ?? defaultOptionMatrixStrategy(variables.length);
   const modifierNames = variables.map((variable) => variable.name);
   const testNames = tests.map((test) => test.name);
   return {
@@ -214,7 +229,7 @@ export async function preflightAppMapCombine(
       id: variable.id,
       name: variable.name,
       selectedCount: selectedIds(
-        combine,
+        effectiveCombine,
         variable.id,
         variable.options.map((option) => option.id),
       ).length,

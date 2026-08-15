@@ -189,7 +189,21 @@ export type RecipeStep = RecipeStepMetadata &
         target?: StepTarget;
         mode?: "append" | "replace";
       }
-    | { kind: "scroll"; direction: "down" | "up"; amount?: number }
+    | {
+        kind: "scroll";
+        direction: "down" | "up";
+        amount?: number;
+        /** Scroll until this mapped screen identity is revealed. This makes
+         * list navigation resilient to text reflow and viewport changes. */
+        until?: {
+          screenId: string;
+          screenTitle: string;
+          fingerprint: string;
+          aliases?: string[];
+          observations?: ScreenIdentityObservation[];
+        };
+        maxAttempts?: number;
+      }
     | {
         kind: "swipe";
         from: StepPoint;

@@ -202,13 +202,51 @@ async function runRequiredRecipeStep(
       break;
     }
 
-    case "scroll":
-      if (step.direction === "down") {
-        await scrollDown(device, step.amount);
-      } else {
-        await scrollUp(device, step.amount);
+    case "scroll": {
+      const performScroll = async () => {
+        if (step.direction === "down") await scrollDown(device, step.amount);
+        else await scrollUp(device, step.amount);
+      };
+      if (!step.until) {
+        await performScroll();
+        break;
+      }
+      const expected = new Set([step.until.fingerprint, ...(step.until.aliases ?? [])]);
+      const maxAttempts = step.maxAttempts ?? 12;
+      let previousFingerprint: string | undefined;
+      let repeated = 0;
+      for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
+        await cooperativeCheckpoint();
+        const observed = observeScreenIdentity(await snapshot(device));
+        if (
+          screenIdentityMatches(expected, observed.fingerprint) ||
+          (step.until.observations ?? []).some(
+            (observation) => compareScreenIdentity(observed, observation).decision === "match",
+          ) ||
+          resilientScreenIdentityMatch(observed, step.until.observations ?? [], ctx.job)
+        ) {
+          ctx.log(
+            attempt
+              ? `scroll: revealed ${step.until.screenTitle} after ${attempt} semantic scroll${attempt === 1 ? "" : "s"}`
+              : `scroll: ${step.until.screenTitle} already visible`,
+          );
+          break;
+        }
+        if (attempt === maxAttempts) {
+          throw new Error(
+            `reveal-screen: could not reveal “${step.until.screenTitle}” after ${maxAttempts} scrolls`,
+          );
+        }
+        repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
+        if (repeated >= 1) {
+          throw new Error(`reveal-screen: reached the list edge before “${step.until.screenTitle}”`);
+        }
+        previousFingerprint = observed.fingerprint;
+        await performScroll();
+        await sleep(250, device);
       }
       break;
+    }
 
     case "swipe": {
       const { from, to, durationMs } = step;

@@ -387,6 +387,8 @@ export type AppMapOperationMap = {
       appMapId: string;
       combineId: string;
       serial?: string;
+      selected?: Record<string, string[]>;
+      strategy?: "zip" | "cartesian" | "pairwise";
     };
     output: { preflight: AppMapCombinePreflight };
   };

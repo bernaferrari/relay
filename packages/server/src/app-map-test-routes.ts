@@ -225,7 +225,10 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!appMap) throw new HttpError(404, `App Map ${comboPreflight.appMapId} not found`);
     const combine = appMap.combines[comboPreflight.combineId!];
     if (!combine) throw new HttpError(404, `Run matrix ${comboPreflight.combineId} not found`);
-    const preflight = await preflightAppMapCombine(appMap, combine);
+    const preflight = await preflightAppMapCombine(appMap, combine, {
+      ...(body.selected ? { selected: body.selected } : {}),
+      ...(body.strategy ? { strategy: body.strategy } : {}),
+    });
     const serial = body.serial?.trim();
     if (serial) {
       const devices = await listDevices().catch(() => []);

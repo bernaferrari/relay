@@ -300,6 +300,132 @@ test("a combined tour returns only to its shared root instead of Home", () => {
   );
 });
 
+test("a combined itinerary reuses the previous tour's final child", () => {
+  const first = {
+    ...scope,
+    id: "memory-tour",
+    name: "Memory coverage",
+    kind: "tour" as const,
+    rootScreenId: "memory",
+    setupFlowId: "open-memory",
+    screenIds: ["memory", "import"],
+    capture: { mode: "every-screen" as const },
+    depth: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const second = {
+    ...scope,
+    id: "import-tour",
+    name: "Import coverage",
+    kind: "tour" as const,
+    rootScreenId: "import",
+    setupFlowId: "open-import",
+    screenIds: ["import"],
+    capture: { mode: "every-screen" as const },
+    depth: 0,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map = {
+    schemaVersion: 1,
+    id: "map-1",
+    organizationId: "org",
+    projectId: "p",
+    name: "App",
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...screen("home", "Home"),
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+      memory: {
+        ...screen("memory", "Memory"),
+        identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+      },
+      import: {
+        ...screen("import", "Import"),
+        identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+      },
+    },
+    screenVariants: {},
+    connections: {
+      "open-memory": {
+        ...scope,
+        id: "open-memory",
+        fromScreenId: "home",
+        destination: { kind: "screen" as const, screenId: "memory" },
+        label: "Memory",
+        state: "ready" as const,
+        actions: [{ id: "tap-memory", kind: "tap" as const, target: { label: "Memory" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "open-import": {
+        ...scope,
+        id: "open-import",
+        fromScreenId: "memory",
+        destination: { kind: "screen" as const, screenId: "import" },
+        label: "Import memory",
+        state: "ready" as const,
+        actions: [{ id: "tap-import", kind: "tap" as const, target: { label: "Import memory" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [first.id]: first, [second.id]: second },
+    combines: {},
+    routines: {},
+    flows: {
+      "open-memory": {
+        ...scope,
+        id: "open-memory",
+        name: "Open memory",
+        startScreenId: "home",
+        connectionIds: ["open-memory"],
+        createdAt: at,
+        updatedAt: at,
+      },
+      "open-import": {
+        ...scope,
+        id: "open-import",
+        name: "Open import",
+        startScreenId: "home",
+        connectionIds: ["open-memory", "open-import"],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  } as AppMap;
+
+  const compiled = compileAppMapCombine(map, {
+    ...scope,
+    id: "memory-matrix",
+    name: "Memory matrix",
+    variableIds: [],
+    testIds: [first.id, second.id],
+    createdAt: at,
+    updatedAt: at,
+  });
+  const secondSetup = compiled.graph["app-map:map-1:flow:open-import:r1"]!;
+  assert.deepEqual(
+    secondSetup.steps.map((step) =>
+      step.kind === "expect-screen" ? `expect:${step.screenId}` : step.kind,
+    ),
+    ["expect:import"],
+  );
+});
+
 test("a screen tour compiles account-state branches as optional semantic stops", () => {
   const work: AppMapTest = {
     ...scope,

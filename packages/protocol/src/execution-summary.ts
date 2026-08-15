@@ -10,6 +10,31 @@ function summarizeJob(value: unknown): unknown {
   const steps = Array.isArray(job.steps) ? job.steps : undefined;
   const frames = Array.isArray(job.frames) ? job.frames : undefined;
   const artifacts = Array.isArray(job.artifacts) ? job.artifacts : undefined;
+  const checks = artifacts?.flatMap((value) => {
+    const artifact = object(value);
+    const data = object(artifact?.data);
+    if (
+      artifact?.kind !== "campaign-check-result" ||
+      typeof data?.id !== "string" ||
+      typeof data.title !== "string" ||
+      (data.status !== "passed" && data.status !== "failed") ||
+      typeof data.startedAt !== "number" ||
+      typeof data.finishedAt !== "number"
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: data.id,
+        title: data.title,
+        status: data.status,
+        startedAt: data.startedAt,
+        finishedAt: data.finishedAt,
+        durationMs: Math.max(0, data.finishedAt - data.startedAt),
+        ...(typeof data.error === "string" ? { error: data.error } : {}),
+      },
+    ];
+  });
   const logs = Array.isArray(job.logs)
     ? job.logs.filter((entry): entry is string => typeof entry === "string").slice(-24)
     : Array.isArray(job.lastLogs)
@@ -28,6 +53,9 @@ function summarizeJob(value: unknown): unknown {
     "startedAt",
     "finishedAt",
     "durationMs",
+    "batchId",
+    "caseIndex",
+    "caseCount",
   ] as const;
   return {
     id: job.id,
@@ -48,6 +76,7 @@ function summarizeJob(value: unknown): unknown {
       : {}),
     ...(frames ? { frameCount: frames.length } : {}),
     ...(artifacts ? { artifactCount: artifacts.length } : {}),
+    ...(checks?.length ? { checks } : {}),
     ...(logs.length ? { logs } : {}),
   };
 }

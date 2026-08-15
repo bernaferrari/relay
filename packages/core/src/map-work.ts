@@ -7,6 +7,7 @@ import type {
   AppMapScenarioTest,
   AppMapTest,
   Connection,
+  LegacyAppMapTest,
   RecipeStep,
   ScreenVariant,
   StepTarget,
@@ -83,6 +84,7 @@ function warmCompiledFlowGraphFromSharedPrefix(
   graph: Record<string, Recipe>,
   plan: AppMapCompiledFlow,
   previousPlan?: AppMapCompiledFlow,
+  currentScreenId?: string,
 ): Record<string, Recipe> {
   const root = graph[plan.rootRecipeId];
   if (!root) return graph;
@@ -97,6 +99,16 @@ function warmCompiledFlowGraphFromSharedPrefix(
     ) {
       sharedConnectionCount += 1;
     }
+  }
+  if (currentScreenId === plan.flow.startScreenId) {
+    sharedConnectionCount = 0;
+  } else if (currentScreenId) {
+    const currentConnectionIndex = plan.connections.findIndex(
+      (connection) =>
+        connection.destination.kind === "screen" &&
+        connection.destination.screenId === currentScreenId,
+    );
+    if (currentConnectionIndex >= 0) sharedConnectionCount = currentConnectionIndex + 1;
   }
 
   const sharedConnection = plan.connections[sharedConnectionCount - 1];
@@ -425,6 +437,37 @@ function tourStopTargetKey(
   return `label:${(target.label ?? fallbackLabel).toLocaleLowerCase()}`;
 }
 
+function tourTerminalScreenId(
+  map: AppMap,
+  work: LegacyAppMapTest,
+  root: Recipe,
+): string | undefined {
+  const tour = root.steps.find(
+    (step): step is Extract<RecipeStep, { kind: "tour" }> => step.kind === "tour",
+  );
+  if (tour?.returnAfterLast !== false) return work.rootScreenId;
+  const lastStop = tour.fallbackStops?.at(-1);
+  if (!lastStop) return work.rootScreenId;
+  const stopKey = tourStopTargetKey(lastStop, lastStop.label);
+  for (const connection of Object.values(map.connections ?? {}) as Connection[]) {
+    if (connection.fromScreenId !== work.rootScreenId || connection.destination.kind !== "screen") {
+      continue;
+    }
+    const label = connection.label?.trim();
+    const target = firstTapTarget(connection.actions);
+    if (!label || !target) continue;
+    const point =
+      target.point && Number.isFinite(target.point.x) && Number.isFinite(target.point.y)
+        ? target.point
+        : sourceAnchorPoint(map, connection);
+    const resolvedTarget = point ? { ...target, point } : target;
+    if (tourStopTargetKey(resolvedTarget, label) === stopKey) {
+      return connection.destination.screenId;
+    }
+  }
+  return work.rootScreenId;
+}
+
 function captureMode(work: AppMapTest): NonNullable<AppMapTest["capture"]>["mode"] {
   return (
     work.capture?.mode ??
@@ -481,17 +524,29 @@ export function preludeStepsToScreen(map: AppMap, rootScreenId: string): RecipeS
 export function compileAppMapTest(
   map: AppMap,
   work: AppMapScenarioTest,
-  options?: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow },
+  options?: {
+    warmSetup?: boolean;
+    warmSetupFrom?: AppMapCompiledFlow;
+    warmCurrentScreenId?: string;
+  },
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest };
 export function compileAppMapTest(
   map: AppMap,
   work: AppMapTest,
-  options?: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow },
+  options?: {
+    warmSetup?: boolean;
+    warmSetupFrom?: AppMapCompiledFlow;
+    warmCurrentScreenId?: string;
+  },
 ): { root: Recipe; graph: Record<string, Recipe>; plan?: AppMapCompiledTest };
 export function compileAppMapTest(
   map: AppMap,
   work: AppMapTest,
-  options: { warmSetup?: boolean; warmSetupFrom?: AppMapCompiledFlow } = {},
+  options: {
+    warmSetup?: boolean;
+    warmSetupFrom?: AppMapCompiledFlow;
+    warmCurrentScreenId?: string;
+  } = {},
 ): { root: Recipe; graph: Record<string, Recipe>; plan?: AppMapCompiledTest } {
   if (work.kind === "path") {
     const flowId = work.flowId?.trim();
@@ -499,7 +554,12 @@ export function compileAppMapTest(
     const plan = compileAppMapFlow(map, flowId);
     let graph = recipeGraphFromCompiledFlow(map, plan);
     if (options.warmSetup) {
-      graph = warmCompiledFlowGraphFromSharedPrefix(graph, plan, options.warmSetupFrom);
+      graph = warmCompiledFlowGraphFromSharedPrefix(
+        graph,
+        plan,
+        options.warmSetupFrom,
+        options.warmCurrentScreenId,
+      );
     }
     let root = graph[plan.rootRecipeId];
     if (!root) throw new Error(`Test “${work.name}” compiled without a root recipe`);
@@ -714,7 +774,12 @@ export function compileAppMapTest(
     graph: {
       ...(setupGraph
         ? options.warmSetup
-          ? warmCompiledFlowGraphFromSharedPrefix(setupGraph, setupPlan!, options.warmSetupFrom)
+          ? warmCompiledFlowGraphFromSharedPrefix(
+              setupGraph,
+              setupPlan!,
+              options.warmSetupFrom,
+              options.warmCurrentScreenId,
+            )
           : setupGraph
         : {}),
       [root.id]: root,
@@ -730,6 +795,7 @@ export function compileAppMapCombine(
   const graph: Record<string, Recipe> = {};
   const modules: RecipeStep[] = [];
   let previousSetupPlan: AppMapCompiledFlow | undefined;
+  let previousTerminalScreenId: string | undefined;
   for (const [index, testId] of combine.testIds.entries()) {
     const work = map.tests?.[testId];
     if (!work) throw new Error(`Test ${testId} is missing`);
@@ -748,6 +814,7 @@ export function compileAppMapCombine(
       {
         warmSetup: index > 0,
         ...(previousSetupPlan ? { warmSetupFrom: previousSetupPlan } : {}),
+        ...(previousTerminalScreenId ? { warmCurrentScreenId: previousTerminalScreenId } : {}),
       },
     );
     Object.assign(graph, compiled.graph);
@@ -765,6 +832,16 @@ export function compileAppMapCombine(
       previousSetupPlan = compileAppMapFlow(map, work.flowId);
     } else {
       previousSetupPlan = undefined;
+    }
+    if (work.kind === "path") {
+      const pathPlan = compileAppMapFlow(map, work.flowId!.trim());
+      const terminal = pathPlan.connections.at(-1)?.destination;
+      previousTerminalScreenId =
+        terminal?.kind === "screen" ? terminal.screenId : pathPlan.flow.startScreenId;
+    } else if (work.kind === "tour") {
+      previousTerminalScreenId = tourTerminalScreenId(map, work, compiled.root);
+    } else {
+      previousTerminalScreenId = undefined;
     }
   }
   const root: Recipe = {

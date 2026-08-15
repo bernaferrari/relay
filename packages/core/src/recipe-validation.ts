@@ -118,6 +118,54 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (raw.direction !== "down" && raw.direction !== "up") {
           throw stepErr(index, 'scroll requires direction: "down" | "up"');
         }
+        if (
+          raw.maxAttempts !== undefined &&
+          (!isNumber(raw.maxAttempts) ||
+            !Number.isInteger(raw.maxAttempts) ||
+            raw.maxAttempts < 1 ||
+            raw.maxAttempts > 48)
+        ) {
+          throw stepErr(index, "scroll.maxAttempts must be an integer from 1 to 48");
+        }
+        let until: Extract<RecipeStep, { kind: "scroll" }>["until"];
+        if (raw.until !== undefined) {
+          if (!isObject(raw.until)) throw stepErr(index, "scroll.until must be an object");
+          if (
+            !isString(raw.until.screenId) ||
+            !raw.until.screenId.trim() ||
+            !isString(raw.until.screenTitle) ||
+            !raw.until.screenTitle.trim() ||
+            !isString(raw.until.fingerprint) ||
+            !/^[a-f0-9]{64}$/u.test(raw.until.fingerprint)
+          ) {
+            throw stepErr(index, "scroll.until needs a mapped screen identity");
+          }
+          if (
+            raw.until.aliases !== undefined &&
+            (!Array.isArray(raw.until.aliases) ||
+              !raw.until.aliases.every(
+                (alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias),
+              ))
+          ) {
+            throw stepErr(index, "scroll.until.aliases must be SHA-256 fingerprints");
+          }
+          if (
+            raw.until.observations !== undefined &&
+            (!Array.isArray(raw.until.observations) ||
+              raw.until.observations.length > 256 ||
+              !raw.until.observations.every(
+                (observation) =>
+                  isObject(observation) &&
+                  isString(observation.fingerprint) &&
+                  /^[a-f0-9]{64}$/u.test(observation.fingerprint) &&
+                  Array.isArray(observation.nodes) &&
+                  Array.isArray(observation.volatileSignals),
+              ))
+          ) {
+            throw stepErr(index, "scroll.until.observations must be semantic observations");
+          }
+          until = structuredClone(raw.until) as NonNullable<typeof until>;
+        }
         const step: Extract<RecipeStep, { kind: "scroll" }> = {
           kind: "scroll",
           direction: raw.direction,
@@ -128,6 +176,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                   throw stepErr(index, "scroll.amount must be a number");
                 })()
             : {}),
+          ...(until ? { until } : {}),
+          ...(raw.maxAttempts !== undefined ? { maxAttempts: raw.maxAttempts } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
