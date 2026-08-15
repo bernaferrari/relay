@@ -17,6 +17,7 @@ import {
   isCancel,
   isNotFoundOrTimeout,
   resilientScreenIdentityMatch,
+  handoffShellIdentityMatch,
   longPressRecordedTarget,
   readInput,
   resolvePointForDevice,
@@ -88,6 +89,7 @@ import {
   labelsForScope,
 } from "./recipe-target-match.js";
 import { runTourStep } from "./recipe-runner-tour.js";
+import { foregroundApplicationBundle } from "./recipe-runner-tour-matching.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runReusableRecipe(
@@ -517,10 +519,15 @@ async function runRequiredRecipeStep(
           step.observations ?? [],
           ctx.job,
         );
+        const handoffShellMatch =
+          Boolean(step.expectedApp) &&
+          foregroundApplicationBundle(nodes) === step.expectedApp &&
+          handoffShellIdentityMatch(observed, step.observations ?? []);
         if (
           screenIdentityMatches(expected, observed.fingerprint) ||
           semanticMatch ||
-          resilientMatch
+          resilientMatch ||
+          handoffShellMatch
         ) {
           reached = true;
           break;

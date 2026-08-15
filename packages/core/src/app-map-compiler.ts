@@ -92,6 +92,7 @@ function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeS
     screenTitle: screen.title,
     fingerprint: screen.identity.fingerprint,
     timeoutMs: 5000,
+    ...(screen.handoff?.ownerApp ? { expectedApp: screen.handoff.ownerApp } : {}),
     ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
     ...(observations.length ? { observations } : {}),
   };

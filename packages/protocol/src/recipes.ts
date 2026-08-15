@@ -252,6 +252,9 @@ export type RecipeStep = RecipeStepMetadata &
         screenId: string;
         screenTitle: string;
         fingerprint: string;
+        /** Explicit owner for a mapped cross-app handoff. The runner verifies
+         * the foreground package before accepting its stable semantic shell. */
+        expectedApp?: string;
         aliases?: string[];
         /** Allow navigation and rendering to settle before declaring that the
          * destination differs. Each observation remains evidence. */

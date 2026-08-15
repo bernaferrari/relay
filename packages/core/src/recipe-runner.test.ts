@@ -1222,11 +1222,14 @@ describe("runRecipeStep expect-screen", () => {
     assert.deepEqual(lines, ["screen: reached Menu"]);
   });
 
-  it("keeps one logical list identity when scroll position changes repeated row counts", async () => {
+  it("accepts a reflowed handoff shell only under its explicit foreground package", async () => {
     const shell = [
-      { role: "view", identifier: "settings.action_bar", depth: 9 },
-      { role: "list", identifier: "settings.recycler", depth: 15 },
-      { role: "image", identifier: "settings.app_icon", depth: 16 },
+      { role: "view", identifier: "settings.action_bar", depth: 9, bundleId: "settings.app" },
+      { role: "list", identifier: "settings.recycler", depth: 15, bundleId: "settings.app" },
+      { role: "image", identifier: "settings.app_icon", depth: 16, bundleId: "settings.app" },
+      { role: "view", identifier: "settings.content", depth: 12, bundleId: "settings.app" },
+      { role: "button", identifier: "settings.back", depth: 10, bundleId: "settings.app" },
+      { role: "button", identifier: "settings.more", depth: 10, bundleId: "settings.app" },
     ];
     const approved = observeScreenIdentity([
       ...shell,
@@ -1255,12 +1258,36 @@ describe("runRecipeStep expect-screen", () => {
         screenId: "languages",
         screenTitle: "App languages",
         fingerprint: "a".repeat(64),
+        expectedApp: "settings.app",
         observations: [approved],
       },
       { log: (line) => lines.push(line) },
     );
 
     assert.deepEqual(lines, ["screen: reached App languages"]);
+
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({
+            snapshot: () =>
+              Promise.resolve({
+                nodes: current.map((node) => ({ ...node, bundleId: "unrelated.app" })),
+              }),
+          }),
+          {
+            kind: "expect-screen",
+            screenId: "languages",
+            screenTitle: "App languages",
+            fingerprint: "a".repeat(64),
+            expectedApp: "settings.app",
+            timeoutMs: 0,
+            observations: [approved],
+          },
+          { ...noLog, observeVisualFingerprint: () => Promise.resolve("b".repeat(64)) },
+        ),
+      /not “App languages”/u,
+    );
   });
 
   it("does not let one generic identifier equate unrelated dynamic screens", async () => {

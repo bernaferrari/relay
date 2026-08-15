@@ -395,6 +395,12 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "expect-screen.fingerprint must be a SHA-256 fingerprint");
         }
         if (
+          raw.expectedApp !== undefined &&
+          (!isString(raw.expectedApp) || !raw.expectedApp.trim())
+        ) {
+          throw stepErr(index, "expect-screen.expectedApp must be a non-empty package identifier");
+        }
+        if (
           raw.aliases !== undefined &&
           (!Array.isArray(raw.aliases) ||
             raw.aliases.length > 256 ||
@@ -465,6 +471,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           screenId: raw.screenId,
           screenTitle: raw.screenTitle,
           fingerprint: raw.fingerprint,
+          ...(isString(raw.expectedApp) ? { expectedApp: raw.expectedApp.trim() } : {}),
           ...(screenTimeoutMs !== undefined ? { timeoutMs: screenTimeoutMs } : {}),
           ...(raw.aliases?.length ? { aliases: [...raw.aliases] as string[] } : {}),
           ...(raw.observations?.length

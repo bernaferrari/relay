@@ -100,7 +100,7 @@ function resilientScreenIdentityMatch(
       // repeated roles without changing the screen. Exact agreement on the
       // complete application-owned identifier set is the stronger anchor;
       // retain a high, but not pixel-like, structural floor.
-      (structure ?? 0) >= 0.9;
+      (structure ?? 0) >= 0.95;
     return (
       (options.allowDynamicShell !== false && stableApplicationShell) ||
       (localized && (stableIdentifiers ?? 0) >= 0.98 && (structure ?? 0) >= 0.95) ||
@@ -108,6 +108,30 @@ function resilientScreenIdentityMatch(
         structureSignature !== undefined &&
         structureSignature === localeNeutralStructureSignature(observation))
     );
+  });
+}
+
+/** Cross-app handoffs can land at a different scroll offset while still
+ * exposing the exact same reviewed, package-owned shell. This deliberately
+ * requires a much richer identifier set than the generic dynamic-list rule;
+ * the caller separately proves the foreground package. */
+function handoffShellIdentityMatch(
+  observed: ReturnType<typeof observeScreenIdentity>,
+  observations: NonNullable<Extract<RecipeStep, { kind: "expect-screen" }>["observations"]>,
+): boolean {
+  const observedIdentifiers = meaningfulStableIdentifiers(observed);
+  return observations.some((observation) => {
+    const expectedIdentifiers = meaningfulStableIdentifiers(observation);
+    if (expectedIdentifiers.size < 6 || observedIdentifiers.size !== expectedIdentifiers.size) {
+      return false;
+    }
+    if ([...expectedIdentifiers].some((identifier) => !observedIdentifiers.has(identifier))) {
+      return false;
+    }
+    const structure = compareScreenIdentity(observed, observation).signals.find(
+      (signal) => signal.kind === "structural-overlap" && signal.impact === "positive",
+    )?.strength;
+    return (structure ?? 0) >= 0.9;
   });
 }
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
@@ -751,6 +775,7 @@ export {
   isCancel,
   isNotFoundOrTimeout,
   resilientScreenIdentityMatch,
+  handoffShellIdentityMatch,
   longPressRecordedTarget,
   readInput,
   resolvePointForDevice,
