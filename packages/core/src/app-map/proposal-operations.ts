@@ -41,12 +41,6 @@ function applyProposalChange(
     case "test.edit": {
       const test = draft.tests[change.testId];
       if (!test) appMapFail("missing-reference", `Test ${change.testId} does not exist`);
-      if (test.kind !== "scenario") {
-        appMapFail(
-          "invalid-map",
-          `Test ${change.testId} is a legacy ${test.kind} test and cannot accept graph-native edits`,
-        );
-      }
       draft.tests[change.testId] = {
         ...applyScenarioTestStepEdits(test, change.edits),
         updatedAt: at,

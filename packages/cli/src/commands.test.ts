@@ -357,22 +357,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { appMapId: "grok-ios", testId: "checkout" },
     ],
     [
-      ["work", "run", "grok-ios", "settings-tour"],
-      "app-map.test.run",
-      { appMapId: "grok-ios", testId: "settings-tour" },
-    ],
-    [
       ["run-matrix", "run", "grok-ios", "language-x-settings"],
-      "job.combine.start",
-      { appMapId: "grok-ios", combineId: "language-x-settings" },
-    ],
-    [
-      ["combine", "run", "grok-ios", "language-x-settings"],
-      "job.combine.start",
-      { appMapId: "grok-ios", combineId: "language-x-settings" },
-    ],
-    [
-      ["combo", "run", "grok-ios", "language-x-settings"],
       "job.combine.start",
       { appMapId: "grok-ios", combineId: "language-x-settings" },
     ],
@@ -391,19 +376,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     "job-start-watch",
   );
   assert.equal(
-    resolveCommand(["work", "run", "grok-ios", "settings-tour"]).behavior,
-    "job-start-watch",
-  );
-  assert.equal(
     resolveCommand(["run-matrix", "run", "grok-ios", "language-x-settings"]).behavior,
-    "job-start-watch",
-  );
-  assert.equal(
-    resolveCommand(["combine", "run", "grok-ios", "language-x-settings"]).behavior,
-    "job-start-watch",
-  );
-  assert.equal(
-    resolveCommand(["combo", "run", "grok-ios", "language-x-settings"]).behavior,
     "job-start-watch",
   );
 });

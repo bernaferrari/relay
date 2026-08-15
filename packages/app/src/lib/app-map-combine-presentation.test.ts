@@ -29,8 +29,8 @@ const variables: CombineVariable[] = [
   },
 ];
 const tests: CombineTestColumn[] = [
-  { id: "settings", name: "Visit Settings", kind: "tour" },
-  { id: "chat", name: "Send a message", kind: "path" },
+  { id: "settings", name: "Visit Settings", kind: "scenario" },
+  { id: "chat", name: "Send a message", kind: "scenario" },
 ];
 
 test("run matrix labels visible values and its group-to-group formula", () => {

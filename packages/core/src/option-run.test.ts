@@ -506,6 +506,7 @@ test("an explicit empty selection never expands to every saved option", async ()
 
 test("run matrix preflight reports the exact device and screenshot expansion", async () => {
   const base = sandwichMap();
+  for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {
     ...entity("language"),
     name: "Language",
@@ -519,10 +520,18 @@ test("run matrix preflight reports the exact device and screenshot expansion", a
   };
   const work = {
     ...entity("settings-tour"),
-    name: "Settings tour",
-    kind: "tour" as const,
-    rootScreenId: "home",
-    screenIds: ["cities"],
+    name: "Settings coverage",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: [
+      {
+        id: "settings-check",
+        kind: "script" as const,
+        intent: "Check Settings",
+        capture: true,
+        binding: { status: "resolved" as const, kind: "script" as const, source: "return true" },
+      },
+    ],
     capture: { mode: "every-screen" as const },
   };
   const combine = {
@@ -555,6 +564,7 @@ test("run matrix preflight reports the exact device and screenshot expansion", a
 
 test("run matrix preflight previews the requested pilot selection", async () => {
   const base = sandwichMap();
+  for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {
     ...entity("language"),
     name: "Language",
@@ -567,10 +577,17 @@ test("run matrix preflight previews the requested pilot selection", async () => 
   };
   const work = {
     ...entity("settings-tour"),
-    name: "Settings tour",
-    kind: "tour" as const,
-    rootScreenId: "home",
-    screenIds: ["home"],
+    name: "Settings coverage",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: [
+      {
+        id: "settings-check",
+        kind: "script" as const,
+        intent: "Check Settings",
+        binding: { status: "resolved" as const, kind: "script" as const, source: "return true" },
+      },
+    ],
   };
   const combine = {
     ...entity("language-x-settings"),
@@ -596,6 +613,7 @@ test("run matrix preflight previews the requested pilot selection", async () => 
 
 test("run matrix preflight blocks a deliberately empty modifier", async () => {
   const base = sandwichMap();
+  for (const screen of Object.values(base.screens)) delete screen.identity;
   const variable = {
     ...entity("language"),
     name: "Language",
@@ -605,10 +623,17 @@ test("run matrix preflight blocks a deliberately empty modifier", async () => {
   };
   const work = {
     ...entity("settings-tour"),
-    name: "Settings tour",
-    kind: "tour" as const,
-    rootScreenId: "home",
-    screenIds: ["home"],
+    name: "Settings coverage",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: [
+      {
+        id: "settings-check",
+        kind: "script" as const,
+        intent: "Check Settings",
+        binding: { status: "resolved" as const, kind: "script" as const, source: "return true" },
+      },
+    ],
   };
   const combine = {
     ...entity("language-x-settings"),

@@ -141,30 +141,6 @@ export function FirstTestEmpty(props: { creating: boolean; onCreate: () => void 
   );
 }
 
-export function LegacyTest(props: { test: AppMapTest; onCreate: () => void }) {
-  return (
-    <div class="grid flex-1 place-items-center p-6 text-center">
-      <div class="max-w-[38ch]">
-        <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-base text-text-weak">
-          <Icon name="folder" size={17} />
-        </span>
-        <h2 class="mt-3 text-[17px] font-semibold">{props.test.name}</h2>
-        <p class="mt-1 text-[12px]/[1.55] text-text-weak">
-          This {props.test.kind === "path" ? "recorded path" : "screen tour"} keeps its existing
-          behavior and stays read-only. Create a scenario to edit intent step by step.
-        </p>
-        <p class="mt-3 text-[11px]/[1.5] text-text-weaker">
-          Legacy Tests are reference-only and cannot be converted. Recreate the intended coverage as
-          a clean graph Test, then remove the old Test after verification.
-        </p>
-        <Button class="mt-4" onClick={props.onCreate}>
-          Create graph Test
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function MobilePaneNav(props: {
   value: MobileTestPane;
   onChange: (pane: MobileTestPane) => void;

@@ -88,9 +88,6 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     }
     const test = map.tests[testMatch.testId!];
     if (!test) throw new HttpError(404, `Test ${testMatch.testId} not found`);
-    if (test.kind !== "scenario") {
-      throw new HttpError(409, `Test ${test.id} is a legacy ${test.kind} test`);
-    }
 
     const targetId = body.target.targetId.trim();
     let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;

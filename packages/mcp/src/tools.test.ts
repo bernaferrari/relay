@@ -426,6 +426,16 @@ test("publishes exact graph Test and one-pass run schemas", () => {
     },
   });
   assert.equal((save.test as { kind?: string }).kind, "scenario");
+  for (const kind of ["path", "tour"] as const) {
+    assert.throws(() =>
+      tool("app-map.test.save").inputSchema.parse({
+        appMapId: "checkout",
+        testId: `old-${kind}`,
+        expectedRevision: 7,
+        test: { name: `Old ${kind}`, kind },
+      }),
+    );
+  }
   assert.throws(() =>
     tool("app-map.test.save").inputSchema.parse({
       appMapId: "checkout",

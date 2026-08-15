@@ -108,12 +108,8 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         id: work.id,
         name: work.name,
         kind: work.kind,
-        ...(work.kind === "path" && work.flowId ? { flowId: work.flowId } : {}),
-        ...(work.kind === "tour" && work.rootScreenId ? { rootScreenId: work.rootScreenId } : {}),
-        ...(work.kind === "tour" && work.setupFlowId ? { setupFlowId: work.setupFlowId } : {}),
         ...(work.capture ? { capture: work.capture } : {}),
-        ...(work.kind === "tour" ? { depth: work.depth ?? 0 } : {}),
-        ...(work.kind === "scenario" ? { stepCount: work.steps.length } : {}),
+        stepCount: work.steps.length,
       })),
       combines: byId(map.combines ?? {}).map((combine) => ({
         id: combine.id,

@@ -115,12 +115,6 @@ export function materializeProposalReviews(map: AppMap, proposal: Proposal): Pro
       if (change.kind !== "test.edit") return structuredClone(change);
       const test = map.tests[change.testId];
       if (!test) appMapFail("missing-reference", `Test ${change.testId} does not exist`);
-      if (test.kind !== "scenario") {
-        appMapFail(
-          "invalid-map",
-          `Test ${change.testId} is a legacy ${test.kind} test and cannot accept graph-native edits`,
-        );
-      }
       return {
         kind: change.kind,
         testId: change.testId,

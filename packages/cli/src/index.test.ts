@@ -551,7 +551,7 @@ test("job watch --no-wait gets the job exactly once", async () => {
   });
 });
 
-test("work run starts the canonical exact Test operation and watches its job", async () => {
+test("test run starts the canonical exact Test operation and watches its job", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
   let polls = 0;
@@ -583,7 +583,7 @@ test("work run starts the canonical exact Test operation and watches its job", a
 
   const code = await runCli(
     [
-      "work",
+      "test",
       "run",
       "grok-ios",
       "settings-tour",

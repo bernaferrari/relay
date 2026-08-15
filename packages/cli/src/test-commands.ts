@@ -18,7 +18,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
   mapped(
     "app-map.test.save",
     path("test save", ["appMapId", "testId"], undefined, {
-      summary: "Save a graph-native scenario, recorded path, or screen tour",
+      summary: "Save a graph-native scenario Test",
       inputHelp: [
         {
           name: "expectedRevision",
@@ -31,7 +31,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           type: "object",
           required: true,
           description:
-            "Test name, kind, and graph steps; graph Tests use kind scenario and intentSchemaVersion 1",
+            "Test name and graph steps; kind must be scenario with intentSchemaVersion 1",
         },
         {
           name: "eventId",
@@ -44,7 +44,6 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       ],
       note: "Use `relay test propose` for reviewable edits to an existing Test. Stable step IDs survive reordering.",
     }),
-    path("work save", ["appMapId", "testId"]),
   ),
   mapped(
     "app-map.test.edit",
@@ -130,14 +129,6 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       note: "The revision and target are mandatory. Device runs require control under the same --actor lease identity.",
       behavior: "job-start-watch",
     }),
-    path("work run", ["appMapId", "testId"], undefined, {
-      summary: "Compatibility alias of test run",
-      behavior: "job-start-watch",
-    }),
   ),
-  mapped(
-    "app-map.test.remove",
-    path("test remove", ["appMapId", "testId"]),
-    path("work remove", ["appMapId", "testId"]),
-  ),
+  mapped("app-map.test.remove", path("test remove", ["appMapId", "testId"])),
 ];

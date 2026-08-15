@@ -1,11 +1,6 @@
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
-import {
-  graphTest,
-  legacyTest,
-  testCapturePolicy,
-  testSemanticEdits,
-} from "./test-input-schemas.js";
+import { graphTest, testCapturePolicy, testSemanticEdits } from "./test-input-schemas.js";
 
 export type RelayOperationInputSchema = z.ZodObject;
 export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
@@ -588,7 +583,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       testId: identifier("Stable Test identifier"),
       expectedRevision: natural("Current App Map revision"),
       eventId: identifier("Optional idempotent activity event identifier").optional(),
-      test: z.union([graphTest, legacyTest]),
+      test: graphTest,
     })
     .strict(),
   "app-map.test.edit": z
@@ -745,7 +740,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       appMapId: identifier("App Map identifier"),
       testId: identifier("Test identifier to run once").optional(),
       combineId: identifier("Saved run matrix identifier").optional(),
-      flowId: identifier("Legacy Flow identifier").optional(),
       variableIds: z.array(identifier("State set identifier")).optional(),
       selected: z.record(z.string(), z.array(z.string())).optional(),
       strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
@@ -760,17 +754,17 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     })
     .strict()
     .superRefine((input, context) => {
-      if (!input.testId && !input.combineId && !input.flowId) {
+      if (!input.testId && !input.combineId) {
         context.addIssue({
           code: "custom",
-          message: "Choose exactly one testId, combineId, or flowId",
+          message: "Choose exactly one testId or combineId",
           path: ["testId"],
         });
       }
-      if ([input.testId, input.combineId, input.flowId].filter(Boolean).length > 1) {
+      if ([input.testId, input.combineId].filter(Boolean).length > 1) {
         context.addIssue({
           code: "custom",
-          message: "Choose only one testId, combineId, or flowId",
+          message: "Choose only one testId or combineId",
           path: ["testId"],
         });
       }

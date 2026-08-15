@@ -42,7 +42,7 @@ function selectedOptions<T extends { id: string }>(
 }
 
 export function canvasCombineCards(
-  map: Pick<AppMap, "combines" | "tests" | "variables" | "flows">,
+  map: Pick<AppMap, "combines" | "tests" | "variables">,
   screenFor: (
     screenId: string,
   ) => { position: { x: number; y: number }; title: string } | undefined,
@@ -56,14 +56,18 @@ export function canvasCombineCards(
     const variables = combine.variableIds
       .map((id) => map.variables?.[id])
       .filter((variable): variable is NonNullable<typeof variable> => Boolean(variable));
-    const tour = tests.find((test) => test.kind === "tour" && test.rootScreenId?.trim());
-    const rootScreenId =
-      (tour?.kind === "tour" ? tour.rootScreenId : undefined) ??
-      tests
-        .map((test) =>
-          test.kind === "path" && test.flowId ? map.flows?.[test.flowId]?.startScreenId : undefined,
-        )
-        .find((id) => id?.trim());
+    const rootScreenId = tests
+      .flatMap((test) =>
+        test.steps.flatMap((step) =>
+          step.kind === "validation" &&
+          step.binding.status === "resolved" &&
+          step.binding.kind === "assertion" &&
+          step.binding.assertion.kind === "screen"
+            ? [step.binding.assertion.screenId]
+            : [],
+        ),
+      )
+      .find((id) => id.trim());
     const rootScreen = rootScreenId ? screenFor(rootScreenId) : undefined;
     const anchor = rootScreen?.position;
     const modifiers = variables.map((variable) => ({

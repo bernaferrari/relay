@@ -218,11 +218,8 @@ function testSummary(value: unknown): Record<string, unknown> {
         : test.name,
     kind: test.kind,
     ...(test.capture ? { capture: test.capture } : {}),
-    ...(test.kind === "scenario"
-      ? { intentSchemaVersion: test.intentSchemaVersion, rootStepCount: steps.length }
-      : {}),
-    ...(test.kind === "path" && test.flowId ? { flowId: test.flowId } : {}),
-    ...(test.kind === "tour" && test.rootScreenId ? { rootScreenId: test.rootScreenId } : {}),
+    intentSchemaVersion: test.intentSchemaVersion,
+    rootStepCount: steps.length,
     updatedAt: test.updatedAt,
   };
 }

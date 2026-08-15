@@ -167,11 +167,8 @@ export function scenarioDiagnostics(map: AppMap, test: AppMapScenarioTest): Scen
 }
 
 export function testKindDescription(test: AppMapTest): string {
-  if (test.kind === "scenario") {
-    const count = scenarioStepCount(test.steps);
-    return `${count} ${count === 1 ? "step" : "steps"}`;
-  }
-  return test.kind === "path" ? "Recorded path · read-only" : "Screen tour · read-only";
+  const count = scenarioStepCount(test.steps);
+  return `${count} ${count === 1 ? "step" : "steps"}`;
 }
 
 export function scenarioStepCount(steps: readonly AppMapScenarioTestStep[]): number {

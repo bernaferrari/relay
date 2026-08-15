@@ -17,8 +17,7 @@ export type AppMapCompileErrorCode =
   | "missing-connection"
   | "missing-routine"
   | "draft-connection"
-  | "missing-screen-identity"
-  | "tour-setup-root-mismatch";
+  | "missing-screen-identity";
 
 export class AppMapCompileError extends Error {
   readonly code: AppMapCompileErrorCode;
@@ -408,31 +407,6 @@ export function compileAppMapFlow(
       .map((id) => structuredClone(map.caseStacks[id]!)),
     terminal,
   };
-}
-
-/**
- * Compile the explicit cold-start route owned by a standalone screen tour.
- *
- * The returned graph is an ordinary Flow compilation, including its optional
- * setup Routine and every source/destination expectation. Callers place its
- * root recipe behind one `module` step before the tour rather than copying
- * launch/navigation actions into each test. Validation rejects this mismatch
- * when a map is saved; this guard keeps direct compiler callers fail-closed.
- */
-export function compileAppMapTourSetupFlow(
-  mapInput: AppMap,
-  setupFlowId: string,
-  rootScreenId: string,
-): AppMapCompiledFlow {
-  const plan = compileAppMapFlow(mapInput, setupFlowId);
-  if (plan.terminal.kind !== "screen" || plan.terminal.screenId !== rootScreenId) {
-    const destination = plan.terminal.kind === "screen" ? plan.terminal.screenId : "the end";
-    fail(
-      "tour-setup-root-mismatch",
-      `Tour setup Flow "${setupFlowId}" ends at ${destination}, not root ${rootScreenId}`,
-    );
-  }
-  return plan;
 }
 
 /** Compile a single canonical connection for focused replay from the UI, CLI,

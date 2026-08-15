@@ -36,7 +36,6 @@ import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   FirstTestEmpty,
-  LegacyTest,
   MobilePaneNav,
   TestPicker,
   TestWorkspaceActionBar,
@@ -465,11 +464,8 @@ export function AppMapTestWorkspace(props: {
               when={selectedTest()}
               fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
             >
-              {(test) => (
-                <Show
-                  when={test().kind === "scenario" && draft()}
-                  fallback={<LegacyTest test={test()} onCreate={() => void createTest()} />}
-                >
+              {(_test) => (
+                <Show when={draft()}>
                   <AppMapTestOutline
                     map={appMap()!}
                     test={draft()!}

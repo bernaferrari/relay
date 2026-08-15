@@ -67,9 +67,6 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!appMap) throw new HttpError(404, `App Map ${testCompile.appMapId} not found`);
     const test = appMap.tests[testCompile.testId!];
     if (!test) throw new HttpError(404, `Test ${testCompile.testId} not found`);
-    if (test.kind !== "scenario") {
-      throw new HttpError(400, `Test ${test.id} is a legacy ${test.kind} test`);
-    }
     try {
       json(response, 200, { plan: compileAppMapTest(appMap, test).plan });
     } catch (error) {
@@ -107,12 +104,6 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         const id = testEdit.testId!;
         const test = map.tests[id];
         if (!test) throw new AppMapDomainError("missing-reference", `Test ${id} does not exist`);
-        if (test.kind !== "scenario") {
-          throw new AppMapDomainError(
-            "invalid-map",
-            `Test ${id} is a legacy ${test.kind} test and cannot accept graph-native edits`,
-          );
-        }
         try {
           if (body.expectedRevision > map.revision) {
             throw new AppMapDomainError(

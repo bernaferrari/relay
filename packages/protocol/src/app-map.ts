@@ -326,8 +326,7 @@ export type AppMapVariable = AppMapEntity & {
   screenshotEach?: boolean;
 };
 
-/** A test you can bind to variables. Scenario = graph-native intent; Path and
- * Tour remain compatibility forms for recorded flows and live child walks. */
+/** Evidence captured while running a graph-native Test. */
 export type AppMapCapturePolicy =
   | { mode: "every-screen" }
   | { mode: "checkpoints"; screenIds: string[] }
@@ -335,34 +334,8 @@ export type AppMapCapturePolicy =
   | { mode: "failures-only" }
   | { mode: "none" };
 
-export type LegacyAppMapTest = AppMapEntity & {
-  name: string;
-  kind: "path" | "tour";
-  flowId?: string;
-  rootScreenId?: string;
-  /**
-   * Optional validated cold-start path for a standalone screen tour. The Flow
-   * must finish at `rootScreenId`, so a tour can begin from a known app state
-   * without copying launch or navigation steps into every test.
-   */
-  setupFlowId?: string;
-  /** Exact mapped screens this test must capture. When omitted, a tour follows
-   * every visible child row as before. */
-  screenIds?: string[];
-  /** Screen branches that are valid only for some account or feature states.
-   * They are visited and captured when their recorded semantic row is present,
-   * but their absence must not turn into a stale-coordinate tap or fail the
-   * current-state coverage run. Values must also appear in `screenIds`. */
-  optionalScreenIds?: string[];
-  depth?: number;
-  /** Evidence is independent from traversal: a test can visit ten screens
-   * without necessarily saving ten screenshots. */
-  capture?: AppMapCapturePolicy;
-  /** @deprecated Read as every-screen/none when capture is absent. */
-  screenshotEach?: boolean;
-};
-
-export type AppMapTest = LegacyAppMapTest | AppMapScenarioTest;
+/** The only Test contract. Navigation is bound to reviewed App Map connections. */
+export type AppMapTest = AppMapScenarioTest;
 
 /** Figma-like binding: variables × tests. Extra variables are M×N×O; extra tests run in order. */
 export type AppMapCombine = AppMapEntity & {

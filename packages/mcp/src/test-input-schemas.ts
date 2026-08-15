@@ -403,21 +403,6 @@ export const graphTest = z
     }
   });
 
-export const legacyTest = z
-  .object({
-    name: text("Test name"),
-    kind: z.enum(["path", "tour"]),
-    flowId: identifier("Flow identifier").optional(),
-    rootScreenId: identifier("Tour root screen identifier").optional(),
-    setupFlowId: identifier("Optional setup Flow identifier").optional(),
-    screenIds: z.array(identifier("Mapped tour screen identifier")).optional(),
-    optionalScreenIds: z.array(identifier("Optional mapped tour screen identifier")).optional(),
-    depth: z.number().int().min(0).optional(),
-    capture: testCapturePolicy.optional(),
-    screenshotEach: z.boolean().optional(),
-  })
-  .strict();
-
 const testSemanticEdit = z.discriminatedUnion("kind", [
   z
     .object({

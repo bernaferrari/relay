@@ -205,12 +205,6 @@ export function editAppMapScenarioTest(
 ): AppMap {
   const test = map.tests?.[testId];
   if (!test) appMapFail("missing-reference", `Test ${testId} does not exist`);
-  if (test.kind !== "scenario") {
-    appMapFail(
-      "invalid-map",
-      `Test ${testId} is a legacy ${test.kind} test and cannot accept graph-native edits`,
-    );
-  }
   const changed = applyScenarioTestStepEdits(test, edits);
   return mutateAppMap(
     map,
@@ -381,13 +375,6 @@ export function removeAppMapFlow(
 ): AppMap {
   const flow = map.flows[flowId];
   if (!flow) appMapFail("missing-reference", `Flow ${flowId} does not exist`);
-  if (
-    Object.values(map.tests ?? {}).some(
-      (work) => work.kind === "tour" && work.setupFlowId === flowId,
-    )
-  ) {
-    appMapFail("in-use", `Flow ${flowId} is still referenced by a screen tour`);
-  }
   return mutateAppMap(
     map,
     context,

@@ -192,66 +192,12 @@ function assertTests(map: AppMap): void {
         }
       }
     }
-    if (work.kind === "path" && !map.flows[work.flowId!]) {
-      appMapFail(
-        "missing-reference",
-        `Path Test ${work.id} references missing Flow ${work.flowId}`,
-      );
-    }
-    if (work.kind === "tour" && work.rootScreenId && !map.screens[work.rootScreenId]) {
-      appMapFail(
-        "missing-reference",
-        `Test ${work.id} references missing root screen ${work.rootScreenId}`,
-      );
-    }
-    for (const screenId of work.kind === "tour" ? (work.screenIds ?? []) : []) {
-      if (!map.screens[screenId]) {
-        appMapFail("missing-reference", `Test ${work.id} references missing screen ${screenId}`);
-      }
-    }
-    if (work.kind === "tour" && work.capture?.mode === "checkpoints") {
-      const traversal = new Set(work.screenIds ?? []);
+    if (work.capture?.mode === "checkpoints") {
       for (const screenId of work.capture.screenIds) {
         if (!map.screens[screenId]) {
           appMapFail("missing-reference", `Test ${work.id} captures missing screen ${screenId}`);
         }
-        if (traversal.size && !traversal.has(screenId)) {
-          appMapFail(
-            "invalid-map",
-            `Test ${work.id} captures ${screenId} without visiting that screen`,
-          );
-        }
       }
-    }
-  }
-}
-
-/** `assertFlows` establishes continuity first; then tour setup can be checked
- * against its verified terminal screen without reimplementing Flow validation. */
-function assertTourSetupFlows(map: AppMap): void {
-  for (const work of Object.values(map.tests ?? {})) {
-    if (work.kind !== "tour") continue;
-    if (!work.setupFlowId) continue;
-    const flow = map.flows[work.setupFlowId];
-    if (!flow) {
-      appMapFail(
-        "missing-reference",
-        `Tour Test ${work.id} references missing setup Flow ${work.setupFlowId}`,
-      );
-    }
-    let terminal: { kind: "screen"; screenId: string } | { kind: "end" } = {
-      kind: "screen",
-      screenId: flow.startScreenId,
-    };
-    for (const connectionId of flow.connectionIds) {
-      terminal = map.connections[connectionId]!.destination;
-    }
-    if (terminal.kind !== "screen" || terminal.screenId !== work.rootScreenId) {
-      const destination = terminal.kind === "screen" ? terminal.screenId : "the end";
-      appMapFail(
-        "invalid-map",
-        `Tour Test ${work.id} setup Flow ${flow.id} ends at ${destination}, not root ${work.rootScreenId}`,
-      );
     }
   }
 }
@@ -262,24 +208,11 @@ function assertCombineCaptures(map: AppMap): void {
       const work = map.tests?.[testId];
       if (!work) continue;
       if (capture.mode !== "checkpoints") continue;
-      if (work.kind !== "tour") {
-        appMapFail(
-          "invalid-map",
-          `Combine ${combine.id} uses screen checkpoints for non-tour Test ${testId}`,
-        );
-      }
-      const traversal = new Set(work.screenIds ?? []);
       for (const screenId of capture.screenIds) {
         if (!map.screens[screenId]) {
           appMapFail(
             "missing-reference",
             `Combine ${combine.id} captures missing screen ${screenId}`,
-          );
-        }
-        if (traversal.size && !traversal.has(screenId)) {
-          appMapFail(
-            "invalid-map",
-            `Combine ${combine.id} captures ${screenId} without Test ${testId} visiting it`,
           );
         }
       }
@@ -591,7 +524,6 @@ export function validateAppMap(value: unknown): AppMap {
   assertConnectionsAndActions(input);
   assertRoutineGraph(input);
   assertFlows(input);
-  assertTourSetupFlows(input);
   assertRunReferences(input);
   return structuredClone(input);
 }

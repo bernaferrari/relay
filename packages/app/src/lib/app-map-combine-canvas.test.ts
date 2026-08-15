@@ -21,13 +21,24 @@ const language: AppMapVariable = {
   updatedAt: at,
 };
 
-const tour: AppMapTest = {
+const scenario: AppMapTest = {
   ...scope,
   id: "settings-tour",
   name: "Open every Settings row",
-  kind: "tour",
-  rootScreenId: "settings",
-  depth: 0,
+  kind: "scenario",
+  intentSchemaVersion: 1,
+  steps: [
+    {
+      id: "settings-visible",
+      kind: "validation",
+      intent: "Settings is visible",
+      binding: {
+        status: "resolved",
+        kind: "assertion",
+        assertion: { kind: "screen", screenId: "settings" },
+      },
+    },
+  ],
   createdAt: at,
   updatedAt: at,
 };
@@ -45,10 +56,9 @@ const combine: AppMapCombine = {
 
 const map = {
   combines: { [combine.id]: combine },
-  tests: { [tour.id]: tour },
+  tests: { [scenario.id]: scenario },
   variables: { [language.id]: language },
-  flows: {},
-} as Pick<AppMap, "combines" | "tests" | "variables" | "flows">;
+} as Pick<AppMap, "combines" | "tests" | "variables">;
 
 test("Combine sits next to the test's root screen", () => {
   const cards = canvasCombineCards(map, (screenId) =>
@@ -72,7 +82,7 @@ test("Combine sits next to the test's root screen", () => {
 
 test("an empty map has no Combine cards", () => {
   assert.deepEqual(
-    canvasCombineCards({ combines: {}, tests: {}, variables: {}, flows: {} }, () => undefined),
+    canvasCombineCards({ combines: {}, tests: {}, variables: {} }, () => undefined),
     [],
   );
 });
@@ -88,19 +98,18 @@ test("multiple state sets count worlds × tests instead of flattening their valu
       { id: "dark", label: "Dark" },
     ],
   };
-  const secondTour: AppMapTest = { ...tour, id: "chat", name: "Send a message" };
+  const secondScenario: AppMapTest = { ...scenario, id: "chat", name: "Send a message" };
   const multi: AppMapCombine = {
     ...combine,
     variableIds: [language.id, theme.id],
-    testIds: [tour.id, secondTour.id],
+    testIds: [scenario.id, secondScenario.id],
     strategy: "cartesian",
   };
   const cards = canvasCombineCards(
     {
       combines: { [multi.id]: multi },
-      tests: { [tour.id]: tour, [secondTour.id]: secondTour },
+      tests: { [scenario.id]: scenario, [secondScenario.id]: secondScenario },
       variables: { [language.id]: language, [theme.id]: theme },
-      flows: {},
     },
     () => ({ position: { x: 0, y: 0 }, title: "Settings" }),
   );

@@ -515,65 +515,7 @@ export function assertAppMapVariable(set: AppMapVariable, scope: AppMapScope, la
 export function assertAppMapTest(work: AppMapTest, scope: AppMapScope, label: string): void {
   assertEntity(work, scope, label);
   requiredText(work.name, `${label}.name`);
-  if (!(work.kind === "path" || work.kind === "tour" || work.kind === "scenario")) {
-    appMapFail("invalid-map", `${label}.kind is unsupported`);
-  }
-  if (work.kind === "scenario") {
-    assertScenarioTest(work, label);
-    return;
-  }
-  if (work.kind === "path") identifier(work.flowId ?? "", `${label}.flowId`);
-  if (work.kind === "tour") identifier(work.rootScreenId ?? "", `${label}.rootScreenId`);
-  if (work.setupFlowId !== undefined) {
-    if (work.kind !== "tour") {
-      appMapFail("invalid-map", `${label}.setupFlowId is only valid for screen tours`);
-    }
-    identifier(work.setupFlowId, `${label}.setupFlowId`);
-  }
-  if (work.screenIds !== undefined) stringArray(work.screenIds, `${label}.screenIds`);
-  if (work.optionalScreenIds !== undefined) {
-    if (work.kind !== "tour") {
-      appMapFail("invalid-map", `${label}.optionalScreenIds is only valid for screen tours`);
-    }
-    stringArray(work.optionalScreenIds, `${label}.optionalScreenIds`);
-    if (!work.screenIds?.length) {
-      appMapFail("invalid-map", `${label}.optionalScreenIds requires screenIds`);
-    }
-    const selected = new Set(work.screenIds);
-    const unsupported = work.optionalScreenIds.filter((screenId) => !selected.has(screenId));
-    if (unsupported.length) {
-      appMapFail("invalid-map", `${label}.optionalScreenIds must be included in screenIds`);
-    }
-  }
-  if (work.depth !== undefined) safeInteger(work.depth, `${label}.depth`);
-  if (work.capture !== undefined) {
-    const capture = objectValue(work.capture, `${label}.capture`);
-    if (
-      !(
-        capture.mode === "every-screen" ||
-        capture.mode === "checkpoints" ||
-        capture.mode === "final-screen" ||
-        capture.mode === "failures-only" ||
-        capture.mode === "none"
-      )
-    ) {
-      appMapFail("invalid-map", `${label}.capture.mode is unsupported`);
-    }
-    if (capture.mode === "checkpoints") {
-      if (work.kind !== "tour") {
-        appMapFail("invalid-map", `${label}.capture checkpoints require a screen tour`);
-      }
-      stringArray(capture.screenIds, `${label}.capture.screenIds`);
-      if (!capture.screenIds.length) {
-        appMapFail("invalid-map", `${label}.capture.screenIds must contain a screen`);
-      }
-    } else if (capture.screenIds !== undefined) {
-      appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
-    }
-  }
-  if (work.screenshotEach !== undefined && typeof work.screenshotEach !== "boolean") {
-    appMapFail("invalid-map", `${label}.screenshotEach must be a boolean`);
-  }
+  assertScenarioTest(work, label);
 }
 
 export function assertAppMapCombine(

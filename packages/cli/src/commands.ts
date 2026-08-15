@@ -317,10 +317,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       note: "A run matrix applies one value from every selected state set, then runs every selected test. Prefer `relay test run` for one pass.",
       behavior: "job-start-watch",
     }),
-    path("job option-matrix start", [], undefined, {
-      summary: "Alias of job combine start",
-      behavior: "job-start-watch",
-    }),
     path("run-matrix run", ["appMapId", "combineId"], undefined, {
       summary: "Run a saved state sets × tests matrix",
       argumentHelp: [
@@ -340,18 +336,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: "zip | cartesian | pairwise",
           description: "State coverage strategy",
         },
-      ],
-      behavior: "job-start-watch",
-    }),
-    path("combine run", ["appMapId", "combineId"], undefined, {
-      summary: "Legacy alias of run-matrix run",
-      behavior: "job-start-watch",
-    }),
-    path("combo run", ["appMapId", "combineId"], undefined, {
-      summary: "Legacy alias of run-matrix run",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved combination" },
       ],
       behavior: "job-start-watch",
     }),

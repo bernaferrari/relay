@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { graphTestCommandDescriptors, graphTestListPath } from "./test-commands.js";
 
-test("graph Test commands preserve their public workflow order and aliases", () => {
+test("graph Test commands expose one canonical scenario-only workflow", () => {
   assert.equal(graphTestListPath.command, "test list");
   assert.deepEqual(
     graphTestCommandDescriptors.map(({ operationId }) => operationId),
@@ -17,16 +17,6 @@ test("graph Test commands preserve their public workflow order and aliases", () 
   );
   assert.deepEqual(
     graphTestCommandDescriptors.flatMap(({ paths }) => paths.map(({ command }) => command)),
-    [
-      "test save",
-      "work save",
-      "test edit",
-      "test propose",
-      "test compile",
-      "test run",
-      "work run",
-      "test remove",
-      "work remove",
-    ],
+    ["test save", "test edit", "test propose", "test compile", "test run", "test remove"],
   );
 });

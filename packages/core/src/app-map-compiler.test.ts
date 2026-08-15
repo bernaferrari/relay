@@ -5,7 +5,6 @@ import {
   AppMapCompileError,
   compileAppMapConnection,
   compileAppMapFlow,
-  compileAppMapTourSetupFlow,
 } from "./app-map-compiler.js";
 
 const at = 1_000;
@@ -349,31 +348,6 @@ test("runs explicit Flow setup before verifying the entry screen", () => {
       target: { identifier: "{{entry}}" },
     },
   ]);
-});
-
-test("compiles a screen tour setup Flow only when it reaches the tour root", () => {
-  const map = fixture();
-  map.routines["start-clean"] = {
-    ...entity("start-clean"),
-    name: "Start clean",
-    parameters: [],
-    actions: [{ id: "open-app", kind: "app", action: "open", app: "ai.x.GrokApp" }],
-  };
-  map.flows.checkout!.setup = { routineId: "start-clean" };
-
-  const plan = compileAppMapTourSetupFlow(map, "checkout", "home");
-  const root = plan.recipes[plan.rootRecipeId]!;
-  assert.equal(plan.rootRecipeId, "app-map:map-1:flow:checkout:r7");
-  assert.deepEqual(plan.terminal, { kind: "screen", screenId: "home" });
-  assert.deepEqual(
-    root.steps.slice(0, 2).map((step) => step.kind),
-    ["module", "expect-screen"],
-  );
-  assert.throws(
-    () => compileAppMapTourSetupFlow(map, "checkout", "welcome"),
-    (error: unknown) =>
-      error instanceof AppMapCompileError && error.code === "tour-setup-root-mismatch",
-  );
 });
 
 test("refuses to run drafts and unverifiable destinations", () => {

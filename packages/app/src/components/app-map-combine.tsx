@@ -2,11 +2,9 @@ import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
 import type {
   AppMapCapturePolicy,
   AppMapCombinePreflight,
-  AppMapTest,
   AppMapVariable,
   CaseExpansionStrategy,
 } from "@relay/protocol";
-import { APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
@@ -18,18 +16,7 @@ import {
   projectCombine,
 } from "../lib/app-map-combine-presentation";
 import { combineWithoutVariable, initialCombineDraft } from "../lib/app-map-combine-edit";
-import {
-  matrixId,
-  savedTestId,
-  testCandidates,
-  tourRootScreenId,
-} from "../lib/app-map-combine-candidates";
-import {
-  makeReusablePathFromRecording,
-  recordedPathCandidates,
-  sameRecordedPathConnectionIds,
-  type RecordedPathCandidate,
-} from "../lib/app-map-reusable-paths";
+import { matrixId, savedTestId, testCandidates } from "../lib/app-map-combine-candidates";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { confirmAction } from "./confirm-dialog";
 import { AppMapCombinePreflightSummary } from "./app-map-combine-preflight";
@@ -65,7 +52,6 @@ export function AppMapCombine(props: {
   const [busy, setBusy] = createSignal(false);
   const [savingOnly, setSavingOnly] = createSignal(false);
   const [preflight, setPreflight] = createSignal<AppMapCombinePreflight>();
-  const [promotingRecordedPathId, setPromotingRecordedPathId] = createSignal<string>();
   let initializedFor = "";
 
   const map = createMemo(() => server.selectedAppMap());
@@ -76,15 +62,6 @@ export function AppMapCombine(props: {
     ),
   );
   const variables = createMemo(() => Object.values(map()?.variables ?? {}));
-  const recordedPaths = createMemo(() => {
-    const current = map();
-    return current ? recordedPathCandidates(current) : [];
-  });
-  const draftConnectionCount = createMemo(
-    () =>
-      Object.values(map()?.connections ?? {}).filter((connection) => connection.state !== "ready")
-        .length,
-  );
   const candidates = createMemo((): TestCandidate[] => {
     const current = map();
     return current ? testCandidates(current) : [];
@@ -148,12 +125,11 @@ export function AppMapCombine(props: {
         projection().totalWorlds &&
         selectedTests().every((test) => {
           const mode = captureModes()[candidateKey(test)] ?? defaultCaptureMode(test);
-          return mode !== "every-screen" || test.screenCount !== undefined;
+          return mode !== "every-screen";
         })
           ? projection().totalWorlds *
             selectedTests().reduce((total, test) => {
               const mode = captureModes()[candidateKey(test)] ?? defaultCaptureMode(test);
-              if (mode === "every-screen") return total + (test.screenCount ?? 0);
               if (mode === "final-screen") return total + 1;
               return total;
             }, 0)
@@ -262,122 +238,8 @@ export function AppMapCombine(props: {
     );
   }
 
-  async function makeRecordedPathReusable(candidate: RecordedPathCandidate) {
-    const initialMap = map();
-    if (!initialMap || busy()) return;
-    setBusy(true);
-    setPromotingRecordedPathId(candidate.id);
-    try {
-      const currentMap = await server.loadAppMap(initialMap.id);
-      const currentCandidate = recordedPathCandidates(currentMap).find((item) =>
-        sameRecordedPathConnectionIds(item, candidate.connectionIds),
-      );
-      if (!currentCandidate) {
-        throw new Error("That recording is already part of a reusable path. Refresh the matrix.");
-      }
-      const reusable = makeReusablePathFromRecording(currentMap, currentCandidate, Date.now());
-      await server.runAction("app-map.commit", {
-        appMapId: currentMap.id,
-        expectedRevision: currentMap.revision,
-        summary: `Made ${reusable.test.name} reusable`,
-        changes: [
-          { kind: "flow.save" as const, flow: reusable.flow },
-          { kind: "test.save" as const, test: reusable.test },
-        ],
-      });
-      await server.refreshAppMaps();
-      const key = `test:${reusable.test.id}`;
-      setSelectedTestKeys((current) => (current.includes(key) ? current : [...current, key]));
-      setCaptureModes((current) => ({
-        ...current,
-        [key]: current[key] ?? "every-screen",
-      }));
-      toast(`Created reusable test: ${reusable.test.name}`, "success");
-    } catch (error) {
-      toast(humanError(error, "Could not make this path reusable"), "error");
-    } finally {
-      setPromotingRecordedPathId(undefined);
-      setBusy(false);
-    }
-  }
-
-  async function ensureTests(currentMap: NonNullable<ReturnType<typeof map>>) {
-    let revision = currentMap.revision;
-    const testIds: string[] = [];
-    for (const candidate of selectedTests()) {
-      if (candidate.source === "test") {
-        testIds.push(candidate.test.id);
-        continue;
-      }
-      const id = savedTestId(candidate);
-      const existing = currentMap.tests?.[id];
-      if (!existing) {
-        const now = Date.now();
-        const rootScreenId = tourRootScreenId(currentMap, candidate);
-        const isFlow = candidate.source === "flow";
-        const test: AppMapTest = isFlow
-          ? {
-              id,
-              organizationId: currentMap.organizationId,
-              projectId: currentMap.projectId,
-              appMapId: currentMap.id,
-              name: candidate.name,
-              kind: "scenario",
-              intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
-              steps: [
-                ...(candidate.flow.setup
-                  ? [
-                      {
-                        id: `${id}-setup`,
-                        kind: "module" as const,
-                        intent: `Prepare ${candidate.name}`,
-                        binding: {
-                          status: "resolved" as const,
-                          kind: "routine" as const,
-                          routineId: candidate.flow.setup.routineId,
-                          ...(candidate.flow.setup.bindings
-                            ? { bindings: candidate.flow.setup.bindings }
-                            : {}),
-                        },
-                      },
-                    ]
-                  : []),
-                {
-                  id: `${id}-path`,
-                  kind: "instruction",
-                  intent: `Follow ${candidate.name}`,
-                  binding: {
-                    status: "resolved",
-                    kind: "connections",
-                    connectionIds: [...candidate.flow.connectionIds],
-                  },
-                },
-              ],
-              createdAt: now,
-              updatedAt: now,
-            }
-          : {
-              id,
-              organizationId: currentMap.organizationId,
-              projectId: currentMap.projectId,
-              appMapId: currentMap.id,
-              name: candidate.name,
-              kind: "tour",
-              rootScreenId,
-              screenIds: [...candidate.group.screenIds],
-              createdAt: now,
-              updatedAt: now,
-            };
-        const saved = await server.saveTest({
-          appMapId: currentMap.id,
-          expectedRevision: revision,
-          test,
-        });
-        revision = saved.appMap.revision;
-      }
-      testIds.push(id);
-    }
-    return { testIds, revision };
+  function selectedTestIds(): string[] {
+    return selectedTests().map(savedTestId);
   }
 
   async function deleteModifier(variable: AppMapVariable) {
@@ -389,8 +251,8 @@ export function AppMapCombine(props: {
     confirmAction({
       title: `Delete ${variable.name}?`,
       body: dependentMatrices.length
-        ? `Relay will remove this modifier from ${dependentMatrices.length} ${dependentMatrices.length === 1 ? "run matrix" : "run matrices"}. Tests and recorded paths remain.`
-        : "The modifier will be removed. Tests and recorded paths remain.",
+        ? `Relay will remove this modifier from ${dependentMatrices.length} ${dependentMatrices.length === 1 ? "run matrix" : "run matrices"}. Tests and map evidence remain.`
+        : "The modifier will be removed. Tests and map evidence remain.",
       confirmLabel: "Delete modifier",
       tone: "destructive",
       onConfirm: async () => {
@@ -437,7 +299,7 @@ export function AppMapCombine(props: {
     if (!currentMap || !existing || busy()) return;
     confirmAction({
       title: `Delete ${existing.name}?`,
-      body: "This removes the saved matrix from the canvas. Its modifiers, tests, and recorded paths remain.",
+      body: "This removes the saved matrix from the canvas. Its modifiers, Tests, and map evidence remain.",
       confirmLabel: "Delete matrix",
       tone: "destructive",
       onConfirm: async () => {
@@ -467,14 +329,14 @@ export function AppMapCombine(props: {
   }
 
   async function persistMatrix(currentMap: NonNullable<ReturnType<typeof map>>) {
-    const ensured = await ensureTests(currentMap);
+    const testIds = selectedTestIds();
     const variableIds = selectedVariables().map((variable) => variable.id);
     const selected = selectedOptionIds();
-    const id = props.combineId?.trim() || matrixId(variableIds, ensured.testIds);
+    const id = props.combineId?.trim() || matrixId(variableIds, testIds);
     const existing = currentMap.combines?.[id];
     const captures = Object.fromEntries(
       selectedTests().map((candidate, index) => [
-        ensured.testIds[index]!,
+        testIds[index]!,
         {
           mode: captureModes()[candidateKey(candidate)] ?? defaultCaptureMode(candidate),
         } satisfies AppMapCapturePolicy,
@@ -483,7 +345,7 @@ export function AppMapCombine(props: {
     const now = Date.now();
     await server.saveCombine({
       appMapId: currentMap.id,
-      expectedRevision: ensured.revision,
+      expectedRevision: currentMap.revision,
       combine: {
         id,
         organizationId: currentMap.organizationId,
@@ -491,7 +353,7 @@ export function AppMapCombine(props: {
         appMapId: currentMap.id,
         name: headline(),
         variableIds,
-        testIds: ensured.testIds,
+        testIds,
         selected,
         captures,
         strategy: strategy(),
@@ -544,13 +406,7 @@ export function AppMapCombine(props: {
             selectedVariables().map((variable) => [variable.id, valuesFor(variable)]),
           );
       if (input) {
-        await ensureTests(currentMap);
-        const testId =
-          input.test.source === "test"
-            ? input.test.id
-            : input.test.source === "flow"
-              ? `flow-${input.test.flow.id}`
-              : `group-${input.test.group.id}`;
+        const testId = input.test.id;
         await server.runPathAcrossVariables({
           appMapId: currentMap.id,
           testId,
@@ -634,10 +490,6 @@ export function AppMapCombine(props: {
               candidates={candidates()}
               selectedTestKeys={selectedTestKeys()}
               selectedTests={selectedTests()}
-              recordedPaths={recordedPaths()}
-              draftConnectionCount={draftConnectionCount()}
-              screenCount={Object.keys(map()?.screens ?? {}).length}
-              promotingRecordedPathId={promotingRecordedPathId()}
               captureModes={captureModes()}
               strategy={strategy()}
               projection={projection()}
@@ -658,7 +510,6 @@ export function AppMapCombine(props: {
               }
               onStrategyChange={setStrategy}
               onToggleTest={toggleTest}
-              onMakeRecordedPathReusable={(candidate) => void makeRecordedPathReusable(candidate)}
               onCaptureModeChange={(candidate, mode) =>
                 setCaptureModes((current) => ({
                   ...current,

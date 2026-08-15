@@ -317,7 +317,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   if (method === "POST" && pathname === "/jobs/combine") {
     const body = (await parseJsonBody(req)) as {
       appMapId?: string;
-      flowId?: string;
       testId?: string;
       combineId?: string;
       variableIds?: string[];
@@ -336,8 +335,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     if (!body.appMapId?.trim()) {
       throw new HttpError(400, "appMapId is required");
     }
-    if (!body.flowId?.trim() && !body.testId?.trim() && !body.combineId?.trim()) {
-      throw new HttpError(400, "combineId, testId, or flowId is required");
+    if (!body.testId?.trim() && !body.combineId?.trim()) {
+      throw new HttpError(400, "combineId or testId is required");
     }
     if (!scope.localTrusted) {
       throw new HttpError(403, "Option matrix jobs require a project-owned store");
@@ -402,23 +401,6 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         });
         compiledBody = compiled.root;
         compiledGraph = compiled.graph;
-      } else {
-        const plan = compileAppMapFlow(map, body.flowId!.trim());
-        compiledGraph = Object.fromEntries(
-          Object.values(plan.recipes).map((compiled) => [
-            compiled.id,
-            {
-              id: compiled.id,
-              title: compiled.title,
-              ...(compiled.description ? { description: compiled.description } : {}),
-              source: "custom" as const,
-              steps: compiled.steps,
-              createdAt: map.createdAt,
-              updatedAt: map.updatedAt,
-            },
-          ]),
-        );
-        compiledBody = compiledGraph[plan.rootRecipeId];
       }
       if (!sets.length) {
         if (!compiledBody) throw new HttpError(400, "compiled test is required");

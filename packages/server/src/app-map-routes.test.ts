@@ -333,18 +333,10 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.equal(variableSaved.appMap.variables.language?.appMapId, "store");
     assert.equal(variableSaved.appMap.variables.language?.organizationId, "acme");
 
-    const testSaved = await human.invoke("app-map.test.save", {
-      appMapId: "store",
-      testId: "welcome-tour",
-      expectedRevision: 5,
-      test: { name: "Welcome tour", kind: "tour", rootScreenId: "welcome", depth: 0 },
-    } as never);
-    assert.equal(testSaved.appMap.tests["welcome-tour"]?.projectId, "mobile");
-
     const scenarioSaved = await human.invoke("app-map.test.save", {
       appMapId: "store",
       testId: "welcome-scenario",
-      expectedRevision: 6,
+      expectedRevision: 5,
       test: {
         name: "Welcome scenario",
         kind: "scenario",
@@ -368,6 +360,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
       },
     } as never);
     assert.equal(scenarioSaved.appMap.tests["welcome-scenario"]?.kind, "scenario");
+    assert.equal(scenarioSaved.appMap.tests["welcome-scenario"]?.projectId, "mobile");
 
     const scenarioCompiled = await human.invoke("app-map.test.compile", {
       appMapId: "store",
@@ -379,7 +372,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     const scenarioEdited = await human.invoke("app-map.test.edit", {
       appMapId: "store",
       testId: "welcome-scenario",
-      expectedRevision: 7,
+      expectedRevision: 6,
       edits: [
         { kind: "test.patch", patch: { name: "Welcome smoke" } },
         {
@@ -397,7 +390,7 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     const addedIndependentStep = await human.invoke("app-map.test.edit", {
       appMapId: "store",
       testId: "welcome-scenario",
-      expectedRevision: 8,
+      expectedRevision: 7,
       edits: [
         {
           kind: "step.add",
@@ -414,12 +407,12 @@ test("App Map operations are equivalent for human and agent actors", async () =>
         },
       ],
     });
-    assert.equal(addedIndependentStep.appMap.revision, 9);
+    assert.equal(addedIndependentStep.appMap.revision, 8);
 
     const rebasedIndependentStep = await agent.invoke("app-map.test.edit", {
       appMapId: "store",
       testId: "welcome-scenario",
-      expectedRevision: 8,
+      expectedRevision: 7,
       edits: [
         {
           kind: "step.patch",
@@ -432,16 +425,16 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.ok(rebasedScenario?.kind === "scenario");
     assert.equal(rebasedScenario.steps[0]?.note, "Agent-reviewed assertion");
     assert.equal(rebasedScenario.steps[1]?.id, "confirm-ready");
-    assert.equal(rebasedIndependentStep.appMap.revision, 10);
+    assert.equal(rebasedIndependentStep.appMap.revision, 9);
 
     const combineSaved = await human.invoke("app-map.combine.save", {
       appMapId: "store",
       combineId: "language-welcome",
-      expectedRevision: 10,
+      expectedRevision: 9,
       combine: {
         name: "Language × Welcome",
         variableIds: ["language"],
-        testIds: ["welcome-tour"],
+        testIds: ["welcome-scenario"],
         strategy: "cartesian",
       },
     } as never);

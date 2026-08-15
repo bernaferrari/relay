@@ -3,7 +3,6 @@ import type { AppMapCapturePolicy, AppMapVariable, CaseExpansionStrategy } from 
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
 import type { CombineProjection } from "../lib/app-map-combine-presentation";
-import type { RecordedPathCandidate } from "../lib/app-map-reusable-paths";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { AppMapMatrixValuePicker } from "./app-map-matrix-value-picker";
@@ -14,50 +13,20 @@ export type { TestCandidate } from "../lib/app-map-combine-candidates";
 export type SimpleCaptureMode = Exclude<AppMapCapturePolicy["mode"], "checkpoints">;
 
 export function candidateKey(candidate: TestCandidate): string {
-  return `${candidate.source}:${candidate.id}`;
+  return `test:${candidate.id}`;
 }
 
 export function defaultCaptureMode(candidate: TestCandidate): SimpleCaptureMode {
   if (candidate.source === "test") {
     const mode = candidate.test.capture?.mode;
     if (mode && mode !== "checkpoints") return mode;
-    if (candidate.test.kind !== "scenario" && candidate.test.screenshotEach === false)
-      return "none";
   }
   return "every-screen";
 }
 
 function candidateDescription(candidate: TestCandidate): string {
-  if (candidate.source === "test") {
-    return candidate.screenCount
-      ? `${candidate.screenCount} mapped ${candidate.screenCount === 1 ? "screen" : "screens"} · reusable test`
-      : candidate.kind === "tour"
-        ? "Visit mapped screens · reusable test"
-        : candidate.kind === "scenario"
-          ? "Editable scenario · reusable test"
-          : "Saved reusable path";
-  }
-  if (candidate.source === "flow") {
-    return `${candidate.flow.connectionIds.length} recorded ${candidate.flow.connectionIds.length === 1 ? "step" : "steps"} · saved flow`;
-  }
-  return `${candidate.screenCount} mapped ${candidate.screenCount === 1 ? "screen" : "screens"} · screen tour`;
-}
-
-function noReusableTestGuidance(input: {
-  screenCount: number;
-  draftConnectionCount: number;
-  recordedPathCount: number;
-}): string {
-  if (input.recordedPathCount) {
-    return "A recorded transition is map evidence, not a test. Make one reusable below.";
-  }
-  if (input.draftConnectionCount) {
-    return "Finish and keep a recorded transition on the map, then make it reusable here.";
-  }
-  if (input.screenCount) {
-    return "A saved screen is map evidence. Record a tap to another screen, then keep that path.";
-  }
-  return "Save a first screen, then record a tap to another screen.";
+  const count = candidate.test.steps.length;
+  return `${count} ${count === 1 ? "step" : "steps"} · graph Test`;
 }
 
 function modifierMethodLabel(variable: AppMapVariable): string {
@@ -161,10 +130,6 @@ export function AppMapCombinePlan(props: {
   candidates: TestCandidate[];
   selectedTestKeys: string[];
   selectedTests: TestCandidate[];
-  recordedPaths: RecordedPathCandidate[];
-  draftConnectionCount: number;
-  screenCount: number;
-  promotingRecordedPathId?: string;
   captureModes: Record<string, SimpleCaptureMode>;
   strategy: CaseExpansionStrategy;
   projection: CombineProjection;
@@ -177,7 +142,6 @@ export function AppMapCombinePlan(props: {
   onValuesChange: (variableId: string, ids: string[]) => void;
   onStrategyChange: (strategy: CaseExpansionStrategy) => void;
   onToggleTest: (candidate: TestCandidate) => void;
-  onMakeRecordedPathReusable: (candidate: RecordedPathCandidate) => void;
   onCaptureModeChange: (candidate: TestCandidate, mode: SimpleCaptureMode) => void;
   onRunCell: (worldIndex: number, test: TestCandidate) => void;
 }) {
@@ -305,7 +269,7 @@ export function AppMapCombinePlan(props: {
               {props.selectedVariables.length > 1 ? "3" : "2"}. Choose tests
             </h3>
             <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
-              Choose a reusable test. A saved flow becomes one when you save this matrix.
+              Choose one or more saved graph Tests.
             </p>
           </div>
           <Show
@@ -319,11 +283,7 @@ export function AppMapCombinePlan(props: {
               >
                 <strong class={cn(copyTitle, "block text-[12px]")}>No reusable test yet</strong>
                 <span class={cn(copyDescription, "block text-[10.5px]")}>
-                  {noReusableTestGuidance({
-                    screenCount: props.screenCount,
-                    draftConnectionCount: props.draftConnectionCount,
-                    recordedPathCount: props.recordedPaths.length,
-                  })}
+                  Create a Test in the Test editor, then return here to add it to this matrix.
                 </span>
               </div>
             }
@@ -383,46 +343,6 @@ export function AppMapCombinePlan(props: {
                 }}
               </For>
             </div>
-          </Show>
-          <Show when={props.recordedPaths.length}>
-            <section
-              class="mt-2 grid gap-1.5 rounded-[9px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-2"
-              aria-label="Recorded paths ready to make reusable"
-            >
-              <div class={cn(copyStack, "px-1 pt-0.5")}>
-                <h4 class={cn(copyTitle, "m-0 text-[11px] font-semibold")}>Recorded paths</h4>
-                <p class={cn(copyDescription, "m-0 text-[10px]")}>
-                  Make one reusable once; then it can be selected in any run matrix.
-                </p>
-              </div>
-              <For each={props.recordedPaths}>
-                {(recording) => {
-                  const promoting = () => props.promotingRecordedPathId === recording.id;
-                  return (
-                    <div class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 hover:bg-[var(--surface-base-hover)]">
-                      <span class={cn(copyStack, "min-w-0 flex-1")}>
-                        <strong class={cn(copyTitle, "block truncate text-[11px] font-medium")}>
-                          {recording.name}
-                        </strong>
-                        <span class={cn(copyDescription, "block text-[9.5px]")}>
-                          {recording.connectionIds.length} recorded{" "}
-                          {recording.connectionIds.length === 1 ? "step" : "steps"}
-                        </span>
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        class="shrink-0"
-                        disabled={props.busy || promoting()}
-                        onClick={() => props.onMakeRecordedPathReusable(recording)}
-                      >
-                        {promoting() ? "Making…" : "Make reusable"}
-                      </Button>
-                    </div>
-                  );
-                }}
-              </For>
-            </section>
           </Show>
         </section>
       </Show>
