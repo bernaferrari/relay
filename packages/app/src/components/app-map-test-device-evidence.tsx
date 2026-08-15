@@ -1,5 +1,10 @@
 import { Show, createEffect, createMemo, createSignal } from "solid-js";
-import type { AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCompiledTest,
+  AppMapScenarioTest,
+  AppMapScenarioTestStep,
+} from "@relay/protocol";
 import { useServer } from "../context/server";
 import {
   latestRunForCompiledTest,
@@ -10,6 +15,8 @@ import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
 import { AppMapTestDevicePanel } from "./app-map-test-device-panel";
 import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
+import { matchLiveScreen } from "../lib/app-map-live-location";
+import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
 
 export type InspectorTab = "device" | "evidence";
 
@@ -17,6 +24,7 @@ const tabClass =
   "relative min-h-11 flex-1 border-b-2 border-transparent px-3 text-[11px] font-semibold transition-[color,border-color,background-color,transform] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus";
 
 export function AppMapTestDeviceEvidence(props: {
+  appMap?: AppMap;
   test: AppMapScenarioTest;
   selectedStepId?: string;
   compiledPlan?: AppMapCompiledTest;
@@ -66,6 +74,24 @@ export function AppMapTestDeviceEvidence(props: {
   const provenance = createMemo(() =>
     provenanceForTestStep(props.compiledPlan, props.selectedStepId),
   );
+  const selectedStep = createMemo(() => findTestStep(props.test.steps, props.selectedStepId));
+  const mappedLiveScreenId = createMemo(() => {
+    const map = props.appMap;
+    if (!map) return undefined;
+    const match = matchLiveScreen(Object.values(map.screens), [
+      currentSnapshot()?.screenIdentity?.fingerprint,
+    ]);
+    return match.kind === "here" ? match.screenId : undefined;
+  });
+  const captureScreenId = createMemo(
+    () =>
+      mappedLiveScreenId() ??
+      (props.appMap ? screenIdForTestStep(props.appMap, selectedStep()) : undefined),
+  );
+  const scrollSurface = useAppMapScrollSurface({
+    activeAppMap: () => props.appMap,
+    screenId: captureScreenId,
+  });
 
   createEffect(() => {
     if (props.selectedTab && props.selectedTab !== tab()) setTab(props.selectedTab);
@@ -185,6 +211,15 @@ export function AppMapTestDeviceEvidence(props: {
           refreshing={refreshing()}
           interacting={interacting()}
           interactionBlocker={interactionBlocker()}
+          fullPageCapture={{
+            busy: scrollSurface.captureProps().busy,
+            disabledReason: captureScreenId()
+              ? scrollSurface.captureProps().disabledReason
+              : "Select a screen-bound step or open a mapped screen to capture its full page.",
+            policy: scrollSurface.captureProps().policy,
+            hasSurface: Boolean(scrollSurface.surface()),
+            onCapture: scrollSurface.captureProps().onCapture,
+          }}
           error={refreshError()}
           onRefresh={() => void refreshDevicePixels()}
           onInteract={interactWithDevice}
@@ -214,6 +249,45 @@ export function AppMapTestDeviceEvidence(props: {
       </section>
     </aside>
   );
+}
+
+function findTestStep(
+  steps: readonly AppMapScenarioTestStep[],
+  stepId: string | undefined,
+): AppMapScenarioTestStep | undefined {
+  if (!stepId) return undefined;
+  for (const step of steps) {
+    if (step.id === stepId) return step;
+    const nested =
+      step.kind === "decision"
+        ? [...step.thenSteps, ...(step.elseSteps ?? [])]
+        : step.kind === "loop"
+          ? step.steps
+          : [];
+    const match = findTestStep(nested, stepId);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function screenIdForTestStep(
+  map: AppMap,
+  step: AppMapScenarioTestStep | undefined,
+): string | undefined {
+  if (!step || step.binding.status !== "resolved") return undefined;
+  if (
+    step.kind === "validation" &&
+    step.binding.kind === "assertion" &&
+    step.binding.assertion.kind === "screen"
+  ) {
+    return step.binding.assertion.screenId;
+  }
+  if (step.kind !== "instruction" || step.binding.kind !== "connections") return undefined;
+  for (const connectionId of step.binding.connectionIds.toReversed()) {
+    const destination = map.connections[connectionId]?.destination;
+    if (destination?.kind === "screen") return destination.screenId;
+  }
+  return undefined;
 }
 
 function ContextTab(props: {

@@ -7,14 +7,15 @@ export function ScrollSurfaceCaptureAction(props: {
   disabledReason?: string;
   policy?: ScrollSurfaceCapturePolicy;
   hasSurface: boolean;
+  statusId?: string;
   onCapture: () => void;
 }) {
   const recommended = () =>
     props.policy?.captureMode === "full-surface" && props.policy.source === "recommended";
   const label = () => {
-    if (props.busy) return "Capturing full surface…";
-    if (props.hasSurface) return "Recapture full surface";
-    return "Capture full surface";
+    if (props.busy) return "Capturing full page…";
+    if (props.hasSurface) return "Recapture full page";
+    return "Capture full page";
   };
 
   return (
@@ -31,7 +32,9 @@ export function ScrollSurfaceCaptureAction(props: {
       )}
       disabled={props.busy || Boolean(props.disabledReason)}
       aria-busy={props.busy}
-      aria-describedby={props.disabledReason ? "scroll-surface-capture-status" : undefined}
+      aria-describedby={
+        props.disabledReason ? (props.statusId ?? "scroll-surface-capture-status") : undefined
+      }
       onClick={props.onCapture}
     >
       <Icon

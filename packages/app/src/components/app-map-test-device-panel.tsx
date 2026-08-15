@@ -21,6 +21,7 @@ import {
 } from "../lib/recorder-tap-targeting";
 import { TestContextEmpty, formatTestContextTime } from "./app-map-test-context-primitives";
 import { Icon } from "./icon";
+import { ScrollSurfaceCaptureAction } from "./scroll-surface-capture-action";
 
 export function AppMapTestDevicePanel(props: {
   frame?: {
@@ -40,6 +41,13 @@ export function AppMapTestDevicePanel(props: {
   refreshing: boolean;
   interacting: boolean;
   interactionBlocker?: string;
+  fullPageCapture?: {
+    busy: boolean;
+    disabledReason?: string;
+    policy?: import("@relay/protocol").ScrollSurfaceCapturePolicy;
+    hasSurface: boolean;
+    onCapture: () => void;
+  };
   error: string;
   onRefresh: () => void;
   onInteract: (step: InteractiveStep) => Promise<boolean>;
@@ -180,6 +188,13 @@ export function AppMapTestDevicePanel(props: {
             detail: "Select a target to see its latest directly observed pixels here.",
           }
         : props.readiness;
+  const fullPageFallback = "Open a mapped device screen before capturing its full page.";
+  const fullPageDetail = () =>
+    props.fullPageCapture
+      ? (props.fullPageCapture.disabledReason ??
+        props.fullPageCapture.policy?.reason ??
+        "Captures every viewport while preserving the original frames and accessibility data.")
+      : fullPageFallback;
   return (
     <div class="grid gap-3">
       <header class="flex min-h-11 items-center justify-between gap-3">
@@ -207,6 +222,20 @@ export function AppMapTestDevicePanel(props: {
           {props.refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
+
+      <ScrollSurfaceCaptureAction
+        busy={props.fullPageCapture?.busy ?? false}
+        disabledReason={
+          props.fullPageCapture ? props.fullPageCapture.disabledReason : fullPageFallback
+        }
+        policy={props.fullPageCapture?.policy}
+        hasSurface={props.fullPageCapture?.hasSurface ?? false}
+        statusId="test-scroll-surface-capture-status"
+        onCapture={() => props.fullPageCapture?.onCapture()}
+      />
+      <p id="test-scroll-surface-capture-status" class="-mt-1 m-0 text-[10px]/[1.4] text-text-weak">
+        {fullPageDetail()}
+      </p>
 
       <Show
         when={props.frame}

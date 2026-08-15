@@ -59,7 +59,7 @@ test("allows a quiet human override and explains a real execution blocker", () =
   );
 
   const button = root.querySelector<HTMLButtonElement>("[data-scroll-surface-capture]")!;
-  expect(button.textContent).toContain("Recapture full surface");
+  expect(button.textContent).toContain("Recapture full page");
   expect(button.textContent).not.toContain("Recommended");
   expect(button.disabled).toBe(true);
   expect(button.getAttribute("aria-describedby")).toBe("scroll-surface-capture-status");

@@ -30,6 +30,18 @@ function renderPanel(input: {
   snapshot?: SnapshotState;
   platform?: "android" | "ios";
   customFrame?: typeof frame;
+  capture?: {
+    busy: boolean;
+    disabledReason?: string;
+    policy?: {
+      captureMode: "viewport" | "full-surface";
+      source: "default" | "recommended" | "explicit";
+      reason: string;
+      decidedAt: number;
+    };
+    hasSurface: boolean;
+    onCapture: () => void;
+  };
 }) {
   document.body.replaceChildren();
   const root = document.createElement("div");
@@ -47,6 +59,7 @@ function renderPanel(input: {
         refreshing={false}
         interacting={false}
         interactionBlocker={input.blocker}
+        fullPageCapture={input.capture}
         error=""
         onRefresh={() => undefined}
         onInteract={input.onInteract}
@@ -80,6 +93,41 @@ test("device preview maps one pointer tap through the logical device bounds", as
 
   expect(onInteract).toHaveBeenCalledTimes(1);
   expect(onInteract).toHaveBeenCalledWith({ kind: "point", x: 90, y: 600 });
+  view.dispose();
+});
+
+test("device preview always exposes full-page capture", () => {
+  const view = renderPanel({ onInteract: async () => true });
+  const action = view.root.querySelector<HTMLButtonElement>("[data-scroll-surface-capture]");
+  expect(action).not.toBeNull();
+  expect(action?.textContent).toContain("Capture full page");
+  expect(action?.disabled).toBe(true);
+  view.dispose();
+});
+
+test("device preview highlights and runs a recommended full-page capture", () => {
+  const onCapture = vi.fn();
+  const view = renderPanel({
+    onInteract: async () => true,
+    capture: {
+      busy: false,
+      hasSurface: false,
+      policy: {
+        captureMode: "full-surface",
+        source: "recommended",
+        reason: "This page scrolls.",
+        decidedAt: 1,
+      },
+      onCapture,
+    },
+  });
+  const action = view.root.querySelector<HTMLButtonElement>("[data-scroll-surface-capture]")!;
+  expect(action.disabled).toBe(false);
+  expect(action.dataset.recommended).toBe("true");
+  expect(action.textContent).toContain("Recommended");
+  expect(view.root.textContent).toContain("This page scrolls.");
+  action.click();
+  expect(onCapture).toHaveBeenCalledTimes(1);
   view.dispose();
 });
 

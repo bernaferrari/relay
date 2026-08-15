@@ -573,6 +573,7 @@ export function AppMapTestWorkspace(props: {
                 inert={mobile() && !["device", "results"].includes(mobilePane())}
               >
                 <AppMapTestDeviceEvidence
+                  appMap={appMap() ?? undefined}
                   test={test()}
                   selectedStepId={selectedStepId()}
                   compiledPlan={compiledPlan()}
