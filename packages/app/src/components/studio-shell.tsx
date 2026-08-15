@@ -905,7 +905,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </div>
                 </Show>
               </div>
-              <Show when={graphRunReadiness().visible}>
+              <Show when={authoringSurface() === "map" && graphRunReadiness().visible}>
                 <AppMapPrimaryActionButton
                   action={graphPrimaryAction()}
                   fallbackTip={graphRunReadiness().label}
