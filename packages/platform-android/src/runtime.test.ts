@@ -24,6 +24,12 @@ test.each([
   ['unknown', unknownKindDevice],
 ])('classifies the Android %s runtime denominator', async (_name, runtimeDevice) => {
   const listApps = vi.fn(async () => [{ id: 'com.example.app', name: 'Example' }]);
+  const shutdownTarget = vi.fn(async () => ({
+    success: true,
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+  }));
   const appState = vi.fn(async () => ({
     stdout: 'mCurrentFocus=Window{1 u0 com.example.app/.MainActivity}',
   }));
@@ -48,6 +54,10 @@ test.each([
       applePhysical: { ensureConnected: async () => {} },
       appleAutomation: { keepHot: () => {} },
       androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
+    },
+    deviceShutdown: {
+      apple: { shutdownTarget },
+      android: { shutdownTarget },
     },
     screenRecording: {
       android: {
@@ -88,6 +98,7 @@ test.each([
   expect(facts.operations.ensureReady).toEqual({ available: true });
   expect(facts.operations.bootTarget).toEqual({ available: true });
   expect(facts.operations.bootTargetHeadless.available).toBe(runtimeDevice.kind === 'emulator');
+  assertShutdownFact(facts.operations.shutdownTarget, runtimeDevice);
 
   await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
     id: runtimeDevice.id,
@@ -120,7 +131,33 @@ test.each([
   } else {
     expect(binding.operations.bootTargetHeadless).toBeUndefined();
   }
+
+  await assertShutdownOperation(binding.operations.shutdownTarget, runtimeDevice, shutdownTarget);
 });
+
+function assertShutdownFact(
+  fact: { available: boolean; reason?: string },
+  runtimeDevice: DeviceInfo,
+): void {
+  expect(fact.available).toBe(runtimeDevice.kind === 'emulator');
+  if (runtimeDevice.kind === 'device') {
+    expect(fact).toMatchObject({ reason: 'unsupported-device-kind' });
+  }
+}
+
+async function assertShutdownOperation(
+  operation: (() => Promise<unknown>) | undefined,
+  runtimeDevice: DeviceInfo,
+  shutdownTarget: ReturnType<typeof vi.fn>,
+): Promise<void> {
+  if (runtimeDevice.kind !== 'emulator') {
+    expect(operation).toBeUndefined();
+    return;
+  }
+  await expect(operation?.()).resolves.toMatchObject({ success: true });
+  expect(shutdownTarget).toHaveBeenCalledOnce();
+  expect(shutdownTarget).toHaveBeenCalledWith(runtimeDevice, expect.any(AbortSignal));
+}
 
 test('rejects the non-discovered Android simulator cell for appstate', async () => {
   const runtimeDevice = { ...device, kind: 'simulator' as const };

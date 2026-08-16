@@ -45,23 +45,8 @@ test.each([
   ['visionOS simulator', leaves.visionos, true, undefined],
   ['watchOS sentinel', leaves.watchos, false, 'watchOS app logs are not supported'],
 ])('classifies the %s leaf explicitly', async (_name, device, available, hint) => {
-  const binding = await createApplePlatformRuntime(platformRuntimeHostFixture()).bind({
-    device,
-    intent: { kind: 'ordinary' },
-    scope: {
-      signal: new AbortController().signal,
-      diagnostics: { emit: () => {} },
-      progress: { report: () => {} },
-    },
-  });
-  const { facts } = binding;
+  const facts = await appleFacts(device);
   expect(facts.device.providerMode).toBe('local');
-  expect(facts.operations.appState).toEqual({
-    available: false,
-    reason: 'unsupported-platform-leaf',
-    hint: expect.stringContaining('session state'),
-  });
-  expect(binding.operations.appState).toBeUndefined();
   expect(facts.operations.networkDump).toEqual({ available: true });
   expect(facts.operations.listApps.available).toBe(
     device.appleOs !== 'watchos' && device.iosPhysicalDeviceBackend !== 'xctest',
@@ -94,6 +79,40 @@ test.each([
   );
   expect(facts.operations.bootTargetHeadless.available).toBe(false);
 });
+
+test.each([
+  ['iOS simulator', leaves.ios, true, undefined],
+  ['iOS physical CoreDevice', appleDevice({ kind: 'device' }), false, 'unsupported-device-kind'],
+  ['iPadOS simulator', leaves.ipados, true, undefined],
+  ['tvOS simulator', leaves.tvos, true, undefined],
+  ['macOS host', leaves.macos, false, 'unsupported-platform-leaf'],
+  ['visionOS simulator', leaves.visionos, true, undefined],
+  ['watchOS sentinel', leaves.watchos, false, 'unsupported-platform-leaf'],
+])('classifies shutdown availability for the %s leaf', async (_name, device, available, reason) => {
+  const facts = await appleFacts(device);
+  expect(facts.operations.shutdownTarget.available).toBe(available);
+  if (reason) expect(facts.operations.shutdownTarget).toMatchObject({ reason });
+});
+
+async function appleFacts(device: DeviceInfo) {
+  const binding = await createApplePlatformRuntime(platformRuntimeHostFixture()).bind({
+    device,
+    intent: { kind: 'ordinary' },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+  });
+  const { facts } = binding;
+  expect(facts.operations.appState).toEqual({
+    available: false,
+    reason: 'unsupported-platform-leaf',
+    hint: expect.stringContaining('session state'),
+  });
+  expect(binding.operations.appState).toBeUndefined();
+  return facts;
+}
 
 test('readiness and boot keep the Apple automation helper warm inside the platform runtime', async () => {
   const host = platformRuntimeHostFixture();
