@@ -359,6 +359,33 @@ test("full-surface bindings compile one executable capture after reaching the de
     destinationRecipe?.steps.slice(-2).map((step) => step.kind),
     ["expect-screen", "capture-surface"],
   );
+
+  const freshRun = compileAppMapTest(current, work, {
+    forceRecaptureSurfaceScreenIds: ["cart"],
+  });
+  const freshCapture = Object.values(freshRun.graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "capture-surface");
+  assert.equal(freshCapture?.kind === "capture-surface" && freshCapture.forceRecapture, true);
+  assert.equal(
+    Object.values(freshRun.plan.recipes)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "capture-surface" && step.forceRecapture),
+    true,
+  );
+  assert.equal(
+    Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "capture-surface" && step.forceRecapture),
+    false,
+  );
+  assert.throws(
+    () =>
+      compileAppMapTest(current, work, {
+        forceRecaptureSurfaceScreenIds: ["missing-surface"],
+      }),
+    /no full-surface binding for missing-surface/u,
+  );
 });
 
 test("a logical surface is captured once even when a later path returns to it", () => {

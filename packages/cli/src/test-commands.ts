@@ -121,9 +121,16 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           required: true,
           description: "Explicit device or browser target",
         },
+        {
+          name: "surfaceCapture",
+          type: "object",
+          description:
+            'Optional run-only fresh evidence policy: { forceRecaptureScreenIds: ["voice"] }',
+        },
       ],
       examples: [
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run grok relay-40 --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"android","targetId":"DEVICE"},"surfaceCapture":{"forceRecaptureScreenIds":["voice"]}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
       ],
       note: "The revision and target are mandatory. Device runs require authorized server-managed control; active jobs serialize Target mutations.",

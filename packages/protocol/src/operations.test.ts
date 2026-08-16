@@ -240,6 +240,30 @@ test("graph Test runs require an exact revision and explicit target", () => {
     target: { kind: "device" as const, platform: "android" as const, targetId: "phone-1" },
   };
   assert.deepEqual(operationDefinition("app-map.test.run").input.parse(input), input);
+  const freshSurfaceInput = {
+    ...input,
+    surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
+  };
+  assert.deepEqual(
+    operationDefinition("app-map.test.run").input.parse(freshSurfaceInput),
+    freshSurfaceInput,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        surfaceCapture: { forceRecaptureScreenIds: [] },
+      }),
+    /between 1 and 50 screen ids/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.run").input.parse({
+        ...input,
+        surfaceCapture: { forceRecaptureScreenIds: ["voice", "voice"] },
+      }),
+    /duplicate screen id voice/u,
+  );
   assert.throws(
     () =>
       operationDefinition("app-map.test.run").input.parse({

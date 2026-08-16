@@ -33,6 +33,11 @@ export class AppMapTestCompileError extends Error {
 
 const MAX_COMPILED_STEPS = 4_096;
 
+export type AppMapTestCompileOptions = {
+  /** Run-scoped cache bypass for selected full-surface Test bindings. */
+  forceRecaptureSurfaceScreenIds?: readonly string[];
+};
+
 function fail(
   code: AppMapTestCompileErrorCode,
   test: AppMapScenarioTest,
@@ -64,6 +69,7 @@ function asRecipe(
 export function compileAppMapScenarioTest(
   map: AppMap,
   test: AppMapScenarioTest,
+  options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest } {
   validateAppMap(map);
   assertScenarioTest(test, `Test ${test.id}`);
@@ -82,6 +88,20 @@ export function compileAppMapScenarioTest(
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   const scheduledLogicalSurfaces = new Set<string>();
+  const forceRecaptureSurfaceScreenIds = new Set(options.forceRecaptureSurfaceScreenIds ?? []);
+  for (const screenId of forceRecaptureSurfaceScreenIds) {
+    const binding = test.surfaceBindings?.find(
+      (candidate) => candidate.screenId === screenId && candidate.captureMode === "full-surface",
+    );
+    if (!binding) {
+      throw new AppMapTestCompileError(
+        "missing-reference",
+        test.id,
+        test.steps[0]?.id ?? test.id,
+        `Test ${test.id} has no full-surface binding for ${screenId}`,
+      );
+    }
+  }
   let compiledCount = 0;
   const captureScreen = (screenId: string): RecipeStep | undefined => {
     const capture = test.capture;
@@ -123,6 +143,7 @@ export function compileAppMapScenarioTest(
       baselineCaptureId: binding.baselineCaptureId,
       reason: binding.reason,
       maxScrolls: Math.max(1, Math.min(6, baseline.viewports.length + 1)),
+      ...(forceRecaptureSurfaceScreenIds.has(screenId) ? { forceRecapture: true } : {}),
       baseline: {
         ...(baseline.composite
           ? {

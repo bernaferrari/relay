@@ -53,6 +53,7 @@ export function AppMapTestWorkspace(props: {
   const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
   const [runError, setRunError] = createSignal("");
   const [runAttributionMismatch, setRunAttributionMismatch] = createSignal(false);
+  const [freshSurfaceEvidence, setFreshSurfaceEvidence] = createSignal(false);
   const [mobile, setMobile] = createSignal(false);
   const [mobilePane, setMobilePane] = createSignal<MobileTestPane>("steps");
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
@@ -63,7 +64,10 @@ export function AppMapTestWorkspace(props: {
   const testDocument = createAppMapTestDocumentSession({
     testId: () => props.testId,
     onTestChange: (testId) => props.onTestChange?.(testId),
-    onCanonicalLoaded: () => setCompiledPlan(),
+    onCanonicalLoaded: () => {
+      setCompiledPlan();
+      setFreshSurfaceEvidence(false);
+    },
     onDraftQueued: () => {
       setCompiledPlan();
       if (!isActiveTestRun(runJob())) {
@@ -340,6 +344,15 @@ export function AppMapTestWorkspace(props: {
         testId: test.id,
         expectedRevision: map.revision,
         target,
+        ...(freshSurfaceEvidence()
+          ? {
+              surfaceCapture: {
+                forceRecaptureScreenIds: (test.surfaceBindings ?? [])
+                  .filter((binding) => binding.captureMode === "full-surface")
+                  .map((binding) => binding.screenId),
+              },
+            }
+          : {}),
       });
       setCompiledPlan(result.plan);
       setRunJobId(result.job.id);
@@ -424,6 +437,11 @@ export function AppMapTestWorkspace(props: {
             blockedReason={runBlockedReason()}
             error={runError()}
             blockedActionLabel={runBlockerActionLabel()}
+            hasSurfaceBindings={draft()?.surfaceBindings?.some(
+              (binding) => binding.captureMode === "full-surface",
+            )}
+            freshSurfaceEvidence={freshSurfaceEvidence()}
+            onFreshSurfaceEvidenceChange={setFreshSurfaceEvidence}
             onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
             onRun={() => void runTest()}
             onCancel={() => void cancelRun()}

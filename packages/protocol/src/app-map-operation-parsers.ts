@@ -285,6 +285,31 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       ) {
         fail("Test run target", "kind and platform do not describe the same target");
       }
+      if (input.surfaceCapture !== undefined) {
+        const policy = record(input.surfaceCapture, "Test run surfaceCapture");
+        const screenIds = policy.forceRecaptureScreenIds;
+        if (!Array.isArray(screenIds) || screenIds.length === 0 || screenIds.length > 50) {
+          fail(
+            "Test run surfaceCapture forceRecaptureScreenIds",
+            "must contain between 1 and 50 screen ids",
+          );
+        }
+        const selectedScreenIds = screenIds as unknown[];
+        const seen = new Set<string>();
+        for (const [index, value] of selectedScreenIds.entries()) {
+          const screenId = string(
+            value,
+            `Test run surfaceCapture forceRecaptureScreenIds ${index}`,
+          );
+          if (seen.has(screenId)) {
+            fail(
+              "Test run surfaceCapture forceRecaptureScreenIds",
+              `contains duplicate screen id ${screenId}`,
+            );
+          }
+          seen.add(screenId);
+        }
+      }
     },
   );
 

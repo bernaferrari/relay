@@ -155,6 +155,7 @@ test("Test help exposes graph creation, semantic edits, and the required run tar
   assert.match(help, /test\.patch, step\.add/);
   assert.match(help, /expectedRevision \(number, required\)/);
   assert.match(help, /target \(object, required\)/);
+  assert.match(help, /forceRecaptureScreenIds/);
   assert.match(help, /"kind":"browser","platform":"browser"/);
   assert.match(help, /revision and target are mandatory/);
   assert.match(help, /eventId/);

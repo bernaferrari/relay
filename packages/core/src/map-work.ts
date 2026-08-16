@@ -6,14 +6,16 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
+import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import type { Recipe } from "./recipes.js";
 
 /** Compile the only supported Test contract: graph-native scenario intent. */
 export function compileAppMapTest(
   map: AppMap,
   test: AppMapScenarioTest,
+  options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest } {
-  return compileAppMapScenarioTest(map, test);
+  return compileAppMapScenarioTest(map, test, options);
 }
 
 /** Compile a matrix's Tests in their saved order. Variables are applied by the

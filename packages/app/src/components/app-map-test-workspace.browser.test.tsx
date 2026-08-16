@@ -388,6 +388,18 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
         binding: { status: "resolved", kind: "script", source: "return true" },
       },
     ],
+    surfaceBindings: [
+      {
+        screenId: "voice",
+        variantId: "voice-en",
+        captureMode: "full-surface",
+        reason: "Voice is a stable scroll surface.",
+        surfaceId: "voice-surface",
+        baselineCaptureId: "voice-baseline",
+        compare: "visual-and-semantic",
+        repair: "propose-recapture",
+      },
+    ],
     createdAt: 1,
     updatedAt: 1,
   };
@@ -475,6 +487,10 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   );
   await settle();
   expect(root.textContent).toContain("Ready to run");
+  const freshEvidence = root.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+  expect(root.textContent).toContain("Fresh scroll evidence");
+  freshEvidence.click();
+  expect(freshEvidence.checked).toBe(true);
 
   const primary = () =>
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -495,6 +511,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
     testId: "checkout-run",
     expectedRevision: 1,
     target: { kind: "device", platform: "ios", targetId: "ipad-1" },
+    surfaceCapture: { forceRecaptureScreenIds: ["voice"] },
   });
   expect(primary().textContent).toContain("Cancel queued run");
   expect(root.textContent).toContain("Queued on the selected target");

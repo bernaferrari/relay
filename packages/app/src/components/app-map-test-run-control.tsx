@@ -10,6 +10,9 @@ export type TestRunControlProps = {
   blockedReason?: string;
   error?: string;
   blockedActionLabel?: string;
+  hasSurfaceBindings?: boolean;
+  freshSurfaceEvidence?: boolean;
+  onFreshSurfaceEvidenceChange?: (checked: boolean) => void;
   onResolveBlocked?: () => void;
   onRun: () => void;
   onCancel: () => void;
@@ -62,6 +65,19 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
 
   return (
     <div class="grid justify-items-end gap-0.5">
+      {props.hasSurfaceBindings ? (
+        <label class="flex min-h-7 cursor-pointer items-center gap-2 text-xs text-text-weaker">
+          <input
+            type="checkbox"
+            checked={props.freshSurfaceEvidence}
+            disabled={busy() || active()}
+            onChange={(event) => props.onFreshSurfaceEvidenceChange?.(event.currentTarget.checked)}
+          />
+          <span title="Bypass cached comparisons and capture every bound scroll surface again for this run only.">
+            Fresh scroll evidence
+          </span>
+        </label>
+      ) : null}
       <Button
         size="sm"
         class="min-h-11 min-w-[122px]"
