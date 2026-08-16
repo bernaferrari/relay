@@ -7,7 +7,7 @@ import type { Glyph } from "./trace.js";
 export function describeTarget(t: StepTarget): string {
   if (t.identifier) return `identifier ${t.identifier}`;
   if (t.ref) return `ref ${t.ref}`;
-  if (t.label) return `label "${t.label}"`;
+  if (t.label) return `${t.role ? `${t.role} ` : ""}label "${t.label}"`;
   if (t.text) return `text "${t.text}"`;
   if (t.point?.relativeTo) {
     return `point inside ${describeTarget(t.point.relativeTo.target)}`;

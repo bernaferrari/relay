@@ -14,6 +14,7 @@ import type {
   AppMapTest,
   AppMapCombine,
   Connection,
+  ConnectionNavigationContract,
   ConnectionPatch,
   ConnectionPresentation,
   Flow,
@@ -373,6 +374,68 @@ function assertConnectionSourceAnchor(value: unknown, label: string): void {
   }
 }
 
+function assertConnectionNavigation(navigation: ConnectionNavigationContract, label: string): void {
+  objectValue(navigation, label);
+  if (
+    !Array.isArray(navigation.targetAlternatives) ||
+    navigation.targetAlternatives.length === 0 ||
+    navigation.targetAlternatives.length > 8
+  ) {
+    appMapFail("invalid-map", `${label}.targetAlternatives must contain 1 to 8 targets`);
+  }
+  const order = { identifier: 0, accessibility: 1, "element-relative": 2 } as const;
+  let previous = -1;
+  navigation.targetAlternatives.forEach((target, index) => {
+    const targetLabel = `${label}.targetAlternatives[${index}]`;
+    objectValue(target, targetLabel);
+    const rank = order[target.kind];
+    if (rank === undefined || rank < previous) {
+      appMapFail(
+        "invalid-map",
+        `${label}.targetAlternatives must use identifier, accessibility, then element-relative order`,
+      );
+    }
+    previous = rank;
+    if (target.kind === "identifier") {
+      requiredText(target.identifier, `${targetLabel}.identifier`);
+      return;
+    }
+    if (target.kind === "accessibility") {
+      requiredText(target.label, `${targetLabel}.label`);
+      optionalText(target.role, `${targetLabel}.role`);
+      return;
+    }
+    if (target.kind !== "element-relative") {
+      appMapFail("invalid-map", `${targetLabel}.kind is unsupported`);
+    }
+    const anchor = objectValue(target.anchor, `${targetLabel}.anchor`);
+    optionalText(anchor.identifier as string | undefined, `${targetLabel}.anchor.identifier`);
+    optionalText(anchor.label as string | undefined, `${targetLabel}.anchor.label`);
+    optionalText(anchor.role as string | undefined, `${targetLabel}.anchor.role`);
+    if (!anchor.identifier && !anchor.label) {
+      appMapFail("invalid-map", `${targetLabel}.anchor requires an identifier or label`);
+    }
+    assertNormalizedCoordinate(target.xRatio, `${targetLabel}.xRatio`);
+    assertNormalizedCoordinate(target.yRatio, `${targetLabel}.yRatio`);
+    finiteTimestamp(target.reviewedAt, `${targetLabel}.reviewedAt`);
+    requiredText(target.reviewedBy, `${targetLabel}.reviewedBy`);
+    stringArray(target.evidenceIds, `${targetLabel}.evidenceIds`);
+    if (target.evidenceIds.length === 0) {
+      appMapFail("invalid-map", `${targetLabel}.evidenceIds must not be empty`);
+    }
+  });
+  const expected = objectValue(navigation.expectedDestination, `${label}.expectedDestination`);
+  identifier(expected.screenId as string, `${label}.expectedDestination.screenId`);
+  assertIdentity(
+    expected.identity as ConnectionNavigationContract["expectedDestination"]["identity"],
+    `${label}.expectedDestination.identity`,
+  );
+  stringArray(expected.evidenceIds as string[], `${label}.expectedDestination.evidenceIds`);
+  if ((expected.evidenceIds as string[]).length === 0) {
+    appMapFail("invalid-map", `${label}.expectedDestination.evidenceIds must not be empty`);
+  }
+}
+
 export function assertConnection(connection: Connection, scope: AppMapScope, label: string): void {
   assertEntity(connection, scope, label);
   identifier(connection.fromScreenId, `${label}.fromScreenId`);
@@ -387,6 +450,8 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   if (!(connection.state === "draft" || connection.state === "ready"))
     appMapFail("invalid-map", `${label}.state is unsupported`);
   assertActions(connection.actions, `${label}.actions`);
+  if (connection.navigation !== undefined)
+    assertConnectionNavigation(connection.navigation, `${label}.navigation`);
   if (connection.sourceAnchor !== undefined)
     assertConnectionSourceAnchor(connection.sourceAnchor, `${label}.sourceAnchor`);
   if (connection.presentation !== undefined)
@@ -717,6 +782,8 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")
     appMapFail("invalid-map", `${label}.state is unsupported`);
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
+  if (patch.navigation !== undefined && patch.navigation !== null)
+    assertConnectionNavigation(patch.navigation, `${label}.navigation`);
   if (patch.sourceAnchor !== undefined && patch.sourceAnchor !== null)
     assertConnectionSourceAnchor(patch.sourceAnchor, `${label}.sourceAnchor`);
   if (patch.presentation !== undefined && patch.presentation !== null)

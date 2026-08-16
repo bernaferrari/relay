@@ -3167,6 +3167,68 @@ describe("runRecipeStep conversational evidence", () => {
     assert.equal(owner.artifacts.at(-1)?.kind, "locator-fallback");
   });
 
+  it("proposes a reviewable graph repair when selector drift uses a reviewed fallback", async () => {
+    const owner = job();
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: [
+              {
+                role: "button",
+                label: "Settings",
+                enabled: true,
+                hittable: true,
+                rect: { x: 770, y: 2040, width: 80, height: 80 },
+              },
+            ],
+          }),
+        press: () => Promise.resolve({}),
+      }),
+      {
+        kind: "tap",
+        target: { identifier: "settings_button" },
+        fallbackTargets: [{ label: "Settings", role: "button" }],
+        navigationContract: {
+          connectionId: "open-settings",
+          expectedScreenId: "settings",
+          expectedFingerprint: "a".repeat(64),
+          evidenceIds: ["settings-destination-tree"],
+        },
+      },
+      { log: () => {}, job: owner },
+    );
+
+    const proposal = owner.artifacts.find(
+      (artifact) => artifact.kind === "navigation-repair-proposal",
+    );
+    assert.ok(proposal);
+    assert.deepEqual(proposal.data, {
+      status: "pending-review",
+      connectionId: "open-settings",
+      beforeSelector: { identifier: "settings_button" },
+      currentSelector: { label: "Settings", role: "button" },
+      currentResolution: {
+        strategy: "label",
+        bounds: { x: 770, y: 2040, width: 80, height: 80 },
+        point: { x: 810, y: 2080 },
+      },
+      attempts: [
+        {
+          target: { identifier: "settings_button" },
+          error:
+            "named target absent from current Android accessibility tree: selector is not present in the current accessibility tree (identifier settings_button)",
+        },
+      ],
+      expectedDestination: {
+        screenId: "settings",
+        fingerprint: "a".repeat(64),
+        evidenceIds: ["settings-destination-tree"],
+      },
+      persisted: false,
+    });
+  });
+
   it("binds declared reusable-flow inputs without leaking them into the parent", async () => {
     const root = await mkdtemp(join(tmpdir(), "relay-flow-inputs-"));
     const oldRecipes = process.env.RELAY_RECIPES_DIR;

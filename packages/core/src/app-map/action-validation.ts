@@ -31,6 +31,7 @@ function assertPoint(value: StepPoint, label: string): void {
     optionalText(target.identifier, `${label}.relativeTo.target.identifier`);
     optionalText(target.ref, `${label}.relativeTo.target.ref`);
     optionalText(target.label, `${label}.relativeTo.target.label`);
+    optionalText(target.role, `${label}.relativeTo.target.role`);
     optionalText(target.text, `${label}.relativeTo.target.text`);
     if (!target.identifier && !target.ref && !target.label && !target.text) {
       appMapFail("invalid-map", `${label}.relativeTo.target must contain a semantic selector`);
@@ -53,6 +54,7 @@ export function assertTarget(value: StepTarget, label: string): void {
   optionalText(value.identifier, `${label}.identifier`);
   optionalText(value.ref, `${label}.ref`);
   optionalText(value.label, `${label}.label`);
+  optionalText(value.role, `${label}.role`);
   optionalText(value.text, `${label}.text`);
   if (value.point) assertPoint(value.point, `${label}.point`);
   if (!value.identifier && !value.ref && !value.label && !value.text && !value.point) {

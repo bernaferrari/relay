@@ -11,7 +11,7 @@ import {
   pressText,
   pressResolvedControl,
   androidNamedPressCompletedHandoff,
-  resolveNamedControl,
+  resolveNamedControlOutcome,
   resolveSnapshotTargetPoint,
   selectedPlatform,
   sleep,
@@ -419,6 +419,7 @@ async function tapTarget(
   const namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
+    ...(target.role ? { role: target.role } : {}),
     ...(target.text ? { text: target.text } : {}),
     ...(literalPoint ? { point: literalPoint } : {}),
     ...(expectedApp ? { expectedApp } : {}),
@@ -427,7 +428,8 @@ async function tapTarget(
   // exact tree. Reuse it until the first mutation; fallback strategies still
   // take a fresh snapshot when the cached tree cannot resolve the target.
   let nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
-  let named = resolveNamedControl(nodes, namedTarget);
+  let namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+  let named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
   if (
     !named &&
     selectedPlatform() === "android" &&
@@ -440,7 +442,8 @@ async function tapTarget(
       await cooperativeCheckpoint();
       await sleep(250, device);
       nodes = await snapshot(device);
-      named = resolveNamedControl(nodes, namedTarget);
+      namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+      named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
     }
   }
   if (named) {
@@ -470,8 +473,16 @@ async function tapTarget(
     !target.point &&
     (target.identifier || target.label || target.text)
   ) {
+    const failure =
+      namedOutcome.status === "resolved"
+        ? { status: "absent", detail: "semantic resolution became stale" }
+        : namedOutcome;
+    const classification =
+      failure.status === "absent"
+        ? "absent from current Android accessibility tree"
+        : `${failure.status} in current Android accessibility tree`;
     throw new Error(
-      `named target absent from current Android accessibility tree (${describeTarget(target)})`,
+      `named target ${classification}: ${failure.detail} (${describeTarget(target)})`,
     );
   }
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
@@ -559,6 +570,7 @@ async function tapRecordedTarget(
     target: StepTarget;
     fallbackTargets?: StepTarget[];
     expectedApp?: string;
+    navigationContract?: Extract<RecipeStep, { kind: "tap" }>["navigationContract"];
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
     region?: NonNullable<RecipeStep["when"]>["region"];
   },
@@ -578,7 +590,7 @@ async function tapRecordedTarget(
       index,
   );
   const configuredTargetCount = 1 + (input.fallbackTargets?.length ?? 0);
-  const failures: string[] = [];
+  const failures: Array<{ target: StepTarget; error: string }> = [];
   for (const [index, candidate] of unique.entries()) {
     try {
       const hit = await tapTarget(
@@ -614,10 +626,34 @@ async function tapRecordedTarget(
             original: input.target,
             replacement: candidate,
             strategy: hit.strategy,
-            reason: failures.join("; "),
+            reason: failures.map((failure) => failure.error).join("; "),
             persisted: false,
           },
         });
+        if (input.navigationContract) {
+          ctx.job?.artifacts.push({
+            kind: "navigation-repair-proposal",
+            capturedAt: now(),
+            data: {
+              status: "pending-review",
+              connectionId: input.navigationContract.connectionId,
+              beforeSelector: input.target,
+              currentSelector: candidate,
+              currentResolution: {
+                strategy: hit.strategy,
+                ...(hit.bounds ? { bounds: hit.bounds } : {}),
+                ...(hit.point ? { point: hit.point } : {}),
+              },
+              attempts: structuredClone(failures),
+              expectedDestination: {
+                screenId: input.navigationContract.expectedScreenId,
+                fingerprint: input.navigationContract.expectedFingerprint,
+                evidenceIds: [...input.navigationContract.evidenceIds],
+              },
+              persisted: false,
+            },
+          });
+        }
         ctx.log(
           `locator: used ${configuredFallback ? "configured" : "recorded"} fallback ${index + 1}/${unique.length} (${hit.strategy})`,
         );
@@ -626,7 +662,7 @@ async function tapRecordedTarget(
     } catch (error) {
       if (isCancel(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      failures.push(message);
+      failures.push({ target: structuredClone(candidate), error: message });
       const attempt = {
         kind: "target-resolution-attempt" as const,
         capturedAt: now(),
@@ -640,7 +676,7 @@ async function tapRecordedTarget(
       ctx.artifacts?.push(attempt);
     }
   }
-  throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
+  throw new Error(`tap failed: ${failures.at(-1)?.error ?? "no locator candidate matched"}`);
 }
 
 async function longPressRecordedTarget(

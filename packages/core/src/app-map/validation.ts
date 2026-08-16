@@ -292,6 +292,38 @@ function assertConnectionsAndActions(map: AppMap): void {
         `Connection ${connection.id} ends at missing screen ${connection.destination.screenId}`,
       );
     }
+    if (connection.navigation) {
+      if (connection.destination.kind !== "screen") {
+        appMapFail(
+          "invalid-map",
+          `Connection ${connection.id} navigation requires a screen destination`,
+        );
+      }
+      if (connection.navigation.expectedDestination.screenId !== connection.destination.screenId) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} navigation proof does not match its destination`,
+        );
+      }
+      const destination = map.screens[connection.destination.screenId];
+      const approvedFingerprints = new Set([
+        ...(destination?.identity
+          ? [destination.identity.fingerprint, ...(destination.identity.aliases ?? [])]
+          : []),
+        ...(destination?.variantIds.flatMap((variantId) => {
+          const observation = map.screenVariants[variantId]?.observation;
+          return observation ? [observation.fingerprint] : [];
+        }) ?? []),
+      ]);
+      if (
+        !approvedFingerprints.has(connection.navigation.expectedDestination.identity.fingerprint)
+      ) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} navigation proof is not an approved destination identity`,
+        );
+      }
+    }
     if (connection.caseStackId && !map.caseStacks[connection.caseStackId]) {
       appMapFail(
         "missing-reference",

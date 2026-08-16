@@ -703,6 +703,37 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("preserves graph navigation proof and accessibility roles", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "tap",
+          target: { identifier: "settings_button" },
+          fallbackTargets: [{ label: "Settings", role: "button" }],
+          navigationContract: {
+            connectionId: "open-settings",
+            expectedScreenId: "settings",
+            expectedFingerprint: "a".repeat(64),
+            evidenceIds: ["settings-tree"],
+          },
+        },
+      ]),
+      [
+        {
+          kind: "tap",
+          target: { identifier: "settings_button" },
+          fallbackTargets: [{ label: "Settings", role: "button" }],
+          navigationContract: {
+            connectionId: "open-settings",
+            expectedScreenId: "settings",
+            expectedFingerprint: "a".repeat(64),
+            evidenceIds: ["settings-tree"],
+          },
+        },
+      ],
+    );
+  });
+
   it("rejects tap with empty target, naming the step index", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tap", target: {} }]),

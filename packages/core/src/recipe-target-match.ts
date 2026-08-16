@@ -19,6 +19,11 @@ export function nodeText(node: SnapshotNode): string[] {
 }
 
 export function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
+  const roleMatches =
+    !target.role ||
+    (node.role ?? node.type ?? "").trim().toLocaleLowerCase() ===
+      target.role.trim().toLocaleLowerCase();
+  if (!roleMatches) return false;
   if (target.identifier && node.identifier === target.identifier) return true;
   if (target.ref && node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")) return true;
   if (target.label && node.label === target.label) return true;
@@ -48,13 +53,13 @@ export function resolveElementRelativePoint(
     throw new Error("element-relative point ratios must be between 0 and 1");
   }
   const selector: StepTarget = target.identifier
-    ? { identifier: target.identifier }
+    ? { identifier: target.identifier, ...(target.role ? { role: target.role } : {}) }
     : target.ref
-      ? { ref: target.ref }
+      ? { ref: target.ref, ...(target.role ? { role: target.role } : {}) }
       : target.label
-        ? { label: target.label }
+        ? { label: target.label, ...(target.role ? { role: target.role } : {}) }
         : target.text
-          ? { text: target.text }
+          ? { text: target.text, ...(target.role ? { role: target.role } : {}) }
           : {};
   if (!selector.identifier && !selector.ref && !selector.label && !selector.text) {
     throw new Error("element-relative point requires a semantic anchor");
@@ -127,6 +132,7 @@ export function sameTarget(left: StepTarget, right: StepTarget): boolean {
     left.identifier === right.identifier &&
     left.ref === right.ref &&
     left.label === right.label &&
+    left.role === right.role &&
     left.text === right.text
   );
 }

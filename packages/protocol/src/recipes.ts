@@ -11,6 +11,7 @@ export type StepPointAnchorTarget = {
   identifier?: string;
   ref?: string;
   label?: string;
+  role?: string;
   text?: string;
 };
 
@@ -68,6 +69,8 @@ export type StepTarget = {
   identifier?: string;
   ref?: string;
   label?: string;
+  /** Stable accessibility role used with a label to disambiguate headings from controls. */
+  role?: string;
   text?: string;
   point?: StepPoint;
 };
@@ -197,6 +200,14 @@ export type RecipeStep = RecipeStepMetadata &
         /** Ordered semantic alternatives for the same intent. The runner only
          * tries these when the primary target cannot be acted on. */
         fallbackTargets?: StepTarget[];
+        /** Graph-native provenance used to propose, never silently persist,
+         * selector repairs when a reviewed alternative replaces the primary. */
+        navigationContract?: {
+          connectionId: string;
+          expectedScreenId: string;
+          expectedFingerprint: string;
+          evidenceIds: string[];
+        };
         gesture?: "single" | "multi" | "hold";
         tapCount?: number;
         intervalMs?: number;

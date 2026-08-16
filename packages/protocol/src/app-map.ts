@@ -228,6 +228,33 @@ export type ActionSpec = ActionMetadata &
 
 export type ConnectionDestination = { kind: "screen"; screenId: string } | { kind: "end" };
 
+/** Ordered, reviewed ways to activate one navigation edge. Absolute viewport
+ * coordinates are deliberately absent: the weakest allowed alternative is a
+ * point inside a semantic element found in the current accessibility tree. */
+export type ConnectionNavigationTarget =
+  | { kind: "identifier"; identifier: string }
+  | { kind: "accessibility"; label: string; role?: string }
+  | {
+      kind: "element-relative";
+      anchor: { identifier?: string; label?: string; role?: string };
+      xRatio: number;
+      yRatio: number;
+      reviewedAt: number;
+      reviewedBy: string;
+      evidenceIds: string[];
+    };
+
+export type ConnectionNavigationContract = {
+  /** Must be authored in identifier → accessibility → reviewed-anchor order. */
+  targetAlternatives: ConnectionNavigationTarget[];
+  /** Frozen destination identity reviewed with this edge, not a title guess. */
+  expectedDestination: {
+    screenId: string;
+    identity: ScreenIdentity;
+    evidenceIds: string[];
+  };
+};
+
 /** Visual presentation for a connection on the App Map canvas. These values
  * never change execution; they are durable author overrides applied after the
  * automatic layout has produced its baseline. */
@@ -265,7 +292,9 @@ export type Connection = AppMapEntity & {
   label?: string;
   caseStackId?: string;
   state: "draft" | "ready";
+  /** Additional edge behavior after `navigation` activates the source control. */
   actions: ActionSpec[];
+  navigation?: ConnectionNavigationContract;
   /** Recorded source control evidence. This is not a mutable canvas-style field. */
   sourceAnchor?: ConnectionSourceAnchor;
   presentation?: ConnectionPresentation;
@@ -543,6 +572,7 @@ export type ConnectionPatch = {
   caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
+  navigation?: ConnectionNavigationContract | null;
   /** Capture-derived origin evidence. `null` deliberately removes stale or
    * disproven evidence; normal canvas styling must never modify this field. */
   sourceAnchor?: ConnectionSourceAnchor | null;
@@ -555,7 +585,9 @@ export type CreateScreenInput = Pick<Screen, "id" | "title"> &
   Partial<Pick<Screen, "description" | "identity" | "position">>;
 
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
-  Partial<Pick<Connection, "label" | "caseStackId" | "state" | "actions" | "presentation">>;
+  Partial<
+    Pick<Connection, "label" | "caseStackId" | "state" | "actions" | "navigation" | "presentation">
+  >;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
   Partial<Pick<Routine, "description" | "parameters">>;

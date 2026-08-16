@@ -280,7 +280,13 @@ function parseTapRuntimeOptions(
   index: number,
 ): Pick<
   Extract<RecipeStep, { kind: "tap" }>,
-  "fallbackTargets" | "gesture" | "tapCount" | "intervalMs" | "durationMs" | "expectedApp"
+  | "fallbackTargets"
+  | "gesture"
+  | "tapCount"
+  | "intervalMs"
+  | "durationMs"
+  | "expectedApp"
+  | "navigationContract"
 > {
   let fallbackTargets: StepTarget[] | undefined;
   if (raw.fallbackTargets !== undefined) {
@@ -322,6 +328,32 @@ function parseTapRuntimeOptions(
   if (raw.expectedApp !== undefined && !isString(raw.expectedApp)) {
     throw stepErr(index, "tap.expectedApp must be a string");
   }
+  let navigationContract: Extract<RecipeStep, { kind: "tap" }>["navigationContract"];
+  if (raw.navigationContract !== undefined) {
+    if (!isObject(raw.navigationContract)) {
+      throw stepErr(index, "tap.navigationContract must be an object");
+    }
+    const contract = raw.navigationContract;
+    if (
+      !isString(contract.connectionId) ||
+      !isString(contract.expectedScreenId) ||
+      !isString(contract.expectedFingerprint) ||
+      !/^[a-f0-9]{64}$/u.test(contract.expectedFingerprint) ||
+      !Array.isArray(contract.evidenceIds) ||
+      !contract.evidenceIds.every(isString)
+    ) {
+      throw stepErr(
+        index,
+        "tap.navigationContract requires connection, destination proof, and evidence",
+      );
+    }
+    navigationContract = {
+      connectionId: contract.connectionId,
+      expectedScreenId: contract.expectedScreenId,
+      expectedFingerprint: contract.expectedFingerprint,
+      evidenceIds: [...contract.evidenceIds],
+    };
+  }
   return {
     ...(fallbackTargets?.length ? { fallbackTargets } : {}),
     ...(raw.gesture !== undefined ? { gesture: raw.gesture as "single" | "multi" | "hold" } : {}),
@@ -329,6 +361,7 @@ function parseTapRuntimeOptions(
     ...(raw.intervalMs !== undefined ? { intervalMs: raw.intervalMs as number } : {}),
     ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
     ...(isString(raw.expectedApp) ? { expectedApp: raw.expectedApp } : {}),
+    ...(navigationContract ? { navigationContract } : {}),
   };
 }
 
@@ -416,6 +449,10 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   if (raw.label !== undefined) {
     if (!isString(raw.label)) throw stepErr(index, `${field}.label must be a string`);
     t.label = raw.label;
+  }
+  if (raw.role !== undefined) {
+    if (!isString(raw.role)) throw stepErr(index, `${field}.role must be a string`);
+    t.role = raw.role;
   }
   if (raw.text !== undefined) {
     if (!isString(raw.text)) throw stepErr(index, `${field}.text must be a string`);

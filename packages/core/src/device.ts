@@ -44,11 +44,14 @@ import type {
 export {
   center,
   resolveNamedControl,
+  resolveNamedControlOutcome,
   resolveSnapshotTargetPoint,
 } from "./device-target-resolution.js";
 export type {
   NamedControlMethod,
   NamedControlResolution,
+  NamedControlResolutionFailure,
+  NamedControlResolutionOutcome,
   NamedControlTarget,
   SnapshotTargetRegion,
 } from "./device-target-resolution.js";

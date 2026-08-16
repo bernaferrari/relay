@@ -363,6 +363,7 @@ export function previewScreenConsolidation(
     }
     if (clone.destination.kind === "screen" && sources.has(clone.destination.screenId)) {
       clone.destination.screenId = input.targetScreenId;
+      if (clone.navigation) clone.navigation.expectedDestination.screenId = input.targetScreenId;
       rewiredConnectionIds.push(connection.id);
     }
     projected.push(clone);
@@ -657,6 +658,8 @@ export function consolidateAppMapScreens(
           sources.has(connection.destination.screenId)
         ) {
           connection.destination.screenId = input.targetScreenId;
+          if (connection.navigation)
+            connection.navigation.expectedDestination.screenId = input.targetScreenId;
           connection.updatedAt = context.at;
         }
         rewriteActionAssertions(connection.actions, sources, input.targetScreenId);
