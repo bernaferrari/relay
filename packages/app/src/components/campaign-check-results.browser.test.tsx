@@ -267,3 +267,147 @@ test("renders one shared navigation edge from exact proof and circuit artifacts"
   dispose();
   root.remove();
 });
+
+test("renders a stopped cold-recovery intervention without a fake reset action", () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const reviewRepair = vi.fn();
+  const teachTransition = vi.fn();
+  const openFrame = vi.fn();
+  const recovery = {
+    action: "review-cold-recovery",
+    warmRecipeId: "confirm-settings",
+    proposedColdRecipeId: "proposed-cold-settings",
+    choices: ["fix-current-state", "teach-semantic-repair", "approve-cold-once", "defer"],
+    implicitResumeAllowed: false,
+  };
+  const job = {
+    id: "run-sos",
+    action: "settings-tour",
+    status: "error",
+    queuedAt: 100,
+    persisted: true,
+    logs: [],
+    artifacts: [
+      {
+        kind: "campaign-recovery-intervention",
+        capturedAt: 200,
+        data: {
+          schemaVersion: 1,
+          status: "intervention-required",
+          checkId: "privacy",
+          checkTitle: "Visit Privacy",
+          transitionId: "settings-privacy",
+          reason: "Warm confirmation could not reach Settings.",
+          attemptedSelectors: [
+            {
+              kind: "target-resolution-attempt",
+              capturedAt: 190,
+              data: {
+                target: { identifier: "settings_button", label: "Settings" },
+                error: "Expected one target, found none.",
+              },
+            },
+          ],
+          recovery,
+          chrome: { app: "Grok", header: "Home" },
+          screenIdentity: { fingerprint: "home-fingerprint" },
+          accessibility: { available: true, nodeCount: 42 },
+          nodes: [{ text: "Home" }, { text: "Settings" }],
+          screenshot: {
+            caption: "sos:cold-recovery:settings-privacy",
+            path: "sos.png",
+            width: 1080,
+            height: 2400,
+          },
+        },
+      },
+      {
+        kind: "human-intervention-requested",
+        capturedAt: 200,
+        data: {
+          reason: "review",
+          message: "Cold recovery blocked for Visit Privacy.",
+          resumeLabel: "Review recovery",
+          interventionKind: "campaign-cold-recovery",
+          checkId: "privacy",
+          transitionId: "settings-privacy",
+          recovery,
+        },
+      },
+    ],
+    frames: [
+      {
+        path: "sos.png",
+        caption: "sos:cold-recovery:settings-privacy",
+        capturedAt: 200,
+      },
+    ],
+  } as JobInfo;
+
+  const dispose = render(
+    () => (
+      <CampaignCheckResults
+        job={job}
+        frameSource={() => "data:image/png;base64,AA=="}
+        onOpenFrame={openFrame}
+        onReviewNavigationRepair={reviewRepair}
+        onRepairTest={teachTransition}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent).toContain("Relay stopped before resetting this app.");
+  expect(root.textContent).toContain("Cold recovery blocked for Visit Privacy.");
+  expect(root.textContent).toContain("Visit Privacy · transition settings-privacy");
+  expect(root.textContent).toContain("Grok · Home");
+  expect(root.textContent).toContain("Available · 42 nodes");
+  expect(root.textContent).toContain("Tree retained");
+  expect(root.textContent).toContain("2 nodes");
+  expect(root.textContent).toContain("1080 × 2400");
+  expect(root.textContent).toContain("Proposed cold recovery · not run");
+  expect(root.textContent).toContain("proposed-cold-settings");
+  expect(root.textContent).toContain("Warm confirmation: confirm-settings");
+  expect(root.textContent).toContain("Automatic resume is not allowed");
+  expect(root.textContent).toContain("Approve one reset · Unavailable");
+  expect(
+    [...root.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Approve one reset"),
+    ),
+  ).toBe(false);
+
+  const selectors = [...root.querySelectorAll("summary")].find((summary) =>
+    summary.textContent?.includes("Attempted selectors"),
+  );
+  selectors?.click();
+  expect(root.textContent).toContain("identifier “settings_button” · label “Settings”");
+  expect(root.textContent).toContain("Expected one target, found none.");
+
+  root
+    .querySelector<HTMLButtonElement>(
+      'button[aria-label="Open stopped-state screenshot: sos:cold-recovery:settings-privacy"]',
+    )
+    ?.click();
+  expect(openFrame).toHaveBeenCalledWith(0);
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "Review repair")
+    ?.click();
+  expect(reviewRepair).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operationId: "run.repair.get",
+      fixedInput: { runId: "run-sos", checkId: "privacy" },
+    }),
+  );
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "Teach transition")
+    ?.click();
+  expect(teachTransition).toHaveBeenCalledWith("privacy");
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent === "Defer")
+    ?.click();
+  expect(root.textContent).toContain("Run unchanged · no reset approved · no automatic resume.");
+
+  dispose();
+  root.remove();
+});

@@ -10,10 +10,12 @@ import {
   navigationTransitionHealthFromJob,
   type NavigationTransitionRepairEntry,
 } from "../lib/navigation-transition-health";
+import { campaignRecoveryInterventionFromJob } from "../lib/campaign-recovery-intervention";
 import { formatReviewTime } from "../lib/run-review-model";
 import type { JobInfo } from "../lib/api-types";
 import { Icon, type IconName } from "./icon";
 import { NavigationTransitionHealth } from "./navigation-transition-health";
+import { CampaignRecoveryIntervention } from "./campaign-recovery-intervention";
 
 const STATUS_PRESENTATION: Record<
   CampaignCheckStatus,
@@ -292,9 +294,23 @@ export function CampaignCheckResults(props: {
   const checks = createMemo(() => campaignCheckResults(props.job));
   const counts = createMemo(() => campaignCheckCounts(checks()));
   const navigation = createMemo(() => navigationTransitionHealthFromJob(props.job));
+  const intervention = createMemo(() => campaignRecoveryInterventionFromJob(props.job));
   return (
-    <Show when={checks().length > 0 || navigation().rows.length > 0}>
+    <Show when={checks().length > 0 || navigation().rows.length > 0 || intervention()}>
       <section class="grid gap-4" aria-label="Run checks">
+        <Show when={intervention()}>
+          {(model) => (
+            <CampaignRecoveryIntervention
+              intervention={model()}
+              frameSource={(frame) =>
+                props.frameSource?.({ index: model().screenshot.frameIndex!, frame }) ?? ""
+              }
+              onOpenFrame={props.onOpenFrame}
+              onReviewRepair={props.onReviewNavigationRepair}
+              onTeachTransition={props.onRepairTest}
+            />
+          )}
+        </Show>
         <Show when={navigation().rows.length > 0}>
           <NavigationTransitionHealth
             model={navigation()}
