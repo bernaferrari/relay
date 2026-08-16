@@ -1,5 +1,6 @@
 import type {
   AppLogSessionArtifacts,
+  DeviceShutdownRuntimeLoaders,
   HostCommandRequest,
   PlatformRuntimeHost,
 } from '@agent-device/contracts/platform';
@@ -17,13 +18,16 @@ import { createAppleAutomationKeepHotHost } from './platform-runtime-apple-autom
 import { createAndroidEmulatorHost } from './platform-runtime-android-emulator-host.ts';
 import { createAppInventoryRuntimeHost } from './platform-runtime-app-inventory-host.ts';
 import { createAppStateRuntimeHost } from './platform-runtime-app-state-host.ts';
+import { createDeviceShutdownRuntimeHost } from './platform-runtime-device-shutdown-host.ts';
 
 export function createPlatformRuntimeHost(options: {
   sessionsDir: string;
   resolveSessionArtifacts(sessionId: string): AppLogSessionArtifacts;
+  shutdownLoaders: DeviceShutdownRuntimeLoaders;
 }): PlatformRuntimeHost {
   const processes = createManagedAppLogProcesses(options.sessionsDir);
   const localProcessTransport = Object.freeze({ mode: 'local' as const, start: processes.start });
+  const appleTools = createAppleToolHost();
   const commands = Object.freeze({
     which: async (executable: string) => ((await whichCmd(executable)) ? executable : undefined),
     run: async (request: HostCommandRequest, signal?: AbortSignal) => {
@@ -49,7 +53,7 @@ export function createPlatformRuntimeHost(options: {
   });
   return Object.freeze({
     commands,
-    appleTools: createAppleToolHost(),
+    appleTools,
     toolchains: createHostToolchainPreparer(),
     artifacts: Object.freeze({ resolveSession: options.resolveSessionArtifacts }),
     outputs: Object.freeze({
@@ -78,6 +82,10 @@ export function createPlatformRuntimeHost(options: {
       appleAutomation: createAppleAutomationKeepHotHost(),
       androidEmulator: createAndroidEmulatorHost(),
     }),
+    deviceShutdown: createDeviceShutdownRuntimeHost(
+      { appleTools, commands },
+      options.shutdownLoaders,
+    ),
     screenRecording: createScreenRecordingRuntimeHost(),
     clock: Object.freeze({
       now: () => Date.now(),

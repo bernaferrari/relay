@@ -12,9 +12,13 @@ import type {
   DeviceReadinessRuntimeOperations,
 } from './device-readiness-runtime.ts';
 import type {
-  DeviceRuntimeOwner,
-  RuntimeOwnerRef,
-  RuntimePlatformModule,
+  DeviceShutdownRuntimeHost,
+  DeviceShutdownRuntimeOperations,
+} from './device-shutdown-runtime.ts';
+import {
+  type DeviceRuntimeOwner,
+  type RuntimeOwnerRef,
+  type RuntimePlatformModule,
 } from './platform-runtime.ts';
 import { runtimeUse } from './platform-runtime-use.ts';
 
@@ -23,13 +27,14 @@ export type PlatformRuntimeOperations = AppLogRuntimeOperations &
   AppStateRuntimeOperations &
   NetworkRuntimeOperations &
   ScreenRecordingRuntimeOperations &
-  DeviceReadinessRuntimeOperations;
+  DeviceReadinessRuntimeOperations &
+  DeviceShutdownRuntimeOperations;
 
 /**
  * The one neutral runtime-use declaration every command domain shares (ADR 0019 §9): no
  * per-domain currying wrappers. Lives here, next to the concrete `PlatformRuntimeOperations`
- * catalog it closes over. The generic `runtimeUse` primitive stays internal to contracts and
- * never depends on this catalog.
+ * catalog it closes over, so the generic `runtimeUse` primitive stays independent of this
+ * command-domain catalog.
  */
 export const defineUse = runtimeUse<PlatformRuntimeOperations>();
 
@@ -74,6 +79,8 @@ export function resolveDeviceReadinessRuntimePlan(
 export const appStateUse = defineUse({ required: ['ensureReady', 'appState'] });
 export const appStateRuntimeUses = Object.freeze([appStateUse] as const);
 
+export const shutdownTargetUse = defineUse({ required: ['shutdownTarget'] });
+
 export type PlatformRuntimeHost = AppLogRuntimeHost &
   NetworkRuntimeHost &
   Readonly<{
@@ -81,6 +88,7 @@ export type PlatformRuntimeHost = AppLogRuntimeHost &
     appState: AppStateRuntimeHost;
     screenRecording: ScreenRecordingRuntimeHost;
     deviceReadiness: DeviceReadinessRuntimeHost;
+    deviceShutdown: DeviceShutdownRuntimeHost;
   }>;
 
 export type PlatformRuntimeOwner = DeviceRuntimeOwner<PlatformRuntimeOperations>;
