@@ -471,6 +471,33 @@ export async function runCampaignCheck(
   const startedAt = now();
   const recovery = step.check.recovery;
   const groups = ((ctx.runtime ??= {}).campaignRecoveryGroups ??= {});
+  const transitionProofs = (ctx.runtime.campaignTransitionProofs ??= {});
+  const transitionDependencies = step.check.transitionDependencies ?? [];
+  const openDependency = transitionDependencies.find(
+    (dependency) => transitionProofs[dependency.connectionId]?.status === "open",
+  );
+  if (openDependency) {
+    const finishedAt = now();
+    const circuit = transitionProofs[openDependency.connectionId]!;
+    const dependencyReason = circuit.reason ?? "Shared transition confirmation failed.";
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "blocked",
+        error: `Blocked: ${dependencyReason}`,
+        dependencyReason,
+        dependencyTransitionId: openDependency.connectionId,
+        startedAt,
+        finishedAt,
+      },
+    });
+    ctx.log(
+      `check blocked: ${step.check.title} — transition ${openDependency.connectionId} circuit is open`,
+    );
+    return;
+  }
   const group = recovery ? groups[recovery.groupId] : undefined;
   if (group?.status === "blocked") {
     const finishedAt = now();
@@ -492,7 +519,15 @@ export async function runCampaignCheck(
   }
   let primaryError: unknown;
   let cleanupError: unknown;
-  const useCanonicalRecovery = Boolean(recovery && ctx.runtime?.campaignItineraryTrusted === false);
+  const transitionToConfirm = transitionDependencies.find(
+    (dependency) => transitionProofs[dependency.connectionId]?.status === "needs-confirmation",
+  );
+  const useCanonicalRecovery = Boolean(
+    recovery &&
+    (recovery.transitionId
+      ? transitionToConfirm?.connectionId === recovery.transitionId
+      : ctx.runtime?.campaignItineraryTrusted === false),
+  );
   let cleanupPassed = false;
   try {
     if (useCanonicalRecovery) {
@@ -572,6 +607,29 @@ export async function runCampaignCheck(
   if (!primaryError && !cleanupError) {
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
+    for (const dependency of transitionDependencies) {
+      if (transitionProofs[dependency.connectionId]?.status === "verified") continue;
+      transitionProofs[dependency.connectionId] = {
+        status: "verified",
+        checkId: step.check.id,
+        updatedAt: finishedAt,
+      };
+      ctx.job?.artifacts.push({
+        kind: "campaign-transition-proof",
+        capturedAt: finishedAt,
+        data: {
+          schemaVersion: 1,
+          tokenId: `${ctx.job.id}:${dependency.connectionId}`,
+          connectionId: dependency.connectionId,
+          originScreenId: dependency.originScreenId,
+          destination: structuredClone(dependency.destination),
+          ...(dependency.expectedApp ? { expectedApp: dependency.expectedApp } : {}),
+          checkId: step.check.id,
+          status: "verified",
+          verifiedAt: finishedAt,
+        },
+      });
+    }
     ctx.job?.artifacts.push({
       kind: "campaign-check-result",
       capturedAt: finishedAt,
@@ -606,7 +664,53 @@ export async function runCampaignCheck(
   if (cleanupError) {
     await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "cleanup");
   }
-  if (recovery && options.allowDefer !== false) {
+  const failedConfirmationTransitionId =
+    useCanonicalRecovery && recovery?.transitionId ? recovery.transitionId : undefined;
+  if (failedConfirmationTransitionId) {
+    transitionProofs[failedConfirmationTransitionId] = {
+      status: "open",
+      checkId: step.check.id,
+      updatedAt: finishedAt,
+      reason: message,
+    };
+    groups[recovery!.groupId] = { status: "blocked", reason: message };
+    ctx.job?.artifacts.push({
+      kind: "campaign-transition-circuit",
+      capturedAt: finishedAt,
+      data: {
+        schemaVersion: 1,
+        connectionId: failedConfirmationTransitionId,
+        checkId: step.check.id,
+        status: "open",
+        reason: message,
+        openedAt: finishedAt,
+      },
+    });
+    ctx.log(
+      `transition circuit opened: ${failedConfirmationTransitionId} — canonical confirmation failed`,
+    );
+  }
+  if (recovery && options.allowDefer !== false && !failedConfirmationTransitionId) {
+    if (recovery.transitionId) {
+      transitionProofs[recovery.transitionId] = {
+        status: "needs-confirmation",
+        checkId: step.check.id,
+        updatedAt: finishedAt,
+        reason: message,
+      };
+      ctx.job?.artifacts.push({
+        kind: "campaign-transition-circuit",
+        capturedAt: finishedAt,
+        data: {
+          schemaVersion: 1,
+          connectionId: recovery.transitionId,
+          checkId: step.check.id,
+          status: "needs-confirmation",
+          reason: message,
+          updatedAt: finishedAt,
+        },
+      });
+    }
     (ctx.runtime!.deferredCampaignChecks ??= []).push({
       check: structuredClone(step.check),
       error: message,
@@ -627,7 +731,9 @@ export async function runCampaignCheck(
     ctx.log(`check deferred: ${step.check.title} — ${message}`);
     return;
   }
-  if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
+  if (recovery && !failedConfirmationTransitionId) {
+    groups[recovery.groupId] = { status: "blocked", reason: message };
+  }
   ctx.job?.artifacts.push({
     kind: "campaign-check-result",
     capturedAt: finishedAt,

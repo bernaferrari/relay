@@ -165,12 +165,23 @@ export type RecipeStepMetadata = {
   check?: {
     id: string;
     title: string;
+    /** Ordered graph edges this check must prove. Connection ids are stable
+     * circuit keys shared by every check compiled from the same App Map edge. */
+    transitionDependencies?: Array<{
+      connectionId: string;
+      originScreenId: string;
+      destination: { kind: "screen"; screenId: string } | { kind: "end" };
+      expectedApp?: string;
+    }>;
     /** Canonical cold path used after a sibling check leaves the shared
      * origin uncertain. One failed recovery blocks only this dependency
      * group instead of cascading misleading failures through the campaign. */
     recovery?: {
       groupId: string;
       recipeId: string;
+      /** Exact shared edge confirmed by this canonical recovery. Legacy
+       * recipes without it retain group-scoped recovery behavior. */
+      transitionId?: string;
     };
     /** Always-run compensating Routine for stateful campaign checks. */
     cleanup?: {

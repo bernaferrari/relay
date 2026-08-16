@@ -8,7 +8,11 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
-import { compileAppMapFlow, compileAppMapRoutine } from "./app-map-compiler.js";
+import {
+  compileAppMapConnection,
+  compileAppMapFlow,
+  compileAppMapRoutine,
+} from "./app-map-compiler.js";
 import { warmCompiledFlowGraphFromSharedPrefix } from "./app-map-itinerary.js";
 import { validateAppMap } from "./app-map.js";
 import type { Recipe } from "./recipes.js";
@@ -232,9 +236,6 @@ export function compileAppMapScenarioTest(
           let instructionGraph = Object.fromEntries(
             Object.values(plan.recipes).map((compiled) => [compiled.id, asRecipe(map, compiled)]),
           );
-          const coldRoot = instructionGraph[plan.rootRecipeId]
-            ? structuredClone(instructionGraph[plan.rootRecipeId])
-            : undefined;
           if (previousInstructionPlan) {
             instructionGraph = warmCompiledFlowGraphFromSharedPrefix(
               map,
@@ -245,6 +246,19 @@ export function compileAppMapScenarioTest(
               { restoreParentViewport: false },
             );
           }
+          const transitionDependencies = connections.map((connection) => {
+            const destination = structuredClone(connection.destination);
+            const destinationScreen =
+              destination.kind === "screen" ? map.screens[destination.screenId] : undefined;
+            return {
+              connectionId: connection.id,
+              originScreenId: connection.fromScreenId,
+              destination,
+              ...(destinationScreen?.handoff?.ownerApp
+                ? { expectedApp: destinationScreen.handoff.ownerApp }
+                : {}),
+            };
+          });
           const terminalConnectionId = plan.connections.at(-1)?.connectionId;
           const decorateRecipe = (recipe: Recipe, recoveryAlternative = false): Recipe => ({
             ...recipe,
@@ -276,14 +290,24 @@ export function compileAppMapScenarioTest(
             instructionGraph[recipeKey] = decorateRecipe(recipe);
           }
           let recoveryRecipeId: string | undefined;
-          if (previousInstructionPlan && campaignSetupSteps.length > 0 && coldRoot) {
-            recoveryRecipeId = `${plan.rootRecipeId}:recover`;
-            const decoratedColdRoot = decorateRecipe(coldRoot, true);
+          const recoveryTransition = transitionDependencies[0];
+          if (campaignSetupSteps.length > 0 && recoveryTransition) {
+            recoveryRecipeId = `${id}:recover:${recoveryTransition.connectionId}`;
+            const connectionPlan = compileAppMapConnection(map, recoveryTransition.connectionId);
+            for (const compiled of Object.values(connectionPlan.recipes)) {
+              instructionGraph[compiled.id] = asRecipe(map, compiled);
+            }
+            const connectionRoot = instructionGraph[connectionPlan.rootRecipeId]!;
             instructionGraph[recoveryRecipeId] = {
-              ...decoratedColdRoot,
               id: recoveryRecipeId,
-              title: `${decoratedColdRoot.title} · canonical recovery`,
-              steps: [...structuredClone(campaignSetupSteps), ...decoratedColdRoot.steps],
+              title: `${connectionRoot.title} · canonical transition confirmation`,
+              source: "custom",
+              steps: [
+                ...structuredClone(campaignSetupSteps),
+                ...structuredClone(connectionRoot.steps),
+              ],
+              createdAt: map.createdAt,
+              updatedAt: map.updatedAt,
             };
           }
           let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
@@ -309,11 +333,13 @@ export function compileAppMapScenarioTest(
             check: {
               id: step.id,
               title: step.intent,
+              transitionDependencies,
               ...(recoveryRecipeId
                 ? {
                     recovery: {
-                      groupId: `${test.id}:${suffix}:check:${step.id}`,
+                      groupId: `transition:${recoveryTransition!.connectionId}`,
                       recipeId: recoveryRecipeId,
+                      transitionId: recoveryTransition!.connectionId,
                     },
                   }
                 : {}),

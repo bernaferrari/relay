@@ -1437,6 +1437,144 @@ describe("runRecipeStep campaign check policy", () => {
     );
     assert.equal(runtime.campaignRecoveryGroups?.settings?.status, "blocked");
   });
+
+  it("opens one shared transition circuit after warm plus one canonical confirmation", async () => {
+    const job = { id: "fb3a7728", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    let settingsAttempts = 0;
+    const sharedDependency = {
+      connectionId: "open-settings-top",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "settings-top" },
+    };
+    const unrelatedDependency = {
+      connectionId: "open-profile",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "profile" },
+    };
+    const recovery = {
+      groupId: "transition:open-settings-top",
+      recipeId: "confirm-open-settings-top",
+      transitionId: "open-settings-top",
+    };
+    const recipeGraph = {
+      "confirm-open-settings-top": {
+        id: "confirm-open-settings-top",
+        title: "Confirm open settings top",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "settings_button" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      "dependent-warm": {
+        id: "dependent-warm",
+        title: "Dependent warm path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      unrelated: {
+        id: "unrelated",
+        title: "Unrelated authored check",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: () => {
+        settingsAttempts += 1;
+        return Promise.reject(new Error("settings_button was not resolved"));
+      },
+      wait: async () => {},
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "settings_button" },
+        check: {
+          id: "visit-settings",
+          title: "Visit Settings",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "dependent-warm",
+        check: {
+          id: "usage",
+          title: "Usage",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "dependent-warm",
+        check: {
+          id: "privacy",
+          title: "Privacy",
+          recovery,
+          transitionDependencies: [sharedDependency],
+        },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "unrelated",
+        check: {
+          id: "profile",
+          title: "Profile",
+          transitionDependencies: [unrelatedDependency],
+        },
+      },
+      context,
+    );
+    finalizeDeferredCampaignChecks(context);
+
+    assert.equal(settingsAttempts, 2, "warm attempt plus one canonical confirmation only");
+    assert.equal(runtime.campaignTransitionProofs?.["open-settings-top"]?.status, "open");
+    assert.equal(runtime.campaignTransitionProofs?.["open-profile"]?.status, "verified");
+    assert.equal(
+      job.artifacts.filter(
+        (artifact) =>
+          artifact.kind === "campaign-transition-circuit" &&
+          (artifact.data as { status?: string }).status === "open",
+      ).length,
+      1,
+    );
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-result" &&
+          (artifact.data as { id?: string; status?: string }).id === "privacy" &&
+          (artifact.data as { status?: string }).status === "blocked",
+      ),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Unrelated authored check")),
+      true,
+    );
+  });
 });
 
 describe("runRecipeStep semantic reveal", () => {

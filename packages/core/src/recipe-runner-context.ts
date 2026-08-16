@@ -33,6 +33,17 @@ export type RecipeRuntimeState = {
     string,
     { status: "healthy" | "needs-recovery" | "blocked"; reason?: string }
   >;
+  /** Run-local proof graph keyed by canonical App Map connection id. An open
+   * circuit is terminal for this run and prevents every dependent mutation. */
+  campaignTransitionProofs?: Record<
+    string,
+    {
+      status: "verified" | "needs-confirmation" | "open";
+      checkId: string;
+      updatedAt: number;
+      reason?: string;
+    }
+  >;
   /** Whether the next campaign check may use its compiled warm path. A failed
    * check invalidates that assumption; the next check gets exactly one
    * canonical recovery path instead of probing Back from an unknown state. */

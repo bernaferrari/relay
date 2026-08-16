@@ -798,10 +798,92 @@ function parseStepMetadata(
           "check.recovery.recipeId must be a non-empty string of at most 512 characters",
         );
       }
+      if (
+        raw.check.recovery.transitionId !== undefined &&
+        (!isString(raw.check.recovery.transitionId) ||
+          !raw.check.recovery.transitionId.trim() ||
+          raw.check.recovery.transitionId.trim().length > 256)
+      ) {
+        throw stepErr(
+          index,
+          "check.recovery.transitionId must be a non-empty string of at most 256 characters",
+        );
+      }
       recovery = {
         groupId: raw.check.recovery.groupId.trim(),
         recipeId: raw.check.recovery.recipeId.trim(),
+        ...(isString(raw.check.recovery.transitionId) && raw.check.recovery.transitionId.trim()
+          ? { transitionId: raw.check.recovery.transitionId.trim() }
+          : {}),
       };
+    }
+    let transitionDependencies:
+      | NonNullable<NonNullable<RecipeStep["check"]>["transitionDependencies"]>
+      | undefined;
+    if (raw.check.transitionDependencies !== undefined) {
+      if (!Array.isArray(raw.check.transitionDependencies)) {
+        throw stepErr(index, "check.transitionDependencies must be an array");
+      }
+      transitionDependencies = raw.check.transitionDependencies.map((value, dependencyIndex) => {
+        if (!isObject(value)) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}] must be an object`,
+          );
+        }
+        if (!isString(value.connectionId) || !value.connectionId.trim()) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].connectionId is required`,
+          );
+        }
+        if (!isString(value.originScreenId) || !value.originScreenId.trim()) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].originScreenId is required`,
+          );
+        }
+        if (!isObject(value.destination)) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].destination is required`,
+          );
+        }
+        const destination = value.destination;
+        if (destination.kind !== "end" && destination.kind !== "screen") {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].destination is invalid`,
+          );
+        }
+        const destinationScreenId = isString(destination.screenId)
+          ? destination.screenId.trim()
+          : undefined;
+        if (destination.kind === "screen" && !destinationScreenId) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].destination.screenId is required`,
+          );
+        }
+        if (
+          value.expectedApp !== undefined &&
+          (!isString(value.expectedApp) || !value.expectedApp.trim())
+        ) {
+          throw stepErr(
+            index,
+            `check.transitionDependencies[${dependencyIndex}].expectedApp must be a non-empty string`,
+          );
+        }
+        return {
+          connectionId: value.connectionId.trim(),
+          originScreenId: value.originScreenId.trim(),
+          destination:
+            destination.kind === "screen"
+              ? { kind: "screen" as const, screenId: destinationScreenId! }
+              : { kind: "end" as const },
+          ...(isString(value.expectedApp) ? { expectedApp: value.expectedApp.trim() } : {}),
+        };
+      });
     }
     let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
     if (raw.check.cleanup !== undefined) {
@@ -854,6 +936,7 @@ function parseStepMetadata(
     metadata.check = {
       id: raw.check.id,
       title: raw.check.title.trim(),
+      ...(transitionDependencies ? { transitionDependencies } : {}),
       ...(recovery ? { recovery } : {}),
       ...(cleanup ? { cleanup } : {}),
     };

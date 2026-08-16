@@ -513,7 +513,17 @@ test("instruction branches compile as isolated campaign checks", () => {
   const moduleStep = compiled.root.steps.find(
     (step) => step.kind === "module" && step.check?.id === instruction.id,
   );
-  assert.deepEqual(moduleStep?.check, { id: instruction.id, title: instruction.intent });
+  assert.deepEqual(moduleStep?.check, {
+    id: instruction.id,
+    title: instruction.intent,
+    transitionDependencies: [
+      {
+        connectionId: "open-cart",
+        originScreenId: "home",
+        destination: { kind: "screen", screenId: "cart" },
+      },
+    ],
+  });
 });
 
 test("instruction cleanup compiles an auditable always-run routine and terminal state", () => {
@@ -581,7 +591,15 @@ test("later instruction checks compile one canonical cold recovery path", () => 
     recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
     true,
   );
-  assert.equal(secondCheck.check.recovery.groupId, "checkout-smoke:root:check:navigate-again");
+  assert.equal(secondCheck.check.recovery.groupId, "transition:open-cart");
+  assert.equal(secondCheck.check.recovery.transitionId, "open-cart");
+  assert.deepEqual(secondCheck.check.transitionDependencies, [
+    {
+      connectionId: "open-cart",
+      originScreenId: "home",
+      destination: { kind: "screen", screenId: "cart" },
+    },
+  ]);
 });
 
 test("scenario capture policy compiles explicit screen evidence", () => {
