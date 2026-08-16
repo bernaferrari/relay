@@ -86,6 +86,16 @@ export type MapGroup = AppMapEntity & {
   screenIds: string[];
 };
 
+/** Surfaces where evidence must remain reviewable before Relay performs a
+ * return mutation. Ordinary destinations use quiescence without a minimum
+ * delay; the other kinds require a stable semantic+raster dwell. */
+export type DestinationEvidenceSurface =
+  | "ordinary"
+  | "modal"
+  | "preview"
+  | "confirmation"
+  | "dead-end";
+
 export type Screen = AppMapEntity & {
   title: string;
   description?: string;
@@ -97,6 +107,7 @@ export type Screen = AppMapEntity & {
     returnAction: "back" | "relaunch-source";
   };
   identity?: ScreenIdentity;
+  evidenceSurface?: DestinationEvidenceSurface;
   position?: AppMapPoint;
   variantIds: string[];
   /** Lossless audit trail for viewport cards absorbed into this logical
@@ -569,6 +580,7 @@ export type ScreenPatch = {
   description?: string | null;
   handoff?: Screen["handoff"] | null;
   identity?: ScreenIdentity | null;
+  evidenceSurface?: DestinationEvidenceSurface | null;
   position?: AppMapPoint | null;
 };
 

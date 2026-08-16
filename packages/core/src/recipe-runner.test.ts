@@ -29,6 +29,7 @@ import { clearControl, JobCancelledError, requestResume } from "./control.js";
 import { runWithTargetContext } from "./target-context.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
+import { runTourStep } from "./recipe-runner-tour.js";
 import type { ScreenshotPayload } from "./workspace-capture.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
@@ -3860,6 +3861,103 @@ describe("runRecipeStep tour", () => {
       () => runIosRecipeStep(device, { kind: "tour", screenshot: false }, noLog),
       /tour:no-rows/,
     );
+  });
+
+  it("keeps Add Widget evidence stable for 500ms before dismissing the preview", async () => {
+    let surface: "settings" | "preview" = "settings";
+    let elapsedMs = 0;
+    let dismissedAt: number | undefined;
+    const settings = [
+      {
+        type: "Button",
+        label: "Add Widget",
+        hittable: true,
+        rect: { x: 40, y: 420, width: 640, height: 64 },
+      },
+    ];
+    const preview = [
+      {
+        type: "Application",
+        label: "Widget preview",
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+      {
+        type: "Button",
+        label: "Back",
+        hittable: true,
+        rect: { x: 20, y: 70, width: 60, height: 36 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () => Promise.resolve({ nodes: surface === "settings" ? settings : preview }),
+      press: (options) => {
+        const selector =
+          typeof options === "object" && options && "selector" in options
+            ? String((options as { selector?: string }).selector ?? "")
+            : "";
+        if (selector.includes("Add Widget")) {
+          surface = "preview";
+        } else if (
+          surface === "preview" &&
+          typeof options === "object" &&
+          options &&
+          "x" in options
+        ) {
+          dismissedAt = elapsedMs;
+          surface = "settings";
+        }
+        return Promise.resolve({});
+      },
+      wait: () => {
+        // sleep() chunks at 100ms; its requested duration is reflected by the
+        // injected clock below without imposing wall-clock time on the test.
+        elapsedMs += 100;
+        return Promise.resolve({});
+      },
+    });
+    const job = { id: "add-widget", artifacts: [] } as unknown as TestJob;
+    const raster: ScreenshotPayload = {
+      capturedAt: 1,
+      mime: "image/png",
+      base64: Buffer.from("preview").toString("base64"),
+      path: "/tmp/add-widget.png",
+      bytes: 7,
+      screenMatch: {
+        fingerprint: "a".repeat(64),
+        visualFingerprint: "a".repeat(64),
+        matchedScreenId: null,
+        status: "observed",
+      },
+    };
+
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "add-widget-preview" },
+      () =>
+        runTourStep(
+          device,
+          {
+            kind: "tour",
+            screenshot: false,
+            fallbackStops: [{ label: "Add Widget", evidenceSurface: "preview" }],
+          },
+          () => {},
+          job,
+          {
+            captureScreenshot: async () => ({ ...raster }),
+            clock: () => elapsedMs,
+          },
+        ),
+    );
+
+    assert.ok(
+      (dismissedAt ?? 0) >= 500,
+      `Back must not dismiss the preview before evidence dwell (dismissedAt=${String(dismissedAt)}, elapsed=${elapsedMs})`,
+    );
+    const timing = job.artifacts.find((artifact) => artifact.kind === "destination-evidence-timing")
+      ?.data as { navigationMs: number; evidenceDwellMs: number; surface: string };
+    assert.equal(timing.surface, "preview");
+    assert.equal(timing.navigationMs, 0);
+    assert.ok(timing.evidenceDwellMs >= 500);
   });
 
   it("walks mapped fallback stops when the live tree is empty", async () => {

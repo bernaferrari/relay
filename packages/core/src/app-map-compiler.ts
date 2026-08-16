@@ -77,7 +77,12 @@ function stableStep(step: RecipeStep, actionId: string, index: number): RecipeSt
   };
 }
 
-export function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeStep {
+export function screenExpectation(
+  map: AppMap,
+  screen: Screen,
+  stepId: string,
+  evidenceSurface = screen.evidenceSurface,
+): RecipeStep {
   if (!screen.identity) {
     fail(
       "missing-screen-identity",
@@ -113,6 +118,7 @@ export function screenExpectation(map: AppMap, screen: Screen, stepId: string): 
     screenTitle: screen.title,
     fingerprint: screen.identity.fingerprint,
     timeoutMs: 5000,
+    ...(evidenceSurface ? { evidenceSurface } : {}),
     ...(screen.handoff?.ownerApp ? { expectedApp: screen.handoff.ownerApp } : {}),
     ...(aliases.size ? { aliases: [...aliases] } : {}),
     ...(observations.length ? { observations } : {}),
@@ -372,6 +378,9 @@ function destinationExpectation(map: AppMap, connection: Connection): RecipeStep
     map.screens[
       (connection.destination as Extract<Connection["destination"], { kind: "screen" }>).screenId
     ]!;
+  const hasOutgoingConnection = Object.values(map.connections).some(
+    (candidate) => candidate.fromScreenId === destination.id && candidate.state !== "draft",
+  );
   return screenExpectation(
     map,
     connection.navigation
@@ -381,6 +390,7 @@ function destinationExpectation(map: AppMap, connection: Connection): RecipeStep
         }
       : destination,
     `relay-destination-${connection.id}`,
+    destination.evidenceSurface ?? (hasOutgoingConnection ? "ordinary" : "dead-end"),
   );
 }
 

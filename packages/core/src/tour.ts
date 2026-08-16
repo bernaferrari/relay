@@ -2,6 +2,7 @@
  * Structural depth-0 (later depth-N) walk of a screen's child rows.
  * Labels are read live so a language switch does not freeze English copy.
  */
+import type { DestinationEvidenceSurface } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 
 export type TourStop = {
@@ -10,6 +11,7 @@ export type TourStop = {
   point?: { x: number; y: number };
   capture?: boolean;
   optional?: boolean;
+  evidenceSurface?: DestinationEvidenceSurface;
 };
 
 export type TourScreenSignature = {

@@ -141,6 +141,7 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
       screenTitle: "Home",
       fingerprint: "b".repeat(64),
       timeoutMs: 5_000,
+      evidenceSurface: "dead-end",
     },
   ]);
   assert.deepEqual(plan.recipes[routineId]!.steps, [

@@ -328,6 +328,15 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "expect-screen.observations must be semantic observations");
         }
         let recovery: Extract<RecipeStep, { kind: "expect-screen" }>["recovery"];
+        const evidenceSurface = raw.evidenceSurface;
+        if (
+          evidenceSurface !== undefined &&
+          !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(
+            String(evidenceSurface),
+          )
+        ) {
+          throw stepErr(index, "expect-screen.evidenceSurface is unsupported");
+        }
         if (raw.recovery !== undefined) {
           if (!isObject(raw.recovery) || raw.recovery.strategy !== "back") {
             throw stepErr(index, 'expect-screen.recovery.strategy must be "back"');
@@ -430,6 +439,14 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(recovery ? { recovery } : {}),
           ...(returnRequirement ? { returnRequirement } : {}),
           ...(repairCheckpoint ? { repairCheckpoint } : {}),
+          ...(evidenceSurface
+            ? {
+                evidenceSurface: evidenceSurface as Extract<
+                  RecipeStep,
+                  { kind: "expect-screen" }
+                >["evidenceSurface"],
+              }
+            : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -635,9 +652,19 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                   point?: { x?: unknown; y?: unknown };
                   capture?: unknown;
                   optional?: unknown;
+                  evidenceSurface?: unknown;
                 };
                 const label = typeof row.label === "string" ? row.label.trim() : "";
                 if (!label) return [];
+                if (
+                  includeCapture &&
+                  row.evidenceSurface !== undefined &&
+                  !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(
+                    String(row.evidenceSurface),
+                  )
+                ) {
+                  throw stepErr(index, "tour.fallbackStops.evidenceSurface is unsupported");
+                }
                 const identifier = typeof row.identifier === "string" ? row.identifier.trim() : "";
                 const point =
                   row.point && isNumber(row.point.x) && isNumber(row.point.y)
@@ -650,6 +677,18 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                     ...(point ? { point } : {}),
                     ...(includeCapture && row.capture === true ? { capture: true } : {}),
                     ...(includeCapture && row.optional === true ? { optional: true } : {}),
+                    ...(includeCapture &&
+                    ["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(
+                      String(row.evidenceSurface),
+                    )
+                      ? {
+                          evidenceSurface: row.evidenceSurface as NonNullable<
+                            NonNullable<
+                              Extract<RecipeStep, { kind: "tour" }>["fallbackStops"]
+                            >[number]["evidenceSurface"]
+                          >,
+                        }
+                      : {}),
                   },
                 ];
               })

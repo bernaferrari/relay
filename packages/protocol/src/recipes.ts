@@ -1,5 +1,5 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
-import type { ScreenIdentityObservation } from "./app-map.js";
+import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
 import type { SemanticRevealPlan } from "./scroll-surface.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
@@ -324,6 +324,9 @@ export type RecipeStep = RecipeStepMetadata &
           fromScreenId: string;
           destinationScreenId: string;
         };
+        /** Review-sensitive destinations must remain semantically and visually
+         * stable before any later Back/Close/cleanup mutation. */
+        evidenceSurface?: DestinationEvidenceSurface;
         /**
          * Generated warm-suite source checks may return through the current
          * app hierarchy before replaying their recorded navigation. This is
@@ -453,6 +456,7 @@ export type RecipeStep = RecipeStepMetadata &
            * Its absence is reported and skipped, never tapped by its old
            * coordinate. */
           optional?: boolean;
+          evidenceSurface?: DestinationEvidenceSurface;
         }>;
         /**
          * Complete recorded row order for the current surface. These are

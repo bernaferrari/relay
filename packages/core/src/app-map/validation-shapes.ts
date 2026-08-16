@@ -158,6 +158,12 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
     }
   }
   if (screen.identity) assertIdentity(screen.identity, `${label}.identity`);
+  if (
+    screen.evidenceSurface !== undefined &&
+    !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(screen.evidenceSurface)
+  ) {
+    appMapFail("invalid-map", `${label}.evidenceSurface is unsupported`);
+  }
   if (screen.position) {
     if (!Number.isFinite(screen.position.x) || !Number.isFinite(screen.position.y)) {
       appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
@@ -771,6 +777,13 @@ export function assertScreenPatch(patch: ScreenPatch, label: string): void {
   }
   if (patch.identity !== undefined && patch.identity !== null)
     assertIdentity(patch.identity, `${label}.identity`);
+  if (
+    patch.evidenceSurface !== undefined &&
+    patch.evidenceSurface !== null &&
+    !["ordinary", "modal", "preview", "confirmation", "dead-end"].includes(patch.evidenceSurface)
+  ) {
+    appMapFail("invalid-map", `${label}.evidenceSurface is unsupported`);
+  }
   if (
     patch.position !== undefined &&
     patch.position !== null &&

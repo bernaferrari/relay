@@ -16,6 +16,10 @@ import {
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
 import { attachScreenshotPayload, captureScreenshot } from "./workspace-capture.js";
+import {
+  awaitStableDestinationEvidence,
+  recordDestinationEvidenceTiming,
+} from "./destination-evidence.js";
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
@@ -109,6 +113,7 @@ export async function runExpectScreenStep(
   ctx: RecipeStepContext,
   dependencies: ExpectScreenDependencies = {},
 ): Promise<void> {
+  const navigationStartedAt = now();
   const priorObservation = ctx.runtime?.observation;
   if (ctx.runtime) {
     ctx.runtime.observation = undefined;
@@ -236,6 +241,43 @@ export async function runExpectScreenStep(
       );
     }
     throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
+  }
+  if (step.evidenceSurface && verifiedNodes) {
+    const captureDestinationScreenshot = dependencies.captureScreenshot ?? captureScreenshot;
+    const stable = await awaitStableDestinationEvidence({
+      surface: step.evidenceSurface,
+      navigationStartedAt,
+      initial: {
+        nodes: verifiedNodes,
+        ...(verifiedScreenshot ? { screenshot: verifiedScreenshot } : {}),
+      },
+      observe: async (includeRaster) => {
+        const observation = await observeDestinationAttempt(
+          device,
+          undefined,
+          includeRaster
+            ? () =>
+                captureDestinationScreenshot({
+                  device,
+                  caption: `Stabilize ${step.screenTitle}`,
+                  ephemeral: true,
+                  includeScreenMatch: false,
+                })
+            : undefined,
+        );
+        return {
+          nodes: observation.nodes,
+          ...(observation.screenshot ? { screenshot: observation.screenshot } : {}),
+        };
+      },
+      wait: (durationMs) => sleep(durationMs, device),
+    });
+    verifiedNodes = stable.nodes;
+    verifiedObservedAt = now();
+    verifiedScreenshot = stable.screenshot;
+    recordDestinationEvidenceTiming(ctx.job?.artifacts ?? ctx.artifacts, stable.timing, {
+      screenId: step.screenId,
+    });
   }
   if (verifiedNodes && ctx.runtime) {
     if (verifiedScreenshot) {
