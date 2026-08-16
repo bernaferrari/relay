@@ -90,12 +90,26 @@ export function findOperationHandler(
   method: string,
   pathname: string,
 ): (OperationHandlerRegistration & { params: Record<string, string> }) | null {
+  let best:
+    | (OperationHandlerRegistration & {
+        params: Record<string, string>;
+        staticSegmentCount: number;
+      })
+    | undefined;
   for (const registration of operationHandlers) {
     if (registration.method !== method) continue;
     const params = matchPath(pathname, registration.path);
-    if (params) return { ...registration, params };
+    if (!params) continue;
+    const staticSegmentCount = registration.path
+      .split("/")
+      .filter((segment) => segment && !segment.startsWith(":")).length;
+    if (!best || staticSegmentCount > best.staticSegmentCount) {
+      best = { ...registration, params, staticSegmentCount };
+    }
   }
-  return null;
+  if (!best) return null;
+  const { staticSegmentCount: _, ...registration } = best;
+  return registration;
 }
 
 export function bindOperationRequest(
