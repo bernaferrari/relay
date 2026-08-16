@@ -25,7 +25,11 @@ function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function lastMatching<T>(values: T[], predicate: (value: T) => boolean): T | undefined {
+function lastMatching<T>(
+  values: readonly T[] | undefined,
+  predicate: (value: T) => boolean,
+): T | undefined {
+  if (!values) return undefined;
   for (let index = values.length - 1; index >= 0; index -= 1) {
     const value = values[index]!;
     if (predicate(value)) return value;
@@ -41,7 +45,7 @@ function resultArtifacts(run: PersistedRun): Array<{
   artifact: PersistedRun["artifacts"][number];
   data: RecordValue;
 }> {
-  return run.artifacts.flatMap((artifact) => {
+  return (run.artifacts ?? []).flatMap((artifact) => {
     const data = record(artifact.data);
     return artifact.kind === "campaign-check-result" && data ? [{ artifact, data }] : [];
   });
@@ -203,7 +207,7 @@ export function buildCampaignRepairTarget(
     (frozenStep?.kind === "module" ? frozenStep.recipeId : undefined);
   const recipe = recipeId ? run.recipeGraph?.[recipeId] : undefined;
   const plan = planIdentity(run);
-  const frames = run.frames.flatMap((frame, index) =>
+  const frames = (run.frames ?? []).flatMap((frame, index) =>
     frame.caption === `failed:${checkId}`
       ? [
           {
@@ -319,7 +323,7 @@ export function summarizeCampaignRepairTarget(
 }
 
 function assertReusableInputs(run: PersistedRun): void {
-  const unavailable = Object.entries(run.resolvedInputs).find(
+  const unavailable = Object.entries(run.resolvedInputs ?? {}).find(
     ([, value]) => value === PRIVATE_INPUT || value === REDACTED,
   );
   if (unavailable) {

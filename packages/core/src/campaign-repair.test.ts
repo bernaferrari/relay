@@ -224,3 +224,13 @@ test("links persisted selective attempts back to the original repair target", ()
     { runId: "run-attempt", status: "ok", createdAt: at },
   ]);
 });
+
+test("ignores historical runs that predate repair artifact collections", () => {
+  const historical = {
+    ...fixture(),
+    id: "run-before-repair-artifacts",
+    artifacts: undefined,
+    frames: undefined,
+  } as unknown as PersistedRun;
+  assert.deepEqual(listCampaignRepairTargets([historical]), []);
+});

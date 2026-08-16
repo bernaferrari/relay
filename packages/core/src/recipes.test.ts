@@ -1106,6 +1106,10 @@ describe("describeRecipeStep", () => {
     );
     assert.equal(describeRecipeStep({ kind: "scroll", direction: "up" }), "Scroll up");
     assert.equal(
+      describeRecipeStep({ kind: "reveal", target: { label: "Advanced" } }),
+      'Reveal label "Advanced"',
+    );
+    assert.equal(
       describeRecipeStep({ kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 } }),
       "swipe ↑ 540,1600 → 540,600",
     );
@@ -1159,6 +1163,7 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "tap", target: { ref: "x" } }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "type", text: "x" }), ["type"]);
     assert.deepEqual(glyphsForStep({ kind: "scroll", direction: "down" }), ["swipe"]);
+    assert.deepEqual(glyphsForStep({ kind: "reveal", target: { label: "Advanced" } }), ["swipe"]);
     assert.deepEqual(glyphsForStep({ kind: "swipe", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }), [
       "swipe",
     ]);
