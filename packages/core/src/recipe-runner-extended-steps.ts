@@ -57,8 +57,10 @@ async function captureCampaignFailureEvidence(
       : [],
   );
   let nodes: Awaited<ReturnType<typeof snapshot>> = [];
+  let accessibilityAvailable = false;
   try {
     nodes = await snapshot(device);
+    accessibilityAvailable = true;
   } catch {
     // The action error and screenshot remain useful when AX is unavailable.
   }
@@ -72,13 +74,14 @@ async function captureCampaignFailureEvidence(
       error,
       attempts,
       chrome: describeSnapshotChrome(nodes),
-      screenIdentity: observeScreenIdentity(nodes),
+      ...(nodes.length ? { screenIdentity: observeScreenIdentity(nodes) } : {}),
+      accessibility: { available: accessibilityAvailable, nodeCount: nodes.length },
       nodes,
     },
   });
   await captureScreenshot({
     jobId: job.id,
-    caption: `failed:${check.title}`,
+    caption: `failed:${check.id}`,
     device,
     ...(nodes.length ? { semanticNodes: nodes } : {}),
   }).catch(() => undefined);

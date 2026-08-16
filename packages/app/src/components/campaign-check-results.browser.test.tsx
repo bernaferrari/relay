@@ -64,10 +64,37 @@ test("renders partial campaign outcomes with exact evidence and no invented sele
       {
         kind: "campaign-check-evidence",
         capturedAt: 180,
-        data: { checkId: "usage", nodes: [{ text: "Settings" }] },
+        data: {
+          checkId: "usage",
+          error: "tap failed: control remained offscreen",
+          chrome: { app: "Grok", header: "Settings" },
+          screenIdentity: { fingerprint: "screen-123" },
+          accessibility: { available: false, nodeCount: 0 },
+          nodes: [],
+          attempts: [
+            {
+              kind: "target-resolution-attempt",
+              capturedAt: 160,
+              data: {
+                target: { ref: "@stale" },
+                error: "control remained offscreen",
+              },
+            },
+            {
+              kind: "target-resolution",
+              capturedAt: 170,
+              data: {
+                method: "label",
+                target: { label: "Usage" },
+                bounds: { x: 20, y: 80, width: 200, height: 44 },
+                point: { x: 120, y: 102 },
+              },
+            },
+          ],
+        },
       },
     ],
-    frames: [{ path: "failure.png", caption: "failed:Usage", capturedAt: 180 }],
+    frames: [{ path: "failure.png", caption: "failed:usage", capturedAt: 180 }],
   } as JobInfo;
 
   const dispose = render(
@@ -85,23 +112,48 @@ test("renders partial campaign outcomes with exact evidence and no invented sele
   expect(root.textContent).toContain("1 failed");
   expect(root.textContent).toContain("1 skipped");
   expect(root.textContent).toContain("1 blocked");
-  expect(root.textContent).toContain("Expected Usage, observed Settings");
+  expect(root.textContent).toContain("tap failed: control remained offscreen");
   expect(root.textContent).toContain("Usage did not reach its mapped destination");
   expect(root.textContent).toContain("Representative viewport retained");
+  expect(root.textContent).toContain("Grok · Settings");
+  expect(root.textContent).toContain("Accessibility tree unavailable · 0 nodes captured");
+  expect(root.textContent).toContain("ref · Rejected · ref “@stale”");
+  expect(root.textContent).toContain("control remained offscreen");
+  expect(root.textContent).toContain("label · Used · label “Usage”");
+  expect(root.textContent).toContain("Bounds x 20, y 80, 200 × 44 · Tap (120, 102)");
+  expect(root.textContent).toContain(
+    "Inspect the failure screenshot, manually locate the missing control, then repair its mapped locator.",
+  );
+  expect([...root.querySelectorAll("h4")].map((heading) => heading.textContent)).toEqual([
+    "What Relay saw",
+    "What Relay tried",
+    "What happened",
+    "Next step",
+  ]);
   expect(root.querySelector('button[aria-label*="Retry"]')).toBeNull();
+  expect(root.textContent?.toLocaleLowerCase()).not.toContain("retry");
   expect(root.querySelectorAll("summary")[0]?.getBoundingClientRect).toBeDefined();
 
-  const screenshot = [...root.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes("failed:Usage"),
+  const screenshot = root.querySelector<HTMLButtonElement>(
+    'button[aria-label="Open failure screenshot: failed:usage"]',
   );
+  expect(screenshot?.tagName).toBe("BUTTON");
+  screenshot?.focus();
+  expect(document.activeElement).toBe(screenshot);
   screenshot?.click();
   expect(openFrame).toHaveBeenCalledWith(0);
 
   const evidence = [...root.querySelectorAll("summary")].find((summary) =>
-    summary.textContent?.includes("Structured evidence"),
+    summary.textContent?.includes("Raw evidence"),
   );
+  const rawEvidence = evidence?.closest("details");
+  expect(rawEvidence?.open).toBe(false);
+  evidence?.focus();
+  expect(document.activeElement).toBe(evidence);
   evidence?.click();
+  expect(rawEvidence?.open).toBe(true);
   expect(root.textContent).toContain('"checkId": "usage"');
+  expect(root.querySelectorAll("summary").length).toBe(5);
 
   dispose();
   root.remove();

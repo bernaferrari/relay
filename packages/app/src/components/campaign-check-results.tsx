@@ -46,9 +46,19 @@ function CheckDetail(props: {
   onOpenFrame?: (index: number) => void;
 }) {
   const reasonLabel = () => (props.check.status === "blocked" ? "Dependency" : "Reason");
+  const accessibilityDescription = () => {
+    const observed = props.check.repair?.observed;
+    if (!observed) return undefined;
+    const count =
+      observed.nodeCount === undefined ? "unknown node count" : `${observed.nodeCount} nodes`;
+    if (observed.accessibilityAvailable === true) return `Accessibility tree available · ${count}`;
+    if (observed.accessibilityAvailable === false)
+      return `Accessibility tree unavailable · ${count} captured`;
+    return `Accessibility availability not recorded · ${count} captured`;
+  };
   return (
     <div class="grid gap-3 border-t border-border-weak-base px-3.5 py-3">
-      <Show when={props.check.error}>
+      <Show when={props.check.error && !props.check.repair}>
         <div class="grid gap-1 rounded-lg bg-surface-critical-weak px-3 py-2.5">
           <span class="text-[9px] font-semibold tracking-[0.08em] text-text-critical-base uppercase">
             Failure
@@ -68,65 +78,171 @@ function CheckDetail(props: {
           </p>
         </div>
       </Show>
-      <Show when={props.check.frames.length > 0}>
+      <Show when={props.check.repair}>
+        {(repair) => (
+          <section class="grid gap-3" aria-label={`Repair evidence for ${props.check.title}`}>
+            <div class="grid gap-2">
+              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What Relay saw</h4>
+              <For each={props.check.frames}>
+                {(evidenceFrame) => {
+                  const source = () => props.frameSource?.(evidenceFrame) ?? "";
+                  const caption = () => evidenceFrame.frame.caption ?? "Captured failure";
+                  return (
+                    <button
+                      type="button"
+                      class="group grid min-h-11 touch-manipulation grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-lg border border-border-weak-base bg-background-base p-1.5 text-left transition-[border-color,background-color] motion-reduce:transition-none hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-default"
+                      onClick={() => props.onOpenFrame?.(evidenceFrame.index)}
+                      disabled={!props.onOpenFrame}
+                      aria-label={`Open failure screenshot: ${caption()}`}
+                    >
+                      <Show
+                        when={source()}
+                        fallback={
+                          <span class="grid h-11 place-items-center rounded-md bg-surface-base">
+                            <Icon name="camera" size={14} />
+                          </span>
+                        }
+                      >
+                        <img
+                          src={source()}
+                          alt=""
+                          class="h-11 w-16 rounded-md bg-background-deep object-cover"
+                        />
+                      </Show>
+                      <span class="min-w-0 break-words text-[10.5px]/[1.4] text-text-base">
+                        {caption()}
+                      </span>
+                      <Show when={props.onOpenFrame}>
+                        <Icon name="arrow-right" size={12} class="mr-1 text-text-weaker" />
+                      </Show>
+                    </button>
+                  );
+                }}
+              </For>
+              <dl class="m-0 grid gap-1 rounded-lg bg-surface-base px-3 py-2.5 text-[10.5px]/[1.45]">
+                <Show when={repair().observed.app || repair().observed.header}>
+                  <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+                    <dt class="text-text-weaker">Location</dt>
+                    <dd class="m-0 break-words text-text-base">
+                      {[repair().observed.app, repair().observed.header]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </dd>
+                  </div>
+                </Show>
+                <Show when={repair().observed.identity}>
+                  <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+                    <dt class="text-text-weaker">Identity</dt>
+                    <dd class="m-0 break-all font-mono text-[9.5px] text-text-base">
+                      {repair().observed.identity}
+                    </dd>
+                  </div>
+                </Show>
+                <div class="grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+                  <dt class="text-text-weaker">Accessibility</dt>
+                  <dd class="m-0 break-words text-text-base">{accessibilityDescription()}</dd>
+                </div>
+              </dl>
+            </div>
+            <div class="grid gap-2">
+              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What Relay tried</h4>
+              <Show
+                when={repair().attempts.length > 0}
+                fallback={
+                  <p class="m-0 text-[10.5px]/[1.45] text-text-weaker">
+                    No locator attempts were recorded for this failure.
+                  </p>
+                }
+              >
+                <ol class="m-0 grid list-decimal gap-2 pl-5">
+                  <For each={repair().attempts}>
+                    {(attempt) => (
+                      <li class="pl-1 text-[10.5px]/[1.45] text-text-base marker:text-text-weaker">
+                        <div class="grid gap-0.5">
+                          <span class="break-words">
+                            <strong class="font-medium text-text-strong">{attempt.method}</strong>
+                            {` · ${attempt.outcome === "used" ? "Used" : "Rejected"} · ${attempt.target}`}
+                          </span>
+                          <Show when={attempt.detail}>
+                            <span class="whitespace-pre-wrap break-words text-text-critical-base">
+                              {attempt.detail}
+                            </span>
+                          </Show>
+                          <Show when={attempt.bounds || attempt.point}>
+                            <span class="break-words font-mono text-[9.5px] text-text-weaker">
+                              {[
+                                attempt.bounds ? `Bounds ${attempt.bounds}` : undefined,
+                                attempt.point ? `Tap ${attempt.point}` : undefined,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </Show>
+                          <Show when={attempt.note}>
+                            <span class="break-words text-text-weaker">{attempt.note}</span>
+                          </Show>
+                        </div>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </Show>
+              <Show when={repair().attemptsTruncated}>
+                <p class="m-0 text-[10px]/[1.4] text-text-weaker">
+                  Additional locator evidence remains in Raw evidence.
+                </p>
+              </Show>
+            </div>
+            <div class="grid gap-1">
+              <h4 class="m-0 text-[10px] font-semibold text-text-strong">What happened</h4>
+              <p class="m-0 whitespace-pre-wrap break-words text-[10.5px]/[1.5] text-text-base">
+                {repair().failureReason ?? "The check failed without a recorded failure reason."}
+              </p>
+            </div>
+            <div class="grid gap-1 rounded-lg bg-surface-warning-weak px-3 py-2.5">
+              <h4 class="m-0 text-[10px] font-semibold text-text-warning-base">Next step</h4>
+              <p class="m-0 break-words text-[10.5px]/[1.5] text-text-strong">
+                {repair().nextStep}
+              </p>
+            </div>
+          </section>
+        )}
+      </Show>
+      <Show when={props.check.frames.length > 0 && !props.check.repair}>
         <div class="grid gap-2">
           <strong class="text-[10px] font-medium text-text-weak">Failure screenshot</strong>
           <For each={props.check.frames}>
-            {(evidenceFrame) => {
-              const source = () => props.frameSource?.(evidenceFrame) ?? "";
-              return (
-                <button
-                  type="button"
-                  class="group grid min-h-11 grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-lg border border-border-weak-base bg-background-base p-1.5 text-left transition-[border-color,background-color] hover:border-border-strong-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-border-strong-focus"
-                  onClick={() => props.onOpenFrame?.(evidenceFrame.index)}
-                  disabled={!props.onOpenFrame}
-                >
-                  <Show
-                    when={source()}
-                    fallback={
-                      <span class="grid h-11 place-items-center rounded-md bg-surface-base">
-                        <Icon name="camera" size={14} />
-                      </span>
-                    }
-                  >
-                    <img
-                      src={source()}
-                      alt=""
-                      class="h-11 w-16 rounded-md bg-background-deep object-cover"
-                    />
-                  </Show>
-                  <span class="min-w-0 truncate text-[10.5px] text-text-base">
-                    {evidenceFrame.frame.caption ?? "Captured failure"}
-                  </span>
-                  <Show when={props.onOpenFrame}>
-                    <Icon name="arrow-right" size={12} class="mr-1 text-text-weaker" />
-                  </Show>
-                </button>
-              );
-            }}
+            {(evidenceFrame) => (
+              <button
+                type="button"
+                class="min-h-11 touch-manipulation rounded-lg border border-border-weak-base bg-background-base px-3 text-left text-[10.5px] text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                onClick={() => props.onOpenFrame?.(evidenceFrame.index)}
+                disabled={!props.onOpenFrame}
+              >
+                {evidenceFrame.frame.caption ?? "Captured failure"}
+              </button>
+            )}
           </For>
         </div>
       </Show>
-      <For each={props.check.evidence}>
-        {(artifact) => (
-          <details class="group rounded-lg border border-border-weak-base bg-background-base">
-            <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-[10.5px] font-medium text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
-              Structured evidence
-              <Icon
-                name="chevron-down"
-                size={12}
-                class="transition-transform group-open:rotate-180"
-              />
-            </summary>
-            <pre class="m-0 max-h-64 overflow-auto border-t border-border-weak-base p-3 font-mono text-[9.5px]/[1.5] text-text-weak">
-              {JSON.stringify(artifact.data, null, 2)}
-            </pre>
-          </details>
-        )}
-      </For>
+      <Show when={props.check.evidence.length > 0}>
+        <details class="group rounded-lg border border-border-weak-base bg-background-base">
+          <summary class="flex min-h-11 touch-manipulation cursor-pointer list-none items-center justify-between gap-2 px-3 text-[10.5px] font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+            Raw evidence
+            <Icon
+              name="chevron-down"
+              size={12}
+              class="transition-transform motion-reduce:transition-none group-open:rotate-180"
+            />
+          </summary>
+          <pre class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border-weak-base p-3 font-mono text-[9.5px]/[1.5] text-text-weak">
+            {JSON.stringify(props.check.evidence, null, 2)}
+          </pre>
+        </details>
+      </Show>
       {props.check.frames.length || props.check.evidence.length ? null : (
         <p class="m-0 text-[10.5px]/[1.45] text-text-weaker">
-          No additional screenshot or structured evidence was captured for this check.
+          No additional screenshot or evidence was captured for this check.
         </p>
       )}
     </div>
@@ -223,14 +339,6 @@ export function CampaignCheckResults(props: {
             }}
           </For>
         </div>
-        <Show
-          when={checks().some((check) => check.status === "failed" || check.status === "blocked")}
-        >
-          <p class="m-0 text-[10px]/[1.45] text-text-weaker">
-            Retry in the report header replays the saved run. Relay only offers a narrower retry
-            when the execution contract identifies a safe retry target.
-          </p>
-        </Show>
       </section>
     </Show>
   );

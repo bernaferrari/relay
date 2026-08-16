@@ -860,13 +860,40 @@ describe("runRecipeStep campaign check policy", () => {
     assert.ok(evidence);
     const evidenceData = evidence.data as {
       attempts?: Array<{ kind: string }>;
+      accessibility?: { available: boolean; nodeCount: number };
       nodes?: Array<{ label?: string }>;
     };
     assert.deepEqual(
       evidenceData.attempts?.map((attempt) => attempt.kind),
       ["target-resolution-attempt"],
     );
+    assert.deepEqual(evidenceData.accessibility, { available: true, nodeCount: 1 });
     assert.equal(evidenceData.nodes?.[0]?.label, "Settings");
+  });
+
+  it("records accessibility as unavailable when failure evidence cannot capture a tree", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("control missing")),
+      snapshot: () => Promise.reject(new Error("accessibility unavailable")),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "settings.missing" },
+        check: { id: "missing", title: "Missing control" },
+      },
+      { ...noLog, job },
+    );
+
+    const evidence = job.artifacts.find((artifact) => artifact.kind === "campaign-check-evidence");
+    assert.deepEqual(
+      (evidence?.data as { accessibility?: unknown; nodes?: unknown[] } | undefined)?.accessibility,
+      { available: false, nodeCount: 0 },
+    );
+    assert.deepEqual((evidence?.data as { nodes?: unknown[] } | undefined)?.nodes, []);
   });
 
   it("records a passing check", async () => {
