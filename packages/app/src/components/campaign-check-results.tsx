@@ -44,6 +44,9 @@ function CheckDetail(props: {
   check: CampaignCheckResult;
   frameSource?: (frame: CampaignCheckResult["frames"][number]) => string;
   onOpenFrame?: (index: number) => void;
+  onRetryCheck?: (checkId: string) => void;
+  onRepairTest?: (checkId: string) => void;
+  retrying?: boolean;
 }) {
   const reasonLabel = () => (props.check.status === "blocked" ? "Dependency" : "Reason");
   const accessibilityDescription = () => {
@@ -204,6 +207,29 @@ function CheckDetail(props: {
               <p class="m-0 break-words text-[10.5px]/[1.5] text-text-strong">
                 {repair().nextStep}
               </p>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <span class="text-[10px] text-text-weaker">Default: continue and report</span>
+                <Show when={props.onRetryCheck}>
+                  <button
+                    type="button"
+                    class="min-h-9 touch-manipulation rounded-lg border border-border-strong-base bg-background-base px-3 text-[10.5px] font-medium text-text-strong hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus disabled:cursor-wait disabled:opacity-60"
+                    disabled={props.retrying}
+                    onClick={() => props.onRetryCheck?.(props.check.id)}
+                    aria-label={`Retry only failed check: ${props.check.title}`}
+                  >
+                    {props.retrying ? "Starting…" : "Retry this check"}
+                  </button>
+                </Show>
+                <Show when={props.onRepairTest}>
+                  <button
+                    type="button"
+                    class="min-h-9 touch-manipulation rounded-lg px-3 text-[10.5px] font-medium text-text-base hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+                    onClick={() => props.onRepairTest?.(props.check.id)}
+                  >
+                    Repair Test
+                  </button>
+                </Show>
+              </div>
             </div>
           </section>
         )}
@@ -253,6 +279,9 @@ export function CampaignCheckResults(props: {
   job: JobInfo;
   frameSource?: (frame: CampaignCheckResult["frames"][number]) => string;
   onOpenFrame?: (index: number) => void;
+  onRetryCheck?: (checkId: string) => void;
+  onRepairTest?: (checkId: string) => void;
+  retryingCheckId?: string;
 }) {
   const checks = createMemo(() => campaignCheckResults(props.job));
   const counts = createMemo(() => campaignCheckCounts(checks()));
@@ -333,6 +362,9 @@ export function CampaignCheckResults(props: {
                     check={check}
                     frameSource={props.frameSource}
                     onOpenFrame={props.onOpenFrame}
+                    onRetryCheck={props.onRetryCheck}
+                    onRepairTest={props.onRepairTest}
+                    retrying={props.retryingCheckId === check.id}
                   />
                 </details>
               );

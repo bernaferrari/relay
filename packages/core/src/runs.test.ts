@@ -99,6 +99,7 @@ test("persisted runs resolve their full ID when folders use a short suffix", asy
 test("run reports finalize once at a terminal atomic commit point", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-finalize-"));
   const run = job(join(root, "run"));
+  run.retryOf = "immutable-source-run";
   try {
     await writeFramePng(run, Buffer.from("frame").toString("base64"), "before finish");
     await assert.rejects(access(join(run.runDir!, "run.json")));
@@ -106,6 +107,7 @@ test("run reports finalize once at a terminal atomic commit point", async () => 
     const persisted = await persistRun(run);
     assert.equal(persisted.status, "ok");
     assert.equal(persisted.schemaVersion, 5);
+    assert.equal(persisted.retryOf, "immutable-source-run");
     await access(join(run.runDir!, ".complete"));
     const onDisk = JSON.parse(await readFile(join(run.runDir!, "run.json"), "utf8"));
     assert.deepEqual(onDisk, JSON.parse(JSON.stringify(persisted)));

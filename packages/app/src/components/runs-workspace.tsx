@@ -81,6 +81,7 @@ export function RunsWorkspace(props: {
   const [visualLoading, setVisualLoading] = createSignal(false);
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [visualPolicyBusy, setVisualPolicyBusy] = createSignal(false);
+  const [repairingCheckId, setRepairingCheckId] = createSignal<string | undefined>();
   const [matrixExporting, setMatrixExporting] = createSignal(false);
   const [openMatrixWhenReady, setOpenMatrixWhenReady] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
@@ -253,6 +254,37 @@ export function RunsWorkspace(props: {
         action === "approve" ? "success" : "info",
       );
     }
+  }
+  async function retryFailedCheck(runId: string, checkId: string): Promise<void> {
+    if (repairingCheckId()) return;
+    setRepairingCheckId(checkId);
+    try {
+      const result = await server.runAction("run.repair.retry", { runId, checkId });
+      const jobId = typeof result.job.id === "string" ? result.job.id : undefined;
+      if (jobId) {
+        setSelectedId(jobId);
+        server.setSelectedJobId(jobId);
+      }
+      await server.refreshJobs();
+      toast("Retrying only this check", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setRepairingCheckId(undefined);
+    }
+  }
+  function repairTestFromRun(job: JobInfo): void {
+    const plan = [...(job.artifacts ?? [])]
+      .reverse()
+      .find((artifact) => artifact.kind === "app-map-test-plan")?.data as
+      | { test?: { id?: unknown } }
+      | undefined;
+    const testId = typeof plan?.test?.id === "string" ? plan.test.id : undefined;
+    if (!testId) {
+      toast("This run does not identify a saved Test to repair", "warning");
+      return;
+    }
+    props.onOpenTest(testId);
   }
   async function updateVisualPolicy(
     regions: import("@relay/protocol").VisualRegion[],
@@ -1025,6 +1057,13 @@ export function RunsWorkspace(props: {
                       selectRunStep(stepIndexForMatrixCapture(job(), index));
                       setTab("timeline");
                     }}
+                    onRetryCheck={
+                      job().persisted
+                        ? (checkId) => void retryFailedCheck(job().id, checkId)
+                        : undefined
+                    }
+                    onRepairTest={job().persisted ? () => repairTestFromRun(job()) : undefined}
+                    retryingCheckId={repairingCheckId()}
                   />
                 </Show>
                 <Show when={tab() === "logs"}>

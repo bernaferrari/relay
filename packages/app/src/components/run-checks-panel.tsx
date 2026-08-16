@@ -18,6 +18,9 @@ export function RunChecksPanel(props: {
   job: JobInfo;
   frameSource: (frame: CampaignCheckResult["frames"][number]) => string;
   onOpenFrame: (index: number) => void;
+  onRetryCheck?: (checkId: string) => void;
+  onRepairTest?: (checkId: string) => void;
+  retryingCheckId?: string;
 }) {
   const evaluation = createMemo(() =>
     (props.job.artifacts ?? []).filter((item) => EVALUATION_KINDS.has(item.kind)),
@@ -31,6 +34,9 @@ export function RunChecksPanel(props: {
         job={props.job}
         frameSource={props.frameSource}
         onOpenFrame={props.onOpenFrame}
+        onRetryCheck={props.onRetryCheck}
+        onRepairTest={props.onRepairTest}
+        retryingCheckId={props.retryingCheckId}
       />
       <Show when={evaluation().length > 0 || !hasCampaignChecks()}>
         <EvidenceList

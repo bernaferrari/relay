@@ -32,8 +32,10 @@ export const relayMcpResourceUris = {
   testOutline: "relay://app-maps/{appMapId}/tests/{testId}/outline",
   testOutlinePage: "relay://app-maps/{appMapId}/tests/{testId}/outline/{page}",
   runs: "relay://runs",
+  repairs: "relay://repairs",
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
+  repair: "relay://runs/{runId}/checks/{checkId}/repair",
   authoringSessions: "relay://authoring-sessions",
   authoringSession: "relay://authoring-sessions/{sessionId}",
   targets: "relay://targets",
@@ -498,6 +500,44 @@ export function registerRelayResources(
       }
     },
   );
+  server.registerResource(
+    "repair",
+    new ResourceTemplate(relayMcpResourceUris.repair, { list: undefined }),
+    {
+      title: "Relay Failed Check Repair",
+      description:
+        "One exact failed-check package with immutable lineage, selector attempts, observed state, and deliberate repair actions.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const runId = variable(variables, "runId", uri);
+      const checkId = variable(variables, "checkId", uri);
+      try {
+        const result = await invoker.invoke(
+          "run.repair.get",
+          { runId, checkId },
+          { signal: context.mcpReq.signal },
+        );
+        const repair = object(result).repair;
+        const compact = object(repair);
+        return readResult(uri, scope.projectId, "repair", result, {
+          repair: {
+            id: compact.id,
+            status: compact.status,
+            defaultAction: compact.defaultAction,
+            source: compact.source,
+            expected: compact.expected,
+            observed: compact.observed,
+            lineage: compact.lineage,
+            actions: compact.actions,
+            evidenceTruncated: true,
+          },
+        });
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+    },
+  );
   registerStaticResource(
     server,
     "app-maps",
@@ -520,6 +560,14 @@ export function registerRelayResources(
     "Relay Runs",
     relayMcpResourceUris.runs,
     (signal) => invokeRead(invoker, "run.list", {}, signal),
+    scope,
+  );
+  registerStaticResource(
+    server,
+    "repairs",
+    "Relay failed-check repair queue",
+    relayMcpResourceUris.repairs,
+    (signal) => invokeRead(invoker, "run.repair.list", {}, signal),
     scope,
   );
   registerStaticResource(

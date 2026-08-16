@@ -400,6 +400,31 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
 
   ...runEvidenceCommandDescriptors,
   mapped(
+    "run.repair.list",
+    path("repair list", [], undefined, {
+      summary: "List addressable failed-check repair targets",
+    }),
+    path("run repair list"),
+  ),
+  mapped(
+    "run.repair.get",
+    path("repair get", ["runId", "checkId"], undefined, {
+      summary: "Inspect one complete failed-check repair package",
+    }),
+    path("run repair get", ["runId", "checkId"]),
+  ),
+  mapped(
+    "run.repair.retry",
+    path("repair retry", ["runId", "checkId"], undefined, {
+      summary: "Retry only one failed check from immutable run evidence",
+      behavior: "job-start-watch",
+      note: "Creates a new lineage-linked run. The original run and saved Test remain unchanged.",
+    }),
+    path("run repair retry", ["runId", "checkId"], undefined, {
+      behavior: "job-start-watch",
+    }),
+  ),
+  mapped(
     "run.replay",
     path("run replay", ["runId"], undefined, {
       summary: "Replay a persisted run's recorded device actions",

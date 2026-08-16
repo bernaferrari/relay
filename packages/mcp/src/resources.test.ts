@@ -80,6 +80,16 @@ function fixtureResult(operationId: string): unknown {
     "run.list": { runs: [{ id: "run-1", status: "passed" }] },
     "run.get": { run: { id: "run-1", status: "passed", artifacts: [] } },
     "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
+    "run.repair.list": {
+      repairs: [{ id: "run-1:usage", source: { runId: "run-1", checkId: "usage" } }],
+    },
+    "run.repair.get": {
+      repair: {
+        id: "run-1:usage",
+        source: { runId: "run-1", checkId: "usage" },
+        actions: [{ kind: "continue-and-report" }],
+      },
+    },
     "authoring.session.list": { sessions: [session] },
     "authoring.session.get": { session },
     "target.devices.list": {
@@ -190,6 +200,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       relayMcpResourceUris.variables,
       relayMcpResourceUris.appMaps,
       relayMcpResourceUris.runs,
+      relayMcpResourceUris.repairs,
       relayMcpResourceUris.authoringSessions,
       relayMcpResourceUris.targets,
       "relay://app-maps/map-1",
@@ -214,6 +225,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
+        relayMcpResourceUris.repair,
         relayMcpResourceUris.appMap,
         relayMcpResourceUris.tests,
         relayMcpResourceUris.test,
@@ -305,10 +317,29 @@ test("reads the configured project and detail resources through Relay queries", 
       updatedAt: 200,
       value: [{ id: "thinking-level", kind: "list", name: "thinking_level" }],
     });
+    const repairs = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.repairs }),
+    );
+    assert.equal(
+      (JSON.parse(repairs.text) as { data: { repairs: Array<{ id: string }> } }).data.repairs[0]
+        ?.id,
+      "run-1:usage",
+    );
+    const repair = resourceContent(
+      await session.request("resources/read", {
+        uri: "relay://runs/run-1/checks/usage/repair",
+      }),
+    );
+    assert.equal(
+      (JSON.parse(repair.text) as { data: { repair: { id: string } } }).data.repair.id,
+      "run-1:usage",
+    );
     assert.deepEqual(calls, [
       { operationId: "project.list", input: {} },
       { operationId: "app-map.get", input: { appMapId: "map-1" } },
       { operationId: "workspace.variables.get", input: {} },
+      { operationId: "run.repair.list", input: {} },
+      { operationId: "run.repair.get", input: { runId: "run-1", checkId: "usage" } },
     ]);
   } finally {
     await session.close();

@@ -88,6 +88,8 @@ test("operation roles keep viewing, authoring, execution, and administration dis
   assert.equal(operationDefinition("app-map.update").minimumRole, "author");
   assert.equal(operationDefinition("corpus.create").minimumRole, "author");
   assert.equal(operationDefinition("job.start").minimumRole, "runner");
+  assert.equal(operationDefinition("run.repair.get").minimumRole, "viewer");
+  assert.equal(operationDefinition("run.repair.retry").minimumRole, "runner");
   assert.equal(operationDefinition("corpus.start").minimumRole, "runner");
   assert.equal(operationDefinition("authoring.session.interact").minimumRole, "runner");
   assert.equal(operationDefinition("authoring.take.replay").minimumRole, "runner");
@@ -99,6 +101,20 @@ test("operation roles keep viewing, authoring, execution, and administration dis
   assert.equal(operationDefinition("run.share.create").minimumRole, "admin");
   assert.equal(operationDefinition("run.share.revoke").minimumRole, "admin");
   assert.equal(operationDefinition("target.delete").minimumRole, "admin");
+});
+
+test("selective repair operations require one exact immutable run check", () => {
+  assert.deepEqual(
+    operationDefinition("run.repair.get").input.parse({ runId: "run-1", checkId: "usage" }),
+    { runId: "run-1", checkId: "usage" },
+  );
+  assert.deepEqual(operationDefinition("run.repair.list").input.parse({ limit: "25" }), {
+    limit: 25,
+  });
+  assert.throws(
+    () => operationDefinition("run.repair.retry").input.parse({ runId: "run-1" }),
+    /checkId/,
+  );
 });
 
 test("map teach accepts a point tap without expectedRevision", () => {

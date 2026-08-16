@@ -246,6 +246,20 @@ test("persisted run replay has one friendly watched command", () => {
   });
 });
 
+test("one failed check is inspectable and selectively retryable", () => {
+  assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
+    operationId: "run.repair.retry",
+    commandPath: "repair retry",
+    input: { runId: "run-1", checkId: "usage" },
+    behavior: "job-start-watch",
+  });
+  assert.deepEqual(resolveCommand(["repair", "get", "run-1", "usage"]), {
+    operationId: "run.repair.get",
+    commandPath: "repair get",
+    input: { runId: "run-1", checkId: "usage" },
+  });
+});
+
 test("unknown session verbs point at family help instead of four arbitrary commands", () => {
   assert.throws(
     () => resolveCommand(["session", "reploy", "authoring-1"]),

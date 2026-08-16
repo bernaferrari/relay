@@ -156,5 +156,23 @@ test("renders partial campaign outcomes with exact evidence and no invented sele
   expect(root.querySelectorAll("summary").length).toBe(5);
 
   dispose();
+  const retryCheck = vi.fn();
+  const repairTest = vi.fn();
+  const disposeActions = render(
+    () => <CampaignCheckResults job={job} onRetryCheck={retryCheck} onRepairTest={repairTest} />,
+    root,
+  );
+  const retry = root.querySelector<HTMLButtonElement>(
+    'button[aria-label="Retry only failed check: Usage"]',
+  );
+  expect(retry?.textContent).toContain("Retry this check");
+  expect(root.textContent).toContain("Default: continue and report");
+  retry?.click();
+  expect(retryCheck).toHaveBeenCalledWith("usage");
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes("Repair Test"))
+    ?.click();
+  expect(repairTest).toHaveBeenCalledWith("usage");
+  disposeActions();
   root.remove();
 });

@@ -32,6 +32,7 @@ import type {
   TargetWorkerStatus,
 } from "./target-runtime.js";
 import type { RunReview } from "./run-review.js";
+import type { CampaignRepairTarget, CampaignRepairTargetSummary } from "./campaign-repair.js";
 import { runShareOperationDefinitions, type RunShareOperationMap } from "./run-share.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
@@ -453,6 +454,18 @@ type SpecificOperationMap = {
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": { input: { limit?: number; appMapId?: string }; output: { runs: RunSummaryDto[] } };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
+  "run.repair.list": {
+    input: { limit?: number };
+    output: { repairs: CampaignRepairTargetSummary[] };
+  };
+  "run.repair.get": {
+    input: { runId: string; checkId: string };
+    output: { repair: CampaignRepairTarget };
+  };
+  "run.repair.retry": {
+    input: { runId: string; checkId: string };
+    output: { repair: CampaignRepairTarget; job: OperationRecord };
+  };
   "run.review": {
     input: { runId: string; action: "approve" | "reject"; note?: string };
     output: { run: OperationRecord; review: RunReview };
@@ -1071,6 +1084,71 @@ const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) =>
 const runIdInputParser = objectParser<{ runId: string }>("run input", (input) => {
   string(input.runId, "run id");
 });
+
+const runRepairInputParser = objectParser<OperationInput<"run.repair.get">>(
+  "run repair input",
+  (input) => {
+    string(input.runId, "run repair runId");
+    string(input.checkId, "run repair checkId");
+  },
+);
+
+const runRepairListInputParser = objectParser<OperationInput<"run.repair.list">>(
+  "run repair list input",
+  (input) => {
+    if (input.limit === undefined) return;
+    const value =
+      typeof input.limit === "string"
+        ? Number(input.limit)
+        : number(input.limit, "run repair list limit");
+    if (!Number.isInteger(value) || value < 1 || value > 500) {
+      fail("run repair list limit", "must be an integer between 1 and 500");
+    }
+    input.limit = value;
+  },
+);
+
+function assertRepairTarget(value: unknown, label: string): void {
+  const target = record(value, label);
+  if (target.schemaVersion !== 1) fail(`${label} schemaVersion`, "must be 1");
+  string(target.id, `${label} id`);
+  const source = record(target.source, `${label} source`);
+  string(source.runId, `${label} source runId`);
+  string(source.checkId, `${label} source checkId`);
+  if (!Array.isArray(target.actions)) fail(`${label} actions`, "must be an array");
+}
+
+function assertRepairSummary(value: unknown, label: string): void {
+  const target = record(value, label);
+  if (target.schemaVersion !== 1) fail(`${label} schemaVersion`, "must be 1");
+  string(target.id, `${label} id`);
+  string(target.error, `${label} error`);
+  number(target.priorAttemptCount, `${label} priorAttemptCount`);
+  const source = record(target.source, `${label} source`);
+  string(source.runId, `${label} source runId`);
+  string(source.checkId, `${label} source checkId`);
+}
+
+const runRepairListOutputParser = objectParser<OperationOutput<"run.repair.list">>(
+  "run repair list response",
+  (input) => {
+    if (!Array.isArray(input.repairs)) fail("run repairs", "must be an array");
+    input.repairs.forEach((repair, index) => assertRepairSummary(repair, `run repair ${index}`));
+  },
+);
+
+const runRepairOutputParser = objectParser<OperationOutput<"run.repair.get">>(
+  "run repair response",
+  (input) => assertRepairTarget(input.repair, "run repair"),
+);
+
+const runRepairRetryOutputParser = objectParser<OperationOutput<"run.repair.retry">>(
+  "run repair retry response",
+  (input) => {
+    assertRepairTarget(input.repair, "run repair");
+    record(input.job, "run repair job");
+  },
+);
 
 const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
   "run evidence input",
@@ -2533,6 +2611,36 @@ export const operationDefinitions = [
     category: "evidence",
     input: runIdInputParser,
   }),
+  query("run.repair.list", "List failed check repair targets", "/runs/repairs", {
+    category: "evidence",
+    input: runRepairListInputParser,
+    output: runRepairListOutputParser,
+  }),
+  query(
+    "run.repair.get",
+    "Get one failed check repair target",
+    "/runs/:runId/checks/:checkId/repair",
+    {
+      category: "evidence",
+      input: runRepairInputParser,
+      output: runRepairOutputParser,
+    },
+  ),
+  command(
+    "run.repair.retry",
+    "Retry only one failed check",
+    "POST",
+    "/runs/:runId/checks/:checkId/retry",
+    {
+      category: "execution",
+      input: runRepairInputParser,
+      output: runRepairRetryOutputParser,
+      progress: true,
+      cancellable: true,
+      lease: "exclusive",
+      targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
+    },
+  ),
   command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {
     category: "evidence",
     confirmation: "confirm",
