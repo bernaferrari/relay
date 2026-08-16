@@ -430,14 +430,18 @@ async function tapTarget(
   let named = resolveNamedControl(nodes, namedTarget);
   if (
     !named &&
-    verifiedNodes?.length &&
     selectedPlatform() === "android" &&
     (target.identifier || target.label || target.text)
   ) {
-    // A verified checkpoint can become stale between asynchronous product
-    // transitions. Refresh once before deciding the semantic target is gone.
-    nodes = await snapshot(device);
-    named = resolveNamedControl(nodes, namedTarget);
+    // Compose can publish the destination shell before its actionable rows.
+    // Wait for a few fresh accessibility generations; never convert absence
+    // into an unreviewed coordinate tap.
+    for (let attempt = 0; attempt < 3 && !named; attempt += 1) {
+      await cooperativeCheckpoint();
+      await sleep(150, device);
+      nodes = await snapshot(device);
+      named = resolveNamedControl(nodes, namedTarget);
+    }
   }
   if (named) {
     try {

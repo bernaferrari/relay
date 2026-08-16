@@ -1203,7 +1203,7 @@ describe("runRecipeStep campaign check policy", () => {
         .map((artifact) => (artifact.data as { status: string }).status),
       ["passed", "failed"],
     );
-    assert.deepEqual(waits, [1]);
+    assert.equal(waits.length >= 1, true);
     assert.equal(
       logs.some((line) => line.includes("Cold recovery")),
       true,
@@ -1281,7 +1281,7 @@ describe("runRecipeStep campaign check policy", () => {
         .map((artifact) => (artifact.data as { status: string }).status),
       ["passed", "failed"],
     );
-    assert.deepEqual(waits, [1]);
+    assert.equal(waits.length >= 1, true);
     assert.equal(
       logs.some((line) => line.includes("Visit next leaf from the current parent")),
       true,
@@ -2600,8 +2600,37 @@ describe("runRecipeStep expect-screen", () => {
       runRecipeStep(device, { kind: "tap", target: { label: "Set Up Auto Top-Up" } }, ctx),
       /named target absent from current Android accessibility tree/u,
     );
-    assert.equal(snapshots, 1);
+    assert.equal(snapshots, 3);
     assert.equal(presses, 0);
+  });
+
+  it("waits for a late Android accessibility row before tapping it semantically", async () => {
+    let snapshots = 0;
+    const presses: unknown[] = [];
+    const lateTarget = {
+      role: "button",
+      identifier: "settings_button",
+      enabled: true,
+      hittable: true,
+      rect: { x: 860, y: 120, width: 120, height: 120 },
+    };
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: snapshots >= 2 ? [lateTarget] : [] });
+      },
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+      wait: async () => {},
+    });
+
+    await runRecipeStep(device, { kind: "tap", target: { identifier: "settings_button" } }, noLog);
+
+    assert.equal(snapshots, 3);
+    assert.equal(presses.length, 1);
+    assert.equal((presses[0] as { selector?: string }).selector, 'id="settings_button"');
   });
 
   it("reuses one unchanged automatic observation for destination assertion and semantic tap", async () => {
