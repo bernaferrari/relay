@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
   type NetworkDumpInput,
@@ -8,6 +9,7 @@ import {
   type RuntimeOperationFact,
   type RuntimeOwnerRef,
 } from '@agent-device/contracts/platform';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../../__tests__/test-utils/runtime-operation-facts.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { BindDeviceRuntime } from '../../request-runtime-binding.ts';
 
@@ -46,10 +48,6 @@ export function createNetworkRuntime(
             appLogStart: unavailable,
             appLogReattach: unavailable,
             appLogCleanup: unavailable,
-            deployApp: unavailable,
-            materializeAppSource: unavailable,
-            deployMaterializedApp: unavailable,
-            sendPushNotification: unavailable,
             appState: unavailable,
             networkDump: networkFact,
             screenRecordingStart: unavailable,
@@ -59,7 +57,18 @@ export function createNetworkRuntime(
             bootTarget: unavailable,
             bootTargetHeadless: unavailable,
             listApps: unavailable,
-            shutdownTarget: unavailable,
+            ...unavailableDeploymentAndShutdownOperationFacts,
+            ...applicationLifecycleOperationFacts({
+              resolveOpenTarget: unavailable,
+              prepareApplicationOpen: unavailable,
+              openApplication: unavailable,
+              applyRuntimeHints: unavailable,
+              clearRuntimeHints: unavailable,
+              closeApplication: unavailable,
+              finalizeApplicationClose: unavailable,
+              prepareAppleRunner: unavailable,
+              configureProviderPortReverse: unavailable,
+            }),
           },
         },
         operations: networkFact.available ? { networkDump } : {},

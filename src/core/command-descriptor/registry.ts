@@ -23,6 +23,10 @@ import {
   networkDumpUse,
   readyMaterializeAndDeployAppUse,
   readySendPushNotificationUse,
+  openApplicationRuntimePlanUses,
+  closeApplicationRuntimePlanUses,
+  prepareAppleRunnerRuntimeUse,
+  runtimeCommandRuntimePlanUses,
   screenRecordingRuntimePlanUses,
   shutdownTargetUse,
 } from '@agent-device/contracts/platform';
@@ -216,11 +220,6 @@ const ALL_DEVICE_COMMAND_CAPABILITY = {
   apple: APPLE_SIM_AND_DEVICE,
   android: ANDROID_ALL,
   linux: LINUX_DEVICE,
-} satisfies CommandCapability;
-const APP_RUNTIME_CAPABILITY = ALL_DEVICE_COMMAND_CAPABILITY;
-const VEGA_APP_RUNTIME_CAPABILITY = {
-  ...APP_RUNTIME_CAPABILITY,
-  vega: VEGA_VVD,
 } satisfies CommandCapability;
 // ---------------------------------------------------------------------------
 // ADR 0019 §6 platform-execution modes. Every descriptor declares one; there is
@@ -628,14 +627,19 @@ export const RAW_COMMAND_DESCRIPTORS = [
   {
     name: 'runtime',
     ...(ownerFilesEnabled
-      ? { ownerFiles: ['src/daemon/handlers/session-runtime-command.ts'] as const }
+      ? {
+          ownerFiles: [
+            'src/daemon/handlers/session-runtime-command.ts',
+            'src/daemon/handlers/session-runtime-port-reverse.ts',
+          ] as const,
+        }
       : {}),
     catalog: { group: 'internal' },
     recordsSessionAction: false,
     daemon: { route: 'session', refFrameEffect: 'preserve' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: runtimeCommandRuntimePlanUses },
   },
   {
     name: 'clipboard',
@@ -758,11 +762,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
       allowSessionlessDefaultDevice: allowAnyDeviceSessionless,
       saveScriptFlagOwner: true,
     },
-    dispatch: {},
-    capability: VEGA_APP_RUNTIME_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: openApplicationRuntimePlanUses },
   },
   {
     name: 'prepare',
@@ -770,9 +772,6 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     recordsSessionAction: false,
     daemon: { route: 'session', refFrameEffect: 'preserve' },
-    // `ios-runner` has no Android implementation; admission must agree with
-    // the handler rather than advertising a command that always rejects later.
-    capability: { apple: APPLE_SIM_AND_DEVICE, android: {}, linux: LINUX_NONE },
     // Runner warm-up builds are the longest fixed envelope; --timeout overrides.
     timeoutPolicy: {
       budget: { source: 'flag' },
@@ -781,7 +780,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     },
     batchable: false,
     mcpExposed: false,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', use: prepareAppleRunnerRuntimeUse },
   },
   {
     name: 'batch',
@@ -805,11 +804,9 @@ export const RAW_COMMAND_DESCRIPTORS = [
       allowInvalidRecording: true,
       saveScriptFlagOwner: true,
     },
-    dispatch: {},
-    capability: VEGA_APP_RUNTIME_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: LEGACY_PLATFORM_EXECUTION,
+    platformExecution: { kind: 'device-runtime', uses: closeApplicationRuntimePlanUses },
   },
 
   // -- snapshot (route: snapshot) --

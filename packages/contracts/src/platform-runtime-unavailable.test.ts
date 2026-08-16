@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { localRuntimeOwner, providerRuntimeOwner } from './platform-runtime.ts';
-import {
-  createUnavailablePlatformRuntimeBinding,
-  createUnavailablePlatformRuntimeOwner,
-} from './platform-runtime-unavailable.ts';
+import { providerRuntimeOwner } from './platform-runtime.ts';
+import { applicationLifecycleOperationFacts } from './application-lifecycle-runtime.ts';
+import { createUnavailablePlatformRuntimeBinding } from './platform-runtime-unavailable.ts';
 
 const device = {
   id: 'linux-host',
@@ -14,61 +12,16 @@ const device = {
   state: 'booted',
 } as const;
 
-const scope = {
-  signal: new AbortController().signal,
-  diagnostics: { emit: () => undefined },
-  progress: { report: () => undefined },
-};
-
-test('builds one complete combined unavailable owner without fake operations', async () => {
-  const owner = createUnavailablePlatformRuntimeOwner('linux', {
-    appLog: { available: false, reason: 'unsupported-platform-leaf' },
-    network: { available: false, reason: 'owner-capability-missing' },
-  });
-  const binding = await owner.bind({ device, intent: { kind: 'ordinary' }, scope });
-
-  assert.deepEqual(Object.keys(binding.facts.operations).sort(), [
-    'appLogCleanup',
-    'appLogDoctor',
-    'appLogInspect',
-    'appLogReattach',
-    'appLogStart',
-    'appState',
-    'bootTarget',
-    'bootTargetHeadless',
-    'deployApp',
-    'deployMaterializedApp',
-    'ensureReady',
-    'listApps',
-    'materializeAppSource',
-    'networkDump',
-    'screenRecordingCleanup',
-    'screenRecordingReattach',
-    'screenRecordingStart',
-    'sendPushNotification',
-    'shutdownTarget',
-  ]);
-  assert.deepEqual(binding.operations, {});
-  await binding[Symbol.asyncDispose]();
-});
-
-test('rejects a planted wrong exact owner before producing a binding', async () => {
-  const owner = createUnavailablePlatformRuntimeOwner('linux', {
-    appLog: { available: false, reason: 'unsupported-platform-leaf' },
-    network: { available: false, reason: 'unsupported-platform-leaf' },
-  });
-  await assert.rejects(
-    owner.bind({
-      device,
-      intent: {
-        kind: 'exact-owner',
-        owner: localRuntimeOwner('vega'),
-        fence: { token: 'token', generation: 1 },
-      },
-      scope,
-    }),
-    /identity does not match/,
-  );
+const lifecycle = applicationLifecycleOperationFacts({
+  resolveOpenTarget: { available: false, reason: 'unsupported-platform-leaf' },
+  prepareApplicationOpen: { available: false, reason: 'unsupported-platform-leaf' },
+  openApplication: { available: false, reason: 'unsupported-platform-leaf' },
+  applyRuntimeHints: { available: false, reason: 'unsupported-platform-leaf' },
+  clearRuntimeHints: { available: false, reason: 'unsupported-platform-leaf' },
+  closeApplication: { available: false, reason: 'unsupported-platform-leaf' },
+  finalizeApplicationClose: { available: false, reason: 'unsupported-platform-leaf' },
+  prepareAppleRunner: { available: false, reason: 'unsupported-platform-leaf' },
+  configureProviderPortReverse: { available: false, reason: 'unsupported-platform-leaf' },
 });
 
 test('generic unavailable binding preserves exact provider ownership and mode', async () => {
@@ -76,6 +29,7 @@ test('generic unavailable binding preserves exact provider ownership and mode', 
   const binding = createUnavailablePlatformRuntimeBinding(device, owner, {
     appLog: { available: false, reason: 'unsupported-provider-mode' },
     network: { available: false, reason: 'owner-capability-missing' },
+    lifecycle,
   });
 
   assert.equal(binding.owner, owner);

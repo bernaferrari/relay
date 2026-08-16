@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   appLogAdmissionUse,
   localRuntimeOwner,
   networkDumpUse,
@@ -10,6 +11,7 @@ import {
   type PlatformRuntimeOperations,
 } from '@agent-device/contracts/platform';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../__tests__/test-utils/runtime-operation-facts.ts';
 import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { acquireDurableCaptureRecoveryAuthorityBeforeDeadline } from '../durable-capture-recovery-authority.ts';
 import { createRequestRuntimeBindings } from '../request-runtime-binding.ts';
@@ -299,7 +301,7 @@ test('request cancellation aborts deferred exact recovery and late publication i
 
 function makeGateway(options: { inspectAvailable?: boolean } = {}) {
   const disposals: string[] = [];
-  const operations: PlatformRuntimeOperations = {
+  const operations: DeviceBinding<PlatformRuntimeOperations>['operations'] = {
     appLogInspect: vi.fn(async () => ({ backend: 'android' as const })),
     appLogDoctor: vi.fn(async () => ({ backend: 'android' as const, checks: {}, notes: [] })),
     appLogStart: vi.fn(async () => {
@@ -307,13 +309,6 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
     }),
     appLogReattach: vi.fn(async () => ({ status: 'missing' as const })),
     appLogCleanup: vi.fn(async () => ({ status: 'already-missing' as const })),
-    deployApp: vi.fn(async () => ({})),
-    materializeAppSource: vi.fn(async () => ({
-      installablePath: '/tmp/materialized-app',
-      cleanup: async () => {},
-    })),
-    deployMaterializedApp: vi.fn(async () => ({})),
-    sendPushNotification: vi.fn(async () => ({})),
     appState: vi.fn(async () => ({
       package: 'com.example.app',
       activity: '.MainActivity',
@@ -341,7 +336,6 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
     bootTarget: vi.fn(async () => device('booted')),
     bootTargetHeadless: vi.fn(async () => device('ready-headless')),
     listApps: vi.fn(async () => []),
-    shutdownTarget: vi.fn(async () => ({ success: true, exitCode: 0, stdout: '', stderr: '' })),
   };
   const facts = {
     device: {
@@ -358,10 +352,6 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
       appLogStart: { available: true } as const,
       appLogReattach: { available: true } as const,
       appLogCleanup: { available: true } as const,
-      deployApp: { available: true } as const,
-      materializeAppSource: { available: true } as const,
-      deployMaterializedApp: { available: true } as const,
-      sendPushNotification: { available: true } as const,
       networkDump: { available: true } as const,
       screenRecordingStart: { available: true } as const,
       screenRecordingReattach: { available: true } as const,
@@ -371,7 +361,18 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
       bootTarget: { available: true } as const,
       bootTargetHeadless: { available: true } as const,
       listApps: { available: true } as const,
-      shutdownTarget: { available: true } as const,
+      ...unavailableDeploymentAndShutdownOperationFacts,
+      ...applicationLifecycleOperationFacts({
+        resolveOpenTarget: unavailableLifecycle,
+        prepareApplicationOpen: unavailableLifecycle,
+        openApplication: unavailableLifecycle,
+        applyRuntimeHints: unavailableLifecycle,
+        clearRuntimeHints: unavailableLifecycle,
+        closeApplication: unavailableLifecycle,
+        finalizeApplicationClose: unavailableLifecycle,
+        prepareAppleRunner: unavailableLifecycle,
+        configureProviderPortReverse: unavailableLifecycle,
+      }),
     },
   };
   const bind = vi.fn(
@@ -386,10 +387,6 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
               appLogStart: operations.appLogStart,
               appLogReattach: operations.appLogReattach,
               appLogCleanup: operations.appLogCleanup,
-              deployApp: operations.deployApp,
-              materializeAppSource: operations.materializeAppSource,
-              deployMaterializedApp: operations.deployMaterializedApp,
-              sendPushNotification: operations.sendPushNotification,
               networkDump: operations.networkDump,
               screenRecordingStart: operations.screenRecordingStart,
               screenRecordingReattach: operations.screenRecordingReattach,
@@ -398,7 +395,6 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
               appState: operations.appState,
               bootTarget: operations.bootTarget,
               bootTargetHeadless: operations.bootTargetHeadless,
-              shutdownTarget: operations.shutdownTarget,
             }
           : operations,
       [Symbol.asyncDispose]: async () => {
@@ -414,6 +410,11 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
   };
   return { gateway, bind, inspectFacts, operations, disposals };
 }
+
+const unavailableLifecycle = Object.freeze({
+  available: false as const,
+  reason: 'owner-capability-missing' as const,
+});
 
 function device(id: string): DeviceInfo {
   return { platform: 'android', id, name: id, kind: 'emulator' };

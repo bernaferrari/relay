@@ -5,7 +5,6 @@ import type {
   LeaseLifecycleProvider,
   ProviderDeviceRuntime,
   ProviderExpiredLeaseRecovery,
-  ProviderPortReverseOptions,
 } from '@agent-device/contracts/device';
 import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
 import type {
@@ -39,6 +38,8 @@ type AppleRunnerScreenRecordingRuntimeExtension = ProviderDeviceRuntime & {
 };
 
 export type ProviderDeviceRuntimeRequestProviders = {
+  /** Eager provider ownership metadata for the platform-runtime composition boundary. */
+  providerRuntimes: readonly ProviderDeviceRuntime[];
   providerRuntimeIds: readonly string[];
   providerRuntimeRequiredIds: readonly string[];
   recoverableProviderIds: readonly string[];
@@ -84,17 +85,6 @@ export function isActiveProviderDevice(device: DeviceInfo): boolean {
   return getActiveProviderDeviceRuntimes().some((runtime) => runtime.ownsDevice(device));
 }
 
-export async function configureProviderPortReverse(
-  options: ProviderPortReverseOptions,
-): Promise<Record<string, unknown> | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtimeMatchesProvider(runtime, options.provider)) continue;
-    const result = await runtime.configurePortReverse?.(options);
-    if (result) return result;
-  }
-  return undefined;
-}
-
 function getActiveProviderDeviceRuntimes(): ProviderDeviceRuntime[] {
   return providerDeviceRuntimeScope.getStore() ?? activeProviderDeviceRuntimes;
 }
@@ -106,6 +96,7 @@ export function createProviderDeviceRuntimeRequestProviders(
   assertUniqueProviderRuntimeIds(runtimes);
   const providerRuntimeIds = runtimes.map((runtime) => runtime.provider);
   return {
+    providerRuntimes: Object.freeze([...runtimes]),
     providerRuntimeIds,
     providerRuntimeRequiredIds: uniqueProviderIds([
       ...providerRuntimeIds,

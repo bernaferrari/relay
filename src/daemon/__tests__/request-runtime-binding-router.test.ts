@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { expect, test, vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   type DeviceBinding,
   type DeviceRuntimeGateway,
@@ -9,6 +10,7 @@ import {
 import { createAppLogStartResult, createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { createTestAppLogLiveHandle } from '../../__tests__/test-utils/app-log-live-handle.ts';
 import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../__tests__/test-utils/runtime-operation-facts.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { createRequestHandler } from './test-device-runtime-gateway.ts';
@@ -142,10 +144,6 @@ function makeGateway(disposeError?: Error) {
         appLogStart: { available: true as const },
         appLogReattach: { available: true as const },
         appLogCleanup: { available: true as const },
-        deployApp: unavailableRecording,
-        materializeAppSource: unavailableRecording,
-        deployMaterializedApp: unavailableRecording,
-        sendPushNotification: unavailableRecording,
         appState: { available: false as const, reason: 'owner-capability-missing' as const },
         networkDump: { available: true as const },
         screenRecordingStart: unavailableRecording,
@@ -155,7 +153,18 @@ function makeGateway(disposeError?: Error) {
         bootTarget: { available: true as const },
         bootTargetHeadless: unavailableRecording,
         listApps: unavailableRecording,
-        shutdownTarget: unavailableRecording,
+        ...unavailableDeploymentAndShutdownOperationFacts,
+        ...applicationLifecycleOperationFacts({
+          resolveOpenTarget: unavailableRecording,
+          prepareApplicationOpen: unavailableRecording,
+          openApplication: unavailableRecording,
+          applyRuntimeHints: unavailableRecording,
+          clearRuntimeHints: unavailableRecording,
+          closeApplication: unavailableRecording,
+          finalizeApplicationClose: unavailableRecording,
+          prepareAppleRunner: unavailableRecording,
+          configureProviderPortReverse: unavailableRecording,
+        }),
       },
     },
     operations,

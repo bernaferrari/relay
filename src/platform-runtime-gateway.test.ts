@@ -1,42 +1,62 @@
-import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
-import type { Interactor } from '@agent-device/contracts/interaction';
-import type {
-  DeviceBinding,
-  PlatformRuntimeHost,
-  PlatformRuntimeOperations,
-  PlatformRuntimeOwner,
-  PlatformRequestScope,
-  RuntimeOwnerRef,
-} from '@agent-device/contracts/platform';
+import type { PlatformRuntimeHost, PlatformRuntimeOwner } from '@agent-device/contracts/platform';
 import { providerRuntimeOwner } from '@agent-device/contracts/platform';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { createLimrunRuntime, type LimrunRuntimeDependencies } from '@agent-device/provider-limrun';
+import { createLimrunRuntime } from '@agent-device/provider-limrun';
 import { describe, expect, test, vi } from 'vitest';
 import { handleSessionStateCommands } from './daemon/handlers/session-state.ts';
 import { createRequestRuntimeBindings } from './daemon/request-runtime-binding.ts';
 import { makeSessionStore } from './__tests__/test-utils/store-factory.ts';
 import { withTestDeviceInventory } from './__tests__/test-utils/device-inventory-gateways.ts';
+import { createComposedPlatformRuntimeGateway } from './platform-runtime-gateway.ts';
 import {
-  createComposedPlatformRuntimeGateway,
-  type PlatformRuntimeProviderRegistration,
-} from './platform-runtime-gateway.ts';
-
-const device: DeviceInfo = {
-  platform: 'apple',
-  appleOs: 'ios',
-  id: 'limrun:ios:lease-a',
-  name: 'Provider iOS',
-  kind: 'simulator',
-  target: 'mobile',
-  booted: true,
-};
-const scope: PlatformRequestScope = {
-  signal: new AbortController().signal,
-  diagnostics: { emit: () => {} },
-  progress: { report: () => {} },
-};
+  gatewayFixture as gateway,
+  gatewayFixtureDevice as device,
+  gatewayFixtureScope as scope,
+  LIFECYCLE_FACETS,
+  limrunTestDependencies,
+  providerLifecycleOwnerFixture as providerLifecycleOwner,
+  providerRuntimeFixture as providerRuntime,
+  runtimeOwnerFixture as runtimeOwner,
+} from './platform-runtime-gateway.fixtures.ts';
 
 describe('composed platform runtime gateway', () => {
+  // Which resources need recovering is the host's composition (see
+  // platform-runtime-application-resources.test.ts). The gateway owns only the lazy host load and
+  // the once-per-process shape of each durable phase.
+  test('durable lifecycle phases load the host lazily and run once per process', async () => {
+    const recoverStartupResources = vi.fn(async () => {});
+    const detachForDaemonShutdown = vi.fn(async () => {});
+    const finalizeDaemonShutdown = vi.fn(async () => {});
+    const host = {
+      applicationResources: {
+        recoverStartupResources,
+        detachForDaemonShutdown,
+        finalizeDaemonShutdown,
+      },
+    } as unknown as PlatformRuntimeHost;
+    const loadHost = vi.fn(async () => host);
+    const runtimeGateway = createComposedPlatformRuntimeGateway({
+      modules: new Map(),
+      loadHost,
+    });
+    const lifecycle = runtimeGateway.applicationLifecycle;
+    if (!lifecycle) throw new Error('expected the composed lifecycle gateway');
+    const stateDir = `/tmp/platform-runtime-marker-evidence-${Date.now()}`;
+
+    await lifecycle.recoverStartupResources({ stateDir });
+
+    expect(loadHost).toHaveBeenCalledOnce();
+    expect(recoverStartupResources).toHaveBeenCalledExactlyOnceWith({ stateDir });
+
+    await lifecycle.detachForDaemonShutdown();
+    await lifecycle.detachForDaemonShutdown();
+    await lifecycle.finalizeDaemonShutdown();
+    await lifecycle.finalizeDaemonShutdown();
+
+    expect(detachForDaemonShutdown).toHaveBeenCalledOnce();
+    expect(finalizeDaemonShutdown).toHaveBeenCalledOnce();
+  });
+
   test('inspects only the selected lazy owner and does not bind it', async () => {
     const selectedRef = providerRuntimeOwner('limrun', 'selected');
     const selectedOwner = runtimeOwner({ ref: selectedRef });
@@ -129,7 +149,7 @@ describe('composed platform runtime gateway', () => {
       expect(response?.ok).toBe(false);
       if (response && !response.ok) {
         expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
-        expect(response.error.hint).toMatch(/session is no longer active/i);
+        expect(response.error.hint).toMatch(/matching live provider session/i);
       }
       expect(inspectCount).toBe(1);
       expect(bindCount).toBe(0);
@@ -241,6 +261,40 @@ describe('composed platform runtime gateway', () => {
     expect(localLoad).not.toHaveBeenCalled();
   });
 
+  test.each(LIFECYCLE_FACETS)(
+    'keeps provider-owned unsupported $0 operations closed without loading a local runtime',
+    async (facet, operations) => {
+      const ref = providerRuntimeOwner('webdriver', `unsupported-${facet}`);
+      const owner = providerLifecycleOwner(ref, facet);
+      const localLoad = vi.fn(async () => {
+        throw new Error('local lifecycle fallback must not load');
+      });
+      const registration = providerRuntime({
+        ref,
+        provider: 'webdriver',
+        ownsDevice: () => true,
+        load: async () => owner,
+      });
+      const runtimeGateway = createComposedPlatformRuntimeGateway({
+        modules: new Map([['apple', { family: 'apple', loadRuntime: localLoad }]]),
+        loadHost: async () => ({}) as PlatformRuntimeHost,
+        providerRuntimes: [registration.runtime],
+        providerModules: [registration],
+      });
+
+      const facts = await runtimeGateway.inspectFacts(device);
+      for (const operation of operations) {
+        expect(facts.operations[operation].available).toBe(false);
+      }
+      const binding = await runtimeGateway.bind({ device, intent: { kind: 'ordinary' }, scope });
+      expect(binding.owner).toEqual(ref);
+      for (const operation of operations) {
+        expect(binding.operations[operation]).toBeUndefined();
+      }
+      expect(localLoad).not.toHaveBeenCalled();
+    },
+  );
+
   test('rejects a swapped local module before loading host mechanics', async () => {
     const hostLoad = vi.fn(async () => ({}) as PlatformRuntimeHost);
     const runtimeGateway = createComposedPlatformRuntimeGateway({
@@ -302,143 +356,3 @@ describe('composed platform runtime gateway', () => {
     },
   );
 });
-
-function gateway(registrations: readonly PlatformRuntimeProviderRegistration[]) {
-  return createComposedPlatformRuntimeGateway({
-    modules: new Map(),
-    loadHost: async () => ({}) as PlatformRuntimeHost,
-    providerRuntimes: registrations.map(({ runtime }) => runtime),
-    providerModules: registrations,
-  });
-}
-
-function providerRuntime(options: {
-  ref: RuntimeOwnerRef;
-  provider?: string;
-  ownsDevice?: (device: DeviceInfo) => boolean;
-  mismatch?: 'owner' | 'device' | 'facts';
-  disposed?: () => Promise<void>;
-  load?: () => Promise<PlatformRuntimeOwner>;
-}): PlatformRuntimeProviderRegistration {
-  const owner = runtimeOwner(options);
-  const runtime: ProviderDeviceRuntime = {
-    provider: options.provider ?? 'limrun',
-    leaseLifecycle: {},
-    deviceInventoryProvider: async () => null,
-    ownsDevice: options.ownsDevice ?? (() => true),
-    getInteractor: () => undefined,
-    shutdown: async () => {},
-  };
-  return {
-    runtime,
-    module: {
-      owner: options.ref as Extract<RuntimeOwnerRef, { kind: 'provider-runtime' }>,
-      loadRuntime: options.load ?? (async () => owner),
-    },
-  };
-}
-
-function runtimeOwner(options: {
-  ref: RuntimeOwnerRef;
-  mismatch?: 'owner' | 'device' | 'facts';
-  providerMode?: 'local' | 'transport-composed' | 'provider-runtime';
-  disposed?: () => Promise<void>;
-}): PlatformRuntimeOwner {
-  return {
-    owner: options.ref,
-    ownsDevice: () => true,
-    inspectFacts: async () => binding(options).facts,
-    bind: async () => binding(options),
-    shutdown: async () => {},
-  };
-}
-
-function binding(options: {
-  ref: RuntimeOwnerRef;
-  mismatch?: 'owner' | 'device' | 'facts';
-  providerMode?: 'local' | 'transport-composed' | 'provider-runtime';
-  disposed?: () => Promise<void>;
-}): DeviceBinding<PlatformRuntimeOperations> {
-  const bindingDevice = options.mismatch === 'device' ? { ...device, id: 'wrong' } : device;
-  const bindingOwner =
-    options.mismatch === 'owner' ? providerRuntimeOwner('limrun', 'wrong') : options.ref;
-  return {
-    device: bindingDevice,
-    owner: bindingOwner,
-    facts: {
-      device: {
-        family: bindingDevice.platform,
-        appleOs: bindingDevice.appleOs,
-        kind: bindingDevice.kind,
-        target: bindingDevice.target,
-        providerMode:
-          options.mismatch === 'facts'
-            ? 'transport-composed'
-            : (options.providerMode ?? 'provider-runtime'),
-      },
-      operations: unavailableFacts(),
-    },
-    operations: {},
-    [Symbol.asyncDispose]: options.disposed ?? (async () => {}),
-  };
-}
-
-function unavailableFacts() {
-  const unavailable = { available: false, reason: 'unsupported-provider-mode' } as const;
-  return {
-    appLogInspect: unavailable,
-    appLogDoctor: unavailable,
-    appLogStart: unavailable,
-    appLogReattach: unavailable,
-    appLogCleanup: unavailable,
-    deployApp: unavailable,
-    materializeAppSource: unavailable,
-    deployMaterializedApp: unavailable,
-    sendPushNotification: unavailable,
-    appState: unavailable,
-    networkDump: unavailable,
-    screenRecordingStart: unavailable,
-    screenRecordingReattach: unavailable,
-    screenRecordingCleanup: unavailable,
-    ensureReady: unavailable,
-    bootTarget: unavailable,
-    bootTargetHeadless: unavailable,
-    listApps: unavailable,
-    shutdownTarget: unavailable,
-  };
-}
-
-const limrunTestDependencies = {
-  clientVersion: 'test',
-  android: {
-    createInteractor: () => ({}) as Interactor,
-    createPortReverse: async () => ({
-      ensure: async () => {},
-      remove: async () => {},
-      removeAllOwned: async () => {},
-    }),
-    inferAppName: async () => 'unused',
-    listApps: async () => [],
-    getForegroundApp: async () => undefined,
-    getKeyboardState: async () => ({ visible: false, inputOwner: 'unknown' as const }),
-    dismissKeyboard: async () => ({
-      visible: false,
-      inputOwner: 'unknown' as const,
-      attempts: 0,
-      wasVisible: false,
-      dismissed: false,
-    }),
-    readLogs: async () => '',
-    adbError: async () => {
-      throw new Error('unused');
-    },
-  },
-  host: {
-    runAdb: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
-    archiveDirectory: async () => {},
-  },
-  ios: {
-    resolveAppAlias: async (app: string) => app,
-    readBundleAppName: async () => undefined,
-  },
-} satisfies LimrunRuntimeDependencies;

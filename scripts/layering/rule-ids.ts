@@ -54,18 +54,19 @@ export function duplicateRuleIds(declarations: readonly RuleDeclaration[]): stri
 }
 
 /**
- * Empty, which is the end state: the R11 and R13 collisions this list was opened
- * for are gone (contracts-implementation-authority moved to R18, device-inventory-cutover
- * to R17), so their allowances expired and were deleted with them. Every id now names
- * exactly one rule, and an entry here would admit a collision nobody is fixing.
+ * Collisions that predate this gate. Transitional, and each entry expires on
+ * contact — see `ruleIdCollisionFailures`. Empty is the end state, and the gate
+ * gets there on its own.
+ *
+ * The R11/R13 collisions were retired by the accepted R18 contracts and R17 devices
+ * allocations. New collisions fail closed; there is no transitional allowance left.
  */
 export const KNOWN_RULE_ID_COLLISIONS: readonly string[] = [];
 
 /**
- * Both halves of the transition, because an allowance that outlives the thing
- * it allows fails OPEN: once #1750 renames R11/R13 apart, a list still naming
- * those exact collisions would wave them straight back through if anyone
- * reintroduced them.
+ * Both halves of any transition, because an allowance that outlives the thing
+ * it allows fails OPEN: a list still naming a retired collision would wave it
+ * straight back through if anyone reintroduced it.
  *
  * So an allowance is only valid while its collision is actually present. A
  * collision nobody allowed fails, and an allowance whose collision is gone

@@ -3,9 +3,9 @@ import {
   type SessionCommandInput,
 } from '../session.ts';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
-  type DeviceShutdownCloseCapability,
   type AppDeploymentInput,
   type AppDeploymentResult,
   type DeviceBinding,
@@ -21,6 +21,7 @@ import {
 import type { TargetShutdownResult } from '@agent-device/contracts/device';
 import { deviceShape, isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
 import { beforeEach, vi } from 'vitest';
+import { applicationLifecycleRuntimeFixture } from '../../__tests__/application-lifecycle-runtime-fixture.ts';
 
 const unavailable = Object.freeze({
   available: false,
@@ -38,21 +39,13 @@ export const mockEnsureReadyHeadlessRuntime = vi.fn(
   async (_input: EnsureReadyInput): Promise<DeviceInfo | undefined> => undefined,
 );
 export const mockShutdownTargetRuntime = vi.fn(
-  async (): Promise<TargetShutdownResult | undefined> => undefined,
+  async (): Promise<TargetShutdownResult> => ({
+    success: true,
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+  }),
 );
-export const mockCloseShutdownTarget = vi.fn(
-  async (_device: DeviceInfo): Promise<TargetShutdownResult | undefined> => undefined,
-);
-const mockCloseShutdownCapability: DeviceShutdownCloseCapability = Object.freeze({
-  canShutdownTarget: async (device) => isShutdownDevice(device),
-  shutdownTarget: async (device) =>
-    (await mockCloseShutdownTarget(device)) ?? {
-      success: true,
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    },
-});
 export const mockDeployAppRuntime = vi.fn(
   async (_input: AppDeploymentInput): Promise<AppDeploymentResult> => ({}),
 );
@@ -69,15 +62,20 @@ export const mockPushNotificationRuntime = vi.fn(
   async (_input: PushNotificationInput): Promise<PushNotificationResult> => ({}),
 );
 export const mockBindDeviceRuntime = vi.fn(async (device: DeviceInfo, use) =>
-  narrowDeviceBinding(readinessBinding(device), use),
+  narrowDeviceBinding(await readinessBinding(device), use),
 );
 
 beforeEach(() => {
   mockInspectDeviceRuntimeFacts.mockClear();
   mockEnsureReadyRuntime.mockClear();
   mockEnsureReadyHeadlessRuntime.mockClear();
-  mockShutdownTargetRuntime.mockClear();
-  mockCloseShutdownTarget.mockClear();
+  mockShutdownTargetRuntime.mockReset();
+  mockShutdownTargetRuntime.mockResolvedValue({
+    success: true,
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+  });
   mockDeployAppRuntime.mockReset();
   mockDeployAppRuntime.mockResolvedValue({});
   mockMaterializeAppSourceRuntime.mockReset();
@@ -100,7 +98,6 @@ export function handleSessionCommands(
     ...params,
     inspectFacts: params.inspectFacts ?? mockInspectDeviceRuntimeFacts,
     bindDevice: params.bindDevice ?? mockBindDeviceRuntime,
-    getCloseShutdown: params.getCloseShutdown ?? (async () => mockCloseShutdownCapability),
     reconcileOrphanedDeviceClaim: async () => ({
       status: 'retained',
       reason: 'test-harness-has-no-exact-owner-recovery',
@@ -135,6 +132,17 @@ function readinessFacts(device: DeviceInfo): RuntimeFacts<PlatformRuntimeOperati
       bootTargetHeadless: operationAvailability(headlessAvailable),
       listApps: unavailable,
       shutdownTarget: shutdownAvailable ? available : unavailable,
+      ...applicationLifecycleOperationFacts({
+        resolveOpenTarget: available,
+        prepareApplicationOpen: available,
+        openApplication: available,
+        applyRuntimeHints: available,
+        clearRuntimeHints: available,
+        closeApplication: available,
+        finalizeApplicationClose: available,
+        prepareAppleRunner: device.platform === 'apple' ? available : unavailable,
+        configureProviderPortReverse: unavailable,
+      }),
     },
   };
 }
@@ -149,8 +157,15 @@ function operationAvailability(supported: boolean): typeof available | typeof un
   return supported ? available : unavailable;
 }
 
-function readinessBinding(device: DeviceInfo): DeviceBinding<PlatformRuntimeOperations> {
+async function readinessBinding(
+  device: DeviceInfo,
+): Promise<DeviceBinding<PlatformRuntimeOperations>> {
   const facts = readinessFacts(device);
+  const lifecycle = await applicationLifecycleRuntimeFixture(
+    device,
+    new AbortController().signal,
+    async () => await mockShutdownTargetRuntime(),
+  );
   return {
     device,
     owner: localRuntimeOwner(device.platform),
@@ -201,6 +216,7 @@ function readinessBinding(device: DeviceInfo): DeviceBinding<PlatformRuntimeOper
             sendPushNotification: async (input) => await mockPushNotificationRuntime(input),
           }
         : {}),
+      ...lifecycle,
     },
     [Symbol.asyncDispose]: async () => {},
   };

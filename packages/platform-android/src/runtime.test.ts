@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest';
-import type { PlatformRuntimeHost } from '@agent-device/contracts/platform';
+import type {
+  DeviceBinding,
+  PlatformRuntimeHost,
+  PlatformRuntimeOperations,
+} from '@agent-device/contracts/platform';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { createAndroidPlatformRuntime } from './runtime.ts';
 
@@ -16,17 +20,14 @@ const appStateUnavailable = {
   reason: 'unsupported-device-kind',
   hint: 'Android appstate is supported only for Android emulators and devices.',
 } as const;
+const unknownKindDevice = { ...device, kind: 'unknown' } as unknown as DeviceInfo;
+
 test.each([
   ['emulator', device],
   ['device', { ...device, kind: 'device' as const }],
+  ['unknown', unknownKindDevice],
 ])('classifies the Android %s runtime denominator', async (_name, runtimeDevice) => {
   const listApps = vi.fn(async () => [{ id: 'com.example.app', name: 'Example' }]);
-  const shutdownTarget = vi.fn(async () => ({
-    success: true,
-    exitCode: 0,
-    stdout: '',
-    stderr: '',
-  }));
   const appState = vi.fn(async () => ({
     stdout: 'mCurrentFocus=Window{1 u0 com.example.app/.MainActivity}',
   }));
@@ -49,13 +50,10 @@ test.each([
     },
     deviceReadiness: {
       applePhysical: { ensureConnected: async () => {} },
-      appleAutomation: { keepHot: () => {} },
+      appleAutomation: { keepHot: () => {}, markBooted: () => {} },
       androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
     },
-    deviceShutdown: {
-      apple: { shutdownTarget },
-      android: { shutdownTarget },
-    },
+    localInteractors: { resolve: async () => ({}) },
     screenRecording: {
       android: {
         resolve: async () => ({
@@ -86,14 +84,6 @@ test.each([
   });
   const { facts } = binding;
   expect(facts.device.providerMode).toBe('local');
-  for (const operation of [
-    'deployApp',
-    'materializeAppSource',
-    'deployMaterializedApp',
-    'sendPushNotification',
-  ] as const) {
-    expect(facts.operations[operation]).toEqual({ available: true });
-  }
   expect(facts.operations.networkDump).toEqual({ available: true });
   expect(facts.operations.listApps).toEqual({ available: true });
   expect(facts.operations.screenRecordingStart).toEqual({ available: true });
@@ -103,7 +93,6 @@ test.each([
   expect(facts.operations.ensureReady).toEqual({ available: true });
   expect(facts.operations.bootTarget).toEqual({ available: true });
   expect(facts.operations.bootTargetHeadless.available).toBe(runtimeDevice.kind === 'emulator');
-  assertShutdownFact(facts.operations.shutdownTarget, runtimeDevice);
 
   await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
     id: runtimeDevice.id,
@@ -136,38 +125,13 @@ test.each([
   } else {
     expect(binding.operations.bootTargetHeadless).toBeUndefined();
   }
-
-  await assertShutdownOperation(binding.operations.shutdownTarget, runtimeDevice, shutdownTarget);
 });
-
-function assertShutdownFact(
-  fact: { available: boolean; reason?: string },
-  runtimeDevice: DeviceInfo,
-): void {
-  expect(fact.available).toBe(runtimeDevice.kind === 'emulator');
-  if (runtimeDevice.kind === 'device') {
-    expect(fact).toMatchObject({ reason: 'unsupported-device-kind' });
-  }
-}
-
-async function assertShutdownOperation(
-  operation: (() => Promise<unknown>) | undefined,
-  runtimeDevice: DeviceInfo,
-  shutdownTarget: ReturnType<typeof vi.fn>,
-): Promise<void> {
-  if (runtimeDevice.kind !== 'emulator') {
-    expect(operation).toBeUndefined();
-    return;
-  }
-  await expect(operation?.()).resolves.toMatchObject({ success: true });
-  expect(shutdownTarget).toHaveBeenCalledOnce();
-  expect(shutdownTarget).toHaveBeenCalledWith(runtimeDevice, expect.any(AbortSignal));
-}
 
 test('rejects the non-discovered Android simulator cell for appstate', async () => {
   const runtimeDevice = { ...device, kind: 'simulator' as const };
   const host = {
     processTransports: { resolve: async () => ({ mode: 'local' as const }) },
+    localInteractors: { resolve: async () => ({}) },
     appState: {
       android: { run: async () => ({ stdout: '' }) },
       harmonyos: { run: async () => ({ stdout: '' }) },
@@ -205,32 +169,59 @@ test('rejects the non-discovered Android simulator cell for appstate', async () 
   expect(binding.facts.operations.appState).toEqual(appStateUnavailable);
   expect(binding.operations.appState).toBeUndefined();
 });
+type LegacyLifecycleCell = Readonly<{
+  openTarget: boolean;
+  prepareAppleRunner: boolean;
+  closeTarget: boolean;
+  runtimeHints: boolean;
+  portReverse: boolean;
+}>;
+
 test.each([
-  ['emulator', device, 'local'],
-  ['device', { ...device, kind: 'device' as const }, 'local'],
-  ['emulator through a composed transport', device, 'transport-composed'],
-] as const)(
-  'classifies the Android %s runtime denominator',
-  async (_name, runtimeDevice, providerMode) => {
-    const listApps = vi.fn(async () => [{ id: 'com.example.app', name: 'Example' }]);
+  [
+    'emulator',
+    device,
+    {
+      openTarget: true,
+      prepareAppleRunner: false,
+      closeTarget: true,
+      runtimeHints: true,
+      portReverse: false,
+    },
+  ],
+  [
+    'device',
+    { ...device, kind: 'device' as const },
+    {
+      openTarget: true,
+      prepareAppleRunner: false,
+      closeTarget: true,
+      runtimeHints: true,
+      portReverse: false,
+    },
+  ],
+  [
+    'synthetic simulator',
+    { ...device, id: 'android-simulator', kind: 'simulator' as const },
+    {
+      openTarget: false,
+      prepareAppleRunner: false,
+      closeTarget: false,
+      runtimeHints: false,
+      portReverse: false,
+    },
+  ],
+] satisfies ReadonlyArray<readonly [string, DeviceInfo, LegacyLifecycleCell]>)(
+  'classifies the Android %s lifecycle denominator against the legacy dispatch cell',
+  async (_name, runtimeDevice, legacy) => {
     const host = {
-      commands: {
-        which: async () => 'tool',
-        run: async () => ({ stdout: '1', stderr: '', exitCode: 0 }),
-      },
-      toolchains: { prepare: async () => {} },
-      clock: { now: () => 1, sleep: async () => {} },
-      processTransports: { resolve: async () => ({ mode: providerMode }) },
+      processTransports: { resolve: async () => ({ mode: 'local' as const }) },
       appInventory: {
         apple: { listApps: async () => [] },
-        android: { listApps },
+        android: { listApps: async () => [] },
         harmonyos: { listApps: async () => [] },
       },
-      deviceReadiness: {
-        applePhysical: { ensureConnected: async () => {} },
-        appleAutomation: { keepHot: () => {} },
-        androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
-      },
+      localInteractors: { resolve: async () => ({}) },
       screenRecording: {
         android: {
           resolve: async () => ({
@@ -260,45 +251,34 @@ test.each([
       },
     });
     const { facts } = binding;
-    expect(facts.device.providerMode).toBe(providerMode);
-    for (const operation of [
-      'deployApp',
-      'materializeAppSource',
-      'deployMaterializedApp',
-      'sendPushNotification',
-    ] as const) {
-      expect(facts.operations[operation]).toEqual({ available: true });
-    }
+    expect(facts.device.providerMode).toBe('local');
     expect(facts.operations.networkDump).toEqual({ available: true });
-    expect(facts.operations.listApps).toEqual({ available: true });
     expect(facts.operations.screenRecordingStart).toEqual({ available: true });
     expect(facts.operations.screenRecordingReattach).toEqual({ available: true });
     expect(facts.operations.screenRecordingCleanup).toEqual({ available: true });
     expect(facts.operations.ensureReady).toEqual({ available: true });
     expect(facts.operations.bootTarget).toEqual({ available: true });
     expect(facts.operations.bootTargetHeadless.available).toBe(runtimeDevice.kind === 'emulator');
-
-    await expect(binding.operations.ensureReady?.({})).resolves.toMatchObject({
-      id: runtimeDevice.id,
-      booted: true,
-    });
-    await expect(
-      binding.operations.listApps?.({ device: runtimeDevice, filter: 'all' }),
-    ).resolves.toEqual([{ id: 'com.example.app', name: 'Example' }]);
-    expect(listApps).toHaveBeenCalledWith(runtimeDevice, 'all', expect.any(AbortSignal));
-
-    await expect(binding.operations.bootTarget?.({})).resolves.toMatchObject({
-      id: runtimeDevice.id,
-      booted: true,
-    });
-
-    if (runtimeDevice.kind === 'emulator') {
-      await expect(binding.operations.bootTargetHeadless?.({})).resolves.toMatchObject({
-        id: runtimeDevice.id,
-        booted: true,
-      });
-    } else {
-      expect(binding.operations.bootTargetHeadless).toBeUndefined();
-    }
+    expectLifecycleFacts(binding, legacy);
   },
 );
+
+function expectLifecycleFacts(
+  binding: DeviceBinding<PlatformRuntimeOperations>,
+  legacy: LegacyLifecycleCell,
+): void {
+  const operations = [
+    ['openTarget', ['resolveOpenTarget', 'prepareApplicationOpen', 'openApplication']],
+    ['prepareAppleRunner', ['prepareAppleRunner']],
+    ['closeTarget', ['closeApplication', 'finalizeApplicationClose']],
+    ['runtimeHints', ['applyRuntimeHints', 'clearRuntimeHints']],
+    ['portReverse', ['configureProviderPortReverse']],
+  ] as const;
+  for (const [facet, names] of operations) {
+    for (const name of names) {
+      expect(binding.facts.operations[name].available).toBe(legacy[facet]);
+      if (legacy[facet]) expect(binding.operations[name]).toBeTypeOf('function');
+      else expect(binding.operations[name]).toBeUndefined();
+    }
+  }
+}
