@@ -176,3 +176,94 @@ test("renders partial campaign outcomes with exact evidence and no invented sele
   disposeActions();
   root.remove();
 });
+
+test("renders one shared navigation edge from exact proof and circuit artifacts", () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const reviewRepair = vi.fn();
+  const dependency = {
+    connectionId: "settings-usage",
+    originScreenId: "settings",
+    destination: { kind: "screen", screenId: "usage" },
+  };
+  const job = {
+    id: "run-42",
+    action: "settings-tour",
+    status: "error",
+    queuedAt: 100,
+    persisted: true,
+    logs: [],
+    artifacts: [
+      {
+        kind: "campaign-check-result",
+        capturedAt: 110,
+        data: {
+          id: "usage",
+          title: "Usage",
+          status: "passed",
+          transitionDependencies: [dependency],
+        },
+      },
+      {
+        kind: "campaign-check-result",
+        capturedAt: 120,
+        data: {
+          id: "buy-more",
+          title: "Buy more",
+          status: "blocked",
+          transitionDependencies: [dependency],
+        },
+      },
+      {
+        kind: "campaign-transition-proof",
+        capturedAt: 115,
+        data: {
+          schemaVersion: 1,
+          tokenId: "run-42:settings-usage",
+          connectionId: "settings-usage",
+          originScreenId: "settings",
+          destination: { kind: "screen", screenId: "usage" },
+          checkId: "usage",
+          status: "verified",
+          verifiedAt: 115,
+        },
+      },
+      {
+        kind: "campaign-transition-circuit",
+        capturedAt: 125,
+        data: {
+          schemaVersion: 1,
+          connectionId: "settings-usage",
+          checkId: "usage",
+          status: "open",
+          reason: "Canonical confirmation no longer reaches Usage.",
+          openedAt: 125,
+        },
+      },
+    ],
+  } as JobInfo;
+
+  const dispose = render(
+    () => <CampaignCheckResults job={job} onReviewNavigationRepair={reviewRepair} />,
+    root,
+  );
+
+  expect(root.querySelectorAll('[aria-label="Navigation transition health"] > li')).toHaveLength(1);
+  expect(root.textContent).toContain("settings → usage");
+  expect(root.textContent).toContain("Last verified at usage · 2 dependents");
+  expect(root.textContent).toContain("Blocked");
+  expect(root.textContent).toContain("Canonical confirmation no longer reaches Usage.");
+  const review = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Review repair",
+  );
+  review?.click();
+  expect(reviewRepair).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operationId: "run.repair.get",
+      fixedInput: { runId: "run-42", checkId: "usage" },
+    }),
+  );
+
+  dispose();
+  root.remove();
+});

@@ -54,8 +54,8 @@ export function NavigationTransitionHealth(props: {
           </span>
         </div>
         <span class="text-[9.5px] tabular-nums text-text-weaker">
-          {props.model.counts.proven} proven · {props.model.counts.drifted} drifted ·{" "}
-          {props.model.counts.blocked} blocked
+          {props.model.counts.ready} ready · {props.model.counts.proven} proven ·{" "}
+          {props.model.counts.drifted} drifted · {props.model.counts.blocked} blocked
         </span>
       </header>
       <ol class="m-0 grid list-none gap-1.5 p-0" aria-label="Navigation transition health">

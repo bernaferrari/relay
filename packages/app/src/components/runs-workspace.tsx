@@ -50,6 +50,7 @@ import {
   stepIndexForMatrixCapture,
 } from "../lib/run-matrix-review";
 import { matrixRetryToast, retryProblemMatrix } from "../lib/run-matrix-retry";
+import type { NavigationTransitionRepairEntry } from "../lib/navigation-transition-health";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -285,6 +286,18 @@ export function RunsWorkspace(props: {
       return;
     }
     props.onOpenTest(testId);
+  }
+  async function reviewNavigationRepair(
+    job: JobInfo,
+    repair: NavigationTransitionRepairEntry,
+  ): Promise<void> {
+    if (!job.persisted) return;
+    try {
+      await server.runAction(repair.operationId, repair.fixedInput);
+      repairTestFromRun(job);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   }
   async function updateVisualPolicy(
     regions: import("@relay/protocol").VisualRegion[],
@@ -1063,6 +1076,11 @@ export function RunsWorkspace(props: {
                         : undefined
                     }
                     onRepairTest={job().persisted ? () => repairTestFromRun(job()) : undefined}
+                    onReviewNavigationRepair={
+                      job().persisted
+                        ? (repair) => void reviewNavigationRepair(job(), repair)
+                        : undefined
+                    }
                     retryingCheckId={repairingCheckId()}
                   />
                 </Show>

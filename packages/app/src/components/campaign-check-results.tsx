@@ -6,9 +6,14 @@ import {
   type CampaignCheckResult,
   type CampaignCheckStatus,
 } from "../lib/campaign-check-results";
+import {
+  navigationTransitionHealthFromJob,
+  type NavigationTransitionRepairEntry,
+} from "../lib/navigation-transition-health";
 import { formatReviewTime } from "../lib/run-review-model";
 import type { JobInfo } from "../lib/api-types";
 import { Icon, type IconName } from "./icon";
+import { NavigationTransitionHealth } from "./navigation-transition-health";
 
 const STATUS_PRESENTATION: Record<
   CampaignCheckStatus,
@@ -281,96 +286,108 @@ export function CampaignCheckResults(props: {
   onOpenFrame?: (index: number) => void;
   onRetryCheck?: (checkId: string) => void;
   onRepairTest?: (checkId: string) => void;
+  onReviewNavigationRepair?: (repair: NavigationTransitionRepairEntry) => void;
   retryingCheckId?: string;
 }) {
   const checks = createMemo(() => campaignCheckResults(props.job));
   const counts = createMemo(() => campaignCheckCounts(checks()));
+  const navigation = createMemo(() => navigationTransitionHealthFromJob(props.job));
   return (
-    <Show when={checks().length > 0}>
-      <section class="grid gap-2.5" aria-labelledby="campaign-checks-heading">
-        <header class="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <strong
-              id="campaign-checks-heading"
-              class="block text-[13px] font-semibold text-text-strong"
-            >
-              Campaign checks
-            </strong>
-            <span class="mt-0.5 block text-[10.5px]/[1.4] text-text-weaker">
-              Independent checks keep their own outcome and evidence.
-            </span>
-          </div>
-          <div
-            class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-[9.5px] tabular-nums text-text-weaker"
-            aria-label="Check totals"
-          >
-            <For
-              each={(["passed", "failed", "skipped", "blocked"] as CampaignCheckStatus[]).filter(
-                (item) => counts()[item] > 0,
-              )}
-            >
-              {(item) => (
-                <span>
-                  {counts()[item]} {STATUS_PRESENTATION[item].label.toLocaleLowerCase()}
-                </span>
-              )}
-            </For>
-          </div>
-        </header>
-        <div class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-base">
-          <For each={checks()}>
-            {(check) => {
-              const presentation = () => STATUS_PRESENTATION[check.status];
-              return (
-                <details
-                  class="group border-b border-border-weak-base last:border-0"
-                  open={["failed", "blocked"].includes(check.status)}
+    <Show when={checks().length > 0 || navigation().rows.length > 0}>
+      <section class="grid gap-4" aria-label="Run checks">
+        <Show when={navigation().rows.length > 0}>
+          <NavigationTransitionHealth
+            model={navigation()}
+            onReviewRepair={props.onReviewNavigationRepair}
+          />
+        </Show>
+        <Show when={checks().length > 0}>
+          <div class="grid gap-2.5">
+            <header class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <strong
+                  id="campaign-checks-heading"
+                  class="block text-[13px] font-semibold text-text-strong"
                 >
-                  <summary class="grid min-h-12 cursor-pointer list-none grid-cols-[28px_minmax(0,1fr)_auto_16px] items-center gap-2.5 px-3.5 py-2.5 hover:bg-surface-raised-base-hover focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
-                    <span
-                      class={cn(
-                        "grid size-7 place-items-center rounded-lg",
-                        presentation().surface,
-                        presentation().tone,
-                      )}
-                      aria-hidden="true"
+                  Campaign checks
+                </strong>
+                <span class="mt-0.5 block text-[10.5px]/[1.4] text-text-weaker">
+                  Independent checks keep their own outcome and evidence.
+                </span>
+              </div>
+              <div
+                class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-[9.5px] tabular-nums text-text-weaker"
+                aria-label="Check totals"
+              >
+                <For
+                  each={(
+                    ["passed", "failed", "skipped", "blocked"] as CampaignCheckStatus[]
+                  ).filter((item) => counts()[item] > 0)}
+                >
+                  {(item) => (
+                    <span>
+                      {counts()[item]} {STATUS_PRESENTATION[item].label.toLocaleLowerCase()}
+                    </span>
+                  )}
+                </For>
+              </div>
+            </header>
+            <div class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-base">
+              <For each={checks()}>
+                {(check) => {
+                  const presentation = () => STATUS_PRESENTATION[check.status];
+                  return (
+                    <details
+                      class="group border-b border-border-weak-base last:border-0"
+                      open={["failed", "blocked"].includes(check.status)}
                     >
-                      <Icon name={presentation().icon} size={13} />
-                    </span>
-                    <span class="min-w-0">
-                      <strong class="block truncate text-[11.5px] font-medium text-text-strong">
-                        {check.title}
-                      </strong>
-                      <span
-                        class={cn("mt-0.5 block text-[9.5px] font-medium", presentation().tone)}
-                      >
-                        {presentation().label}
-                      </span>
-                    </span>
-                    <Show when={check.durationMs !== undefined}>
-                      <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
-                        {formatReviewTime(check.durationMs!)}
-                      </span>
-                    </Show>
-                    <Icon
-                      name="chevron-down"
-                      size={12}
-                      class="text-text-weaker transition-transform group-open:rotate-180"
-                    />
-                  </summary>
-                  <CheckDetail
-                    check={check}
-                    frameSource={props.frameSource}
-                    onOpenFrame={props.onOpenFrame}
-                    onRetryCheck={props.onRetryCheck}
-                    onRepairTest={props.onRepairTest}
-                    retrying={props.retryingCheckId === check.id}
-                  />
-                </details>
-              );
-            }}
-          </For>
-        </div>
+                      <summary class="grid min-h-12 cursor-pointer list-none grid-cols-[28px_minmax(0,1fr)_auto_16px] items-center gap-2.5 px-3.5 py-2.5 hover:bg-surface-raised-base-hover focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+                        <span
+                          class={cn(
+                            "grid size-7 place-items-center rounded-lg",
+                            presentation().surface,
+                            presentation().tone,
+                          )}
+                          aria-hidden="true"
+                        >
+                          <Icon name={presentation().icon} size={13} />
+                        </span>
+                        <span class="min-w-0">
+                          <strong class="block truncate text-[11.5px] font-medium text-text-strong">
+                            {check.title}
+                          </strong>
+                          <span
+                            class={cn("mt-0.5 block text-[9.5px] font-medium", presentation().tone)}
+                          >
+                            {presentation().label}
+                          </span>
+                        </span>
+                        <Show when={check.durationMs !== undefined}>
+                          <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+                            {formatReviewTime(check.durationMs!)}
+                          </span>
+                        </Show>
+                        <Icon
+                          name="chevron-down"
+                          size={12}
+                          class="text-text-weaker transition-transform group-open:rotate-180"
+                        />
+                      </summary>
+                      <CheckDetail
+                        check={check}
+                        frameSource={props.frameSource}
+                        onOpenFrame={props.onOpenFrame}
+                        onRetryCheck={props.onRetryCheck}
+                        onRepairTest={props.onRepairTest}
+                        retrying={props.retryingCheckId === check.id}
+                      />
+                    </details>
+                  );
+                }}
+              </For>
+            </div>
+          </div>
+        </Show>
       </section>
     </Show>
   );
