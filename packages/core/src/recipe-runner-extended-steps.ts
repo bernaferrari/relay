@@ -460,7 +460,7 @@ export async function runCampaignCheck(
   device: Device,
   step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
   ctx: RecipeStepContext,
-  execute: (recoveryRecipeId?: string) => Promise<void>,
+  execute: () => Promise<void>,
   options: { allowDefer?: boolean } = {},
 ): Promise<void> {
   const startedAt = now();
@@ -486,12 +486,7 @@ export async function runCampaignCheck(
     return;
   }
   try {
-    const restoreItinerary = Boolean(recovery && ctx.runtime?.campaignItineraryDirty);
-    if (restoreItinerary) {
-      ctx.log(`check reset: ${step.check.title} — using canonical recovery path`);
-    }
-    await execute(restoreItinerary ? recovery?.recipeId : undefined);
-    if (restoreItinerary && ctx.runtime) ctx.runtime.campaignItineraryDirty = false;
+    await execute();
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
     ctx.job?.artifacts.push({
@@ -506,10 +501,10 @@ export async function runCampaignCheck(
     const finishedAt = now();
     await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message);
     if (recovery && options.allowDefer !== false) {
-      ctx.runtime!.campaignItineraryDirty = true;
       (ctx.runtime!.deferredCampaignChecks ??= []).push({
         check: structuredClone(step.check),
         error: message,
+        startedAt,
         deferredAt: finishedAt,
       });
       ctx.job?.artifacts.push({
@@ -529,6 +524,40 @@ export async function runCampaignCheck(
       });
     }
     ctx.log(`check failed: ${step.check.title} — ${message}`);
+  }
+}
+
+/** Finish the coverage pass without moving the device again. The original
+ * failure and its evidence become the terminal result; the saved recovery
+ * metadata remains available to an explicit selective-repair run. */
+export function finalizeDeferredCampaignChecks(ctx: RecipeStepContext): void {
+  const queue = ctx.runtime?.deferredCampaignChecks?.splice(0) ?? [];
+  if (queue.length === 0) return;
+  ctx.log(
+    `${queue.length} campaign check${queue.length === 1 ? "" : "s"} queued for selective repair`,
+  );
+  for (const deferred of queue) {
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt: deferred.deferredAt,
+      data: {
+        ...deferred.check,
+        status: "failed",
+        error: deferred.error,
+        startedAt: deferred.startedAt,
+        finishedAt: deferred.deferredAt,
+        selectiveRepair: {
+          status: "pending",
+          ...(deferred.check.recovery
+            ? {
+                recipeId: deferred.check.recovery.recipeId,
+                groupId: deferred.check.recovery.groupId,
+              }
+            : {}),
+        },
+      },
+    });
+    ctx.log(`check needs repair: ${deferred.check.title} — ${deferred.error}`);
   }
 }
 
@@ -566,7 +595,7 @@ export async function retryDeferredCampaignChecks(
       device,
       { kind: "module", recipeId: recovery.recipeId, check: deferred.check },
       ctx,
-      (recipeId) => executeRecipe(recipeId ?? recovery.recipeId),
+      () => executeRecipe(recovery.recipeId),
       { allowDefer: false },
     );
   }
