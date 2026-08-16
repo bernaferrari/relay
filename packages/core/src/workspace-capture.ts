@@ -429,6 +429,43 @@ export type ScreenshotPayload = {
   inspectable?: boolean;
 };
 
+type ScreenshotAttacher = (opts: {
+  jobId?: string;
+  base64: string;
+  caption: string;
+  mime?: string;
+}) => Promise<{ path: string } | null>;
+
+const screenshotAttachments = new WeakMap<ScreenshotPayload, Promise<void>>();
+
+/** Attach an already captured raster without touching the target again.
+ * Attachment is single-flight per ephemeral payload, including rejection. */
+export async function attachScreenshotPayload(
+  screenshot: ScreenshotPayload,
+  jobId: string | undefined,
+  caption: string,
+  attach: ScreenshotAttacher = attachJobFrame,
+): Promise<ScreenshotPayload> {
+  if (screenshot.framePath) return screenshot;
+  let pending = screenshotAttachments.get(screenshot);
+  if (!pending) {
+    pending = (async () => {
+      const frame = await attach({
+        jobId,
+        base64: screenshot.base64,
+        caption,
+        mime: screenshot.mime,
+      });
+      if (!frame) return;
+      screenshot.framePath = frame.path;
+      if (jobId) screenshot.jobId = jobId;
+    })();
+    screenshotAttachments.set(screenshot, pending);
+  }
+  await pending;
+  return screenshot;
+}
+
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
@@ -552,23 +589,13 @@ export async function captureScreenshot(opts?: {
     const serial = targetIdentity();
     publish({ type: "screenshot.captured", at: now(), serial, bytes: buf.byteLength });
 
-    let framePath: string | undefined;
-    let jobId = opts?.jobId;
-    if (!opts?.ephemeral) {
-      const active = opts?.jobId ? { id: opts.jobId } : getActiveJob(serial);
-      if (active) {
-        const frame = await attachJobFrame({
-          jobId: active.id,
-          base64,
-          caption: opts?.caption ?? `screenshot · ${new Date().toISOString()}`,
-        });
-        framePath = frame?.path;
-        jobId = active.id;
-      }
-    }
-
     const proposedRows = proposeVisualRows(buf);
-    return {
+    const active = !opts?.ephemeral
+      ? opts?.jobId
+        ? { id: opts.jobId }
+        : getActiveJob(serial)
+      : undefined;
+    const screenshot: ScreenshotPayload = {
       serial,
       capturedAt: now(),
       mime: "image/png",
@@ -579,9 +606,16 @@ export async function captureScreenshot(opts?: {
       ...(foregroundApp ? { foregroundApp } : {}),
       ...(screenMatch ? { screenMatch } : {}),
       ...(proposedRows.length ? { proposedRows } : {}),
-      jobId,
-      framePath,
+      ...(active?.id || opts?.jobId ? { jobId: active?.id ?? opts?.jobId } : {}),
     };
+    if (active) {
+      await attachScreenshotPayload(
+        screenshot,
+        active.id,
+        opts?.caption ?? `screenshot · ${new Date().toISOString()}`,
+      );
+    }
+    return screenshot;
   });
 }
 

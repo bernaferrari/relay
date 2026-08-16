@@ -21,9 +21,11 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
-import { clearControl, requestResume } from "./control.js";
+import { clearControl, JobCancelledError, requestResume } from "./control.js";
 import { runWithTargetContext } from "./target-context.js";
 import { observeScreenIdentity } from "./screen-identity.js";
+import { runExpectScreenStep } from "./recipe-runner-screen.js";
+import type { ScreenshotPayload } from "./workspace-capture.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "device", platform: "android", serial: "recipe-runner-test" }, () =>
@@ -1425,6 +1427,266 @@ describe("runRecipeStep expect-set", () => {
 describe("runRecipeStep expect-screen", () => {
   const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
   const fingerprint = observeScreenIdentity(nodes).fingerprint;
+
+  const screenshot = (name: string, visualFingerprint?: string): ScreenshotPayload => ({
+    capturedAt: 1,
+    mime: "image/png",
+    base64: Buffer.from(name).toString("base64"),
+    path: `/tmp/${name}.png`,
+    bytes: name.length,
+    ...(visualFingerprint
+      ? {
+          screenMatch: {
+            fingerprint: visualFingerprint,
+            visualFingerprint,
+            matchedScreenId: null,
+            status: "observed" as const,
+          },
+        }
+      : {}),
+  });
+
+  it("starts Android destination semantics and raster together and retains the matched pair", async () => {
+    let resolveNodes!: (value: { nodes: typeof nodes }) => void;
+    let resolveRaster!: (value: ScreenshotPayload) => void;
+    let markSemanticStarted!: () => void;
+    let markRasterStarted!: () => void;
+    const semanticStarted = new Promise<void>((resolve) => {
+      markSemanticStarted = resolve;
+    });
+    const rasterStarted = new Promise<void>((resolve) => {
+      markRasterStarted = resolve;
+    });
+    const semantic = new Promise<{ nodes: typeof nodes }>((resolve) => {
+      resolveNodes = resolve;
+    });
+    const raster = new Promise<ScreenshotPayload>((resolve) => {
+      resolveRaster = resolve;
+    });
+    const device = stubDevice({
+      snapshot: () => {
+        markSemanticStarted();
+        return semantic;
+      },
+    });
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const pending = runWithTargetContext(
+      { kind: "device", platform: "android", serial: "coalesced-observation" },
+      () =>
+        runExpectScreenStep(
+          device,
+          { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+          {
+            log: () => {},
+            job: { id: "coalesced", platform: "android" } as TestJob,
+            runtime,
+          },
+          {
+            captureScreenshot: () => {
+              markRasterStarted();
+              return raster;
+            },
+          },
+        ),
+    );
+
+    await Promise.all([semanticStarted, rasterStarted]);
+    const captured = screenshot("destination");
+    resolveRaster(captured);
+    await Promise.resolve();
+    assert.equal(Boolean(runtime.verifiedScreen), false, "the pair waits for both observations");
+    resolveNodes({ nodes });
+    await pending;
+
+    assert.equal(runtime.verifiedScreen?.screenshot, captured);
+    assert.equal(runtime.verifiedScreen?.nodes, nodes);
+    assert.equal(captured.framePath, undefined, "ephemeral evidence is not attached early");
+    assert.equal(captured.screenMatch?.matchedScreenId, "home");
+  });
+
+  it("discards a mismatched raster and captures a new pair after recovery", async () => {
+    const wrongNodes = [{ role: "heading", label: "Wrong" }];
+    const rasters = [screenshot("wrong"), screenshot("recovered")];
+    let snapshots = 0;
+    let screenshots = 0;
+    let backs = 0;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "coalesced-recovery" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({
+            snapshot: () => {
+              snapshots += 1;
+              return Promise.resolve({ nodes: snapshots === 1 ? wrongNodes : nodes });
+            },
+            press: () => {
+              backs += 1;
+              return Promise.resolve({});
+            },
+          }),
+          {
+            kind: "expect-screen",
+            screenId: "home",
+            screenTitle: "Home",
+            fingerprint,
+            recovery: { strategy: "back", maxAttempts: 1 },
+          },
+          {
+            log: () => {},
+            job: { id: "recovery", platform: "android" } as TestJob,
+            runtime,
+            observeVisualFingerprint: () => Promise.resolve("f".repeat(64)),
+          },
+          {
+            captureScreenshot: async () => rasters[screenshots++]!,
+          },
+        ),
+    );
+
+    assert.equal(snapshots, 3, "Back resolution takes its own fresh semantic snapshot");
+    assert.equal(screenshots, 2);
+    assert.equal(backs, 1);
+    assert.equal(runtime.verifiedScreen?.screenshot, rasters[1]);
+    assert.equal(rasters[0]?.framePath, undefined);
+  });
+
+  it("does not retain or attach a terminally mismatched raster", async () => {
+    const discarded = screenshot("discarded");
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "android", serial: "coalesced-mismatch" },
+        () =>
+          runExpectScreenStep(
+            stubDevice({
+              snapshot: () => Promise.resolve({ nodes: [{ role: "heading", label: "Wrong" }] }),
+            }),
+            {
+              kind: "expect-screen",
+              screenId: "home",
+              screenTitle: "Home",
+              fingerprint,
+              timeoutMs: 0,
+            },
+            {
+              log: () => {},
+              job: { id: "mismatch", platform: "android" } as TestJob,
+              runtime,
+            },
+            { captureScreenshot: async () => discarded },
+          ),
+      ),
+      /not “Home”/u,
+    );
+    assert.equal(runtime.observation, undefined);
+    assert.equal(runtime.verifiedScreen, undefined);
+    assert.equal(discarded.framePath, undefined);
+    assert.equal(discarded.jobId, undefined);
+  });
+
+  it("does not pre-capture raster evidence for source, warm, iOS, or browser expectations", async () => {
+    let screenshots = 0;
+    const cases = [
+      {
+        context: { kind: "device", platform: "android", serial: "source" } as const,
+        job: { id: "source", platform: "android" } as TestJob,
+        id: "relay-source-home",
+      },
+      {
+        context: { kind: "device", platform: "android", serial: "warm" } as const,
+        job: { id: "warm", platform: "android" } as TestJob,
+        id: "home:warm",
+      },
+      {
+        context: { kind: "device", platform: "ios", serial: "ios" } as const,
+        job: { id: "ios", platform: "ios" } as TestJob,
+        id: "home",
+      },
+      {
+        context: { kind: "browser", platform: "browser", targetId: "browser" } as const,
+        job: { id: "browser", platform: "android", targetKind: "browser" } as TestJob,
+        id: "home",
+      },
+    ];
+    for (const item of cases) {
+      await runWithTargetContext(item.context, () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+          {
+            kind: "expect-screen",
+            id: item.id,
+            screenId: "home",
+            screenTitle: "Home",
+            fingerprint,
+          },
+          { log: () => {}, job: item.job, runtime: {} },
+          {
+            captureScreenshot: async () => {
+              screenshots += 1;
+              return screenshot("unexpected");
+            },
+          },
+        ),
+      );
+    }
+    assert.equal(screenshots, 0);
+  });
+
+  it("uses the concurrent raster for visual fallback", async () => {
+    const visualFingerprint = "b".repeat(64);
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "visual-fallback" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) }),
+          {
+            kind: "expect-screen",
+            screenId: "canvas",
+            screenTitle: "Canvas",
+            fingerprint: "a".repeat(64),
+            aliases: [visualFingerprint],
+          },
+          {
+            log: () => {},
+            job: { id: "visual", platform: "android" } as TestJob,
+            runtime,
+          },
+          {
+            captureScreenshot: async () => screenshot("visual", visualFingerprint),
+          },
+        ),
+    );
+    assert.equal(
+      runtime.verifiedScreen?.screenshot?.screenMatch?.visualFingerprint,
+      visualFingerprint,
+    );
+  });
+
+  it("propagates concurrent cancellation after settling both promises", async () => {
+    let resolveNodes!: (value: { nodes: typeof nodes }) => void;
+    const semantic = new Promise<{ nodes: typeof nodes }>((resolve) => {
+      resolveNodes = resolve;
+    });
+    const pending = runWithTargetContext(
+      { kind: "device", platform: "android", serial: "cancelled-observation" },
+      () =>
+        runExpectScreenStep(
+          stubDevice({ snapshot: () => semantic }),
+          { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+          {
+            log: () => {},
+            job: { id: "cancelled", platform: "android" } as TestJob,
+            runtime: {},
+          },
+          { captureScreenshot: () => Promise.reject(new JobCancelledError()) },
+        ),
+    );
+    await Promise.resolve();
+    resolveNodes({ nodes });
+    await assert.rejects(pending, JobCancelledError);
+  });
 
   it("passes when normalized visible semantics reach the expected destination", async () => {
     const lines: string[] = [];
