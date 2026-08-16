@@ -426,8 +426,19 @@ async function tapTarget(
   // An immediately preceding expect-screen already paid for and verified this
   // exact tree. Reuse it until the first mutation; fallback strategies still
   // take a fresh snapshot when the cached tree cannot resolve the target.
-  const nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
-  const named = resolveNamedControl(nodes, namedTarget);
+  let nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
+  let named = resolveNamedControl(nodes, namedTarget);
+  if (
+    !named &&
+    verifiedNodes?.length &&
+    selectedPlatform() === "android" &&
+    (target.identifier || target.label || target.text)
+  ) {
+    // A verified checkpoint can become stale between asynchronous product
+    // transitions. Refresh once before deciding the semantic target is gone.
+    nodes = await snapshot(device);
+    named = resolveNamedControl(nodes, namedTarget);
+  }
   if (named) {
     try {
       if (verifiedNodes && selectedPlatform() === "android") {
@@ -448,6 +459,16 @@ async function tapTarget(
       bounds: named.bounds,
       point: named.point,
     };
+  }
+  if (
+    selectedPlatform() === "android" &&
+    nodes.length > 0 &&
+    !target.point &&
+    (target.identifier || target.label || target.text)
+  ) {
+    throw new Error(
+      `named target absent from current Android accessibility tree (${describeTarget(target)})`,
+    );
   }
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
   let attemptedPoint: { x: number; y: number } | undefined;

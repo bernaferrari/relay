@@ -1205,11 +1205,11 @@ describe("runRecipeStep campaign check policy", () => {
     );
     assert.deepEqual(waits, [1]);
     assert.equal(
-      logs.some((line) => line.includes("Visit next leaf from the current parent")),
+      logs.some((line) => line.includes("Cold recovery")),
       true,
     );
     assert.equal(
-      logs.some((line) => line.includes("Cold recovery")),
+      logs.some((line) => line.includes("Visit next leaf from the current parent")),
       false,
     );
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
@@ -1223,7 +1223,7 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("keeps the next sibling on its authored warm recipe after one leaf is deferred", async () => {
+  it("keeps an authored warm recipe when no canonical recovery was declared", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -1268,7 +1268,7 @@ describe("runRecipeStep campaign check policy", () => {
       {
         kind: "module",
         recipeId: "warm",
-        check: { id: "next", title: "Next leaf", recovery },
+        check: { id: "next", title: "Next leaf" },
       },
       { log: (line) => logs.push(line), job, runtime, recipeGraph },
     );
@@ -1291,6 +1291,65 @@ describe("runRecipeStep campaign check policy", () => {
       false,
     );
     assert.equal(runtime.deferredCampaignChecks?.length, 0);
+  });
+
+  it("uses one canonical path after a failed check instead of probing an unknown warm state", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const recipeGraph = {
+      warm: {
+        id: "warm",
+        title: "Warm path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      recover: {
+        id: "recover",
+        title: "Canonical path",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 2 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = { groupId: "settings", recipeId: "recover" };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("row disappeared")),
+      wait: async () => {},
+    });
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      context,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "warm",
+        check: { id: "next", title: "Next leaf", recovery },
+      },
+      context,
+    );
+
+    assert.equal(
+      logs.some((line) => line.includes("Canonical path")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Warm path")),
+      false,
+    );
+    assert.equal(runtime.campaignItineraryTrusted, true);
   });
 
   it("finalizes deferred checks without executing automatic recovery", async () => {
@@ -2496,9 +2555,53 @@ describe("runRecipeStep expect-screen", () => {
       {
         platform: "android",
         serial: "recipe-runner-test",
-        selector: 'label="Privacy Policy"',
+        x: 540,
+        y: 1345,
       },
     ]);
+  });
+
+  it("fails closed when Android accessibility says a named target is absent", async () => {
+    let snapshots = 0;
+    let presses = 0;
+    const visibleNodes = [
+      {
+        role: "button",
+        label: "App Language",
+        enabled: true,
+        hittable: true,
+        rect: { x: 45, y: 1700, width: 990, height: 158 },
+      },
+    ];
+    const device = stubDevice({
+      snapshot: () => {
+        snapshots += 1;
+        return Promise.resolve({ nodes: visibleNodes });
+      },
+      press: () => {
+        presses += 1;
+        return Promise.resolve({});
+      },
+    });
+    const ctx: RecipeStepContext = {
+      log: () => {},
+      runtime: {
+        verifiedScreen: {
+          screenId: "usage",
+          screenTitle: "Usage",
+          nodes: visibleNodes,
+          observedAt: 100,
+          verifiedAt: 100,
+        },
+      },
+    };
+
+    await assert.rejects(
+      runRecipeStep(device, { kind: "tap", target: { label: "Set Up Auto Top-Up" } }, ctx),
+      /named target absent from current Android accessibility tree/u,
+    );
+    assert.equal(snapshots, 1);
+    assert.equal(presses, 0);
   });
 
   it("reuses one unchanged automatic observation for destination assertion and semantic tap", async () => {

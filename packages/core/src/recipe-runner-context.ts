@@ -33,6 +33,10 @@ export type RecipeRuntimeState = {
     string,
     { status: "healthy" | "needs-recovery" | "blocked"; reason?: string }
   >;
+  /** Whether the next campaign check may use its compiled warm path. A failed
+   * check invalidates that assumption; the next check gets exactly one
+   * canonical recovery path instead of probing Back from an unknown state. */
+  campaignItineraryTrusted?: boolean;
 };
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([

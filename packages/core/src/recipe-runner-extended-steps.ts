@@ -492,8 +492,14 @@ export async function runCampaignCheck(
   }
   let primaryError: unknown;
   let cleanupError: unknown;
+  const useCanonicalRecovery = Boolean(recovery && ctx.runtime?.campaignItineraryTrusted === false);
+  let cleanupPassed = false;
   try {
-    await execute();
+    if (useCanonicalRecovery) {
+      ctx.log(`check recovery: ${step.check.title} — one canonical path`);
+    }
+    await execute(useCanonicalRecovery ? recovery?.recipeId : undefined);
+    if (ctx.runtime) ctx.runtime.campaignItineraryTrusted = true;
   } catch (error) {
     primaryError = error;
     if (!isCancel(error)) {
@@ -522,6 +528,7 @@ export async function runCampaignCheck(
       } else {
         try {
           await execute(cleanup.recipeId, cleanup.bindings);
+          cleanupPassed = true;
           const finishedAt = now();
           ctx.job?.artifacts.push({
             kind: "campaign-check-cleanup",
@@ -591,6 +598,11 @@ export async function runCampaignCheck(
         ? primaryMessage
         : `Cleanup failed: ${cleanupMessage}`;
   const finishedAt = now();
+  if (ctx.runtime) {
+    // A successful cleanup proves its explicit terminal screen. Otherwise the
+    // current device state is unknown and no later warm path may trust it.
+    ctx.runtime.campaignItineraryTrusted = cleanupPassed;
+  }
   if (cleanupError) {
     await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "cleanup");
   }
