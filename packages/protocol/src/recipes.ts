@@ -169,6 +169,14 @@ export type RecipeStepMetadata = {
       groupId: string;
       recipeId: string;
     };
+    /** Always-run compensating Routine for stateful campaign checks. */
+    cleanup?: {
+      recipeId: string;
+      bindings?: Record<string, string>;
+      terminalScreenId: string;
+      /** Cancellation is an immediate authority boundary; cleanup is skipped. */
+      onCancel: "skip";
+    };
   };
   /** Run this step only when the target is currently present or absent. */
   when?: {

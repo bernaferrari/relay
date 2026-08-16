@@ -40,11 +40,28 @@ type TestStepBase = {
   capture?: boolean;
 };
 
+export type AppMapTestStepCleanup = {
+  kind: "routine";
+  routineId: string;
+  bindings?: Record<string, string>;
+  /** Proven terminal state after the cleanup Routine's mandatory assertions. */
+  terminalScreenId: string;
+  /** Required so cancellation behavior is never an implicit runner default. */
+  onCancel: "skip";
+};
+
 export type AppMapInstructionTestStep = TestStepBase & {
   kind: "instruction";
   binding:
     | UnresolvedTestBinding
     | ResolvedTestBinding<{ kind: "connections"; connectionIds: string[] }>;
+  /**
+   * An auditable compensating Routine that restores product state after this
+   * graph path, whether the primary path passes or fails. Cancellation
+   * deliberately skips cleanup: cancelling a job is an immediate authority
+   * boundary and may already have hard-stopped the device session.
+   */
+  cleanup?: AppMapTestStepCleanup;
 };
 
 export type AppMapValidationRecipeStep =
@@ -161,6 +178,8 @@ export type AppMapTestStepPatch = {
   /** `null` removes the note. */
   note?: string | null;
   capture?: boolean;
+  /** `null` removes the compensating Routine. */
+  cleanup?: AppMapTestStepCleanup | null;
   binding?: AppMapScenarioTestStep["binding"];
 };
 

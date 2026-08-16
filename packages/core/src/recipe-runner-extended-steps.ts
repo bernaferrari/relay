@@ -45,6 +45,7 @@ async function captureCampaignFailureEvidence(
   ctx: RecipeStepContext,
   startedAt: number,
   error: string,
+  phase: "primary" | "cleanup" = "primary",
 ): Promise<void> {
   const job = ctx.job;
   if (!job) return;
@@ -71,6 +72,7 @@ async function captureCampaignFailureEvidence(
     data: {
       checkId: check.id,
       checkTitle: check.title,
+      phase,
       error,
       attempts,
       chrome: describeSnapshotChrome(nodes),
@@ -81,7 +83,7 @@ async function captureCampaignFailureEvidence(
   });
   await captureScreenshot({
     jobId: job.id,
-    caption: `failed:${check.id}`,
+    caption: `failed:${phase}:${check.title}`,
     device,
     ...(nodes.length ? { semanticNodes: nodes } : {}),
   }).catch(() => undefined);
@@ -463,7 +465,7 @@ export async function runCampaignCheck(
   device: Device,
   step: RecipeStep & { check: NonNullable<RecipeStep["check"]> },
   ctx: RecipeStepContext,
-  execute: () => Promise<void>,
+  execute: (recipeId?: string, bindings?: Record<string, string>) => Promise<void>,
   options: { allowDefer?: boolean } = {},
 ): Promise<void> {
   const startedAt = now();
@@ -488,8 +490,79 @@ export async function runCampaignCheck(
     ctx.log(`check blocked: ${step.check.title} — ${dependencyReason}`);
     return;
   }
+  let primaryError: unknown;
+  let cleanupError: unknown;
   try {
     await execute();
+  } catch (error) {
+    primaryError = error;
+    if (!isCancel(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
+    }
+  } finally {
+    const cleanup = step.check.cleanup;
+    if (cleanup) {
+      const cleanupStartedAt = now();
+      if (primaryError && isCancel(primaryError)) {
+        ctx.job?.artifacts.push({
+          kind: "campaign-check-cleanup",
+          capturedAt: cleanupStartedAt,
+          data: {
+            checkId: step.check.id,
+            recipeId: cleanup.recipeId,
+            terminalScreenId: cleanup.terminalScreenId,
+            status: "skipped",
+            reason: "Job cancellation is an immediate authority boundary.",
+            startedAt: cleanupStartedAt,
+            finishedAt: cleanupStartedAt,
+          },
+        });
+        ctx.log(`check cleanup skipped: ${step.check.title} — job cancelled`);
+      } else {
+        try {
+          await execute(cleanup.recipeId, cleanup.bindings);
+          const finishedAt = now();
+          ctx.job?.artifacts.push({
+            kind: "campaign-check-cleanup",
+            capturedAt: finishedAt,
+            data: {
+              checkId: step.check.id,
+              recipeId: cleanup.recipeId,
+              terminalScreenId: cleanup.terminalScreenId,
+              status: "passed",
+              startedAt: cleanupStartedAt,
+              finishedAt,
+            },
+          });
+          ctx.log(`check cleanup passed: ${step.check.title}`);
+        } catch (error) {
+          cleanupError = error;
+          const finishedAt = now();
+          ctx.job?.artifacts.push({
+            kind: "campaign-check-cleanup",
+            capturedAt: finishedAt,
+            data: {
+              checkId: step.check.id,
+              recipeId: cleanup.recipeId,
+              terminalScreenId: cleanup.terminalScreenId,
+              status: isCancel(error) ? "cancelled" : "failed",
+              error: error instanceof Error ? error.message : String(error),
+              startedAt: cleanupStartedAt,
+              finishedAt,
+            },
+          });
+          ctx.log(
+            `check cleanup ${isCancel(error) ? "cancelled" : "failed"}: ${step.check.title} — ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    }
+  }
+
+  if (primaryError && isCancel(primaryError)) throw primaryError;
+  if (cleanupError && isCancel(cleanupError)) throw cleanupError;
+  if (!primaryError && !cleanupError) {
     const finishedAt = now();
     if (recovery) groups[recovery.groupId] = { status: "healthy" };
     ctx.job?.artifacts.push({
@@ -498,36 +571,65 @@ export async function runCampaignCheck(
       data: { ...step.check, status: "passed", startedAt, finishedAt },
     });
     ctx.log(`check passed: ${step.check.title}`);
-  } catch (error) {
-    if (isCancel(error)) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    const finishedAt = now();
-    await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message);
-    if (recovery && options.allowDefer !== false) {
-      (ctx.runtime!.deferredCampaignChecks ??= []).push({
-        check: structuredClone(step.check),
-        error: message,
-        startedAt,
-        deferredAt: finishedAt,
-      });
-      ctx.job?.artifacts.push({
-        kind: "campaign-check-deferred",
-        capturedAt: finishedAt,
-        data: { ...step.check, status: "deferred", error: message },
-      });
-      ctx.log(`check deferred: ${step.check.title} — ${message}`);
-      return;
-    }
-    if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
-    if (ctx.job) {
-      ctx.job.artifacts.push({
-        kind: "campaign-check-result",
-        capturedAt: finishedAt,
-        data: { ...step.check, status: "failed", error: message, startedAt, finishedAt },
-      });
-    }
-    ctx.log(`check failed: ${step.check.title} — ${message}`);
+    return;
   }
+
+  const primaryMessage = primaryError
+    ? primaryError instanceof Error
+      ? primaryError.message
+      : String(primaryError)
+    : undefined;
+  const cleanupMessage = cleanupError
+    ? cleanupError instanceof Error
+      ? cleanupError.message
+      : String(cleanupError)
+    : undefined;
+  const message =
+    primaryMessage && cleanupMessage
+      ? `Primary failed: ${primaryMessage}; cleanup failed: ${cleanupMessage}`
+      : primaryMessage
+        ? primaryMessage
+        : `Cleanup failed: ${cleanupMessage}`;
+  const finishedAt = now();
+  if (cleanupError) {
+    await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "cleanup");
+  }
+  if (recovery && options.allowDefer !== false) {
+    (ctx.runtime!.deferredCampaignChecks ??= []).push({
+      check: structuredClone(step.check),
+      error: message,
+      startedAt,
+      deferredAt: finishedAt,
+    });
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-deferred",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "deferred",
+        error: message,
+        ...(primaryMessage ? { primaryError: primaryMessage } : {}),
+        ...(cleanupMessage ? { cleanupError: cleanupMessage } : {}),
+      },
+    });
+    ctx.log(`check deferred: ${step.check.title} — ${message}`);
+    return;
+  }
+  if (recovery) groups[recovery.groupId] = { status: "blocked", reason: message };
+  ctx.job?.artifacts.push({
+    kind: "campaign-check-result",
+    capturedAt: finishedAt,
+    data: {
+      ...step.check,
+      status: "failed",
+      error: message,
+      ...(primaryMessage ? { primaryError: primaryMessage } : {}),
+      ...(cleanupMessage ? { cleanupError: cleanupMessage } : {}),
+      startedAt,
+      finishedAt,
+    },
+  });
+  ctx.log(`check failed: ${step.check.title} — ${message}`);
 }
 
 /** Finish the coverage pass without moving the device again. The original

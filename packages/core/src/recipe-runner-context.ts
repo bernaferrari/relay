@@ -67,6 +67,19 @@ export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
   }
 }
 
+export function campaignExecutionStep(
+  step: RecipeStep,
+  recipeId?: string,
+  bindings?: Record<string, string>,
+): RecipeStep {
+  return recipeId && step.kind === "module"
+    ? {
+        ...step,
+        recipeId,
+        ...(bindings ? { bindings: structuredClone(bindings) } : {}),
+      }
+    : step;
+}
 export type RecipeStepContext = {
   log: (line: string) => void;
   /**

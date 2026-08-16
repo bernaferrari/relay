@@ -58,6 +58,21 @@ function fixture(): AppMap {
         createdAt: at,
         updatedAt: at,
       },
+      "restore-cart": {
+        ...scope,
+        id: "restore-cart",
+        name: "Restore cart",
+        parameters: [],
+        actions: [
+          {
+            id: "assert-cart",
+            kind: "assertion",
+            assertion: { kind: "screen", screenId: "cart" },
+          },
+        ],
+        createdAt: at,
+        updatedAt: at,
+      },
     },
     flows: {},
     runs: {},
@@ -499,6 +514,48 @@ test("instruction branches compile as isolated campaign checks", () => {
     (step) => step.kind === "module" && step.check?.id === instruction.id,
   );
   assert.deepEqual(moduleStep?.check, { id: instruction.id, title: instruction.intent });
+});
+
+test("instruction cleanup compiles an auditable always-run routine and terminal state", () => {
+  const map = fixture();
+  const work = scenario();
+  const instruction = work.steps[0]!;
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  work.steps = [
+    {
+      ...instruction,
+      cleanup: {
+        kind: "routine",
+        routineId: "restore-cart",
+        terminalScreenId: "cart",
+        onCancel: "skip",
+      },
+    },
+  ];
+
+  const compiled = compileAppMapTest(map, work);
+  const checkStep = compiled.root.steps.find(
+    (step) => step.kind === "module" && step.check?.id === "navigate",
+  );
+  assert.equal(checkStep?.kind, "module");
+  assert.deepEqual(checkStep.check?.cleanup, {
+    recipeId: "app-map:checkout:routine:restore-cart:r7",
+    terminalScreenId: "cart",
+    onCancel: "skip",
+  });
+  assert.ok(compiled.graph["app-map:checkout:routine:restore-cart:r7"]);
+  assert.equal(
+    compiled.plan.stepProvenance.some(
+      (entry) =>
+        entry.testStepId === "navigate" &&
+        entry.referencedEntityIds.includes("restore-cart") &&
+        entry.referencedEntityIds.includes("cart"),
+    ),
+    true,
+  );
 });
 
 test("later instruction checks compile one canonical cold recovery path", () => {

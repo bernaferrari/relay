@@ -918,7 +918,234 @@ describe("runRecipeStep campaign check policy", () => {
     );
   });
 
-  it("keeps the next sibling on its authored warm recipe after one leaf is deferred", async () => {
+  it("always runs cleanup after a primary action failure and retains the product failure", async () => {
+    const presses: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        const selector = String((options as { selector?: string }).selector);
+        presses.push(selector);
+        return selector.includes("primary")
+          ? Promise.reject(new Error("primary changed"))
+          : Promise.resolve({});
+      },
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    assert.deepEqual(presses, ['id="primary"', 'id="cleanup"']);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-cleanup" &&
+          (artifact.data as { status?: string }).status === "passed",
+      ),
+      true,
+    );
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    const resultData = result.data as { status?: string; primaryError?: string };
+    assert.equal(resultData.status, "failed");
+    assert.match(resultData.primaryError ?? "", /identifier primary/u);
+  });
+
+  it("runs cleanup after a passing primary path before marking the check passed", async () => {
+    const order: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    await runRecipeStep(
+      stubDevice({
+        press: (options) => {
+          order.push(String((options as { selector?: string }).selector));
+          return Promise.resolve({});
+        },
+      }),
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    assert.deepEqual(order, ['id="primary"', 'id="cleanup"']);
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    assert.equal((result.data as { status?: string }).status, "passed");
+  });
+
+  it("reports primary and cleanup failures separately without hiding either", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) =>
+        Promise.reject(
+          new Error(
+            String((options as { selector?: string }).selector).includes("primary")
+              ? "primary changed"
+              : "cleanup could not restore off",
+          ),
+        ),
+      snapshot: () => Promise.resolve({ nodes: [] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "primary",
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, recipeGraph },
+    );
+
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.ok(result);
+    const resultData = result.data as {
+      status?: string;
+      primaryError?: string;
+      cleanupError?: string;
+      error?: string;
+    };
+    assert.equal(resultData.status, "failed");
+    assert.match(resultData.primaryError ?? "", /identifier primary/u);
+    assert.match(resultData.cleanupError ?? "", /identifier cleanup/u);
+    assert.match(
+      resultData.error ?? "",
+      /Primary failed: .*identifier primary.*; cleanup failed: .*identifier cleanup/u,
+    );
+  });
+
+  it("skips cleanup on cancellation because cancellation revokes device authority", async () => {
+    const presses: string[] = [];
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "primary" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [{ kind: "tap" as const, target: { identifier: "cleanup" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(String((options as { selector?: string }).selector));
+        return Promise.reject(new JobCancelledError());
+      },
+    });
+
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "primary",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+          },
+        },
+        { ...noLog, job, recipeGraph },
+      ),
+      JobCancelledError,
+    );
+
+    assert.deepEqual(presses, ['id="primary"']);
+    assert.equal(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "campaign-check-cleanup" &&
+          (artifact.data as { status?: string }).status === "skipped",
+      ),
+      true,
+    );
+  });
+
+  it("defers one failed leaf while independent siblings continue", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const logs: string[] = [];
@@ -994,6 +1221,76 @@ describe("runRecipeStep campaign check policy", () => {
       ),
       true,
     );
+  });
+
+  it("keeps the next sibling on its authored warm recipe after one leaf is deferred", async () => {
+    const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    const waits: number[] = [];
+    const recipeGraph = {
+      warm: {
+        id: "warm",
+        title: "Visit next leaf from the current parent",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      recover: {
+        id: "recover",
+        title: "Cold recovery",
+        source: "custom" as const,
+        steps: [{ kind: "sleep" as const, ms: 99 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    const recovery = { groupId: "settings", recipeId: "recover" };
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("row disappeared")),
+      wait: async () => {
+        waits.push(1);
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { identifier: "missing" },
+        check: { id: "missing", title: "Missing row", recovery },
+      },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "module",
+        recipeId: "warm",
+        check: { id: "next", title: "Next leaf", recovery },
+      },
+      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    );
+    const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
+    finalizeDeferredCampaignChecks(context);
+
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status: string }).status),
+      ["passed", "failed"],
+    );
+    assert.deepEqual(waits, [1]);
+    assert.equal(
+      logs.some((line) => line.includes("Visit next leaf from the current parent")),
+      true,
+    );
+    assert.equal(
+      logs.some((line) => line.includes("Cold recovery")),
+      false,
+    );
+    assert.equal(runtime.deferredCampaignChecks?.length, 0);
   });
 
   it("finalizes deferred checks without executing automatic recovery", async () => {

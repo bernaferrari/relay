@@ -16,6 +16,7 @@ import {
   waitForResponseCompletion,
 } from "./recipe-runner-support.js";
 import {
+  campaignExecutionStep,
   invalidateVerifiedScreen,
   stepBreaksVerifiedScreen,
   type RecipeStepContext,
@@ -922,7 +923,8 @@ export async function runRecipeStep(
       device,
       step as RecipeStep & { check: NonNullable<RecipeStep["check"]> },
       ctx,
-      () => runRequiredRecipeStep(device, step, ctx),
+      (recipeId, bindings) =>
+        runRequiredRecipeStep(device, campaignExecutionStep(step, recipeId, bindings), ctx),
     );
     return;
   }

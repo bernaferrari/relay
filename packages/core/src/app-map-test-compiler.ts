@@ -286,6 +286,22 @@ export function compileAppMapScenarioTest(
               steps: [...structuredClone(campaignSetupSteps), ...decoratedColdRoot.steps],
             };
           }
+          let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
+          if (step.cleanup) {
+            const compiledCleanup = compileAppMapRoutine(map, step.cleanup.routineId);
+            importRecipes(step, compiledCleanup.recipes, [
+              step.cleanup.routineId,
+              step.cleanup.terminalScreenId,
+            ]);
+            cleanup = {
+              recipeId: compiledCleanup.rootRecipeId,
+              ...(step.cleanup.bindings
+                ? { bindings: structuredClone(step.cleanup.bindings) }
+                : {}),
+              terminalScreenId: step.cleanup.terminalScreenId,
+              onCancel: step.cleanup.onCancel,
+            };
+          }
           importRecipes(step, instructionGraph, step.binding.connectionIds);
           recipeSteps.push({
             kind: "module",
@@ -301,13 +317,18 @@ export function compileAppMapScenarioTest(
                     },
                   }
                 : {}),
+              ...(cleanup ? { cleanup } : {}),
             },
           });
           referencedEntityIds.push(...step.binding.connectionIds);
+          if (step.cleanup) {
+            referencedEntityIds.push(step.cleanup.routineId, step.cleanup.terminalScreenId);
+          }
           previousInstructionPlan = plan;
           const terminal = plan.connections.at(-1)?.destination;
           previousTerminalScreenId =
-            terminal?.kind === "screen" ? terminal.screenId : plan.flow.startScreenId;
+            cleanup?.terminalScreenId ??
+            (terminal?.kind === "screen" ? terminal.screenId : plan.flow.startScreenId);
           break;
         }
         case "validation":

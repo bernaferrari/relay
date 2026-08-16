@@ -766,10 +766,59 @@ function parseStepMetadata(
         recipeId: raw.check.recovery.recipeId.trim(),
       };
     }
+    let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
+    if (raw.check.cleanup !== undefined) {
+      if (!isObject(raw.check.cleanup)) {
+        throw stepErr(index, "check.cleanup must be an object");
+      }
+      if (
+        !isString(raw.check.cleanup.recipeId) ||
+        !raw.check.cleanup.recipeId.trim() ||
+        raw.check.cleanup.recipeId.trim().length > 512
+      ) {
+        throw stepErr(
+          index,
+          "check.cleanup.recipeId must be a non-empty string of at most 512 characters",
+        );
+      }
+      if (
+        !isString(raw.check.cleanup.terminalScreenId) ||
+        !raw.check.cleanup.terminalScreenId.trim() ||
+        raw.check.cleanup.terminalScreenId.trim().length > 96
+      ) {
+        throw stepErr(
+          index,
+          "check.cleanup.terminalScreenId must be a non-empty string of at most 96 characters",
+        );
+      }
+      if (raw.check.cleanup.onCancel !== "skip") {
+        throw stepErr(index, 'check.cleanup.onCancel must be "skip"');
+      }
+      let bindings: Record<string, string> | undefined;
+      if (raw.check.cleanup.bindings !== undefined) {
+        if (!isObject(raw.check.cleanup.bindings)) {
+          throw stepErr(index, "check.cleanup.bindings must be an object");
+        }
+        bindings = {};
+        for (const [name, value] of Object.entries(raw.check.cleanup.bindings)) {
+          if (!PARAMETER_NAME.test(name) || !isString(value)) {
+            throw stepErr(index, "check.cleanup.bindings must map parameter names to strings");
+          }
+          bindings[name] = value;
+        }
+      }
+      cleanup = {
+        recipeId: raw.check.cleanup.recipeId.trim(),
+        ...(bindings ? { bindings } : {}),
+        terminalScreenId: raw.check.cleanup.terminalScreenId.trim(),
+        onCancel: "skip",
+      };
+    }
     metadata.check = {
       id: raw.check.id,
       title: raw.check.title.trim(),
       ...(recovery ? { recovery } : {}),
+      ...(cleanup ? { cleanup } : {}),
     };
   }
   if (raw.when !== undefined) {

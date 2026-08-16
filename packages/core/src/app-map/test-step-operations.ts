@@ -251,7 +251,9 @@ export function patchScenarioTestStep(
 ): AppMapScenarioTest {
   assertScenarioTest(test, "test");
   const keys = Object.keys(patch);
-  const unknown = keys.find((key) => !["intent", "note", "capture", "binding"].includes(key));
+  const unknown = keys.find(
+    (key) => !["intent", "note", "capture", "cleanup", "binding"].includes(key),
+  );
   if (unknown) {
     fail(
       "invalid-patch",
@@ -268,9 +270,15 @@ export function patchScenarioTestStep(
     );
   }
   const base = (() => {
-    if (patch.note !== null) return step;
-    const { note: _note, ...withoutNote } = step;
-    return withoutNote;
+    const withoutNote = (() => {
+      if (patch.note !== null) return step;
+      const { note: _note, ...rest } = step;
+      return rest;
+    })();
+    if (patch.cleanup !== null) return withoutNote;
+    return Object.fromEntries(
+      Object.entries(withoutNote).filter(([key]) => key !== "cleanup"),
+    ) as typeof withoutNote;
   })();
   const replacement = {
     ...base,
@@ -278,6 +286,9 @@ export function patchScenarioTestStep(
     ...(patch.binding !== undefined ? { binding: patch.binding } : {}),
     ...(patch.note !== undefined && patch.note !== null ? { note: patch.note } : {}),
     ...(patch.capture !== undefined ? { capture: patch.capture } : {}),
+    ...(patch.cleanup !== undefined && patch.cleanup !== null
+      ? { cleanup: structuredClone(patch.cleanup) }
+      : {}),
   } as AppMapScenarioTestStep;
   return validated({ ...test, steps: replaceStep(test.steps, stepId, replacement) });
 }

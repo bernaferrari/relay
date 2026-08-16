@@ -137,6 +137,34 @@ test("patches only authorable fields and preserves identity and kind", () => {
   );
 });
 
+test("patches and removes instruction cleanup without replacing step identity", () => {
+  const source = addScenarioTestStep(scenario(), {
+    id: "navigate",
+    kind: "instruction",
+    intent: "Navigate",
+    binding: { status: "resolved", kind: "connections", connectionIds: ["open-cart"] },
+  });
+  const instruction = selectScenarioTestStep(source, "navigate").step;
+  const withCleanup = patchScenarioTestStep(source, instruction.id, {
+    cleanup: {
+      kind: "routine",
+      routineId: "restore-cart",
+      terminalScreenId: "cart",
+      onCancel: "skip",
+    },
+  });
+  const patched = selectScenarioTestStep(withCleanup, instruction.id).step;
+  assert.equal(patched.kind, "instruction");
+  assert.equal(
+    patched.kind === "instruction" ? patched.cleanup?.routineId : undefined,
+    "restore-cart",
+  );
+
+  const removed = patchScenarioTestStep(withCleanup, instruction.id, { cleanup: null });
+  const cleaned = selectScenarioTestStep(removed, instruction.id).step;
+  assert.equal(cleaned.kind === "instruction" ? cleaned.cleanup : undefined, undefined);
+});
+
 test("removes nested steps and reorders only complete sibling sets", () => {
   const source = scenario();
   const reordered = reorderScenarioTestSteps(source, ["retry-payment", "choose-path", "open-cart"]);

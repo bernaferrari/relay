@@ -880,6 +880,49 @@ describe("validateRecipeSteps", () => {
         ]),
       /check and optional cannot be combined/u,
     );
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "module",
+          recipeId: "kids-flow",
+          check: {
+            id: "kids",
+            title: "Kids Mode",
+            cleanup: {
+              recipeId: "restore-kids-off",
+              bindings: { locale: "en" },
+              terminalScreenId: "kids-off",
+              onCancel: "skip",
+            },
+          },
+        },
+      ])[0]?.check?.cleanup,
+      {
+        recipeId: "restore-kids-off",
+        bindings: { locale: "en" },
+        terminalScreenId: "kids-off",
+        onCancel: "skip",
+      },
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "module",
+            recipeId: "kids-flow",
+            check: {
+              id: "kids",
+              title: "Kids Mode",
+              cleanup: {
+                recipeId: "restore-kids-off",
+                terminalScreenId: "kids-off",
+                onCancel: "run",
+              },
+            },
+          },
+        ]),
+      /check\.cleanup\.onCancel must be "skip"/u,
+    );
   });
 
   it("rejects swipe missing from/to", () => {

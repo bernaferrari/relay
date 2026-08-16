@@ -33,6 +33,40 @@ function validateCanonicalStep(step: RecipeStep, label: string): void {
   }
 }
 
+function assertCleanup(step: AppMapScenarioTestStep, label: string): void {
+  if (step.kind !== "instruction") {
+    if ("cleanup" in step && step.cleanup !== undefined) {
+      appMapFail("invalid-map", `${label}.cleanup is only supported on instruction steps`);
+    }
+    return;
+  }
+  if (step.cleanup === undefined) return;
+  const cleanup = objectValue(step.cleanup, `${label}.cleanup`);
+  allowedKeys(
+    cleanup,
+    ["kind", "routineId", "bindings", "terminalScreenId", "onCancel"],
+    `${label}.cleanup`,
+  );
+  if (cleanup.kind !== "routine") {
+    appMapFail("invalid-map", `${label}.cleanup.kind must be routine`);
+  }
+  identifier(cleanup.routineId, `${label}.cleanup.routineId`);
+  identifier(cleanup.terminalScreenId, `${label}.cleanup.terminalScreenId`);
+  if (cleanup.onCancel !== "skip") {
+    appMapFail("invalid-map", `${label}.cleanup.onCancel must be skip`);
+  }
+  if (cleanup.bindings !== undefined) {
+    for (const [name, value] of Object.entries(
+      objectValue(cleanup.bindings, `${label}.cleanup.bindings`),
+    )) {
+      identifier(name, `${label}.cleanup.bindings key`);
+      if (typeof value !== "string") {
+        appMapFail("invalid-map", `${label}.cleanup.bindings.${name} must be a string`);
+      }
+    }
+  }
+}
+
 function assertBinding(step: AppMapScenarioTestStep, label: string): void {
   const binding = objectValue(step.binding, `${label}.binding`);
   if (binding.status === "unresolved") {
@@ -211,8 +245,13 @@ function assertSteps(
       appMapFail("invalid-map", `${item}.kind is unsupported`);
     const nested =
       step.kind === "decision" ? ["thenSteps", "elseSteps"] : step.kind === "loop" ? ["steps"] : [];
-    allowedKeys(step, ["id", "kind", "intent", "note", "capture", "binding", ...nested], item);
+    allowedKeys(
+      step,
+      ["id", "kind", "intent", "note", "capture", "cleanup", "binding", ...nested],
+      item,
+    );
     assertBinding(step, item);
+    assertCleanup(step, item);
     if (step.kind === "decision") {
       assertSteps(step.thenSteps, `${item}.thenSteps`, seen, depth + 1, count);
       if (step.elseSteps) assertSteps(step.elseSteps, `${item}.elseSteps`, seen, depth + 1, count);
