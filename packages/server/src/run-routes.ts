@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import {
   applyRunRetention,
   buildCampaignRepairTarget,
+  campaignRepairPlanIdentity,
   buildCompatibilityReport,
   buildSoakReport,
   compareEvidenceMetrics,
@@ -18,9 +19,11 @@ import {
   listRunSummaries,
   listRunShares,
   readFrameFile,
+  readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
   rebuildRunCatalog,
+  reconcileCampaignCheckRepair,
   runArtifactFile,
   runsRoot,
   runStorageHealth,
@@ -90,6 +93,19 @@ function reviewActor(context: RunRouteContext): {
 } {
   const actor = resolveCommandActor(context.request.headers, context.scope);
   return { id: actor.actorId, kind: actor.actorKind };
+}
+
+async function currentCampaignRepairReconciliation(
+  scope: RequestContext,
+  run: NonNullable<Awaited<ReturnType<typeof readPersistedRun>>>,
+  checkId: string,
+) {
+  const identity = campaignRepairPlanIdentity(run);
+  if (!identity.appMapId || !identity.testId) return undefined;
+  const map = await readAppMap(scope.projectId, identity.appMapId);
+  const test = map?.tests[identity.testId];
+  if (!map || !test) return undefined;
+  return reconcileCampaignCheckRepair(run, checkId, map, test);
 }
 
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
@@ -175,9 +191,20 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const runs = (await listPersistedRuns(500)).filter((candidate) =>
       runVisibleToScope(scope, candidate),
     );
-    const repair = listCampaignRepairTargets(runs).find(
+    const frozenRepair = listCampaignRepairTargets(runs).find(
       (candidate) =>
         candidate.source.runId === run.id && candidate.source.checkId === repairGetMatch.checkId,
+    );
+    const reconciliation = await currentCampaignRepairReconciliation(
+      scope,
+      run,
+      repairGetMatch.checkId!,
+    ).catch(() => undefined);
+    const repair = buildCampaignRepairTarget(
+      run,
+      repairGetMatch.checkId!,
+      frozenRepair?.lineage.priorAttempts ?? [],
+      reconciliation,
     );
     if (!repair) throw new HttpError(404, `Failed check ${repairGetMatch.checkId} not found`);
     json(response, 200, { repair });
@@ -191,9 +218,16 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     await parseJsonBody(request);
     await assertTargetControl(scope, run.serial);
     try {
-      const repair = buildCampaignRepairTarget(run, repairRetryMatch.checkId!);
+      const reconciliation = await currentCampaignRepairReconciliation(
+        scope,
+        run,
+        repairRetryMatch.checkId!,
+      );
+      const repair = buildCampaignRepairTarget(run, repairRetryMatch.checkId!, [], reconciliation);
       if (!repair) throw new HttpError(404, `Failed check ${repairRetryMatch.checkId} not found`);
-      const job = enqueueJob(campaignCheckRepairInput(run, repairRetryMatch.checkId!));
+      const job = enqueueJob(
+        campaignCheckRepairInput(run, repairRetryMatch.checkId!, reconciliation),
+      );
       recordAudit(scope, {
         action: "run.repair.retry",
         resource: repair.id,

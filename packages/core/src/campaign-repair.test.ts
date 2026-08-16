@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import type { PersistedRun } from "./runs.js";
 import {
   buildCampaignRepairTarget,
   campaignCheckRepairInput,
   listCampaignRepairTargets,
+  reconcileCampaignCheckRepair,
 } from "./campaign-repair.js";
 
 const at = 1_700_000_000_000;
@@ -183,6 +185,77 @@ function fixture(): PersistedRun {
   };
 }
 
+function currentMapAndTest(): { map: AppMap; test: AppMapScenarioTest } {
+  const scope = { organizationId: "org", projectId: "project", appMapId: "grok" };
+  const screen = (id: string, fingerprint: string): Screen => ({
+    ...scope,
+    id,
+    title: id === "settings" ? "Settings" : "Usage",
+    identity: { schemaVersion: 1, fingerprint },
+    variantIds: [],
+    createdAt: at,
+    updatedAt: at,
+  });
+  const test: AppMapScenarioTest = {
+    ...scope,
+    id: "settings",
+    name: "Settings coverage",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "usage",
+        kind: "instruction",
+        intent: "Visit Usage",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-usage"] },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const map: AppMap = {
+    schemaVersion: 1,
+    id: "grok",
+    organizationId: "org",
+    projectId: "project",
+    name: "Grok",
+    revision: 136,
+    notes: {},
+    groups: {},
+    screens: {
+      settings: screen("settings", "a".repeat(64)),
+      usage: screen("usage", "b".repeat(64)),
+    },
+    screenVariants: {},
+    connections: {
+      "open-usage": {
+        ...scope,
+        id: "open-usage",
+        fromScreenId: "settings",
+        destination: { kind: "screen", screenId: "usage" },
+        label: "Open Usage",
+        state: "ready",
+        actions: [{ id: "tap-usage", kind: "tap", target: { label: "Usage" } }],
+        createdAt: at,
+        updatedAt: at,
+      },
+    },
+    caseStacks: {},
+    variables: {},
+    tests: { [test.id]: test },
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  };
+  return { map, test };
+}
+
 test("assembles one complete stable repair target without mutating source evidence", () => {
   const run = fixture();
   const before = structuredClone(run);
@@ -294,6 +367,78 @@ test("refuses an app launch hidden inside a warm repair module", () => {
     false,
   );
   assert.throws(() => campaignCheckRepairInput(run, "usage"), /refuses app open/u);
+});
+
+test("reconciles an r133-shaped flow to the exact matching current terminal edge", () => {
+  const run = fixture();
+  const root = run.recipeSnapshot!;
+  run.recipeGraph = {
+    [root.id]: root,
+    "visit-14": {
+      id: "visit-14",
+      title: "Visit Usage",
+      source: "custom",
+      steps: [
+        {
+          kind: "expect-screen",
+          screenId: "settings",
+          screenTitle: "Settings",
+          fingerprint: "a".repeat(64),
+        },
+        { kind: "tap", target: { label: "Usage" } },
+        {
+          kind: "expect-screen",
+          screenId: "usage",
+          screenTitle: "Usage",
+          fingerprint: "b".repeat(64),
+        },
+      ],
+      createdAt: at,
+      updatedAt: at,
+    },
+  };
+  assert.equal(
+    buildCampaignRepairTarget(run, "usage")?.actions.find((action) => action.kind === "retry-check")
+      ?.available,
+    false,
+  );
+
+  const { map, test: currentTest } = currentMapAndTest();
+  const reconciliation = reconcileCampaignCheckRepair(run, "usage", map, currentTest);
+  assert.ok(reconciliation);
+  const repair = buildCampaignRepairTarget(run, "usage", [], reconciliation);
+  assert.equal(repair?.actions.find((action) => action.kind === "retry-check")?.available, true);
+  assert.equal(repair?.expected.recipeId, "app-map:grok:connection:open-usage:r136");
+  assert.equal(repair?.expected.originScreenId, "settings");
+  assert.equal(repair?.expected.transitionId, "open-usage");
+
+  const input = campaignCheckRepairInput(run, "usage", reconciliation);
+  assert.equal(input.retryOf, run.id);
+  assert.deepEqual(
+    input.recipeSnapshot?.steps.flatMap((step) => (step.kind === "module" ? [step.recipeId] : [])),
+    ["app-map:grok:connection:open-usage:r136"],
+  );
+  const lineage = input.artifacts?.[0]?.data as {
+    sourceRunId?: string;
+    reconciliation?: {
+      appMapRevision?: number;
+      appMapDigest?: string;
+      compiledPlanDigest?: string;
+    };
+  };
+  assert.equal(lineage.sourceRunId, run.id);
+  assert.equal(lineage.reconciliation?.appMapRevision, 136);
+  assert.match(lineage.reconciliation?.appMapDigest ?? "", /^[a-f0-9]{64}$/u);
+  assert.match(lineage.reconciliation?.compiledPlanDigest ?? "", /^[a-f0-9]{64}$/u);
+});
+
+test("refuses current-plan reconciliation when the terminal dependency drifts", () => {
+  const run = fixture();
+  run.recipeGraph = { [run.recipeSnapshot!.id]: run.recipeSnapshot! };
+  const { map, test: currentTest } = currentMapAndTest();
+  map.connections["open-usage"]!.fromScreenId = "usage";
+  assert.equal(reconcileCampaignCheckRepair(run, "usage", map, currentTest), undefined);
+  assert.throws(() => campaignCheckRepairInput(run, "usage"), /verified live origin/u);
 });
 
 test("links persisted selective attempts back to the original repair target", () => {

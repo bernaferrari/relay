@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import type {
+  AppMap,
+  AppMapScenarioTest,
   CampaignRepairAction,
   CampaignRepairTarget,
   CampaignRepairTargetSummary,
@@ -8,6 +11,8 @@ import { REDACTED } from "./redaction.js";
 import type { PersistedRun } from "./runs.js";
 import type { EnqueueJobInput } from "./session-contract.js";
 import type { Recipe, RecipeStep } from "./recipes.js";
+import { compileAppMapConnection } from "./app-map-compiler.js";
+import { compileAppMapTest } from "./map-work.js";
 
 type RecordValue = Record<string, unknown>;
 
@@ -58,7 +63,7 @@ function failedResult(run: PersistedRun, checkId: string) {
   );
 }
 
-function planIdentity(run: PersistedRun): {
+export function campaignRepairPlanIdentity(run: PersistedRun): {
   appMapId?: string;
   appMapRevision?: number;
   testId?: string;
@@ -98,10 +103,26 @@ function expectedScreenId(recipe: Recipe | undefined): string | undefined {
 }
 
 type RepairPlan = {
+  sourceCheckStep: RecipeStep & { check: NonNullable<RecipeStep["check"]> };
   checkStep: RecipeStep & { check: NonNullable<RecipeStep["check"]> };
   executableRecipeId: string;
   origin: Extract<RecipeStep, { kind: "expect-screen" }>;
   transitionId?: string;
+  graph: Record<string, Recipe>;
+  reconciliation?: CampaignRepairReconciliation["identity"];
+};
+
+export type CampaignRepairReconciliation = {
+  sourceRunId: string;
+  sourceCheckId: string;
+  identity: {
+    appMapId: string;
+    appMapRevision: number;
+    appMapDigest: string;
+    testId: string;
+    compiledPlanDigest: string;
+  };
+  plan: RepairPlan;
 };
 
 function referencedRecipeIds(step: RecipeStep): string[] {
@@ -138,7 +159,7 @@ function unsafeWarmRepairEffect(step: RecipeStep): string | undefined {
   return undefined;
 }
 
-function repairPlan(run: PersistedRun, checkId: string): RepairPlan | undefined {
+function frozenRepairPlan(run: PersistedRun, checkId: string): RepairPlan | undefined {
   const checkStep = frozenCheckStep(run, checkId);
   if (!checkStep || !run.recipeGraph) return undefined;
   const terminalDependency = checkStep.check.transitionDependencies?.at(-1);
@@ -172,7 +193,180 @@ function repairPlan(run: PersistedRun, checkId: string): RepairPlan | undefined 
       `Live-checkpoint repair refuses ${unsafeWarmRepairEffect(unsafe)} in ${executableRecipeId}`,
     );
   }
-  return { checkStep, executableRecipeId, origin, transitionId };
+  return {
+    sourceCheckStep: checkStep,
+    checkStep,
+    executableRecipeId,
+    origin,
+    transitionId,
+    graph: run.recipeGraph,
+  };
+}
+
+function digest(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function sameTerminalDependency(
+  left: NonNullable<NonNullable<RecipeStep["check"]>["transitionDependencies"]>[number],
+  right: NonNullable<NonNullable<RecipeStep["check"]>["transitionDependencies"]>[number],
+): boolean {
+  return (
+    left.connectionId === right.connectionId &&
+    left.originScreenId === right.originScreenId &&
+    JSON.stringify(left.destination) === JSON.stringify(right.destination)
+  );
+}
+
+function recipeFromCompiled(
+  map: AppMap,
+  compiled: {
+    id: string;
+    title: string;
+    description?: string;
+    steps: RecipeStep[];
+  },
+): Recipe {
+  return {
+    id: compiled.id,
+    title: compiled.title,
+    ...(compiled.description ? { description: compiled.description } : {}),
+    source: "custom",
+    steps: structuredClone(compiled.steps),
+    createdAt: map.createdAt,
+    updatedAt: map.updatedAt,
+  };
+}
+
+function uniqueCheckStep(
+  root: Recipe,
+  graph: Readonly<Record<string, Recipe>>,
+  checkId: string,
+): (RecipeStep & { check: NonNullable<RecipeStep["check"]> }) | undefined {
+  const recipes = new Map<string, Recipe>([[root.id, root], ...Object.entries(graph)]);
+  const matches = [...recipes.values()].flatMap((recipe) =>
+    recipe.steps.filter(
+      (step): step is RecipeStep & { check: NonNullable<RecipeStep["check"]> } =>
+        step.check?.id === checkId,
+    ),
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function includeReachableRecipes(
+  source: Readonly<Record<string, Recipe>>,
+  target: Record<string, Recipe>,
+  recipeId: string,
+): void {
+  if (target[recipeId]) return;
+  const recipe = source[recipeId];
+  if (!recipe) throw new Error(`Reconciled repair recipe ${recipeId} is missing`);
+  target[recipeId] = structuredClone(recipe);
+  for (const step of recipe.steps) {
+    for (const childId of referencedRecipeIds(step)) {
+      includeReachableRecipes(source, target, childId);
+    }
+  }
+}
+
+/**
+ * Reconcile only an un-runnable frozen terminal edge against the current saved
+ * Test. Stable check identity and the complete terminal graph dependency must
+ * still match; this never infers an edge from labels or recipe names.
+ */
+export function reconcileCampaignCheckRepair(
+  run: PersistedRun,
+  checkId: string,
+  map: AppMap,
+  test: AppMapScenarioTest,
+): CampaignRepairReconciliation | undefined {
+  if (frozenRepairPlan(run, checkId)) return undefined;
+  const identity = campaignRepairPlanIdentity(run);
+  if (identity.appMapId !== map.id || identity.testId !== test.id) return undefined;
+  const sourceCheckStep = frozenCheckStep(run, checkId);
+  const sourceTerminal = sourceCheckStep?.check.transitionDependencies?.at(-1);
+  if (!sourceCheckStep || !sourceTerminal) return undefined;
+
+  const compiledTest = compileAppMapTest(map, test);
+  const currentCheckStep = uniqueCheckStep(compiledTest.root, compiledTest.graph, checkId);
+  const currentTerminal = currentCheckStep?.check.transitionDependencies?.at(-1);
+  if (
+    !currentCheckStep ||
+    !currentTerminal ||
+    !sameTerminalDependency(sourceTerminal, currentTerminal)
+  ) {
+    return undefined;
+  }
+
+  const compiledConnection = compileAppMapConnection(map, sourceTerminal.connectionId);
+  const graph = Object.fromEntries(
+    Object.values(compiledConnection.recipes).map((recipe) => [
+      recipe.id,
+      recipeFromCompiled(map, recipe),
+    ]),
+  );
+  const executableRecipeId = compiledConnection.rootRecipeId;
+  const executableSteps = reachableSteps(graph, executableRecipeId);
+  const origin = executableSteps.find(
+    (step): step is Extract<RecipeStep, { kind: "expect-screen" }> =>
+      step.kind === "expect-screen" && step.screenId === sourceTerminal.originScreenId,
+  );
+  if (!origin) return undefined;
+  if (currentCheckStep.check.cleanup) {
+    includeReachableRecipes(compiledTest.graph, graph, currentCheckStep.check.cleanup.recipeId);
+  }
+  const inspectedSteps = [
+    ...executableSteps,
+    ...(currentCheckStep.check.cleanup
+      ? reachableSteps(graph, currentCheckStep.check.cleanup.recipeId)
+      : []),
+  ];
+  const unsafe = inspectedSteps.find((step) => unsafeWarmRepairEffect(step));
+  if (unsafe) {
+    throw new Error(
+      `Live-checkpoint repair refuses ${unsafeWarmRepairEffect(unsafe)} in ${executableRecipeId}`,
+    );
+  }
+  const reconciliationIdentity = {
+    appMapId: map.id,
+    appMapRevision: map.revision,
+    appMapDigest: digest(map),
+    testId: test.id,
+    compiledPlanDigest: digest(compiledTest.plan),
+  };
+  const plan: RepairPlan = {
+    sourceCheckStep,
+    checkStep: currentCheckStep,
+    executableRecipeId,
+    origin,
+    transitionId: sourceTerminal.connectionId,
+    graph,
+    reconciliation: reconciliationIdentity,
+  };
+  return {
+    sourceRunId: run.id,
+    sourceCheckId: checkId,
+    identity: reconciliationIdentity,
+    plan,
+  };
+}
+
+function repairPlan(
+  run: PersistedRun,
+  checkId: string,
+  reconciliation?: CampaignRepairReconciliation,
+): RepairPlan | undefined {
+  const frozen = frozenRepairPlan(run, checkId);
+  if (frozen) return frozen;
+  if (
+    reconciliation?.sourceRunId !== run.id ||
+    reconciliation.sourceCheckId !== checkId ||
+    reconciliation.identity.appMapId !== campaignRepairPlanIdentity(run).appMapId ||
+    reconciliation.identity.testId !== campaignRepairPlanIdentity(run).testId
+  ) {
+    return undefined;
+  }
+  return reconciliation.plan;
 }
 
 const proposalRequirements = {
@@ -272,6 +466,7 @@ export function buildCampaignRepairTarget(
   run: PersistedRun,
   checkId: string,
   priorAttempts: CampaignRepairTarget["lineage"]["priorAttempts"] = [],
+  reconciliation?: CampaignRepairReconciliation,
 ): CampaignRepairTarget | null {
   const result = failedResult(run, checkId);
   if (!result) return null;
@@ -287,7 +482,7 @@ export function buildCampaignRepairTarget(
     frozenStep?.check.recovery?.recipeId ??
     (frozenStep?.kind === "module" ? frozenStep.recipeId : undefined);
   const recipe = recipeId ? run.recipeGraph?.[recipeId] : undefined;
-  const identity = planIdentity(run);
+  const identity = campaignRepairPlanIdentity(run);
   const frames = (run.frames ?? []).flatMap((frame, index) =>
     frame.caption === `failed:${checkId}`
       ? [
@@ -302,7 +497,7 @@ export function buildCampaignRepairTarget(
   );
   let checkpointPlan: RepairPlan | undefined;
   try {
-    checkpointPlan = run.recipeSnapshot ? repairPlan(run, checkId) : undefined;
+    checkpointPlan = run.recipeSnapshot ? repairPlan(run, checkId, reconciliation) : undefined;
   } catch {
     checkpointPlan = undefined;
   }
@@ -438,14 +633,18 @@ function assertReusableInputs(run: PersistedRun): void {
 
 /** Build a new one-check execution from frozen source data. No field in the
  * persisted source run is rewritten, and sibling campaign checks are omitted. */
-export function campaignCheckRepairInput(run: PersistedRun, checkId: string): EnqueueJobInput {
-  const target = buildCampaignRepairTarget(run, checkId);
+export function campaignCheckRepairInput(
+  run: PersistedRun,
+  checkId: string,
+  reconciliation?: CampaignRepairReconciliation,
+): EnqueueJobInput {
+  const target = buildCampaignRepairTarget(run, checkId, [], reconciliation);
   if (!target) throw new Error(`Run ${run.id} has no failed check ${checkId}`);
   assertReusableInputs(run);
   if (!run.recipeSnapshot || !run.recipeGraph) {
     throw new Error("This run predates frozen recipe data and cannot retry one check safely");
   }
-  const plan = repairPlan(run, checkId);
+  const plan = repairPlan(run, checkId, reconciliation);
   if (!plan) {
     throw new Error(
       `Frozen recipe has no verified live origin and warm executable path for check ${checkId}`,
@@ -499,7 +698,7 @@ export function campaignCheckRepairInput(run: PersistedRun, checkId: string): En
     recipeSnapshot: root,
     recipeGraph: {
       ...Object.fromEntries(
-        Object.entries(structuredClone(run.recipeGraph)).map(([id, recipe]) => [
+        Object.entries(structuredClone(plan.graph)).map(([id, recipe]) => [
           id,
           {
             ...recipe,
@@ -527,9 +726,10 @@ export function campaignCheckRepairInput(run: PersistedRun, checkId: string): En
           sourceCheckId: checkId,
           sourceInputDigest: run.inputDigest,
           sourceCapturedAt: target.source.capturedAt,
-          ...(plan.checkStep.check.recovery?.recipeId
-            ? { sourceRecoveryRecipeId: plan.checkStep.check.recovery.recipeId }
+          ...(plan.sourceCheckStep.check.recovery?.recipeId
+            ? { sourceRecoveryRecipeId: plan.sourceCheckStep.check.recovery.recipeId }
             : {}),
+          ...(plan.reconciliation ? { reconciliation: structuredClone(plan.reconciliation) } : {}),
           checkpoint: {
             screenId: checkpoint.screenId,
             screenTitle: checkpoint.screenTitle,
