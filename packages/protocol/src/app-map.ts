@@ -244,15 +244,27 @@ export type ConnectionNavigationTarget =
       evidenceIds: string[];
     };
 
+export type ConnectionScreenProof = {
+  screenId: string;
+  identity: ScreenIdentity;
+  evidenceIds: string[];
+};
+
 export type ConnectionNavigationContract = {
   /** Must be authored in identifier → accessibility → reviewed-anchor order. */
   targetAlternatives: ConnectionNavigationTarget[];
   /** Frozen destination identity reviewed with this edge, not a title guess. */
-  expectedDestination: {
-    screenId: string;
-    identity: ScreenIdentity;
-    evidenceIds: string[];
-  };
+  expectedDestination: ConnectionScreenProof;
+};
+
+/** A reviewed inverse for one successful forward edge. Relay may only unwind
+ * the edge with Back when this proof is present, and must verify the frozen
+ * origin immediately after the mutation. Absence means "stop for repair", not
+ * permission to guess with repeated Back or reopen the app. */
+export type ConnectionReturnContract = {
+  kind: "back";
+  expectedDestination: ConnectionScreenProof;
+  expectedApp?: string;
 };
 
 /** Visual presentation for a connection on the App Map canvas. These values
@@ -295,6 +307,7 @@ export type Connection = AppMapEntity & {
   /** Additional edge behavior after `navigation` activates the source control. */
   actions: ActionSpec[];
   navigation?: ConnectionNavigationContract;
+  return?: ConnectionReturnContract;
   /** Recorded source control evidence. This is not a mutable canvas-style field. */
   sourceAnchor?: ConnectionSourceAnchor;
   presentation?: ConnectionPresentation;
@@ -573,6 +586,7 @@ export type ConnectionPatch = {
   state?: Connection["state"];
   actions?: ActionSpec[];
   navigation?: ConnectionNavigationContract | null;
+  return?: ConnectionReturnContract | null;
   /** Capture-derived origin evidence. `null` deliberately removes stale or
    * disproven evidence; normal canvas styling must never modify this field. */
   sourceAnchor?: ConnectionSourceAnchor | null;
@@ -586,7 +600,10 @@ export type CreateScreenInput = Pick<Screen, "id" | "title"> &
 
 export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "destination"> &
   Partial<
-    Pick<Connection, "label" | "caseStackId" | "state" | "actions" | "navigation" | "presentation">
+    Pick<
+      Connection,
+      "label" | "caseStackId" | "state" | "actions" | "navigation" | "return" | "presentation"
+    >
   >;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &

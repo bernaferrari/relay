@@ -316,6 +316,14 @@ export type RecipeStep = RecipeStepMetadata &
         /** Approved semantic observations let dynamic screens retain one
          * identity while their body content changes between executions. */
         observations?: ScreenIdentityObservation[];
+        /** Compiler diagnostic used when the current hierarchy cannot be left
+         * safely because a forward edge has no reviewed inverse. It performs
+         * one observation and never mutates the device. */
+        returnRequirement?: {
+          connectionId: string;
+          fromScreenId: string;
+          destinationScreenId: string;
+        };
         /**
          * Generated warm-suite source checks may return through the current
          * app hierarchy before replaying their recorded navigation. This is

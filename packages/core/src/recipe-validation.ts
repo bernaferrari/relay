@@ -358,6 +358,31 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             ...(raw.recovery.restoreParentViewport === true ? { restoreParentViewport: true } : {}),
           };
         }
+        let returnRequirement: Extract<RecipeStep, { kind: "expect-screen" }>["returnRequirement"];
+        if (raw.returnRequirement !== undefined) {
+          if (!isObject(raw.returnRequirement)) {
+            throw stepErr(index, "expect-screen.returnRequirement must be an object");
+          }
+          const requirement = raw.returnRequirement;
+          if (
+            !isString(requirement.connectionId) ||
+            !requirement.connectionId.trim() ||
+            !isString(requirement.fromScreenId) ||
+            !requirement.fromScreenId.trim() ||
+            !isString(requirement.destinationScreenId) ||
+            !requirement.destinationScreenId.trim()
+          ) {
+            throw stepErr(
+              index,
+              "expect-screen.returnRequirement requires connection and endpoint ids",
+            );
+          }
+          returnRequirement = {
+            connectionId: requirement.connectionId.trim(),
+            fromScreenId: requirement.fromScreenId.trim(),
+            destinationScreenId: requirement.destinationScreenId.trim(),
+          };
+        }
         out.push({
           kind: "expect-screen",
           screenId: raw.screenId,
@@ -375,6 +400,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
               }
             : {}),
           ...(recovery ? { recovery } : {}),
+          ...(returnRequirement ? { returnRequirement } : {}),
           ...(note ? { note } : {}),
         });
         break;

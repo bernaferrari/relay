@@ -243,7 +243,6 @@ export function compileAppMapScenarioTest(
               plan,
               previousInstructionPlan,
               previousTerminalScreenId,
-              { restoreParentViewport: false },
             );
           }
           const transitionDependencies = connections.map((connection) => {

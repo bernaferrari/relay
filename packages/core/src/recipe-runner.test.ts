@@ -2220,6 +2220,41 @@ describe("runRecipeStep expect-screen", () => {
       : {}),
   });
 
+  it("reports the exact missing inverse without attempting Back", async () => {
+    let backs = 0;
+    await assert.rejects(
+      () =>
+        runWithTargetContext(
+          { kind: "device", platform: "android", serial: "missing-return" },
+          () =>
+            runExpectScreenStep(
+              stubDevice({
+                snapshot: () => Promise.resolve({ nodes: [{ role: "heading", label: "Widget" }] }),
+                back: () => {
+                  backs += 1;
+                  return Promise.resolve({});
+                },
+              }),
+              {
+                kind: "expect-screen",
+                screenId: "settings",
+                screenTitle: "Settings",
+                fingerprint,
+                timeoutMs: 0,
+                returnRequirement: {
+                  connectionId: "open-widget",
+                  fromScreenId: "settings",
+                  destinationScreenId: "widget",
+                },
+              },
+              { log: () => {}, runtime: {}, observeVisualFingerprint: async () => "f".repeat(64) },
+            ),
+        ),
+      /return-edge open-widget: reviewed inverse is required for widget → settings.*no Back was attempted/u,
+    );
+    assert.equal(backs, 0);
+  });
+
   it("starts Android destination semantics and raster together and retains the matched pair", async () => {
     let resolveNodes!: (value: { nodes: typeof nodes }) => void;
     let resolveRaster!: (value: ScreenshotPayload) => void;

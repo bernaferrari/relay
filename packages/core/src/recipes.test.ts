@@ -734,6 +734,39 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("preserves an exact missing-return diagnostic without adding recovery", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "expect-screen",
+          screenId: "settings",
+          screenTitle: "Settings",
+          fingerprint: "a".repeat(64),
+          timeoutMs: 0,
+          returnRequirement: {
+            connectionId: "open-widget",
+            fromScreenId: "settings",
+            destinationScreenId: "widget",
+          },
+        },
+      ]),
+      [
+        {
+          kind: "expect-screen",
+          screenId: "settings",
+          screenTitle: "Settings",
+          fingerprint: "a".repeat(64),
+          timeoutMs: 0,
+          returnRequirement: {
+            connectionId: "open-widget",
+            fromScreenId: "settings",
+            destinationScreenId: "widget",
+          },
+        },
+      ],
+    );
+  });
+
   it("rejects tap with empty target, naming the step index", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tap", target: {} }]),

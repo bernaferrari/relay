@@ -45,6 +45,8 @@ export function patchConnection(
   if (patch.navigation === null) delete connection.navigation;
   else if (patch.navigation !== undefined)
     connection.navigation = structuredClone(patch.navigation);
+  if (patch.return === null) delete connection.return;
+  else if (patch.return !== undefined) connection.return = structuredClone(patch.return);
   if (patch.sourceAnchor === null) delete connection.sourceAnchor;
   else if (patch.sourceAnchor !== undefined)
     connection.sourceAnchor = structuredClone(patch.sourceAnchor);

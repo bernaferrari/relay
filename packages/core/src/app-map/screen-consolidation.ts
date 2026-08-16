@@ -344,7 +344,10 @@ export function previewScreenConsolidation(
     const clone = structuredClone(connection);
     if (all.has(clone.fromScreenId)) {
       const originalFromScreenId = clone.fromScreenId;
-      if (sources.has(clone.fromScreenId)) clone.fromScreenId = input.targetScreenId;
+      if (sources.has(clone.fromScreenId)) {
+        clone.fromScreenId = input.targetScreenId;
+        if (clone.return) clone.return.expectedDestination.screenId = input.targetScreenId;
+      }
       const target = semanticTarget(connection);
       if (!target)
         blockers.push({
@@ -638,7 +641,11 @@ export function consolidateAppMapScreens(
           continue;
         }
         if (all.has(connection.fromScreenId)) {
-          if (sources.has(connection.fromScreenId)) connection.fromScreenId = input.targetScreenId;
+          if (sources.has(connection.fromScreenId)) {
+            connection.fromScreenId = input.targetScreenId;
+            if (connection.return)
+              connection.return.expectedDestination.screenId = input.targetScreenId;
+          }
           const plan = revealPlan(connection)!;
           const alreadyRevealed = connection.actions
             .slice(0, plan.actionIndex)

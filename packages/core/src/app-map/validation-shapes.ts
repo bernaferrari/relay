@@ -374,6 +374,19 @@ function assertConnectionSourceAnchor(value: unknown, label: string): void {
   }
 }
 
+function assertConnectionScreenProof(
+  expected: ConnectionNavigationContract["expectedDestination"],
+  label: string,
+): void {
+  objectValue(expected, label);
+  identifier(expected.screenId, `${label}.screenId`);
+  assertIdentity(expected.identity, `${label}.identity`);
+  stringArray(expected.evidenceIds, `${label}.evidenceIds`);
+  if (expected.evidenceIds.length === 0) {
+    appMapFail("invalid-map", `${label}.evidenceIds must not be empty`);
+  }
+}
+
 function assertConnectionNavigation(navigation: ConnectionNavigationContract, label: string): void {
   objectValue(navigation, label);
   if (
@@ -424,16 +437,7 @@ function assertConnectionNavigation(navigation: ConnectionNavigationContract, la
       appMapFail("invalid-map", `${targetLabel}.evidenceIds must not be empty`);
     }
   });
-  const expected = objectValue(navigation.expectedDestination, `${label}.expectedDestination`);
-  identifier(expected.screenId as string, `${label}.expectedDestination.screenId`);
-  assertIdentity(
-    expected.identity as ConnectionNavigationContract["expectedDestination"]["identity"],
-    `${label}.expectedDestination.identity`,
-  );
-  stringArray(expected.evidenceIds as string[], `${label}.expectedDestination.evidenceIds`);
-  if ((expected.evidenceIds as string[]).length === 0) {
-    appMapFail("invalid-map", `${label}.expectedDestination.evidenceIds must not be empty`);
-  }
+  assertConnectionScreenProof(navigation.expectedDestination, `${label}.expectedDestination`);
 }
 
 export function assertConnection(connection: Connection, scope: AppMapScope, label: string): void {
@@ -452,6 +456,17 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   assertActions(connection.actions, `${label}.actions`);
   if (connection.navigation !== undefined)
     assertConnectionNavigation(connection.navigation, `${label}.navigation`);
+  if (connection.return !== undefined) {
+    objectValue(connection.return, `${label}.return`);
+    if (connection.return.kind !== "back") {
+      appMapFail("invalid-map", `${label}.return.kind must be back`);
+    }
+    assertConnectionScreenProof(
+      connection.return.expectedDestination,
+      `${label}.return.expectedDestination`,
+    );
+    optionalText(connection.return.expectedApp, `${label}.return.expectedApp`);
+  }
   if (connection.sourceAnchor !== undefined)
     assertConnectionSourceAnchor(connection.sourceAnchor, `${label}.sourceAnchor`);
   if (connection.presentation !== undefined)
@@ -784,6 +799,17 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
   if (patch.navigation !== undefined && patch.navigation !== null)
     assertConnectionNavigation(patch.navigation, `${label}.navigation`);
+  if (patch.return !== undefined && patch.return !== null) {
+    objectValue(patch.return, `${label}.return`);
+    if (patch.return.kind !== "back") {
+      appMapFail("invalid-map", `${label}.return.kind must be back`);
+    }
+    assertConnectionScreenProof(
+      patch.return.expectedDestination,
+      `${label}.return.expectedDestination`,
+    );
+    optionalText(patch.return.expectedApp, `${label}.return.expectedApp`);
+  }
   if (patch.sourceAnchor !== undefined && patch.sourceAnchor !== null)
     assertConnectionSourceAnchor(patch.sourceAnchor, `${label}.sourceAnchor`);
   if (patch.presentation !== undefined && patch.presentation !== null)

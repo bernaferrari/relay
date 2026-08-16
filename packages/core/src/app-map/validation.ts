@@ -324,6 +324,46 @@ function assertConnectionsAndActions(map: AppMap): void {
         );
       }
     }
+    if (connection.return) {
+      if (connection.destination.kind !== "screen") {
+        appMapFail(
+          "invalid-map",
+          `Connection ${connection.id} return proof requires a screen destination`,
+        );
+      }
+      if (connection.return.expectedDestination.screenId !== connection.fromScreenId) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return proof does not match its origin`,
+        );
+      }
+      const origin = map.screens[connection.fromScreenId];
+      const approvedFingerprints = new Set([
+        ...(origin?.identity
+          ? [origin.identity.fingerprint, ...(origin.identity.aliases ?? [])]
+          : []),
+        ...(origin?.variantIds.flatMap((variantId) => {
+          const observation = map.screenVariants[variantId]?.observation;
+          return observation ? [observation.fingerprint] : [];
+        }) ?? []),
+      ]);
+      if (!approvedFingerprints.has(connection.return.expectedDestination.identity.fingerprint)) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return proof is not an approved origin identity`,
+        );
+      }
+      if (
+        connection.return.expectedApp &&
+        origin?.handoff?.ownerApp &&
+        connection.return.expectedApp !== origin.handoff.ownerApp
+      ) {
+        appMapFail(
+          "missing-reference",
+          `Connection ${connection.id} return app does not match its origin owner`,
+        );
+      }
+    }
     if (connection.caseStackId && !map.caseStacks[connection.caseStackId]) {
       appMapFail(
         "missing-reference",

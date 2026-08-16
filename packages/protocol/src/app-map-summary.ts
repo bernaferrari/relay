@@ -71,6 +71,17 @@ export function summarizeAppMapOperationResult(operationId: string, result: unkn
         destination: connection.destination,
         state: connection.state,
         actionCount: connection.actions.length,
+        ...(connection.return
+          ? {
+              return: {
+                kind: connection.return.kind,
+                screenId: connection.return.expectedDestination.screenId,
+                ...(connection.return.expectedApp
+                  ? { expectedApp: connection.return.expectedApp }
+                  : {}),
+              },
+            }
+          : {}),
       })),
       groups: byId(map.groups).map((group) => ({
         id: group.id,

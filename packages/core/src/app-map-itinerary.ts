@@ -6,6 +6,7 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
+import { compileAppMapConnection, screenExpectation } from "./app-map-compiler.js";
 
 function authoredSteps(action: ActionSpec): RecipeStep[] {
   return action.kind === "recorded" || action.kind === "steps" ? action.steps : [];
@@ -31,55 +32,180 @@ function isScrollAction(action: ActionSpec): boolean {
   );
 }
 
-function reversibleBackCost(connection: Connection): 0 | 1 | undefined {
-  if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) return 0;
-  const mutations = [
-    ...(connection.navigation ? ["tap"] : []),
-    ...connection.actions.flatMap((action) => {
-      if (action.kind === "tap") return ["tap"];
-      if (action.kind === "reveal") return [];
-      if (action.kind === "recorded" || action.kind === "steps") {
-        return action.steps.flatMap((step) =>
-          step.kind === "tap"
-            ? ["tap"]
-            : step.kind === "expect-screen" || step.kind === "screenshot" || step.kind === "sleep"
-              ? []
-              : [step.kind],
-        );
+type ReviewedReturnPlan =
+  | {
+      status: "complete";
+      steps: RecipeStep[];
+      recipes: Record<string, Recipe>;
+      verifiedScreenId?: string;
+    }
+  | {
+      status: "missing";
+      steps: RecipeStep[];
+      recipes: Record<string, Recipe>;
+      connectionId?: string;
+      currentScreenId?: string;
+    };
+
+function isReviewedBackEdge(connection: Connection): boolean {
+  let backCount = 0;
+  for (const action of connection.actions) {
+    if (action.kind === "back") {
+      backCount += 1;
+      continue;
+    }
+    if (action.kind === "wait" || action.kind === "assertion" || action.kind === "passive") {
+      continue;
+    }
+    if (action.kind === "recorded" || action.kind === "steps") {
+      for (const step of action.steps) {
+        if (step.kind === "key" && step.key === "back") {
+          backCount += 1;
+          continue;
+        }
+        if (
+          step.kind === "sleep" ||
+          step.kind === "wait-for" ||
+          step.kind === "expect" ||
+          step.kind === "expect-set" ||
+          step.kind === "expect-screen" ||
+          step.kind === "screenshot"
+        ) {
+          continue;
+        }
+        return false;
       }
-      return action.kind === "wait" || action.kind === "passive" ? [] : [action.kind];
-    }),
-  ];
-  return mutations.length === 1 && mutations[0] === "tap" ? 1 : undefined;
+      continue;
+    }
+    return false;
+  }
+  return backCount === 1;
 }
 
-function knownBackCount(
+/** Explicit ready connections are the canonical Figma-style inverse edge.
+ * They stay independently replayable and visible in the graph data while the
+ * planner embeds only a compact module reference in the next sibling. */
+type ScreenConnection = Connection & { destination: { kind: "screen"; screenId: string } };
+
+function explicitReviewedInverse(map: AppMap, forward: Connection): ScreenConnection | undefined {
+  if (forward.destination.kind !== "screen") return undefined;
+  const destinationScreenId = forward.destination.screenId;
+  const candidates = Object.values(map.connections).filter(
+    (candidate): candidate is ScreenConnection =>
+      candidate.state === "ready" &&
+      candidate.fromScreenId === destinationScreenId &&
+      candidate.destination.kind === "screen" &&
+      candidate.destination.screenId === forward.fromScreenId &&
+      isReviewedBackEdge(candidate),
+  );
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function reviewedReturnPlan(
   map: AppMap,
   previousPlan: AppMapCompiledFlow | undefined,
   currentScreenId: string | undefined,
   targetScreenId: string | undefined,
-): number | undefined {
-  if (!previousPlan || !currentScreenId || !targetScreenId) return undefined;
-  const screenAt = (screenId: string): number | undefined => {
-    if (screenId === previousPlan.flow.startScreenId) return -1;
-    const index = previousPlan.connections.findIndex(
-      (connection) =>
-        connection.destination.kind === "screen" && connection.destination.screenId === screenId,
-    );
-    return index < 0 ? undefined : index;
-  };
-  const current = screenAt(currentScreenId);
-  const target = screenAt(targetScreenId);
-  if (current === undefined || target === undefined || current <= target) return undefined;
-  let count = 0;
-  for (const compiled of previousPlan.connections.slice(target + 1, current + 1)) {
-    const connection = map.connections[compiled.connectionId];
-    if (!connection) return undefined;
-    const cost = reversibleBackCost(connection);
-    if (cost === undefined) return undefined;
-    count += cost;
+): ReviewedReturnPlan {
+  if (!previousPlan || !currentScreenId || !targetScreenId) {
+    return {
+      status: "missing",
+      steps: [],
+      recipes: {},
+      ...(currentScreenId ? { currentScreenId } : {}),
+    };
   }
-  return count > 0 ? count : undefined;
+  const pathScreens = [
+    previousPlan.flow.startScreenId,
+    ...previousPlan.connections.map((connection) =>
+      connection.destination.kind === "screen" ? connection.destination.screenId : undefined,
+    ),
+  ];
+  let current = -1;
+  for (let index = pathScreens.length - 1; index >= 0; index -= 1) {
+    if (pathScreens[index] === currentScreenId) {
+      current = index;
+      break;
+    }
+  }
+  let target = -1;
+  for (let index = current - 1; index >= 0; index -= 1) {
+    if (pathScreens[index] === targetScreenId) {
+      target = index;
+      break;
+    }
+  }
+  if (current < 0 || target < 0 || current <= target) {
+    return { status: "missing", steps: [], recipes: {}, currentScreenId };
+  }
+  const steps: RecipeStep[] = [];
+  const recipes: Record<string, Recipe> = {};
+  let verifiedScreenId: string | undefined;
+  const unwind = previousPlan.connections.slice(target, current).reverse();
+  for (const compiled of unwind) {
+    const connection = map.connections[compiled.connectionId];
+    if (!connection) {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        connectionId: compiled.connectionId,
+        currentScreenId,
+      };
+    }
+    // Scroll variants are one logical surface. Reaching the parent hierarchy
+    // does not require Back; the next semantic reveal owns viewport placement.
+    if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) continue;
+    const inverse = explicitReviewedInverse(map, connection);
+    if (inverse) {
+      const compiledInverse = compileAppMapConnection(map, inverse.id);
+      for (const recipe of Object.values(compiledInverse.recipes)) {
+        recipes[recipe.id] = {
+          id: recipe.id,
+          title: recipe.title,
+          ...(recipe.description ? { description: recipe.description } : {}),
+          source: "custom",
+          steps: structuredClone(recipe.steps),
+          createdAt: map.createdAt,
+          updatedAt: map.updatedAt,
+        };
+      }
+      steps.push({
+        kind: "module",
+        id: `relay-return-edge-${inverse.id}`,
+        recipeId: compiledInverse.rootRecipeId,
+      });
+      verifiedScreenId = inverse.destination.screenId;
+      continue;
+    }
+    const reviewedReturn = connection.return;
+    if (!reviewedReturn) {
+      return { status: "missing", steps, recipes, connectionId: connection.id, currentScreenId };
+    }
+    const origin = map.screens[connection.fromScreenId];
+    if (!origin) {
+      return { status: "missing", steps, recipes, connectionId: connection.id, currentScreenId };
+    }
+    const expectation = screenExpectation(
+      map,
+      { ...origin, identity: structuredClone(reviewedReturn.expectedDestination.identity) },
+      `relay-return-proof-${connection.id}`,
+    );
+    steps.push(
+      { kind: "key", key: "back", id: `relay-return-${connection.id}` },
+      {
+        ...expectation,
+        ...(reviewedReturn.expectedApp ? { expectedApp: reviewedReturn.expectedApp } : {}),
+      },
+    );
+    verifiedScreenId = connection.fromScreenId;
+  }
+  return {
+    status: "complete",
+    steps,
+    recipes,
+    ...(verifiedScreenId ? { verifiedScreenId } : {}),
+  };
 }
 
 function scrollFamilyScreenIds(map: AppMap, startScreenId: string): Set<string> {
@@ -130,18 +256,16 @@ function scrollFamilyExpectation(
   };
 }
 
-/** Trim a cold path to the nearest proven shared checkpoint. The resulting
- * source assertion owns bounded Back recovery. It deliberately does not try
- * to restore list position while still inside an unrelated child screen;
- * semantic scroll edges reveal the next control after the checkpoint is
- * reached. */
+/** Trim a cold path to the nearest proven shared checkpoint. Every hierarchy
+ * mutation is an authored inverse edge followed immediately by its frozen
+ * destination proof. Missing proof stops on the current screen; it never
+ * guesses with generic Back or reopens a root path. */
 export function warmCompiledFlowGraphFromSharedPrefix(
   map: AppMap,
   graph: Record<string, Recipe>,
   plan: AppMapCompiledFlow,
   previousPlan?: AppMapCompiledFlow,
   currentScreenId?: string,
-  options: { restoreParentViewport?: boolean } = { restoreParentViewport: true },
 ): Record<string, Recipe> {
   const root = graph[plan.rootRecipeId];
   if (!root) return graph;
@@ -205,41 +329,54 @@ export function warmCompiledFlowGraphFromSharedPrefix(
   if (sourceIndex < 0 || !terminalExpectation) return graph;
 
   const warmExpectation = scrollFamilyExpectation(map, terminalExpectation);
-  const backCount = knownBackCount(map, previousPlan, currentScreenId, sharedScreenId);
-  const recoverySteps: RecipeStep[] = backCount
-    ? Array.from({ length: backCount }, (_, index) => [
-        { kind: "key" as const, key: "back" as const, id: `relay-recover-back-${index + 1}` },
-        ...(index < backCount - 1
-          ? [
-              {
-                kind: "sleep" as const,
-                ms: 350,
-                id: `relay-recover-back-settle-${index + 1}`,
-              },
-            ]
-          : []),
-      ]).flat()
-    : [];
+  const returns = reviewedReturnPlan(map, previousPlan, currentScreenId, sharedScreenId);
+  const missingReturnId =
+    returns.status === "missing"
+      ? `relay-return-required-${returns.connectionId ?? `${returns.currentScreenId ?? "unknown"}-to-${sharedScreenId}`}`
+      : undefined;
+  const missingReturnConnection =
+    returns.status === "missing" && returns.connectionId
+      ? map.connections[returns.connectionId]
+      : undefined;
+  const recoverySteps = returns.steps;
+  const alreadyVerifiedTarget =
+    returns.status === "complete" && returns.verifiedScreenId === sharedScreenId;
   return {
     ...graph,
+    ...returns.recipes,
     [plan.rootRecipeId]: {
       ...root,
-      title: root.title.replace(/cold start/iu, "warm recovery"),
+      title: root.title.replace(
+        /cold start/iu,
+        returns.status === "complete" ? "reviewed return" : "return proof required",
+      ),
       steps: [
         ...recoverySteps,
-        {
-          ...structuredClone(warmExpectation),
-          id: `${warmExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
-          ...(backCount
-            ? {}
-            : {
-                recovery: {
-                  strategy: "back" as const,
-                  maxAttempts: 8,
-                  ...(options.restoreParentViewport ? { restoreParentViewport: true } : {}),
-                },
-              }),
-        },
+        ...(alreadyVerifiedTarget
+          ? []
+          : [
+              {
+                ...structuredClone(warmExpectation),
+                id:
+                  missingReturnId ??
+                  `${warmExpectation.id ?? `relay-source-${sharedScreenId}`}:warm`,
+                ...(missingReturnId
+                  ? {
+                      timeoutMs: 0,
+                      note: `Reviewed return contract required before leaving ${currentScreenId ?? "the current screen"}`,
+                      ...(missingReturnConnection?.destination.kind === "screen"
+                        ? {
+                            returnRequirement: {
+                              connectionId: missingReturnConnection.id,
+                              fromScreenId: missingReturnConnection.fromScreenId,
+                              destinationScreenId: missingReturnConnection.destination.screenId,
+                            },
+                          }
+                        : {}),
+                    }
+                  : {}),
+              },
+            ]),
         ...root.steps.slice(suffixStart),
       ],
     },

@@ -677,6 +677,14 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
       { id: "reveal-first", kind: "reveal", target: { label: "First" }, direction: "auto" },
       { id: "tap-first", kind: "tap", target: { label: "First" } },
     ],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "cart",
+        identity: structuredClone(map.screens.cart!.identity!),
+        evidenceIds: ["cart-after-first-back"],
+      },
+    },
   };
   map.connections["open-second"] = {
     ...map.connections["open-cart"]!,
@@ -728,7 +736,7 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   assert.deepEqual(secondPath.steps[0], {
     kind: "key",
     key: "back",
-    id: "relay-recover-back-1",
+    id: "relay-return-open-first",
   });
   assert.equal(
     secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].screenId : undefined,
@@ -739,7 +747,184 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
     undefined,
   );
   assert.equal(
+    secondPath.steps[1]?.kind === "expect-screen" ? secondPath.steps[1].id : undefined,
+    "relay-return-proof-open-first",
+  );
+  assert.equal(
     secondPath.steps.some((step) => step.kind === "tap" && step.target.label === "Second"),
+    true,
+  );
+});
+
+test("scenario siblings unwind every reviewed inverse and verify each destination", () => {
+  const map = fixture();
+  map.screens["add-home"] = {
+    ...screen("add-home"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.privacy = {
+    ...screen("privacy"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["open-cart"]!.return = {
+    kind: "back",
+    expectedDestination: {
+      screenId: "home",
+      identity: structuredClone(map.screens.home!.identity!),
+      evidenceIds: ["settings-after-widget-back"],
+    },
+  };
+  map.connections["add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "add-home",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "add-home" },
+    actions: [{ id: "tap-add-home", kind: "tap", target: { label: "Add to Home screen" } }],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "cart",
+        identity: structuredClone(map.screens.cart!.identity!),
+        evidenceIds: ["add-home-back-tree"],
+      },
+    },
+  };
+  map.connections.privacy = {
+    ...map.connections["open-cart"]!,
+    id: "privacy",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "privacy" },
+    actions: [{ id: "tap-privacy", kind: "tap", target: { label: "Privacy" } }],
+    return: undefined,
+  };
+  map.connections["return-from-add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "return-from-add-home",
+    fromScreenId: "add-home",
+    destination: { kind: "screen", screenId: "cart" },
+    actions: [
+      {
+        id: "back-from-add-home",
+        kind: "steps",
+        steps: [{ id: "press-back-from-add-home", kind: "key", key: "back" }],
+      },
+    ],
+    return: undefined,
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "reviewed-returns",
+    name: "Reviewed returns",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "add-home",
+        kind: "instruction",
+        intent: "Open Add to Home screen",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "add-home"],
+        },
+      },
+      {
+        id: "privacy",
+        kind: "instruction",
+        intent: "Open Privacy",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["privacy"] },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const sibling = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(sibling.steps[0], {
+    kind: "module",
+    id: "relay-return-edge-return-from-add-home",
+    recipeId: `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`,
+  });
+  assert.equal(
+    compiled.graph[
+      `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`
+    ]?.steps.some((step) => step.kind === "key" && step.key === "back"),
+    true,
+  );
+  assert.equal(
+    sibling.steps.some(
+      (step) => step.kind === "expect-screen" && step.id === "relay-return-proof-add-home",
+    ),
+    false,
+  );
+
+  delete map.connections["return-from-add-home"];
+  const embedded = compileAppMapTest(map, work);
+  const embeddedSibling = Object.values(embedded.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(
+    embeddedSibling.steps.slice(0, 4).map((step) => [step.kind, step.id]),
+    [
+      ["key", "relay-return-add-home"],
+      ["expect-screen", "relay-return-proof-add-home"],
+      ["key", "relay-return-open-cart"],
+      ["expect-screen", "relay-return-proof-open-cart"],
+    ],
+  );
+  assert.equal(
+    embeddedSibling.steps[1]?.kind === "expect-screen"
+      ? embeddedSibling.steps[1].screenId
+      : undefined,
+    "cart",
+  );
+  assert.equal(
+    embeddedSibling.steps[3]?.kind === "expect-screen"
+      ? embeddedSibling.steps[3].screenId
+      : undefined,
+    "home",
+  );
+  assert.equal(
+    embeddedSibling.steps.some(
+      (step) => step.kind === "expect-screen" && step.recovery?.strategy === "back",
+    ),
+    false,
+  );
+  assert.equal(
+    embeddedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    true,
+  );
+
+  delete map.connections["open-cart"]!.return;
+  const missing = compileAppMapTest(map, work);
+  const blockedSibling = Object.values(missing.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(
+    blockedSibling.steps.slice(0, 3).map((step) => [step.kind, step.id]),
+    [
+      ["key", "relay-return-add-home"],
+      ["expect-screen", "relay-return-proof-add-home"],
+      ["expect-screen", "relay-return-required-open-cart"],
+    ],
+  );
+  assert.equal(
+    blockedSibling.steps[2]?.kind === "expect-screen"
+      ? blockedSibling.steps[2].recovery
+      : undefined,
+    undefined,
+  );
+  assert.deepEqual(
+    blockedSibling.steps[2]?.kind === "expect-screen"
+      ? blockedSibling.steps[2].returnRequirement
+      : undefined,
+    { connectionId: "open-cart", fromScreenId: "home", destinationScreenId: "cart" },
+  );
+  assert.equal(
+    blockedSibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
     true,
   );
 });

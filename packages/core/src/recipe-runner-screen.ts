@@ -230,6 +230,11 @@ export async function runExpectScreenStep(
   } while (Date.now() < deadline);
 
   if (!reached) {
+    if (step.returnRequirement) {
+      throw new Error(
+        `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,
+      );
+    }
     throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
   }
   if (verifiedNodes && ctx.runtime) {

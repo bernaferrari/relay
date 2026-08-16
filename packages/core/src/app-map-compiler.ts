@@ -77,7 +77,7 @@ function stableStep(step: RecipeStep, actionId: string, index: number): RecipeSt
   };
 }
 
-function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeStep {
+export function screenExpectation(map: AppMap, screen: Screen, stepId: string): RecipeStep {
   if (!screen.identity) {
     fail(
       "missing-screen-identity",
