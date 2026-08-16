@@ -1,6 +1,15 @@
 import { parseSync } from 'oxc-parser';
 import { propertyName, visitAst, type ProductionSource } from './cutover-policy-ast.ts';
+import { lineOf } from './runtime-command-cutover-ast.ts';
 import type { UnruledViolation } from './runtime-command-cutover-model.ts';
+
+export {
+  applicationLifecycleDurableResourceViolations,
+  closeLifecycleRouteBindingViolations,
+  openLifecycleRouteBindingViolations,
+  prepareLifecycleRouteBindingViolations,
+  runtimeLifecycleRouteBindingViolations,
+} from './runtime-command-cutover-lifecycle.ts';
 
 type AstNode = Record<string, unknown>;
 
@@ -287,8 +296,4 @@ function identifierName(node: unknown): string | undefined {
   return record['type'] === 'Identifier' && typeof record['name'] === 'string'
     ? record['name']
     : undefined;
-}
-
-function lineOf(source: string, node: AstNode): number {
-  return source.slice(0, (node['start'] as number | undefined) ?? 0).split('\n').length;
 }

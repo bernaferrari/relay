@@ -161,7 +161,6 @@ test('core commands support iOS simulator, iOS device, and Android', () => {
       'back',
       'boot',
       'click',
-      'close',
       'diff',
       'fill',
       'find',
@@ -170,7 +169,6 @@ test('core commands support iOS simulator, iOS device, and Android', () => {
       'home',
       'longpress',
       'logs',
-      'open',
       'perf',
       'press',
       'record',
@@ -186,19 +184,6 @@ test('core commands support iOS simulator, iOS device, and Android', () => {
       { device: iosSimulator, expected: true, label: 'on iOS sim' },
       { device: iosDevice, expected: true, label: 'on iOS device' },
       { device: androidDevice, expected: true, label: 'on Android' },
-    ],
-  );
-});
-
-test('Android denies Apple runner preparation until a durable backend exists', () => {
-  assertCommandSupport(
-    ['prepare'],
-    [
-      { device: iosSimulator, expected: true, label: 'on iOS simulator' },
-      { device: macOsDevice, expected: true, label: 'on macOS' },
-      { device: tvOsSimulator, expected: true, label: 'on tvOS simulator' },
-      { device: androidDevice, expected: false, label: 'on Android device' },
-      { device: androidEmulator, expected: false, label: 'on Android emulator' },
     ],
   );
 });
@@ -233,7 +218,7 @@ test('capabilities reject CoreDevice-only commands for XCTest-backed devices', (
     assert.match(unsupportedHintForDevice(command, xctestIosDevice) ?? '', /CoreDevice-backed/);
   }
   assertCommandSupport(
-    ['close', 'open', 'screenshot', 'snapshot'],
+    ['screenshot', 'snapshot'],
     [{ device: xctestIosDevice, expected: true, label: 'on XCTest backend' }],
   );
 });
@@ -244,7 +229,6 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
       'alert',
       'back',
       'click',
-      'close',
       'diff',
       'fill',
       'find',
@@ -253,7 +237,6 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
       'is',
       'longpress',
       'logs',
-      'open',
       'perf',
       'press',
       'record',
@@ -277,17 +260,7 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
 
 test('tvOS follows iOS capability matrix by device kind', () => {
   assertCommandSupport(
-    [
-      'open',
-      'close',
-      'apps',
-      'screenshot',
-      'trigger-app-event',
-      'logs',
-      'reinstall',
-      'boot',
-      'shutdown',
-    ],
+    ['apps', 'screenshot', 'trigger-app-event', 'logs', 'reinstall', 'boot', 'shutdown'],
     [{ device: tvOsSimulator, expected: true, label: 'on tvOS' }],
   );
   assertCommandSupport(
@@ -330,7 +303,6 @@ test('Linux supports desktop interaction commands and blocks mobile/unsupported 
       'back',
       'click',
       'clipboard',
-      'close',
       'diff',
       'fill',
       'find',
@@ -339,7 +311,6 @@ test('Linux supports desktop interaction commands and blocks mobile/unsupported 
       'home',
       'is',
       'longpress',
-      'open',
       'press',
       'screenshot',
       'scroll',
@@ -361,13 +332,11 @@ test('web supports only the initial browser interaction slice', () => {
     [
       'audio',
       'click',
-      'close',
       'fill',
       'focus',
       'find',
       'get',
       'is',
-      'open',
       'press',
       'record',
       'screenshot',

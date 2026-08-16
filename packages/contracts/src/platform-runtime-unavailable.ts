@@ -1,18 +1,20 @@
-import { deviceShape, type DeviceInfo, type Platform } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import { deviceShape, type DeviceInfo } from '@agent-device/kernel/device';
 import {
-  localRuntimeOwner,
-  sameRuntimeOwner,
-  type DeviceBinding,
-  type RuntimeFacts,
-  type RuntimeOperationUnavailability,
-  type RuntimeOwnerRef,
-} from './platform-runtime.ts';
+  applicationLifecycleOperationFacts,
+  type ApplicationLifecycleOperationFacts,
+} from './application-lifecycle-runtime.ts';
+import type { PlatformRuntimeOperations } from './platform-runtime-operations.ts';
 import type {
-  PlatformRuntimeOperations,
-  PlatformRuntimeOwner,
-} from './platform-runtime-operations.ts';
+  DeviceBinding,
+  RuntimeFacts,
+  RuntimeOperationUnavailability,
+  RuntimeOwnerRef,
+} from './platform-runtime.ts';
 
+/**
+ * A runtime-contract helper for provider ownership gaps. It never assigns lifecycle semantics:
+ * the selected package/provider must classify every lifecycle operation for its exact cell.
+ */
 export type UnavailablePlatformRuntimeFacts = Readonly<{
   appLog: RuntimeOperationUnavailability;
   apps?: RuntimeOperationUnavailability;
@@ -22,6 +24,7 @@ export type UnavailablePlatformRuntimeFacts = Readonly<{
   screenRecording?: RuntimeOperationUnavailability;
   readiness?: RuntimeOperationUnavailability;
   shutdown?: RuntimeOperationUnavailability;
+  lifecycle: ApplicationLifecycleOperationFacts;
 }>;
 
 type FrozenUnavailablePlatformRuntimeFacts = Readonly<{
@@ -33,48 +36,18 @@ type FrozenUnavailablePlatformRuntimeFacts = Readonly<{
   screenRecording: RuntimeOperationUnavailability;
   readiness: RuntimeOperationUnavailability;
   shutdown: RuntimeOperationUnavailability;
+  lifecycle: ApplicationLifecycleOperationFacts;
 }>;
-
-/** Builds one honest combined owner for a family with no platform operations. */
-export function createUnavailablePlatformRuntimeOwner(
-  family: Platform,
-  unavailable: UnavailablePlatformRuntimeFacts,
-): PlatformRuntimeOwner {
-  const owner = localRuntimeOwner(family);
-  const facts = freezeUnavailableFacts(unavailable);
-  return Object.freeze({
-    owner,
-    ownsDevice: (device) => device.platform === family,
-    inspectFacts: async (device) => createUnavailablePlatformRuntimeFacts(device, owner, facts),
-    bind: async (request) => {
-      if (request.intent.kind === 'exact-owner' && !sameRuntimeOwner(request.intent.owner, owner)) {
-        throw new AppError(
-          'UNSUPPORTED_OPERATION',
-          family + ' platform runtime owner identity does not match',
-        );
-      }
-      if (request.device.platform !== family) {
-        throw new AppError(
-          'UNSUPPORTED_PLATFORM',
-          family + ' platform runtime cannot bind ' + request.device.platform,
-        );
-      }
-      return createUnavailablePlatformRuntimeBinding(request.device, owner, facts);
-    },
-    shutdown: async () => undefined,
-  });
-}
 
 export function createUnavailablePlatformRuntimeBinding(
   device: DeviceInfo,
   owner: RuntimeOwnerRef,
   unavailable: UnavailablePlatformRuntimeFacts,
 ): DeviceBinding<PlatformRuntimeOperations> {
-  const facts = createUnavailablePlatformRuntimeFacts(device, owner, unavailable);
   return Object.freeze({
     device,
     owner,
-    facts,
+    facts: createUnavailablePlatformRuntimeFacts(device, owner, unavailable),
     operations: Object.freeze({}),
     [Symbol.asyncDispose]: async () => undefined,
   });
@@ -85,8 +58,17 @@ export function createUnavailablePlatformRuntimeFacts(
   owner: RuntimeOwnerRef,
   unavailable: UnavailablePlatformRuntimeFacts,
 ): RuntimeFacts<PlatformRuntimeOperations> {
-  const { appLog, apps, appDeployment, appState, network, screenRecording, readiness, shutdown } =
-    freezeUnavailableFacts(unavailable);
+  const {
+    appLog,
+    apps,
+    appDeployment,
+    appState,
+    network,
+    screenRecording,
+    readiness,
+    shutdown,
+    lifecycle,
+  } = freezeUnavailableFacts(unavailable);
   return Object.freeze({
     device: {
       ...deviceShape(device),
@@ -112,6 +94,7 @@ export function createUnavailablePlatformRuntimeFacts(
       bootTarget: readiness,
       bootTargetHeadless: readiness,
       shutdownTarget: shutdown,
+      ...lifecycle,
     },
   });
 }
@@ -130,5 +113,6 @@ function freezeUnavailableFacts(
     }),
     readiness: Object.freeze({ ...(unavailable.readiness ?? unavailable.network) }),
     shutdown: Object.freeze({ ...(unavailable.shutdown ?? unavailable.network) }),
+    lifecycle: applicationLifecycleOperationFacts(unavailable.lifecycle),
   });
 }

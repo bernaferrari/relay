@@ -6,11 +6,13 @@ import type {
   InspectDeviceRuntimeFacts,
 } from '../../request-runtime-binding.ts';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
   type PlatformRuntimeOperations,
   type RuntimeFacts,
 } from '@agent-device/contracts/platform';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../../__tests__/test-utils/runtime-operation-facts.ts';
 import { handleDoctorCommand } from '../session-doctor.ts';
 
 vi.mock('../session-doctor-device.ts', async (importOriginal) => {
@@ -99,10 +101,6 @@ test('doctor preserves the legacy unsupported HarmonyOS target-app check', async
       appLogCleanup: unavailable,
       appState: unavailable,
       listApps: available,
-      deployApp: unavailable,
-      materializeAppSource: unavailable,
-      deployMaterializedApp: unavailable,
-      sendPushNotification: unavailable,
       networkDump: unavailable,
       screenRecordingStart: unavailable,
       screenRecordingReattach: unavailable,
@@ -110,7 +108,18 @@ test('doctor preserves the legacy unsupported HarmonyOS target-app check', async
       ensureReady: available,
       bootTarget: unavailable,
       bootTargetHeadless: unavailable,
-      shutdownTarget: unavailable,
+      ...unavailableDeploymentAndShutdownOperationFacts,
+      ...applicationLifecycleOperationFacts({
+        resolveOpenTarget: unavailable,
+        prepareApplicationOpen: unavailable,
+        openApplication: unavailable,
+        applyRuntimeHints: unavailable,
+        clearRuntimeHints: unavailable,
+        closeApplication: unavailable,
+        finalizeApplicationClose: unavailable,
+        prepareAppleRunner: unavailable,
+        configureProviderPortReverse: unavailable,
+      }),
     },
   });
   const inspectFacts: InspectDeviceRuntimeFacts = vi.fn(async () => runtimeFacts());

@@ -24,19 +24,30 @@ import {
 } from './session-device-utils.ts';
 import { errorResponse } from './response.ts';
 import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
+import {
+  admitRuntimeOperations,
+  admitRuntimeUse,
+  type UnavailableRuntimeResponse,
+} from '../runtime-admission.ts';
+import type { RuntimeCommandHandlerParams } from './session-runtime-admission.ts';
 
 const IOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'iOS appstate requires an active session on the target device. Run open first (for example: open --session sim --platform ios --device "<name>" <app>).';
 const MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'macOS appstate requires an active session on the target device. Run open first (for example: open --session macos --platform macos "System Settings").';
 
-type AppStateCommandParams = Readonly<{
-  req: DaemonRequest;
-  sessionName: string;
-  sessionStore: SessionStore;
-  inspectFacts?: InspectDeviceRuntimeFacts;
-  bindDevice?: BindDeviceRuntime;
-}>;
+/** `boot --headless` reports an unsupported cell as a request error, not a device capability gap. */
+function bootUnavailableResponse(headless: boolean): UnavailableRuntimeResponse {
+  return (unavailable) =>
+    errorResponse(
+      headless ? 'INVALID_ARGS' : 'UNSUPPORTED_OPERATION',
+      headless
+        ? 'boot --headless is supported only for Android emulators.'
+        : 'boot is not supported on this device',
+      undefined,
+      unavailable.hint ? { hint: unavailable.hint } : undefined,
+    );
+}
 
 function requireInspectFacts(
   inspectFacts: InspectDeviceRuntimeFacts | undefined,
@@ -52,18 +63,6 @@ function requireBindDevice(bindDevice: BindDeviceRuntime | undefined): BindDevic
   throw new AppError('COMMAND_FAILED', 'Device runtime binding is unavailable.', {
     reason: 'runtime-gateway-missing',
   });
-}
-
-function bootUnavailableResponse(fact: RuntimeOperationFact, headless: boolean) {
-  if (fact.available) return null;
-  return errorResponse(
-    headless ? 'INVALID_ARGS' : 'UNSUPPORTED_OPERATION',
-    headless
-      ? 'boot --headless is supported only for Android emulators.'
-      : 'boot is not supported on this device',
-    undefined,
-    fact.hint ? { hint: fact.hint } : undefined,
-  );
 }
 
 function shutdownUnavailableResponse(fact: RuntimeOperationFact) {
@@ -86,7 +85,7 @@ function hasAndroidAvdIdentity(
   );
 }
 
-async function handleAppStateCommand(params: AppStateCommandParams): Promise<DaemonResponse> {
+async function handleAppStateCommand(params: RuntimeCommandHandlerParams): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore } = params;
   const session = sessionStore.get(sessionName);
   const flags = req.flags ?? {};
@@ -172,24 +171,24 @@ async function handleAppStateCommand(params: AppStateCommandParams): Promise<Dae
   if (isMacOs(device)) {
     return errorResponse('SESSION_NOT_FOUND', MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE);
   }
-  const inspect = requireInspectFacts(params.inspectFacts);
-  const facts = await inspect(device);
-  const unavailable = [facts.operations.ensureReady, facts.operations.appState].find(
-    (fact) => !fact.available,
-  );
-  if (unavailable && !unavailable.available) {
-    return errorResponse(
-      'UNSUPPORTED_OPERATION',
-      device.platform === 'web'
-        ? 'appstate is not supported on web.'
-        : 'appstate is not supported on this device',
-      undefined,
-      unavailable.hint ? { hint: unavailable.hint } : undefined,
-    );
-  }
-
-  const bindDevice = requireBindDevice(params.bindDevice);
-  const runtime = await bindDevice(device, appStateUse);
+  const admitted = await admitRuntimeUse({
+    command: 'appstate',
+    device,
+    use: appStateUse,
+    inspectFacts: params.inspectFacts,
+    bindDevice: params.bindDevice,
+    unavailableResponse: (unavailable) =>
+      errorResponse(
+        'UNSUPPORTED_OPERATION',
+        device.platform === 'web'
+          ? 'appstate is not supported on web.'
+          : 'appstate is not supported on this device',
+        undefined,
+        unavailable.hint ? { hint: unavailable.hint } : undefined,
+      ),
+  });
+  if (admitted.type === 'response') return admitted.response;
+  const runtime = admitted.runtime;
   await runtime.operations.ensureReady({
     serial: flags.serial,
     androidSerialAllowlist: resolveAndroidSerialAllowlistForAppState(flags.androidDeviceAllowlist),
@@ -258,18 +257,21 @@ export async function handleSessionStateCommands(params: {
       );
     }
 
-    const inspectFacts = requireInspectFacts(params.inspectFacts);
-    const facts = await inspectFacts(device);
-    const fact = facts.operations[plan.operation];
-    const unsupported = bootUnavailableResponse(fact, plan.kind === 'boot-target-headless');
-    if (unsupported) return unsupported;
+    const admitted = await admitRuntimeOperations({
+      command: 'boot',
+      device,
+      required: plan.use.required,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
+      unavailableResponse: bootUnavailableResponse(plan.kind === 'boot-target-headless'),
+    });
+    if (admitted.type === 'response') return admitted.response;
 
-    const bindDevice = requireBindDevice(params.bindDevice);
     const input = { serial: flags.serial, androidSerialAllowlist };
     if (plan.kind === 'boot-target-headless') {
-      device = await (await bindDevice(device, plan.use)).operations.bootTargetHeadless(input);
+      device = await (await admitted.bind(device, plan.use)).operations.bootTargetHeadless(input);
     } else {
-      device = await (await bindDevice(device, plan.use)).operations.bootTarget(input);
+      device = await (await admitted.bind(device, plan.use)).operations.bootTarget(input);
     }
 
     return {

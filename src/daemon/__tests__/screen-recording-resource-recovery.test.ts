@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   type DeviceRuntimeGateway,
   type PlatformRuntimeOperations,
 } from '@agent-device/contracts/platform';
 import { makeTestScreenRecordingResource } from '../../__tests__/test-utils/screen-recording-live-handle.ts';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../__tests__/test-utils/runtime-operation-facts.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 import { recoverScreenRecordingResourceAfterDaemonLock } from '../screen-recording-resource-recovery.ts';
 import { screenRecordingResourceStore } from '../screen-recording-resource-store.ts';
@@ -45,10 +47,6 @@ test('recovery cleans a recording through its exact runtime owner', async () => 
         appLogStart: unavailable,
         appLogReattach: unavailable,
         appLogCleanup: unavailable,
-        deployApp: unavailable,
-        materializeAppSource: unavailable,
-        deployMaterializedApp: unavailable,
-        sendPushNotification: unavailable,
         appState: unavailable,
         networkDump: unavailable,
         screenRecordingStart: unavailable,
@@ -58,7 +56,18 @@ test('recovery cleans a recording through its exact runtime owner', async () => 
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
         listApps: unavailable,
-        shutdownTarget: unavailable,
+        ...unavailableDeploymentAndShutdownOperationFacts,
+        ...applicationLifecycleOperationFacts({
+          resolveOpenTarget: unavailable,
+          prepareApplicationOpen: unavailable,
+          openApplication: unavailable,
+          applyRuntimeHints: unavailable,
+          clearRuntimeHints: unavailable,
+          closeApplication: unavailable,
+          finalizeApplicationClose: unavailable,
+          prepareAppleRunner: unavailable,
+          configureProviderPortReverse: unavailable,
+        }),
       },
     },
     operations: {

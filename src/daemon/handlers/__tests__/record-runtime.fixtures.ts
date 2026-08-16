@@ -1,5 +1,6 @@
 import { expect, vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
   PendingTransferGuard,
@@ -9,6 +10,7 @@ import {
   type RuntimeOperationUnavailability,
   type ScreenRecordingLiveHandle,
 } from '@agent-device/contracts/platform';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../../__tests__/test-utils/runtime-operation-facts.ts';
 import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
 import { createScreenRecordingAdmissionLedger } from '../../screen-recording-admission-ledger.ts';
@@ -189,10 +191,6 @@ function makeRuntime(session: SessionState, options: RuntimeOptions = {}) {
         appLogStart: unavailable,
         appLogReattach: unavailable,
         appLogCleanup: unavailable,
-        deployApp: unavailable,
-        materializeAppSource: unavailable,
-        deployMaterializedApp: unavailable,
-        sendPushNotification: unavailable,
         appState: unavailable,
         networkDump: unavailable,
         screenRecordingStart: options.screenRecordingStartFact ?? { available: true },
@@ -202,7 +200,18 @@ function makeRuntime(session: SessionState, options: RuntimeOptions = {}) {
         bootTarget: unavailable,
         bootTargetHeadless: unavailable,
         listApps: unavailable,
-        shutdownTarget: unavailable,
+        ...unavailableDeploymentAndShutdownOperationFacts,
+        ...applicationLifecycleOperationFacts({
+          resolveOpenTarget: unavailable,
+          prepareApplicationOpen: unavailable,
+          openApplication: unavailable,
+          applyRuntimeHints: unavailable,
+          clearRuntimeHints: unavailable,
+          closeApplication: unavailable,
+          finalizeApplicationClose: unavailable,
+          prepareAppleRunner: unavailable,
+          configureProviderPortReverse: unavailable,
+        }),
       },
     },
     operations,

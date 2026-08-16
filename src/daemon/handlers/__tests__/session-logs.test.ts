@@ -1,5 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
   type AppLogRuntimeOperations,
@@ -7,6 +8,7 @@ import {
   type DeviceBinding,
   type PlatformRuntimeOperations,
 } from '@agent-device/contracts/platform';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../../__tests__/test-utils/runtime-operation-facts.ts';
 import { createAppLogStartResult, createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { createTestAppLogLiveHandle } from '../../../__tests__/test-utils/app-log-live-handle.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
@@ -406,10 +408,6 @@ function createRuntimeHarness(options: { inspectAvailable?: boolean } = {}) {
           appLogStart: { available: true },
           appLogReattach: { available: true },
           appLogCleanup: { available: true },
-          deployApp: unavailableRecording,
-          materializeAppSource: unavailableRecording,
-          deployMaterializedApp: unavailableRecording,
-          sendPushNotification: unavailableRecording,
           appState: { available: false, reason: 'owner-capability-missing' },
           networkDump: { available: true },
           screenRecordingStart: unavailableRecording,
@@ -419,7 +417,18 @@ function createRuntimeHarness(options: { inspectAvailable?: boolean } = {}) {
           bootTarget: { available: true as const },
           bootTargetHeadless: unavailableRecording,
           listApps: unavailableRecording,
-          shutdownTarget: unavailableRecording,
+          ...unavailableDeploymentAndShutdownOperationFacts,
+          ...applicationLifecycleOperationFacts({
+            resolveOpenTarget: unavailableRecording,
+            prepareApplicationOpen: unavailableRecording,
+            openApplication: unavailableRecording,
+            applyRuntimeHints: unavailableRecording,
+            clearRuntimeHints: unavailableRecording,
+            closeApplication: unavailableRecording,
+            finalizeApplicationClose: unavailableRecording,
+            prepareAppleRunner: unavailableRecording,
+            configureProviderPortReverse: unavailableRecording,
+          }),
         },
       },
       operations,

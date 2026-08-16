@@ -3,11 +3,13 @@ import type { DaemonRequest, DaemonResponse } from '../../types.ts';
 import { makeSession, makeSessionStore } from './session-test-harness.ts';
 import { handleSessionInventoryCommands } from '../session-inventory.ts';
 import {
+  applicationLifecycleOperationFacts,
   localRuntimeOwner,
   narrowDeviceBinding,
   type PlatformRuntimeOperations,
   type RuntimeFacts,
 } from '@agent-device/contracts/platform';
+import { unavailableDeploymentAndShutdownOperationFacts } from '../../../__tests__/test-utils/runtime-operation-facts.ts';
 import type {
   BindDeviceRuntime,
   InspectDeviceRuntimeFacts,
@@ -47,10 +49,6 @@ function runtimeFacts(): RuntimeFacts<PlatformRuntimeOperations> {
       appLogCleanup: available,
       appState: unavailable,
       listApps: { available: true },
-      deployApp: unavailable,
-      materializeAppSource: unavailable,
-      deployMaterializedApp: unavailable,
-      sendPushNotification: unavailable,
       networkDump: unavailable,
       screenRecordingStart: unavailable,
       screenRecordingReattach: unavailable,
@@ -58,7 +56,18 @@ function runtimeFacts(): RuntimeFacts<PlatformRuntimeOperations> {
       ensureReady: available,
       bootTarget: unavailable,
       bootTargetHeadless: unavailable,
-      shutdownTarget: unavailable,
+      ...unavailableDeploymentAndShutdownOperationFacts,
+      ...applicationLifecycleOperationFacts({
+        resolveOpenTarget: unavailable,
+        prepareApplicationOpen: unavailable,
+        openApplication: unavailable,
+        applyRuntimeHints: unavailable,
+        clearRuntimeHints: unavailable,
+        closeApplication: unavailable,
+        finalizeApplicationClose: unavailable,
+        prepareAppleRunner: unavailable,
+        configureProviderPortReverse: unavailable,
+      }),
     },
   };
 }

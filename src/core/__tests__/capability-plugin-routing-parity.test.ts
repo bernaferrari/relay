@@ -175,11 +175,9 @@ const CAPABILITY_BUCKET_BY_PLATFORM: Record<Platform, keyof CommandCapability> =
   linux: 'linux',
   web: 'web',
 };
-const VEGA_VVD_ONLY_COMMANDS_REF = new Set(['open', 'close', 'back', 'home', 'tv-remote']);
+const VEGA_VVD_ONLY_COMMANDS_REF = new Set(['back', 'home', 'tv-remote']);
 const HARMONYOS_SUPPORTED_COMMANDS_REF = new Set([
-  'open',
   'perf',
-  'close',
   'back',
   'app-switcher',
   'click',
@@ -273,7 +271,6 @@ test('HarmonyOS static capabilities omit runtime-backed command admissions', () 
     'app-switcher',
     'back',
     'click',
-    'close',
     'fill',
     'find',
     'focus',
@@ -283,7 +280,6 @@ test('HarmonyOS static capabilities omit runtime-backed command admissions', () 
     'is',
     'keyboard',
     'longpress',
-    'open',
     'perf',
     'press',
     'screenshot',
@@ -316,34 +312,16 @@ test('(b.2) unsupportedHint closures are verbatim across the full device matrix'
   }
 });
 
-test('the capability catalog includes fact-backed commands without restoring legacy admission', () => {
-  const factBackedCommands = [
-    'boot',
-    'logs',
-    'network',
-    'install',
-    'reinstall',
-    'push',
-    'install-from-source',
-  ];
-  for (const command of factBackedCommands) {
-    assert.ok(listCapabilityCommands().includes(command), `${command} stays discoverable`);
-    assert.equal(
-      BASE_COMMAND_CAPABILITY_MATRIX[command],
-      undefined,
-      `${command} has no capability bucket`,
-    );
-  }
-  assert.equal(
-    listCapabilityCommands().includes('install_source'),
-    false,
-    'internal runtime commands are not advertised as public capabilities',
-  );
-  assert.equal(
-    BASE_COMMAND_CAPABILITY_MATRIX.install_source,
-    undefined,
-    'internal source deployment has no capability bucket',
-  );
+test('the capability catalog includes runtime-backed commands without restoring legacy admission', () => {
+  assert.ok(listCapabilityCommands().includes('boot'));
+  assert.ok(listCapabilityCommands().includes('logs'));
+  assert.ok(listCapabilityCommands().includes('network'));
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['boot'], undefined);
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['open'], undefined);
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['close'], undefined);
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['prepare'], undefined);
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['logs'], undefined);
+  assert.equal(BASE_COMMAND_CAPABILITY_MATRIX['network'], undefined);
 });
 
 test('(b.2) the Apple plugin carries exactly the relocated supports/hint closures', () => {
@@ -399,15 +377,11 @@ test('(b.2) non-Apple families only carry their own non-portable support gates',
     'tv-remote',
   ]);
   assert.deepEqual(Object.keys(getPlugin('vega').capability.supportsByDefault ?? {}), [
-    'open',
-    'close',
     'back',
     'home',
     'tv-remote',
   ]);
   assert.deepEqual(Object.keys(getPlugin('vega').capability.unsupportedHintByDefault ?? {}), [
-    'open',
-    'close',
     'back',
     'home',
     'tv-remote',

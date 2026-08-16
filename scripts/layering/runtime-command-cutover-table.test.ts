@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkRuntimeCommandCutover } from './runtime-command-cutover-policy.ts';
 import { rowFor, sources, summariesFor } from './runtime-command-cutover-fixtures.ts';
+import { cutoverTableDefects } from './runtime-command-cutover-model.ts';
+import { MIGRATED_COMMAND_CUTOVERS } from './runtime-command-cutover-table.ts';
+import { commandDescriptors } from '../../src/core/command-descriptor/registry.ts';
 
 test('R20 boot rejects the superseded root readiness adapter', () => {
   assert.deepEqual(
@@ -525,4 +528,50 @@ test('R16 rejects proof repair for a narrowed screen-recording operation', () =>
   assert.match(messages, /widened recording runtime type assertion/);
   assert.match(messages, /non-null repair of a narrowed recording operation/);
   assert.match(messages, /bracketed recording operation access/);
+});
+
+// The four lifecycle descriptors are independent migration units: each carries its own durable
+// row rather than inheriting a sibling's proof.
+test('the four application-lifecycle descriptors each carry an independent durable cutover row', () => {
+  const rows = ['open', 'prepare', 'close', 'runtime'].map(rowFor);
+  assert.deepEqual(
+    rows.map(({ tier, execution }) => ({ tier, execution })),
+    [
+      { tier: 'durable-resource', execution: 'device-runtime' },
+      { tier: 'durable-resource', execution: 'device-runtime' },
+      { tier: 'durable-resource', execution: 'device-runtime' },
+      { tier: 'durable-resource', execution: 'device-runtime' },
+    ],
+  );
+  assert.deepEqual(
+    rows.flatMap((row) => (row.lifecycleProof === undefined ? [row.command] : [])),
+    [],
+  );
+});
+
+// A row id names a heading in the layering report, so a sibling stack claiming the same id would
+// silently merge two commands' violations.
+test('the cutover table rejects a duplicate rule id', () => {
+  const [first] = MIGRATED_COMMAND_CUTOVERS;
+  assert.ok(first);
+  assert.deepEqual(cutoverTableDefects(MIGRATED_COMMAND_CUTOVERS), []);
+  assert.match(
+    cutoverTableDefects([first, { ...first, command: 'planted' }]).join('\n'),
+    /rule id .* is claimed by/,
+  );
+});
+
+test('every daemon-routed migrated descriptor has exactly one cutover row', () => {
+  const migratedDescriptors = commandDescriptors
+    .filter(
+      (descriptor) =>
+        descriptor.daemon !== undefined &&
+        (descriptor.platformExecution.kind === 'inventory' ||
+          descriptor.platformExecution.kind === 'device-runtime'),
+    )
+    .map(({ name }) => name)
+    .sort();
+  const tableCommands = MIGRATED_COMMAND_CUTOVERS.map(({ command }) => command).sort();
+
+  assert.deepEqual(tableCommands, migratedDescriptors);
 });

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
 import {
   createProviderDeviceRuntimeRequestProviders,
-  configureProviderPortReverse,
   getProviderDeviceInteractor,
   setActiveProviderDeviceRuntimes,
 } from '../provider-device-runtime.ts';
@@ -41,7 +40,7 @@ test('provider device runtime registry delegates lifecycle, inventory, and inter
     ),
     { kind: 'inventory', devices: [world.device] },
   );
-  await assertProviderRuntimeDelegates(world);
+  assert.equal(getProviderDeviceInteractor(world.device), world.interactor);
 });
 
 test('provider device runtime registry rejects duplicate provider owners', () => {
@@ -156,20 +155,6 @@ function makeMissingRuntime(): ProviderDeviceRuntime {
     interactor: undefined,
     portReverseResult: undefined,
   });
-}
-
-async function assertProviderRuntimeDelegates(world: ReturnType<typeof makeProviderRuntimeWorld>) {
-  assert.equal(getProviderDeviceInteractor(world.device), world.interactor);
-  assert.deepEqual(
-    await configureProviderPortReverse({
-      leaseId: world.lease.leaseId,
-      provider: 'hit',
-      devicePort: 8097,
-      hostPort: 8097,
-      name: 'devtools',
-    }),
-    { provider: 'hit' },
-  );
 }
 
 function makeRuntime(options: {

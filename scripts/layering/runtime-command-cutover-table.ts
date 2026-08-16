@@ -1,8 +1,13 @@
 import type { MigratedCommandCutover, UnruledViolation } from './runtime-command-cutover-model.ts';
 import {
   appStateLegacySessionHandlerViolations,
+  applicationLifecycleDurableResourceViolations,
   appLogSessionStateOwnershipViolations,
+  closeLifecycleRouteBindingViolations,
   devicesGatewayBindingViolations,
+  openLifecycleRouteBindingViolations,
+  prepareLifecycleRouteBindingViolations,
+  runtimeLifecycleRouteBindingViolations,
   sourceExecutedUsingDeclarationViolations,
 } from './runtime-command-cutover-extensions.ts';
 import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechanics-policy.ts';
@@ -12,9 +17,13 @@ import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechani
  * mechanism in `runtime-command-cutover-policy.ts` carries one planted-red proof for
  * every row, and `cutoverRowDefects` rejects a row that leaves its claims unstated.
  *
- * Rule ids are per row: the layering report groups violations under R20 boot,
- * R21 apps, R22 appstate, R23 shutdown, R24-R27 install/deploy, R17 devices, R14 logs,
- * R15 network, and R16 record.
+ * Rule ids are per row: the layering report groups violations under R20 boot, R21 apps,
+ * R22 appstate, R23 shutdown, R24-R27 install/deploy, R28-R31 lifecycle, R17 devices,
+ * R14 logs, R15 network, and R16 record.
+ *
+ * A row id is a report heading, so it must be unique across every stack that adds rows here.
+ * `cutoverTableDefects` rejects a duplicate; lifecycle starts at R28 after the accepted
+ * shutdown and install/deploy allocations.
  */
 export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
   {
@@ -110,9 +119,7 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
     singularExecution: {
       routes: ['handleSessionStateCommands'],
       operations: ['shutdownTarget'],
-      operationOwners: {
-        shutdownTarget: ['handleSessionStateCommands'],
-      },
+      operationOwners: { shutdownTarget: ['handleSessionStateCommands'] },
     },
   },
   {
@@ -184,9 +191,7 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
       routeNames: ['handleInstallFromSourceCommand', 'installProviderDeviceInstallablePath'],
     },
     runtimeTypeNames: ['AppDeploymentRuntimeOperations', 'DeviceReadinessRuntimeOperations'],
-    operations: {
-      names: ['ensureReady', 'materializeAppSource', 'deployMaterializedApp'],
-    },
+    operations: { names: ['ensureReady', 'materializeAppSource', 'deployMaterializedApp'] },
     singularExecution: {
       routes: ['handleInstallFromSourceDeploymentCommand'],
       operations: ['ensureReady', 'materializeAppSource', 'deployMaterializedApp'],
@@ -203,9 +208,7 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
     subject: 'push notification',
     tier: 'request-scoped',
     execution: 'device-runtime',
-    legacyRetirement: {
-      routeNames: ['handlePushCommand'],
-    },
+    legacyRetirement: { routeNames: ['handlePushCommand'] },
     admissionMember: {
       forms: ['computed-property'],
       files: ['src/platforms/apple/plugin.ts'],
@@ -361,6 +364,79 @@ export const MIGRATED_COMMAND_CUTOVERS: readonly MigratedCommandCutover[] = [
       },
     },
     lifecycleProof: recordDaemonMechanicsProof,
+  },
+  {
+    rule: 'R28 open-runtime-cutover',
+    command: 'open',
+    subject: 'application opening',
+    tier: 'durable-resource',
+    execution: 'device-runtime',
+    legacyRetirement: {
+      modulePaths: ['src/platform-runtime-application-lifecycle-open.ts'],
+      importPatterns: [/(?:^|\/)platform-runtime-application-lifecycle-open(?:\.[cm]?[jt]s)?$/],
+      routeNames: [
+        'createApplicationOpenOperations',
+        'dispatchApplicationLifecycleCommand',
+        'applicationLifecycleDispatchContext',
+        'applicationLifecycleRunnerOptions',
+      ],
+    },
+    runtimeTypeNames: ['ApplicationLifecycleRuntimeOperations'],
+    operations: {
+      pattern:
+        /^(?:resolveOpenTarget|prepareApplicationOpen|openApplication|applyRuntimeHints|clearRuntimeHints)$/,
+    },
+    singularExecution: { routeProof: openLifecycleRouteBindingViolations },
+    lifecycleProof: applicationLifecycleDurableResourceViolations,
+  },
+  {
+    rule: 'R29 prepare-runtime-cutover',
+    command: 'prepare',
+    subject: 'Apple runner preparation',
+    tier: 'durable-resource',
+    execution: 'device-runtime',
+    legacyRetirement: {
+      modulePaths: ['src/platform-runtime-application-lifecycle-host.ts'],
+      importPatterns: [/(?:^|\/)platform-runtime-application-lifecycle-host(?:\.[cm]?[jt]s)?$/],
+    },
+    runtimeTypeNames: ['ApplicationLifecycleRuntimeOperations'],
+    operations: { pattern: /^prepareAppleRunner$/ },
+    singularExecution: { routeProof: prepareLifecycleRouteBindingViolations },
+    lifecycleProof: applicationLifecycleDurableResourceViolations,
+  },
+  {
+    rule: 'R30 close-runtime-cutover',
+    command: 'close',
+    subject: 'application closing',
+    tier: 'durable-resource',
+    execution: 'device-runtime',
+    legacyRetirement: {
+      modulePaths: ['src/platform-runtime-application-lifecycle-close.ts'],
+      importPatterns: [/(?:^|\/)platform-runtime-application-lifecycle-close(?:\.[cm]?[jt]s)?$/],
+      routeNames: ['dispatchApplicationLifecycleCommand'],
+    },
+    runtimeTypeNames: ['ApplicationLifecycleRuntimeOperations'],
+    operations: { pattern: /^(?:closeApplication|finalizeApplicationClose|clearRuntimeHints)$/ },
+    singularExecution: { routeProof: closeLifecycleRouteBindingViolations },
+    lifecycleProof: applicationLifecycleDurableResourceViolations,
+  },
+  {
+    rule: 'R31 runtime-runtime-cutover',
+    command: 'runtime',
+    subject: 'runtime hints and provider port reverse',
+    tier: 'durable-resource',
+    execution: 'device-runtime',
+    legacyRetirement: {
+      modulePaths: ['src/platform-runtime-application-lifecycle-ownership.ts'],
+      importPatterns: [
+        /(?:^|\/)platform-runtime-application-lifecycle-ownership(?:\.[cm]?[jt]s)?$/,
+      ],
+      routeNames: ['ProviderPortReverse'],
+    },
+    runtimeTypeNames: ['ApplicationLifecycleRuntimeOperations'],
+    operations: { pattern: /^(?:clearRuntimeHints|configureProviderPortReverse)$/ },
+    singularExecution: { routeProof: runtimeLifecycleRouteBindingViolations },
+    lifecycleProof: applicationLifecycleDurableResourceViolations,
   },
 ];
 
