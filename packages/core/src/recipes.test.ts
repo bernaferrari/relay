@@ -644,6 +644,12 @@ describe("validateRecipeSteps", () => {
         screenId: "home",
         screenTitle: "Home",
         fingerprint: "a".repeat(64),
+        repairCheckpoint: {
+          sourceRunId: "run-1",
+          sourceCheckId: "visit-home",
+          sourceInputDigest: "digest-1",
+          transitionId: "open-home",
+        },
       },
       { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
       { kind: "assert-content", input: "response", expected: "France", match: "contains" },

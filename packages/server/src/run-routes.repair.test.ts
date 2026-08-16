@@ -16,7 +16,24 @@ test("failed campaign checks are addressable as complete repair resources", asyn
     id: "usage:recover",
     title: "Usage recovery",
     source: "custom",
-    steps: [{ kind: "tap", target: { label: "Usage" } }],
+    steps: [
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "a".repeat(64),
+      },
+      {
+        kind: "tap",
+        target: { label: "Usage" },
+        navigationContract: {
+          connectionId: "open-usage",
+          expectedScreenId: "usage",
+          expectedFingerprint: "b".repeat(64),
+          evidenceIds: ["usage-evidence"],
+        },
+      },
+    ],
     createdAt: at,
     updatedAt: at,
   };
@@ -31,7 +48,19 @@ test("failed campaign checks are addressable as complete repair resources", asyn
         check: {
           id: "usage",
           title: "Usage",
-          recovery: { groupId: "settings:usage", recipeId: recovery.id },
+          recovery: {
+            groupId: "settings:usage",
+            recipeId: recovery.id,
+            transitionId: "open-usage",
+            mode: "warm-transition",
+          },
+          transitionDependencies: [
+            {
+              connectionId: "open-usage",
+              originScreenId: "settings",
+              destination: { kind: "screen", screenId: "usage" },
+            },
+          ],
         },
       },
     ],
@@ -62,7 +91,14 @@ test("failed campaign checks are addressable as complete repair resources", asyn
     recipeGraph: {
       [recipe.id]: recipe,
       [recovery.id]: recovery,
-      "usage:warm": { ...recovery, id: "usage:warm" },
+      "usage:warm": {
+        id: "usage:warm",
+        title: "Usage warm",
+        source: "custom",
+        steps: [{ kind: "module", recipeId: recovery.id }],
+        createdAt: at,
+        updatedAt: at,
+      },
     },
     artifacts: [
       {
@@ -133,8 +169,9 @@ test("failed campaign checks are addressable as complete repair resources", asyn
     };
     assert.equal(retry.repair.id, "failed-run:usage");
     assert.equal(retryJob.retryOf, "failed-run");
-    assert.equal(retryJob.recipeSnapshot?.steps.length, 1);
-    assert.equal(retryJob.recipeSnapshot?.steps[0]?.check?.id, "usage");
+    assert.equal(retryJob.recipeSnapshot?.steps.length, 2);
+    assert.equal(retryJob.recipeSnapshot?.steps[0]?.kind, "expect-screen");
+    assert.equal(retryJob.recipeSnapshot?.steps[1]?.check?.id, "usage");
     assert.equal(retryJob.artifacts?.[0]?.kind, "campaign-check-repair-lineage");
     assert.equal(retryJob.artifacts?.[0]?.data?.sourceCheckId, "usage");
   } finally {

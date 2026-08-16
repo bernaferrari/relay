@@ -337,6 +337,15 @@ export type RecipeStep = RecipeStepMetadata &
            * its stable top checkpoint before considering another Back. */
           restoreParentViewport?: boolean;
         };
+        /** A selective repair may begin only from this freshly re-observed
+         * frozen origin. The runner persists the proof and source lineage
+         * before any warm edge is allowed to mutate the device. */
+        repairCheckpoint?: {
+          sourceRunId: string;
+          sourceCheckId: string;
+          sourceInputDigest: string;
+          transitionId?: string;
+        };
       }
     | {
         kind: "extract";

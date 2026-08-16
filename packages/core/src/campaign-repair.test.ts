@@ -11,17 +11,41 @@ import {
 const at = 1_700_000_000_000;
 
 function fixture(): PersistedRun {
+  const rootRecovery: Recipe = {
+    id: "confirm-open-navigation",
+    title: "Canonical root recovery",
+    source: "custom",
+    steps: [{ kind: "app", action: "open", app: "ai.x.grok" }],
+    createdAt: at,
+    updatedAt: at,
+  };
   const recovery: Recipe = {
     id: "usage:recover",
     title: "Usage · canonical recovery",
     source: "custom",
     steps: [
-      { kind: "tap", target: { label: "Settings" } },
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "a".repeat(64),
+        recovery: { strategy: "back", maxAttempts: 8 },
+      },
+      {
+        kind: "tap",
+        target: { label: "Usage" },
+        navigationContract: {
+          connectionId: "open-usage",
+          expectedScreenId: "usage",
+          expectedFingerprint: "b".repeat(64),
+          evidenceIds: ["usage-evidence"],
+        },
+      },
       {
         kind: "expect-screen",
         screenId: "usage",
         screenTitle: "Usage",
-        fingerprint: "expected-usage",
+        fingerprint: "b".repeat(64),
       },
     ],
     createdAt: at,
@@ -46,7 +70,24 @@ function fixture(): PersistedRun {
         check: {
           id: "usage",
           title: "Usage",
-          recovery: { groupId: "settings:usage", recipeId: recovery.id },
+          recovery: {
+            groupId: "settings:usage",
+            recipeId: rootRecovery.id,
+            transitionId: "open-navigation",
+            mode: "warm-transition",
+          },
+          transitionDependencies: [
+            {
+              connectionId: "open-navigation",
+              originScreenId: "start",
+              destination: { kind: "screen", screenId: "settings" },
+            },
+            {
+              connectionId: "open-usage",
+              originScreenId: "settings",
+              destination: { kind: "screen", screenId: "usage" },
+            },
+          ],
         },
       },
       {
@@ -78,9 +119,17 @@ function fixture(): PersistedRun {
     recipeSnapshot: root,
     recipeGraph: {
       [root.id]: root,
+      [rootRecovery.id]: rootRecovery,
       [recovery.id]: recovery,
       [sibling.id]: sibling,
-      "usage:warm": { ...recovery, id: "usage:warm", title: "Usage warm" },
+      "usage:warm": {
+        id: "usage:warm",
+        title: "Usage warm",
+        source: "custom",
+        steps: [{ kind: "module", recipeId: recovery.id }],
+        createdAt: at,
+        updatedAt: at,
+      },
     },
     artifacts: [
       {
@@ -112,7 +161,7 @@ function fixture(): PersistedRun {
           finishedAt: at + 91,
           selectiveRepair: {
             status: "pending",
-            recipeId: recovery.id,
+            recipeId: rootRecovery.id,
             groupId: "settings:usage",
           },
         },
@@ -143,6 +192,8 @@ test("assembles one complete stable repair target without mutating source eviden
   assert.equal(repair.defaultAction, "continue-and-report");
   assert.equal(repair.source.appMapRevision, 7);
   assert.equal(repair.expected.recipeId, "usage:recover");
+  assert.equal(repair.expected.originScreenId, "settings");
+  assert.equal(repair.expected.transitionId, "open-usage");
   assert.equal(repair.expected.screenId, "usage");
   assert.equal(repair.observed.error, "Expected Usage, observed Settings");
   assert.equal(repair.evidence.frames[0]?.path, "frames/001.png");
@@ -163,8 +214,16 @@ test("builds a frozen one-check retry and omits successful siblings", () => {
   const run = fixture();
   const input = campaignCheckRepairInput(run, "usage");
   assert.equal(input.retryOf, run.id);
-  assert.equal(input.recipeSnapshot?.steps.length, 1);
-  const step = input.recipeSnapshot?.steps[0];
+  assert.equal(input.recipeSnapshot?.steps.length, 2);
+  const checkpoint = input.recipeSnapshot?.steps[0];
+  assert.equal(checkpoint?.kind, "expect-screen");
+  assert.equal(checkpoint?.kind === "expect-screen" ? checkpoint.screenId : undefined, "settings");
+  assert.equal(checkpoint?.kind === "expect-screen" ? checkpoint.recovery : undefined, undefined);
+  assert.equal(
+    checkpoint?.kind === "expect-screen" ? checkpoint.repairCheckpoint?.sourceRunId : undefined,
+    run.id,
+  );
+  const step = input.recipeSnapshot?.steps[1];
   assert.equal(step?.kind, "module");
   assert.equal(step?.kind === "module" ? step.recipeId : undefined, "usage:recover");
   assert.equal(
@@ -177,11 +236,10 @@ test("builds a frozen one-check retry and omits successful siblings", () => {
   assert.equal(input.artifacts?.[0]?.kind, "campaign-check-repair-lineage");
 });
 
-test("a first check keeps canonical setup but never replays later checks", () => {
+test("a first check drops frozen setup and requires the live origin proof", () => {
   const run = fixture();
   const check = run.recipeSnapshot!.steps[0]!;
   assert.ok(check.check);
-  check.check.recovery = undefined;
   run.recipeSnapshot!.steps = [
     { kind: "module", recipeId: "launch-grok" },
     check,
@@ -199,8 +257,43 @@ test("a first check keeps canonical setup but never replays later checks", () =>
   const input = campaignCheckRepairInput(run, "usage");
   assert.deepEqual(
     input.recipeSnapshot?.steps.flatMap((step) => (step.kind === "module" ? [step.recipeId] : [])),
-    ["launch-grok", "usage:warm"],
+    ["usage:recover"],
   );
+  assert.equal(input.recipeSnapshot?.steps[0]?.kind, "expect-screen");
+  assert.equal(
+    input.artifacts?.[0]?.data &&
+      (input.artifacts[0].data as { execution?: { setupStepsReplayed?: number } }).execution
+        ?.setupStepsReplayed,
+    0,
+  );
+});
+
+test("fails closed when no frozen origin proof exists", () => {
+  const run = fixture();
+  const recovery = run.recipeGraph!["usage:recover"]!;
+  recovery.steps = recovery.steps.filter((step) => step.kind !== "expect-screen");
+  assert.equal(
+    buildCampaignRepairTarget(run, "usage")?.actions.find((action) => action.kind === "retry-check")
+      ?.available,
+    false,
+  );
+  assert.throws(() => campaignCheckRepairInput(run, "usage"), /verified live origin/u);
+});
+
+test("refuses an app launch hidden inside a warm repair module", () => {
+  const run = fixture();
+  run.recipeGraph!["usage:recover"]!.steps.splice(1, 0, {
+    kind: "app",
+    action: "open",
+    app: "ai.x.grok",
+    relaunch: false,
+  });
+  assert.equal(
+    buildCampaignRepairTarget(run, "usage")?.actions.find((action) => action.kind === "retry-check")
+      ?.available,
+    false,
+  );
+  assert.throws(() => campaignCheckRepairInput(run, "usage"), /refuses app open/u);
 });
 
 test("links persisted selective attempts back to the original repair target", () => {

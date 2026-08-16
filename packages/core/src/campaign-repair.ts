@@ -97,6 +97,84 @@ function expectedScreenId(recipe: Recipe | undefined): string | undefined {
     .at(-1);
 }
 
+type RepairPlan = {
+  checkStep: RecipeStep & { check: NonNullable<RecipeStep["check"]> };
+  executableRecipeId: string;
+  origin: Extract<RecipeStep, { kind: "expect-screen" }>;
+  transitionId?: string;
+};
+
+function referencedRecipeIds(step: RecipeStep): string[] {
+  if (step.kind === "module" || step.kind === "repeat") return [step.recipeId];
+  if (step.kind === "flow") return [step.flow];
+  if (step.kind === "branch") {
+    return [step.thenRecipeId, ...(step.elseRecipeId ? [step.elseRecipeId] : [])];
+  }
+  return [];
+}
+
+function reachableSteps(
+  graph: Readonly<Record<string, Recipe>>,
+  recipeId: string,
+  seen = new Set<string>(),
+): RecipeStep[] {
+  if (seen.has(recipeId)) return [];
+  const recipe = graph[recipeId];
+  if (!recipe) throw new Error(`Frozen repair recipe ${recipeId} is missing`);
+  seen.add(recipeId);
+  return recipe.steps.flatMap((step) => [
+    step,
+    ...referencedRecipeIds(step).flatMap((childId) => reachableSteps(graph, childId, seen)),
+  ]);
+}
+
+function unsafeWarmRepairEffect(step: RecipeStep): string | undefined {
+  if (step.kind === "app") return `app ${step.action}`;
+  if (step.kind === "tour") return "tour navigation";
+  if (step.kind === "key" && step.key === "home") return "Home navigation";
+  if (["device", "rotate", "settings", "location", "permission"].includes(step.kind)) {
+    return `${step.kind} mutation`;
+  }
+  return undefined;
+}
+
+function repairPlan(run: PersistedRun, checkId: string): RepairPlan | undefined {
+  const checkStep = frozenCheckStep(run, checkId);
+  if (!checkStep || !run.recipeGraph) return undefined;
+  const terminalDependency = checkStep.check.transitionDependencies?.at(-1);
+  if (!terminalDependency) return undefined;
+  const transitionId = terminalDependency.connectionId;
+  const originScreenId = terminalDependency.originScreenId;
+  const candidates = Object.entries(run.recipeGraph).filter(
+    ([id, recipe]) =>
+      id.includes(`:connection:${transitionId}:`) ||
+      recipe.steps.some(
+        (step) => step.kind === "tap" && step.navigationContract?.connectionId === transitionId,
+      ),
+  );
+  if (candidates.length !== 1) return undefined;
+  const executableRecipeId = candidates[0]![0];
+  const executableSteps = reachableSteps(run.recipeGraph, executableRecipeId);
+  const origin = executableSteps.find(
+    (step): step is Extract<RecipeStep, { kind: "expect-screen" }> =>
+      step.kind === "expect-screen" && (!originScreenId || step.screenId === originScreenId),
+  );
+  if (!origin) return undefined;
+  const steps = [
+    ...executableSteps,
+    ...(checkStep.check.cleanup
+      ? reachableSteps(run.recipeGraph, checkStep.check.cleanup.recipeId)
+      : []),
+  ];
+  const unsafe = steps.find((step) => unsafeWarmRepairEffect(step));
+  if (unsafe) {
+    throw new Error(
+      `Live-checkpoint repair refuses ${unsafeWarmRepairEffect(unsafe)} in ${executableRecipeId}`,
+    );
+  }
+  return { checkStep, executableRecipeId, origin, transitionId };
+}
+
 const proposalRequirements = {
   actorAttribution: true,
   priorRevision: true,
@@ -140,11 +218,14 @@ function actions(input: {
       available: input.retryAvailable,
       mutation: "new-run",
       description:
-        "Create a lineage-linked run containing only the canonical setup and this failed check.",
+        "Verify the live origin, then create a lineage-linked run containing only the warm failed check.",
       operationId: "run.repair.retry",
       fixedInput: { runId: input.runId, checkId: input.checkId },
       ...(!input.retryAvailable
-        ? { unavailableReason: "The source run has no frozen executable recipe for this check." }
+        ? {
+            unavailableReason:
+              "The source run has no frozen origin proof and warm executable recipe for this check.",
+          }
         : {}),
     },
     {
@@ -206,7 +287,7 @@ export function buildCampaignRepairTarget(
     frozenStep?.check.recovery?.recipeId ??
     (frozenStep?.kind === "module" ? frozenStep.recipeId : undefined);
   const recipe = recipeId ? run.recipeGraph?.[recipeId] : undefined;
-  const plan = planIdentity(run);
+  const identity = planIdentity(run);
   const frames = (run.frames ?? []).flatMap((frame, index) =>
     frame.caption === `failed:${checkId}`
       ? [
@@ -219,7 +300,21 @@ export function buildCampaignRepairTarget(
         ]
       : [],
   );
-  const retryAvailable = Boolean(frozenStep && run.recipeSnapshot && run.recipeGraph && recipeId);
+  let checkpointPlan: RepairPlan | undefined;
+  try {
+    checkpointPlan = run.recipeSnapshot ? repairPlan(run, checkId) : undefined;
+  } catch {
+    checkpointPlan = undefined;
+  }
+  const retryAvailable = Boolean(checkpointPlan);
+  const terminalDestination =
+    checkpointPlan?.checkStep.check.transitionDependencies?.at(-1)?.destination;
+  const repairScreenId =
+    terminalDestination?.kind === "screen"
+      ? terminalDestination.screenId
+      : expectedScreenId(
+          checkpointPlan ? run.recipeGraph?.[checkpointPlan.executableRecipeId] : recipe,
+        );
   return {
     schemaVersion: 1,
     id: repairTargetId(run.id, checkId),
@@ -232,13 +327,21 @@ export function buildCampaignRepairTarget(
       checkTitle: text(result.data.title) ?? checkId,
       action: run.action,
       capturedAt: result.artifact.capturedAt,
-      ...plan,
+      ...identity,
     },
     expected: {
-      ...(recipeId ? { recipeId } : {}),
-      ...(expectedScreenId(recipe) ? { screenId: expectedScreenId(recipe) } : {}),
+      ...(checkpointPlan?.executableRecipeId || recipeId
+        ? { recipeId: checkpointPlan?.executableRecipeId ?? recipeId }
+        : {}),
+      ...(repairScreenId ? { screenId: repairScreenId } : {}),
       ...(text(selectiveRepair?.groupId) || frozenStep?.check.recovery?.groupId
         ? { groupId: text(selectiveRepair?.groupId) ?? frozenStep?.check.recovery?.groupId }
+        : {}),
+      ...(checkpointPlan
+        ? {
+            originScreenId: checkpointPlan.origin.screenId,
+            ...(checkpointPlan.transitionId ? { transitionId: checkpointPlan.transitionId } : {}),
+          }
         : {}),
     },
     observed: {
@@ -265,7 +368,7 @@ export function buildCampaignRepairTarget(
       runId: run.id,
       checkId,
       retryAvailable,
-      ...plan,
+      ...identity,
     }),
   };
 }
@@ -342,34 +445,38 @@ export function campaignCheckRepairInput(run: PersistedRun, checkId: string): En
   if (!run.recipeSnapshot || !run.recipeGraph) {
     throw new Error("This run predates frozen recipe data and cannot retry one check safely");
   }
-  const checkStep = frozenCheckStep(run, checkId);
-  if (!checkStep) throw new Error(`Frozen recipe has no check ${checkId}`);
-  const recoveryRecipeId = checkStep.check.recovery?.recipeId;
-  const moduleRecipeId = checkStep.kind === "module" ? checkStep.recipeId : undefined;
-  const executableRecipeId = recoveryRecipeId ?? moduleRecipeId;
-  if (!executableRecipeId || !run.recipeGraph[executableRecipeId]) {
-    throw new Error(`Frozen recipe has no canonical executable path for check ${checkId}`);
+  const plan = repairPlan(run, checkId);
+  if (!plan) {
+    throw new Error(
+      `Frozen recipe has no verified live origin and warm executable path for check ${checkId}`,
+    );
   }
-  const rootCheckIndex = run.recipeSnapshot.steps.findIndex((step) => step.check?.id === checkId);
-  const setupSteps =
-    rootCheckIndex < 0
-      ? []
-      : run.recipeSnapshot.steps.slice(0, rootCheckIndex).filter((step) => !step.check);
   const rootId = `repair:${run.id}:${checkId}`;
+  const { recovery: _recovery, ...warmCheck } = plan.checkStep.check;
+  const checkpoint: Extract<RecipeStep, { kind: "expect-screen" }> = {
+    ...structuredClone(plan.origin),
+    timeoutMs: 0,
+    recovery: undefined,
+    repairCheckpoint: {
+      sourceRunId: run.id,
+      sourceCheckId: checkId,
+      sourceInputDigest: run.inputDigest,
+      ...(plan.transitionId ? { transitionId: plan.transitionId } : {}),
+    },
+  };
   const root: Recipe = {
     id: rootId,
     title: `${target.source.checkTitle} · selective repair`,
     description: `Retries only check ${checkId} from immutable run ${run.id}.`,
     source: "custom",
-    steps: recoveryRecipeId
-      ? [
-          {
-            kind: "module",
-            recipeId: recoveryRecipeId,
-            check: { id: checkId, title: target.source.checkTitle },
-          },
-        ]
-      : [...structuredClone(setupSteps), structuredClone(checkStep)],
+    steps: [
+      checkpoint,
+      {
+        kind: "module",
+        recipeId: plan.executableRecipeId,
+        check: structuredClone(warmCheck),
+      },
+    ],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -390,7 +497,22 @@ export function campaignCheckRepairInput(run: PersistedRun, checkId: string): En
     targetProfile: run.targetProfile,
     variables: structuredClone(run.resolvedInputs),
     recipeSnapshot: root,
-    recipeGraph: { ...structuredClone(run.recipeGraph), [root.id]: root },
+    recipeGraph: {
+      ...Object.fromEntries(
+        Object.entries(structuredClone(run.recipeGraph)).map(([id, recipe]) => [
+          id,
+          {
+            ...recipe,
+            steps: recipe.steps.map((step) =>
+              step.kind === "expect-screen" && step.recovery
+                ? { ...step, recovery: undefined }
+                : step,
+            ),
+          },
+        ]),
+      ),
+      [root.id]: root,
+    },
     projectId: run.projectId,
     ownerId: run.ownerId,
     retryOf: run.id,
@@ -405,6 +527,22 @@ export function campaignCheckRepairInput(run: PersistedRun, checkId: string): En
           sourceCheckId: checkId,
           sourceInputDigest: run.inputDigest,
           sourceCapturedAt: target.source.capturedAt,
+          ...(plan.checkStep.check.recovery?.recipeId
+            ? { sourceRecoveryRecipeId: plan.checkStep.check.recovery.recipeId }
+            : {}),
+          checkpoint: {
+            screenId: checkpoint.screenId,
+            screenTitle: checkpoint.screenTitle,
+            fingerprint: checkpoint.fingerprint,
+            aliases: [...(checkpoint.aliases ?? [])],
+            ...(plan.transitionId ? { transitionId: plan.transitionId } : {}),
+            status: "required-live-proof",
+          },
+          execution: {
+            recipeId: plan.executableRecipeId,
+            mode: "warm-only",
+            setupStepsReplayed: 0,
+          },
         },
       },
     ],

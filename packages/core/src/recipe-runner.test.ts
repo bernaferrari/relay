@@ -2255,6 +2255,40 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(backs, 0);
   });
 
+  it("persists immutable lineage after a fresh selective-repair checkpoint matches", async () => {
+    const job = { id: "repair-job", artifacts: [] } as unknown as TestJob;
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+      {
+        kind: "expect-screen",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint,
+        timeoutMs: 0,
+        repairCheckpoint: {
+          sourceRunId: "0bc5b19f",
+          sourceCheckId: "visit-14",
+          sourceInputDigest: "immutable-source",
+          transitionId: "open-advanced",
+        },
+      },
+      { ...noLog, job, runtime: {} },
+    );
+
+    const proof = job.artifacts.find(
+      (artifact) => artifact.kind === "campaign-repair-checkpoint-proof",
+    )?.data as {
+      source?: { sourceRunId?: string; sourceCheckId?: string };
+      expected?: { screenId?: string };
+      observed?: { accessibility?: { nodeCount?: number }; nodes?: unknown[] };
+    };
+    assert.equal(proof.source?.sourceRunId, "0bc5b19f");
+    assert.equal(proof.source?.sourceCheckId, "visit-14");
+    assert.equal(proof.expected?.screenId, "settings");
+    assert.equal(proof.observed?.accessibility?.nodeCount, 1);
+    assert.equal(proof.observed?.nodes?.length, 1);
+  });
+
   it("starts Android destination semantics and raster together and retains the matched pair", async () => {
     let resolveNodes!: (value: { nodes: typeof nodes }) => void;
     let resolveRaster!: (value: ScreenshotPayload) => void;

@@ -418,7 +418,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("repair retry", ["runId", "checkId"], undefined, {
       summary: "Retry only one failed check from immutable run evidence",
       behavior: "job-start-watch",
-      note: "Creates a new lineage-linked run. The original run and saved Test remain unchanged.",
+      note: "Proves the live origin, then runs only the warm failed check. No setup or app launch is replayed; the original run and saved Test remain unchanged.",
     }),
     path("run repair retry", ["runId", "checkId"], undefined, {
       behavior: "job-start-watch",

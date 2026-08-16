@@ -115,6 +115,11 @@ test("selective repair operations require one exact immutable run check", () => 
     () => operationDefinition("run.repair.retry").input.parse({ runId: "run-1" }),
     /checkId/,
   );
+  assert.deepEqual(operationDefinition("run.repair.retry").targetCapabilities, [
+    "tap",
+    "snapshot",
+    "screenshot",
+  ]);
 });
 
 test("map teach accepts a point tap without expectedRevision", () => {

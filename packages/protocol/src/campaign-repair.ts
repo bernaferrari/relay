@@ -49,6 +49,8 @@ export type CampaignRepairTarget = {
     recipeId?: string;
     screenId?: string;
     groupId?: string;
+    originScreenId?: string;
+    transitionId?: string;
   };
   observed: {
     error: string;

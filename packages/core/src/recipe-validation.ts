@@ -383,6 +383,34 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             destinationScreenId: requirement.destinationScreenId.trim(),
           };
         }
+        let repairCheckpoint: Extract<RecipeStep, { kind: "expect-screen" }>["repairCheckpoint"];
+        if (raw.repairCheckpoint !== undefined) {
+          if (
+            !isObject(raw.repairCheckpoint) ||
+            !isString(raw.repairCheckpoint.sourceRunId) ||
+            !raw.repairCheckpoint.sourceRunId.trim() ||
+            !isString(raw.repairCheckpoint.sourceCheckId) ||
+            !raw.repairCheckpoint.sourceCheckId.trim() ||
+            !isString(raw.repairCheckpoint.sourceInputDigest) ||
+            !raw.repairCheckpoint.sourceInputDigest.trim() ||
+            (raw.repairCheckpoint.transitionId !== undefined &&
+              (!isString(raw.repairCheckpoint.transitionId) ||
+                !raw.repairCheckpoint.transitionId.trim()))
+          ) {
+            throw stepErr(
+              index,
+              "expect-screen.repairCheckpoint requires source run, check, and input digest",
+            );
+          }
+          repairCheckpoint = {
+            sourceRunId: raw.repairCheckpoint.sourceRunId.trim(),
+            sourceCheckId: raw.repairCheckpoint.sourceCheckId.trim(),
+            sourceInputDigest: raw.repairCheckpoint.sourceInputDigest.trim(),
+            ...(isString(raw.repairCheckpoint.transitionId)
+              ? { transitionId: raw.repairCheckpoint.transitionId.trim() }
+              : {}),
+          };
+        }
         out.push({
           kind: "expect-screen",
           screenId: raw.screenId,
@@ -401,6 +429,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             : {}),
           ...(recovery ? { recovery } : {}),
           ...(returnRequirement ? { returnRequirement } : {}),
+          ...(repairCheckpoint ? { repairCheckpoint } : {}),
           ...(note ? { note } : {}),
         });
         break;

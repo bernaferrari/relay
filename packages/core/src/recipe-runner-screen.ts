@@ -263,5 +263,55 @@ export async function runExpectScreenStep(
     ctx.runtime.observation = checkpoint;
     ctx.runtime.verifiedScreen = checkpoint;
   }
+  if (verifiedNodes && step.repairCheckpoint && ctx.job) {
+    const proofScreenshot = await captureScreenshot({
+      jobId: ctx.job.id,
+      device,
+      caption: `repair-checkpoint:${step.repairCheckpoint.sourceCheckId}:${step.screenId}`,
+      semanticNodes: verifiedNodes,
+      includeScreenMatch: true,
+    }).catch(() => undefined);
+    const observed = observeScreenIdentity(verifiedNodes);
+    const capturedAt = now();
+    ctx.job.artifacts.push({
+      kind: "campaign-repair-checkpoint-proof",
+      capturedAt,
+      data: {
+        schemaVersion: 1,
+        tokenId: `${ctx.job.id}:${step.repairCheckpoint.sourceRunId}:${step.repairCheckpoint.sourceCheckId}`,
+        source: structuredClone(step.repairCheckpoint),
+        expected: {
+          screenId: step.screenId,
+          screenTitle: step.screenTitle,
+          fingerprint: step.fingerprint,
+          aliases: [...(step.aliases ?? [])],
+          observations: structuredClone(step.observations ?? []),
+          ...(step.expectedApp ? { expectedApp: step.expectedApp } : {}),
+        },
+        observed: {
+          observedAt: verifiedObservedAt ?? capturedAt,
+          verifiedAt: capturedAt,
+          screenIdentity: observed,
+          chrome: describeSnapshotChrome(verifiedNodes),
+          accessibility: { available: true, nodeCount: verifiedNodes.length },
+          nodes: structuredClone(verifiedNodes),
+          ...(proofScreenshot
+            ? {
+                screenshot: {
+                  ...(proofScreenshot.framePath ? { framePath: proofScreenshot.framePath } : {}),
+                  ...(proofScreenshot.path ? { path: proofScreenshot.path } : {}),
+                  ...(proofScreenshot.width ? { width: proofScreenshot.width } : {}),
+                  ...(proofScreenshot.height ? { height: proofScreenshot.height } : {}),
+                  ...(proofScreenshot.screenMatch
+                    ? { screenMatch: structuredClone(proofScreenshot.screenMatch) }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      },
+    });
+    ctx.log(`repair checkpoint: verified ${step.screenTitle} from fresh device evidence`);
+  }
   ctx.log(`screen: reached ${step.screenTitle}`);
 }

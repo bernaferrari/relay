@@ -2638,7 +2638,7 @@ export const operationDefinitions = [
       progress: true,
       cancellable: true,
       lease: "exclusive",
-      targetCapabilities: ["tap", "snapshot", "screenshot", "launch"],
+      targetCapabilities: ["tap", "snapshot", "screenshot"],
     },
   ),
   command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {
