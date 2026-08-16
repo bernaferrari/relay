@@ -264,6 +264,12 @@ export function compileAppMapScenarioTest(
             ...recipe,
             steps: recipe.steps.flatMap((recipeStep) => {
               if (recipeStep.kind !== "expect-screen") return [recipeStep];
+              const boundedExpectation = recipeStep.recovery
+                ? {
+                    ...recipeStep,
+                    recovery: { ...recipeStep.recovery, maxAttempts: 1 },
+                  }
+                : recipeStep;
               const sourceExpectation =
                 recipeStep.id?.startsWith("relay-source-") === true ||
                 recipeStep.id?.endsWith(":warm") === true ||
@@ -280,7 +286,7 @@ export function compileAppMapScenarioTest(
                     })
                   : undefined;
               return [
-                recipeStep,
+                boundedExpectation,
                 ...(capture ? [capture] : []),
                 ...(logicalSurface ? [logicalSurface] : []),
               ];
@@ -290,17 +296,27 @@ export function compileAppMapScenarioTest(
             instructionGraph[recipeKey] = decorateRecipe(recipe);
           }
           let recoveryRecipeId: string | undefined;
+          let coldRecoveryRecipeId: string | undefined;
           const recoveryTransition = transitionDependencies[0];
           if (campaignSetupSteps.length > 0 && recoveryTransition) {
-            recoveryRecipeId = `${id}:recover:${recoveryTransition.connectionId}`;
             const connectionPlan = compileAppMapConnection(map, recoveryTransition.connectionId);
             for (const compiled of Object.values(connectionPlan.recipes)) {
               instructionGraph[compiled.id] = asRecipe(map, compiled);
             }
             const connectionRoot = instructionGraph[connectionPlan.rootRecipeId]!;
+            recoveryRecipeId = `${id}:confirm:${recoveryTransition.connectionId}`;
             instructionGraph[recoveryRecipeId] = {
               id: recoveryRecipeId,
-              title: `${connectionRoot.title} · canonical transition confirmation`,
+              title: `${connectionRoot.title} · warm transition confirmation`,
+              source: "custom",
+              steps: structuredClone(connectionRoot.steps),
+              createdAt: map.createdAt,
+              updatedAt: map.updatedAt,
+            };
+            coldRecoveryRecipeId = `${id}:proposed-cold-recovery:${recoveryTransition.connectionId}`;
+            instructionGraph[coldRecoveryRecipeId] = {
+              id: coldRecoveryRecipeId,
+              title: `${connectionRoot.title} · proposed cold recovery`,
               source: "custom",
               steps: [
                 ...structuredClone(campaignSetupSteps),
@@ -340,6 +356,8 @@ export function compileAppMapScenarioTest(
                       groupId: `transition:${recoveryTransition!.connectionId}`,
                       recipeId: recoveryRecipeId,
                       transitionId: recoveryTransition!.connectionId,
+                      mode: "warm-transition",
+                      coldRecipeId: coldRecoveryRecipeId!,
                     },
                   }
                 : {}),

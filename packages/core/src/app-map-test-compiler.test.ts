@@ -568,7 +568,7 @@ test("instruction cleanup compiles an auditable always-run routine and terminal 
   );
 });
 
-test("later instruction checks compile one canonical cold recovery path", () => {
+test("later instruction checks split warm confirmation from proposed cold recovery", () => {
   const map = fixture();
   const work = scenario();
   const setup = work.steps.find((step) => step.id === "module")!;
@@ -586,13 +586,21 @@ test("later instruction checks compile one canonical cold recovery path", () => 
   assert.ok(secondCheck.check?.recovery);
   const recovery = compiled.graph[secondCheck.check.recovery.recipeId];
   assert.ok(recovery);
-  assert.equal(recovery.steps[0]?.kind, "module");
+  assert.equal(recovery.steps[0]?.kind, "expect-screen");
+  assert.equal(
+    recovery.steps.some((step) => step.kind === "app" && step.action === "open"),
+    false,
+  );
   assert.equal(
     recovery.steps.some((step) => step.kind === "expect-screen" && step.screenId === "home"),
     true,
   );
   assert.equal(secondCheck.check.recovery.groupId, "transition:open-cart");
   assert.equal(secondCheck.check.recovery.transitionId, "open-cart");
+  assert.equal(secondCheck.check.recovery.mode, "warm-transition");
+  const proposedColdRecovery = compiled.graph[secondCheck.check.recovery.coldRecipeId!];
+  assert.ok(proposedColdRecovery);
+  assert.equal(proposedColdRecovery.steps[0]?.kind, "module");
   assert.deepEqual(secondCheck.check.transitionDependencies, [
     {
       connectionId: "open-cart",

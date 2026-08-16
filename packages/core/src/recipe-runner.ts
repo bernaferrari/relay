@@ -16,6 +16,7 @@ import {
   waitForResponseCompletion,
 } from "./recipe-runner-support.js";
 import {
+  campaignCoverageForbiddenEffect,
   campaignExecutionStep,
   invalidateVerifiedScreen,
   stepBreaksVerifiedScreen,
@@ -163,6 +164,36 @@ async function runRequiredRecipeStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   const { log, job } = ctx;
+  if (ctx.runtime?.campaignCoverageStarted) {
+    const blockedEffect = campaignCoverageForbiddenEffect(step);
+    if (blockedEffect) {
+      const capturedAt = now();
+      job?.artifacts.push({
+        kind: "campaign-effect-blocked",
+        capturedAt,
+        data: {
+          schemaVersion: 1,
+          stepId: step.id,
+          stepKind: step.kind,
+          effect: {
+            kind: step.kind,
+            ...("action" in step ? { action: step.action } : {}),
+            ...("app" in step && step.app ? { app: step.app } : {}),
+            ...("relaunch" in step && step.relaunch !== undefined
+              ? { relaunch: step.relaunch }
+              : {}),
+            ...("url" in step && step.url ? { hasUrl: true } : {}),
+            ...("setting" in step ? { setting: step.setting } : {}),
+            ...("key" in step ? { key: step.key } : {}),
+          },
+          reason: blockedEffect,
+          coverageStarted: true,
+        },
+      });
+      log(`campaign safety: blocked ${step.kind} — ${blockedEffect}`);
+      throw new Error(`Campaign safety blocked ${step.kind}: ${blockedEffect}`);
+    }
+  }
   if (stepBreaksVerifiedScreen(step)) invalidateVerifiedScreen(ctx);
   switch (step.kind) {
     case "tap":
@@ -353,7 +384,16 @@ async function runRequiredRecipeStep(
     }
 
     case "expect-screen": {
-      await runExpectScreenStep(device, step, ctx);
+      const boundedStep =
+        ctx.runtime?.campaignCoverageStarted &&
+        step.recovery &&
+        (step.recovery.maxAttempts ?? 8) > 1
+          ? { ...step, recovery: { ...step.recovery, maxAttempts: 1 } }
+          : step;
+      if (boundedStep !== step) {
+        log("campaign safety: bounded semantic Back recovery to one reviewed attempt");
+      }
+      await runExpectScreenStep(device, boundedStep, ctx);
       break;
     }
 

@@ -12,6 +12,7 @@ import {
 import {
   finalizeDeferredCampaignChecks,
   retryDeferredCampaignChecks,
+  runCampaignCheck,
 } from "./recipe-runner-extended-steps.js";
 
 it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
@@ -1168,7 +1169,11 @@ describe("runRecipeStep campaign check policy", () => {
         updatedAt: 1,
       },
     };
-    const recovery = { groupId: "settings", recipeId: "recover" };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
     const device = stubDevice({
       press: () => Promise.reject(new Error("row disappeared")),
       wait: async () => {
@@ -1246,7 +1251,11 @@ describe("runRecipeStep campaign check policy", () => {
         updatedAt: 1,
       },
     };
-    const recovery = { groupId: "settings", recipeId: "recover" };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
     const device = stubDevice({
       press: () => Promise.reject(new Error("row disappeared")),
       wait: async () => {
@@ -1315,7 +1324,11 @@ describe("runRecipeStep campaign check policy", () => {
         updatedAt: 1,
       },
     };
-    const recovery = { groupId: "settings", recipeId: "recover" };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
     const device = stubDevice({
       press: () => Promise.reject(new Error("row disappeared")),
       wait: async () => {},
@@ -1400,7 +1413,11 @@ describe("runRecipeStep campaign check policy", () => {
   it("blocks only a dependency group after its canonical recovery fails", async () => {
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
     const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
-    const recovery = { groupId: "settings", recipeId: "recover" };
+    const recovery = {
+      groupId: "settings",
+      recipeId: "recover",
+      mode: "warm-transition" as const,
+    };
     const failingTap = { kind: "tap" as const, target: { identifier: "missing" } };
     const recipeGraph = {
       recover: {
@@ -1457,6 +1474,8 @@ describe("runRecipeStep campaign check policy", () => {
       groupId: "transition:open-settings-top",
       recipeId: "confirm-open-settings-top",
       transitionId: "open-settings-top",
+      mode: "warm-transition" as const,
+      coldRecipeId: "proposed-cold-open-settings-top",
     };
     const recipeGraph = {
       "confirm-open-settings-top": {
@@ -1574,6 +1593,170 @@ describe("runRecipeStep campaign check policy", () => {
       logs.some((line) => line.includes("Unrelated authored check")),
       true,
     );
+  });
+
+  it("persists one SOS and never executes a cold recovery after coverage begins", async () => {
+    const job = { id: "d7ef41b4-regression", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const logs: string[] = [];
+    let coldExecutions = 0;
+    let unrelatedExecutions = 0;
+    const dependency = {
+      connectionId: "open-settings-top",
+      originScreenId: "start",
+      destination: { kind: "screen" as const, screenId: "settings-top" },
+    };
+    const unsafeRecovery = {
+      groupId: "transition:open-settings-top",
+      recipeId: "legacy-cold-open-settings",
+      transitionId: "open-settings-top",
+      coldRecipeId: "legacy-cold-open-settings",
+    };
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              text: "Settings",
+              visibleToUser: true,
+              rect: { x: 0, y: 0, width: 1080, height: 2200 },
+            },
+          ],
+        }),
+    });
+    const context = {
+      log: (line: string) => logs.push(line),
+      job,
+      runtime,
+      recipeGraph: {},
+    };
+    const failedCheck = {
+      kind: "sleep" as const,
+      ms: 1,
+      check: {
+        id: "visit-data-controls",
+        title: "Visit Data Controls",
+        recovery: unsafeRecovery,
+        transitionDependencies: [dependency],
+      },
+    };
+
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "recipe-runner-test" },
+      async () => {
+        await runCampaignCheck(device, failedCheck, context, async () => {
+          throw new Error("Settings origin was not found");
+        });
+        await runCampaignCheck(
+          device,
+          {
+            ...failedCheck,
+            check: {
+              ...failedCheck.check,
+              id: "visit-cloud-storage",
+              title: "Visit Cloud Storage",
+            },
+          },
+          context,
+          async (recipeId) => {
+            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+          },
+        );
+        await runCampaignCheck(
+          device,
+          {
+            ...failedCheck,
+            check: { ...failedCheck.check, id: "visit-privacy", title: "Visit Privacy" },
+          },
+          context,
+          async (recipeId) => {
+            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+          },
+        );
+        await runCampaignCheck(
+          device,
+          { kind: "sleep", ms: 1, check: { id: "visit-profile", title: "Visit Profile" } },
+          context,
+          async () => {
+            unrelatedExecutions += 1;
+          },
+        );
+      },
+    );
+
+    assert.equal(coldExecutions, 0);
+    assert.equal(unrelatedExecutions, 1);
+    assert.equal(
+      job.artifacts.filter((artifact) => artifact.kind === "human-intervention-requested").length,
+      1,
+    );
+    const intervention = job.artifacts.find(
+      (artifact) => artifact.kind === "campaign-recovery-intervention",
+    )?.data as {
+      transitionId?: string;
+      nodes?: unknown[];
+      screenshot?: { caption?: string };
+      recovery?: {
+        proposedColdRecipeId?: string;
+        implicitResumeAllowed?: boolean;
+        choices?: string[];
+      };
+    };
+    assert.equal(intervention.transitionId, "open-settings-top");
+    assert.equal(intervention.nodes?.length, 1);
+    assert.equal(intervention.screenshot?.caption, "sos:cold-recovery:open-settings-top");
+    assert.equal(intervention.recovery?.proposedColdRecipeId, "legacy-cold-open-settings");
+    assert.equal(intervention.recovery?.implicitResumeAllowed, false);
+    assert.deepEqual(intervention.recovery?.choices, [
+      "fix-current-state",
+      "teach-semantic-repair",
+      "approve-cold-once",
+      "defer",
+    ]);
+    assert.deepEqual(
+      job.artifacts
+        .filter((artifact) => artifact.kind === "campaign-check-result")
+        .map((artifact) => (artifact.data as { status?: string }).status),
+      ["blocked", "blocked", "passed"],
+    );
+    assert.equal(logs.filter((line) => line.includes("SOS: cold recovery blocked")).length, 1);
+  });
+
+  it("firewalls hidden cold effects in graph modules during coverage", async () => {
+    const job = { id: "coverage-firewall", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const context = {
+      ...noLog,
+      job,
+      runtime,
+      recipeGraph: {
+        "arbitrary-setup": {
+          id: "arbitrary-setup",
+          title: "Arbitrary graph setup",
+          source: "custom" as const,
+          steps: [{ kind: "app" as const, action: "open" as const, app: "ai.x.grok" }],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    };
+
+    await runRecipeStep(
+      stubDevice({}),
+      {
+        kind: "module",
+        recipeId: "arbitrary-setup",
+        check: { id: "unsafe-setup", title: "Unsafe setup" },
+      },
+      context,
+    );
+    finalizeDeferredCampaignChecks(context);
+
+    const blocked = job.artifacts.find((artifact) => artifact.kind === "campaign-effect-blocked")
+      ?.data as { reason?: string; coverageStarted?: boolean };
+    assert.match(blocked.reason ?? "", /relaunch:false/u);
+    assert.equal(blocked.coverageStarted, true);
+    assert.equal(runtime.campaignCoverageStarted, true);
   });
 });
 

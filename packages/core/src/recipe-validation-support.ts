@@ -809,11 +809,31 @@ function parseStepMetadata(
           "check.recovery.transitionId must be a non-empty string of at most 256 characters",
         );
       }
+      if (raw.check.recovery.mode !== undefined && raw.check.recovery.mode !== "warm-transition") {
+        throw stepErr(index, 'check.recovery.mode must be "warm-transition"');
+      }
+      if (
+        raw.check.recovery.coldRecipeId !== undefined &&
+        (!isString(raw.check.recovery.coldRecipeId) ||
+          !raw.check.recovery.coldRecipeId.trim() ||
+          raw.check.recovery.coldRecipeId.trim().length > 512)
+      ) {
+        throw stepErr(
+          index,
+          "check.recovery.coldRecipeId must be a non-empty string of at most 512 characters",
+        );
+      }
       recovery = {
         groupId: raw.check.recovery.groupId.trim(),
         recipeId: raw.check.recovery.recipeId.trim(),
         ...(isString(raw.check.recovery.transitionId) && raw.check.recovery.transitionId.trim()
           ? { transitionId: raw.check.recovery.transitionId.trim() }
+          : {}),
+        ...(raw.check.recovery.mode === "warm-transition"
+          ? { mode: "warm-transition" as const }
+          : {}),
+        ...(isString(raw.check.recovery.coldRecipeId)
+          ? { coldRecipeId: raw.check.recovery.coldRecipeId.trim() }
           : {}),
       };
     }

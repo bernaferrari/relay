@@ -178,10 +178,16 @@ export type RecipeStepMetadata = {
      * group instead of cascading misleading failures through the campaign. */
     recovery?: {
       groupId: string;
+      /** Safe single-edge confirmation. It never contains app launch, reset,
+       * or campaign setup and may run at most once. */
       recipeId: string;
       /** Exact shared edge confirmed by this canonical recovery. Legacy
        * recipes without it retain group-scoped recovery behavior. */
       transitionId?: string;
+      mode?: "warm-transition";
+      /** Proposed cold setup retained for SOS/review only. The campaign
+       * runner never executes it automatically or merely because a job resumed. */
+      coldRecipeId?: string;
     };
     /** Always-run compensating Routine for stateful campaign checks. */
     cleanup?: {

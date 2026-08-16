@@ -48,7 +48,36 @@ export type RecipeRuntimeState = {
    * check invalidates that assumption; the next check gets exactly one
    * canonical recovery path instead of probing Back from an unknown state. */
   campaignItineraryTrusted?: boolean;
+  /** Becomes true at the first coverage check and never resets during the run.
+   * Destructive setup effects are firewalled after this boundary, including
+   * when they are hidden inside reusable modules or graph routines. */
+  campaignCoverageStarted?: boolean;
 };
+
+export function campaignCoverageForbiddenEffect(step: RecipeStep): string | undefined {
+  if (step.kind === "app") {
+    if (step.action === "open") {
+      if (step.url) return "opening a URL is a reviewed handoff effect";
+      if (step.relaunch !== false) {
+        return "app open requires explicit relaunch:false after coverage begins";
+      }
+      return undefined;
+    }
+    if (!["inspect", "assert-installed", "assert-not-installed"].includes(step.action)) {
+      return `app ${step.action} is a setup/reset effect`;
+    }
+  }
+  if (["rotate", "settings", "location", "permission"].includes(step.kind)) {
+    return `${step.kind} is a setup/device mutation effect`;
+  }
+  if (step.kind === "device" && ["lock", "unlock"].includes(step.action)) {
+    return `device ${step.action} is a setup/device mutation effect`;
+  }
+  if (step.kind === "key" && step.key === "home") {
+    return "device Home is a setup/navigation reset effect";
+  }
+  return undefined;
+}
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
   "tour",

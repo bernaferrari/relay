@@ -89,6 +89,95 @@ async function captureCampaignFailureEvidence(
   }).catch(() => undefined);
 }
 
+async function captureCampaignRecoveryIntervention(
+  device: Device,
+  check: NonNullable<RecipeStep["check"]>,
+  ctx: RecipeStepContext,
+  transitionId: string,
+  reason: string,
+): Promise<void> {
+  const job = ctx.job;
+  if (!job) return;
+  let nodes: Awaited<ReturnType<typeof snapshot>> = [];
+  let accessibilityAvailable = false;
+  try {
+    nodes = await snapshot(device);
+    accessibilityAvailable = true;
+  } catch {
+    // Pixels plus the prior action evidence still form a truthful SOS package.
+  }
+  const caption = `sos:cold-recovery:${transitionId}`;
+  const screenshot = await captureScreenshot({
+    jobId: job.id,
+    caption,
+    device,
+    ...(nodes.length ? { semanticNodes: nodes } : {}),
+  }).catch(() => undefined);
+  const capturedAt = now();
+  const attempts = job.artifacts
+    .filter((artifact) =>
+      [
+        "target-resolution",
+        "target-resolution-attempt",
+        "locator-fallback",
+        "locator-heal",
+      ].includes(artifact.kind),
+    )
+    .slice(-32)
+    .map((artifact) => ({
+      kind: artifact.kind,
+      capturedAt: artifact.capturedAt,
+      data: artifact.data,
+    }));
+  const recovery = check.recovery;
+  const proposal = {
+    action: "review-cold-recovery",
+    warmRecipeId: recovery?.recipeId,
+    proposedColdRecipeId: recovery?.coldRecipeId,
+    choices: ["fix-current-state", "teach-semantic-repair", "approve-cold-once", "defer"],
+    implicitResumeAllowed: false,
+  };
+  job.artifacts.push({
+    kind: "campaign-recovery-intervention",
+    capturedAt,
+    data: {
+      schemaVersion: 1,
+      status: "intervention-required",
+      checkId: check.id,
+      checkTitle: check.title,
+      transitionId,
+      reason,
+      attemptedSelectors: attempts,
+      recovery: proposal,
+      chrome: describeSnapshotChrome(nodes),
+      ...(nodes.length ? { screenIdentity: observeScreenIdentity(nodes) } : {}),
+      accessibility: { available: accessibilityAvailable, nodeCount: nodes.length },
+      nodes,
+      screenshot: {
+        caption,
+        ...(screenshot?.framePath ? { framePath: screenshot.framePath } : {}),
+        ...(screenshot?.path ? { path: screenshot.path } : {}),
+        ...(screenshot?.width ? { width: screenshot.width } : {}),
+        ...(screenshot?.height ? { height: screenshot.height } : {}),
+      },
+    },
+  });
+  job.artifacts.push({
+    kind: "human-intervention-requested",
+    capturedAt,
+    data: {
+      reason: "review",
+      message: `Cold recovery blocked for ${check.title}. Review transition ${transitionId}.`,
+      resumeLabel: "Review recovery",
+      interventionKind: "campaign-cold-recovery",
+      checkId: check.id,
+      transitionId,
+      recovery: proposal,
+    },
+  });
+  ctx.log(`SOS: cold recovery blocked for transition ${transitionId} — intervention required`);
+}
+
 function semanticRevealMovement(
   nodes: Awaited<ReturnType<typeof snapshot>>,
   plans: NonNullable<Extract<RecipeStep, { kind: "reveal" }>["navigation"]>,
@@ -469,8 +558,9 @@ export async function runCampaignCheck(
   options: { allowDefer?: boolean } = {},
 ): Promise<void> {
   const startedAt = now();
+  (ctx.runtime ??= {}).campaignCoverageStarted = true;
   const recovery = step.check.recovery;
-  const groups = ((ctx.runtime ??= {}).campaignRecoveryGroups ??= {});
+  const groups = (ctx.runtime.campaignRecoveryGroups ??= {});
   const transitionProofs = (ctx.runtime.campaignTransitionProofs ??= {});
   const transitionDependencies = step.check.transitionDependencies ?? [];
   const openDependency = transitionDependencies.find(
@@ -528,6 +618,49 @@ export async function runCampaignCheck(
       ? transitionToConfirm?.connectionId === recovery.transitionId
       : ctx.runtime?.campaignItineraryTrusted === false),
   );
+  if (recovery && useCanonicalRecovery && recovery.mode !== "warm-transition") {
+    const finishedAt = now();
+    const transitionId =
+      transitionToConfirm?.connectionId ?? recovery.transitionId ?? recovery.groupId;
+    const reason =
+      transitionProofs[transitionId]?.reason ??
+      "The transition origin is unproven and only a cold recovery is available.";
+    await captureCampaignRecoveryIntervention(device, step.check, ctx, transitionId, reason);
+    transitionProofs[transitionId] = {
+      status: "open",
+      checkId: step.check.id,
+      updatedAt: finishedAt,
+      reason,
+    };
+    groups[recovery.groupId] = { status: "blocked", reason };
+    ctx.job?.artifacts.push({
+      kind: "campaign-transition-circuit",
+      capturedAt: finishedAt,
+      data: {
+        schemaVersion: 1,
+        connectionId: transitionId,
+        checkId: step.check.id,
+        status: "open",
+        reason,
+        openedAt: finishedAt,
+        recoverySuppressed: true,
+      },
+    });
+    ctx.job?.artifacts.push({
+      kind: "campaign-check-result",
+      capturedAt: finishedAt,
+      data: {
+        ...step.check,
+        status: "blocked",
+        error: `Blocked: ${reason}`,
+        dependencyReason: reason,
+        dependencyTransitionId: transitionId,
+        startedAt,
+        finishedAt,
+      },
+    });
+    return;
+  }
   let cleanupPassed = false;
   try {
     if (useCanonicalRecovery) {
@@ -667,6 +800,13 @@ export async function runCampaignCheck(
   const failedConfirmationTransitionId =
     useCanonicalRecovery && recovery?.transitionId ? recovery.transitionId : undefined;
   if (failedConfirmationTransitionId) {
+    await captureCampaignRecoveryIntervention(
+      device,
+      step.check,
+      ctx,
+      failedConfirmationTransitionId,
+      message,
+    );
     transitionProofs[failedConfirmationTransitionId] = {
       status: "open",
       checkId: step.check.id,
