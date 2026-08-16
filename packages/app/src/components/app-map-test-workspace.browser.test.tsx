@@ -92,7 +92,8 @@ test("scenario editor creates and edits stable intent without inventing a runnab
 
   const dispose = render(() => <AppMapTestWorkspace />, root);
   const desktopLayout = root.querySelector<HTMLElement>("[data-test-workspace-layout]")!;
-  expect(desktopLayout.className).toContain("grid-cols-[clamp(290px,21vw,340px)");
+  expect(desktopLayout.className).toContain("grid-cols-[clamp(280px,19vw,320px)");
+  expect(root.textContent).toContain("Coverage");
   expect(root.textContent).not.toContain("Open map");
   const create = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Create scenario test"),
@@ -100,6 +101,7 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   create.click();
   await settle();
   expect(root.textContent).toContain("Test 1");
+  expect(root.textContent).toContain("Problems");
   root.querySelector<HTMLElement>("summary[aria-label='Test options']")!.click();
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent === "Duplicate Test")!
@@ -113,6 +115,12 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   await settle();
   expect(root.textContent).toContain("Instruction");
   expect(root.textContent).toContain("issue to fix");
+  const problems = [...root.querySelectorAll<HTMLButtonElement>("button[role='tab']")].find(
+    (button) => button.textContent?.includes("Problems"),
+  )!;
+  problems.click();
+  expect(problems.getAttribute("aria-selected")).toBe("true");
+  expect(root.querySelectorAll("[data-step-row]")).toHaveLength(1);
 
   const intent = root.querySelector<HTMLTextAreaElement>("textarea[id^='test-step-intent-']")!;
   intent.value = "Open the reviewed cart";
@@ -488,7 +496,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   await settle();
   expect(root.textContent).toContain("Ready to run");
   const freshEvidence = root.querySelector<HTMLInputElement>("input[type='checkbox']")!;
-  expect(root.textContent).toContain("Fresh scroll evidence");
+  expect(root.textContent).toContain("Capture fresh evidence");
   freshEvidence.click();
   expect(freshEvidence.checked).toBe(true);
 
@@ -527,14 +535,14 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   document.body.replaceChildren();
 });
 
-test("mobile Test authoring uses one focused pane and advances from Steps to Edit", async () => {
+test("narrow Test authoring uses one focused pane and advances from Coverage to Edit", async () => {
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
   const originalMatchMedia = window.matchMedia;
   window.matchMedia = vi.fn().mockReturnValue({
     matches: true,
-    media: "(max-width: 760px)",
+    media: "(max-width: 980px)",
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }) as typeof window.matchMedia;

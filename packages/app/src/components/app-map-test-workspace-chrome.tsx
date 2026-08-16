@@ -57,12 +57,13 @@ export function TestPicker(props: {
   onDelete: () => void;
 }) {
   return (
-    <div class="flex items-center gap-1 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-2">
+    <div class="grid gap-1.5 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-2">
       <label class="min-w-0 flex-1" for="app-map-test-picker">
         <span class="sr-only">Test</span>
         <select
           id="app-map-test-picker"
           class={cn(testEditorInput, "truncate")}
+          title={props.tests.find((test) => test.id === props.selectedTestId)?.name}
           value={props.selectedTestId}
           disabled={props.disabled}
           onChange={(event) => props.onSelect(event.currentTarget.value)}
@@ -76,50 +77,53 @@ export function TestPicker(props: {
           </For>
         </select>
       </label>
-      <div class="flex items-center gap-1">
-        <Button
-          variant="secondary"
-          size="sm"
-          class="min-h-11 shrink-0"
-          disabled={props.creating}
-          onClick={props.onCreate}
-        >
-          <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
-        </Button>
-        <Show when={props.selectedTestId}>
-          <details class="relative">
-            <summary
-              class="grid min-h-11 min-w-11 cursor-pointer list-none place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
-              aria-label="Test options"
-            >
-              <Icon name="more" size={14} />
-            </summary>
-            <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-40 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDuplicate();
-                }}
+      <div class="flex items-center justify-between gap-1">
+        <span class="pl-1 text-[10px] font-medium text-text-weaker">Saved Test</span>
+        <div class="flex items-center gap-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            class="min-h-11 shrink-0"
+            disabled={props.creating}
+            onClick={props.onCreate}
+          >
+            <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
+          </Button>
+          <Show when={props.selectedTestId}>
+            <details class="relative">
+              <summary
+                class="grid min-h-11 min-w-11 cursor-pointer list-none place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+                aria-label="Test options"
               >
-                Duplicate Test
-              </button>
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] text-text-critical-base hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDelete();
-                }}
-              >
-                Delete Test…
-              </button>
-            </div>
-          </details>
-        </Show>
+                <Icon name="more" size={14} />
+              </summary>
+              <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-40 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
+                <button
+                  type="button"
+                  disabled={props.disabled}
+                  class="min-h-11 rounded-md px-3 text-left text-[12px] hover:bg-surface-base-hover disabled:opacity-40"
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    props.onDuplicate();
+                  }}
+                >
+                  Duplicate Test
+                </button>
+                <button
+                  type="button"
+                  disabled={props.disabled}
+                  class="min-h-11 rounded-md px-3 text-left text-[12px] text-text-critical-base hover:bg-surface-base-hover disabled:opacity-40"
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    props.onDelete();
+                  }}
+                >
+                  Delete Test…
+                </button>
+              </div>
+            </details>
+          </Show>
+        </div>
       </div>
     </div>
   );
@@ -146,14 +150,14 @@ export function MobilePaneNav(props: {
   onChange: (pane: MobileTestPane) => void;
 }) {
   const panes = [
-    ["steps", "Steps"],
-    ["edit", "Edit"],
+    ["steps", "Coverage"],
     ["device", "Device"],
     ["results", "Results"],
+    ["edit", "Edit"],
   ] as const;
   return (
     <nav
-      class="hidden min-h-12 shrink-0 grid-cols-4 border-b border-border-weak-base bg-background-base p-1 max-[760px]:grid"
+      class="hidden min-h-12 shrink-0 grid-cols-4 border-b border-border-weak-base bg-background-base p-1 max-[980px]:grid"
       aria-label="Test workspace"
     >
       <For each={panes}>

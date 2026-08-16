@@ -39,22 +39,63 @@ export function AppMapTestOutline(props: {
 }) {
   const [rootKind, setRootKind] = createSignal<ScenarioStepKind>("instruction");
   const [query, setQuery] = createSignal("");
+  const [view, setView] = createSignal<"coverage" | "problems">("coverage");
   const outline = () => flattenScenarioSteps(props.test.steps);
+  const problemStepIds = () =>
+    new Set(
+      props.diagnostics.flatMap((diagnostic) => (diagnostic.stepId ? [diagnostic.stepId] : [])),
+    );
+  const problemCount = () => problemStepIds().size;
   const visibleOutline = () => {
     const needle = query().trim().toLocaleLowerCase();
-    if (!needle) return outline();
-    return outline().filter((item) =>
-      [
+    return outline().filter((item) => {
+      if (view() === "problems" && !problemStepIds().has(item.step.id)) return false;
+      if (!needle) return true;
+      return [
         SCENARIO_STEP_LABELS[item.step.kind],
         item.step.intent,
         scenarioStepSummary(props.map, item.step),
-      ].some((value) => value.toLocaleLowerCase().includes(needle)),
-    );
+      ].some((value) => value.toLocaleLowerCase().includes(needle));
+    });
   };
 
   return (
     <>
-      <div class="border-b border-border-weak-base p-2">
+      <div class="grid gap-2 border-b border-border-weak-base p-2">
+        <div
+          class="grid min-h-10 grid-cols-2 gap-1 rounded-lg bg-surface-base p-1"
+          role="tablist"
+          aria-label="Test coverage"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view() === "coverage"}
+            class={cn(
+              "min-h-8 rounded-md px-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-border-strong-focus",
+              view() === "coverage"
+                ? "bg-background-base text-text-strong shadow-sm"
+                : "text-text-weak hover:text-text-strong",
+            )}
+            onClick={() => setView("coverage")}
+          >
+            Coverage <span class="ml-1 tabular-nums text-text-weaker">{outline().length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view() === "problems"}
+            class={cn(
+              "min-h-8 rounded-md px-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-border-strong-focus",
+              view() === "problems"
+                ? "bg-background-base text-text-strong shadow-sm"
+                : "text-text-weak hover:text-text-strong",
+            )}
+            onClick={() => setView("problems")}
+          >
+            Problems <span class="ml-1 tabular-nums text-text-weaker">{problemCount()}</span>
+          </button>
+        </div>
         <label class="relative block" for="test-step-search">
           <span class="sr-only">Find a step</span>
           <Icon
@@ -67,7 +108,9 @@ export function AppMapTestOutline(props: {
             type="search"
             class={cn(testEditorInput, "h-9 min-h-9 pl-8")}
             value={query()}
-            placeholder={`Find in ${outline().length} steps…`}
+            placeholder={
+              view() === "problems" ? "Find a problem…" : `Find in ${outline().length} checks…`
+            }
             onInput={(event) => setQuery(event.currentTarget.value)}
           />
         </label>
@@ -94,6 +137,14 @@ export function AppMapTestOutline(props: {
           <div class="px-4 py-8 text-center">
             <h2 class="m-0 text-[14px] font-semibold">No matching steps</h2>
             <p class="mt-1 text-[11px] text-text-weak">Try an intent, type, or binding name.</p>
+          </div>
+        </Show>
+        <Show when={view() === "problems" && !query() && !visibleOutline().length}>
+          <div class="px-4 py-8 text-center">
+            <h2 class="m-0 text-[14px] font-semibold">No authoring problems</h2>
+            <p class="mt-1 text-[11px] text-text-weak">
+              Every check is resolved and ready to run in its authored order.
+            </p>
           </div>
         </Show>
         <Show when={!props.test.steps.length}>
@@ -151,7 +202,7 @@ function OutlineRow(props: {
           type="button"
           id={`test-step-row-${step().id}`}
           data-step-row={step().id}
-          class="grid min-h-[52px] w-full grid-cols-[30px_minmax(0,1fr)] items-center gap-2 rounded-l-[9px] px-2 py-1.5 text-left focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+          class="grid min-h-12 w-full grid-cols-[28px_minmax(0,1fr)] items-center gap-2 rounded-l-[9px] px-2 py-1 text-left focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
           aria-current={props.selected ? "step" : undefined}
           aria-label={`${rowLabel()}: ${SCENARIO_STEP_LABELS[step().kind]}`}
           onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
@@ -162,7 +213,7 @@ function OutlineRow(props: {
             props.onMove(step().id, event.key === "ArrowUp" ? -1 : 1);
           }}
         >
-          <span class="grid size-[30px] place-items-center rounded-md bg-background-base text-[10px] font-semibold tabular-nums text-text-interactive-base">
+          <span class="grid size-7 place-items-center rounded-md bg-background-base text-[10px] font-semibold tabular-nums text-text-interactive-base">
             {props.item.branch === "root" ? props.item.index + 1 : branchGlyph(props.item.branch)}
           </span>
           <span class="min-w-0">
@@ -199,7 +250,7 @@ function OutlineRow(props: {
           }}
         >
           <summary
-            class="grid min-h-[52px] min-w-11 cursor-pointer list-none place-items-center rounded-r-[9px] text-text-weak hover:bg-surface-base-hover hover:text-text-strong focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+            class="grid min-h-12 min-w-11 cursor-pointer list-none place-items-center rounded-r-[9px] text-text-weak hover:bg-surface-base-hover hover:text-text-strong focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-border-strong-focus"
             aria-label={`Actions for ${rowLabel()}`}
             onClick={(event) =>
               event.currentTarget.closest("li")?.scrollIntoView({ block: "center" })

@@ -114,7 +114,7 @@ export function AppMapTestWorkspace(props: {
   let runTestKey = "";
 
   onMount(() => {
-    const query = window.matchMedia("(max-width: 760px)");
+    const query = window.matchMedia("(max-width: 980px)");
     const update = () => setMobile(query.matches);
     update();
     query.addEventListener("change", update);
@@ -455,15 +455,15 @@ export function AppMapTestWorkspace(props: {
         </Show>
       </TestWorkspaceActionBar>
 
-      <div class="min-h-0 max-[760px]:flex max-[760px]:flex-col">
+      <div class="min-h-0 max-[980px]:flex max-[980px]:flex-col">
         <MobilePaneNav value={mobilePane()} onChange={setMobilePane} />
         <div
           data-test-workspace-layout
-          class="grid h-full min-h-0 grid-cols-[clamp(290px,21vw,340px)_minmax(380px,520px)_minmax(400px,1fr)] max-[1120px]:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)] max-[1120px]:grid-rows-[minmax(0,1fr)_minmax(320px,44%)] max-[760px]:block max-[760px]:flex-1"
+          class="grid h-full min-h-0 grid-cols-[clamp(280px,19vw,320px)_minmax(440px,1fr)_minmax(340px,420px)] max-[980px]:block max-[980px]:flex-1"
         >
           <div
             class={cn(
-              "flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[760px]:h-full max-[760px]:border-r-0",
+              "flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[980px]:h-full max-[980px]:border-r-0",
               mobile() && mobilePane() !== "steps" && "hidden",
             )}
             inert={mobile() && mobilePane() !== "steps"}
@@ -507,9 +507,35 @@ export function AppMapTestWorkspace(props: {
             </Show>
           </div>
 
+          <Show when={draft()}>
+            {(test) => (
+              <div
+                class={cn(
+                  "min-h-0 bg-background-base max-[980px]:h-full",
+                  mobile() && !["device", "results"].includes(mobilePane()) && "hidden",
+                )}
+                inert={mobile() && !["device", "results"].includes(mobilePane())}
+              >
+                <AppMapTestDeviceEvidence
+                  appMap={appMap() ?? undefined}
+                  test={test()}
+                  selectedStepId={selectedStepId()}
+                  compiledPlan={compiledPlan()}
+                  onOpenRun={props.onOpenRun}
+                  onSelectStep={setSelectedStepId}
+                  selectedTab={mobilePane() === "results" ? "evidence" : "device"}
+                  onTabChange={(tab) =>
+                    mobile() && setMobilePane(tab === "evidence" ? "results" : "device")
+                  }
+                  hideTabs={mobile()}
+                />
+              </div>
+            )}
+          </Show>
+
           <div
             class={cn(
-              "min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha max-[760px]:h-full",
+              "min-h-0 overflow-y-auto border-l border-border-weak-base bg-surface-raised-stronger-non-alpha max-[980px]:h-full max-[980px]:border-l-0",
               mobile() && mobilePane() !== "edit" && "hidden",
             )}
             inert={mobile() && mobilePane() !== "edit"}
@@ -558,7 +584,17 @@ export function AppMapTestWorkspace(props: {
             </Show>
             <Show when={draft()}>
               {(test) => (
-                <div class="mx-auto grid w-full max-w-[560px] gap-4 p-4">
+                <div class="mx-auto grid w-full max-w-[520px] gap-4 p-4">
+                  <header class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
+                        Edit check
+                      </p>
+                      <h2 class="m-0 mt-1 text-[15px] font-semibold text-text-strong">
+                        {selectedItem() ? "Selected check" : "Test details"}
+                      </h2>
+                    </div>
+                  </header>
                   <label class="grid gap-1.5" for="scenario-test-name">
                     <span class={testEditorLabel}>Test name</span>
                     <input
@@ -581,31 +617,6 @@ export function AppMapTestWorkspace(props: {
               )}
             </Show>
           </div>
-          <Show when={draft()}>
-            {(test) => (
-              <div
-                class={cn(
-                  "min-h-0 border-l border-border-weak-base max-[1120px]:col-span-2 max-[1120px]:border-l-0 max-[760px]:h-full",
-                  mobile() && !["device", "results"].includes(mobilePane()) && "hidden",
-                )}
-                inert={mobile() && !["device", "results"].includes(mobilePane())}
-              >
-                <AppMapTestDeviceEvidence
-                  appMap={appMap() ?? undefined}
-                  test={test()}
-                  selectedStepId={selectedStepId()}
-                  compiledPlan={compiledPlan()}
-                  onOpenRun={props.onOpenRun}
-                  onSelectStep={setSelectedStepId}
-                  selectedTab={mobilePane() === "results" ? "evidence" : "device"}
-                  onTabChange={(tab) =>
-                    mobile() && setMobilePane(tab === "evidence" ? "results" : "device")
-                  }
-                  hideTabs={mobile()}
-                />
-              </div>
-            )}
-          </Show>
         </div>
       </div>
       <Show when={proposalReviewOpen() && draft() && pendingTestProposals().length > 0}>

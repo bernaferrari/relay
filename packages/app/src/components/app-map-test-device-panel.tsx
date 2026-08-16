@@ -223,20 +223,6 @@ export function AppMapTestDevicePanel(props: {
         </Button>
       </header>
 
-      <ScrollSurfaceCaptureAction
-        busy={props.fullPageCapture?.busy ?? false}
-        disabledReason={
-          props.fullPageCapture ? props.fullPageCapture.disabledReason : fullPageFallback
-        }
-        policy={props.fullPageCapture?.policy}
-        hasSurface={props.fullPageCapture?.hasSurface ?? false}
-        statusId="test-scroll-surface-capture-status"
-        onCapture={() => props.fullPageCapture?.onCapture()}
-      />
-      <p id="test-scroll-surface-capture-status" class="-mt-1 m-0 text-[10px]/[1.4] text-text-weak">
-        {fullPageDetail()}
-      </p>
-
       <Show
         when={props.frame}
         fallback={
@@ -248,7 +234,7 @@ export function AppMapTestDevicePanel(props: {
         }
       >
         {(frame) => (
-          <figure class="m-0 grid min-h-[360px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-3 max-[1120px]:min-h-[260px]">
+          <figure class="m-0 grid min-h-[420px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-3 max-[980px]:min-h-[320px]">
             <div
               role="application"
               tabindex={props.interactionBlocker ? -1 : 0}
@@ -256,7 +242,7 @@ export function AppMapTestDevicePanel(props: {
               aria-disabled={Boolean(props.interactionBlocker)}
               title={props.interactionBlocker ? undefined : "Tap to interact with the device"}
               data-testid="test-device-interaction-surface"
-              class={`relative h-[min(680px,calc(100dvh-245px))] max-h-[680px] max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus max-[1120px]:h-[360px] ${
+              class={`relative h-[min(720px,calc(100dvh-230px))] max-h-[720px] max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus max-[980px]:h-[440px] ${
                 props.interactionBlocker ? "cursor-default" : "touch-manipulation cursor-pointer"
               }`}
               style={{ "aspect-ratio": surfaceAspectRatio() }}
@@ -346,6 +332,21 @@ export function AppMapTestDevicePanel(props: {
           </figure>
         )}
       </Show>
+      <div class="grid gap-1.5 rounded-xl border border-border-weak-base bg-surface-base p-2.5">
+        <ScrollSurfaceCaptureAction
+          busy={props.fullPageCapture?.busy ?? false}
+          disabledReason={
+            props.fullPageCapture ? props.fullPageCapture.disabledReason : fullPageFallback
+          }
+          policy={props.fullPageCapture?.policy}
+          hasSurface={props.fullPageCapture?.hasSurface ?? false}
+          statusId="test-scroll-surface-capture-status"
+          onCapture={() => props.fullPageCapture?.onCapture()}
+        />
+        <p id="test-scroll-surface-capture-status" class="m-0 text-[10px]/[1.4] text-text-weak">
+          {fullPageDetail()}
+        </p>
+      </div>
       <Show when={props.interactionBlocker}>
         {(blocker) => <p class="m-0 text-[11px]/[1.45] text-text-weak">View only · {blocker()}</p>}
       </Show>

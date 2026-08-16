@@ -64,17 +64,18 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   }
 
   return (
-    <div class="grid justify-items-end gap-0.5">
+    <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
       {props.hasSurfaceBindings ? (
-        <label class="flex min-h-7 cursor-pointer items-center gap-2 text-xs text-text-weaker">
+        <label class="flex min-h-11 cursor-pointer touch-manipulation items-center gap-2 rounded-lg px-2 text-[11px] font-medium text-text-weak focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-border-strong-focus">
           <input
             type="checkbox"
+            class="size-4 shrink-0 accent-[var(--text-interactive-base)]"
             checked={props.freshSurfaceEvidence}
             disabled={busy() || active()}
             onChange={(event) => props.onFreshSurfaceEvidenceChange?.(event.currentTarget.checked)}
           />
           <span title="Bypass cached comparisons and capture every bound scroll surface again for this run only.">
-            Fresh scroll evidence
+            Capture fresh evidence
           </span>
         </label>
       ) : null}
@@ -94,7 +95,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       {status() ? (
         <span
           id="test-run-control-status"
-          class="max-w-[38ch] text-right text-[10px]/[1.35] text-text-weaker"
+          class="basis-full text-right text-[10px]/[1.35] text-text-weaker"
           role="status"
           aria-live="polite"
         >
