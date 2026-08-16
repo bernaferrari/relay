@@ -87,18 +87,39 @@ function isReviewedBackEdge(connection: Connection): boolean {
  * planner embeds only a compact module reference in the next sibling. */
 type ScreenConnection = Connection & { destination: { kind: "screen"; screenId: string } };
 
-function explicitReviewedInverse(map: AppMap, forward: Connection): ScreenConnection | undefined {
-  if (forward.destination.kind !== "screen") return undefined;
-  const destinationScreenId = forward.destination.screenId;
+type AncestorInverse =
+  | { status: "resolved"; connection: ScreenConnection; destinationIndex: number }
+  | { status: "absent" | "ambiguous" };
+
+function explicitReviewedAncestorInverse(
+  map: AppMap,
+  currentScreenId: string,
+  pathScreens: Array<string | undefined>,
+  targetIndex: number,
+  currentIndex: number,
+): AncestorInverse {
   const candidates = Object.values(map.connections).filter(
     (candidate): candidate is ScreenConnection =>
       candidate.state === "ready" &&
-      candidate.fromScreenId === destinationScreenId &&
+      candidate.fromScreenId === currentScreenId &&
       candidate.destination.kind === "screen" &&
-      candidate.destination.screenId === forward.fromScreenId &&
+      pathScreens.slice(targetIndex, currentIndex).includes(candidate.destination.screenId) &&
       isReviewedBackEdge(candidate),
   );
-  return candidates.length === 1 ? candidates[0] : undefined;
+  if (candidates.length === 0) return { status: "absent" };
+  if (candidates.length !== 1) return { status: "ambiguous" };
+  const connection = candidates[0]!;
+  // When a path revisits the same logical screen, consume through its earliest
+  // still-required occurrence. The frozen destination proof makes this jump
+  // safe; using the later occurrence would only replay redundant edges.
+  const destinationIndex = pathScreens
+    .slice(targetIndex, currentIndex)
+    .findIndex((screenId) => screenId === connection.destination.screenId);
+  return {
+    status: "resolved",
+    connection,
+    destinationIndex: targetIndex + destinationIndex,
+  };
 }
 
 function reviewedReturnPlan(
@@ -141,8 +162,19 @@ function reviewedReturnPlan(
   const steps: RecipeStep[] = [];
   const recipes: Record<string, Recipe> = {};
   let verifiedScreenId: string | undefined;
-  const unwind = previousPlan.connections.slice(target, current).reverse();
-  for (const compiled of unwind) {
+  let cursor = current;
+  while (cursor > target) {
+    const cursorScreenId = pathScreens[cursor];
+    const compiled = previousPlan.connections[cursor - 1];
+    if (!cursorScreenId || !compiled) {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        connectionId: compiled?.connectionId,
+        currentScreenId: cursorScreenId ?? currentScreenId,
+      };
+    }
     const connection = map.connections[compiled.connectionId];
     if (!connection) {
       return {
@@ -150,14 +182,27 @@ function reviewedReturnPlan(
         steps,
         recipes,
         connectionId: compiled.connectionId,
-        currentScreenId,
+        currentScreenId: cursorScreenId,
       };
     }
-    // Scroll variants are one logical surface. Reaching the parent hierarchy
-    // does not require Back; the next semantic reveal owns viewport placement.
-    if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) continue;
-    const inverse = explicitReviewedInverse(map, connection);
-    if (inverse) {
+    const ancestorInverse = explicitReviewedAncestorInverse(
+      map,
+      cursorScreenId,
+      pathScreens,
+      target,
+      cursor,
+    );
+    if (ancestorInverse.status === "ambiguous") {
+      return {
+        status: "missing",
+        steps,
+        recipes,
+        connectionId: connection.id,
+        currentScreenId: cursorScreenId,
+      };
+    }
+    if (ancestorInverse.status === "resolved") {
+      const inverse = ancestorInverse.connection;
       const compiledInverse = compileAppMapConnection(map, inverse.id);
       for (const recipe of Object.values(compiledInverse.recipes)) {
         recipes[recipe.id] = {
@@ -176,6 +221,13 @@ function reviewedReturnPlan(
         recipeId: compiledInverse.rootRecipeId,
       });
       verifiedScreenId = inverse.destination.screenId;
+      cursor = ancestorInverse.destinationIndex;
+      continue;
+    }
+    // Scroll variants are one logical surface. Reaching the parent hierarchy
+    // does not require Back; the next semantic reveal owns viewport placement.
+    if (connection.actions.length > 0 && connection.actions.every(isScrollAction)) {
+      cursor -= 1;
       continue;
     }
     const reviewedReturn = connection.return;
@@ -199,6 +251,7 @@ function reviewedReturnPlan(
       },
     );
     verifiedScreenId = connection.fromScreenId;
+    cursor -= 1;
   }
   return {
     status: "complete",

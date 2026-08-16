@@ -756,7 +756,7 @@ test("scenario instruction paths reuse their nearest shared checkpoint", () => {
   );
 });
 
-test("scenario siblings unwind every reviewed inverse and verify each destination", () => {
+test("scenario siblings use a reviewed direct-ancestor Back before per-edge inverses", () => {
   const map = fixture();
   map.screens["add-home"] = {
     ...screen("add-home"),
@@ -801,7 +801,9 @@ test("scenario siblings unwind every reviewed inverse and verify each destinatio
     ...map.connections["open-cart"]!,
     id: "return-from-add-home",
     fromScreenId: "add-home",
-    destination: { kind: "screen", screenId: "cart" },
+    // Android Back intentionally skips the logical Widget preview and lands
+    // directly on Settings. This one proof subsumes both forward edges.
+    destination: { kind: "screen", screenId: "home" },
     actions: [
       {
         id: "back-from-add-home",
@@ -859,6 +861,17 @@ test("scenario siblings unwind every reviewed inverse and verify each destinatio
       (step) => step.kind === "expect-screen" && step.id === "relay-return-proof-add-home",
     ),
     false,
+  );
+  assert.equal(
+    sibling.steps.some(
+      (step) =>
+        step.id === "relay-return-open-cart" || step.id === "relay-return-required-open-cart",
+    ),
+    false,
+  );
+  assert.equal(
+    sibling.steps.some((step) => step.kind === "tap" && step.target.label === "Privacy"),
+    true,
   );
 
   delete map.connections["return-from-add-home"];
