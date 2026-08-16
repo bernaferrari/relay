@@ -315,7 +315,7 @@ export function Layout(props: {
       )}
     >
       <ErrorBanner />
-      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background-weak text-text-strong text-12-regular">
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background-weak text-text-strong text-caption">
         {props.children}
       </div>
       <CommandPalette />

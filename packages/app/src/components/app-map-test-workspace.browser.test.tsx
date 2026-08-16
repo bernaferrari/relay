@@ -21,6 +21,38 @@ async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
+/**
+ * The workspace measures itself rather than the viewport, so a test drives the
+ * layout by reporting a container width instead of stubbing `matchMedia`.
+ */
+function observeWidth(width: number): () => void {
+  const original = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(): void {
+      this.callback(
+        [{ contentRect: { width } } as unknown as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+  return () => {
+    globalThis.ResizeObserver = original;
+  };
+}
+
+/** The rail footer is one "Add step" menu now, not a permanent select plus button. */
+function addStep(root: HTMLElement, kind: string): void {
+  const menu = root.querySelector<HTMLElement>("summary[aria-label='Add step']")!;
+  menu.click();
+  menu
+    .closest("details")!
+    .querySelector<HTMLButtonElement>(`button[data-step-kind='${kind}']`)!
+    .click();
+}
+
 function fixture(): AppMap {
   return {
     schemaVersion: 1,
@@ -92,7 +124,8 @@ test("scenario editor creates and edits stable intent without inventing a runnab
 
   const dispose = render(() => <AppMapTestWorkspace />, root);
   const desktopLayout = root.querySelector<HTMLElement>("[data-test-workspace-layout]")!;
-  expect(desktopLayout.className).toContain("grid-cols-[clamp(290px,21vw,340px)");
+  expect(desktopLayout.getAttribute("data-layout-mode")).toMatch(/wide|medium|narrow|compact/);
+  expect(desktopLayout.style.gridTemplateColumns.split(" ").length).toBe(3);
   expect(root.textContent).not.toContain("Open map");
   const create = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Create scenario test"),
@@ -102,14 +135,13 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   expect(root.textContent).toContain("Test 1");
   root.querySelector<HTMLElement>("summary[aria-label='Test options']")!.click();
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent === "Duplicate Test")!
+    .find((button) => button.textContent?.includes("Duplicate Test"))!
     .click();
   await settle();
   expect(saves).toHaveLength(2);
   expect(root.textContent).toContain("Test 1 copy");
 
-  const add = root.querySelector<HTMLButtonElement>("button[aria-label='Add Next step']")!;
-  add.click();
+  addStep(root, "instruction");
   await settle();
   expect(root.textContent).toContain("Instruction");
   expect(root.textContent).toContain("issue to fix");
@@ -128,18 +160,17 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   expect(blockerAction.disabled).toBe(false);
   expect(blockerAction.textContent).toContain("Fix 1 issue");
 
-  const rootKind = [...root.querySelectorAll<HTMLSelectElement>("select")].find((select) =>
-    [...select.options].some((option) => option.value === "decision"),
-  )!;
-  rootKind.value = "decision";
-  rootKind.dispatchEvent(new Event("change", { bubbles: true }));
-  add.click();
+  addStep(root, "decision");
   await settle();
 
-  const thenDetails = [...root.querySelectorAll<HTMLDetailsElement>("details")].find((details) =>
-    details.querySelector("summary")?.textContent?.includes("Add to Then"),
+  const branch = [...root.querySelectorAll<HTMLElement>("summary[aria-label='Add to Then']")].at(
+    -1,
   )!;
-  thenDetails.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
+  branch.click();
+  branch
+    .closest("details")!
+    .querySelector<HTMLButtonElement>("button[data-step-kind='instruction']")!
+    .click();
   await settle();
   expect(root.querySelector("button[aria-label^='Then 1: Instruction']")).not.toBeNull();
 
@@ -510,17 +541,11 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   document.body.replaceChildren();
 });
 
-test("mobile Test authoring uses one focused pane and advances from Steps to Edit", async () => {
+test("a narrow workspace keeps the device on the right edge and never below the editor", async () => {
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
-  const originalMatchMedia = window.matchMedia;
-  window.matchMedia = vi.fn().mockReturnValue({
-    matches: true,
-    media: "(max-width: 760px)",
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }) as typeof window.matchMedia;
+  const restoreObserver = observeWidth(860);
   const scenario: AppMapScenarioTest = {
     kind: "scenario",
     id: "mobile-test",
@@ -594,23 +619,58 @@ test("mobile Test authoring uses one focused pane and advances from Steps to Edi
   proposed.click();
   expect(root.textContent).toContain("Open the reviewed checkout");
   root.querySelector<HTMLButtonElement>("button[aria-label='Close Test proposal review']")!.click();
-  expect(root.querySelector("[data-test-mobile-tab='steps']")?.getAttribute("aria-current")).toBe(
-    "page",
-  );
+
+  const layout = root.querySelector<HTMLElement>("[data-test-workspace-layout]")!;
+  expect(layout.getAttribute("data-layout-mode")).toBe("narrow");
+  const tracks = () => layout.style.gridTemplateColumns.split(" ");
+  expect(tracks()).toHaveLength(3);
+  expect(layout.style.gridTemplateRows).toBe("");
+  // The device is docked in the third (right) track, and the steps rail is the
+  // one that yields to an overlay when space runs short.
+  expect(Number.parseInt(tracks()[2]!, 10)).toBeGreaterThanOrEqual(272);
+  expect(root.querySelector("[data-test-rail-strip='steps']")).not.toBeNull();
+  expect(root.querySelector("[data-test-rail-strip='device']")).toBeNull();
+
+  // Collapsing the device leaves its edge strip behind rather than moving it.
+  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
+  await settle();
+  expect(root.querySelector("[data-test-rail-strip='device']")).not.toBeNull();
+  expect(tracks()).toHaveLength(3);
+  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
+  await settle();
+
+  // Opening Steps here overlays the editor on the left edge; it does not push the
+  // device anywhere, so the grid still has exactly three columns.
+  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='steps']")!.click();
+  await settle();
+  expect(tracks()).toHaveLength(3);
+
+  // Escape leaves the floating rail and hands focus back to the control that
+  // opened it, then `/` brings the rail and its search back.
+  layout.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await settle();
+  expect(root.querySelector("[data-test-rail-strip='steps']")).not.toBeNull();
+  expect(document.activeElement?.getAttribute("data-test-rail-toggle")).toBe("steps");
+  layout.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
+  await settle();
+  expect(document.activeElement?.id).toBe("test-step-search");
+
+  // Selecting a step names it in the rail, so Live and Last run are visibly the
+  // views of one step rather than two unrelated columns.
   root.querySelector<HTMLButtonElement>("#test-step-row-mobile-step")!.click();
   await settle();
-  expect(root.querySelector("[data-test-mobile-tab='edit']")?.getAttribute("aria-current")).toBe(
-    "page",
+  expect(root.querySelector("[data-test-rail-step='mobile-step']")?.textContent).toContain(
+    "Open checkout",
   );
-  expect(document.activeElement?.id).toBe("test-step-intent-mobile-step");
-  root.querySelector<HTMLButtonElement>("[data-test-mobile-tab='results']")!.click();
-  expect(root.querySelector("[data-test-mobile-tab='results']")?.getAttribute("aria-current")).toBe(
-    "page",
-  );
+  const lastRun = [...root.querySelectorAll<HTMLButtonElement>("button[role='tab']")].find((tab) =>
+    tab.textContent?.includes("Last run"),
+  )!;
+  lastRun.click();
+  await settle();
   expect(root.querySelector("#test-context-device-panel")?.hasAttribute("inert")).toBe(true);
   expect(root.querySelector("#test-context-evidence-panel")?.hasAttribute("inert")).toBe(false);
 
   dispose();
-  window.matchMedia = originalMatchMedia;
+  restoreObserver();
   document.body.replaceChildren();
 });

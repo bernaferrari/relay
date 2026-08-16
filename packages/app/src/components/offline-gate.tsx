@@ -67,7 +67,7 @@ export function OfflineGate(props: {
             {busy() ? "Checking…" : "Retry connection"}
           </Button>
           {retryError() ? (
-            <span class="text-12-regular text-text-critical-base" role="alert">
+            <span class="text-caption text-text-critical-base" role="alert">
               {retryError()}
             </span>
           ) : null}

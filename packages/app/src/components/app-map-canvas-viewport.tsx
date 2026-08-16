@@ -110,7 +110,7 @@ export function AppMapCanvasWorld(props: {
       <Show when={props.marquee}>
         {(selection) => (
           <div
-            class="pointer-events-none absolute z-50 rounded-[4px] border border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--product-accent-soft)_48%,transparent)]"
+            class="pointer-events-none absolute z-50 rounded border border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--product-accent-soft)_48%,transparent)]"
             data-app-map-marquee
             aria-hidden="true"
             style={{

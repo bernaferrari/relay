@@ -24,7 +24,7 @@ export function ScrollSurfaceCaptureAction(props: {
       data-scroll-surface-capture
       data-recommended={recommended() ? "true" : undefined}
       class={cn(
-        "col-span-2 flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-[8px] border px-3 text-[10.5px] font-medium outline-none transition-[background-color,border-color,color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.96] disabled:cursor-not-allowed disabled:active:scale-100 motion-reduce:active:scale-100",
+        "col-span-2 flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border px-3 text-micro font-medium outline-none transition-[background-color,border-color,color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.96] disabled:cursor-not-allowed disabled:active:scale-100 motion-reduce:active:scale-100",
         recommended()
           ? "border-[var(--border-focus)] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
           : "border-[var(--border-weak-base)] bg-[var(--surface-base)] text-[var(--text-strong)]",
@@ -44,7 +44,7 @@ export function ScrollSurfaceCaptureAction(props: {
       />
       <span>{label()}</span>
       {recommended() ? (
-        <span class="rounded-full bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[8px] font-semibold text-[var(--background-base)]">
+        <span class="rounded-full bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-micro font-semibold text-[var(--background-base)]">
           Recommended
         </span>
       ) : null}

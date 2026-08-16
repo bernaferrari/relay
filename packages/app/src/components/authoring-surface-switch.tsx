@@ -16,7 +16,7 @@ export function AuthoringSurfaceSwitch(props: {
         <button
           type="button"
           class={cn(
-            "min-h-8 rounded-md px-3 text-[11px] font-medium transition-[background-color,color,box-shadow] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
+            "min-h-8 rounded-md px-3 text-caption font-medium transition-[background-color,color,box-shadow] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-[var(--border-strong-focus)]",
             props.value === surface
               ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-sm"
               : "text-[var(--text-weak)] hover:text-[var(--text-base)]",

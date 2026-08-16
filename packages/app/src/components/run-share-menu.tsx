@@ -106,7 +106,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
         ref={(element) => (trigger = element)}
         variant="secondary"
         size="sm"
-        class="text-[11px]"
+        class="text-caption"
         aria-expanded={open()}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
@@ -127,16 +127,16 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
             }}
           >
             <div class="grid gap-1">
-              <strong class="text-[14px] font-semibold text-text-strong">Share results</strong>
-              <p class="m-0 text-[11px]/[1.45] text-text-weaker">
+              <strong class="text-body font-semibold text-text-strong">Share results</strong>
+              <p class="m-0 text-caption/[1.45] text-text-weaker">
                 Screenshots and result status are included. Inputs, logs, and device IDs stay
                 private.
               </p>
             </div>
-            <label class="grid gap-1.5 text-[11px] font-medium text-text-base">
+            <label class="grid gap-1.5 text-caption font-medium text-text-base">
               Link expires
               <select
-                class="h-9 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2.5 text-[12px] text-text-strong focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+                class="h-9 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2.5 text-caption text-text-strong focus-visible:outline-2 focus-visible:outline-border-strong-focus"
                 value={expiresInHours()}
                 onInput={(event) => setExpiresInHours(Number(event.currentTarget.value))}
               >
@@ -146,7 +146,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
               </select>
             </label>
             <Show when={props.run.batchId && props.batchRunCount > 1}>
-              <label class="flex items-start gap-2.5 rounded-lg bg-surface-base px-3 py-2.5 text-[11px]/[1.4] text-text-base">
+              <label class="flex items-start gap-2.5 rounded-lg bg-surface-base px-3 py-2.5 text-caption/[1.4] text-text-base">
                 <input
                   type="checkbox"
                   class="mt-0.5 size-4 accent-[var(--accent-solid-base)]"
@@ -164,7 +164,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
             <Show when={createdUrl()}>
               {(url) => (
                 <div class="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-weak-base)] p-2">
-                  <span class="min-w-0 flex-1 truncate text-[11px] text-text-weaker">{url()}</span>
+                  <span class="min-w-0 flex-1 truncate text-caption text-text-weaker">{url()}</span>
                   <Button size="sm" variant="secondary" onClick={() => void copy(url())}>
                     Copy
                   </Button>
@@ -181,12 +181,12 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
             </Button>
             <Show when={shares().length}>
               <div class="grid gap-1 border-t border-[var(--border-weak-base)] pt-3">
-                <span class="mb-1 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
+                <span class="mb-1 text-micro font-semibold tracking-[0.08em] text-text-weaker uppercase">
                   Previous links
                 </span>
                 <For each={shares().slice(0, 4)}>
                   {(share) => (
-                    <div class="flex min-w-0 items-center gap-2 py-1.5 text-[11px]">
+                    <div class="flex min-w-0 items-center gap-2 py-1.5 text-caption">
                       <span class="min-w-0 flex-1">
                         <strong class="block truncate font-medium text-text-base">
                           {share.runCount > 1 ? `${share.runCount} matrix results` : "This result"}
@@ -200,7 +200,7 @@ export function RunShareMenu(props: { run: JobInfo; batchRunCount: number }) {
                       <Show when={share.status === "active"}>
                         <button
                           type="button"
-                          class="rounded-md px-2 py-1 text-[11px] text-text-weaker hover:bg-surface-base-hover hover:text-danger-base focus-visible:outline-2 focus-visible:outline-border-strong-focus"
+                          class="rounded-md px-2 py-1 text-caption text-text-weaker hover:bg-surface-base-hover hover:text-danger-base focus-visible:outline-2 focus-visible:outline-border-strong-focus"
                           onClick={() => void revoke(share)}
                         >
                           Revoke

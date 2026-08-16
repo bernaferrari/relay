@@ -30,8 +30,8 @@ export function RunBrowser(props: {
     >
       <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--border-weak-base)] px-3.5">
         <div>
-          <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">Runs</strong>
-          <small class="text-[10px] text-[var(--text-weak)]">
+          <strong class="block text-body font-semibold text-[var(--text-strong)]">Runs</strong>
+          <small class="text-micro text-[var(--text-weak)]">
             {query().trim()
               ? `${filteredRows().length} of ${props.rows.length}`
               : props.rows.length}{" "}
@@ -48,7 +48,7 @@ export function RunBrowser(props: {
         </span>
         <span class="sr-only">Search runs</span>
         <input
-          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-[16px] text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)] min-[681px]:text-[11.5px]"
+          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-title text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)] min-[681px]:text-caption"
           value={query()}
           placeholder="Search runs"
           onInput={(event) => setQuery(event.currentTarget.value)}
@@ -63,7 +63,7 @@ export function RunBrowser(props: {
               <button
                 type="button"
                 class={cn(
-                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-border-strong-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background-base",
+                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-xl px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-border-strong-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background-base",
                   props.selectedId === job.id
                     ? "bg-[var(--surface-base-hover)]"
                     : "hover:bg-[var(--surface-base)]",
@@ -83,10 +83,10 @@ export function RunBrowser(props: {
                   aria-hidden="true"
                 />
                 <span class="min-w-0">
-                  <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                  <strong class="block truncate text-caption font-medium text-[var(--text-strong)]">
                     {job.title ?? recipe()?.title ?? titleize(job.action)}
                   </strong>
-                  <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--text-weak)]">
+                  <small class="mt-1 flex items-center gap-1.5 text-micro text-[var(--text-weak)]">
                     <span>{status().label}</span>
                     <span aria-hidden="true">·</span>
                     <span class="font-mono tabular-nums">{fmtDur(job, server.clock()) || "—"}</span>
@@ -103,10 +103,10 @@ export function RunBrowser(props: {
         </For>
         <Show when={filteredRows().length === 0}>
           <div class="px-3 py-8 text-center">
-            <p class="m-0 text-[11.5px] font-medium text-[var(--text-base)]">No matching runs</p>
+            <p class="m-0 text-caption font-medium text-[var(--text-base)]">No matching runs</p>
             <button
               type="button"
-              class="mt-2 min-h-8 rounded-md px-2.5 text-[11px] font-medium text-[var(--text-accent-base)] outline-none hover:bg-[var(--surface-base)] focus-visible:ring-2 focus-visible:ring-border-strong-focus"
+              class="mt-2 min-h-8 rounded-md px-2.5 text-caption font-medium text-[var(--text-accent-base)] outline-none hover:bg-[var(--surface-base)] focus-visible:ring-2 focus-visible:ring-border-strong-focus"
               onClick={() => setQuery("")}
             >
               Clear search

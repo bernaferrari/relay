@@ -1,5 +1,6 @@
 import { createMemo, createSignal, Show } from "solid-js";
-import { Button } from "@relay/ui/button";
+import { cn } from "../lib/cn";
+import { productIconButton } from "../lib/ui";
 import type { SnapshotNode, SnapshotState } from "../context/server";
 import type { InteractiveStep } from "../lib/server-interaction";
 import { deviceReadiness } from "../lib/device-readiness";
@@ -196,13 +197,13 @@ export function AppMapTestDevicePanel(props: {
         "Captures every viewport while preserving the original frames and accessibility data.")
       : fullPageFallback;
   return (
-    <div class="grid gap-3">
-      <header class="flex min-h-11 items-center justify-between gap-3">
+    <div class="grid gap-2.5">
+      <header class="flex items-center justify-between gap-2">
         <div class="min-w-0">
-          <strong class="block truncate text-[12px] font-semibold text-text-strong">
+          <strong class="block truncate text-caption font-medium text-text-strong">
             {props.deviceName ?? "No device selected"}
           </strong>
-          <span class="mt-0.5 block text-[10.5px] text-text-weak" role="status" aria-live="polite">
+          <span class="block text-caption/[1.3] text-text-weak" role="status" aria-live="polite">
             {props.refreshing
               ? "Requesting fresh pixels…"
               : props.frame
@@ -210,32 +211,18 @@ export function AppMapTestDevicePanel(props: {
                 : (message()?.title ?? "Live pixels available")}
           </span>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          class="min-h-11 shrink-0"
+        <button
+          type="button"
+          class={cn(productIconButton, "size-8")}
           disabled={!props.deviceSelected || props.offline || props.refreshing}
           aria-busy={props.refreshing}
+          aria-label={props.refreshing ? "Refreshing pixels" : "Refresh pixels"}
+          data-tip="Refresh pixels"
           onClick={props.onRefresh}
         >
-          <Icon name="refresh" size={13} class={props.refreshing ? "ui-refresh-spin" : undefined} />
-          {props.refreshing ? "Refreshing…" : "Refresh"}
-        </Button>
+          <Icon name="refresh" size={14} class={props.refreshing ? "ui-refresh-spin" : undefined} />
+        </button>
       </header>
-
-      <ScrollSurfaceCaptureAction
-        busy={props.fullPageCapture?.busy ?? false}
-        disabledReason={
-          props.fullPageCapture ? props.fullPageCapture.disabledReason : fullPageFallback
-        }
-        policy={props.fullPageCapture?.policy}
-        hasSurface={props.fullPageCapture?.hasSurface ?? false}
-        statusId="test-scroll-surface-capture-status"
-        onCapture={() => props.fullPageCapture?.onCapture()}
-      />
-      <p id="test-scroll-surface-capture-status" class="-mt-1 m-0 text-[10px]/[1.4] text-text-weak">
-        {fullPageDetail()}
-      </p>
 
       <Show
         when={props.frame}
@@ -248,7 +235,7 @@ export function AppMapTestDevicePanel(props: {
         }
       >
         {(frame) => (
-          <figure class="m-0 grid min-h-[360px] place-items-center overflow-hidden rounded-xl border border-border-weak-base bg-[var(--map-canvas)] p-3 max-[1120px]:min-h-[260px]">
+          <figure class="m-0 grid place-items-center overflow-hidden rounded-lg bg-[var(--map-canvas)] p-2">
             <div
               role="application"
               tabindex={props.interactionBlocker ? -1 : 0}
@@ -256,9 +243,12 @@ export function AppMapTestDevicePanel(props: {
               aria-disabled={Boolean(props.interactionBlocker)}
               title={props.interactionBlocker ? undefined : "Tap to interact with the device"}
               data-testid="test-device-interaction-surface"
-              class={`relative h-[min(680px,calc(100dvh-245px))] max-h-[680px] max-w-full overflow-hidden rounded-lg shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)] outline-none focus-visible:ring-2 focus-visible:ring-border-strong-focus max-[1120px]:h-[360px] ${
-                props.interactionBlocker ? "cursor-default" : "touch-manipulation cursor-pointer"
-              }`}
+              class={cn(
+                "relative max-h-[min(620px,calc(100dvh-220px))] w-full max-w-full overflow-hidden rounded-md outline-none",
+                "shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
+                "focus-visible:ring-2 focus-visible:ring-border-strong-focus",
+                props.interactionBlocker ? "cursor-default" : "touch-manipulation cursor-pointer",
+              )}
               style={{ "aspect-ratio": surfaceAspectRatio() }}
               onKeyDown={onScreenKeyDown}
               onFocus={() => setKeyboardActive(true)}
@@ -305,12 +295,12 @@ export function AppMapTestDevicePanel(props: {
                 {(highlight) => (
                   <>
                     <div
-                      class="pointer-events-none absolute z-[2] rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.14]"
+                      class="pointer-events-none absolute z-[2] rounded border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.14]"
                       style={highlight().rect}
                       aria-hidden="true"
                     />
                     <span
-                      class="pointer-events-none absolute z-[3] max-w-[78%] truncate rounded bg-surface-brand-base px-1.5 py-0.5 text-[10px] font-medium text-text-on-brand-base shadow-sm"
+                      class="pointer-events-none absolute z-[3] max-w-[78%] truncate rounded bg-surface-brand-base px-1.5 py-0.5 text-micro font-medium text-text-on-brand-base shadow-sm"
                       style={{
                         left: highlight().chip.left,
                         ...(highlight().chip.below
@@ -336,7 +326,7 @@ export function AppMapTestDevicePanel(props: {
               </Show>
               <Show when={props.interacting}>
                 <span
-                  class="absolute inset-x-3 bottom-3 z-[4] rounded-md bg-surface-strong-base/90 px-2 py-1.5 text-center text-[11px] font-medium text-text-strong"
+                  class="absolute inset-x-3 bottom-3 z-[4] rounded-md bg-surface-strong-base/90 px-2 py-1.5 text-center text-caption font-medium text-text-strong"
                   role="status"
                 >
                   Applying tap…
@@ -347,11 +337,11 @@ export function AppMapTestDevicePanel(props: {
         )}
       </Show>
       <Show when={props.interactionBlocker}>
-        {(blocker) => <p class="m-0 text-[11px]/[1.45] text-text-weak">View only · {blocker()}</p>}
+        {(blocker) => <p class="m-0 text-caption/[1.4] text-text-weak">View only · {blocker()}</p>}
       </Show>
       <Show when={interactionError()}>
         <p
-          class="m-0 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[11px]/[1.5] text-text-critical-base"
+          class="m-0 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base"
           role="alert"
         >
           {interactionError()}
@@ -359,12 +349,40 @@ export function AppMapTestDevicePanel(props: {
       </Show>
       <Show when={props.error}>
         <p
-          class="m-0 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[11px]/[1.5] text-text-critical-base"
+          class="m-0 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base"
           role="alert"
         >
           Pixels were not refreshed. {props.error}
         </p>
       </Show>
+
+      <details class="border-t border-border-weak-base pt-2">
+        <summary
+          class={cn(
+            "flex min-h-8 w-fit cursor-pointer list-none items-center gap-1 rounded",
+            "text-caption font-medium text-text-weak hover:text-text-strong",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+          )}
+        >
+          <Icon name="camera" size={12} />
+          Capture this screen
+        </summary>
+        <div class="grid gap-1.5 pt-1.5">
+          <ScrollSurfaceCaptureAction
+            busy={props.fullPageCapture?.busy ?? false}
+            disabledReason={
+              props.fullPageCapture ? props.fullPageCapture.disabledReason : fullPageFallback
+            }
+            policy={props.fullPageCapture?.policy}
+            hasSurface={props.fullPageCapture?.hasSurface ?? false}
+            statusId="test-scroll-surface-capture-status"
+            onCapture={() => props.fullPageCapture?.onCapture()}
+          />
+          <p id="test-scroll-surface-capture-status" class="m-0 text-caption/[1.4] text-text-weak">
+            {fullPageDetail()}
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

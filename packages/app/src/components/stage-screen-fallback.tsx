@@ -64,13 +64,13 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                             when={props.embeddedRecordingControls && props.targetReady}
                             fallback={
                               <div class="grid justify-items-center gap-2.5">
-                                <span class={cn(deviceIconWell, "size-11 rounded-[13px]")}>
+                                <span class={cn(deviceIconWell, "size-11 rounded-2xl")}>
                                   <Icon name="smartphone" size={20} />
                                 </span>
                                 <strong
                                   class={cn(
                                     deviceTitle,
-                                    "text-[14px] font-semibold tracking-[-0.01em]",
+                                    "text-body font-semibold tracking-[-0.01em]",
                                   )}
                                 >
                                   {props.emptyStageTitle}
@@ -94,7 +94,7 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                                 <strong
                                   class={cn(
                                     deviceTitle,
-                                    "text-[14px] font-semibold tracking-[-0.01em]",
+                                    "text-body font-semibold tracking-[-0.01em]",
                                   )}
                                 >
                                   {props.emptyStageTitle}
@@ -104,7 +104,7 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                                 <strong
                                   class={cn(
                                     deviceTitle,
-                                    "text-[14px] font-semibold tracking-[-0.01em]",
+                                    "text-body font-semibold tracking-[-0.01em]",
                                   )}
                                 >
                                   Checking iPad setup
@@ -115,10 +115,10 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                         }
                       >
                         <div class="grid justify-items-center gap-3 text-center">
-                          <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+                          <span class={cn(deviceIconWell, "size-10 rounded-xl")}>
                             <Icon name="smartphone" size={18} />
                           </span>
-                          <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
+                          <strong class={cn(deviceTitle, "text-body font-semibold")}>
                             {props.developerModeDisabled
                               ? "Turn on Developer Mode"
                               : props.hasIosSetupIssue
@@ -126,14 +126,14 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                                 : "Screen unavailable"}
                           </strong>
                           <Show when={props.hasIosSetupIssue}>
-                            <p class="m-0 max-w-[23ch] text-[10.5px] leading-4 text-[var(--text-weak)]">
+                            <p class="m-0 max-w-[23ch] text-micro leading-4 text-[var(--text-weak)]">
                               {props.iosSetupGuidance}
                             </p>
                           </Show>
                           <Show when={!props.developerModeDisabled}>
                             <button
                               type="button"
-                              class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-[10px] border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-[11px] font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
+                              class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-xl border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-caption font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
                               onClick={() => {
                                 if (props.hasIosSetupIssue) {
                                   window.dispatchEvent(
@@ -171,12 +171,12 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
                             class={cn(
                               mono,
                               deviceCaption,
-                              "text-[9.5px] tracking-[0.09em] uppercase",
+                              "text-micro tracking-[0.09em] uppercase",
                             )}
                           >
                             Step {String(focused().index + 1).padStart(2, "0")}
                           </span>
-                          <span class={cn(deviceCaption, "max-w-[26ch] text-[11.5px]/[1.5]")}>
+                          <span class={cn(deviceCaption, "max-w-[26ch] text-caption/[1.5]")}>
                             {props.targetReady
                               ? "No captured screen"
                               : props.isEmptyDevices
@@ -193,18 +193,18 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
               {(issue) => (
                 <div class="grid h-full w-full place-items-center px-6 text-center">
                   <div class="grid max-w-[220px] justify-items-center gap-3">
-                    <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+                    <span class={cn(deviceIconWell, "size-10 rounded-xl")}>
                       <Icon name="smartphone" size={18} />
                     </span>
-                    <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
+                    <strong class={cn(deviceTitle, "text-body font-semibold")}>
                       {issue().kind === "setup" ? "Set up this iPad" : "Can’t read this screen"}
                     </strong>
-                    <p class="m-0 text-[10.5px] leading-4 text-[var(--text-weak)]">
+                    <p class="m-0 text-micro leading-4 text-[var(--text-weak)]">
                       {issue().message}
                     </p>
                     <button
                       type="button"
-                      class="min-h-11 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97]"
+                      class="min-h-11 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97]"
                       onClick={() => {
                         if (issue().kind === "setup") {
                           window.dispatchEvent(
@@ -227,10 +227,10 @@ export function StageScreenFallback(props: StageScreenFallbackProps) {
         >
           <div class="grid h-full w-full place-items-center px-6 text-center">
             <div class="grid justify-items-center gap-3">
-              <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+              <span class={cn(deviceIconWell, "size-10 rounded-xl")}>
                 <Icon name="smartphone" size={18} />
               </span>
-              <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>Preparing device</strong>
+              <strong class={cn(deviceTitle, "text-body font-semibold")}>Preparing device</strong>
               <span
                 class="size-4 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
                 role="status"

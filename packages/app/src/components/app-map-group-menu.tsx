@@ -11,7 +11,7 @@ export type AppMapGroupMenuState = {
 };
 
 const menuItemClass =
-  "flex h-8 items-center justify-between rounded-[7px] px-2.5 text-left text-[12px] text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]";
+  "flex h-8 items-center justify-between rounded-lg px-2.5 text-left text-caption text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]";
 
 export function AppMapGroupMenu(props: {
   menu: AppMapGroupMenuState | null;
@@ -38,7 +38,7 @@ export function AppMapGroupMenu(props: {
           aria-label="Group actions"
           data-app-map-group-menu
           data-canvas-shortcuts="ignore"
-          class="absolute z-50 grid w-48 gap-0.5 rounded-[10px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]"
+          class="absolute z-50 grid w-48 gap-0.5 rounded-xl bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]"
           style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -56,7 +56,7 @@ export function AppMapGroupMenu(props: {
                     <span class="inline-flex items-center gap-2">
                       <Icon name="group" size={13} /> Group
                     </span>
-                    <kbd class="text-[10px] text-[var(--text-weak)]">⌘G</kbd>
+                    <kbd class="text-micro text-[var(--text-weak)]">⌘G</kbd>
                   </button>
                 </Show>
                 <Show when={hasGroupedScreen()}>
@@ -67,11 +67,11 @@ export function AppMapGroupMenu(props: {
                     onClick={props.onUngroupSelection}
                   >
                     <span>Ungroup</span>
-                    <kbd class="text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
+                    <kbd class="text-micro text-[var(--text-weak)]">⇧⌘G</kbd>
                   </button>
                 </Show>
                 <Show when={menu().screenIds.length < 2 && !hasGroupedScreen()}>
-                  <p class="px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-weak)]">
+                  <p class="px-2.5 py-2 text-caption/[1.45] text-[var(--text-weak)]">
                     Shift-click another screen to group them.
                   </p>
                 </Show>
@@ -87,7 +87,7 @@ export function AppMapGroupMenu(props: {
                   onClick={() => props.onRename(group())}
                 >
                   <span>Rename Group</span>
-                  <kbd class="text-[10px] text-[var(--text-weak)]">F2</kbd>
+                  <kbd class="text-micro text-[var(--text-weak)]">F2</kbd>
                 </button>
                 <button
                   type="button"
@@ -96,7 +96,7 @@ export function AppMapGroupMenu(props: {
                   onClick={() => props.onUngroup(group())}
                 >
                   <span>Ungroup</span>
-                  <kbd class="text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
+                  <kbd class="text-micro text-[var(--text-weak)]">⇧⌘G</kbd>
                 </button>
               </>
             )}

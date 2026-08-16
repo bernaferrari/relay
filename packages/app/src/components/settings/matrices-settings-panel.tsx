@@ -76,8 +76,8 @@ export function MatricesSettingsPanel() {
     <section class="flex flex-col gap-4">
       <header class="flex items-start justify-between gap-4">
         <div class="min-w-0">
-          <h3 class="m-0 text-14-medium text-text-strong">Test environments</h3>
-          <p class="mt-1 mb-0 max-w-[34rem] text-12-regular leading-relaxed text-text-weak">
+          <h3 class="m-0 text-body font-medium text-text-strong">Test environments</h3>
+          <p class="mt-1 mb-0 max-w-[34rem] text-caption leading-relaxed text-text-weak">
             A reusable set of devices. Choose an environment when you run a test to repeat it on
             every device in the set.
           </p>
@@ -103,7 +103,7 @@ export function MatricesSettingsPanel() {
 
       <Show when={error()}>
         <p
-          class="m-0 rounded-md bg-surface-critical-weak px-3 py-2 text-11-regular text-icon-critical-base"
+          class="m-0 rounded-md bg-surface-critical-weak px-3 py-2 text-caption text-icon-critical-base"
           role="alert"
         >
           {error()}
@@ -126,10 +126,10 @@ export function MatricesSettingsPanel() {
             <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
               <div class="flex items-center justify-between gap-3">
                 <div class={copyStack}>
-                  <strong class={`block truncate text-12-medium ${copyTitle}`}>
+                  <strong class={`block truncate text-caption font-medium ${copyTitle}`}>
                     {matrix.name}
                   </strong>
-                  <span class={`block truncate text-11-regular ${copyDescription}`}>
+                  <span class={`block truncate text-caption ${copyDescription}`}>
                     {matrixSummary(matrix)}
                   </span>
                 </div>
@@ -158,7 +158,7 @@ export function MatricesSettingsPanel() {
                 </div>
               </div>
               <Show when={preview()?.id === matrix.id}>
-                <p class="mt-2 mb-0 text-11-regular leading-relaxed text-text-weak" role="status">
+                <p class="mt-2 mb-0 text-caption leading-relaxed text-text-weak" role="status">
                   Includes: {preview()!.included.join(", ") || "none"}.
                   <Show when={preview()!.excluded.length > 0}>
                     {" "}

@@ -23,7 +23,7 @@ export function CoordinateConstraintPicker(props: {
 }): JSX.Element {
   const positionFields = () => (
     <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2.5">
-      <span class="text-[9.5px] font-medium text-[var(--text-weak)]">Position</span>
+      <span class="text-micro font-medium text-[var(--text-weak)]">Position</span>
       <div class="grid grid-cols-2 gap-1.5" aria-label="Device coordinates">
         <CoordinateField
           axis="X"
@@ -67,10 +67,10 @@ export function CoordinateConstraintPicker(props: {
             class={cn("size-1.5 rounded-full", props.active && "bg-[var(--text-interactive-base)]")}
           />
         </span>
-        <strong class="truncate text-[11px] font-medium text-[var(--text-strong)]">
+        <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
           Coordinates
         </strong>
-        <code class="font-mono text-[9.5px] tabular-nums text-[var(--text-base)]">
+        <code class="font-mono text-micro tabular-nums text-[var(--text-base)]">
           {props.point.x}, {props.point.y}
         </code>
       </button>
@@ -79,7 +79,7 @@ export function CoordinateConstraintPicker(props: {
         <div class="grid gap-2.5 px-0.5 pt-0.5">
           {positionFields()}
           <div class="grid grid-cols-[52px_minmax(0,1fr)] items-start gap-2.5">
-            <span class="pt-1 text-[9.5px] font-medium text-[var(--text-weak)]">Pin to</span>
+            <span class="pt-1 text-micro font-medium text-[var(--text-weak)]">Pin to</span>
             <CoordinatePinPicker
               horizontal={props.horizontal}
               vertical={props.vertical}
@@ -162,7 +162,7 @@ export function CoordinatePinPicker(props: {
           setOpen((value) => !value);
         }}
       >
-        <span class="truncate text-[10.5px] text-[var(--text-strong)]">
+        <span class="truncate text-micro text-[var(--text-strong)]">
           {pinLabel(props.horizontal, props.vertical)}
         </span>
         <svg viewBox="0 0 12 12" class="size-3 text-[var(--text-weak)]" aria-hidden="true">
@@ -288,7 +288,7 @@ function CoordinateField(props: {
     >
       <span
         class={cn(
-          "grid h-full touch-none cursor-ew-resize place-items-center rounded-l-md font-mono text-[9px] text-[var(--text-weak)] select-none",
+          "grid h-full touch-none cursor-ew-resize place-items-center rounded-l-md font-mono text-micro text-[var(--text-weak)] select-none",
           "hover:text-[var(--text-interactive-base)]",
           scrubbing() && "text-[var(--text-interactive-base)]",
         )}
@@ -310,7 +310,7 @@ function CoordinateField(props: {
         min="0"
         step="1"
         aria-label={`${props.axis} coordinate`}
-        class="min-w-0 bg-transparent p-0 font-mono text-[10.5px] tabular-nums text-[var(--text-strong)] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        class="min-w-0 bg-transparent p-0 font-mono text-micro tabular-nums text-[var(--text-strong)] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         value={draft()}
         onInput={(event) => update(event.currentTarget.value)}
         onBlur={() => setDraft(String(props.value))}
@@ -338,9 +338,9 @@ function ConstraintPad(props: {
   const pad = (
     <div class={cn("grid gap-1", props.bare && "gap-0")}>
       <Show when={!props.bare}>
-        <span class="flex items-center justify-between gap-1 text-[9.5px] font-medium text-[var(--text-weak)]">
+        <span class="flex items-center justify-between gap-1 text-micro font-medium text-[var(--text-weak)]">
           <span>Pin to</span>
-          <strong class="truncate text-[9px] font-medium text-[var(--text-base)]">
+          <strong class="truncate text-micro font-medium text-[var(--text-base)]">
             {pinLabel(props.horizontal, props.vertical)}
           </strong>
         </span>
@@ -406,7 +406,7 @@ function ConstraintPad(props: {
                       type="button"
                       role="radio"
                       class={cn(
-                        "group grid min-h-0 min-w-0 cursor-pointer place-items-center rounded-[5px] outline-none",
+                        "group grid min-h-0 min-w-0 cursor-pointer place-items-center rounded-md outline-none",
                         "transition-[background-color,transform] duration-100 ease-out hover:bg-[color-mix(in_srgb,var(--text-base)_7%,transparent)] active:scale-90",
                         "focus-visible:bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--text-interactive-base)]",
                       )}

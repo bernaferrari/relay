@@ -90,7 +90,7 @@ export function CollaborationPresence(props: {
             <Show when={visual.screen}>
               {(screen) => (
                 <div
-                  class="absolute rounded-[16px] border-2 opacity-65"
+                  class="absolute rounded-2xl border-2 opacity-65"
                   style={{
                     transform: `translate3d(${screen().position.x - 4}px, ${screen().position.y - 4}px, 0)`,
                     width: `${SCREEN_CARD_WIDTH + 8}px`,
@@ -116,7 +116,7 @@ export function CollaborationPresence(props: {
                     />
                   </svg>
                   <span
-                    class="mt-3 max-w-32 truncate rounded-full px-2 py-0.5 text-[9px] font-semibold text-[var(--text-invert-strong)] shadow-sm"
+                    class="mt-3 max-w-32 truncate rounded-full px-2 py-0.5 text-micro font-semibold text-[var(--text-invert-strong)] shadow-sm"
                     style={{ background: visual.color }}
                   >
                     {visual.label}

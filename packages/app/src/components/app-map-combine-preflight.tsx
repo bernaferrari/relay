@@ -17,19 +17,19 @@ export function AppMapCombinePreflightSummary(props: { preflight: AppMapCombineP
   ];
   return (
     <section
-      class="grid gap-2 rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-3"
+      class="grid gap-2 rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-3"
       aria-label="Run preflight"
     >
       <div class="flex items-start justify-between gap-3">
         <div>
-          <h3 class="m-0 text-[11.5px] font-semibold text-[var(--text-strong)]">Before you run</h3>
-          <p class="m-0 mt-0.5 text-[10px] text-[var(--text-weak)]">
+          <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">Before you run</h3>
+          <p class="m-0 mt-0.5 text-micro text-[var(--text-weak)]">
             {durationLabel(props.preflight.estimatedDurationMs)}
           </p>
         </div>
         <span
           class={cn(
-            "inline-flex items-center gap-1 text-[10px] font-medium",
+            "inline-flex items-center gap-1 text-micro font-medium",
             props.preflight.ok
               ? "text-[var(--icon-success-base)]"
               : "text-[var(--icon-critical-base)]",
@@ -42,11 +42,11 @@ export function AppMapCombinePreflightSummary(props: { preflight: AppMapCombineP
       <div class="grid grid-cols-3 gap-1.5">
         <For each={metrics()}>
           {(metric) => (
-            <div class="rounded-[8px] bg-[var(--background-base)] px-2 py-2">
-              <strong class="block text-[12px] font-semibold tabular-nums text-[var(--text-strong)]">
+            <div class="rounded-lg bg-[var(--background-base)] px-2 py-2">
+              <strong class="block text-caption font-semibold tabular-nums text-[var(--text-strong)]">
                 {metric.value}
               </strong>
-              <span class="block text-[9.5px] text-[var(--text-weak)]">{metric.label}</span>
+              <span class="block text-micro text-[var(--text-weak)]">{metric.label}</span>
             </div>
           )}
         </For>
@@ -55,7 +55,7 @@ export function AppMapCombinePreflightSummary(props: { preflight: AppMapCombineP
         <ul class="m-0 grid list-none gap-1 p-0">
           <For each={[...props.preflight.blockers, ...props.preflight.warnings]}>
             {(item) => (
-              <li class="flex items-start gap-1.5 text-[10px]/[1.4] text-[var(--text-base)]">
+              <li class="flex items-start gap-1.5 text-micro/[1.4] text-[var(--text-base)]">
                 <Icon
                   name={props.preflight.blockers.includes(item) ? "alert" : "info"}
                   size={11}

@@ -31,19 +31,19 @@ export function AppMapAgentSetup(props: {
   return (
     <div class="grid gap-4">
       <section>
-        <h2 class="text-[19px]/[1.2] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
+        <h2 class="text-display/[1.2] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
           What should Relay learn?
         </h2>
-        <p class="mt-1.5 max-w-[34ch] text-[12px]/[1.55] text-[var(--text-weak)]">
+        <p class="mt-1.5 max-w-[34ch] text-caption/[1.55] text-[var(--text-weak)]">
           It will explore safe visible paths, preserve evidence, and bring every map change back for
           review.
         </p>
       </section>
 
       <label class="grid gap-1.5">
-        <span class="text-[10.5px] font-semibold text-[var(--text-base)]">Goal</span>
+        <span class="text-micro font-semibold text-[var(--text-base)]">Goal</span>
         <textarea
-          class="min-h-24 resize-y rounded-[10px] border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-[16px]/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)] min-[681px]:text-[12.5px]"
+          class="min-h-24 resize-y rounded-xl border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-title/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)] min-[681px]:text-body"
           value={props.goal}
           placeholder="Map onboarding and find every safe path into settings"
           onInput={(event) => props.onGoal(event.currentTarget.value)}
@@ -52,10 +52,8 @@ export function AppMapAgentSetup(props: {
 
       <Show when={workerCount() > 1}>
         <fieldset class="grid gap-2">
-          <legend class="text-[10.5px] font-semibold text-[var(--text-base)]">
-            Multiple agents
-          </legend>
-          <div class="grid grid-cols-2 gap-1 rounded-[10px] bg-[var(--surface-base)] p-1">
+          <legend class="text-micro font-semibold text-[var(--text-base)]">Multiple agents</legend>
+          <div class="grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-base)] p-1">
             <For
               each={
                 [
@@ -68,17 +66,17 @@ export function AppMapAgentSetup(props: {
                 <button
                   type="button"
                   class={cn(
-                    "grid min-h-14 content-center rounded-[8px] px-2 text-left transition-[background-color,color,box-shadow] duration-150",
+                    "grid min-h-14 content-center rounded-lg px-2 text-left transition-[background-color,color,box-shadow] duration-150",
                     props.strategy === option[0] &&
                       "bg-[var(--background-base)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
                   )}
                   aria-pressed={props.strategy === option[0]}
                   onClick={() => props.onStrategy(option[0])}
                 >
-                  <strong class="text-[11px] font-medium text-[var(--text-strong)]">
+                  <strong class="text-caption font-medium text-[var(--text-strong)]">
                     {option[1]}
                   </strong>
-                  <small class="mt-0.5 text-[9.5px] text-[var(--text-weak)]">{option[2]}</small>
+                  <small class="mt-0.5 text-micro text-[var(--text-weak)]">{option[2]}</small>
                 </button>
               )}
             </For>
@@ -87,14 +85,14 @@ export function AppMapAgentSetup(props: {
       </Show>
 
       <fieldset class="grid gap-2">
-        <legend class="text-[10.5px] font-semibold text-[var(--text-base)]">Time budget</legend>
-        <div class="grid grid-cols-3 gap-1 rounded-[10px] bg-[var(--surface-base)] p-1">
+        <legend class="text-micro font-semibold text-[var(--text-base)]">Time budget</legend>
+        <div class="grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-base)] p-1">
           <For each={[5, 10, 20]}>
             {(value) => (
               <button
                 type="button"
                 class={cn(
-                  "min-h-11 rounded-[8px] text-[11.5px] font-medium text-[var(--text-base)] transition-[background-color,color,box-shadow] duration-150",
+                  "min-h-11 rounded-lg text-caption font-medium text-[var(--text-base)] transition-[background-color,color,box-shadow] duration-150",
                   props.minutes === value &&
                     "bg-[var(--background-base)] text-[var(--text-strong)] shadow-[0_1px_4px_rgb(0_0_0/12%)]",
                 )}
@@ -111,17 +109,17 @@ export function AppMapAgentSetup(props: {
       <Show when={props.selectedTargetCount === 0}>
         <button
           type="button"
-          class="group flex min-h-14 items-center gap-3 rounded-[11px] bg-[var(--product-accent-soft)] px-3 text-left shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--surface-base-hover))]"
+          class="group flex min-h-14 items-center gap-3 rounded-xl bg-[var(--product-accent-soft)] px-3 text-left shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--surface-base-hover))]"
           onClick={props.onOpenTargets}
         >
-          <span class="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/10%)]">
+          <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/10%)]">
             <Icon name="smartphone" size={15} />
           </span>
           <span class="min-w-0 flex-1">
-            <strong class="block text-[11.5px] font-semibold text-[var(--text-strong)]">
+            <strong class="block text-caption font-semibold text-[var(--text-strong)]">
               Choose where Relay should explore
             </strong>
-            <small class="mt-0.5 block text-[10px]/[1.4] text-[var(--text-weak)]">
+            <small class="mt-0.5 block text-micro/[1.4] text-[var(--text-weak)]">
               Select one device or several targets to run in parallel.
             </small>
           </span>
@@ -130,7 +128,7 @@ export function AppMapAgentSetup(props: {
       </Show>
 
       <details class="group border-y border-[var(--border-weak-base)] open:pb-2">
-        <summary class="flex min-h-12 cursor-pointer list-none items-center gap-2 px-1 text-[11.5px] font-medium text-[var(--text-strong)] hover:text-[var(--text-interactive-base)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--text-interactive-base)]">
+        <summary class="flex min-h-12 cursor-pointer list-none items-center gap-2 px-1 text-caption font-medium text-[var(--text-strong)] hover:text-[var(--text-interactive-base)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--text-interactive-base)]">
           <Icon name="grid" size={14} class="text-[var(--text-weak)]" />
           <span class="flex-1">Coverage</span>
           <span class="font-normal text-[var(--text-weak)]">
@@ -145,14 +143,14 @@ export function AppMapAgentSetup(props: {
         </summary>
         <div class="grid gap-4 px-1 pb-2 pt-2">
           <fieldset class="grid gap-2">
-            <legend class="text-[10px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
+            <legend class="text-micro font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
               Targets
             </legend>
             <div class="grid gap-1">
               <For
                 each={props.devices}
                 fallback={
-                  <p class="rounded-[9px] bg-[var(--background-base)] px-3 py-3 text-[11px] text-[var(--text-weak)]">
+                  <p class="rounded-xl bg-[var(--background-base)] px-3 py-3 text-caption text-[var(--text-weak)]">
                     Connect a device to begin.
                   </p>
                 }
@@ -163,7 +161,7 @@ export function AppMapAgentSetup(props: {
                   return (
                     <label
                       class={cn(
-                        "flex min-h-11 items-center gap-2.5 rounded-[9px] px-2.5 transition-colors duration-150",
+                        "flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 transition-colors duration-150",
                         enabled()
                           ? "cursor-pointer hover:bg-[var(--background-base)]"
                           : "cursor-not-allowed opacity-50",
@@ -177,10 +175,10 @@ export function AppMapAgentSetup(props: {
                         onChange={() => props.onTargetIds(toggle(props.targetIds, device.serial))}
                       />
                       <Icon name="smartphone" size={14} class="text-[var(--text-weak)]" />
-                      <span class="min-w-0 flex-1 truncate text-[11.5px] text-[var(--text-strong)]">
+                      <span class="min-w-0 flex-1 truncate text-caption text-[var(--text-strong)]">
                         {device.name ?? device.serial}
                       </span>
-                      <span class="text-[9.5px] text-[var(--text-weak)]">
+                      <span class="text-micro text-[var(--text-weak)]">
                         {device.platform ?? "device"}
                       </span>
                     </label>
@@ -191,7 +189,7 @@ export function AppMapAgentSetup(props: {
           </fieldset>
 
           <fieldset class="grid gap-2">
-            <legend class="text-[10px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
+            <legend class="text-micro font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
               Agent perspectives
             </legend>
             <div class="flex flex-wrap gap-1.5">
@@ -202,7 +200,7 @@ export function AppMapAgentSetup(props: {
                     <button
                       type="button"
                       class={cn(
-                        "min-h-11 rounded-full px-3 text-[10.5px] font-medium transition-[background-color,color,box-shadow] duration-150",
+                        "min-h-11 rounded-full px-3 text-micro font-medium transition-[background-color,color,box-shadow] duration-150",
                         selected()
                           ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)]"
                           : "bg-[var(--background-base)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] hover:text-[var(--text-strong)]",
@@ -216,7 +214,7 @@ export function AppMapAgentSetup(props: {
                 }}
               </For>
             </div>
-            <p class="text-[10px]/[1.45] text-[var(--text-weak)]">
+            <p class="text-micro/[1.45] text-[var(--text-weak)]">
               Targets run in parallel. Perspectives sharing one device queue safely and never tap
               over each other. Named models use your OpenRouter connection; Relay falls back to its
               built-in step planner when the cloud model is unavailable.
@@ -225,7 +223,7 @@ export function AppMapAgentSetup(props: {
         </div>
       </details>
 
-      <div class="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2.5 gap-y-2.5 px-1 text-[10.5px]/[1.45] text-[var(--text-base)]">
+      <div class="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2.5 gap-y-2.5 px-1 text-micro/[1.45] text-[var(--text-base)]">
         <Icon name="check" size={13} class="mt-0.5 text-[var(--icon-success-base)]" />
         <span>Sensitive and irreversible controls remain blocked.</span>
         <Show when={workerCount() > 1}>

@@ -42,7 +42,8 @@ test("configuration uses arguments over environment over CLI-compatible defaults
   assert.equal(defaults.connection.projectId, "default");
   assert.equal(defaults.connection.actorId, "agent:mcp:42");
   assert.equal(defaults.connection.actorKind, "agent");
-  assert.equal(defaults.profile, "author");
+  assert.equal(defaults.profile, "control");
+  assert.equal(defaults.timeoutMs, 180000);
 });
 
 test("explicit actor IDs remain agent actors", () => {
@@ -65,7 +66,7 @@ test("credential source reads a named environment variable without exposing it",
   assert.doesNotMatch(rendered, /super-secret-token/);
   assert.match(rendered, /env:MY_RELAY_TOKEN/);
   assert.match(rendered, /configured/);
-  assert.match(rendered, /author/);
+  assert.match(rendered, /control/);
 });
 
 test("credential validation matches CLI semantics", () => {

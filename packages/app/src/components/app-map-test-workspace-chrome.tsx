@@ -1,179 +1,400 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
 import type { AppMapTest } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
-import { testKindDescription } from "../lib/app-map-test-editor-model";
-import { testEditorInput } from "./app-map-test-binding-editor";
+import { menuOption, popover, productIconButton } from "../lib/ui";
+import { testEditorInput } from "../lib/app-map-test-editor-styles";
+import { scenarioStepCount } from "../lib/app-map-test-editor-model";
+import type { TestRailKind } from "../lib/app-map-test-layout";
 import { Icon } from "./icon";
 
-export type MobileTestPane = "steps" | "edit" | "device" | "results";
+export type TestWorkspaceStatusTone = "ready" | "attention" | "saving" | "neutral";
 
-export function TestWorkspaceActionBar(props: {
+const TONE_DOT: Record<TestWorkspaceStatusTone, string> = {
+  ready: "bg-icon-success-base",
+  attention: "bg-icon-warning-base",
+  saving: "bg-icon-interactive-base",
+  neutral: "bg-icon-disabled",
+};
+
+const menuItem = cn(
+  menuOption,
+  "flex min-h-11 w-full items-center gap-2 px-2.5 text-left text-caption text-text-base",
+  "hover:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
+  "disabled:cursor-not-allowed disabled:text-text-weaker",
+);
+
+/**
+ * The single piece of workspace chrome. It replaced four stacked low-density
+ * bars (window title, status, test picker, step search): the status is now a
+ * label beside the one primary action, the picker is a popover, and the step
+ * search moved into the Steps rail where the steps are.
+ */
+export function TestWorkspaceBar(props: {
   status: string;
-  statusTone?: "ready" | "attention" | "saving" | "neutral";
-  stepCount: number | undefined;
+  statusTone: TestWorkspaceStatusTone;
+  stepCount?: number;
+  railOpen: Record<TestRailKind, boolean>;
+  onToggleRail: (rail: TestRailKind) => void;
+  switcher: JSX.Element;
   children: JSX.Element;
 }) {
   return (
-    <header class="flex min-h-[52px] items-center justify-between gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-1.5">
-      <div class="flex min-w-0 items-center gap-2.5" aria-live="polite">
-        <div class="flex min-w-0 items-center gap-2">
-          <span
-            class={cn(
-              "size-2 shrink-0 rounded-full",
-              props.statusTone === "attention"
-                ? "bg-icon-warning-base"
-                : props.statusTone === "saving"
-                  ? "bg-icon-interactive-base"
-                  : props.statusTone === "neutral"
-                    ? "bg-icon-disabled"
-                    : "bg-icon-success-base",
-            )}
-            aria-hidden="true"
-          />
-          <strong class="truncate text-[12px] font-semibold text-text-strong">
-            {props.status}
-          </strong>
-        </div>
+    <header class="flex min-h-11 items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-2">
+      <RailToggle rail="steps" open={props.railOpen.steps} onToggle={props.onToggleRail} />
+      <div class="flex min-w-0 flex-1 items-center gap-2">
+        {props.switcher}
         <Show when={props.stepCount !== undefined}>
-          <span class="shrink-0 border-l border-border-weak-base pl-2.5 text-[10.5px] tabular-nums text-text-weak">
+          <span class="shrink-0 text-caption tabular-nums text-text-weak max-[560px]:hidden">
             {props.stepCount} {props.stepCount === 1 ? "step" : "steps"}
           </span>
         </Show>
       </div>
-      <div class="flex shrink-0 items-center gap-2">{props.children}</div>
+      <div class="flex shrink-0 items-center gap-2" aria-live="polite">
+        <span class="flex min-w-0 items-center gap-1.5 max-[720px]:hidden">
+          <span
+            class={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[props.statusTone])}
+            aria-hidden="true"
+          />
+          <span class="truncate text-caption text-text-base">{props.status}</span>
+        </span>
+        {props.children}
+        <RailToggle rail="device" open={props.railOpen.device} onToggle={props.onToggleRail} />
+      </div>
     </header>
   );
 }
 
-export function TestPicker(props: {
+function RailToggle(props: {
+  rail: TestRailKind;
+  open: boolean;
+  onToggle: (rail: TestRailKind) => void;
+}) {
+  const label = () =>
+    props.rail === "steps"
+      ? `${props.open ? "Hide" : "Show"} steps`
+      : `${props.open ? "Hide" : "Show"} device`;
+  return (
+    <button
+      type="button"
+      data-test-rail-toggle={props.rail}
+      class={cn(productIconButton, props.open && "bg-surface-base-active text-text-strong")}
+      aria-label={label()}
+      aria-pressed={props.open}
+      data-tip={`${label()} · ${props.rail === "steps" ? "[" : "]"}`}
+      onClick={() => props.onToggle(props.rail)}
+    >
+      <Icon name={props.rail === "steps" ? "panel-left" : "smartphone"} size={16} />
+    </button>
+  );
+}
+
+/**
+ * A collapsed rail keeps its edge. Without this the device would simply vanish
+ * below the widths where it used to jump to the bottom of the screen.
+ */
+export function RailStrip(props: {
+  rail: TestRailKind;
+  label: string;
+  onOpen: (rail: TestRailKind) => void;
+}) {
+  return (
+    <div
+      class={cn(
+        "flex min-h-0 flex-col items-center gap-2 bg-background-base py-2",
+        props.rail === "steps"
+          ? "border-r border-border-weak-base"
+          : "border-l border-border-weak-base",
+      )}
+      data-test-rail-strip={props.rail}
+    >
+      <button
+        type="button"
+        class={cn(productIconButton, "size-8")}
+        aria-label={`Show ${props.label.toLocaleLowerCase()}`}
+        aria-expanded={false}
+        data-tip={`Show ${props.label.toLocaleLowerCase()}`}
+        onClick={() => props.onOpen(props.rail)}
+      >
+        <Icon name={props.rail === "steps" ? "chevron-right" : "chevron-left"} size={15} />
+      </button>
+      <span
+        class="text-micro font-semibold tracking-[0.1em] text-text-weak uppercase [writing-mode:vertical-rl]"
+        aria-hidden="true"
+      >
+        {props.label}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The Test name is shown once and edited where it is shown. The old screen
+ * printed it three times: window title, picker option, and a `Test name` field
+ * at the top of the step editor.
+ */
+export function TestSwitcher(props: {
   tests: AppMapTest[];
   selectedTestId: string;
-  disabled: boolean;
+  name: string;
+  busy: boolean;
   creating: boolean;
   onSelect: (id: string) => void;
+  onRename: (name: string) => void;
   onCreate: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const [open, setOpen] = createSignal(false);
+  const [renaming, setRenaming] = createSignal(false);
+  const [query, setQuery] = createSignal("");
+  let trigger: HTMLButtonElement | undefined;
+  let container: HTMLDivElement | undefined;
+
+  const matches = () => {
+    const needle = query().trim().toLocaleLowerCase();
+    if (!needle) return props.tests;
+    return props.tests.filter((test) => test.name.toLocaleLowerCase().includes(needle));
+  };
+
+  const close = (restoreFocus = true) => {
+    setOpen(false);
+    setQuery("");
+    if (restoreFocus) queueMicrotask(() => trigger?.focus());
+  };
+
+  createEffect(() => {
+    if (!open()) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!container?.contains(event.target as Node)) close(false);
+    };
+    document.addEventListener("mousedown", dismiss);
+    onCleanup(() => document.removeEventListener("mousedown", dismiss));
+  });
+
   return (
-    <div class="flex items-center gap-1 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha p-2">
-      <label class="min-w-0 flex-1" for="app-map-test-picker">
-        <span class="sr-only">Test</span>
-        <select
-          id="app-map-test-picker"
-          class={cn(testEditorInput, "truncate")}
-          value={props.selectedTestId}
-          disabled={props.disabled}
-          onChange={(event) => props.onSelect(event.currentTarget.value)}
+    <div class="relative flex min-w-0 items-center gap-1" ref={(element) => (container = element)}>
+      <Show
+        when={!renaming()}
+        fallback={
+          <input
+            class={cn(testEditorInput, "min-w-0 max-w-[280px] flex-1")}
+            aria-label="Test name"
+            value={props.name}
+            autofocus
+            spellcheck={false}
+            onBlur={(event) => {
+              props.onRename(event.currentTarget.value);
+              setRenaming(false);
+              queueMicrotask(() => trigger?.focus());
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                event.currentTarget.value = props.name;
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        }
+      >
+        <button
+          ref={(element) => (trigger = element)}
+          type="button"
+          id="app-map-test-switcher"
+          class={cn(
+            "flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-150 motion-reduce:transition-none",
+            "hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus",
+            open() && "bg-surface-base-active",
+          )}
+          aria-haspopup="listbox"
+          aria-expanded={open()}
+          aria-controls="app-map-test-switcher-menu"
+          onClick={() => setOpen((value) => !value)}
         >
-          <For each={props.tests}>
-            {(test) => (
-              <option value={test.id}>
-                {test.name} · {testKindDescription(test)}
-              </option>
-            )}
-          </For>
-        </select>
-      </label>
-      <div class="flex items-center gap-1">
-        <Button
-          variant="secondary"
-          size="sm"
-          class="min-h-11 shrink-0"
-          disabled={props.creating}
-          onClick={props.onCreate}
+          <span class="truncate text-caption font-medium text-text-strong">
+            {props.name || "Choose a Test"}
+          </span>
+          <Icon name="chevron-down" size={13} class="shrink-0 text-text-weak" />
+        </button>
+      </Show>
+
+      <TestOverflow
+        disabled={props.busy || !props.selectedTestId}
+        onRename={() => setRenaming(true)}
+        onDuplicate={props.onDuplicate}
+        onDelete={props.onDelete}
+      />
+
+      <Show when={open()}>
+        <div
+          id="app-map-test-switcher-menu"
+          class={cn(popover, "absolute top-[calc(100%+6px)] left-0 w-[min(320px,80vw)] p-0")}
+          role="listbox"
+          aria-label="Tests on this map"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              close();
+            }
+          }}
         >
-          <Icon name="plus" size={13} /> {props.creating ? "Creating…" : "New"}
-        </Button>
-        <Show when={props.selectedTestId}>
-          <details class="relative">
-            <summary
-              class="grid min-h-11 min-w-11 cursor-pointer list-none place-items-center rounded-lg text-text-weak hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus"
-              aria-label="Test options"
+          <div class="border-b border-border-weak-base p-2">
+            <label class="relative block" for="app-map-test-switcher-search">
+              <span class="sr-only">Find a Test</span>
+              <Icon
+                name="search"
+                size={13}
+                class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-weaker"
+              />
+              <input
+                id="app-map-test-switcher-search"
+                type="search"
+                class={cn(testEditorInput, "pl-8")}
+                placeholder="Find a Test…"
+                autofocus
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+              />
+            </label>
+          </div>
+          <div class="max-h-[min(320px,50vh)] overflow-y-auto p-1">
+            <For
+              each={matches()}
+              fallback={
+                <p class="m-0 px-2.5 py-3 text-caption text-text-weak">
+                  No Test matches that name.
+                </p>
+              }
             >
-              <Icon name="more" size={14} />
-            </summary>
-            <div class="absolute top-[calc(100%+4px)] right-0 z-30 grid w-40 rounded-lg border border-border-strong-base bg-background-base p-1 shadow-[var(--shadow-lg)]">
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDuplicate();
-                }}
-              >
-                Duplicate Test
-              </button>
-              <button
-                type="button"
-                disabled={props.disabled}
-                class="min-h-11 rounded-md px-3 text-left text-[12px] text-text-critical-base hover:bg-surface-base-hover disabled:opacity-40"
-                onClick={(event) => {
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                  props.onDelete();
-                }}
-              >
-                Delete Test…
-              </button>
-            </div>
-          </details>
-        </Show>
-      </div>
+              {(test) => (
+                <button
+                  type="button"
+                  role="option"
+                  data-test-switcher-option={test.id}
+                  aria-selected={test.id === props.selectedTestId}
+                  class={cn(
+                    menuItem,
+                    "justify-between",
+                    test.id === props.selectedTestId && "bg-surface-base-active text-text-strong",
+                  )}
+                  disabled={props.busy && test.id !== props.selectedTestId}
+                  onClick={() => {
+                    props.onSelect(test.id);
+                    close();
+                  }}
+                >
+                  <span class="min-w-0 truncate">{test.name}</span>
+                  <span class="shrink-0 text-caption tabular-nums text-text-weaker">
+                    {stepLabel(test)}
+                  </span>
+                </button>
+              )}
+            </For>
+          </div>
+          <div class="border-t border-border-weak-base p-1">
+            <button
+              type="button"
+              class={cn(menuItem, "text-text-interactive-base")}
+              disabled={props.creating}
+              onClick={() => {
+                close(false);
+                props.onCreate();
+              }}
+            >
+              <Icon name="plus" size={13} />
+              {props.creating ? "Creating…" : "New Test"}
+            </button>
+          </div>
+        </div>
+      </Show>
     </div>
   );
+}
+
+function TestOverflow(props: {
+  disabled: boolean;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <details
+      class="relative shrink-0"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        event.currentTarget.removeAttribute("open");
+        event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+      }}
+    >
+      <summary
+        class={cn(productIconButton, "size-8 cursor-pointer list-none")}
+        aria-label="Test options"
+      >
+        <Icon name="more" size={15} />
+      </summary>
+      <div class={cn(popover, "absolute top-[calc(100%+4px)] left-0 grid w-44")}>
+        <button
+          type="button"
+          class={menuItem}
+          disabled={props.disabled}
+          onClick={(event) => {
+            event.currentTarget.closest("details")?.removeAttribute("open");
+            props.onRename();
+          }}
+        >
+          <Icon name="edit" size={13} /> Rename Test
+        </button>
+        <button
+          type="button"
+          class={menuItem}
+          disabled={props.disabled}
+          onClick={(event) => {
+            event.currentTarget.closest("details")?.removeAttribute("open");
+            props.onDuplicate();
+          }}
+        >
+          <Icon name="copy" size={13} /> Duplicate Test
+        </button>
+        <button
+          type="button"
+          class={cn(menuItem, "text-text-critical-base hover:text-icon-critical-base")}
+          disabled={props.disabled}
+          onClick={(event) => {
+            event.currentTarget.closest("details")?.removeAttribute("open");
+            props.onDelete();
+          }}
+        >
+          <Icon name="trash" size={13} /> Delete Test…
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function stepLabel(test: AppMapTest): string {
+  const count = test.kind === "scenario" ? scenarioStepCount(test.steps) : 0;
+  return `${count} ${count === 1 ? "step" : "steps"}`;
 }
 
 export function FirstTestEmpty(props: { creating: boolean; onCreate: () => void }) {
   return (
-    <div class="grid flex-1 place-items-center p-6 text-center">
-      <div class="max-w-[32ch]">
-        <h2 class="m-0 text-[17px] font-semibold">Create the first test</h2>
-        <p class="mt-2 text-[12px]/[1.5] text-text-weak">
-          Start with readable intent, then bind each step to reviewed map truth.
+    <div class="grid min-h-0 flex-1 place-items-center p-6 text-center">
+      <div class="max-w-[34ch]">
+        <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-base text-text-weak">
+          <Icon name="command" size={18} />
+        </span>
+        <h2 class="mt-3 mb-0 text-title/[1.25] font-semibold text-text-strong">
+          Create the first Test
+        </h2>
+        <p class="mt-1.5 text-caption/[1.5] text-text-weak">
+          Write readable intent first, then bind each step to a reviewed path on the App Map.
         </p>
         <Button class="mt-4" disabled={props.creating} onClick={props.onCreate}>
-          Create scenario test
+          {props.creating ? "Creating…" : "Create scenario test"}
         </Button>
       </div>
     </div>
-  );
-}
-
-export function MobilePaneNav(props: {
-  value: MobileTestPane;
-  onChange: (pane: MobileTestPane) => void;
-}) {
-  const panes = [
-    ["steps", "Steps"],
-    ["edit", "Edit"],
-    ["device", "Device"],
-    ["results", "Results"],
-  ] as const;
-  return (
-    <nav
-      class="hidden min-h-12 shrink-0 grid-cols-4 border-b border-border-weak-base bg-background-base p-1 max-[760px]:grid"
-      aria-label="Test workspace"
-    >
-      <For each={panes}>
-        {([pane, label]) => (
-          <button
-            type="button"
-            data-test-mobile-tab={pane}
-            class={cn(
-              "min-h-11 rounded-lg px-2 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-border-strong-focus",
-              props.value === pane
-                ? "bg-surface-base-active text-text-strong"
-                : "text-text-weak hover:bg-surface-base-hover",
-            )}
-            aria-current={props.value === pane ? "page" : undefined}
-            onClick={() => props.onChange(pane)}
-          >
-            {label}
-          </button>
-        )}
-      </For>
-    </nav>
   );
 }

@@ -358,7 +358,7 @@ export function RunReplayStage(props: {
       <header class="relative z-[1] grid min-h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4">
         <button
           type="button"
-          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-surface-base-hover hover:text-[var(--text-strong)]"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-body font-medium text-[var(--text-base)] transition-colors hover:bg-surface-base-hover hover:text-[var(--text-strong)]"
           onClick={props.onBack}
         >
           <Icon name="chevron-left" size={14} /> All runs
@@ -384,7 +384,7 @@ export function RunReplayStage(props: {
           </div>
         </Show>
         <Show when={nodes().length > 0}>
-          <div class="flex min-w-0 items-center justify-end gap-2 text-[10.5px] text-text-weaker">
+          <div class="flex min-w-0 items-center justify-end gap-2 text-micro text-text-weaker">
             <span class="shrink-0 font-mono tabular-nums">
               {index() + 1} / {nodes().length}
             </span>
@@ -428,7 +428,7 @@ export function RunReplayStage(props: {
             Its captured dimensions choose the surface ratio, so tablets,
             landscape devices, browsers, and phones all use the available stage. */}
           <div
-            class="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[12px] bg-[var(--background-base)] shadow-[0_0_0_1px_rgb(0_0_0/10%),0_12px_28px_-8px_rgb(0_0_0/28%),0_28px_72px_-28px_rgb(0_0_0/45%)]"
+            class="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl bg-[var(--background-base)] shadow-[0_0_0_1px_rgb(0_0_0/10%),0_12px_28px_-8px_rgb(0_0_0/28%),0_28px_72px_-28px_rgb(0_0_0/45%)]"
             style={{
               "aspect-ratio": String(mediaAspect() ?? 9 / 16),
               width: (mediaAspect() ?? 9 / 16) > 1 ? "100%" : "auto",
@@ -451,7 +451,7 @@ export function RunReplayStage(props: {
                             size={16}
                             class="text-text-weaker"
                           />
-                          <span class="text-[11px]/[1.4] text-text-weaker">
+                          <span class="text-caption/[1.4] text-text-weaker">
                             {node()?.observed ? "No screenshot captured here" : "Step not reached"}
                           </span>
                         </div>
@@ -500,12 +500,12 @@ export function RunReplayStage(props: {
                     }}
                   />
                   <Show when={!liveVideoReady()}>
-                    <div class="absolute inset-0 grid place-items-center text-[11px] text-text-weaker">
+                    <div class="absolute inset-0 grid place-items-center text-caption text-text-weaker">
                       Connecting to live device…
                     </div>
                   </Show>
                   <Show when={liveVideoReady()}>
-                    <span class="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full bg-black/65 px-2 py-1 text-[9px] font-medium text-white backdrop-blur-sm">
+                    <span class="absolute top-2 left-2 inline-flex items-center gap-1.5 rounded-full bg-black/65 px-2 py-1 text-micro font-medium text-white backdrop-blur-sm">
                       <span class="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
                       Live
                     </span>
@@ -521,14 +521,14 @@ export function RunReplayStage(props: {
             size={12}
             class={node()?.state === "failed" ? "text-icon-critical-base" : "text-text-weaker"}
           />
-          <p class="m-0 truncate text-[12px] font-medium text-text-base">{node()?.title}</p>
+          <p class="m-0 truncate text-caption font-medium text-text-base">{node()?.title}</p>
         </div>
         <Show when={hasVideo() && reviewCut()}>
           {(cut) => (
             <div class="relative z-[2] mx-auto flex w-full max-w-[560px] items-center justify-between gap-3 px-4 pb-1">
               <div class="min-w-0">
-                <p class="m-0 text-[11px] font-medium text-text-base">Focused review</p>
-                <p class="m-0.5 text-[10px] text-text-weaker">
+                <p class="m-0 text-caption font-medium text-text-base">Focused review</p>
+                <p class="m-0.5 text-micro text-text-weaker">
                   Skips {formatStepDuration(cut().skippedDurationMs)} of unchanged time. Original
                   video stays intact.
                 </p>
@@ -556,7 +556,7 @@ export function RunReplayStage(props: {
         </Show>
         <Show when={reviewCutSkipped()}>
           {(skipped) => (
-            <div class="pointer-events-none absolute right-4 bottom-[72px] z-[4] rounded-full border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base-hover)_94%,transparent)] px-2.5 py-1 text-[10px] font-medium text-text-base shadow-[0_8px_24px_rgb(0_0_0/28%)] backdrop-blur">
+            <div class="pointer-events-none absolute right-4 bottom-[72px] z-[4] rounded-full border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base-hover)_94%,transparent)] px-2.5 py-1 text-micro font-medium text-text-base shadow-[0_8px_24px_rgb(0_0_0/28%)] backdrop-blur">
               Skipped {formatStepDuration(skipped())} unchanged
             </div>
           )}

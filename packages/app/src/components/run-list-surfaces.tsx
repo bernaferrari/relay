@@ -31,7 +31,7 @@ export function RunStepList(props: {
         <For
           each={nodes()}
           fallback={
-            <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-5 text-center text-[12px] text-[var(--text-weak)]">
+            <div class="rounded-xl border border-dashed border-[var(--border-weak-base)] px-3 py-5 text-center text-caption text-[var(--text-weak)]">
               No steps were recorded for this run.
             </div>
           }
@@ -54,7 +54,7 @@ export function RunStepList(props: {
               >
                 <span
                   class={cn(
-                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--background-base)] font-mono text-[11px] font-semibold tabular-nums",
+                    "relative z-[1] grid size-8 place-items-center rounded-xl border bg-[var(--background-base)] font-mono text-caption font-semibold tabular-nums",
                     active()
                       ? "border-[var(--text-interactive-base)] text-[var(--text-interactive-base)]"
                       : node.state === "failed"
@@ -65,14 +65,14 @@ export function RunStepList(props: {
                   {node.index + 1}
                 </span>
                 <span class="min-w-0 pr-2">
-                  <span class="flex min-w-0 items-center gap-1.5 text-[10px] font-medium text-text-weaker">
+                  <span class="flex min-w-0 items-center gap-1.5 text-micro font-medium text-text-weaker">
                     <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={11} class="shrink-0" />
                     <span class="shrink-0 tracking-[0.02em]">
                       {kind() ? kindLabel(kind()!) : "Step"}
                     </span>
                     <Show when={node.durationMs}>
                       <span class="shrink-0 text-text-weaker/70">·</span>
-                      <span class={cn(mono, "shrink-0 text-[10px]")}>
+                      <span class={cn(mono, "shrink-0 text-micro")}>
                         {formatStepDuration(node.durationMs!)}
                       </span>
                     </Show>
@@ -85,7 +85,7 @@ export function RunStepList(props: {
                       )}
                     </Show>
                   </span>
-                  <strong class="mt-1 block truncate text-[13.5px]/[1.35] font-medium tracking-[-0.005em] text-text-strong">
+                  <strong class="mt-1 block truncate text-body/[1.35] font-medium tracking-[-0.005em] text-text-strong">
                     {node.title}
                   </strong>
                 </span>
@@ -163,7 +163,7 @@ export function RunRow(props: {
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-caption/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
@@ -172,7 +172,7 @@ export function RunRow(props: {
     >
       <span
         class={cn(
-          "grid size-9 place-items-center rounded-[10px]",
+          "grid size-9 place-items-center rounded-xl",
           passed() && "bg-surface-success-weak text-icon-success-base",
           attention() && "bg-surface-warning-weak text-icon-warning-base",
           active() && "bg-surface-info-weak text-icon-info-base",
@@ -190,7 +190,7 @@ export function RunRow(props: {
           <Show
             when={props.batch}
             fallback={
-              <span class="text-[15px] font-semibold leading-none" aria-hidden="true">
+              <span class="text-title font-semibold leading-none" aria-hidden="true">
                 ?
               </span>
             }
@@ -200,9 +200,7 @@ export function RunRow(props: {
         </Show>
       </span>
       <span class="min-w-0">
-        <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
-          {title()}
-        </strong>
+        <strong class="block truncate text-body/[1.3] font-[550] text-text-base">{title()}</strong>
         <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
           <span
             class={cn(
@@ -216,7 +214,7 @@ export function RunRow(props: {
           </span>
           <Show when={glyphSteps().length > 0}>
             <span class="opacity-50">·</span>
-            <span class="text-[11px]">
+            <span class="text-caption">
               {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
             </span>
             <span class="opacity-50">·</span>
@@ -227,10 +225,10 @@ export function RunRow(props: {
             <span class="max-w-[220px] truncate">{targetName()}</span>
           </Show>
           <Show when={props.job.appVersion}>
-            <i class="font-mono text-[11px] not-italic">· build {props.job.appVersion}</i>
+            <i class="font-mono text-caption not-italic">· build {props.job.appVersion}</i>
           </Show>
           <Show when={props.job.failureCategory}>
-            <i class="truncate text-[11px] not-italic text-icon-critical-base">
+            <i class="truncate text-caption not-italic text-icon-critical-base">
               · {titleize(props.job.failureCategory!)}
             </i>
           </Show>
@@ -242,7 +240,7 @@ export function RunRow(props: {
                 <img
                   src={src}
                   alt=""
-                  class="h-8 w-[18px] shrink-0 rounded-[3px] border border-border-weak-base object-cover opacity-90"
+                  class="h-8 w-[18px] shrink-0 rounded border border-border-weak-base object-cover opacity-90"
                 />
               )}
             </For>
@@ -250,9 +248,9 @@ export function RunRow(props: {
         </Show>
       </span>
       <span class="grid justify-items-end gap-1.5">
-        <span class="font-mono text-[11px] tabular-nums text-text-base">{duration() || "—"}</span>
-        <span class="inline-flex items-center gap-1.5 text-[10.5px] text-text-weaker">
-          <span class={cn(mono, "text-[10.5px]")}>
+        <span class="font-mono text-caption tabular-nums text-text-base">{duration() || "—"}</span>
+        <span class="inline-flex items-center gap-1.5 text-micro text-text-weaker">
+          <span class={cn(mono, "text-micro")}>
             {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
           </span>
           <Icon name="chevron-right" size={13} />

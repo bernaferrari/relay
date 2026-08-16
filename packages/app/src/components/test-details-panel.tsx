@@ -122,7 +122,7 @@ export function MapPropertiesPanel(props: {
       class={cn(
         shellSteps,
         props.presentation === "floating"
-          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-[16px] border border-[var(--border-strong-base)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
+          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-2xl border border-[var(--border-strong-base)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
           : shellAsideDrawer,
       )}
       aria-label="Map details"
@@ -162,13 +162,13 @@ export function MapPropertiesPanel(props: {
               <div class="grid gap-1.5">
                 <label
                   for="app-map-description"
-                  class="text-[10.5px] font-medium text-[var(--text-base)]"
+                  class="text-micro font-medium text-[var(--text-base)]"
                 >
                   Description
                 </label>
                 <textarea
                   id="app-map-description"
-                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--border-strong-base)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5 text-caption/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--border-strong-base)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={descriptionDraft()}
                   placeholder="What does this map cover?"
                   onInput={(event) => {
@@ -179,7 +179,7 @@ export function MapPropertiesPanel(props: {
                 />
                 <span
                   class={cn(
-                    "min-h-4 text-[10px]",
+                    "min-h-4 text-micro",
                     descriptionMessage() && descriptionMessage() !== "Saved"
                       ? "text-[var(--icon-critical-base)]"
                       : "text-[var(--text-weak)]",
@@ -200,10 +200,10 @@ export function MapPropertiesPanel(props: {
                   <Icon name="sparkle" size={14} />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
+                  <strong class="block text-caption font-medium text-[var(--text-base)]">
                     Test data
                   </strong>
-                  <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
+                  <small class="mt-0.5 block text-micro text-[var(--text-weak)]">
                     Shared lists and private values for a run
                   </small>
                 </span>
@@ -220,14 +220,14 @@ export function MapPropertiesPanel(props: {
         <Show when={tab() === "source"}>
           <div class="flex h-full min-h-0 flex-col overflow-hidden">
             <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-weak-base)] px-3">
-              <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
+              <span class="text-caption font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
                 Portable map file (YAML)
               </span>
               <div class="flex items-center gap-1">
                 <Show when={!yamlEditing()}>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-caption text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
                   >
@@ -235,7 +235,7 @@ export function MapPropertiesPanel(props: {
                   </button>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-caption text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -249,7 +249,7 @@ export function MapPropertiesPanel(props: {
                 <Show when={yamlEditing()}>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)]"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-caption text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)]"
                     disabled={yamlSaving()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -261,7 +261,7 @@ export function MapPropertiesPanel(props: {
                   </button>
                   <button
                     type="button"
-                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-caption font-semibold text-[var(--text-strong)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--surface-base-hover)] disabled:opacity-40"
                     disabled={yamlSaving()}
                     onClick={() => void saveYaml()}
                   >
@@ -273,7 +273,7 @@ export function MapPropertiesPanel(props: {
             <Show
               when={yamlSource()}
               fallback={
-                <div class="grid flex-1 place-items-center p-6 text-center text-[12px] text-[var(--text-weak)]">
+                <div class="grid flex-1 place-items-center p-6 text-center text-caption text-[var(--text-weak)]">
                   <Show
                     when={!yamlLoading() && yamlMessage()?.tone === "error"}
                     fallback={<span>Preparing portable YAML…</span>}
@@ -295,13 +295,13 @@ export function MapPropertiesPanel(props: {
               <Show
                 when={yamlEditing()}
                 fallback={
-                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--background-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-base)]">
+                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--background-deep)] p-3 font-mono text-caption/[1.5] text-[var(--text-base)]">
                     {yamlSource()}
                   </pre>
                 }
               >
                 <textarea
-                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--background-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
+                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--background-deep)] p-3 font-mono text-caption/[1.5] text-[var(--text-strong)] outline-none"
                   aria-label="Map YAML"
                   spellcheck={false}
                   value={yamlDraft()}
@@ -315,7 +315,7 @@ export function MapPropertiesPanel(props: {
                 {(message) => (
                   <p
                     class={cn(
-                      "m-0 border-t border-[var(--border-weak-base)] px-3 py-2 text-[11px]",
+                      "m-0 border-t border-[var(--border-weak-base)] px-3 py-2 text-caption",
                       message().tone === "success"
                         ? "text-[var(--icon-success-base)]"
                         : "text-[var(--icon-critical-base)]",

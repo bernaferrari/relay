@@ -23,7 +23,7 @@ export function StageViewToggle(props: {
             when={props.hasRecordedEvidence}
             fallback={
               <span
-                class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
+                class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-caption font-medium"
                 role="status"
                 aria-live="polite"
                 data-tip={
@@ -50,7 +50,7 @@ export function StageViewToggle(props: {
             }
           >
             <span
-              class="inline-flex h-8 min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium text-text-base"
+              class="inline-flex h-8 min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-caption font-medium text-text-base"
               role="status"
               aria-label="Recorded device evidence"
             >
@@ -67,7 +67,7 @@ export function StageViewToggle(props: {
           <button
             type="button"
             class={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
               props.stageView === "recorded"
                 ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
                 : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
@@ -81,7 +81,7 @@ export function StageViewToggle(props: {
           <button
             type="button"
             class={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
               props.stageView === "live"
                 ? "bg-[var(--surface-raised-base)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_72%,transparent)]"
                 : "text-[var(--text-weak)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-base)]",
@@ -125,12 +125,12 @@ export function StageInspectionHint(props: {
   onAction: () => void;
 }) {
   return (
-    <div class="pointer-events-auto absolute inset-x-3 bottom-3 z-[6] flex items-start gap-2 rounded-[12px] bg-[color-mix(in_srgb,var(--surface-raised-base)_92%,transparent)] px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/28%),inset_0_0_0_1px_var(--border-weak-base)]">
+    <div class="pointer-events-auto absolute inset-x-3 bottom-3 z-[6] flex items-start gap-2 rounded-xl bg-[color-mix(in_srgb,var(--surface-raised-base)_92%,transparent)] px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/28%),inset_0_0_0_1px_var(--border-weak-base)]">
       <div class="min-w-0 flex-1">
-        <strong class="block text-[11px] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
+        <strong class="block text-caption font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
           {props.title}
         </strong>
-        <p class="m-0 mt-0.5 text-[10.5px] leading-4 text-[var(--text-weak)]">{props.detail}</p>
+        <p class="m-0 mt-0.5 text-micro leading-4 text-[var(--text-weak)]">{props.detail}</p>
       </div>
       <Button
         type="button"
@@ -167,7 +167,7 @@ export function StageRecordingControls(props: {
   return (
     <div class="z-[2] mt-3 flex min-h-10 items-center justify-center text-text-base">
       <Show when={props.stageView === "live"}>
-        <div class="flex items-center gap-1 rounded-[11px] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--map-elevation-control)]">
+        <div class="flex items-center gap-1 rounded-xl bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--map-elevation-control)]">
           <Button
             variant={props.recording ? "danger" : "primary"}
             size="md"
@@ -189,7 +189,7 @@ export function StageRecordingControls(props: {
           <Show when={props.recording}>
             <div class="flex h-9 min-w-0 items-center rounded-lg bg-[var(--surface-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
               <input
-                class="h-full w-32 min-w-0 bg-transparent px-2.5 text-[12px] font-medium text-[var(--text-strong)] outline-none placeholder:text-text-weak"
+                class="h-full w-32 min-w-0 bg-transparent px-2.5 text-caption font-medium text-[var(--text-strong)] outline-none placeholder:text-text-weak"
                 aria-label="Current recording task"
                 value={props.recordingGroup}
                 placeholder="Task name"

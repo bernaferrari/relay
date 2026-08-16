@@ -520,7 +520,7 @@ export function AppMapCombine(props: {
             />
 
             <Show when={runIssue()}>
-              <p class="m-0 flex items-start gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 py-2 text-[10.5px]/[1.4] text-[var(--text-base)]">
+              <p class="m-0 flex items-start gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 py-2 text-micro/[1.4] text-[var(--text-base)]">
                 <Icon name="info" size={12} class="mt-0.5 shrink-0" /> {runIssue()}
               </p>
             </Show>

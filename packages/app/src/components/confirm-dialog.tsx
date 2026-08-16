@@ -76,11 +76,11 @@ export function ConfirmDialogHost(): JSX.Element {
             >
               <h2
                 id="confirm-dialog-title"
-                class="m-0 text-[15px] font-semibold text-[var(--text-strong)]"
+                class="m-0 text-title font-semibold text-[var(--text-strong)]"
               >
                 {active().title}
               </h2>
-              <p id="confirm-dialog-body" class="mt-1.5 mb-4 text-[12.5px]/[1.5] text-text-weak">
+              <p id="confirm-dialog-body" class="mt-1.5 mb-4 text-body/[1.5] text-text-weak">
                 {active().body}
               </p>
               <div class="flex justify-end gap-2">

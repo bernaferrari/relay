@@ -244,7 +244,23 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "target.interact": z
     .object({
       ...targetReference,
-      kind: z.enum(["label", "point", "ref", "find", "text-match", "swipe", "type"]),
+      kind: z.enum([
+        "label",
+        "identifier",
+        "point",
+        "ref",
+        "find",
+        "text-match",
+        "swipe",
+        "type",
+        "key",
+        "replace",
+      ]),
+      identifier: z.string().min(1).optional(),
+      label: z.string().min(1).optional(),
+      text: z.string().optional(),
+      x: z.number().optional(),
+      y: z.number().optional(),
     })
     .catchall(z.unknown()),
   "target.ui.describe": z.object(targetReference).strict(),

@@ -43,7 +43,7 @@ export function ServerSettingsPanel() {
         <div class="shrink-0">
           <span
             class={cn(
-              "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium tracking-wide",
+              "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-caption font-medium tracking-wide",
               healthTone(),
             )}
           >
@@ -83,12 +83,12 @@ export function ServerSettingsPanel() {
           Refresh
         </Button>
         <Show when={serverSaved()}>
-          <span class="text-12-regular text-icon-success-base">Saved</span>
+          <span class="text-caption text-icon-success-base">Saved</span>
         </Show>
       </div>
       <Show when={server.error() && !server.isOffline()}>
         <div
-          class="mt-3 flex items-center gap-2 rounded-md bg-surface-critical-weak px-3 py-2 text-12-regular text-icon-critical-base"
+          class="mt-3 flex items-center gap-2 rounded-md bg-surface-critical-weak px-3 py-2 text-caption text-icon-critical-base"
           role="alert"
         >
           <span class="min-w-0 flex-1">{server.error()}</span>

@@ -31,6 +31,11 @@ export const relayMcpInstructions = [
   "Use Relay tools only within the configured organization and project scope.",
   "Treat tool results as server-authoritative and preserve Relay actor identity.",
   "Pass operation fields directly as tool arguments; do not infer target or session identifiers.",
+  "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
+  "If a tap does not change pixels, it missed; try the label, not a cell center.",
+  "A missing accessibility tree is not a failed session — screenshot plus point still works.",
+  "On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with this actor, then retry.",
+  "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
 ].join(" ");
 
 export const relayMcpTextLimit = 8_192;
@@ -64,6 +69,17 @@ const relayToolOutputSchema = z
         code: z.string(),
         message: z.string(),
         recovery: z.object({ action: z.string(), retryable: z.boolean() }).strict(),
+        recoveryAction: z
+          .object({
+            operationId: z.string(),
+            input: z.record(z.string(), z.unknown()).optional(),
+            cli: z
+              .object({ argv: z.array(z.string()) })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
         currentRevision: z.number().int().nonnegative().optional(),
       })
       .strict()

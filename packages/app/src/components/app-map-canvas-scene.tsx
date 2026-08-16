@@ -454,7 +454,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             <button
               type="button"
               class={cn(
-                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-[10.5px] font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-[8px] hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-micro font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-lg hover:bg-[var(--background-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
                 !showLabel() && "pointer-events-none opacity-0",
                 props.selectedConnectionId === connection.id &&
                   "bg-[var(--background-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
@@ -477,7 +477,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               </span>
               <Show when={count()}>
                 {(value) => (
-                  <span class="inline-flex items-center gap-1 text-[9.5px] font-normal tabular-nums text-[var(--text-weak)]">
+                  <span class="inline-flex items-center gap-1 text-micro font-normal tabular-nums text-[var(--text-weak)]">
                     <span aria-hidden="true">·</span>{" "}
                     {value().exact ? value().count : `~${value().count}`}{" "}
                     {value().count === 1 ? "run" : "runs"}

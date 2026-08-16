@@ -52,20 +52,20 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
     <section class="mt-3 border-t border-[var(--border-weak-base)] pt-2">
       <button
         type="button"
-        class="group flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+        class="group flex min-h-11 w-full items-center gap-2 rounded-lg px-1.5 text-left transition-colors duration-150 hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
         aria-expanded={open()}
         onClick={() => setOpen(!open())}
       >
-        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base-hover)] text-[var(--text-base)]">
+        <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--surface-base-hover)] text-[var(--text-base)]">
           <Icon name="grid" size={11} />
         </span>
         <span class="min-w-0 flex-1">
-          <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
+          <strong class="block text-micro font-medium text-[var(--text-strong)]">
             {props.stack
               ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} runs`
               : "Test data"}
           </strong>
-          <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+          <span class="block truncate text-micro text-[var(--text-weak)]">
             {props.stack
               ? selectedVariables()
                   .map((variable) => humanizeName(variable.name))
@@ -74,7 +74,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
           </span>
         </span>
         <span
-          class="grid size-8 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] transition-colors group-hover:text-[var(--text-strong)]"
+          class="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-colors group-hover:text-[var(--text-strong)]"
           aria-hidden="true"
         >
           <Icon name={open() ? "chevron-up" : props.stack ? "edit" : "plus"} size={11} />
@@ -82,10 +82,10 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
       </button>
 
       <Show when={open()}>
-        <div class="mt-1 grid gap-2 rounded-[9px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-2">
+        <div class="mt-1 grid gap-2 rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-2">
           <Show when={reusableStacks().length > 0}>
             <div class="grid gap-1">
-              <span class="px-1 text-[9px] font-medium text-[var(--text-weak)]">
+              <span class="px-1 text-micro font-medium text-[var(--text-weak)]">
                 Saved input sets
               </span>
               <For each={reusableStacks()}>
@@ -94,7 +94,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                   return (
                     <button
                       type="button"
-                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors hover:bg-[var(--surface-base)] disabled:opacity-45"
+                      class="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-micro transition-colors hover:bg-[var(--surface-base)] disabled:opacity-45"
                       disabled={props.busy}
                       onClick={() => {
                         props.onAttach(stack.id);
@@ -105,7 +105,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                       <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
                         {humanizeName(stack.name)}
                       </span>
-                      <span class="text-[9px] tabular-nums text-[var(--text-weak)]">
+                      <span class="text-micro tabular-nums text-[var(--text-weak)]">
                         {count().exact ? "" : "~"}
                         {count().count} runs
                       </span>
@@ -120,16 +120,16 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
           <Show
             when={props.variables.length > 0}
             fallback={
-              <div class="rounded-[7px] bg-[var(--surface-base)] p-2.5">
-                <strong class="block text-[10.5px] text-[var(--text-strong)]">
+              <div class="rounded-lg bg-[var(--surface-base)] p-2.5">
+                <strong class="block text-micro text-[var(--text-strong)]">
                   Add test data first
                 </strong>
-                <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
+                <p class="m-0 mt-1 text-micro/[1.45] text-[var(--text-weak)]">
                   Add a list such as low, medium, high, then repeat this path for each value.
                 </p>
                 <button
                   type="button"
-                  class="mt-2 min-h-9 rounded-[7px] px-2 text-[10px] font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
+                  class="mt-2 min-h-9 rounded-lg px-2 text-micro font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
                   onClick={props.onOpenVariables}
                 >
                   Add test data
@@ -138,7 +138,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
             }
           >
             <div class="grid max-h-36 gap-0.5 overflow-y-auto overscroll-contain pr-0.5">
-              <span class="sticky top-0 z-[1] bg-[var(--surface-base)] px-1 pb-1 text-[9px] font-medium text-[var(--text-weak)]">
+              <span class="sticky top-0 z-[1] bg-[var(--surface-base)] px-1 pb-1 text-micro font-medium text-[var(--text-weak)]">
                 Inputs to vary
               </span>
               <For each={props.variables}>
@@ -148,7 +148,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                     <button
                       type="button"
                       class={cn(
-                        "flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors duration-150 hover:bg-[var(--surface-base-hover)]",
+                        "flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-micro transition-colors duration-150 hover:bg-[var(--surface-base-hover)]",
                         selected() && "bg-[var(--product-accent-soft)]",
                       )}
                       aria-pressed={selected()}
@@ -162,7 +162,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                     >
                       <span
                         class={cn(
-                          "grid size-4 place-items-center rounded-[4px] border border-[var(--border-strong-base)]",
+                          "grid size-4 place-items-center rounded border border-[var(--border-strong-base)]",
                           selected() &&
                             "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]",
                         )}
@@ -174,7 +174,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                       <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
                         {humanizeName(variable.name)}
                       </span>
-                      <span class="text-[9px] text-[var(--text-weak)]">
+                      <span class="text-micro text-[var(--text-weak)]">
                         {variable.scope === "private"
                           ? "Private on this machine"
                           : `${Math.max(1, variable.values?.length ?? 1)} value${(variable.values?.length ?? 1) === 1 ? "" : "s"}`}
@@ -186,11 +186,11 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
             </div>
             <Show when={dataIds().length > 1}>
               <label class="grid gap-1">
-                <span class="text-[9px] font-medium text-[var(--text-weak)]">
-                  Combine selected inputs
+                <span class="text-micro font-medium text-[var(--text-weak)]">
+                  How selected values expand
                 </span>
                 <select
-                  class="min-h-9 rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 text-[10px] text-[var(--text-base)] outline-none focus:border-[var(--border-focus)]"
+                  class="min-h-9 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 text-micro text-[var(--text-base)] outline-none focus:border-[var(--border-focus)]"
                   value={strategy()}
                   onChange={(event) =>
                     setStrategy(event.currentTarget.value as CaseExpansionStrategy)
@@ -203,7 +203,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
               </label>
             </Show>
             <div class="flex min-h-10 items-center gap-2 border-t border-[var(--border-weak-base)] pt-2">
-              <span class="min-w-0 flex-1 text-[9.5px] text-[var(--text-weak)]">
+              <span class="min-w-0 flex-1 text-micro text-[var(--text-weak)]">
                 {dataIds().length
                   ? `${draftCount().exact ? "" : "About "}${draftCount().count} run${draftCount().count === 1 ? "" : "s"}`
                   : "Select at least one input"}
@@ -230,7 +230,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
               <Show when={props.stack}>
                 <button
                   type="button"
-                  class="min-h-10 rounded-[7px] px-2.5 text-[10px] text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
+                  class="min-h-10 rounded-lg px-2.5 text-micro text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
                   onClick={props.onDetach}
                 >
                   Detach

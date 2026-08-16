@@ -358,7 +358,7 @@ export function CommandPalette(): JSX.Element {
     return (list[idx]?.group ?? "") !== (list[idx - 1]?.group ?? "");
   };
 
-  const kbdCls = "mono rounded px-1 py-px text-12-regular text-text-weak";
+  const kbdCls = "mono rounded px-1 py-px text-caption text-text-weak";
 
   // Only mount when open — a closed "fixed" overlay was still in document
   // flow when TW utilities failed, stealing ~126px of shell height.
@@ -374,7 +374,7 @@ export function CommandPalette(): JSX.Element {
       >
         <div
           ref={(element) => (dialogRef = element)}
-          class="ui-instant flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-12-regular text-text-strong shadow-lg-border-base"
+          class="ui-instant flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-caption text-text-strong shadow-lg-border-base"
           role="dialog"
           aria-label="Command palette"
           aria-modal="true"
@@ -382,7 +382,7 @@ export function CommandPalette(): JSX.Element {
           <div class="border-b border-border-weak-base p-1">
             <input
               type="search"
-              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-[16px]/[1.4] text-text-strong placeholder:text-text-weak focus:outline-none"
+              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-title/[1.4] text-text-strong placeholder:text-text-weak focus:outline-none"
               placeholder="Search commands, tests…"
               aria-label="Search commands"
               {...commandComboboxAttributes(activeCommandId())}
@@ -406,7 +406,7 @@ export function CommandPalette(): JSX.Element {
               <Show
                 when={filtered().length > 0}
                 fallback={
-                  <div class="px-6 py-8 text-center text-14-regular text-text-base">
+                  <div class="px-6 py-8 text-center text-body text-text-base">
                     No matching commands
                   </div>
                 }
@@ -416,7 +416,7 @@ export function CommandPalette(): JSX.Element {
                     <>
                       <Show when={groupStart(i())}>
                         <div
-                          class="sticky top-0 z-[1] bg-surface-raised-stronger-non-alpha px-2.5 pt-2 pb-1 text-12-medium text-text-weak"
+                          class="sticky top-0 z-[1] bg-surface-raised-stronger-non-alpha px-2.5 pt-2 pb-1 text-caption font-medium text-text-weak"
                           role="presentation"
                         >
                           {c.group ?? "Commands"}
@@ -427,7 +427,7 @@ export function CommandPalette(): JSX.Element {
                         type="button"
                         role="option"
                         class={cn(
-                          "flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-14-regular text-text-strong transition-colors",
+                          "flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-body text-text-strong transition-colors",
                           "hover:bg-surface-raised-base-hover",
                           cmd.active() === i() && "bg-surface-base-active",
                         )}
@@ -439,9 +439,9 @@ export function CommandPalette(): JSX.Element {
                         onClick={() => void cmd.run(c.id)}
                       >
                         <span class="flex min-w-0 flex-col gap-px">
-                          <span class="text-14-medium">{c.title}</span>
+                          <span class="text-body font-medium">{c.title}</span>
                           <Show when={c.subtitle}>
-                            <span class="text-12-regular text-text-weak">{c.subtitle}</span>
+                            <span class="text-caption text-text-weak">{c.subtitle}</span>
                           </Show>
                         </span>
                         <span class="flex shrink-0 items-center gap-2">

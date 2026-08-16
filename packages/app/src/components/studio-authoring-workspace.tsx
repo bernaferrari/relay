@@ -11,7 +11,7 @@ const AppMapTestWorkspace = lazy(() =>
 
 function Loading(props: { label: string }) {
   return (
-    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-[12px] text-[var(--text-weak)]">
+    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-caption text-[var(--text-weak)]">
       Loading {props.label}…
     </div>
   );

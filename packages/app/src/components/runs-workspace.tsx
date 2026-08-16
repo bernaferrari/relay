@@ -412,10 +412,10 @@ export function RunsWorkspace(props: {
       <Show when={!selected()}>
         <div class="mx-auto mb-5 flex max-w-[1080px] items-center justify-between gap-4">
           <div>
-            <h2 class="m-0 text-[18px] font-semibold tracking-[-0.02em] text-text-strong">
+            <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-text-strong">
               Run history
             </h2>
-            <p class="mt-0.5 text-[11px] text-text-weak">
+            <p class="mt-0.5 text-caption text-text-weak">
               Every path and matrix run, including screenshot evidence.
             </p>
           </div>
@@ -437,13 +437,11 @@ export function RunsWorkspace(props: {
         )}
       >
         <Show when={!selected()}>
-          <div
-            class={cn("w-full max-w-none", rows().length === 0 && "max-w-[680px] rounded-[20px]")}
-          >
+          <div class={cn("w-full max-w-none", rows().length === 0 && "max-w-[680px] rounded-3xl")}>
             <Show when={rows().length > 0}>
               <div class="mb-2.5 flex min-h-10 items-center justify-between gap-3">
                 <div
-                  class="flex items-center gap-1 rounded-[10px] border border-border-weak-base bg-background-stronger p-1"
+                  class="flex items-center gap-1 rounded-xl border border-border-weak-base bg-background-stronger p-1"
                   role="tablist"
                   aria-label="Filter runs"
                 >
@@ -453,7 +451,7 @@ export function RunsWorkspace(props: {
                       role="tab"
                       aria-selected={runFilter() === id}
                       class={cn(
-                        "min-h-7 rounded-md px-3 text-[11.5px] font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                        "min-h-7 rounded-md px-3 text-caption font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
                         runFilter() === id
                           ? "bg-surface-base-active text-text-strong"
                           : "hover:bg-surface-base-hover hover:text-text-base",
@@ -468,13 +466,13 @@ export function RunsWorkspace(props: {
                   <Show when={runFilter() === "all" && rows().length > visibleRows().length}>
                     <button
                       type="button"
-                      class="rounded-md px-2 py-1 text-[10.5px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                      class="rounded-md px-2 py-1 text-micro font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
                       onClick={() => setHistoryExpanded((expanded) => !expanded)}
                     >
                       {historyExpanded() ? "Latest only" : `All ${rows().length}`}
                     </button>
                   </Show>
-                  <span class="font-mono text-[10.5px] text-text-weaker">
+                  <span class="font-mono text-micro text-text-weaker">
                     {visibleRows().length}{" "}
                     {historyExpanded()
                       ? "runs"
@@ -577,7 +575,7 @@ export function RunsWorkspace(props: {
                 <div class="flex items-start justify-between gap-2">
                   <div class="grid min-w-0 gap-1">
                     <span class={eyebrow}>Execution review</span>
-                    <strong class="line-clamp-2 text-[20px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
+                    <strong class="line-clamp-2 text-display/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
                       {job().title ??
                         server.recipes().find((r) => r.id === job().action)?.title ??
                         job().action}
@@ -605,7 +603,7 @@ export function RunsWorkspace(props: {
                   <Button
                     variant="secondary"
                     size="sm"
-                    class="text-[11px]"
+                    class="text-caption"
                     disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
                     onClick={() => {
                       if (selectedAppMapId() && !selectedAppMapAvailable()) return;
@@ -626,7 +624,7 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="primary"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       onClick={() => void server.retrySelectedJob(job().id)}
                     >
                       <Icon name="refresh" size={12} /> Retry
@@ -641,7 +639,7 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="secondary"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       data-tip="Run the exact frozen plan and saved non-private inputs again"
                       onClick={() => void server.replayRecordedRunFromHistory(job().id)}
                     >
@@ -652,7 +650,7 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="secondary"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       onClick={() =>
                         void (job().status === "paused"
                           ? server.resumeJob(job().id)
@@ -665,14 +663,14 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="danger"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       onClick={() => void server.cancelJob(job().id)}
                     >
                       <Icon name="square" size={11} /> Stop
                     </Button>
                   </Show>
                 </div>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-text-weak">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-caption text-text-weak">
                   <StatusChip
                     tone={runOutcomeChip(job()).tone}
                     label={runOutcomeChip(job()).label}
@@ -703,19 +701,19 @@ export function RunsWorkspace(props: {
                 <div class="mx-4 mb-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--icon-warning-base)_32%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--icon-warning-base)_7%,transparent)] px-3 py-3">
                   <div class="flex items-start gap-2.5">
                     <span
-                      class="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-warning-weak text-[14px] font-semibold text-text-warning-base"
+                      class="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-warning-weak text-body font-semibold text-text-warning-base"
                       aria-hidden="true"
                     >
                       ?
                     </span>
                     <div class="min-w-0">
-                      <strong class="block text-[12.5px] font-semibold text-text-strong">
+                      <strong class="block text-body font-semibold text-text-strong">
                         Needs your review
                       </strong>
-                      <span class="mt-0.5 block text-[11px]/[1.45] text-text-weak">
+                      <span class="mt-0.5 block text-caption/[1.45] text-text-weak">
                         {job().review!.reason}
                       </span>
-                      <span class="mt-1 block font-mono text-[10px] text-text-weaker">
+                      <span class="mt-1 block font-mono text-micro text-text-weaker">
                         Capability · {job().review!.capability}
                       </span>
                     </div>
@@ -724,7 +722,7 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="primary"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       onClick={() => void reviewDeferredRun("approve")}
                     >
                       <Icon name="check" size={12} /> Mark correct
@@ -732,7 +730,7 @@ export function RunsWorkspace(props: {
                     <Button
                       variant="secondary"
                       size="sm"
-                      class="text-[11px]"
+                      class="text-caption"
                       onClick={() => void reviewDeferredRun("reject")}
                     >
                       Keep unresolved
@@ -741,13 +739,13 @@ export function RunsWorkspace(props: {
                 </div>
               </Show>
               <Show when={job().review?.status === "approved"}>
-                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-success-base/40 bg-surface-success-weak px-3 py-2.5 text-[11px]/[1.4] text-text-success-base">
+                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-success-base/40 bg-surface-success-weak px-3 py-2.5 text-caption/[1.4] text-text-success-base">
                   <Icon name="check" size={13} class="mt-0.5 shrink-0" />
                   <span>Marked correct by a reviewer. The original evidence is unchanged.</span>
                 </div>
               </Show>
               <Show when={job().review?.status === "rejected"}>
-                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-critical-base/40 bg-surface-critical-weak px-3 py-2.5 text-[11px]/[1.4] text-text-critical-base">
+                <div class="mx-4 mb-3 flex items-start gap-2 rounded-xl border border-border-critical-base/40 bg-surface-critical-weak px-3 py-2.5 text-caption/[1.4] text-text-critical-base">
                   <Icon name="x" size={13} class="mt-0.5 shrink-0" />
                   <span>
                     This check was not accepted. Fix the capability or add an explicit assertion
@@ -761,7 +759,7 @@ export function RunsWorkspace(props: {
                     <Icon name="alert" size={13} />
                   </span>
                   <div class="min-w-0">
-                    <strong class="block text-[12.5px] font-semibold text-text-strong">
+                    <strong class="block text-body font-semibold text-text-strong">
                       {runStopHeadline({
                         total: reviewCompletion()?.total ?? 0,
                         selectedIndex: initialRunReviewStep(job()),
@@ -770,7 +768,7 @@ export function RunsWorkspace(props: {
                           : "Stopped",
                       })}
                     </strong>
-                    <span class="mt-0.5 block text-[11px]/[1.4] text-text-weak">
+                    <span class="mt-0.5 block text-caption/[1.4] text-text-weak">
                       {job().error
                         ? friendlyError(job().error!)
                         : "The relevant evidence is selected. Review the state, then retry or fix the test."}
@@ -792,7 +790,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === id &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -801,12 +799,12 @@ export function RunsWorkspace(props: {
                   >
                     {label}
                     {id === "evaluation" && (reviewCounts()?.checks ?? 0) > 0 ? (
-                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[11px]/4 text-text-interactive-base">
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-caption/4 text-text-interactive-base">
                         {reviewCounts()!.checks}
                       </span>
                     ) : null}
                     {id === "network" && (reviewCounts()?.network ?? 0) > 0 ? (
-                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[11px]/4 text-text-interactive-base">
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-caption/4 text-text-interactive-base">
                         {reviewCounts()!.network}
                       </span>
                     ) : null}
@@ -821,7 +819,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "matrix"}
                     tabindex={tab() === "matrix" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === "matrix" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -829,7 +827,7 @@ export function RunsWorkspace(props: {
                     onKeyDown={onReportTabKeyDown}
                   >
                     Matrix
-                    <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[10px]/4 tabular-nums text-text-interactive-base">
+                    <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-micro/4 tabular-nums text-text-interactive-base">
                       {selectedMatrixRows().length}
                     </span>
                   </button>
@@ -843,7 +841,7 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97]",
                       tab() === "compatibility" &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
@@ -879,12 +877,12 @@ export function RunsWorkspace(props: {
                   <Show when={job().evidence}>
                     {(manifest) => (
                       <section class="mt-3 rounded-xl border border-border-weak-base p-3">
-                        <strong class="text-[11px] font-semibold text-text-strong">
+                        <strong class="text-caption font-semibold text-text-strong">
                           Evidence completeness
                         </strong>
                         <div class="mt-2 flex flex-wrap gap-1.5">
                           {Object.values(manifest().channels).map((channel) => (
-                            <span class="rounded-full border border-border-weak-base px-2 py-1 text-[9px] text-text-weak">
+                            <span class="rounded-full border border-border-weak-base px-2 py-1 text-micro text-text-weak">
                               {channel.channel} · {channel.status}
                             </span>
                           ))}
@@ -894,14 +892,14 @@ export function RunsWorkspace(props: {
                   </Show>
                   <Show when={regressionSignals().some((signal) => signal.material)}>
                     <section class="mt-3 rounded-xl border border-border-weak-base p-3">
-                      <strong class="text-[11px] font-semibold text-text-strong">
+                      <strong class="text-caption font-semibold text-text-strong">
                         Material regressions
                       </strong>
                       <div class="mt-2 grid gap-1.5">
                         {regressionSignals()
                           .filter((signal) => signal.material)
                           .map((signal) => (
-                            <span class="text-[10px] text-text-weak">
+                            <span class="text-micro text-text-weak">
                               {signal.metric.id} · +{signal.delta?.toFixed(0)} {signal.metric.unit}{" "}
                               · baseline {signal.baseline?.median.toFixed(0)} (
                               {signal.baseline?.sampleCount})
@@ -911,7 +909,7 @@ export function RunsWorkspace(props: {
                     </section>
                   </Show>
                   <details class="group col-span-2 mt-2 border-t border-border-weak-base">
-                    <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-[11px]/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+                    <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-caption/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
                       <span>More details</span>
                       <Icon
                         name="chevron-down"
@@ -921,9 +919,9 @@ export function RunsWorkspace(props: {
                     </summary>
                     <dl class="m-0 grid gap-2 pb-3">
                       <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
-                        <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">Run ID</dt>
+                        <dt class="min-w-0 text-micro/[1.25] text-text-weaker">Run ID</dt>
                         <dd class="m-0 flex min-w-0 items-center gap-1.5">
-                          <code class="truncate text-[10px]/[1.25] text-text-weak">{job().id}</code>
+                          <code class="truncate text-micro/[1.25] text-text-weak">{job().id}</code>
                           <button
                             type="button"
                             class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
@@ -936,11 +934,11 @@ export function RunsWorkspace(props: {
                       </div>
                       <Show when={job().serial}>
                         <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
-                          <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">
+                          <dt class="min-w-0 text-micro/[1.25] text-text-weaker">
                             Device identifier
                           </dt>
                           <dd class="m-0 flex min-w-0 items-center gap-1.5">
-                            <code class="truncate text-[10px]/[1.25] text-text-weak">
+                            <code class="truncate text-micro/[1.25] text-text-weak">
                               {job().serial}
                             </code>
                             <button
@@ -956,10 +954,10 @@ export function RunsWorkspace(props: {
                       </Show>
                       <Show when={job().error}>
                         <div class="grid gap-1 border-t border-border-weak-base pt-2.5">
-                          <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">
+                          <dt class="min-w-0 text-micro/[1.25] text-text-weaker">
                             Technical message
                           </dt>
-                          <dd class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-[10px]/[1.45] text-text-weak">
+                          <dd class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-micro/[1.45] text-text-weak">
                             {job().error}
                           </dd>
                         </div>
@@ -971,7 +969,7 @@ export function RunsWorkspace(props: {
                   <Show
                     when={job().persisted}
                     fallback={
-                      <p class="m-0 rounded-lg border border-border-weak-base px-3 py-3 text-[11px]/[1.45] text-text-weak">
+                      <p class="m-0 rounded-lg border border-border-weak-base px-3 py-3 text-caption/[1.45] text-text-weak">
                         This run is still being saved. Visual review becomes available when its
                         evidence is complete.
                       </p>
@@ -981,10 +979,10 @@ export function RunsWorkspace(props: {
                       when={hasVisualRunFrames(job().frames ?? [])}
                       fallback={
                         <div class="grid gap-1.5 rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3.5">
-                          <strong class="text-[13px] font-semibold text-text-strong">
+                          <strong class="text-body font-semibold text-text-strong">
                             No screens to compare
                           </strong>
-                          <p class="m-0 text-[11px]/[1.45] text-text-weak">
+                          <p class="m-0 text-caption/[1.45] text-text-weak">
                             This run ended before Relay captured a screen. Reconnect the target and
                             retry before creating or comparing a visual baseline.
                           </p>
@@ -1041,10 +1039,10 @@ export function RunsWorkspace(props: {
                   {(review) => (
                     <div class="grid gap-3">
                       <div class="grid gap-1 rounded-xl border border-border-weak-base bg-surface-base px-3 py-3">
-                        <strong class="text-[12px] font-semibold text-text-strong">
+                        <strong class="text-caption font-semibold text-text-strong">
                           {review().complete} of {review().rows.length} runs complete
                         </strong>
-                        <p class="m-0 text-[10.5px]/[1.45] text-text-weak">
+                        <p class="m-0 text-micro/[1.45] text-text-weak">
                           Select any screenshot in the grid to inspect its exact steps and evidence.
                         </p>
                       </div>

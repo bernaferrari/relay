@@ -46,8 +46,8 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
     <div class="grid min-w-0 overflow-hidden">
       <div class="flex min-w-0 items-center justify-between gap-3 border-b border-border-weak-base py-px pb-3.5">
         <div class="grid min-w-0 gap-1">
-          <span class="text-[11px]/[1.25] text-text-weaker">Run result</span>
-          <div class="flex min-w-0 items-center gap-1.5 text-[15px]/[1.25] font-semibold text-text-strong">
+          <span class="text-caption/[1.25] text-text-weaker">Run result</span>
+          <div class="flex min-w-0 items-center gap-1.5 text-title/[1.25] font-semibold text-text-strong">
             <span class={cn("size-[7px] shrink-0 rounded-full", resultTone())} aria-hidden="true" />
             <strong class="font-semibold">{outcome()}</strong>
           </div>
@@ -57,20 +57,20 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
         </Show>
       </div>
       <Show when={job().error && job().status === "error"}>
-        <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-[12.5px]/[1.5] text-text-weak">
+        <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-body/[1.5] text-text-weak">
           {friendlyError(job().error!)}
         </p>
       </Show>
       <Show when={job().review?.status === "pending"}>
-        <div class="mt-3 grid gap-1.5 rounded-lg bg-surface-warning-weak px-3 py-2.5 text-[11.5px]/[1.45] text-text-warning-base">
+        <div class="mt-3 grid gap-1.5 rounded-lg bg-surface-warning-weak px-3 py-2.5 text-caption/[1.45] text-text-warning-base">
           <strong class="font-semibold">Automation paused at a human-verifiable boundary</strong>
           <span>{job().review!.reason}</span>
-          <span class="font-mono text-[10px] text-text-weaker">
+          <span class="font-mono text-micro text-text-weaker">
             Capability · {job().review!.capability}
           </span>
         </div>
       </Show>
-      <div class="pt-4 pb-1 text-[11px]/[1.25] font-semibold tracking-[0.06em] uppercase text-text-weaker">
+      <div class="pt-4 pb-1 text-caption/[1.25] font-semibold tracking-[0.06em] uppercase text-text-weaker">
         What happened
       </div>
       <dl class="m-0 grid grid-cols-1">
@@ -104,17 +104,17 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
         {(prior) => (
           <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border-weak-base py-2.5">
             <div class="grid gap-0.5">
-              <span class="text-[11px]/[1.25] text-text-weaker">Since the last run</span>
-              <small class={cn(mono, "text-[10px]/[1.25] text-text-weaker")}>
+              <span class="text-caption/[1.25] text-text-weaker">Since the last run</span>
+              <small class={cn(mono, "text-micro/[1.25] text-text-weaker")}>
                 {fmtAgo(prior().startedAt ?? prior().queuedAt, props.clock)}
               </small>
             </div>
             <div class="grid justify-items-end gap-0.5 text-right">
-              <strong class="text-[12.5px]/[1.25] font-semibold text-text-strong">
+              <strong class="text-body/[1.25] font-semibold text-text-strong">
                 {durationDelta(job(), prior())}
               </strong>
               <Show when={scoreDelta(job(), prior())}>
-                {(delta) => <small class="text-[10px] text-text-weaker">{delta()}</small>}
+                {(delta) => <small class="text-micro text-text-weaker">{delta()}</small>}
               </Show>
             </div>
           </div>
@@ -122,10 +122,10 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
       </Show>
       <Show when={Object.keys(job().resolvedInputs ?? {}).length > 0}>
         <div class="grid min-w-0 gap-2 border-b border-border-weak-base py-2.5">
-          <span class="text-[11px]/[1.25] text-text-weaker">Inputs used for this run</span>
+          <span class="text-caption/[1.25] text-text-weaker">Inputs used for this run</span>
           <For each={Object.entries(job().resolvedInputs ?? {})}>
             {([name, value]) => (
-              <code class="grid min-w-0 grid-cols-[minmax(0,0.4fr)_minmax(0,1fr)] gap-2 font-mono text-[10.5px]/[1.5] text-text-weak">
+              <code class="grid min-w-0 grid-cols-[minmax(0,0.4fr)_minmax(0,1fr)] gap-2 font-mono text-micro/[1.5] text-text-weak">
                 <b class="min-w-0 overflow-hidden text-ellipsis text-text-strong">{name}</b>
                 <span class="min-w-0 overflow-hidden overflow-wrap-anywhere">{value}</span>
               </code>
@@ -148,8 +148,8 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
 function Fact(props: { label: string; value: string }): JSX.Element {
   return (
     <div class="flex min-h-[38px] min-w-0 items-baseline justify-between gap-4 border-b border-border-weak-base py-2">
-      <dt class="min-w-0 text-[11.5px]/[1.3] text-text-weaker">{props.label}</dt>
-      <dd class="m-0 max-w-[68%] min-w-0 overflow-hidden text-right text-[13px]/[1.3] font-medium text-ellipsis whitespace-nowrap text-text-strong">
+      <dt class="min-w-0 text-caption/[1.3] text-text-weaker">{props.label}</dt>
+      <dd class="m-0 max-w-[68%] min-w-0 overflow-hidden text-right text-body/[1.3] font-medium text-ellipsis whitespace-nowrap text-text-strong">
         {props.value}
       </dd>
     </div>

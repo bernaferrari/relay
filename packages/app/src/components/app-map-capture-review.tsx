@@ -20,13 +20,13 @@ import type { RecordedNodeEvidence } from "@relay/protocol";
 import { softTruncate } from "../lib/human-error";
 
 const controlButton =
-  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid min-h-11 min-w-11 place-items-center rounded-lg px-1.5 text-caption text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
 const primaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-caption font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]";
 const reviewEvidenceShell =
-  "relative overflow-hidden rounded-[14px] bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--border-weak-base),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
+  "relative overflow-hidden rounded-2xl bg-[var(--phone-screen)] shadow-[0_0_0_1px_var(--border-weak-base),0_24px_54px_-32px_color-mix(in_srgb,var(--surface-float-base)_72%,transparent)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -42,7 +42,7 @@ export function TakeCaptureBar(props: {
     <section class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3">
       <div class="flex min-w-0 items-center gap-2.5">
         <i class="size-2 shrink-0 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
-        <div class="min-w-0 text-[10.5px]/[1.35]">
+        <div class="min-w-0 text-micro/[1.35]">
           <strong class="block font-semibold text-[var(--text-strong)]">
             {props.contextLabel ? "Recording path" : "Recording"}
           </strong>
@@ -53,7 +53,7 @@ export function TakeCaptureBar(props: {
       </div>
       <button
         type="button"
-        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[9px] bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] px-3 text-[11px] font-semibold text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_20%,transparent)] active:scale-[0.96]"
+        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] px-3 text-caption font-semibold text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_20%,transparent)] active:scale-[0.96]"
         onClick={props.onStop}
       >
         <Icon name="square" size={10} /> Stop
@@ -176,13 +176,13 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
       aria-label="Review captured actions"
     >
       <header class="shrink-0 border-b border-[var(--border-weak-base)] px-4 py-3.5">
-        <span class="text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
+        <span class="text-micro font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
           Path
         </span>
-        <strong class="mt-1 block text-[15px] font-semibold tracking-[-0.018em] text-[var(--text-strong)]">
+        <strong class="mt-1 block text-title font-semibold tracking-[-0.018em] text-[var(--text-strong)]">
           Review recording
         </strong>
-        <p class="m-0 mt-1 text-[11px]/[1.45] text-[var(--text-weak)]">
+        <p class="m-0 mt-1 text-caption/[1.45] text-[var(--text-weak)]">
           {actionLabel()} from {props.sourceTitle}. Edit the steps, try them on the device, then
           keep what worked.
         </p>
@@ -192,11 +192,11 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
         <Show
           when={count() > 0}
           fallback={
-            <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] px-4 py-3">
-              <p class="m-0 text-[11px] leading-relaxed font-medium text-[var(--text-strong)]">
+            <div class="grid gap-2 rounded-xl bg-[var(--surface-base)] px-4 py-3">
+              <p class="m-0 text-caption leading-relaxed font-medium text-[var(--text-strong)]">
                 Nothing was tapped
               </p>
-              <p class="m-0 text-[11px] leading-relaxed text-[var(--text-weak)]">
+              <p class="m-0 text-caption leading-relaxed text-[var(--text-weak)]">
                 Only the screen change was kept. Recapture steps if this path needs taps, swipes, or
                 typing.
               </p>
@@ -257,7 +257,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
               : {})}
           />
           <Show when={hasRecordedTiming()}>
-            <div class="mt-2 flex items-start gap-2 rounded-[8px] bg-[var(--surface-base)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--text-weak)]">
+            <div class="mt-2 flex items-start gap-2 rounded-lg bg-[var(--surface-base)] px-3 py-2.5 text-micro/[1.45] text-[var(--text-weak)]">
               <Icon name="clock" size={12} class="mt-0.5 shrink-0" />
               <span>
                 Pauses are saved as Wait steps. Shorten or remove any pause that makes replay feel
@@ -287,16 +287,16 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
           </Show>
         </Show>
         <section class="mt-4 border-t border-[var(--border-weak-base)] px-1 pt-3">
-          <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
+          <span class="block text-micro font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
             Where it goes
           </span>
-          <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
+          <span class="mt-1 block text-micro text-[var(--text-weak)]">
             Starts on <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
           </span>
-          <label class="mt-2 grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]">
+          <label class="mt-2 grid gap-1.5 text-micro font-medium text-[var(--text-base)]">
             Ends on
             <select
-              class="h-11 w-full rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2 text-[11px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+              class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2 text-caption text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
               value={
                 props.destination.kind === "new-screen"
                   ? "new"
@@ -328,7 +328,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
         <Show when={mutationError()}>
           {(message) => (
             <section
-              class="mt-3 flex items-start gap-2 rounded-[9px] border border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--icon-critical-base)]"
+              class="mt-3 flex items-start gap-2 rounded-xl border border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5 text-micro/[1.45] text-[var(--icon-critical-base)]"
               role="alert"
             >
               <Icon name="alert" size={12} class="mt-0.5 shrink-0" />
@@ -338,7 +338,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
         </Show>
         <section
           class={cn(
-            "mt-3 rounded-[9px] border px-3 py-2.5",
+            "mt-3 rounded-xl border px-3 py-2.5",
             canApprove()
               ? "border-[color-mix(in_srgb,var(--icon-success-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-success-base)_8%,transparent)]"
               : props.replayState === "failed"
@@ -358,7 +358,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                     : "text-[var(--text-interactive-base)]"
               }
             />
-            <strong class="text-[10.5px] font-semibold text-[var(--text-strong)]">
+            <strong class="text-micro font-semibold text-[var(--text-strong)]">
               {pendingMutation()
                 ? "Saving change…"
                 : canApprove()
@@ -372,7 +372,7 @@ export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
                         : "Ready when you are"}
             </strong>
           </div>
-          <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
+          <p class="m-0 mt-1 text-micro/[1.45] text-[var(--text-weak)]">
             {pendingMutation()
               ? "Saving your edit before Relay can try it on the device."
               : canApprove()
@@ -600,7 +600,7 @@ export function RecordedTakePlayer(props: {
       <Show
         when={Boolean(props.videoSrc || imageSrc())}
         fallback={
-          <div class="grid w-full max-w-[340px] place-items-center rounded-[14px] bg-[var(--surface-base)] px-4 py-6 text-center shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+          <div class="grid w-full max-w-[340px] place-items-center rounded-2xl bg-[var(--surface-base)] px-4 py-6 text-center shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
             <EmptyState
               size="sm"
               icon="camera"
@@ -685,7 +685,7 @@ export function RecordedTakePlayer(props: {
               <For each={nodeOutlines()}>
                 {(highlight) => (
                   <i
-                    class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
+                    class="pointer-events-none absolute z-[2] rounded-sm border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
                     style={highlight}
                     data-recorded-node-outline
                     aria-hidden="true"
@@ -697,13 +697,13 @@ export function RecordedTakePlayer(props: {
               {(highlight) => (
                 <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
                   <i
-                    class="absolute rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                    class="absolute rounded border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
                     style={highlight()}
                   />
                   <Show when={hoverLabel()}>
                     {(label) => (
                       <span
-                        class="absolute z-[5] max-w-[62%] -translate-y-[calc(100%+6px)] truncate rounded-md bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[10.5px] leading-snug font-medium text-[var(--text-on-brand-base,white)] shadow-sm"
+                        class="absolute z-[5] max-w-[62%] -translate-y-[calc(100%+6px)] truncate rounded-md bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-micro leading-snug font-medium text-[var(--text-on-brand-base,white)] shadow-sm"
                         style={{ left: highlight().left, top: highlight().top }}
                       >
                         {label()}
@@ -755,15 +755,15 @@ export function RecordedTakePlayer(props: {
           const minimumGap = 100;
           const formatTime = (milliseconds: number) => `${(milliseconds / 1000).toFixed(1)}s`;
           return (
-            <section class="mt-3 w-full max-w-[420px] rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5">
+            <section class="mt-3 w-full max-w-[420px] rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 py-2.5">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-semibold text-[var(--text-strong)]">Trim video</span>
-                <span class="text-[9px] text-[var(--text-weak)]">
+                <span class="text-micro font-semibold text-[var(--text-strong)]">Trim video</span>
+                <span class="text-micro text-[var(--text-weak)]">
                   Original recording is preserved
                 </span>
               </div>
               <div class="mt-2 grid grid-cols-[36px_1fr_36px] items-center gap-2">
-                <span class="font-mono text-[9px] tabular-nums text-[var(--text-weak)]">
+                <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
                   {formatTime(clip().startMs)}
                 </span>
                 <input
@@ -780,8 +780,8 @@ export function RecordedTakePlayer(props: {
                     if (video) video.currentTime = startMs / 1000;
                   }}
                 />
-                <span class="text-right text-[9px] text-[var(--text-weak)]">Start</span>
-                <span class="font-mono text-[9px] tabular-nums text-[var(--text-weak)]">
+                <span class="text-right text-micro text-[var(--text-weak)]">Start</span>
+                <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
                   {formatTime(clip().endMs)}
                 </span>
                 <input
@@ -799,7 +799,7 @@ export function RecordedTakePlayer(props: {
                     })
                   }
                 />
-                <span class="text-right text-[9px] text-[var(--text-weak)]">End</span>
+                <span class="text-right text-micro text-[var(--text-weak)]">End</span>
               </div>
             </section>
           );
@@ -808,16 +808,16 @@ export function RecordedTakePlayer(props: {
 
       <Show when={hasMultipleFrames() || Boolean(step())}>
         <div class="mt-1 flex max-w-[min(640px,100%)] flex-col items-center gap-2.5 pt-1">
-          <span class="line-clamp-2 max-w-full px-2 text-center text-[12px] leading-snug font-medium text-[var(--text-strong)]">
+          <span class="line-clamp-2 max-w-full px-2 text-center text-caption leading-snug font-medium text-[var(--text-strong)]">
             {title()}
           </span>
           <Show when={!props.videoSrc && frameHovered() && !treeActive()}>
-            <span class="text-[10px] text-[var(--text-weak)]">
+            <span class="text-micro text-[var(--text-weak)]">
               No accessibility labels on this frame
             </span>
           </Show>
           <Show when={hasMultipleFrames()}>
-            <div class="inline-flex items-center gap-1 rounded-[9px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-1 shadow-[0_2px_8px_rgb(0_0_0/12%)]">
+            <div class="inline-flex items-center gap-1 rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-1 shadow-[0_2px_8px_rgb(0_0_0/12%)]">
               <button
                 type="button"
                 class={controlButton}
@@ -829,7 +829,7 @@ export function RecordedTakePlayer(props: {
                 <Icon name="chevron-left" size={13} />
               </button>
               <span
-                class="min-w-16 px-1 text-center text-[10px] tabular-nums text-[var(--text-weak)]"
+                class="min-w-16 px-1 text-center text-micro tabular-nums text-[var(--text-weak)]"
                 aria-live="polite"
               >
                 Step {selectedIndex() + 1} of {props.take.steps.length}
@@ -938,16 +938,16 @@ export function AppMapEmptyState(props: {
           style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
         >
           <section class="grid w-[min(390px,calc(100vw-48px))] justify-items-center text-center">
-            <h2 class="m-0 text-balance text-[20px]/[1.25] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
+            <h2 class="m-0 text-balance text-display/[1.25] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
               {guidance().title}
             </h2>
-            <p class="m-0 mt-1.5 max-w-[40ch] text-pretty text-[13px]/[1.5] text-[var(--text-weak)]">
+            <p class="m-0 mt-1.5 max-w-[40ch] text-pretty text-body/[1.5] text-[var(--text-weak)]">
               {guidance().detail}
             </p>
             <Show when={!props.take}>
               <div class="mt-4 flex min-h-11 flex-wrap items-center justify-center gap-2">
                 <Show when={props.recordState !== "ready"}>
-                  <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
+                  <span class="inline-flex items-center gap-2 text-caption text-[var(--text-weak)]">
                     <i class="size-1.5 rounded-full bg-[var(--icon-warning-base)] motion-safe:animate-pulse" />
                     {props.recordState === "choose-device"
                       ? "Waiting for a device"

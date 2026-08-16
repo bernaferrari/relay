@@ -6,9 +6,9 @@ import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 
-const labelClass = "text-12-medium text-text-strong";
+const labelClass = "text-caption font-medium text-text-strong";
 const inputClass =
-  "h-11 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
+  "h-11 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 text-caption text-text-strong focus:border-border-focus focus:outline-none";
 
 export function DeviceSettingsPanel() {
   const server = useServer();
@@ -60,8 +60,8 @@ export function DeviceSettingsPanel() {
   return (
     <section class="flex max-w-[36rem] flex-col gap-4">
       <header>
-        <h3 class="m-0 text-14-medium text-text-strong">Mobile devices</h3>
-        <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
+        <h3 class="m-0 text-body font-medium text-text-strong">Mobile devices</h3>
+        <p class="mt-1 mb-0 text-caption leading-relaxed text-text-weak">
           Relay connects automatically. These checks appear only when a device needs attention.
         </p>
       </header>
@@ -69,8 +69,8 @@ export function DeviceSettingsPanel() {
       <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <h4 class="m-0 text-12-medium text-text-strong">Android devices</h4>
-            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+            <h4 class="m-0 text-caption font-medium text-text-strong">Android devices</h4>
+            <p class="mt-1 mb-0 text-caption leading-snug text-text-weak">
               Relay bundles streaming. Android Platform Tools provides the local adb connection.
             </p>
           </div>
@@ -78,7 +78,7 @@ export function DeviceSettingsPanel() {
             {(check) => (
               <span
                 class={cn(
-                  "shrink-0 rounded-full px-2 py-1 text-10-medium",
+                  "shrink-0 rounded-full px-2 py-1 text-micro font-medium",
                   check().status === "ready"
                     ? "bg-surface-success-weak text-icon-success-base"
                     : "bg-surface-warning-weak text-icon-warning-base",
@@ -91,11 +91,11 @@ export function DeviceSettingsPanel() {
         </div>
         <Show when={server.androidDeviceSetup()?.checks[0]}>
           {(check) => (
-            <p class="mt-2 mb-0 text-11-regular leading-snug text-text-weak">{check().detail}</p>
+            <p class="mt-2 mb-0 text-caption leading-snug text-text-weak">{check().detail}</p>
           )}
         </Show>
         <Show when={server.androidDeviceSetup()?.checks[0]?.status === "needs-attention"}>
-          <p class="mt-3 mb-0 text-11-regular leading-snug text-text-weak">
+          <p class="mt-3 mb-0 text-caption leading-snug text-text-weak">
             In Android Studio, open SDK Manager → SDK Tools and install Android SDK Platform-Tools.
             Then reopen Relay.
           </p>
@@ -125,8 +125,8 @@ export function DeviceSettingsPanel() {
       </div>
 
       <div class="border-t border-border-weak-base pt-4">
-        <h4 class="m-0 text-12-medium text-text-strong">Apple devices</h4>
-        <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+        <h4 class="m-0 text-caption font-medium text-text-strong">Apple devices</h4>
+        <p class="mt-1 mb-0 text-caption leading-snug text-text-weak">
           Relay connects to iPhones and iPads through the Apple device support already on this Mac.
           You only need to intervene when a permission is missing.
         </p>
@@ -143,8 +143,8 @@ export function DeviceSettingsPanel() {
                 aria-label="Checking Apple device setup"
               />
               <div>
-                <p class="m-0 text-12-medium text-text-strong">Checking Apple devices</p>
-                <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                <p class="m-0 text-caption font-medium text-text-strong">Checking Apple devices</p>
+                <p class="mt-1 mb-0 text-caption leading-snug text-text-weak">
                   Looking for an Apple account already connected to Xcode.
                 </p>
               </div>
@@ -169,10 +169,10 @@ export function DeviceSettingsPanel() {
                         <div class="flex items-start gap-2.5">
                           <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-warning-base" />
                           <div class={copyStack}>
-                            <p class={`m-0 text-12-medium ${copyTitle}`}>
+                            <p class={`m-0 text-caption font-medium ${copyTitle}`}>
                               Apple device access needs attention
                             </p>
-                            <p class={`m-0 text-11-regular ${copyDescription}`}>
+                            <p class={`m-0 text-caption ${copyDescription}`}>
                               Open Xcode once and add an Apple account. Relay will use that local
                               permission for this device.
                             </p>
@@ -198,7 +198,7 @@ export function DeviceSettingsPanel() {
                             Check again
                           </Button>
                           <button
-                            class="text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            class="text-caption font-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
                             type="button"
                             onClick={() => setAppleAdvancedOpen((open) => !open)}
                           >
@@ -213,8 +213,10 @@ export function DeviceSettingsPanel() {
                         <div class="flex items-start gap-2.5">
                           <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
                           <div class={copyStack}>
-                            <p class={`m-0 text-12-medium ${copyTitle}`}>Use this Xcode account</p>
-                            <p class={`m-0 text-11-regular ${copyDescription}`}>
+                            <p class={`m-0 text-caption font-medium ${copyTitle}`}>
+                              Use this Xcode account
+                            </p>
+                            <p class={`m-0 text-caption ${copyDescription}`}>
                               Relay found {suggestion().label} on this Mac.
                             </p>
                           </div>
@@ -236,7 +238,7 @@ export function DeviceSettingsPanel() {
                             {appleSetupBusy() ? "Setting up…" : "Use this account"}
                           </Button>
                           <button
-                            class="text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            class="text-caption font-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
                             type="button"
                             onClick={() => setAppleAdvancedOpen((open) => !open)}
                           >
@@ -252,17 +254,17 @@ export function DeviceSettingsPanel() {
                   <div class="flex min-w-0 items-start gap-2.5">
                     <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
                     <div class={copyStack}>
-                      <p class={`m-0 text-12-medium ${copyTitle}`}>
+                      <p class={`m-0 text-caption font-medium ${copyTitle}`}>
                         Ready to control Apple devices
                       </p>
-                      <p class={`m-0 text-11-regular ${copyDescription}`}>
+                      <p class={`m-0 text-caption ${copyDescription}`}>
                         Relay will connect automatically when you choose an iPhone or iPad.
                       </p>
                     </div>
                   </div>
                   <div class="mt-2 flex justify-end">
                     <button
-                      class="min-h-8 shrink-0 rounded-lg px-2 text-12-medium text-text-weak transition-colors duration-150 hover:bg-surface-base-hover hover:text-text-strong"
+                      class="min-h-8 shrink-0 rounded-lg px-2 text-caption font-medium text-text-weak transition-colors duration-150 hover:bg-surface-base-hover hover:text-text-strong"
                       type="button"
                       onClick={() => setAppleAdvancedOpen((open) => !open)}
                     >
@@ -276,7 +278,7 @@ export function DeviceSettingsPanel() {
                 <div class="flex flex-col gap-1.5">
                   <div class={copyStack}>
                     <span class={`${labelClass} ${copyTitle}`}>iOS live preview</span>
-                    <p class={`m-0 text-11-regular ${copyDescription}`}>
+                    <p class={`m-0 text-caption ${copyDescription}`}>
                       Live preview defaults to a go-ios video/MJPEG stream. Screenshots stay for
                       evidence. Switch to PNG only if the stream is unavailable.
                     </p>
@@ -343,7 +345,7 @@ export function DeviceSettingsPanel() {
                     </label>
                   </div>
                   <details class="rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5">
-                    <summary class="cursor-pointer text-12-medium text-text-strong">
+                    <summary class="cursor-pointer text-caption font-medium text-text-strong">
                       More signing options
                     </summary>
                     <div class="mt-3 grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
@@ -376,10 +378,10 @@ export function DeviceSettingsPanel() {
                       {appleSetupBusy() ? "Saving…" : "Save changes"}
                     </Button>
                     <Show when={appleSetupSaved()}>
-                      <span class="text-12-regular text-icon-success-base">Saved</span>
+                      <span class="text-caption text-icon-success-base">Saved</span>
                     </Show>
                     <Show when={appleSetupError()}>
-                      <span class="text-12-regular text-icon-critical-base" role="alert">
+                      <span class="text-caption text-icon-critical-base" role="alert">
                         {appleSetupError()}
                       </span>
                     </Show>
@@ -388,13 +390,13 @@ export function DeviceSettingsPanel() {
               </Show>
 
               <details class="border-t border-border-weak-base pt-3">
-                <summary class="cursor-pointer text-11-medium text-text-weak">
+                <summary class="cursor-pointer text-caption font-medium text-text-weak">
                   Setup details
                 </summary>
                 <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 max-[680px]:grid-cols-1">
                   <For each={appleStatus().checks}>
                     {(check) => (
-                      <div class="flex min-w-0 items-center gap-1.5 text-11-regular text-text-weak">
+                      <div class="flex min-w-0 items-center gap-1.5 text-caption text-text-weak">
                         <span
                           class={cn(
                             "size-1.5 shrink-0 rounded-full",

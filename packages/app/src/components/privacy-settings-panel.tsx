@@ -69,10 +69,10 @@ export function PrivacySettingsPanel() {
     <section aria-labelledby="redaction-title">
       <div class="flex items-center justify-between gap-5 border-b border-border-weak-base py-3">
         <div class={copyStack}>
-          <span id="redaction-title" class={`text-12-medium ${copyTitle}`}>
+          <span id="redaction-title" class={`text-caption font-medium ${copyTitle}`}>
             Redact sensitive evidence
           </span>
-          <span class={`max-w-[520px] text-12-regular ${copyDescription}`}>
+          <span class={`max-w-[520px] text-caption ${copyDescription}`}>
             Removes credentials, cookies, clipboard contents, typed secrets, and URL query values
             before Relay exposes or saves new evidence.
           </span>
@@ -85,11 +85,11 @@ export function PrivacySettingsPanel() {
         />
       </div>
 
-      <div class="flex items-center justify-between gap-3 py-3 text-12-regular">
+      <div class="flex items-center justify-between gap-3 py-3 text-caption">
         <span class="text-text-weak">{sourceLabel()}</span>
         <span
           class={cn(
-            "text-12-medium",
+            "text-caption font-medium",
             !server.redactionPolicy()
               ? "text-text-weak"
               : server.redactionPolicy()?.enabled
@@ -109,7 +109,7 @@ export function PrivacySettingsPanel() {
 
       <Show when={server.redactionPolicy()?.enabled === false}>
         <div
-          class="rounded-md border border-border-critical-base bg-surface-critical-weak px-3 py-2.5 text-12-regular leading-snug text-icon-critical-base"
+          class="rounded-md border border-border-critical-base bg-surface-critical-weak px-3 py-2.5 text-caption leading-snug text-icon-critical-base"
           role="alert"
         >
           New runs may store typed text, variables, headers, URLs, clipboard contents, and logs
@@ -118,12 +118,12 @@ export function PrivacySettingsPanel() {
       </Show>
 
       <Show when={error()}>
-        <p class="mt-3 text-12-regular text-icon-critical-base" role="alert">
+        <p class="mt-3 text-caption text-icon-critical-base" role="alert">
           {error()}
         </p>
       </Show>
 
-      <p class="mt-3 text-11-regular leading-snug text-text-weak">
+      <p class="mt-3 text-caption leading-snug text-text-weak">
         This setting applies to future collection and responses. Finalized run artifacts are
         immutable and are not rewritten.
       </p>
@@ -131,8 +131,8 @@ export function PrivacySettingsPanel() {
 
       <div class="mt-4 flex items-center justify-between gap-5 border-t border-border-weak-base py-3">
         <div class={copyStack}>
-          <span class={`text-12-medium ${copyTitle}`}>Project activity</span>
-          <span class={`max-w-[500px] text-12-regular ${copyDescription}`}>
+          <span class={`text-caption font-medium ${copyTitle}`}>Project activity</span>
+          <span class={`max-w-[500px] text-caption ${copyDescription}`}>
             Download every attributed operation in this project with a SHA-256 integrity digest.
           </span>
         </div>

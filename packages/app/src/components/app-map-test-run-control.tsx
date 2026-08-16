@@ -60,31 +60,33 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
     else props.onRun();
   }
 
+  // One row, so the primary action can live in the single workspace bar instead of
+  // the status strip the old screen stacked under it.
   return (
-    <div class="grid justify-items-end gap-0.5">
-      <Button
-        size="sm"
-        class="min-h-11 min-w-[122px]"
-        variant={active() ? "danger" : "primary"}
-        disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
-        aria-busy={busy()}
-        aria-describedby={status() ? "test-run-control-status" : undefined}
-        title={props.blockedReason || undefined}
-        onClick={activate}
-      >
-        <Icon name={active() ? "square" : finished() ? "arrow-right" : "play"} size={13} />
-        {label()}
-      </Button>
+    <div class="flex min-w-0 items-center gap-2">
       {status() ? (
         <span
           id="test-run-control-status"
-          class="max-w-[38ch] text-right text-[10px]/[1.35] text-text-weaker"
+          class="max-w-[26ch] truncate text-right text-caption/[1.3] text-text-weak"
           role="status"
           aria-live="polite"
         >
           {status()}
         </span>
       ) : null}
+      <Button
+        size="sm"
+        class="shrink-0"
+        variant={active() ? "danger" : "primary"}
+        disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
+        aria-busy={busy()}
+        aria-describedby={status() ? "test-run-control-status" : undefined}
+        title={status() || undefined}
+        onClick={activate}
+      >
+        <Icon name={active() ? "square" : finished() ? "arrow-right" : "play"} size={13} />
+        {label()}
+      </Button>
     </div>
   );
 }

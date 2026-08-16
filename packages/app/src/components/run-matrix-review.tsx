@@ -100,10 +100,10 @@ export function RunMatrixReview(props: {
             <Button variant="ghost" size="sm" aria-label="Back to runs" onClick={props.onClose}>
               <Icon name="chevron-left" size={14} />
             </Button>
-            <h2 class="m-0 text-[16px] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
+            <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
               Matrix results
             </h2>
-            <span class="shrink-0 text-[11px] tabular-nums text-[var(--text-weak)]">
+            <span class="shrink-0 text-caption tabular-nums text-[var(--text-weak)]">
               {dimensionsLabel()}
             </span>
           </div>
@@ -138,7 +138,7 @@ export function RunMatrixReview(props: {
           </div>
         </div>
         <div
-          class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] tabular-nums text-[var(--text-weak)]"
+          class="flex flex-wrap items-center gap-x-3 gap-y-1 text-micro tabular-nums text-[var(--text-weak)]"
           aria-live="polite"
         >
           <span>
@@ -174,11 +174,11 @@ export function RunMatrixReview(props: {
         </Show>
       </header>
       <Show when={props.review.insights.length > 0}>
-        <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border-weak-base)] px-5 py-2 text-[10.5px]">
+        <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--border-weak-base)] px-5 py-2 text-micro">
           <span class="mr-1 shrink-0 font-medium text-[var(--text-strong)]">Needs attention</span>
           <For each={props.review.insights}>
             {(insight) => (
-              <span class="max-w-full rounded-[7px] bg-[var(--surface-base)] px-2 py-1 text-[var(--text-base)]">
+              <span class="max-w-full rounded-lg bg-[var(--surface-base)] px-2 py-1 text-[var(--text-base)]">
                 <strong class="font-medium">{insight.label}</strong>
                 <span class="ml-1.5 text-[var(--text-weak)]">{insight.detail}</span>
               </span>
@@ -192,7 +192,7 @@ export function RunMatrixReview(props: {
             <span class="sr-only">Screen</span>
             <select
               aria-label="Screen to review"
-              class="h-8 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[11px] font-medium text-[var(--text-strong)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
+              class="h-8 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-caption font-medium text-[var(--text-strong)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--border-focus)]"
               value={selectedCaptureIndex()}
               onChange={(event) => setSelectedCaptureIndex(Number(event.currentTarget.value))}
             >
@@ -201,15 +201,15 @@ export function RunMatrixReview(props: {
               </For>
             </select>
           </label>
-          <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+          <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
             {selectedCaptureIndex() + 1}/{props.review.captureLabels.length}
           </span>
-          <label class="ml-auto flex h-8 min-w-[190px] flex-1 items-center gap-2 rounded-[8px] bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)] sm:max-w-[280px]">
+          <label class="ml-auto flex h-8 min-w-[190px] flex-1 items-center gap-2 rounded-lg bg-[var(--surface-base)] px-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-strong-base)] sm:max-w-[280px]">
             <Icon name="search" size={12} class="text-[var(--text-weak)]" />
             <span class="sr-only">Filter modifier values</span>
             <input
               type="search"
-              class="min-w-0 flex-1 border-0 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+              class="min-w-0 flex-1 border-0 bg-transparent text-caption text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
               value={query()}
               placeholder="Filter modifier values"
               onInput={(event) => setQuery(event.currentTarget.value)}
@@ -223,14 +223,14 @@ export function RunMatrixReview(props: {
           >
             {problemsOnly() ? "Show all" : "Problems"}
           </Button>
-          <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+          <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
             {visibleRows().length} values
           </span>
         </div>
       </Show>
       <div class="min-h-0 flex-1 overflow-auto overscroll-contain px-5 py-4">
         <div class="mb-3 flex items-baseline gap-3">
-          <h3 class="m-0 truncate text-[13px] font-semibold text-[var(--text-strong)]">
+          <h3 class="m-0 truncate text-body font-semibold text-[var(--text-strong)]">
             {selectedCaptureLabel()}
           </h3>
         </div>
@@ -264,8 +264,8 @@ export function RunMatrixReview(props: {
         <Show when={props.review.captureLabels.length > 0 && visibleRows().length === 0}>
           <div class="grid min-h-48 place-items-center text-center">
             <div>
-              <strong class="block text-[12px] text-[var(--text-strong)]">No matching runs</strong>
-              <p class="m-0 mt-1 text-[10.5px] text-[var(--text-weak)]">
+              <strong class="block text-caption text-[var(--text-strong)]">No matching runs</strong>
+              <p class="m-0 mt-1 text-micro text-[var(--text-weak)]">
                 Clear the filter or show all results.
               </p>
             </div>
@@ -274,10 +274,10 @@ export function RunMatrixReview(props: {
         <Show when={props.review.captureLabels.length === 0}>
           <div class="grid min-h-48 place-items-center rounded-xl border border-dashed border-[var(--border-weak-base)] text-center">
             <div>
-              <strong class="block text-[12px] text-[var(--text-strong)]">
+              <strong class="block text-caption text-[var(--text-strong)]">
                 No screenshots requested
               </strong>
-              <p class="m-0 mt-1 text-[10.5px] text-[var(--text-weak)]">
+              <p class="m-0 mt-1 text-micro text-[var(--text-weak)]">
                 This matrix still records pass, failure, timing, and diagnostic evidence.
               </p>
             </div>
@@ -382,11 +382,11 @@ export function RunMatrixScreenshotDialog(props: {
           <div class="min-w-0">
             <h2
               id="matrix-screenshot-title"
-              class="truncate text-[14px] font-semibold text-[var(--text-strong)]"
+              class="truncate text-body font-semibold text-[var(--text-strong)]"
             >
               {props.title}
             </h2>
-            <p class="mt-0.5 truncate text-[11px] text-[var(--text-weak)]">
+            <p class="mt-0.5 truncate text-caption text-[var(--text-weak)]">
               {valueLabel()} · {props.position} of {props.total}
             </p>
           </div>
@@ -416,7 +416,7 @@ export function RunMatrixScreenshotDialog(props: {
             >
               <Icon name="chevron-left" size={14} />
             </Button>
-            <span class="min-w-16 text-center text-[11px] tabular-nums text-[var(--text-weak)]">
+            <span class="min-w-16 text-center text-caption tabular-nums text-[var(--text-weak)]">
               {props.position} / {props.total}
             </span>
             <Button

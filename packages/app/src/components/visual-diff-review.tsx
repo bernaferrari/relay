@@ -66,7 +66,7 @@ export function VisualDiffReview(props: {
       <Show
         when={!props.loading}
         fallback={
-          <div class="flex min-h-24 items-center gap-2.5 rounded-xl border border-border-weak-base px-3.5 text-[11px] text-text-weak">
+          <div class="flex min-h-24 items-center gap-2.5 rounded-xl border border-border-weak-base px-3.5 text-caption text-text-weak">
             <Icon name="refresh" size={13} class="animate-spin motion-reduce:animate-none" />
             Comparing approved and current screens…
           </div>
@@ -81,12 +81,12 @@ export function VisualDiffReview(props: {
                   <Icon name="scan" size={14} />
                 </span>
                 <div class="min-w-0">
-                  <strong class="block text-[13px] font-semibold text-text-strong">
+                  <strong class="block text-body font-semibold text-text-strong">
                     {props.baselineApprovalAllowed
                       ? "Save the first expected look"
                       : "Finish the run before saving"}
                   </strong>
-                  <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
+                  <p class="m-0 mt-0.5 text-caption/[1.45] text-text-weak">
                     {props.baselineApprovalAllowed
                       ? "Save these screens as the look we expect. Future runs on this device are compared against them."
                       : "Finish a successful run first, then save its screens as the expected look."}
@@ -111,10 +111,10 @@ export function VisualDiffReview(props: {
             <>
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <strong class="block text-[13px] font-semibold text-text-strong">
+                  <strong class="block text-body font-semibold text-text-strong">
                     {changed().length > 0 ? "Changes to review" : "Screens match"}
                   </strong>
-                  <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
+                  <p class="m-0 mt-0.5 text-caption/[1.45] text-text-weak">
                     {changed().length > 0
                       ? `${changed().length} captured screen${changed().length === 1 ? " is" : "s are"} outside the approved tolerance.`
                       : "No reviewed area changed enough to require attention."}
@@ -122,7 +122,7 @@ export function VisualDiffReview(props: {
                 </div>
                 <span
                   class={cn(
-                    "rounded-full px-2 py-1 text-[10px] font-semibold",
+                    "rounded-full px-2 py-1 text-micro font-semibold",
                     changed().length > 0
                       ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_13%,transparent)] text-[var(--icon-warning-base)]"
                       : "bg-[color-mix(in_srgb,var(--icon-success-base)_13%,transparent)] text-[var(--icon-success-base)]",
@@ -131,7 +131,7 @@ export function VisualDiffReview(props: {
                   {changed().length > 0 ? `${changed().length} changed` : "Matched"}
                 </span>
               </div>
-              <p class="-mt-2 m-0 text-[10px] text-text-weaker">
+              <p class="-mt-2 m-0 text-micro text-text-weaker">
                 Expected look saved {approvedAt(baseline().approvedAt)} on{" "}
                 {targetLabel(props.current)} · comparison rules v
                 {props.comparison?.policy.revision ?? 0}
@@ -140,17 +140,17 @@ export function VisualDiffReview(props: {
               <Show
                 when={frames().length > 0}
                 fallback={
-                  <div class="rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3 text-[11px]/[1.45] text-text-weak">
+                  <div class="rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3 text-caption/[1.45] text-text-weak">
                     These runs do not yet contain matching captured screens.
                   </div>
                 }
               >
                 <div class="grid gap-3">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
+                    <span class="text-micro font-semibold uppercase tracking-[0.12em] text-text-weaker">
                       Captured screens
                     </span>
-                    <span class="text-[10px] text-text-weaker">
+                    <span class="text-micro text-text-weaker">
                       {changed().length} to review · {frames().length} total
                     </span>
                   </div>
@@ -178,10 +178,10 @@ export function VisualDiffReview(props: {
                                 : "bg-[var(--icon-success-base)]",
                             )}
                           />
-                          <span class="truncate text-[11.5px] font-medium">
+                          <span class="truncate text-caption font-medium">
                             {frame.index + 1}. {frame.latest?.caption ?? "Captured screen"}
                           </span>
-                          <span class="text-[10px] text-text-weaker">{changeLabel(frame)}</span>
+                          <span class="text-micro text-text-weaker">{changeLabel(frame)}</span>
                         </button>
                       )}
                     </For>
@@ -251,7 +251,7 @@ function VisualReviewActions(props: {
   return (
     <div class="grid gap-2 rounded-xl border border-border-weak-base bg-surface-base p-2.5">
       <div class="flex items-center justify-between gap-3 px-0.5">
-        <span class="text-[10.5px]/[1.35] text-text-weak">
+        <span class="text-micro/[1.35] text-text-weak">
           What should Relay do with this visual change?
         </span>
       </div>
@@ -265,7 +265,7 @@ function VisualReviewActions(props: {
             <button
               type="button"
               class={cn(
-                "min-h-10 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50",
+                "min-h-10 rounded-lg px-2.5 text-caption font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50",
                 item.primary
                   ? "bg-surface-interactive-base text-text-on-interactive hover:bg-surface-interactive-hover"
                   : "border border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover",
@@ -281,7 +281,7 @@ function VisualReviewActions(props: {
       <Show when={props.decision}>
         {(decision) => (
           <p
-            class="m-0 rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] px-2.5 py-2 text-[10.5px]/[1.4] text-[var(--icon-success-base)]"
+            class="m-0 rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] px-2.5 py-2 text-micro/[1.4] text-[var(--icon-success-base)]"
             role="status"
           >
             Decision recorded as {decision().action.replaceAll("-", " ")}.
@@ -352,10 +352,10 @@ function DiffCanvas(props: {
     <figure class="m-0 overflow-hidden rounded-xl border border-border-weak-base bg-surface-base">
       <figcaption class="grid gap-2 border-b border-border-weak-base px-2.5 py-2">
         <div class="flex items-center justify-between gap-2">
-          <span class="truncate text-[11px] font-medium text-text-strong">
+          <span class="truncate text-caption font-medium text-text-strong">
             {props.frame.latest?.caption ?? `Screen ${props.frame.index + 1}`}
           </span>
-          <span class="shrink-0 text-[10px] text-text-weaker">
+          <span class="shrink-0 text-micro text-text-weaker">
             {tool() ? "Drag on the screen" : "Drag divider to compare"}
           </span>
         </div>
@@ -363,7 +363,7 @@ function DiffCanvas(props: {
           <button
             type="button"
             class={cn(
-              "min-h-9 rounded-lg px-2.5 text-[10.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+              "min-h-9 rounded-lg px-2.5 text-micro font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
               tool() === "compare"
                 ? "bg-surface-interactive-base text-text-on-interactive"
                 : "bg-surface-interactive-weak text-text-interactive-base hover:bg-surface-base-hover",
@@ -376,7 +376,7 @@ function DiffCanvas(props: {
           <button
             type="button"
             class={cn(
-              "min-h-9 rounded-lg px-2.5 text-[10.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+              "min-h-9 rounded-lg px-2.5 text-micro font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
               tool() === "ignore"
                 ? "bg-[var(--icon-warning-base)] text-white"
                 : "bg-[color-mix(in_srgb,var(--icon-warning-base)_12%,transparent)] text-[var(--icon-warning-base)] hover:bg-[color-mix(in_srgb,var(--icon-warning-base)_18%,transparent)]",
@@ -387,14 +387,14 @@ function DiffCanvas(props: {
             Ignore area
           </button>
           <Show when={props.regions.length === 0}>
-            <span class="text-[10px] text-text-weaker">The whole screen is compared.</span>
+            <span class="text-micro text-text-weaker">The whole screen is compared.</span>
           </Show>
           <For each={props.regions}>
             {(region) => (
               <button
                 type="button"
                 class={cn(
-                  "inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-[10px] font-medium",
+                  "inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-micro font-medium",
                   region.mode === "compare"
                     ? "bg-surface-interactive-weak text-text-interactive-base"
                     : "bg-[color-mix(in_srgb,var(--icon-warning-base)_12%,transparent)] text-[var(--icon-warning-base)]",
@@ -410,7 +410,7 @@ function DiffCanvas(props: {
             )}
           </For>
           <Show when={props.busy}>
-            <span class="inline-flex items-center gap-1 text-[10px] text-text-weaker">
+            <span class="inline-flex items-center gap-1 text-micro text-text-weaker">
               <Icon name="refresh" size={10} class="animate-spin motion-reduce:animate-none" />
               Saving…
             </span>
@@ -486,10 +486,10 @@ function DiffCanvas(props: {
               onInput={(event) => setSplit(Number(event.currentTarget.value))}
             />
           </Show>
-          <span class="pointer-events-none absolute left-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
+          <span class="pointer-events-none absolute left-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-micro font-medium text-text-strong">
             Expected look
           </span>
-          <span class="pointer-events-none absolute right-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
+          <span class="pointer-events-none absolute right-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-micro font-medium text-text-strong">
             Current
           </span>
         </div>

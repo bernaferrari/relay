@@ -298,6 +298,7 @@ test("requires literal confirmation for confirmation-protected operations", asyn
 
 test("profile selection exposes deterministic least-privilege tool sets", async () => {
   for (const profile of [
+    "control",
     "map",
     "observe",
     "author",
@@ -326,9 +327,28 @@ test("profile selection exposes deterministic least-privilege tool sets", async 
 
   const compact = relayMcpToolsForProfile(defaultRelayMcpProfile);
   assert.ok(compact.length < relayMcpTools.length / 2);
-  assert.ok(compact.some(({ operationId }) => operationId === "app-map.proposal.submit"));
-  assert.ok(compact.some(({ operationId }) => operationId === "workspace.variables.update"));
-  assert.ok(compact.some(({ operationId }) => operationId === "authoring.session.commit"));
+  assert.ok(compact.some(({ operationId }) => operationId === "target.interact"));
+  assert.ok(compact.some(({ operationId }) => operationId === "target.recover"));
+  assert.ok(compact.some(({ operationId }) => operationId === "lease.create"));
+  assert.equal(
+    compact.some(({ operationId }) => operationId === "app-map.proposal.submit"),
+    false,
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.proposal.submit",
+    ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "workspace.variables.update",
+    ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "authoring.session.commit",
+    ),
+  );
   assert.equal(
     relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
     true,
@@ -343,6 +363,11 @@ test("returns sanitized structured ApiError recovery without losing revision sta
         error: "Refresh after /Users/example/private/map.json with Bearer private-credential",
         current: { revision: 17, privateState: "not-public" },
         recovery: { action: "refresh-and-retry", retryable: true },
+        recoveryAction: {
+          operationId: "lease.takeover",
+          input: { leaseId: "lease-1" },
+          cli: { argv: ["lease", "takeover", "lease-1"] },
+        },
       });
     },
   });
@@ -362,6 +387,11 @@ test("returns sanitized structured ApiError recovery without losing revision sta
         message: "Refresh after [local path redacted] with Bearer [redacted]",
         recovery: { action: "refresh-and-retry", retryable: true },
         currentRevision: 17,
+        recoveryAction: {
+          operationId: "lease.takeover",
+          input: { leaseId: "lease-1" },
+          cli: { argv: ["lease", "takeover", "lease-1"] },
+        },
       },
     });
     const serialized = JSON.stringify(result);

@@ -114,10 +114,10 @@ export function AppMapBrowseView(props: {
       >
         <header class="mb-3 flex items-center justify-between gap-4 max-[720px]:items-start max-[720px]:flex-col">
           <div class="min-w-0">
-            <h2 class="text-[18px]/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
+            <h2 class="text-title/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
               {props.mode === "screens" ? "Screens" : "Results"}
             </h2>
-            <p class="mt-0.5 max-w-[680px] text-[11px]/[1.45] text-[var(--text-weak)]">
+            <p class="mt-0.5 max-w-[680px] text-caption/[1.45] text-[var(--text-weak)]">
               {props.mode === "screens"
                 ? explicitGroupCount()
                   ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} · ${explicitGroupCount()} ${explicitGroupCount() === 1 ? "group" : "groups"}`
@@ -140,14 +140,14 @@ export function AppMapBrowseView(props: {
         </header>
 
         <Show when={props.mode === "screens" || rows().length > 0}>
-          <div class="mb-4 flex min-h-11 w-full items-center gap-1.5 rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--background-base)] p-1 max-[680px]:flex-wrap">
-            <label class="group/search relative min-w-[180px] flex-1 rounded-[8px] transition-colors focus-within:bg-[var(--surface-base)]">
+          <div class="mb-4 flex min-h-11 w-full items-center gap-1.5 rounded-xl border border-[var(--border-weak-base)] bg-[var(--background-base)] p-1 max-[680px]:flex-wrap">
+            <label class="group/search relative min-w-[180px] flex-1 rounded-lg transition-colors focus-within:bg-[var(--surface-base)]">
               <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)] transition-colors group-focus-within/search:text-[var(--text-interactive-base)]">
                 <Icon name="search" size={14} />
               </span>
               <span class="sr-only">Search {props.mode}</span>
               <input
-                class="h-9 w-full rounded-[8px] border-0 bg-transparent pr-3 pl-9 text-[16px] text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] min-[681px]:text-[11.5px]"
+                class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-title text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] min-[681px]:text-caption"
                 value={query()}
                 placeholder={props.mode === "screens" ? "Search screens" : "Search runs"}
                 onInput={(event) => setQuery(event.currentTarget.value)}
@@ -248,11 +248,11 @@ export function AppMapBrowseView(props: {
                     <header class="mb-3 flex items-baseline gap-2.5">
                       <h3
                         id={`area-${area.id}`}
-                        class="text-[15px] font-semibold tracking-[-0.015em] text-[var(--text-strong)]"
+                        class="text-title font-semibold tracking-[-0.015em] text-[var(--text-strong)]"
                       >
                         {area.title}
                       </h3>
-                      <span class="text-[10.5px] tabular-nums text-[var(--text-weak)]">
+                      <span class="text-micro tabular-nums text-[var(--text-weak)]">
                         {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
                       </span>
                     </header>
@@ -388,8 +388,8 @@ function CoverageTable(props: {
         />
       }
     >
-      <div class="overflow-hidden rounded-[13px] bg-[var(--background-base)] shadow-[0_0_0_1px_var(--border-weak-base),0_10px_28px_rgb(0_0_0/6%)]">
-        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--border-weak-base)] px-4 py-2.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden">
+      <div class="overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[0_0_0_1px_var(--border-weak-base),0_10px_28px_rgb(0_0_0/6%)]">
+        <div class="grid grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] gap-4 border-b border-[var(--border-weak-base)] px-4 py-2.5 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden">
           <span>Run</span>
           <span>Target</span>
           <span>Actor</span>
@@ -400,7 +400,7 @@ function CoverageTable(props: {
           {(row) => (
             <button
               type="button"
-              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-[11.5px] outline-none transition-colors duration-150 last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
+              class="grid min-h-14 w-full grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_minmax(120px,.8fr)_110px_118px] items-center gap-4 border-b border-[var(--border-weak-base)] px-4 text-left text-caption outline-none transition-colors duration-150 last:border-b-0 hover:bg-[var(--surface-base)] focus-visible:bg-[var(--product-accent-soft)] max-[820px]:grid-cols-[minmax(160px,1fr)_minmax(130px,.8fr)_110px] max-[820px]:[&>*:nth-child(3)]:hidden max-[820px]:[&>*:nth-child(5)]:hidden"
               onClick={() => props.onOpenRun(row.id)}
             >
               <span class="min-w-0">
@@ -408,7 +408,7 @@ function CoverageTable(props: {
                   {row.label}
                 </strong>
                 <Show when={row.durationMs !== undefined}>
-                  <small class="font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+                  <small class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
                     {formatDuration(row.durationMs!)}
                   </small>
                 </Show>
@@ -424,7 +424,7 @@ function CoverageTable(props: {
               <span class="truncate text-[var(--text-base)]">{row.actor}</span>
               <span class={outcomePill(row.outcome)}>{browseOutcomeLabel(row.outcome)}</span>
               <time
-                class="font-mono text-[10px] tabular-nums text-[var(--text-weak)]"
+                class="font-mono text-micro tabular-nums text-[var(--text-weak)]"
                 datetime={new Date(row.finishedAt).toISOString()}
               >
                 {formatDate(row.finishedAt)}
@@ -433,7 +433,7 @@ function CoverageTable(props: {
           )}
         </For>
         <Show when={props.rows.length > visibleRows().length}>
-          <p class="px-4 py-3 text-center text-[10.5px] text-[var(--text-weak)]">
+          <p class="px-4 py-3 text-center text-micro text-[var(--text-weak)]">
             Showing the newest {visibleRows().length} of {props.rows.length} results. Narrow the
             list with search or filters.
           </p>
@@ -453,7 +453,7 @@ function FilterSelect(props: {
     <label class="relative shrink-0">
       <span class="sr-only">{props.label}</span>
       <select
-        class="h-9 min-w-[124px] appearance-none rounded-[8px] border-0 bg-transparent pr-8 pl-3 text-[16px] font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] min-[681px]:text-[10.5px]"
+        class="h-9 min-w-[124px] appearance-none rounded-lg border-0 bg-transparent pr-8 pl-3 text-title font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] min-[681px]:text-micro"
         value={props.value}
         onChange={(event) => props.onChange(event.currentTarget.value)}
       >
@@ -533,7 +533,7 @@ function platformName(platform: "android" | "ios" | "browser"): string {
 
 function outcomePill(outcome: BrowseRunOutcome): string {
   return cn(
-    "inline-flex min-h-6 w-fit items-center rounded-md px-2 text-[9.5px] font-semibold ring-1 ring-inset",
+    "inline-flex min-h-6 w-fit items-center rounded-md px-2 text-micro font-semibold ring-1 ring-inset",
     outcome === "passed"
       ? "bg-surface-success-weak text-text-success-base ring-border-success-base/40"
       : outcome === "product-failure"

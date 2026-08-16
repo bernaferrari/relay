@@ -62,25 +62,25 @@ export function EmptyAppMap(props: {
       <Show when={!props.deviceOpen}>
         <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
           <div class="grid max-w-[420px] justify-items-center gap-3">
-            <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+            <span class="grid size-12 place-items-center rounded-2xl bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
               <Icon name="smartphone" size={20} />
             </span>
             <div class="grid gap-1.5">
-              <h1 class="m-0 text-[20px]/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
+              <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
                 Start your map
               </h1>
-              <p class="m-0 max-w-[38ch] text-[13px]/[1.55] text-[var(--text-weak)]">
+              <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
                 Open the live device and save the first screen. Then navigate to map the rest.
               </p>
             </div>
             <button
               type="button"
-              class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-[var(--text-interactive-base)] px-3.5 text-[12px] font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+              class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
               onClick={props.onToggleDevice}
             >
               <Icon name="smartphone" size={14} />
               Show live device
-              <kbd class="rounded-[5px] bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-[10px] font-medium">
+              <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
                 D
               </kbd>
             </button>
@@ -91,7 +91,7 @@ export function EmptyAppMap(props: {
       <Show when={props.deviceOpen}>
         <aside
           class={cn(
-            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[14px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
+            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-2xl bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
             deviceOrientation() === "landscape"
               ? "w-[min(620px,calc(100%-32px))]"
               : "w-[min(480px,calc(100%-32px))]",
@@ -145,7 +145,7 @@ export function EmptyAppMap(props: {
                   </Button>
                 }
               >
-                <div class="flex min-w-0 flex-col items-center gap-2 text-center text-[11px] text-[var(--text-weak)]">
+                <div class="flex min-w-0 flex-col items-center gap-2 text-center text-caption text-[var(--text-weak)]">
                   <span class="max-w-[36ch] text-pretty">
                     Another Relay window has control of this device.
                   </span>

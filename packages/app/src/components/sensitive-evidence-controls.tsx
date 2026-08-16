@@ -52,10 +52,10 @@ export function SensitiveEvidenceControls() {
   return (
     <section class="mt-5" aria-labelledby="sensitive-evidence-title">
       <div class="mb-2">
-        <h3 id="sensitive-evidence-title" class="m-0 text-13-medium text-text-strong">
+        <h3 id="sensitive-evidence-title" class="m-0 text-body font-medium text-text-strong">
           Sensitive collectors
         </h3>
-        <p class="mt-1 text-12-regular leading-snug text-text-weak">
+        <p class="mt-1 text-caption leading-snug text-text-weak">
           These channels stay off until a local user grants consent. Every run freezes and records
           the exact grant it used.
         </p>
@@ -66,10 +66,8 @@ export function SensitiveEvidenceControls() {
           <div class="border-b border-border-weak-base py-3 last:border-b-0">
             <div class="flex items-center justify-between gap-5">
               <div class={copyStack}>
-                <span class={`block text-12-medium ${copyTitle}`}>{channel.label}</span>
-                <span class={`block text-12-regular ${copyDescription}`}>
-                  {channel.description}
-                </span>
+                <span class={`block text-caption font-medium ${copyTitle}`}>{channel.label}</span>
+                <span class={`block text-caption ${copyDescription}`}>{channel.description}</span>
               </div>
               <Switch
                 checked={enabled(channel.id)}
@@ -84,7 +82,7 @@ export function SensitiveEvidenceControls() {
 
             <Show when={pending() === channel.id}>
               <div class="mt-3 rounded-md border border-border-warning-base bg-surface-warning-weak px-3 py-2.5">
-                <p class="m-0 text-12-regular leading-snug text-text-strong">
+                <p class="m-0 text-caption leading-snug text-text-strong">
                   I consent to collecting {channel.label.toLowerCase()} in future runs for this
                   workspace. Evidence may contain personal or confidential data when redaction is
                   off.
@@ -107,7 +105,7 @@ export function SensitiveEvidenceControls() {
 
             <Show when={server.evidenceCollectionPolicy()?.sensitive[channel.id]}>
               {(grant) => (
-                <p class="mt-2 text-11-regular text-text-weak">
+                <p class="mt-2 text-caption text-text-weak">
                   Consented by {grant().grantedBy} · {new Date(grant().grantedAt).toLocaleString()}
                 </p>
               )}
@@ -117,7 +115,7 @@ export function SensitiveEvidenceControls() {
       </For>
 
       <Show when={error()}>
-        <p class="mt-3 text-12-regular text-icon-critical-base" role="alert">
+        <p class="mt-3 text-caption text-icon-critical-base" role="alert">
           {error()}
         </p>
       </Show>

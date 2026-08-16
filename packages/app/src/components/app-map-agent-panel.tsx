@@ -20,7 +20,7 @@ export function AppMapAgentPanel(props: {
         panel = element;
         queueMicrotask(() => panel?.focus());
       }}
-      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
+      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Map with AI"
       tabindex={-1}
       data-app-map-native-scroll
@@ -33,21 +33,21 @@ export function AppMapAgentPanel(props: {
     >
       <header class="flex min-h-[52px] shrink-0 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-3.5">
         <div class="flex min-w-0 items-center gap-2.5">
-          <span class="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+          <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
             <Icon name="scan" size={13} />
           </span>
           <span class="min-w-0">
-            <strong class="block truncate text-[13px] font-semibold text-[var(--text-strong)]">
+            <strong class="block truncate text-body font-semibold text-[var(--text-strong)]">
               Map with AI
             </strong>
-            <small class="block truncate text-[10.5px] text-[var(--text-weak)]">
+            <small class="block truncate text-micro text-[var(--text-weak)]">
               Suggested screens come back for you to keep or discard
             </small>
           </span>
         </div>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-[9px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--text-interactive-base)]"
+          class="grid size-10 place-items-center rounded-xl text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--text-interactive-base)]"
           aria-label="Close exploration panel"
           onClick={props.onClose}
         >
@@ -93,7 +93,7 @@ export function AppMapAgentPanel(props: {
             exploration.workerCount() > 1
           }
         >
-          <span class="text-[10px] text-[var(--text-weak)] tabular-nums">
+          <span class="text-micro text-[var(--text-weak)] tabular-nums">
             {exploration.workerCount()} agent{exploration.workerCount() === 1 ? "" : "s"}
           </span>
         </Show>

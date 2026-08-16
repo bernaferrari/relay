@@ -7,7 +7,7 @@ export function AppMapTestUndo(props: {
 }) {
   return (
     <div
-      class="mx-3 mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-[12px] text-text-strong shadow-sm"
+      class="mx-3 mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-caption text-text-strong shadow-sm"
       role="status"
       aria-live="polite"
     >

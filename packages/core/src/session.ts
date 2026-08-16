@@ -1,10 +1,7 @@
 /** Test-run sessions with action traces, heal retries, and disk persistence. */
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { now, publish } from "./events.js";
 import {
-  base,
   createDevice,
   openApp,
   rememberedTargetApplication,
@@ -64,7 +61,7 @@ import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
-import { reserveTargetControl } from "./target-control.js";
+import { reserveTargetControl, releaseTargetControl } from "./target-control.js";
 import {
   classifySessionError,
   createJobLeaseValidator,
@@ -104,15 +101,17 @@ export async function waitForJobCompletion(id: string): Promise<TestJob> {
 }
 
 export function getActiveJobs(): TestJob[] {
-  return [...activeJobIds]
-    .map((id) => jobRegistry.get(id))
-    .filter((job): job is TestJob => Boolean(job));
+  return jobRegistry
+    .list(MAX_JOBS)
+    .filter(
+      (job) => job.status === "queued" || job.status === "running" || job.status === "paused",
+    );
 }
 
 export function getActiveJob(targetId?: string): TestJob | null {
-  const active = getActiveJobs();
-  if (!targetId) return active.at(-1) ?? null;
-  return active.find((job) => (job.browserTargetId ?? job.serial) === targetId) ?? null;
+  const occupying = getActiveJobs();
+  if (!targetId) return occupying.find((job) => job.status === "running") ?? occupying[0] ?? null;
+  return occupying.find((job) => (job.browserTargetId ?? job.serial) === targetId) ?? null;
 }
 
 export function listTargetWorkers(): TargetWorkerStatus[] {
@@ -318,6 +317,7 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
     if (parent) parent.retriedBy = job.id;
   }
   jobRegistry.remember(job);
+  if (job.targetContext.kind === "device") reserveTargetControl(job.targetContext.serial, job.id);
   publish({
     type: "job.queued",
     at: job.queuedAt,
@@ -478,11 +478,7 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
   });
 }
 
-/**
- * Cancel a queued or in-flight job.
- * Flags cancel immediately and hard-stops the agent-device session so in-flight
- * ADB work is more likely to drop (best-effort).
- */
+/** Cancel a queued or in-flight job and hard-stop the device session. */
 export function cancelJob(id: string): TestJob {
   const job = jobRegistry.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
@@ -504,6 +500,7 @@ export function cancelJob(id: string): TestJob {
 
   if (job.status === "queued") {
     scheduler.remove(id);
+    if (job.targetContext.kind === "device") releaseTargetControl(job.targetContext.serial, job.id);
     job.startedAt = job.startedAt ?? now();
     finalizeCancelled(job);
     void persistRun(job)
@@ -724,6 +721,8 @@ async function executeJob(id: string): Promise<void> {
         });
       }
       await persistCompletedRun(job, (line) => job.logs.push(line));
+      if (job.targetContext.kind === "device")
+        releaseTargetControl(job.targetContext.serial, job.id);
       clearControl(id);
       jobRegistry.pruneTerminalHistory();
       return;
@@ -769,7 +768,7 @@ async function executeJob(id: string): Promise<void> {
   const primary = () => currentRecipeStep ?? job.steps[job.steps.length - 1];
   let device: Device | undefined;
   let evidence: RunEvidenceHandle | undefined = initializeRunEvidence(job);
-  const releaseTargetControl =
+  const releaseOccupiedTarget =
     job.targetContext.kind === "device"
       ? reserveTargetControl(job.targetContext.serial, job.id)
       : () => undefined;
@@ -954,7 +953,7 @@ async function executeJob(id: string): Promise<void> {
     try {
       await finishEvidence();
     } finally {
-      releaseTargetControl();
+      releaseOccupiedTarget();
       activeJobIds.delete(id);
       clearControl(id);
       jobRegistry.pruneTerminalHistory();

@@ -27,7 +27,7 @@ Run the package from this workspace and pass an explicit Relay scope and agent i
         "--actor",
         "agent:mcp:qa",
         "--profile",
-        "author",
+        "control",
         "--credential-source",
         "env:RELAY_AUTH_TOKEN"
       ],

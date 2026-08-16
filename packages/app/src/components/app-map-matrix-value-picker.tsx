@@ -39,14 +39,14 @@ export function AppMapMatrixValuePicker(props: {
       aria-label={`${props.variable.name} values`}
     >
       <div class="flex items-center justify-between gap-2">
-        <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
+        <span class="text-micro tabular-nums text-[var(--text-weak)]">
           {props.selectedIds.length} selected · {props.variable.options.length} available
         </span>
         <div class="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
-            class="min-h-11 px-2 text-[10.5px]"
+            class="min-h-11 px-2 text-micro"
             disabled={props.selectedIds.length === props.variable.options.length}
             onClick={() => props.onChange(props.variable.options.map((option) => option.id))}
           >
@@ -55,7 +55,7 @@ export function AppMapMatrixValuePicker(props: {
           <Button
             variant="ghost"
             size="sm"
-            class="min-h-11 px-2 text-[10.5px]"
+            class="min-h-11 px-2 text-micro"
             disabled={props.selectedIds.length === 0}
             onClick={() => props.onChange([])}
           >
@@ -70,7 +70,7 @@ export function AppMapMatrixValuePicker(props: {
         </span>
         <input
           type="search"
-          class="h-11 w-full rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-[16px] text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-150 placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
+          class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-title text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-150 placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
           value={query()}
           placeholder="Search available values"
           onInput={(event) => setQuery(event.currentTarget.value)}
@@ -87,7 +87,7 @@ export function AppMapMatrixValuePicker(props: {
               <button
                 type="button"
                 class={cn(
-                  "flex min-h-11 items-center gap-2 rounded-[7px] px-2 text-left transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
+                  "flex min-h-11 items-center gap-2 rounded-lg px-2 text-left transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]",
                   checked()
                     ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
                     : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]",
@@ -97,7 +97,7 @@ export function AppMapMatrixValuePicker(props: {
               >
                 <span
                   class={cn(
-                    "grid size-4 shrink-0 place-items-center rounded-[4px] border",
+                    "grid size-4 shrink-0 place-items-center rounded border",
                     checked()
                       ? "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]"
                       : "border-[var(--border-strong-base)]",
@@ -108,16 +108,18 @@ export function AppMapMatrixValuePicker(props: {
                     <Icon name="check" size={9} />
                   </Show>
                 </span>
-                <span class="min-w-0 flex-1 truncate text-[11px]">{combineValueLabel(option)}</span>
+                <span class="min-w-0 flex-1 truncate text-caption">
+                  {combineValueLabel(option)}
+                </span>
                 <Show when={option.label && option.id !== option.label}>
-                  <code class="truncate text-[9px] text-[var(--text-weaker)]">{option.id}</code>
+                  <code class="truncate text-micro text-[var(--text-weaker)]">{option.id}</code>
                 </Show>
               </button>
             );
           }}
         </For>
         <Show when={filtered().length === 0}>
-          <p class="col-span-full m-0 px-3 py-5 text-center text-[11px] text-[var(--text-weak)]">
+          <p class="col-span-full m-0 px-3 py-5 text-center text-caption text-[var(--text-weak)]">
             No values match “{query()}”.
           </p>
         </Show>

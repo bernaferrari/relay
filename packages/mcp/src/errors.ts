@@ -16,6 +16,12 @@ export type RelayMcpRecoveryAction =
   | "retry-later"
   | "none";
 
+export type RelayMcpRecoveryCommand = {
+  operationId: string;
+  input?: Record<string, unknown>;
+  cli?: { argv: string[] };
+};
+
 export type RelayMcpStructuredError = {
   operationId: OperationId;
   status?: number;
@@ -25,6 +31,7 @@ export type RelayMcpStructuredError = {
     action: RelayMcpRecoveryAction;
     retryable: boolean;
   };
+  recoveryAction?: RelayMcpRecoveryCommand;
   currentRevision?: number;
 };
 
@@ -105,6 +112,22 @@ function suppliedRecovery(
   };
 }
 
+function recoveryActionFrom(value: unknown): RelayMcpStructuredError["recoveryAction"] | undefined {
+  const input = object(value);
+  if (!input || typeof input.operationId !== "string" || !input.operationId.trim())
+    return undefined;
+  const cli = object(input.cli);
+  const argv = cli?.argv;
+  const payload = object(input.input);
+  return {
+    operationId: input.operationId,
+    ...(payload ? { input: payload } : {}),
+    ...(Array.isArray(argv) && argv.every((item) => typeof item === "string")
+      ? { cli: { argv } }
+      : {}),
+  };
+}
+
 export function relayMcpError(operationId: OperationId, error: unknown): RelayMcpStructuredError {
   const fallback = `Relay operation ${operationId} failed.`;
   if (!(error instanceof ApiError)) {
@@ -125,6 +148,7 @@ export function relayMcpError(operationId: OperationId, error: unknown): RelayMc
   const message = sanitizeErrorText(body?.error ?? error.message, fallback);
   const revision = currentRevision(body);
   const recovery = suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
+  const recoveryAction = recoveryActionFrom(body?.recoveryAction);
 
   return {
     operationId,
@@ -132,6 +156,7 @@ export function relayMcpError(operationId: OperationId, error: unknown): RelayMc
     code,
     message,
     recovery,
+    ...(recoveryAction ? { recoveryAction } : {}),
     ...(revision === undefined ? {} : { currentRevision: revision }),
   };
 }

@@ -1,5 +1,3 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
   RevisionConflict,
   type AppMap,
@@ -14,185 +12,31 @@ import {
   type TestData,
 } from "@relay/protocol";
 import { now, publish } from "./events.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
 import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
+import {
+  degradedAppMapsFrom,
+  mutateCollaborationState,
+  readCollaborationState,
+  type CollaborationState,
+  type DegradedAppMap,
+} from "./collaboration-store.js";
+
+export { recoverCollaborationState, type DegradedAppMap } from "./collaboration-store.js";
 
 /** Local/agent leases last long enough for a Settings tour + a server blink. */
 export const DEVICE_LEASE_TTL_MS = 2 * 60 * 60 * 1000;
 /** Touching the device with <30 minutes left extends the same lease. */
 export const DEVICE_LEASE_RENEW_UNDER_MS = 30 * 60 * 1000;
 
-type CollaborationState = {
-  projects: Project[];
-  builds: Build[];
-  pools: DevicePool[];
-  matrices: CompatibilityMatrix[];
-  leases: DeviceLease[];
-  variables: Record<string, Revisioned<TestData[]>>;
-  appMaps: Record<string, AppMap>;
-  idempotency: Record<string, number | string>;
-};
-
-type LoadedCollaborationState = {
-  state: CollaborationState;
-  /** Exact bytes that parsed and validated successfully. */
-  source?: string;
-};
-
-let queue = Promise.resolve();
-
-function stateRoot(): string {
-  return process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
-}
-
-function statePath(): string {
-  return join(stateRoot(), "collaboration.json");
-}
-
-function emptyState(): CollaborationState {
-  const at = now();
-  return {
-    projects: [
-      { id: "default", organizationId: "local", name: "Mobile QA", createdAt: at, updatedAt: at },
-    ],
-    builds: [],
-    pools: [],
-    matrices: [],
-    leases: [],
-    variables: {},
-    appMaps: {},
-    idempotency: {},
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function invalidState(message: string): never {
-  throw new Error(`Invalid collaboration state: ${message}`);
-}
-
-function objectArray<T>(state: Record<string, unknown>, key: string, fallback: T[]): T[] {
-  const value = state[key];
-  if (value === undefined) return fallback;
-  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) {
-    invalidState(`${key} must be an array of objects`);
-  }
-  return value as T[];
-}
-
-function objectRecord<T>(
-  state: Record<string, unknown>,
-  key: string,
-  fallback: Record<string, T>,
-): Record<string, T> {
-  const value = state[key];
-  if (value === undefined) return fallback;
-  if (!isRecord(value)) invalidState(`${key} must be an object`);
-  return value as Record<string, T>;
-}
-
-function parseState(source: string): CollaborationState {
-  let value: unknown;
-  try {
-    value = JSON.parse(source) as unknown;
-  } catch (error) {
-    throw new Error("Invalid collaboration state: JSON could not be parsed", { cause: error });
-  }
-  if (!isRecord(value)) invalidState("top level must be an object");
-
-  const empty = emptyState();
-  const variables = objectRecord<Revisioned<TestData[]>>(value, "variables", {});
-  for (const [projectId, revision] of Object.entries(variables)) {
-    if (
-      !isRecord(revision) ||
-      typeof revision.revision !== "number" ||
-      !Number.isSafeInteger(revision.revision) ||
-      typeof revision.updatedAt !== "number" ||
-      !Number.isFinite(revision.updatedAt) ||
-      !Array.isArray(revision.value)
-    ) {
-      invalidState(`variables.${projectId} must be revisioned variable data`);
-    }
-  }
-
-  const rawAppMaps = objectRecord<unknown>(value, "appMaps", {});
-  const appMaps: Record<string, AppMap> = {};
-  for (const [key, candidate] of Object.entries(rawAppMaps)) {
-    const appMap = validateAppMap(candidate);
-    if (appMap.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
-      invalidState(`appMaps.${key} has an unsupported schema`);
-    }
-    if (key !== `${appMap.projectId}:${appMap.id}`) {
-      invalidState(`appMaps.${key} does not match its project and id`);
-    }
-    appMaps[key] = appMap;
-  }
-
-  const idempotency = objectRecord<number | string>(value, "idempotency", {});
-  if (
-    Object.values(idempotency).some((item) => typeof item !== "number" && typeof item !== "string")
-  ) {
-    invalidState("idempotency values must be strings or numbers");
-  }
-
-  return {
-    projects: objectArray<Project>(value, "projects", empty.projects),
-    builds: objectArray<Build>(value, "builds", []),
-    pools: objectArray<DevicePool>(value, "pools", []),
-    matrices: objectArray<CompatibilityMatrix>(value, "matrices", []),
-    leases: objectArray<DeviceLease>(value, "leases", []),
-    variables,
-    appMaps,
-    idempotency,
-  };
-}
-
-async function loadState(): Promise<LoadedCollaborationState> {
-  let source: string;
-  try {
-    source = await readFile(statePath(), "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: emptyState() };
-    throw error;
-  }
-  return { state: parseState(source), source };
-}
-
 async function readState(): Promise<CollaborationState> {
-  return (await loadState()).state;
-}
-
-async function persist(state: CollaborationState, previousSource?: string): Promise<void> {
-  await mkdir(stateRoot(), { recursive: true });
-  const path = statePath();
-  if (previousSource !== undefined) {
-    const backup = `${path}.bak`;
-    const backupTemp = `${backup}.${process.pid}.tmp`;
-    await writeFile(backupTemp, previousSource, "utf8");
-    await rename(backupTemp, backup);
-  }
-  const temp = `${path}.${process.pid}.tmp`;
-  await writeFile(temp, JSON.stringify(state, null, 2), "utf8");
-  await rename(temp, path);
+  return readCollaborationState();
 }
 
 async function mutate<T>(fn: (state: CollaborationState) => Promise<T> | T): Promise<T> {
-  const pending = queue.then(async () => {
-    const loaded = await loadState();
-    const result = await fn(loaded.state);
-    await persist(loaded.state, loaded.source);
-    return result;
-  });
-  queue = pending.then(
-    () => undefined,
-    () => undefined,
-  );
-  return pending;
+  return mutateCollaborationState(fn);
 }
 
 function emit(event: ResourceEvent): void {
@@ -644,16 +488,30 @@ function appMapKey(projectId: string, appMapId: string): string {
   return `${projectId}:${appMapId}`;
 }
 
-export async function listAppMaps(projectId: string): Promise<AppMap[]> {
-  return Object.values((await readState()).appMaps)
+export async function listAppMapCatalog(projectId: string): Promise<{
+  appMaps: AppMap[];
+  degraded?: DegradedAppMap[];
+}> {
+  const state = await readState();
+  const appMaps = Object.values(state.appMaps)
     .filter((appMap) => appMap.projectId === projectId)
-    .sort((left, right) => right.updatedAt - left.updatedAt)
-    .map((appMap) => validateAppMap(appMap));
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+  const degraded = degradedAppMapsFrom(state).filter((item) =>
+    item.key.startsWith(`${projectId}:`),
+  );
+  return degraded.length ? { appMaps, degraded } : { appMaps };
+}
+
+export async function listAppMaps(projectId: string): Promise<AppMap[]> {
+  return (await listAppMapCatalog(projectId)).appMaps;
+}
+
+export async function listDegradedAppMaps(projectId: string): Promise<DegradedAppMap[]> {
+  return (await listAppMapCatalog(projectId)).degraded ?? [];
 }
 
 export async function readAppMap(projectId: string, appMapId: string): Promise<AppMap | null> {
-  const value = (await readState()).appMaps[appMapKey(projectId, appMapId)];
-  return value ? validateAppMap(value) : null;
+  return (await readState()).appMaps[appMapKey(projectId, appMapId)] ?? null;
 }
 
 export async function deleteAppMap(projectId: string, appMapId: string): Promise<boolean> {

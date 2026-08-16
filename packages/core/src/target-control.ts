@@ -11,18 +11,37 @@ export class TargetControlReservedError extends Error {
 }
 
 const mutations = new KeyedSerialQueue();
+const occupancy = new Map<string, Set<string>>();
 const reservations = new Map<string, string>();
 const heldTargets = new AsyncLocalStorage<ReadonlySet<string>>();
 
-/** Reserve a target for a run. The target scheduler normally prevents two
- * jobs from reaching this point; the guard keeps that invariant explicit. */
+function holdersOf(targetId: string): Set<string> {
+  let holders = occupancy.get(targetId);
+  if (!holders) {
+    holders = new Set();
+    occupancy.set(targetId, holders);
+  }
+  return holders;
+}
+
+/** Mark a target occupied by a queued or running job. Several jobs may wait on
+ * the same serial; interactive input is rejected until the last one releases. */
 export function reserveTargetControl(targetId: string, jobId: string): () => void {
-  const current = reservations.get(targetId);
-  if (current && current !== jobId) throw new TargetControlReservedError(targetId);
+  holdersOf(targetId).add(jobId);
   reservations.set(targetId, jobId);
-  return () => {
-    if (reservations.get(targetId) === jobId) reservations.delete(targetId);
-  };
+  return () => releaseTargetControl(targetId, jobId);
+}
+
+export function releaseTargetControl(targetId: string, jobId: string): void {
+  const holders = occupancy.get(targetId);
+  holders?.delete(jobId);
+  if (!holders || holders.size === 0) {
+    occupancy.delete(targetId);
+    reservations.delete(targetId);
+    return;
+  }
+  const next = holders.values().next().value;
+  if (next) reservations.set(targetId, next);
 }
 
 export function targetControlReservation(targetId: string): string | undefined {
@@ -38,8 +57,10 @@ export function runTargetMutation<T>(
 ): Promise<T> {
   if (heldTargets.getStore()?.has(targetId)) return operation();
   return mutations.run(targetId, async () => {
-    const reservedBy = reservations.get(targetId);
-    if (reservedBy && reservedBy !== executingJobId) throw new TargetControlReservedError(targetId);
+    const holders = occupancy.get(targetId);
+    if (holders && holders.size > 0 && (!executingJobId || !holders.has(executingJobId))) {
+      throw new TargetControlReservedError(targetId);
+    }
     const held = new Set(heldTargets.getStore() ?? []);
     held.add(targetId);
     return heldTargets.run(held, operation);

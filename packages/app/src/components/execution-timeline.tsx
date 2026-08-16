@@ -160,17 +160,17 @@ export function ExecutionTimeline(props: {
                   runState() === "running" && "motion-safe:animate-pulse",
                 )}
               />
-              <span class="text-[11px] font-medium text-[var(--text-base)]">
+              <span class="text-caption font-medium text-[var(--text-base)]">
                 {props.mode === "plan" ? "Ready" : executionStateLabel(runState())}
               </span>
             </div>
 
             <div class="min-w-0 flex-1">
               <div class="mb-1.5 flex min-w-0 items-baseline justify-between gap-3">
-                <strong class="truncate text-[11px] font-medium text-[var(--text-strong)]">
+                <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
                   {selected()?.title ?? "No step selected"}
                 </strong>
-                <small class="shrink-0 font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+                <small class="shrink-0 font-mono text-micro tabular-nums text-[var(--text-weak)]">
                   Step {props.moments.length ? safeIndex() + 1 : 0} of {props.moments.length}
                 </small>
               </div>
@@ -220,7 +220,7 @@ export function ExecutionTimeline(props: {
           <Show when={props.onCycleSpeed}>
             <button
               type="button"
-              class="grid h-9 min-w-9 shrink-0 place-items-center rounded-md px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus"
+              class="grid h-9 min-w-9 shrink-0 place-items-center rounded-md px-1.5 font-mono text-micro font-semibold tabular-nums text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-strong active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus"
               aria-label="Playback speed"
               onClick={() => props.onCycleSpeed?.()}
             >
@@ -313,7 +313,7 @@ export function ExecutionTimeline(props: {
             <For each={props.skippedFractions ?? []}>
               {(fraction) => (
                 <span
-                  class="pointer-events-none absolute top-1/2 z-[3] grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--background-base)] text-[9px] leading-none text-[var(--text-weaker)]"
+                  class="pointer-events-none absolute top-1/2 z-[3] grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--background-base)] text-micro leading-none text-[var(--text-weaker)]"
                   style={{ left: `${Math.max(0, Math.min(1, fraction)) * 100}%` }}
                   aria-label="Quiet time skipped"
                 >
@@ -328,7 +328,7 @@ export function ExecutionTimeline(props: {
             />
           </div>
 
-          <span class="shrink-0 font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+          <span class="shrink-0 font-mono text-micro tabular-nums text-[var(--text-weak)]">
             {formatReviewTime(props.elapsedMs ?? 0)} /{" "}
             {formatReviewTime(props.totalDurationMs ?? 0)}
           </span>

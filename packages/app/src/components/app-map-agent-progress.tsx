@@ -25,9 +25,9 @@ export function AppMapAgentProgress(props: {
 
   return (
     <div class="grid gap-5">
-      <section class="grid gap-3 rounded-[12px] bg-[var(--surface-base)] p-4">
+      <section class="grid gap-3 rounded-xl bg-[var(--surface-base)] p-4">
         <div class="flex items-center justify-between gap-3">
-          <span class="inline-flex items-center gap-2 text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+          <span class="inline-flex items-center gap-2 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
             <i
               class={cn(
                 "size-2 rounded-full",
@@ -44,31 +44,31 @@ export function AppMapAgentProgress(props: {
                 ? "Needs attention"
                 : "Exploring"}
           </span>
-          <span class="text-[9.5px] text-[var(--text-weak)] tabular-nums">
+          <span class="text-micro text-[var(--text-weak)] tabular-nums">
             {complete()}/{props.workers.length} agents
           </span>
         </div>
         <div>
-          <h2 class="text-[18px]/[1.25] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
+          <h2 class="text-title/[1.25] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
             {props.stage}
           </h2>
-          <p class="mt-1 text-[10.5px] text-[var(--text-weak)] tabular-nums">
+          <p class="mt-1 text-micro text-[var(--text-weak)] tabular-nums">
             {screens()} screens · {interactions()} steps · {proposals()} suggestions
           </p>
         </div>
       </section>
 
       <section>
-        <h3 class="mb-2 text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+        <h3 class="mb-2 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
           Agents
         </h3>
         <ul class="grid gap-1.5">
           <For each={props.workers}>
             {(worker) => (
-              <li class="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] bg-[var(--surface-base)] px-2.5 py-2.5">
+              <li class="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl bg-[var(--surface-base)] px-2.5 py-2.5">
                 <span
                   class={cn(
-                    "grid size-8 place-items-center rounded-full text-[9px] font-semibold",
+                    "grid size-8 place-items-center rounded-full text-micro font-semibold",
                     worker.status === "error"
                       ? "bg-[color-mix(in_srgb,var(--icon-critical-base)_11%,transparent)] text-[var(--icon-critical-base)]"
                       : worker.status === "complete"
@@ -81,26 +81,26 @@ export function AppMapAgentProgress(props: {
                 </span>
                 <span class="min-w-0">
                   <span class="flex min-w-0 items-center gap-1.5">
-                    <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                    <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
                       {worker.model.label}
                     </strong>
                     <Show when={worker.planner === "semantic"}>
-                      <small class="shrink-0 rounded-full bg-[var(--background-base)] px-1.5 py-0.5 text-[8.5px] text-[var(--text-weak)]">
+                      <small class="shrink-0 rounded-full bg-[var(--background-base)] px-1.5 py-0.5 text-micro text-[var(--text-weak)]">
                         local fallback
                       </small>
                     </Show>
                   </span>
-                  <small class="mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]">
+                  <small class="mt-0.5 block truncate text-micro text-[var(--text-weak)]">
                     {worker.targetName}
                     {worker.focus ? ` · ${worker.focus}` : ""} · {worker.stage}
                   </small>
                   <Show when={worker.error}>
-                    <small class="mt-1 block text-[9.5px]/[1.35] text-[var(--icon-critical-base)]">
+                    <small class="mt-1 block text-micro/[1.35] text-[var(--icon-critical-base)]">
                       {worker.error}
                     </small>
                   </Show>
                 </span>
-                <span class="grid justify-items-end gap-1 text-right text-[9px] text-[var(--text-weak)] tabular-nums">
+                <span class="grid justify-items-end gap-1 text-right text-micro text-[var(--text-weak)] tabular-nums">
                   <span>
                     {worker.screens} screens
                     <br />
@@ -109,7 +109,7 @@ export function AppMapAgentProgress(props: {
                   <Show when={worker.status === "error" || worker.status === "stopped"}>
                     <button
                       type="button"
-                      class="min-h-11 rounded-lg px-2 text-[10px] font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
+                      class="min-h-11 rounded-lg px-2 text-micro font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
                       onClick={() => props.onRetry(worker.id)}
                     >
                       Retry
@@ -122,7 +122,7 @@ export function AppMapAgentProgress(props: {
         </ul>
       </section>
 
-      <p class="flex items-start gap-2 px-1 text-[10px]/[1.45] text-[var(--text-weak)]">
+      <p class="flex items-start gap-2 px-1 text-micro/[1.45] text-[var(--text-weak)]">
         <Icon name="info" size={13} class="mt-0.5 shrink-0" />
         You can keep working on the canvas. Relay only controls the targets assigned above, and all
         map edits wait for review.

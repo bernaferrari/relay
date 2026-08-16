@@ -27,15 +27,15 @@ export function RecipesSettingsPanel() {
             <Icon name="sparkle" size={14} />
           </span>
           <div class="min-w-0">
-            <h3 class="m-0 text-13-medium text-text-strong">Agent planner</h3>
-            <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
+            <h3 class="m-0 text-body font-medium text-text-strong">Agent planner</h3>
+            <p class="mt-1 mb-0 text-caption leading-relaxed text-text-weak">
               Relay can use OpenRouter to choose among safe controls while exploring. Without a key
               Relay can still turn plain language into steps.
             </p>
-            <code class="mt-2.5 block overflow-x-auto rounded-md bg-surface-raised-stronger-non-alpha px-2.5 py-2 font-mono text-[10.5px] text-text-base">
+            <code class="mt-2.5 block overflow-x-auto rounded-md bg-surface-raised-stronger-non-alpha px-2.5 py-2 font-mono text-micro text-text-base">
               OPENROUTER_API_KEY=… pnpm dev:desktop
             </code>
-            <p class="mt-2 mb-0 text-[10.5px] leading-relaxed text-text-weak">
+            <p class="mt-2 mb-0 text-micro leading-relaxed text-text-weak">
               The key stays in the server process environment and is never saved in a map or
               evidence bundle.
             </p>
@@ -65,7 +65,7 @@ export function RecipesSettingsPanel() {
           Save
         </Button>
         <Show when={prodSaved()}>
-          <span class="text-12-regular text-icon-success-base">Saved</span>
+          <span class="text-caption text-icon-success-base">Saved</span>
         </Show>
       </div>
     </>

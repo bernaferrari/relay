@@ -7,7 +7,7 @@ import { describeTakeAction, moveActionIds } from "./take-action-model";
 /** Ordered Take actions — drag the grip to reorder; no up/down arrow clutter. */
 
 const iconButton =
-  "grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-30";
+  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-30";
 
 type DropMarker = { actionId: string; place: "before" | "after" };
 
@@ -160,7 +160,7 @@ export function TakeActionList(props: {
               <li
                 ref={(element) => rowElements.set(action.id, element)}
                 class={cn(
-                  "relative overflow-hidden rounded-[10px] border transition-[background-color,border-color,box-shadow,opacity,transform] duration-100",
+                  "relative overflow-hidden rounded-xl border transition-[background-color,border-color,box-shadow,opacity,transform] duration-100",
                   selected()
                     ? "border-[color-mix(in_srgb,var(--text-interactive-base)_28%,var(--border-weak-base))] bg-[var(--product-accent-soft)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_7%,transparent)]"
                     : "border-transparent bg-[var(--surface-base)]",
@@ -206,7 +206,7 @@ export function TakeActionList(props: {
                   >
                     <span
                       class={cn(
-                        "grid size-6 shrink-0 place-items-center rounded-[6px] font-mono text-[9px]",
+                        "grid size-6 shrink-0 place-items-center rounded-md font-mono text-micro",
                         selected()
                           ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] text-[var(--text-interactive-base)]"
                           : "bg-[var(--surface-base-hover)] text-[var(--text-weak)]",
@@ -215,16 +215,16 @@ export function TakeActionList(props: {
                       {String(index() + 1).padStart(2, "0")}
                     </span>
                     <span class="min-w-0 flex-1 overflow-hidden">
-                      <span class="block truncate text-[11.5px] leading-snug font-medium text-[var(--text-strong)]">
+                      <span class="block truncate text-caption leading-snug font-medium text-[var(--text-strong)]">
                         {description()}
                       </span>
                       <Show when={action.steps.length > 1}>
-                        <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                        <span class="block truncate text-micro text-[var(--text-weak)]">
                           Edited together as one recorded action
                         </span>
                       </Show>
                       <Show when={action.label === "Recorded pause"}>
-                        <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                        <span class="block truncate text-micro text-[var(--text-weak)]">
                           Pause between actions · edit or remove
                         </span>
                       </Show>

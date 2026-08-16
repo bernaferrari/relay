@@ -103,8 +103,8 @@ export function AppMapTestProposalReview(props: {
           <Icon name="sparkle" size={15} />
         </span>
         <div class="min-w-0 flex-1">
-          <strong class="block text-[13px]">Review Test changes</strong>
-          <span class="block text-[11px] text-text-weak">
+          <strong class="block text-body">Review Test changes</strong>
+          <span class="block text-caption text-text-weak">
             Nothing changes until you approve it.
           </span>
         </div>
@@ -121,9 +121,9 @@ export function AppMapTestProposalReview(props: {
         <For each={props.proposals}>
           {(proposal) => (
             <article class="rounded-xl border border-border-weak-base bg-surface-base p-3">
-              <strong class="block text-[13px] text-text-strong">{proposal.title}</strong>
+              <strong class="block text-body text-text-strong">{proposal.title}</strong>
               <Show when={proposal.description}>
-                <p class="mt-1 text-[11px]/[1.5] text-text-weak">{proposal.description}</p>
+                <p class="mt-1 text-caption/[1.5] text-text-weak">{proposal.description}</p>
               </Show>
               <div class="mt-3 grid gap-2">
                 <For
@@ -139,10 +139,10 @@ export function AppMapTestProposalReview(props: {
                         const details = editDetails(props.test, edit);
                         return (
                           <section class="rounded-lg bg-background-base p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
-                            <strong class="block text-[11px] text-text-strong">
+                            <strong class="block text-caption text-text-strong">
                               {details.title}
                             </strong>
-                            <div class="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-[11px]/[1.45]">
+                            <div class="mt-2 grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)] items-start gap-2 text-caption/[1.45]">
                               <span class="min-w-0 break-words text-text-weak">
                                 {details.before}
                               </span>
@@ -181,7 +181,7 @@ export function AppMapTestProposalReview(props: {
         </For>
         <Show when={props.error}>
           <p
-            class="m-0 rounded-lg bg-surface-critical-weak p-3 text-[12px] text-text-critical-base"
+            class="m-0 rounded-lg bg-surface-critical-weak p-3 text-caption text-text-critical-base"
             role="alert"
           >
             {props.error}

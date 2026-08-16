@@ -19,7 +19,7 @@ type CompanionImageLayout = {
 };
 
 /** Abstract device viewport — thin always-dark frame, no hardware gimmicks. */
-export const PHONE_SHELL = "phone-bezel relative rounded-[21px] bg-[var(--phone-bezel)] p-px";
+export const PHONE_SHELL = "phone-bezel relative rounded-3xl bg-[var(--phone-bezel)] p-px";
 export const DEFAULT_TOUCH_BOUNDS = { width: 1080, height: 2340 } as const;
 
 export function frameDataUrl(value: { mime: string; base64: string }): string {

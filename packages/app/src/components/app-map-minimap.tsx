@@ -66,7 +66,7 @@ export function AppMapMinimap(props: {
     <>
       <aside
         class={cn(
-          "absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-[12px] bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none min-[901px]:block",
+          "absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 hidden w-48 overflow-hidden rounded-xl bg-[color-mix(in_srgb,var(--background-base)_95%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[16px] transition-transform duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none min-[901px]:block",
         )}
         style={{
           transform: props.shiftForSidePanel
@@ -76,7 +76,7 @@ export function AppMapMinimap(props: {
         aria-label="Map overview"
       >
         <header class="flex h-10 items-center justify-between border-b border-[var(--map-divider)] px-2 pl-3">
-          <span class="text-[10px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
+          <span class="text-micro font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
             Map
           </span>
           <div class="flex items-center gap-0.5">
@@ -89,7 +89,7 @@ export function AppMapMinimap(props: {
             >
               −
             </button>
-            <span class="min-w-9 text-center font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+            <span class="min-w-9 text-center font-mono text-micro tabular-nums text-[var(--text-weak)]">
               {Math.round(props.scale * 100)}%
             </span>
             <button
@@ -103,7 +103,7 @@ export function AppMapMinimap(props: {
             </button>
             <button
               type="button"
-              class={cn(minimapControl, "w-auto px-1.5 text-[9.5px] font-medium")}
+              class={cn(minimapControl, "w-auto px-1.5 text-micro font-medium")}
               aria-label="Fit map"
               data-tip="Fit map"
               onClick={props.onFit}
@@ -113,7 +113,7 @@ export function AppMapMinimap(props: {
           </div>
         </header>
         <div
-          class="relative m-2 h-24 cursor-crosshair touch-none overflow-hidden rounded-[4px] bg-[color-mix(in_srgb,var(--map-canvas)_72%,var(--surface-base))] shadow-[inset_0_0_0_1px_var(--map-divider)]"
+          class="relative m-2 h-24 cursor-crosshair touch-none overflow-hidden rounded bg-[color-mix(in_srgb,var(--map-canvas)_72%,var(--surface-base))] shadow-[inset_0_0_0_1px_var(--map-divider)]"
           onPointerDown={(event) => {
             event.stopPropagation();
             dragging = true;
@@ -206,7 +206,7 @@ export function AppMapMinimap(props: {
           <Show when={props.viewport}>
             {(viewport) => (
               <div
-                class="pointer-events-none absolute z-10 rounded-[4px] border border-[var(--border-focus)] bg-[color-mix(in_srgb,var(--text-interactive-base)_10%,transparent)] shadow-[0_0_0_999px_color-mix(in_srgb,var(--text-strong)_10%,transparent),inset_0_0_0_1px_color-mix(in_srgb,var(--background-base)_46%,transparent)]"
+                class="pointer-events-none absolute z-10 rounded border border-[var(--border-focus)] bg-[color-mix(in_srgb,var(--text-interactive-base)_10%,transparent)] shadow-[0_0_0_999px_color-mix(in_srgb,var(--text-strong)_10%,transparent),inset_0_0_0_1px_color-mix(in_srgb,var(--background-base)_46%,transparent)]"
                 style={{
                   left: `${viewport().left}%`,
                   top: `${viewport().top}%`,
@@ -218,7 +218,7 @@ export function AppMapMinimap(props: {
           </Show>
         </div>
       </aside>
-      <div class="absolute right-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-[10px] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[12px] min-[901px]:hidden">
+      <div class="absolute right-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-xl bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] p-1 shadow-[var(--map-elevation-control)] backdrop-blur-[12px] min-[901px]:hidden">
         <button
           type="button"
           class={compactControl}
@@ -227,7 +227,7 @@ export function AppMapMinimap(props: {
         >
           −
         </button>
-        <span class="min-w-9 text-center font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
+        <span class="min-w-9 text-center font-mono text-micro tabular-nums text-[var(--text-weak)]">
           {Math.round(props.scale * 100)}%
         </span>
         <button type="button" class={compactControl} aria-label="Zoom in" onClick={props.onZoomIn}>
@@ -235,7 +235,7 @@ export function AppMapMinimap(props: {
         </button>
         <button
           type="button"
-          class={`${compactControl} w-auto px-2 text-[10px]`}
+          class={`${compactControl} w-auto px-2 text-micro`}
           aria-label="Fit map"
           onClick={props.onFit}
         >
@@ -265,7 +265,7 @@ function stateColor(state: AppMapRunPresentationState | undefined, selected: boo
 }
 
 const minimapControl =
-  "relative grid size-7 place-items-center rounded-[7px] text-[10px] text-[var(--text-base)] outline-none before:absolute before:-inset-2 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
+  "relative grid size-7 place-items-center rounded-lg text-micro text-[var(--text-base)] outline-none before:absolute before:-inset-2 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
 
 const compactControl =
-  "relative grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";
+  "relative grid h-10 min-w-10 place-items-center rounded-xl px-2 text-micro text-[var(--text-base)] outline-none before:absolute before:-inset-0.5 before:content-[''] transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] motion-reduce:active:scale-100";

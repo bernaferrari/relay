@@ -1,45 +1,34 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type { AppMapCompiledTest, AppMapScenarioTestStep, Proposal } from "@relay/protocol";
+import { Show, createEffect, createMemo, createSignal, on } from "solid-js";
+import type { Proposal } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
-import { cn } from "../lib/cn";
 import { useAppMapProposalReview } from "../lib/use-app-map-proposal-review";
+import { useElementWidth } from "../lib/use-element-width";
+import { scenarioDiagnostics, scenarioStepCount } from "../lib/app-map-test-editor-model";
 import {
-  createScenarioStep,
-  scenarioDiagnostics,
-  scenarioStepCount,
-  type ScenarioStepKind,
-} from "../lib/app-map-test-editor-model";
-import {
-  addScenarioChild,
-  deleteScenarioStepTree,
-  duplicateScenarioStepTree,
-  findScenarioStep,
-  flattenScenarioSteps,
-  moveScenarioStepTree,
-  siblingFocusAfterDelete,
-  updateScenarioStepTree,
-  type ScenarioStepBranch,
-} from "../lib/app-map-test-editor-tree";
+  testLayoutMode,
+  testRailOpensByDefault,
+  testRailOverlayWidth,
+  testRailPresentation,
+  testWorkspaceColumns,
+  type TestRailKind,
+} from "../lib/app-map-test-layout";
+import { flattenScenarioSteps } from "../lib/app-map-test-editor-tree";
+import { createAppMapTestStepActions } from "../lib/use-app-map-test-step-actions";
 import { AppMapTestInspector } from "./app-map-test-inspector";
 import { AppMapTestOutline } from "./app-map-test-outline";
 import { AppMapTestUndo } from "./app-map-test-undo";
 import { AppMapTestDeviceEvidence } from "./app-map-test-device-evidence";
-import {
-  AppMapTestRunControl,
-  isActiveTestRun,
-  type TestRunLaunchState,
-} from "./app-map-test-run-control";
-import { testEditorInput, testEditorLabel } from "./app-map-test-binding-editor";
+import { AppMapTestRunControl } from "./app-map-test-run-control";
+import { createAppMapTestRun } from "../lib/use-app-map-test-run";
 import { Icon } from "./icon";
 import { AppMapTestProposalReview } from "./app-map-test-proposal-review";
 import { createAppMapTestDocumentSession } from "./app-map-test-document-session";
 import {
   FirstTestEmpty,
-  MobilePaneNav,
-  TestPicker,
-  TestWorkspaceActionBar,
-  type MobileTestPane,
+  RailStrip,
+  TestSwitcher,
+  TestWorkspaceBar,
 } from "./app-map-test-workspace-chrome";
 
 export function AppMapTestWorkspace(props: {
@@ -48,34 +37,28 @@ export function AppMapTestWorkspace(props: {
   onOpenRun?: (runId: string) => void;
 }) {
   const server = useServer();
-  const [compiledPlan, setCompiledPlan] = createSignal<AppMapCompiledTest>();
-  const [runJobId, setRunJobId] = createSignal<string>();
-  const [runLaunchState, setRunLaunchState] = createSignal<TestRunLaunchState>("idle");
-  const [runError, setRunError] = createSignal("");
-  const [runAttributionMismatch, setRunAttributionMismatch] = createSignal(false);
-  const [mobile, setMobile] = createSignal(false);
-  const [mobilePane, setMobilePane] = createSignal<MobileTestPane>("steps");
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
-  const runJob = createMemo(() => {
-    const id = runJobId();
-    return id ? server.jobs().find((job) => job.id === id) : undefined;
-  });
+  /** `undefined` means "follow the layout default for this width". */
+  const [railOverride, setRailOverride] = createSignal<Partial<Record<TestRailKind, boolean>>>({});
+  const workspace = useElementWidth();
+  const mode = createMemo(() => testLayoutMode(workspace.width()));
+  const railOpen = createMemo(() => ({
+    steps: railOverride().steps ?? testRailOpensByDefault("steps", mode()),
+    device: railOverride().device ?? testRailOpensByDefault("device", mode()),
+  }));
+  const railView = createMemo(() => ({
+    steps: testRailPresentation("steps", mode(), railOpen().steps),
+    device: testRailPresentation("device", mode(), railOpen().device),
+  }));
+
+  // The run session and the document session each need the other, and both only
+  // call back once the component is running, so the reference is filled in below.
+  let run: ReturnType<typeof createAppMapTestRun> | undefined;
   const testDocument = createAppMapTestDocumentSession({
     testId: () => props.testId,
     onTestChange: (testId) => props.onTestChange?.(testId),
-    onCanonicalLoaded: () => setCompiledPlan(),
-    onDraftQueued: () => {
-      setCompiledPlan();
-      if (!isActiveTestRun(runJob())) {
-        setRunJobId();
-        setRunLaunchState("idle");
-        setRunError("");
-        setRunAttributionMismatch(false);
-      }
-    },
-    onTestDeleted: () => {
-      if (mobile()) setMobilePane("edit");
-    },
+    onCanonicalLoaded: () => run?.clearPlan(),
+    onDraftQueued: () => run?.onDraftEdited(),
   });
   const {
     appMap,
@@ -107,36 +90,6 @@ export function AppMapTestWorkspace(props: {
   const { proposalBusyId, proposalError, decideProposal } = useAppMapProposalReview(
     () => appMap() ?? undefined,
   );
-  let runTestKey = "";
-
-  onMount(() => {
-    const query = window.matchMedia("(max-width: 760px)");
-    const update = () => setMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    onCleanup(() => query.removeEventListener("change", update));
-  });
-
-  createEffect(() => {
-    const map = appMap();
-    const test = selectedTest();
-    if (!map || !test) {
-      runTestKey = "";
-      setRunJobId();
-      setRunLaunchState("idle");
-      setRunError("");
-      setRunAttributionMismatch(false);
-      return;
-    }
-    const nextRunTestKey = `${map.id}:${test.id}`;
-    if (nextRunTestKey !== runTestKey) {
-      runTestKey = nextRunTestKey;
-      setRunJobId();
-      setRunLaunchState("idle");
-      setRunError("");
-      setRunAttributionMismatch(false);
-    }
-  });
 
   const diagnostics = createMemo(() => {
     const map = appMap();
@@ -160,151 +113,84 @@ export function AppMapTestWorkspace(props: {
   const selectedDevice = createMemo(() =>
     server.devices().find((device) => device.serial === server.selectedDevice()),
   );
-  const runBlockedReason = createMemo(() => {
-    if (server.isOffline()) return "Reconnect Relay before running this Test.";
-    if (saveState() === "saving") return "Wait for the latest changes to finish saving.";
-    if (saveState() === "error") return "Retry the local changes before running.";
-    if (blockers().length) {
-      return `Resolve ${blockers().length} authoring ${blockers().length === 1 ? "issue" : "issues"} before running.`;
-    }
-    if (!selectedDevice()) return "Choose a target before running this Test.";
-    if (!selectedDevice()?.platform) return "Refresh the selected target before running this Test.";
-    return undefined;
+  run = createAppMapTestRun({
+    appMap,
+    draft,
+    selectedDevice,
+    saveState,
+    blockerCount: () => blockers().length,
+    offline: () => server.isOffline(),
+    jobs: () => server.jobs(),
+    refreshJobs: () => server.refreshJobs(),
+    cancelJob: (id) => server.cancelJob(id),
+    compileAndRun: (input) => server.runAction("app-map.test.run", input),
+    awaitPendingSaves,
   });
+  const testRun = run;
 
-  function updateDraftStep(next: AppMapScenarioTestStep): void {
-    setDraft((test) =>
-      test ? { ...test, steps: updateScenarioStepTree(test.steps, next.id, () => next) } : test,
+  // A different Test, or a different map, is a different run history.
+  createEffect(
+    on(
+      () => (appMap() && selectedTest() ? `${appMap()!.id}:${selectedTest()!.id}` : ""),
+      () => testRun.reset(),
+      { defer: true },
+    ),
+  );
+
+  function toggleRail(rail: TestRailKind): void {
+    setRailOverride((current) => ({ ...current, [rail]: !railOpen()[rail] }));
+  }
+
+  /** A rail that floats over the editor must not stay open behind the editor. */
+  function closeOverlayRail(rail: TestRailKind): void {
+    if (railView()[rail] === "overlay") {
+      setRailOverride((current) => ({ ...current, [rail]: false }));
+    }
+  }
+
+  /** `/` reaches the step search even when the Steps rail is a strip. */
+  function openSearch(): void {
+    if (!railOpen().steps) setRailOverride((current) => ({ ...current, steps: true }));
+    queueMicrotask(() => document.getElementById("test-step-search")?.focus());
+  }
+
+  /** Escape closes a floating rail and hands focus back to the toggle that opened it. */
+  function dismissOverlayRail(): void {
+    const rail = (["steps", "device"] as const).find((kind) => railView()[kind] === "overlay");
+    if (!rail) return;
+    setRailOverride((current) => ({ ...current, [rail]: false }));
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`)?.focus(),
     );
   }
 
-  function commitStep(next: AppMapScenarioTestStep): void {
-    const test = draft();
-    if (!test) return;
-    queueSave({
-      ...test,
-      steps: updateScenarioStepTree(test.steps, next.id, () => next),
-      updatedAt: Date.now(),
-    });
-  }
-
-  function focusStep(stepId: string | undefined, intent = false): void {
-    if (!stepId) return;
-    queueMicrotask(() => {
-      const id = intent ? `test-step-intent-${stepId}` : `test-step-row-${stepId}`;
-      document.getElementById(id)?.focus();
-    });
-  }
-
-  function addRootStep(kind: ScenarioStepKind): void {
-    const test = draft();
-    if (!test) return;
-    const step = createScenarioStep(kind);
-    queueSave({ ...test, steps: [...test.steps, step], updatedAt: Date.now() });
-    setSelectedStepId(step.id);
-    if (mobile()) setMobilePane("edit");
-    focusStep(step.id, true);
-  }
-
-  function addChildStep(
-    parentStepId: string,
-    branch: Exclude<ScenarioStepBranch, "root">,
-    kind: ScenarioStepKind,
-  ): void {
-    const test = draft();
-    if (!test) return;
-    const step = createScenarioStep(kind);
-    queueSave({
-      ...test,
-      steps: addScenarioChild(test.steps, parentStepId, branch, step),
-      updatedAt: Date.now(),
-    });
-    setSelectedStepId(step.id);
-    if (mobile()) setMobilePane("edit");
-    focusStep(step.id, true);
-  }
-
-  function moveStep(stepId: string, direction: -1 | 1): void {
-    const test = draft();
-    if (!test) return;
-    queueSave({
-      ...test,
-      steps: moveScenarioStepTree(test.steps, stepId, direction),
-      updatedAt: Date.now(),
-    });
-    focusStep(stepId);
-  }
-
-  function duplicateStep(stepId: string): void {
-    const test = draft();
-    if (!test) return;
-    let duplicateId: string | undefined;
-    const steps = duplicateScenarioStepTree(test.steps, stepId, () => {
-      const id = crypto.randomUUID();
-      duplicateId ??= id;
-      return id;
-    });
-    queueSave({ ...test, steps, updatedAt: Date.now() });
-    setSelectedStepId(duplicateId);
-    focusStep(duplicateId);
-  }
-
-  function deleteStep(stepId: string): void {
-    const test = draft();
-    if (!test) return;
-    const deleted = findScenarioStep(test.steps, stepId);
-    const nextSelection = siblingFocusAfterDelete(test.steps, stepId);
-    setUndoDelete({
-      message: `Deleted ${deleted?.intent || "step"}`,
-      test: structuredClone(test),
-      selectedStepId: stepId,
-    });
-    queueSave(
-      {
-        ...test,
-        steps: deleteScenarioStepTree(test.steps, stepId),
-        updatedAt: Date.now(),
-      },
-      { preserveUndo: true },
-    );
-    setSelectedStepId(nextSelection);
-    focusStep(nextSelection);
-  }
-
-  function undoStepDelete(): void {
-    const deleted = undoDelete();
-    if (!deleted) return;
-    setUndoDelete();
-    queueSave({ ...deleted.test, updatedAt: Date.now() });
-    setSelectedStepId(deleted.selectedStepId);
-    focusStep(deleted.selectedStepId);
-  }
+  const steps = createAppMapTestStepActions({
+    draft,
+    queueSave,
+    setDraft,
+    setSelectedStepId,
+    undoDelete,
+    setUndoDelete,
+    onStepAdded: () => closeOverlayRail("steps"),
+  });
 
   function resolveRunBlocker(): void {
     if (saveState() === "error") {
       if (retryAvailable()) void retrySave();
-      else {
-        if (mobile()) setMobilePane("edit");
-        queueMicrotask(() => document.getElementById("test-save-error")?.focus());
-      }
+      else queueMicrotask(() => document.getElementById("test-save-error")?.focus());
       return;
     }
     const first = blockers().find((item) => item.stepId);
     if (first?.stepId) {
       setSelectedStepId(first.stepId);
-      if (mobile()) setMobilePane("edit");
-      focusStep(first.stepId, true);
+      steps.focusStep(first.stepId, true);
       return;
     }
     if (blockers().length) {
-      if (mobile()) setMobilePane(draft()?.steps.length ? "edit" : "steps");
-      queueMicrotask(() => document.getElementById("scenario-test-name")?.focus());
+      queueMicrotask(() => document.getElementById("app-map-test-switcher")?.focus());
       return;
     }
-    if (!selectedDevice()) {
-      window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
-      return;
-    }
+    if (!selectedDevice()) window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
   }
 
   const runBlockerActionLabel = createMemo(() => {
@@ -316,75 +202,91 @@ export function AppMapTestWorkspace(props: {
     return undefined;
   });
 
-  async function runTest(): Promise<void> {
-    const map = appMap();
-    const test = draft();
-    const device = selectedDevice();
-    if (!map || !test || !device || runBlockedReason() || isActiveTestRun(runJob())) return;
-    setRunLaunchState("preparing");
-    setRunError("");
-    setRunAttributionMismatch(false);
-    setRunJobId();
-    try {
-      await awaitPendingSaves();
-      const target =
-        device.platform === "browser"
-          ? ({ kind: "browser", platform: "browser", targetId: device.serial } as const)
-          : ({
-              kind: "device",
-              platform: device.platform!,
-              targetId: device.serial,
-            } as const);
-      const result = await server.runAction("app-map.test.run", {
-        appMapId: map.id,
-        testId: test.id,
-        expectedRevision: map.revision,
-        target,
-      });
-      setCompiledPlan(result.plan);
-      setRunJobId(result.job.id);
-      await server.refreshJobs();
-      setRunLaunchState("idle");
-      const job = server.jobs().find((candidate) => candidate.id === result.job.id);
-      if (job && job.action !== result.planIdentity.rootRecipeId) {
-        setRunAttributionMismatch(true);
-        setRunError("The queued job does not match this saved Test revision.");
-        setRunLaunchState("error");
-      }
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : String(error));
-      setRunLaunchState("error");
-    }
+  /**
+   * Both rails render identically whether they are docked in their grid track or
+   * floated over the editor, so the body lives in one place.
+   */
+  function StepsRail() {
+    return (
+      <Show
+        when={draft()}
+        fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
+      >
+        {(test) => (
+          <AppMapTestOutline
+            map={appMap()!}
+            test={test()}
+            selectedStepId={selectedStepId()}
+            diagnostics={diagnostics()}
+            onSelect={setSelectedStepId}
+            onOpen={(id) => {
+              setSelectedStepId(id);
+              closeOverlayRail("steps");
+              steps.focusStep(id, true);
+            }}
+            onAddRoot={steps.addRootStep}
+            onAddChild={steps.addChildStep}
+            onMove={steps.moveStep}
+            onReorder={steps.reorderStep}
+            onDuplicate={steps.duplicateStep}
+            onDelete={steps.deleteStep}
+            onClose={() => toggleRail("steps")}
+          />
+        )}
+      </Show>
+    );
   }
 
-  async function cancelRun(): Promise<void> {
-    const id = runJobId();
-    if (!id || !isActiveTestRun(runJob()) || runLaunchState() === "canceling") return;
-    setRunLaunchState("canceling");
-    await server.cancelJob(id);
-    await server.refreshJobs();
-    setRunLaunchState(runAttributionMismatch() ? "error" : "idle");
+  function DeviceRail() {
+    return (
+      <Show when={draft()}>
+        {(test) => (
+          <AppMapTestDeviceEvidence
+            appMap={appMap() ?? undefined}
+            test={test()}
+            selectedStepId={selectedStepId()}
+            compiledPlan={testRun.plan()}
+            onOpenRun={props.onOpenRun}
+            onSelectStep={setSelectedStepId}
+            onClose={() => toggleRail("device")}
+          />
+        )}
+      </Show>
+    );
   }
 
   return (
     <section
-      class="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--map-canvas)] text-text-strong"
+      class="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background-base text-text-strong"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
-        if (
-          !undoDelete() ||
-          !(event.metaKey || event.ctrlKey) ||
-          event.key.toLowerCase() !== "z" ||
-          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
-          target.isContentEditable
-        ) {
+        const typing =
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
+        // Escape is the way out of a floating rail even from its own search field.
+        if (event.key === "Escape") {
+          dismissOverlayRail();
           return;
         }
-        event.preventDefault();
-        undoStepDelete();
+        if (typing) return;
+        if (undoDelete() && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+          event.preventDefault();
+          steps.undoStepDelete();
+          return;
+        }
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === "[") {
+          event.preventDefault();
+          toggleRail("steps");
+        } else if (event.key === "]") {
+          event.preventDefault();
+          toggleRail("device");
+        } else if (event.key === "/") {
+          event.preventDefault();
+          openSearch();
+        }
       }}
     >
-      <TestWorkspaceActionBar
+      <TestWorkspaceBar
         status={
           saveState() === "saving"
             ? "Saving changes…"
@@ -406,96 +308,73 @@ export function AppMapTestWorkspace(props: {
                 : "neutral"
         }
         stepCount={draft() ? scenarioStepCount(draft()!.steps) : undefined}
+        railOpen={railOpen()}
+        onToggleRail={toggleRail}
+        switcher={
+          <TestSwitcher
+            tests={tests()}
+            selectedTestId={selectedTestId()}
+            name={draft()?.name ?? ""}
+            busy={saveState() !== "saved"}
+            creating={creating()}
+            onSelect={selectTest}
+            onRename={(name) => {
+              const test = draft();
+              if (!test || name === test.name) return;
+              queueSave({ ...test, name, updatedAt: Date.now() });
+            }}
+            onCreate={() => void createTest()}
+            onDuplicate={() => void duplicateTest()}
+            onDelete={deleteTest}
+          />
+        }
       >
         <Show when={draft()}>
           <Show when={pendingTestProposals().length > 0}>
             <Button
               variant="secondary"
               size="sm"
-              class="min-h-11"
+              class="shrink-0"
               onClick={() => setProposalReviewOpen(true)}
             >
               <Icon name="sparkle" size={13} /> {pendingTestProposals().length} proposed
             </Button>
           </Show>
           <AppMapTestRunControl
-            launchState={runLaunchState()}
-            job={runJob()}
-            blockedReason={runBlockedReason()}
-            error={runError()}
+            launchState={testRun.launchState()}
+            job={testRun.job()}
+            blockedReason={testRun.blockedReason()}
+            error={testRun.error()}
             blockedActionLabel={runBlockerActionLabel()}
             onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
-            onRun={() => void runTest()}
-            onCancel={() => void cancelRun()}
+            onRun={() => void testRun.run()}
+            onCancel={() => void testRun.cancel()}
             onOpenResult={() => {
-              const id = runJobId();
-              if (!id) return;
-              props.onOpenRun?.(id);
-              setRunJobId();
+              const id = testRun.consumeResult();
+              if (id) props.onOpenRun?.(id);
             }}
           />
         </Show>
-      </TestWorkspaceActionBar>
+      </TestWorkspaceBar>
 
-      <div class="min-h-0 max-[760px]:flex max-[760px]:flex-col">
-        <MobilePaneNav value={mobilePane()} onChange={setMobilePane} />
+      <div class="relative min-h-0">
         <div
+          ref={workspace.ref}
           data-test-workspace-layout
-          class="grid h-full min-h-0 grid-cols-[clamp(290px,21vw,340px)_minmax(380px,520px)_minmax(400px,1fr)] max-[1120px]:grid-cols-[minmax(280px,0.85fr)_minmax(380px,1.15fr)] max-[1120px]:grid-rows-[minmax(0,1fr)_minmax(320px,44%)] max-[760px]:block max-[760px]:flex-1"
+          data-layout-mode={mode()}
+          class="grid h-full min-h-0"
+          style={{ "grid-template-columns": testWorkspaceColumns(mode(), railOpen()) }}
         >
-          <div
-            class={cn(
-              "flex min-h-0 flex-col border-r border-border-weak-base bg-background-base max-[760px]:h-full max-[760px]:border-r-0",
-              mobile() && mobilePane() !== "steps" && "hidden",
-            )}
-            inert={mobile() && mobilePane() !== "steps"}
+          <Show
+            when={railView().steps === "docked"}
+            fallback={<RailStrip rail="steps" label="Steps" onOpen={() => toggleRail("steps")} />}
           >
-            <TestPicker
-              tests={tests()}
-              selectedTestId={selectedTestId()}
-              disabled={saveState() !== "saved"}
-              creating={creating()}
-              onSelect={selectTest}
-              onCreate={() => void createTest()}
-              onDuplicate={() => void duplicateTest()}
-              onDelete={deleteTest}
-            />
-            <Show
-              when={selectedTest()}
-              fallback={<FirstTestEmpty creating={creating()} onCreate={() => void createTest()} />}
-            >
-              {(_test) => (
-                <Show when={draft()}>
-                  <AppMapTestOutline
-                    map={appMap()!}
-                    test={draft()!}
-                    selectedStepId={selectedStepId()}
-                    diagnostics={diagnostics()}
-                    onSelect={(id) => {
-                      setSelectedStepId(id);
-                      if (mobile()) {
-                        setMobilePane("edit");
-                        focusStep(id, true);
-                      }
-                    }}
-                    onAddRoot={addRootStep}
-                    onAddChild={addChildStep}
-                    onMove={moveStep}
-                    onDuplicate={duplicateStep}
-                    onDelete={deleteStep}
-                  />
-                </Show>
-              )}
-            </Show>
-          </div>
+            <div class="flex min-h-0 flex-col border-r border-border-weak-base">
+              <StepsRail />
+            </div>
+          </Show>
 
-          <div
-            class={cn(
-              "min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha max-[760px]:h-full",
-              mobile() && mobilePane() !== "edit" && "hidden",
-            )}
-            inert={mobile() && mobilePane() !== "edit"}
-          >
+          <div class="min-h-0 overflow-y-auto bg-surface-raised-stronger-non-alpha">
             <Show when={deletedTest()}>
               {(test) => (
                 <AppMapTestUndo
@@ -509,7 +388,7 @@ export function AppMapTestWorkspace(props: {
               {(undo) => (
                 <AppMapTestUndo
                   message={undo().message}
-                  onUndo={undoStepDelete}
+                  onUndo={steps.undoStepDelete}
                   onDismiss={() => setUndoDelete()}
                 />
               )}
@@ -518,7 +397,7 @@ export function AppMapTestWorkspace(props: {
               <div
                 id="test-save-error"
                 tabindex={-1}
-                class="m-3 flex items-start justify-between gap-3 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[12px] text-text-critical-base"
+                class="m-3 flex items-start justify-between gap-3 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base"
                 role="alert"
               >
                 <span>
@@ -539,57 +418,48 @@ export function AppMapTestWorkspace(props: {
               </div>
             </Show>
             <Show when={draft()}>
-              {(test) => (
-                <div class="mx-auto grid w-full max-w-[560px] gap-4 p-4">
-                  <label class="grid gap-1.5" for="scenario-test-name">
-                    <span class={testEditorLabel}>Test name</span>
-                    <input
-                      id="scenario-test-name"
-                      class={testEditorInput}
-                      value={test().name}
-                      onInput={(event) => setDraft({ ...test(), name: event.currentTarget.value })}
-                      onBlur={() => draft() && queueSave({ ...draft()!, updatedAt: Date.now() })}
-                    />
-                  </label>
-                  <AppMapTestInspector
-                    map={appMap()!}
-                    item={selectedItem()}
-                    diagnostics={diagnostics()}
-                    blockers={blockers().length}
-                    onDraftChange={updateDraftStep}
-                    onCommit={commitStep}
-                  />
-                </div>
-              )}
-            </Show>
-          </div>
-          <Show when={draft()}>
-            {(test) => (
-              <div
-                class={cn(
-                  "min-h-0 border-l border-border-weak-base max-[1120px]:col-span-2 max-[1120px]:border-l-0 max-[760px]:h-full",
-                  mobile() && !["device", "results"].includes(mobilePane()) && "hidden",
-                )}
-                inert={mobile() && !["device", "results"].includes(mobilePane())}
-              >
-                <AppMapTestDeviceEvidence
-                  appMap={appMap() ?? undefined}
-                  test={test()}
-                  selectedStepId={selectedStepId()}
-                  compiledPlan={compiledPlan()}
-                  onOpenRun={props.onOpenRun}
-                  onSelectStep={setSelectedStepId}
-                  selectedTab={mobilePane() === "results" ? "evidence" : "device"}
-                  onTabChange={(tab) =>
-                    mobile() && setMobilePane(tab === "evidence" ? "results" : "device")
-                  }
-                  hideTabs={mobile()}
+              <div class="mx-auto grid w-full max-w-[640px] gap-4 px-5 py-4">
+                <AppMapTestInspector
+                  map={appMap()!}
+                  item={selectedItem()}
+                  diagnostics={diagnostics()}
+                  blockers={blockers().length}
+                  onDraftChange={steps.updateDraftStep}
+                  onCommit={steps.commitStep}
                 />
               </div>
-            )}
+            </Show>
+          </div>
+
+          <Show
+            when={railView().device === "docked"}
+            fallback={
+              <RailStrip rail="device" label="Device" onOpen={() => toggleRail("device")} />
+            }
+          >
+            <div class="min-h-0 border-l border-border-weak-base">
+              <DeviceRail />
+            </div>
           </Show>
         </div>
+        <Show when={railView().steps === "overlay"}>
+          <div
+            class="absolute inset-y-0 left-0 z-20 flex min-h-0 flex-col border-r border-border-weak-base bg-background-base shadow-[8px_0_24px_-16px_rgb(0_0_0/40%)]"
+            style={{ width: testRailOverlayWidth("steps", workspace.width()) }}
+          >
+            <StepsRail />
+          </div>
+        </Show>
+        <Show when={railView().device === "overlay"}>
+          <div
+            class="absolute inset-y-0 right-0 z-20 min-h-0 border-l border-border-weak-base bg-background-base shadow-[-8px_0_24px_-16px_rgb(0_0_0/40%)]"
+            style={{ width: testRailOverlayWidth("device", workspace.width()) }}
+          >
+            <DeviceRail />
+          </div>
+        </Show>
       </div>
+
       <Show when={proposalReviewOpen() && draft() && pendingTestProposals().length > 0}>
         <AppMapTestProposalReview
           test={draft()!}

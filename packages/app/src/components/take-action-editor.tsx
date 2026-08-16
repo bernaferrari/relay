@@ -18,10 +18,10 @@ import {
 } from "./take-action-model";
 
 const field =
-  "h-11 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-[16px] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-[12px]";
-const label = "grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]";
+  "h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-title text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-caption";
+const label = "grid gap-1.5 text-micro font-medium text-[var(--text-base)]";
 const iconButton =
-  "grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
+  "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";
 
 type BindingRow = { id: number; name: string; value: string };
 
@@ -118,10 +118,10 @@ export function TakeActionEditor(props: {
       }}
     >
       <div class="flex items-center justify-between gap-3">
-        <strong id={titleId} class="text-[11.5px] font-semibold text-[var(--text-strong)]">
+        <strong id={titleId} class="text-caption font-semibold text-[var(--text-strong)]">
           Edit action
         </strong>
-        <span class="text-[9.5px] text-[var(--text-weak)]">Changes require replay</span>
+        <span class="text-micro text-[var(--text-weak)]">Changes require replay</span>
       </div>
 
       <label class={label}>
@@ -359,7 +359,7 @@ export function TakeActionEditor(props: {
                   onInput={(event) => setDraft({ ...interaction, text: event.currentTarget.value })}
                 />
               </label>
-              <label class="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-1 text-[11px] text-[var(--text-base)]">
+              <label class="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-1 text-caption text-[var(--text-base)]">
                 <input
                   type="checkbox"
                   checked={Boolean(interaction.target)}
@@ -494,7 +494,7 @@ export function TakeActionEditor(props: {
                     })
                   }
                 />
-                <span class="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-[10.5px] text-[var(--text-weak)]">
+                <span class="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-micro text-[var(--text-weak)]">
                   sec
                 </span>
               </span>
@@ -596,7 +596,7 @@ export function TakeActionEditor(props: {
                 </For>
                 <button
                   type="button"
-                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] border border-[var(--border-weak-base)] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                  class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--border-weak-base)] px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                   disabled={props.pending}
                   onClick={() =>
                     setBindingRows((rows) => [
@@ -614,7 +614,7 @@ export function TakeActionEditor(props: {
       </Show>
 
       <Show when={draft().kind === "steps"}>
-        <p class="m-0 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-2.5 text-[10.5px]/[1.5] text-[var(--text-weak)]">
+        <p class="m-0 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-base)] px-3 py-2.5 text-micro/[1.5] text-[var(--text-weak)]">
           This action contains custom or grouped steps. They will stay unchanged unless you choose
           another action type.
         </p>
@@ -624,7 +624,7 @@ export function TakeActionEditor(props: {
         {(message) => (
           <p
             id={errorId}
-            class="m-0 flex items-start gap-2 rounded-[8px] bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] px-3 py-2.5 text-[10.5px]/[1.45] text-[var(--icon-critical-base)]"
+            class="m-0 flex items-start gap-2 rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] px-3 py-2.5 text-micro/[1.45] text-[var(--icon-critical-base)]"
             role="alert"
           >
             <Icon name="alert" size={12} class="mt-0.5 shrink-0" /> {message()}
@@ -635,7 +635,7 @@ export function TakeActionEditor(props: {
       <div class="grid grid-cols-2 gap-2">
         <button
           type="button"
-          class="min-h-11 rounded-[8px] px-3 text-[11px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)]"
+          class="min-h-11 rounded-lg px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)]"
           disabled={props.pending}
           onClick={props.onCancel}
         >
@@ -643,7 +643,7 @@ export function TakeActionEditor(props: {
         </button>
         <button
           type="submit"
-          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+          class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={props.pending}
         >
           <Show when={props.pending} fallback={<Icon name="check" size={12} />}>

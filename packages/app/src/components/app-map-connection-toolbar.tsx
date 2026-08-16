@@ -22,7 +22,7 @@ const SCREEN_MARGIN = 12;
 const SCREEN_GAP = 12;
 
 const controlClass =
-  "grid size-11 shrink-0 cursor-pointer place-items-center rounded-[8px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)] hover:text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)] active:scale-[0.96] motion-reduce:active:scale-100";
+  "grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_22%,transparent)] hover:text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)] active:scale-[0.96] motion-reduce:active:scale-100";
 
 const selectedControlClass =
   "bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] text-[var(--text-interactive-base)]";
@@ -251,7 +251,7 @@ export function AppMapConnectionToolbar(props: {
       return (
         <div
           class={cn(
-            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-[11px] border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
+            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
             popoverPlacementClass(),
           )}
           id={popoverId()}
@@ -279,7 +279,7 @@ export function AppMapConnectionToolbar(props: {
       return (
         <div
           class={cn(
-            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-[11px] border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
+            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
             popoverPlacementClass(),
           )}
           id={popoverId()}
@@ -321,7 +321,7 @@ export function AppMapConnectionToolbar(props: {
       return (
         <div
           class={cn(
-            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-[11px] border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
+            "absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]",
             popoverPlacementClass(),
           )}
           id={popoverId()}
@@ -358,7 +358,7 @@ export function AppMapConnectionToolbar(props: {
         (endpoint === "source" ? presentation().sourcePort : presentation().targetPort) ?? "auto";
       return (
         <div class="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-x-2">
-          <span class="px-1 text-[11px] font-medium text-[var(--text-weak)]">{label}</span>
+          <span class="px-1 text-caption font-medium text-[var(--text-weak)]">{label}</span>
           <div class="flex flex-wrap items-center justify-end gap-1">
             <For each={ports}>
               {(option) => (
@@ -381,7 +381,7 @@ export function AppMapConnectionToolbar(props: {
     return (
       <div
         class={cn(
-          "absolute left-1/2 -translate-x-1/2 rounded-[11px] border border-[var(--border-base)] bg-[var(--background-base)] p-2 shadow-[var(--map-elevation-control)]",
+          "absolute left-1/2 -translate-x-1/2 rounded-xl border border-[var(--border-base)] bg-[var(--background-base)] p-2 shadow-[var(--map-elevation-control)]",
           popoverPlacementClass(),
         )}
         id={popoverId()}
@@ -396,7 +396,7 @@ export function AppMapConnectionToolbar(props: {
         <div class="mt-2 border-t border-[var(--border-base)] pt-2">
           <button
             type="button"
-            class="min-h-11 w-full rounded-[8px] px-2 text-left text-xs font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--background-hover)] hover:text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
+            class="min-h-11 w-full rounded-lg px-2 text-left text-xs font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--background-hover)] hover:text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
             onClick={() => {
               props.onChangePresentation(undefined);
               closePopover(true);
@@ -444,7 +444,7 @@ export function AppMapConnectionToolbar(props: {
         }}
       >
         <div
-          class="flex min-h-11 items-center gap-1 rounded-[11px] border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]"
+          class="flex min-h-11 items-center gap-1 rounded-xl border border-[var(--border-base)] bg-[var(--background-base)] p-1.5 shadow-[var(--map-elevation-control)]"
           role="toolbar"
           aria-label="Connector appearance"
         >

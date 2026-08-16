@@ -136,6 +136,19 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
   assert.throws(() => screenshot.inputSchema.parse({ input: { serial: "device-1" } }));
 });
 
+test("lets agents tap by accessibility identifier", () => {
+  const interact = tool("target.interact");
+  assert.match(interact.description, /Prefer identifier/);
+  assert.deepEqual(
+    interact.inputSchema.parse({
+      serial: "ipad-1",
+      kind: "identifier",
+      identifier: "settings.gear",
+    }),
+    { serial: "ipad-1", kind: "identifier", identifier: "settings.gear" },
+  );
+});
+
 test("exposes app launch as one high-intent leased target tool", () => {
   const launch = tool("target.app.launch");
   assert.equal(launch.name, "relay_target_app_launch");
@@ -214,6 +227,7 @@ test("gives run agents one revision-pinned graph Test operation", () => {
 
 test("defines deterministic task profiles with a compact authoring default", () => {
   assert.deepEqual(relayMcpProfiles, [
+    "control",
     "map",
     "observe",
     "author",
@@ -224,11 +238,23 @@ test("defines deterministic task profiles with a compact authoring default", () 
     "admin",
     "full",
   ]);
-  assert.equal(defaultRelayMcpProfile, "author");
+  assert.equal(defaultRelayMcpProfile, "control");
   assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
   assert.equal(
     relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
     true,
+  );
+  assert.ok(
+    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "target.interact"),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "target.recover"),
+  );
+  assert.equal(
+    relayMcpToolsForProfile("control").some(({ operationId }) =>
+      operationId.startsWith("app-map."),
+    ),
+    false,
   );
   assert.ok(
     relayMcpToolsForProfile("author").some(
@@ -334,7 +360,7 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: ["map", "observe", "author", "test", "run", "execute", "review"],
+    profiles: ["control", "map", "observe", "author", "test", "run", "execute", "review"],
   });
 });
 

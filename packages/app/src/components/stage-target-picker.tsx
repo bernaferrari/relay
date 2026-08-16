@@ -69,14 +69,14 @@ export function StageTargetPicker(props: {
       >
         <header class="flex items-start justify-between gap-3 px-3 pt-3 pb-2.5">
           <span class="min-w-0">
-            <small class="block text-[9px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
+            <small class="block text-micro font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
               Target
             </small>
-            <strong class="mt-0.5 block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
+            <strong class="mt-0.5 block truncate text-body font-semibold text-[var(--text-strong)]">
               {props.nodeLabel}
             </strong>
             <Show when={props.metaLine}>
-              <span class={cn(mono, "mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]")}>
+              <span class={cn(mono, "mt-0.5 block truncate text-micro text-[var(--text-weak)]")}>
                 {props.metaLine}
               </span>
             </Show>
@@ -95,18 +95,18 @@ export function StageTargetPicker(props: {
           <div class="mx-2.5 flex min-h-11 items-center justify-between rounded-lg bg-[var(--surface-base)] px-1">
             <button
               type="button"
-              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index <= 0}
               onClick={() => props.onRetarget(props.picker().index - 1)}
             >
               <Icon name="chevron-down" size={12} /> Child
             </button>
-            <span class={cn(mono, "text-[9px] tabular-nums text-[var(--text-weak)]")}>
+            <span class={cn(mono, "text-micro tabular-nums text-[var(--text-weak)]")}>
               {props.picker().index + 1} / {props.ancestryLength}
             </span>
             <button
               type="button"
-              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+              class="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-micro font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--surface-base-hover)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
               disabled={props.picker().index >= props.ancestryLength - 1}
               onClick={() => props.onRetarget(props.picker().index + 1)}
             >
@@ -142,10 +142,10 @@ export function StageTargetPicker(props: {
                     <Icon name={strategyIcon(strategy)} size={13} />
                   </span>
                   <span class="min-w-0">
-                    <strong class="block truncate text-[10.5px] font-medium text-[var(--text-base)]">
+                    <strong class="block truncate text-micro font-medium text-[var(--text-base)]">
                       {strategyLabel(strategy)}
                     </strong>
-                    <code class="mt-0.5 block truncate font-mono text-[9px] text-[var(--text-weak)]">
+                    <code class="mt-0.5 block truncate font-mono text-micro text-[var(--text-weak)]">
                       {strategyValue(strategy)}
                     </code>
                   </span>
@@ -179,14 +179,14 @@ export function StageTargetPicker(props: {
                   <Icon name="scan" size={13} />
                 </span>
                 <span class="min-w-0">
-                  <strong class="block text-[10.5px] font-medium text-[var(--text-base)]">
+                  <strong class="block text-micro font-medium text-[var(--text-base)]">
                     Coordinates
                   </strong>
                   <span class="mt-1 flex gap-1.5">
-                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-micro text-[var(--text-weak)]">
                       X {props.strategies.find((strategy) => strategy.kind === "point")?.x ?? 0}
                     </code>
-                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                    <code class="rounded bg-[var(--background-deep)] px-1.5 py-0.5 font-mono text-micro text-[var(--text-weak)]">
                       Y {props.strategies.find((strategy) => strategy.kind === "point")?.y ?? 0}
                     </code>
                   </span>
@@ -216,7 +216,7 @@ export function StageTargetPicker(props: {
                   <button
                     type="button"
                     class={cn(
-                      "min-h-11 rounded-md px-2 text-[10px] font-medium",
+                      "min-h-11 rounded-md px-2 text-micro font-medium",
                       props.coordinateSpace === "element"
                         ? "bg-[var(--surface-base)] text-[var(--text-strong)] shadow-sm"
                         : "text-[var(--text-weak)]",
@@ -229,7 +229,7 @@ export function StageTargetPicker(props: {
                   <button
                     type="button"
                     class={cn(
-                      "min-h-11 rounded-md px-2 text-[10px] font-medium",
+                      "min-h-11 rounded-md px-2 text-micro font-medium",
                       props.coordinateSpace === "screen"
                         ? "bg-[var(--surface-base)] text-[var(--text-strong)] shadow-sm"
                         : "text-[var(--text-weak)]",
@@ -240,7 +240,7 @@ export function StageTargetPicker(props: {
                     On screen
                   </button>
                 </div>
-                <p class="px-1 text-[9.5px] leading-4 text-[var(--text-weak)]">
+                <p class="px-1 text-micro leading-4 text-[var(--text-weak)]">
                   {props.coordinateSpace === "element"
                     ? "Tracks this stable element when translated copy moves the layout."
                     : "Keeps the point pinned to the viewport."}
@@ -254,7 +254,7 @@ export function StageTargetPicker(props: {
           <Button
             variant="secondary"
             size="sm"
-            class="text-[10.5px]"
+            class="text-micro"
             disabled={!props.selectedStrategy}
             onClick={() => {
               const strategy = props.selectedStrategy;
@@ -266,7 +266,7 @@ export function StageTargetPicker(props: {
           <Button
             variant="primary"
             size="sm"
-            class="text-[10.5px]"
+            class="text-micro"
             disabled={!props.selectedStrategy}
             onClick={() => {
               const strategy = props.selectedStrategy;

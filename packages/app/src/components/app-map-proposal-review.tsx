@@ -21,23 +21,23 @@ function TestChangeReview(props: { change: Extract<ProposalChange, { kind: "test
   return (
     <Show when={review()}>
       {(details) => (
-        <div class="mt-3 rounded-[9px] bg-[var(--background-base)] p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+        <div class="mt-3 rounded-xl bg-[var(--background-base)] p-2.5 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
           <div class="flex items-center justify-between gap-2">
-            <strong class="text-[10px] font-medium text-[var(--text-strong)]">Test changes</strong>
-            <span class="text-[9px] tabular-nums text-[var(--text-weak)]">
+            <strong class="text-micro font-medium text-[var(--text-strong)]">Test changes</strong>
+            <span class="text-micro tabular-nums text-[var(--text-weak)]">
               {details().before.stepCount} → {details().after.stepCount} steps ·{" "}
               {details().after.unresolvedStepCount} unresolved
             </span>
           </div>
           <Show when={details().before.name !== details().after.name}>
-            <p class="mt-2 text-[9.5px] text-[var(--text-base)]">
+            <p class="mt-2 text-micro text-[var(--text-base)]">
               Rename “{details().before.name}” to “{details().after.name}”
             </p>
           </Show>
           <ul class="mt-2 grid list-none gap-1.5 p-0">
             <For each={details().edits}>
               {(edit) => (
-                <li class="flex items-start gap-1.5 text-[9.5px]/[1.45] text-[var(--text-base)]">
+                <li class="flex items-start gap-1.5 text-micro/[1.45] text-[var(--text-base)]">
                   <Icon
                     name="arrow-right"
                     size={9}
@@ -90,26 +90,26 @@ export function AppMapProposalReview(props: {
   const [feedback, setFeedback] = createSignal("");
   return (
     <aside
-      class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
+      class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-2xl bg-[var(--background-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Suggested map changes"
       data-app-map-native-scroll
       onWheel={(event) => event.stopPropagation()}
     >
       <header class="flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] px-3">
-        <span class="grid size-7 place-items-center rounded-[8px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+        <span class="grid size-7 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
           <Icon name="sparkle" size={13} />
         </span>
         <div class="min-w-0 flex-1">
-          <strong class="block text-[12px] font-semibold text-[var(--text-strong)]">
+          <strong class="block text-caption font-semibold text-[var(--text-strong)]">
             Proposed map changes
           </strong>
-          <span class="block text-[10px] text-[var(--text-weak)]">
+          <span class="block text-micro text-[var(--text-weak)]">
             Nothing is added until you keep a suggestion.
           </span>
         </div>
         <button
           type="button"
-          class="grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+          class="grid size-10 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
           aria-label="Close proposal review"
           onClick={props.onClose}
         >
@@ -122,8 +122,8 @@ export function AppMapProposalReview(props: {
           fallback={
             <div class="grid min-h-36 place-items-center px-6 text-center">
               <div>
-                <strong class="text-[12px] text-[var(--text-strong)]">You’re all caught up</strong>
-                <p class="mt-1 text-[10.5px]/[1.5] text-[var(--text-weak)]">
+                <strong class="text-caption text-[var(--text-strong)]">You’re all caught up</strong>
+                <p class="mt-1 text-micro/[1.5] text-[var(--text-weak)]">
                   New agent work will appear here while it is still safe to review.
                 </p>
               </div>
@@ -142,23 +142,23 @@ export function AppMapProposalReview(props: {
                   : undefined;
               const isScreenReview = Boolean(screenReview);
               return (
-                <article class="rounded-[10px] bg-[var(--surface-base)] p-3 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+                <article class="rounded-xl bg-[var(--surface-base)] p-3 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
                   <div class="flex items-start gap-2">
                     <div class="min-w-0 flex-1">
-                      <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
+                      <strong class="block truncate text-caption font-semibold text-[var(--text-strong)]">
                         {proposal.title}
                       </strong>
                       <Show when={proposal.description}>
-                        <p class="mt-1 text-[10px]/[1.45] text-[var(--text-weak)]">
+                        <p class="mt-1 text-micro/[1.45] text-[var(--text-weak)]">
                           {proposal.description}
                         </p>
                       </Show>
                     </div>
-                    <span class="rounded-full bg-[var(--product-accent-soft)] px-2 py-1 text-[9px] font-medium text-[var(--text-interactive-base)]">
+                    <span class="rounded-full bg-[var(--product-accent-soft)] px-2 py-1 text-micro font-medium text-[var(--text-interactive-base)]">
                       Agent
                     </span>
                   </div>
-                  <ul class="mt-2.5 grid gap-1 text-[10px] text-[var(--text-base)]">
+                  <ul class="mt-2.5 grid gap-1 text-micro text-[var(--text-base)]">
                     <For each={proposal.changes.slice(0, 5)}>
                       {(change) => (
                         <li class="flex items-start gap-1.5">
@@ -173,7 +173,7 @@ export function AppMapProposalReview(props: {
                     </For>
                   </ul>
                   <Show when={proposal.changes.length > 5}>
-                    <span class="mt-1 block text-[9.5px] text-[var(--text-weak)]">
+                    <span class="mt-1 block text-micro text-[var(--text-weak)]">
                       +{proposal.changes.length - 5} more changes
                     </span>
                   </Show>
@@ -185,12 +185,12 @@ export function AppMapProposalReview(props: {
                     )}
                   </For>
                   <Show when={screenReview}>
-                    <div class="mt-3 rounded-[9px] bg-[var(--background-base)] p-2 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
+                    <div class="mt-3 rounded-xl bg-[var(--background-base)] p-2 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
                       <div class="mb-2 flex items-center justify-between gap-2">
-                        <span class="text-[10px] font-medium text-[var(--text-strong)]">
+                        <span class="text-micro font-medium text-[var(--text-strong)]">
                           Compare evidence
                         </span>
-                        <span class="text-[9px] text-[var(--text-weak)]">
+                        <span class="text-micro text-[var(--text-weak)]">
                           {screenReview!.currentVariant.observation?.nodes.length ?? 0} →{" "}
                           {screenReview!.proposedVariant.observation?.nodes.length ?? 0}{" "}
                           accessibility nodes
@@ -198,57 +198,57 @@ export function AppMapProposalReview(props: {
                       </div>
                       <div class="grid grid-cols-2 gap-2">
                         <div class="min-w-0">
-                          <span class="mb-1 block text-[9px] font-medium text-[var(--text-weak)]">
+                          <span class="mb-1 block text-micro font-medium text-[var(--text-weak)]">
                             Current
                           </span>
                           <Show
                             when={screenReview!.currentVariant.screenshotUri}
                             fallback={
-                              <div class="grid aspect-[4/3] place-items-center rounded-[6px] bg-[var(--surface-base-hover)] px-2 text-center text-[9px] text-[var(--text-weak)]">
+                              <div class="grid aspect-[4/3] place-items-center rounded-md bg-[var(--surface-base-hover)] px-2 text-center text-micro text-[var(--text-weak)]">
                                 No screenshot
                               </div>
                             }
                           >
                             <img
-                              class="aspect-[4/3] w-full rounded-[6px] object-cover shadow-[inset_0_0_0_1px_var(--border-weak-base)]"
+                              class="aspect-[4/3] w-full rounded-md object-cover shadow-[inset_0_0_0_1px_var(--border-weak-base)]"
                               src={props.evidenceUrl(screenReview!.currentVariant.screenshotUri!)}
                               alt="Current approved screen capture"
                             />
                           </Show>
                         </div>
                         <div class="min-w-0">
-                          <span class="mb-1 block text-[9px] font-medium text-[var(--text-weak)]">
+                          <span class="mb-1 block text-micro font-medium text-[var(--text-weak)]">
                             New capture
                           </span>
                           <Show
                             when={screenReview!.proposedVariant.screenshotUri}
                             fallback={
-                              <div class="grid aspect-[4/3] place-items-center rounded-[6px] bg-[var(--surface-base-hover)] px-2 text-center text-[9px] text-[var(--text-weak)]">
+                              <div class="grid aspect-[4/3] place-items-center rounded-md bg-[var(--surface-base-hover)] px-2 text-center text-micro text-[var(--text-weak)]">
                                 No screenshot
                               </div>
                             }
                           >
                             <img
-                              class="aspect-[4/3] w-full rounded-[6px] object-cover shadow-[inset_0_0_0_1px_var(--border-focus)]"
+                              class="aspect-[4/3] w-full rounded-md object-cover shadow-[inset_0_0_0_1px_var(--border-focus)]"
                               src={props.evidenceUrl(screenReview!.proposedVariant.screenshotUri!)}
                               alt="New screen capture awaiting review"
                             />
                           </Show>
                         </div>
                       </div>
-                      <p class="mt-2 text-[9.5px]/[1.45] text-[var(--text-weak)]">
+                      <p class="mt-2 text-micro/[1.45] text-[var(--text-weak)]">
                         Screenshots and accessibility semantics are saved together. Keeping the new
                         capture replaces this target variant; keeping current discards it.
                       </p>
-                      <details class="mt-2 text-[9.5px] text-[var(--text-weak)]">
+                      <details class="mt-2 text-micro text-[var(--text-weak)]">
                         <summary class="cursor-pointer font-medium text-[var(--text-base)] hover:text-[var(--text-strong)]">
                           Compare accessibility trees
                         </summary>
                         <div class="mt-2 grid grid-cols-2 gap-2">
-                          <pre class="max-h-28 overflow-auto whitespace-pre-wrap rounded-[6px] bg-[var(--surface-base-hover)] p-1.5 font-mono text-[8.5px]/[1.4] text-[var(--text-base)]">
+                          <pre class="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--surface-base-hover)] p-1.5 font-mono text-micro/[1.4] text-[var(--text-base)]">
                             {accessibilityTreePreview(screenReview!.currentVariant)}
                           </pre>
-                          <pre class="max-h-28 overflow-auto whitespace-pre-wrap rounded-[6px] bg-[var(--surface-base-hover)] p-1.5 font-mono text-[8.5px]/[1.4] text-[var(--text-base)]">
+                          <pre class="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--surface-base-hover)] p-1.5 font-mono text-micro/[1.4] text-[var(--text-base)]">
                             {accessibilityTreePreview(screenReview!.proposedVariant)}
                           </pre>
                         </div>
@@ -257,11 +257,11 @@ export function AppMapProposalReview(props: {
                   </Show>
                   <Show when={feedbackId() === proposal.id}>
                     <div class="mt-3 grid gap-2">
-                      <label class="grid gap-1 text-[10px] font-medium text-[var(--text-base)]">
+                      <label class="grid gap-1 text-micro font-medium text-[var(--text-base)]">
                         What should the agent change?
                         <textarea
                           autofocus
-                          class="min-h-20 resize-y rounded-[8px] bg-[var(--background-base)] px-2.5 py-2 text-[11px]/[1.45] text-[var(--text-strong)] outline-none shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:shadow-[inset_0_0_0_2px_var(--border-focus)]"
+                          class="min-h-20 resize-y rounded-lg bg-[var(--background-base)] px-2.5 py-2 text-caption/[1.45] text-[var(--text-strong)] outline-none shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:shadow-[inset_0_0_0_2px_var(--border-focus)]"
                           value={feedback()}
                           onInput={(event) => setFeedback(event.currentTarget.value.slice(0, 500))}
                         />
@@ -312,7 +312,7 @@ export function AppMapProposalReview(props: {
                       </Button>
                       <button
                         type="button"
-                        class="min-h-10 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)] disabled:opacity-50"
+                        class="min-h-10 rounded-lg px-2 text-micro font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)] disabled:opacity-50"
                         disabled={Boolean(props.busyId)}
                         onClick={() => props.onReject(proposal.id)}
                       >
@@ -328,7 +328,7 @@ export function AppMapProposalReview(props: {
         <Show when={props.error}>
           <p
             role="alert"
-            class="rounded-[8px] bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)] p-2 text-[10px] text-[var(--icon-critical-base)]"
+            class="rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)] p-2 text-micro text-[var(--icon-critical-base)]"
           >
             {props.error}
           </p>

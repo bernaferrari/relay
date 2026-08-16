@@ -14,6 +14,7 @@ import {
   deleteCompatibilityMatrix,
   listCompatibilityMatrices,
   listAppMaps,
+  listAppMapCatalog,
   listDevicePools,
   listDeviceLeases,
   listProjects,
@@ -27,6 +28,7 @@ import {
   saveCompatibilityMatrix,
   mutateStoredAppMap,
   writeProjectVariables,
+  recoverCollaborationState,
 } from "./collaboration.js";
 import { addAppMapScreen } from "./app-map.js";
 
@@ -77,7 +79,6 @@ test("invalid collaboration state rejects reads and mutations without changing o
       "[]",
       JSON.stringify({ projects: {} }),
       JSON.stringify({ builds: ["not-a-build"] }),
-      JSON.stringify({ appMaps: { "p:broken": { schemaVersion: 1 } } }),
     ];
     for (const source of invalidStates) {
       await writeFile(path, source, "utf8");
@@ -459,4 +460,81 @@ test("compatibility matrices have project-scoped CRUD", async () => {
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("one unreadable App Map does not take down the collection", async () => {
+  await withStateRoot("relay-state-degraded-map-", async (root) => {
+    const healthy = await createAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      name: "Store",
+      at: 100,
+    });
+    const path = join(root, "collaboration.json");
+    const state = JSON.parse(await readFile(path, "utf8")) as {
+      appMaps: Record<string, Record<string, unknown>>;
+    };
+    state.appMaps["mobile:broken"] = { schemaVersion: 1 };
+    state.appMaps["mobile:store"] = {
+      ...state.appMaps["mobile:store"],
+      tests: {
+        smoke: {
+          id: "smoke",
+          organizationId: "acme",
+          projectId: "mobile",
+          appMapId: "store",
+          name: "Smoke",
+          kind: "scenario",
+          intentSchemaVersion: 1,
+          steps: [
+            {
+              id: "launch",
+              kind: "instruction",
+              intent: "Launch home",
+              cleanup: { kind: "home" },
+              binding: { status: "unresolved", reason: "not mapped yet" },
+            },
+          ],
+          createdAt: 100,
+          updatedAt: 100,
+        },
+      },
+    };
+    await writeFile(path, JSON.stringify(state), "utf8");
+
+    const catalog = await listAppMapCatalog("mobile");
+    assert.deepEqual(
+      catalog.appMaps.map((map) => map.id),
+      [healthy.id],
+    );
+    const step = catalog.appMaps[0]?.tests.smoke?.steps[0];
+    assert.equal(Boolean(step && "cleanup" in step), false);
+    assert.equal(catalog.degraded?.length, 1);
+    assert.equal(catalog.degraded?.[0]?.key, "mobile:broken");
+  });
+});
+
+test("unreadable JSON falls back to the last-known-good backup", async () => {
+  await withStateRoot("relay-state-backup-recover-", async (root) => {
+    await createAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      name: "Store",
+      at: 100,
+    });
+    const path = join(root, "collaboration.json");
+    const good = await readFile(path, "utf8");
+    await writeFile(`${path}.bak`, good, "utf8");
+    await writeFile(path, '{"projects":', "utf8");
+    const listed = await listAppMaps("mobile");
+    assert.deepEqual(
+      listed.map((map) => map.id),
+      ["store"],
+    );
+    const recovered = await recoverCollaborationState();
+    assert.equal(recovered.recoveredFromBackup, true);
+    JSON.parse(await readFile(path, "utf8"));
+  });
 });

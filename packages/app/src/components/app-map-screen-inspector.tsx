@@ -43,19 +43,19 @@ export function ScreenInspector(props: {
         <aside
           id={`app-map-screen-details-${_node().id}`}
           data-app-map-screen-inspector
-          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
+          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
           aria-label={`Details for ${props.title}`}
           data-app-map-native-scroll
           onWheel={(event) => event.stopPropagation()}
         >
           <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
             <div class="flex min-w-0 items-center gap-2.5">
-              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+              <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name="info" size={12} />
               </span>
               <button
                 type="button"
-                class="min-w-0 truncate rounded-[6px] px-1 py-0.5 text-left text-[13px]/[1.2] font-semibold text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-strong-focus)]"
+                class="min-w-0 truncate rounded-md px-1 py-0.5 text-left text-body/[1.2] font-semibold text-[var(--text-strong)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-strong-focus)]"
                 aria-label={`Rename ${props.title}`}
                 data-tip="Rename screen · F2"
                 onClick={props.onRename}
@@ -74,7 +74,7 @@ export function ScreenInspector(props: {
           </header>
 
           <section class="grid grid-cols-[72px_minmax(0,1fr)] gap-3 p-3">
-            <div class="flex h-[88px] items-center justify-center overflow-hidden rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--background-deep)] p-1.5">
+            <div class="flex h-[88px] items-center justify-center overflow-hidden rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-deep)] p-1.5">
               <Show
                 when={props.image}
                 fallback={<Icon name="smartphone" size={18} class="text-[var(--text-weaker)]" />}
@@ -89,7 +89,7 @@ export function ScreenInspector(props: {
                 )}
               </Show>
             </div>
-            <div class="grid content-center gap-2 text-[10.5px] text-[var(--text-weak)]">
+            <div class="grid content-center gap-2 text-micro text-[var(--text-weak)]">
               <div class="flex items-center gap-2">
                 <i
                   class={cn(
@@ -145,13 +145,13 @@ export function ScreenInspector(props: {
                 <Show when={(capture().variants?.length ?? 0) > 1}>
                   <label
                     for="scroll-surface-variant"
-                    class="text-[9.5px] font-medium text-[var(--text-base)]"
+                    class="text-micro font-medium text-[var(--text-base)]"
                   >
                     Screen variant
                   </label>
                   <select
                     id="scroll-surface-variant"
-                    class="min-h-11 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-[10.5px] text-[var(--text-strong)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
+                    class="min-h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-micro text-[var(--text-strong)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
                     value={capture().selectedVariantId}
                     disabled={capture().busy}
                     onChange={(event) => capture().onSelectVariant?.(event.currentTarget.value)}
@@ -161,7 +161,7 @@ export function ScreenInspector(props: {
                     </For>
                   </select>
                 </Show>
-                <p class="m-0 text-[9.5px]/[1.4] text-[var(--text-weak)]">
+                <p class="m-0 text-micro/[1.4] text-[var(--text-weak)]">
                   {capture().policy?.reason ??
                     "Viewport only by default. Opt into a full surface for stable product UI."}
                 </p>
@@ -170,7 +170,7 @@ export function ScreenInspector(props: {
                     id="scroll-surface-capture-status"
                     role={capture().error ? "alert" : undefined}
                     class={cn(
-                      "m-0 text-[9.5px]/[1.4]",
+                      "m-0 text-micro/[1.4]",
                       capture().error
                         ? "text-[var(--icon-critical-base)]"
                         : "text-[var(--text-weak)]",
@@ -198,14 +198,14 @@ export function ScreenInspector(props: {
                 <div class="flex items-baseline justify-between gap-3">
                   <label
                     for="screen-flow-setup"
-                    class="text-[10.5px] font-medium text-[var(--text-base)]"
+                    class="text-micro font-medium text-[var(--text-base)]"
                   >
                     When a run starts
                   </label>
                 </div>
                 <select
                   id="screen-flow-setup"
-                  class="h-9 w-full rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-[11px] text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--border-strong-base)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
+                  class="h-9 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-2.5 text-caption text-[var(--text-strong)] outline-none transition-colors hover:border-[var(--border-strong-base)] focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--border-focus)_24%,transparent)]"
                   value={flowSetup().mixed ? "__mixed__" : (flowSetup().routineId ?? "")}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
@@ -228,15 +228,15 @@ export function ScreenInspector(props: {
 
           <section class="grid gap-1 border-t border-[var(--border-weak-base)] px-2 py-2">
             <div class="flex min-h-6 items-center justify-between gap-3 px-1">
-              <span class="text-[10.5px] font-medium text-[var(--text-base)]">Paths</span>
-              <span class="font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+              <span class="text-micro font-medium text-[var(--text-base)]">Paths</span>
+              <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
                 {props.connections.length}
               </span>
             </div>
             <Show
               when={props.connections.length}
               fallback={
-                <p class="m-0 rounded-[8px] bg-[var(--surface-base)] px-2.5 py-2 text-[10.5px]/[1.45] text-[var(--text-weak)]">
+                <p class="m-0 rounded-lg bg-[var(--surface-base)] px-2.5 py-2 text-micro/[1.45] text-[var(--text-weak)]">
                   No paths from this screen.
                 </p>
               }
@@ -247,13 +247,13 @@ export function ScreenInspector(props: {
                   return (
                     <button
                       type="button"
-                      class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[11px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
+                      class="flex min-h-10 items-center gap-2 rounded-lg px-2 text-left text-caption text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:ring-2 focus-visible:ring-[var(--border-focus)] active:scale-[0.99] motion-reduce:active:scale-100"
                       aria-label={`Open path to ${targetTitle()}`}
                       onClick={() => props.onSelectConnection(connection)}
                     >
                       <span
                         class={cn(
-                          "grid size-5 shrink-0 place-items-center rounded-[5px]",
+                          "grid size-5 shrink-0 place-items-center rounded-md",
                           connection.state === "needs-recording"
                             ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_16%,transparent)] text-[var(--icon-warning-base)]"
                             : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
@@ -276,7 +276,7 @@ export function ScreenInspector(props: {
           <footer class="border-t border-[var(--border-weak-base)] p-2">
             <button
               type="button"
-              class="flex min-h-10 w-full items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_9%,transparent)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--icon-critical-base)]"
+              class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-micro text-[var(--text-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_9%,transparent)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--icon-critical-base)]"
               aria-label="Remove screen"
               data-tip="Remove screen · Delete"
               onClick={props.onRemove}
@@ -309,19 +309,19 @@ export function GroupInspector(props: {
       {(group) => (
         <aside
           data-app-map-group-inspector
-          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-[13px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
+          class="app-map-panel-scroll absolute top-16 right-3 z-30 max-h-[calc(100%-144px)] w-[min(304px,calc(100%-24px))] touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_97%,transparent)] shadow-[var(--map-elevation-panel)] backdrop-blur-[14px] max-[720px]:top-auto max-[720px]:right-3 max-[720px]:bottom-[calc(72px+env(safe-area-inset-bottom))] max-[720px]:left-3 max-[720px]:max-h-[min(70%,540px)] max-[720px]:w-auto"
           aria-label={`Details for group ${group().name}`}
           data-app-map-native-scroll
           onWheel={(event) => event.stopPropagation()}
         >
           <header class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border-weak-base)] px-2.5">
             <div class="flex min-w-0 items-center gap-2.5">
-              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+              <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name="group" size={12} />
               </span>
               <div class="min-w-0">
-                <span class="block text-[10px] font-medium text-[var(--text-weak)]">Group</span>
-                <strong class="mt-0.5 block truncate text-[12px] font-semibold text-[var(--text-strong)]">
+                <span class="block text-micro font-medium text-[var(--text-weak)]">Group</span>
+                <strong class="mt-0.5 block truncate text-caption font-semibold text-[var(--text-strong)]">
                   {group().name}
                 </strong>
               </div>
@@ -329,7 +329,7 @@ export function GroupInspector(props: {
             <div class="flex items-center">
               <button
                 type="button"
-                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label={`Rename ${group().name}`}
                 title="Rename group · F2"
                 onClick={props.onRename}
@@ -338,7 +338,7 @@ export function GroupInspector(props: {
               </button>
               <button
                 type="button"
-                class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+                class="relative grid size-9 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-[background-color,color,transform] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
                 aria-label="Close group details"
                 onClick={props.onClose}
               >
@@ -346,12 +346,12 @@ export function GroupInspector(props: {
               </button>
             </div>
           </header>
-          <p class="m-0 px-3 py-2.5 text-[10.5px]/[1.45] text-[var(--text-weak)]">
+          <p class="m-0 px-3 py-2.5 text-micro/[1.45] text-[var(--text-weak)]">
             {props.screens.length} {props.screens.length === 1 ? "screen" : "screens"}. Groups only
             organize the canvas; they do not affect runs.
           </p>
           <div class="border-t border-[var(--border-weak-base)] px-2 py-2">
-            <span class="block px-1 pb-1 text-[9.5px] font-medium text-[var(--text-weak)]">
+            <span class="block px-1 pb-1 text-micro font-medium text-[var(--text-weak)]">
               Screens
             </span>
             <div class="grid gap-0.5">
@@ -359,10 +359,10 @@ export function GroupInspector(props: {
                 {(screen) => (
                   <button
                     type="button"
-                    class="flex min-h-10 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                    class="flex min-h-10 items-center gap-2 rounded-lg px-2 text-left text-micro text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                     onClick={() => props.onSelectScreen(screen.id)}
                   >
-                    <span class="grid size-5 shrink-0 place-items-center rounded-[5px] bg-[var(--surface-base-hover)] text-[var(--text-weak)]">
+                    <span class="grid size-5 shrink-0 place-items-center rounded-md bg-[var(--surface-base-hover)] text-[var(--text-weak)]">
                       <Icon name="smartphone" size={10} />
                     </span>
                     <span class="min-w-0 flex-1 truncate">{screen.title}</span>
@@ -375,12 +375,12 @@ export function GroupInspector(props: {
           <footer class="border-t border-[var(--border-weak-base)] p-2">
             <button
               type="button"
-              class="flex min-h-10 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+              class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-micro text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
               onClick={props.onUngroup}
             >
               <Icon name="group" size={12} class="text-[var(--text-weak)]" />
               <span>Ungroup screens</span>
-              <kbd class="ml-auto text-[10px] text-[var(--text-weak)]">⇧⌘G</kbd>
+              <kbd class="ml-auto text-micro text-[var(--text-weak)]">⇧⌘G</kbd>
             </button>
           </footer>
         </aside>

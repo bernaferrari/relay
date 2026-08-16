@@ -52,7 +52,7 @@ export function DevicePanelStatus(props: {
     >
       <span
         class={cn(
-          "grid size-12 place-items-center rounded-[14px] text-[var(--text-base)]",
+          "grid size-12 place-items-center rounded-2xl text-[var(--text-base)]",
           "bg-[var(--surface-base-hover)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--border-strong-base)_64%,transparent),0_1px_2px_rgb(0_0_0/5%),0_8px_22px_-12px_rgb(0_0_0/18%)]",
         )}
         aria-hidden="true"
@@ -77,10 +77,10 @@ export function DevicePanelStatus(props: {
       </span>
 
       <div class="grid justify-items-center gap-2">
-        <h3 class="m-0 max-w-[22ch] text-balance text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
+        <h3 class="m-0 max-w-[22ch] text-balance text-title font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
           {props.state.title}
         </h3>
-        <p class="m-0 max-w-[38ch] text-pretty text-[12px]/[1.55] text-[var(--text-weak)]">
+        <p class="m-0 max-w-[38ch] text-pretty text-caption/[1.55] text-[var(--text-weak)]">
           {props.state.detail}
         </p>
       </div>
@@ -112,7 +112,7 @@ export function DevicePanelStatus(props: {
           <Show when={props.state.secondaryRetry}>
             <button
               type="button"
-              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-[9px] px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
+              class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
               disabled={props.busy}
               onClick={props.onRetry}
             >

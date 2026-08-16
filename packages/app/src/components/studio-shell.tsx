@@ -67,7 +67,7 @@ const AppMapCombine = lazy(() =>
 
 function WorkspaceLoading(props: { label: string }) {
   return (
-    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-[12px] text-[var(--text-weak)]">
+    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-caption text-[var(--text-weak)]">
       Loading {props.label}…
     </div>
   );
@@ -680,7 +680,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <Show
               when={area() === "tests"}
               fallback={
-                <strong class="max-w-full truncate text-center text-[13px] font-medium text-[var(--text-base)]">
+                <strong class="max-w-full truncate text-center text-body font-medium text-[var(--text-base)]">
                   Run history
                 </strong>
               }
@@ -778,7 +778,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <div
                     ref={(element) => (studioActionsMenu = element)}
                     id="app-map-options-menu"
-                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
+                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-xl border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
                     role="menu"
                     aria-label="Map options"
                     onFocusOut={(event) => {
@@ -806,7 +806,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[760px]:flex"
+                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[760px]:flex"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
@@ -818,7 +818,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(
@@ -828,12 +828,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     >
                       <Icon name="undo" size={14} />
                       <span class="flex-1">Undo</span>
-                      <kbd class="text-[10px] font-normal text-[var(--text-weaker)]">⌘Z</kbd>
+                      <kbd class="text-micro font-normal text-[var(--text-weaker)]">⌘Z</kbd>
                     </button>
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(
@@ -843,12 +843,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     >
                       <Icon name="redo" size={14} />
                       <span class="flex-1">Redo</span>
-                      <kbd class="text-[10px] font-normal text-[var(--text-weaker)]">⇧⌘Z</kbd>
+                      <kbd class="text-micro font-normal text-[var(--text-weaker)]">⇧⌘Z</kbd>
                     </button>
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] transition-[background-color,color] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] transition-[background-color,color] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
                       aria-label="Re-layout map"
                       data-tip="Arrange screens to reduce connector crossings"
                       onClick={() => {
@@ -862,7 +862,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:toggle-map-history"));
@@ -873,7 +873,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void duplicateSelected();
@@ -884,7 +884,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void exportSelected();
@@ -895,7 +895,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--surface-base-hover)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--icon-critical-base)] hover:bg-[var(--surface-base-hover)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void deleteSelected();
@@ -916,7 +916,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   variant="secondary"
                   size="lg"
                   class={cn(
-                    "text-[12px]",
+                    "text-caption",
                     combineOpen() && "bg-[var(--surface-base)] text-[var(--text-strong)]",
                   )}
                   aria-label={combineOpen() ? "Close run matrix" : "Open run matrix"}
@@ -989,13 +989,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={combineOpen()}>
                   <aside
-                    class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-[14px] max-[760px]:border"
+                    class="relative z-[6] flex min-h-0 w-[clamp(420px,40vw,560px)] shrink-0 overflow-hidden border-l border-[var(--border-strong-base)] bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[-12px_0_32px_rgb(0_0_0/10%)] max-[760px]:absolute max-[760px]:inset-y-2 max-[760px]:right-2 max-[760px]:w-[min(560px,calc(100%-16px))] max-[760px]:rounded-2xl max-[760px]:border"
                     aria-label="Run matrix"
                     onWheel={(event) => event.stopPropagation()}
                   >
                     <Suspense
                       fallback={
-                        <div class="grid h-40 flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
+                        <div class="grid h-40 flex-1 place-items-center text-caption text-[var(--text-weak)]">
                           Loading run matrix…
                         </div>
                       }
@@ -1054,7 +1054,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           >
             <Suspense
               fallback={
-                <div class="grid h-full place-items-center text-[12px] text-[var(--text-weak)]">
+                <div class="grid h-full place-items-center text-caption text-[var(--text-weak)]">
                   Loading test data…
                 </div>
               }
@@ -1096,7 +1096,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <span class={eyebrow}>Map file</span>
                   <h3
                     id="import-review-title"
-                    class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
+                    class="mt-1 text-title font-semibold text-[var(--text-strong)]"
                   >
                     {review().exists ? "This map already exists" : "Import this map?"}
                   </h3>
@@ -1110,15 +1110,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Icon name="x" size={14} />
                 </button>
               </header>
-              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-3">
+              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-base)] p-3">
                 <span class="grid size-9 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] text-[var(--icon-success-base)]">
                   <Icon name="check" size={16} />
                 </span>
                 <div class="min-w-0">
-                  <strong class="block text-[13px] text-[var(--text-strong)]">
+                  <strong class="block text-body text-[var(--text-strong)]">
                     {review().appMap.name}
                   </strong>
-                  <small class="block text-[11px] text-[var(--text-weak)]">
+                  <small class="block text-caption text-[var(--text-weak)]">
                     {review().appMap.id} · {Object.keys(review().appMap.screens).length} screen
                     {Object.keys(review().appMap.screens).length === 1 ? "" : "s"} ·{" "}
                     {Object.keys(review().appMap.connections).length} connection
@@ -1127,15 +1127,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </div>
               </div>
               <details class="mx-4 my-3 rounded-lg border border-[var(--border-weak-base)] bg-[var(--background-deep)] px-3 py-2">
-                <summary class="cursor-pointer text-[11px] text-[var(--text-base)]">
+                <summary class="cursor-pointer text-caption text-[var(--text-base)]">
                   Preview portable YAML
                 </summary>
-                <pre class="mt-2 max-h-48 overflow-auto font-mono text-[11px]/[1.5] text-[var(--text-weak)]">
+                <pre class="mt-2 max-h-48 overflow-auto font-mono text-caption/[1.5] text-[var(--text-weak)]">
                   {review().yaml}
                 </pre>
               </details>
               <footer class="flex items-center justify-between gap-3 border-t border-[var(--border-weak-base)] px-4 py-3">
-                <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
+                <p class="m-0 max-w-[28ch] text-caption/[1.45] text-[var(--text-weak)]">
                   {review().exists
                     ? "Replace this map, or import a separate copy with the same screens and paths."
                     : "Relay will add this portable map to the current project."}

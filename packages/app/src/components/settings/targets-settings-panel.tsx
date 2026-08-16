@@ -73,8 +73,8 @@ export function TargetsSettingsPanel() {
   return (
     <>
       <div class="mb-4">
-        <h3 class="m-0 text-14-medium text-text-strong">Browser targets</h3>
-        <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
+        <h3 class="m-0 text-body font-medium text-text-strong">Browser targets</h3>
+        <p class="mt-1 mb-0 text-caption leading-relaxed text-text-weak">
           Give each website a private browser. Sign in once, then record and replay the same tests
           you use on iOS and Android.
         </p>
@@ -112,7 +112,7 @@ export function TargetsSettingsPanel() {
           </span>
         </label>
         <Show when={targetError()}>
-          <p class="m-0 text-12-regular text-icon-critical-base" role="alert">
+          <p class="m-0 text-caption text-icon-critical-base" role="alert">
             {targetError()}
           </p>
         </Show>
@@ -142,10 +142,10 @@ export function TargetsSettingsPanel() {
               <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
                 <div class="flex items-start justify-between gap-3">
                   <div class={copyStack}>
-                    <strong class={`block truncate text-12-medium ${copyTitle}`}>
+                    <strong class={`block truncate text-caption font-medium ${copyTitle}`}>
                       {target.name}
                     </strong>
-                    <span class={`block truncate text-12-regular ${copyDescription}`}>
+                    <span class={`block truncate text-caption ${copyDescription}`}>
                       {target.browser?.startUrl}
                     </span>
                   </div>
@@ -174,7 +174,7 @@ export function TargetsSettingsPanel() {
                 <Show when={preflight()?.id === target.id}>
                   <p
                     class={cn(
-                      "mt-2 mb-0 text-12-regular leading-relaxed",
+                      "mt-2 mb-0 text-caption leading-relaxed",
                       preflight()?.ok ? "text-icon-success-base" : "text-text-weak",
                     )}
                     role="status"

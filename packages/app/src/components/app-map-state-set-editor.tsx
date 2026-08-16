@@ -337,18 +337,18 @@ export function AppMapStateSetEditor(props: {
       <div>
         <h3
           id="modifier-editor-title"
-          class="m-0 text-[13px] font-semibold text-[var(--text-strong)]"
+          class="m-0 text-body font-semibold text-[var(--text-strong)]"
         >
           {props.variable ? `Edit ${props.variable.name}` : "New modifier"}
         </h3>
-        <p class="m-0 mt-1 max-w-[52ch] text-[11.5px]/[1.45] text-[var(--text-weak)]">
+        <p class="m-0 mt-1 max-w-[52ch] text-caption/[1.45] text-[var(--text-weak)]">
           A modifier changes one thing before a test—such as language, account, theme, or model.
           Relay applies a value, returns to the test start, and repeats.
         </p>
       </div>
 
       <div
-        class="grid grid-cols-3 gap-1 rounded-[9px] bg-[var(--surface-base)] p-1"
+        class="grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-base)] p-1"
         role="tablist"
         aria-label="How Relay learns modifier values"
       >
@@ -365,7 +365,7 @@ export function AppMapStateSetEditor(props: {
               role="tab"
               aria-selected={sourceMode() === source.id}
               class={cn(
-                "min-h-10 rounded-[7px] px-2 text-[11.5px] font-medium",
+                "min-h-10 rounded-lg px-2 text-caption font-medium",
                 sourceMode() === source.id
                   ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[var(--shadow-xs-border-base)]"
                   : "text-[var(--text-weak)] hover:text-[var(--text-strong)]",
@@ -383,9 +383,9 @@ export function AppMapStateSetEditor(props: {
       </div>
 
       <label class="grid gap-1.5">
-        <span class="text-[10.5px] font-medium text-[var(--text-base)]">Name</span>
+        <span class="text-micro font-medium text-[var(--text-base)]">Name</span>
         <input
-          class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+          class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={name()}
           placeholder={KINDS.find((item) => item.id === kind())?.label ?? "Modifier"}
           onInput={(event) => setName(event.currentTarget.value)}
@@ -393,9 +393,9 @@ export function AppMapStateSetEditor(props: {
       </label>
 
       <label class="grid gap-1.5">
-        <span class="text-[10.5px] font-medium text-[var(--text-base)]">What changes?</span>
+        <span class="text-micro font-medium text-[var(--text-base)]">What changes?</span>
         <select
-          class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px] text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+          class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
           value={kind()}
           disabled={sourceMode() === "android"}
           onChange={(event) => {
@@ -414,27 +414,27 @@ export function AppMapStateSetEditor(props: {
             when={sourceMode() === "android"}
             fallback={
               <label class="grid gap-1.5">
-                <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
+                <span class="flex items-center justify-between gap-2 text-micro font-medium text-[var(--text-base)]">
                   Labels Relay should tap
                   <span class="font-normal text-[var(--text-weak)]">One per line</span>
                 </span>
                 <textarea
-                  class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[13px]/[1.5] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+                  class="min-h-36 resize-y rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-body/[1.5] text-[var(--text-strong)] placeholder:text-[var(--text-weaker)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
                   value={manualText()}
                   placeholder={"English\nPortuguês\n日本語"}
                   onInput={(event) => setManualText(event.currentTarget.value)}
                 />
-                <span class="text-[10.5px] text-[var(--text-weak)]">
+                <span class="text-micro text-[var(--text-weak)]">
                   Relay looks for each label in the value list. You can set the paths below.
                 </span>
               </label>
             }
           >
-            <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
+            <div class="grid gap-2 rounded-xl bg-[var(--surface-base)] p-2.5">
               <label class="grid gap-1.5">
-                <span class="text-[10.5px] font-medium text-[var(--text-base)]">Android app</span>
+                <span class="text-micro font-medium text-[var(--text-base)]">Android app</span>
                 <input
-                  class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[13px]"
+                  class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-body"
                   value={androidPackage()}
                   placeholder="ai.x.grok"
                   onInput={(event) => setAndroidPackage(event.currentTarget.value)}
@@ -457,17 +457,17 @@ export function AppMapStateSetEditor(props: {
                 {discoveringLocales() ? "Reading app languages…" : "Read supported languages"}
               </Button>
               <label class="grid gap-1.5">
-                <span class="flex items-center justify-between gap-2 text-[10.5px] font-medium text-[var(--text-base)]">
+                <span class="flex items-center justify-between gap-2 text-micro font-medium text-[var(--text-base)]">
                   App languages
                   <span class="font-normal text-[var(--text-weak)]">Locale | label</span>
                 </span>
                 <textarea
-                  class="min-h-36 resize-y rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 font-mono text-[12px]/[1.5] text-[var(--text-strong)]"
+                  class="min-h-36 resize-y rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 font-mono text-caption/[1.5] text-[var(--text-strong)]"
                   value={localeText()}
                   placeholder={"en | English\nit | Italiano\npt-BR | Português (Brasil)"}
                   onInput={(event) => setLocaleText(event.currentTarget.value)}
                 />
-                <span class="text-[10.5px]/[1.4] text-[var(--text-weak)]">
+                <span class="text-micro/[1.4] text-[var(--text-weak)]">
                   Reads the installed app’s declared languages. No device navigation is needed.
                 </span>
               </label>
@@ -476,7 +476,7 @@ export function AppMapStateSetEditor(props: {
         }
       >
         <div class="grid gap-2">
-          <div class="rounded-[9px] bg-[var(--surface-base)] px-3 py-2.5 text-[11px]/[1.45] text-[var(--text-weak)]">
+          <div class="rounded-xl bg-[var(--surface-base)] px-3 py-2.5 text-caption/[1.45] text-[var(--text-weak)]">
             Visible list reads exactly what is open on the device now. It does not search the app or
             discover every supported language.
             <Show when={kind() === "language"}>
@@ -518,7 +518,7 @@ export function AppMapStateSetEditor(props: {
             {(status) => (
               <p
                 class={cn(
-                  "m-0 rounded-[8px] px-2.5 py-2 text-[10.5px]/[1.4]",
+                  "m-0 rounded-lg px-2.5 py-2 text-micro/[1.4]",
                   status().tone === "success"
                     ? "bg-[var(--product-accent-soft)] text-[var(--text-base)]"
                     : "bg-[var(--surface-base)] text-[var(--text-base)]",
@@ -533,18 +533,18 @@ export function AppMapStateSetEditor(props: {
           <Show
             when={rows().length}
             fallback={
-              <div class="rounded-[9px] bg-[var(--surface-base)] px-3 py-4 text-center">
-                <strong class="block text-[12px] text-[var(--text-strong)]">
+              <div class="rounded-xl bg-[var(--surface-base)] px-3 py-4 text-center">
+                <strong class="block text-caption text-[var(--text-strong)]">
                   Open a value list on your device
                 </strong>
-                <span class="mt-1 block text-[11px] text-[var(--text-weak)]">
+                <span class="mt-1 block text-caption text-[var(--text-weak)]">
                   Then choose Read visible list and mark one or two examples.
                 </span>
               </div>
             }
           >
             <div
-              class="grid max-h-56 gap-1 overflow-y-auto overscroll-contain rounded-[9px] border border-[var(--border-weak-base)] p-1.5"
+              class="grid max-h-56 gap-1 overflow-y-auto overscroll-contain rounded-xl border border-[var(--border-weak-base)] p-1.5"
               onWheel={(event) => event.stopPropagation()}
             >
               <For each={rows()}>
@@ -554,7 +554,7 @@ export function AppMapStateSetEditor(props: {
                     <button
                       type="button"
                       class={cn(
-                        "flex min-h-10 items-center gap-2 rounded-[7px] px-2.5 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+                        "flex min-h-10 items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
                         selected()
                           ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
                           : "text-[var(--text-base)] hover:bg-[var(--surface-base-hover)]",
@@ -564,7 +564,7 @@ export function AppMapStateSetEditor(props: {
                     >
                       <span
                         class={cn(
-                          "grid size-4 shrink-0 place-items-center rounded-[4px] border",
+                          "grid size-4 shrink-0 place-items-center rounded border",
                           selected()
                             ? "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]"
                             : "border-[var(--border-strong-base)]",
@@ -574,11 +574,11 @@ export function AppMapStateSetEditor(props: {
                           <Icon name="check" size={9} />
                         </Show>
                       </span>
-                      <span class="min-w-0 flex-1 truncate text-[12px]">
+                      <span class="min-w-0 flex-1 truncate text-caption">
                         {row.label ?? row.value}
                       </span>
                       <Show when={selected()}>
-                        <span class="text-[10px] text-[var(--text-weak)]">Example</span>
+                        <span class="text-micro text-[var(--text-weak)]">Example</span>
                       </Show>
                     </button>
                   );
@@ -592,23 +592,23 @@ export function AppMapStateSetEditor(props: {
       <Show when={sourceMode() !== "android"}>
         <button
           type="button"
-          class="flex min-h-10 items-center justify-between rounded-[8px] px-2 text-left text-[11.5px] text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          class="flex min-h-10 items-center justify-between rounded-lg px-2 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
           aria-expanded={pathsOpen()}
           onClick={() => setPathsOpen((open) => !open)}
         >
           <span>Where is the list?</span>
-          <span class="flex items-center gap-1 text-[10.5px] text-[var(--text-weak)]">
+          <span class="flex items-center gap-1 text-micro text-[var(--text-weak)]">
             Set start and return paths
             <Icon name={pathsOpen() ? "chevron-up" : "chevron-down"} size={11} />
           </span>
         </button>
       </Show>
       <Show when={sourceMode() !== "android" && pathsOpen()}>
-        <div class="grid gap-2 rounded-[9px] bg-[var(--surface-base)] p-2.5">
+        <div class="grid gap-2 rounded-xl bg-[var(--surface-base)] p-2.5">
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">Open the value list with</span>
+            <span class="text-micro text-[var(--text-base)]">Open the value list with</span>
             <select
-              class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
+              class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-caption"
               value={inConnectionId()}
               onChange={(event) => setInConnectionId(event.currentTarget.value)}
             >
@@ -619,9 +619,9 @@ export function AppMapStateSetEditor(props: {
             </select>
           </label>
           <label class="grid gap-1">
-            <span class="text-[10.5px] text-[var(--text-base)]">After choosing a value</span>
+            <span class="text-micro text-[var(--text-base)]">After choosing a value</span>
             <select
-              class="h-10 rounded-[8px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-[12px]"
+              class="h-10 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 text-caption"
               value={outConnectionId()}
               onChange={(event) => setOutConnectionId(event.currentTarget.value)}
             >

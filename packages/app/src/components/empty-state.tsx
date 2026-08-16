@@ -65,10 +65,10 @@ export function EmptyState(props: EmptyStateProps) {
           class={cn(
             "m-0 tracking-tight text-text-strong",
             size() === "sm"
-              ? "text-12-medium"
+              ? "text-caption font-medium"
               : size() === "lg"
-                ? "text-[17px] font-semibold tracking-[-0.02em]"
-                : "text-14-medium",
+                ? "text-title font-semibold tracking-[-0.02em]"
+                : "text-body font-medium",
           )}
         >
           {props.title}
@@ -77,7 +77,7 @@ export function EmptyState(props: EmptyStateProps) {
           <p
             class={cn(
               "m-0 text-text-base",
-              size() === "sm" ? "max-w-[260px] text-12-regular" : "max-w-[300px] text-14-regular",
+              size() === "sm" ? "max-w-[260px] text-caption" : "max-w-[300px] text-body",
             )}
           >
             {props.description}
@@ -87,7 +87,7 @@ export function EmptyState(props: EmptyStateProps) {
           <code
             class={cn(
               mono,
-              "mt-2 rounded-md bg-surface-base px-2.5 py-1 text-12-regular text-text-strong shadow-xs-border-base",
+              "mt-2 rounded-md bg-surface-base px-2.5 py-1 text-caption text-text-strong shadow-xs-border-base",
             )}
           >
             {props.code}
@@ -110,7 +110,7 @@ export function EmptyState(props: EmptyStateProps) {
           <Show when={props.secondaryLabel && props.onSecondary}>
             <button
               type="button"
-              class="h-7 px-2 text-12-medium text-text-base transition-colors hover:text-text-strong"
+              class="h-7 px-2 text-caption font-medium text-text-base transition-colors hover:text-text-strong"
               onClick={() => props.onSecondary?.()}
             >
               {props.secondaryLabel}

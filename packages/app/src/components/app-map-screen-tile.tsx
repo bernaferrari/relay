@@ -38,10 +38,10 @@ export function AppMapScreenTile(props: {
   return (
     <button
       type="button"
-      class="group min-w-0 rounded-[10px] bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)]"
+      class="group min-w-0 rounded-xl bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)]"
       onClick={props.onOpen}
     >
-      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[9px] bg-[var(--background-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),0_8px_20px_rgb(0_0_0/7%)]">
+      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--border-strong-base),0_8px_20px_rgb(0_0_0/7%)]">
         <Show when={image()} fallback={<EmptyScreenImage />}>
           <OrientedScreenshot
             src={image()}
@@ -60,7 +60,7 @@ export function AppMapScreenTile(props: {
         <Show when={props.screen.handoff}>
           {(handoff) => (
             <span
-              class="absolute top-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[var(--surface-base)] px-2 text-[9.5px] font-semibold text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)]"
+              class="absolute top-2 left-2 inline-flex min-h-6 items-center gap-1 rounded-full bg-[var(--surface-base)] px-2 text-micro font-semibold text-[var(--text-base)] shadow-[0_1px_5px_rgb(0_0_0/12%)]"
               title={`Owned by ${handoff().ownerApp} · returns with ${handoff().returnAction}`}
             >
               <Icon name="external" size={10} /> Handoff
@@ -78,7 +78,7 @@ export function AppMapScreenTile(props: {
       </div>
       <div class="grid gap-2 px-1 pt-2.5 pb-1">
         <div class="flex min-w-0 items-start justify-between gap-2">
-          <strong class="truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
+          <strong class="truncate text-body font-semibold text-[var(--text-strong)]">
             {props.screen.title}
           </strong>
           <Icon
@@ -87,7 +87,7 @@ export function AppMapScreenTile(props: {
             class="mt-0.5 shrink-0 text-[var(--text-weak)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
           />
         </div>
-        <div class="flex min-w-0 items-center gap-2 text-[10px] text-[var(--text-weak)]">
+        <div class="flex min-w-0 items-center gap-2 text-micro text-[var(--text-weak)]">
           <span class="tabular-nums">{incomingLabel(props)}</span>
           <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
           <span class="tabular-nums">
@@ -110,11 +110,11 @@ export function AppMapScreenTile(props: {
 function EmptyScreenImage() {
   return (
     <div class="grid max-w-[170px] justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors duration-150 group-hover:text-[var(--text-base)]">
-      <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--surface-base-hover)]">
+      <span class="grid size-9 place-items-center rounded-xl bg-[var(--surface-base-hover)]">
         <Icon name="camera" size={15} />
       </span>
-      <span class="text-[11px] font-medium text-[var(--text-base)]">No screenshot</span>
-      <span class="text-[9.5px]/[1.35]">Open on the map to save one</span>
+      <span class="text-caption font-medium text-[var(--text-base)]">No screenshot</span>
+      <span class="text-micro/[1.35]">Open on the map to save one</span>
     </div>
   );
 }
@@ -130,7 +130,7 @@ function incomingLabel(props: { screen: Screen; incoming: number; isStart: boole
 
 function statePill(state: AppMapScreenState): string {
   return cn(
-    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--background-base)] px-1.5 text-[8.5px] font-semibold shadow-[0_1px_5px_rgb(0_0_0/16%)]",
+    "inline-flex min-h-5 items-center gap-1 rounded-full bg-[var(--background-base)] px-1.5 text-micro font-semibold shadow-[0_1px_5px_rgb(0_0_0/16%)]",
     state === "passed"
       ? "text-[var(--icon-success-base)]"
       : state === "failed"

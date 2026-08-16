@@ -45,7 +45,7 @@ type DataRow = {
 };
 
 const fieldClass =
-  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-[16px]/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
+  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-title/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
 
 export function DataWorkspace(props: {
   onConfigureProvider: () => void;
@@ -151,7 +151,7 @@ export function DataWorkspace(props: {
           <h2
             class={
               props.embedded
-                ? "m-0 mt-0.5 truncate text-[16px] font-semibold tracking-[-0.015em] text-text-strong"
+                ? "m-0 mt-0.5 truncate text-title font-semibold tracking-[-0.015em] text-text-strong"
                 : productPageTitle
             }
           >
@@ -191,7 +191,7 @@ export function DataWorkspace(props: {
         )}
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-[0_1px_2px_rgb(0_0_0/4%)]">
-          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-[10px]/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
+          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-micro/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
             <span>Variable</span>
             <span>Scope</span>
             <span>Source</span>
@@ -210,8 +210,8 @@ export function DataWorkspace(props: {
                 onClick={() => setSelectedId(row.id)}
               >
                 <span class={copyStack}>
-                  <strong class={`${copyTitle} block truncate text-[13px]`}>{row.name}</strong>
-                  <small class={`${copyDescription} block truncate text-[10px] text-text-weaker`}>
+                  <strong class={`${copyTitle} block truncate text-body`}>{row.name}</strong>
+                  <small class={`${copyDescription} block truncate text-micro text-text-weaker`}>
                     {draftIds().has(row.id)
                       ? "Not saved yet"
                       : row.scope === "private"
@@ -221,18 +221,18 @@ export function DataWorkspace(props: {
                           : "Shared across tests"}
                   </small>
                 </span>
-                <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-[10px]/[1.25] text-text-weak">
+                <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak">
                   {row.scope === "private" ? "Private" : "Shared"}
                 </span>
                 <span
                   class={cn(
-                    "w-fit rounded-md bg-surface-weak px-2 py-1 text-[10px]/[1.25] text-text-weak",
+                    "w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak",
                     row.mode === "AI" && "bg-surface-info-weak text-text-info-base",
                   )}
                 >
                   {row.mode === "AI" ? "Generated" : row.mode === "List" ? "List" : "Fixed"}
                 </span>
-                <span class="min-w-0 truncate text-[11px]/[1.3] text-text-weak">
+                <span class="min-w-0 truncate text-caption/[1.3] text-text-weak">
                   {row.scope === "private"
                     ? row.privateValue
                       ? "Set locally"
@@ -249,10 +249,10 @@ export function DataWorkspace(props: {
                 <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-info-weak text-text-info-base">
                   <Icon name="grid" size={17} />
                 </span>
-                <strong class="mt-3 block text-[14px]/[1.3] text-text-strong">
+                <strong class="mt-3 block text-body/[1.3] text-text-strong">
                   Add data only when a test needs it
                 </strong>
-                <p class="m-0 mt-1.5 text-[11px]/[1.5] text-text-weaker">
+                <p class="m-0 mt-1.5 text-caption/[1.5] text-text-weaker">
                   Use a list to cover plans or roles. Language and theme can drive a data run. Keep
                   logins private so each teammate can use their own account.
                 </p>
@@ -272,7 +272,7 @@ export function DataWorkspace(props: {
               <header class="flex min-h-16 items-center justify-between border-b border-border-weak-base px-4">
                 <div class="min-w-0">
                   <span class={eyebrow}>Variable</span>
-                  <strong class="mt-1 block truncate text-[16px]/[1.25] text-text-base">
+                  <strong class="mt-1 block truncate text-title/[1.25] text-text-base">
                     {row().name}
                   </strong>
                 </div>
@@ -287,7 +287,7 @@ export function DataWorkspace(props: {
               </header>
               <div class="grid gap-4 p-4">
                 <fieldset class="grid gap-1.5 border-0 p-0">
-                  <legend class="text-[11px]/[1.25] font-semibold text-text-weak">
+                  <legend class="text-caption/[1.25] font-semibold text-text-weak">
                     Who can see the value
                   </legend>
                   <div class="grid grid-cols-2 gap-1 rounded-lg bg-surface-weak p-1">
@@ -296,7 +296,7 @@ export function DataWorkspace(props: {
                         <button
                           type="button"
                           class={cn(
-                            "min-h-10 rounded-md px-2 text-[11px] font-medium text-text-weak transition-colors duration-150",
+                            "min-h-10 rounded-md px-2 text-caption font-medium text-text-weak transition-colors duration-150",
                             row().scope === scope &&
                               "bg-background-stronger text-text-strong shadow-[0_1px_2px_rgb(0_0_0/8%)]",
                           )}
@@ -318,14 +318,14 @@ export function DataWorkspace(props: {
                       )}
                     </For>
                   </div>
-                  <small class="text-[10px]/[1.4] text-text-weaker">
+                  <small class="text-micro/[1.4] text-text-weaker">
                     {row().scope === "private"
                       ? "The definition is shared; your value stays in this app on this computer."
                       : "Project values sync with the map and are visible to collaborators."}
                   </small>
                 </fieldset>
                 <label class="grid gap-1.5">
-                  <span class="text-[11px]/[1.25] font-semibold text-text-weak">Name</span>
+                  <span class="text-caption/[1.25] font-semibold text-text-weak">Name</span>
                   <input
                     class={fieldClass}
                     value={row().name}
@@ -346,7 +346,7 @@ export function DataWorkspace(props: {
                       when={row().mode === "List"}
                       fallback={
                         <label class="grid gap-1.5">
-                          <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                          <span class="text-caption/[1.25] font-semibold text-text-weak">
                             {row().mode === "AI" ? "Generation prompt" : "Value"}
                           </span>
                           <textarea
@@ -361,7 +361,7 @@ export function DataWorkspace(props: {
                       }
                     >
                       <label class="grid gap-1.5">
-                        <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                        <span class="text-caption/[1.25] font-semibold text-text-weak">
                           Allowed values
                         </span>
                         <textarea
@@ -382,7 +382,7 @@ export function DataWorkspace(props: {
                   }
                 >
                   <label class="grid gap-1.5">
-                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">Your value</span>
+                    <span class="text-caption/[1.25] font-semibold text-text-weak">Your value</span>
                     <input
                       class={fieldClass}
                       type="password"
@@ -399,7 +399,7 @@ export function DataWorkspace(props: {
                 </Show>
                 <Show when={row().scope === "shared"}>
                   <label class="grid gap-1.5">
-                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                    <span class="text-caption/[1.25] font-semibold text-text-weak">
                       Safe fallback
                     </span>
                     <textarea
@@ -410,7 +410,7 @@ export function DataWorkspace(props: {
                         patchRow(row().id, { fallback: event.currentTarget.value })
                       }
                     />
-                    <small class="text-[10px]/[1.3] text-text-weaker">
+                    <small class="text-micro/[1.3] text-text-weaker">
                       Used when generation is unavailable.
                     </small>
                   </label>
@@ -419,12 +419,12 @@ export function DataWorkspace(props: {
               <footer class="flex min-h-14 items-center justify-between gap-3 border-t border-border-weak-base px-4">
                 <button
                   type="button"
-                  class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[11px]/[1.25] text-text-critical-base hover:bg-surface-critical-weak"
+                  class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-caption/[1.25] text-text-critical-base hover:bg-surface-critical-weak"
                   onClick={() => deleteRow(row().id)}
                 >
                   <Icon name="trash" size={14} /> Delete variable
                 </button>
-                <span class="text-[10px]/[1.25] text-text-weaker">
+                <span class="text-micro/[1.25] text-text-weaker">
                   {draftIds().has(row().id)
                     ? "Edit anything to save"
                     : "Changes save automatically"}

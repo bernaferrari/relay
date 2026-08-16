@@ -17,7 +17,7 @@ const defaults = {
   organization: "local",
   project: "default",
   credentialSource: "env:RELAY_AUTH_TOKEN",
-  timeout: "20000",
+  timeout: "180000",
   profile: defaultRelayMcpProfile,
 } as const;
 

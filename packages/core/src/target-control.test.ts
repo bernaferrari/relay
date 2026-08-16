@@ -37,6 +37,22 @@ test("an automated run reservation rejects manual interleaving", async () => {
   await runTargetMutation("ipad", null, async () => undefined);
 });
 
+test("queued jobs share occupancy so the next run still owns the target", async () => {
+  const first = reserveTargetControl("ipad", "job-1");
+  const second = reserveTargetControl("ipad", "job-2");
+  try {
+    await assert.rejects(
+      runTargetMutation("ipad", null, async () => undefined),
+      TargetControlReservedError,
+    );
+    await runTargetMutation("ipad", "job-1", async () => undefined);
+    await runTargetMutation("ipad", "job-2", async () => undefined);
+  } finally {
+    first();
+    second();
+  }
+});
+
 test("a composite mutation can call target-aware device helpers without deadlocking", async () => {
   const order: string[] = [];
   await runTargetMutation("ipad", null, async () => {

@@ -33,7 +33,7 @@ export function CanvasNoteCard(props: {
   let textAtFocus = props.note.text;
   return (
     <article
-      class="absolute w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_74%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
+      class="absolute w-[220px] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_74%,transparent)] bg-[color-mix(in_srgb,var(--surface-base)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
       style={{ transform: `translate3d(${props.note.x}px, ${props.note.y}px, 0)` }}
     >
       <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)] px-1">
@@ -45,11 +45,11 @@ export function CanvasNoteCard(props: {
           onPointerDown={props.onPointerDown}
         >
           <Icon name="move" size={11} class="text-[var(--text-weak)]" />
-          <span class="text-[10px] font-semibold text-[var(--text-strong)]">Note</span>
+          <span class="text-micro font-semibold text-[var(--text-strong)]">Note</span>
         </button>
         <button
           type="button"
-          class="relative grid size-8 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)]"
+          class="relative grid size-8 place-items-center rounded-lg text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--icon-critical-base)]"
           aria-label="Delete note"
           onClick={props.onDelete}
         >
@@ -57,7 +57,7 @@ export function CanvasNoteCard(props: {
         </button>
       </header>
       <textarea
-        class="block min-h-[96px] w-full resize-none bg-transparent px-2.5 py-2 text-[11px]/[1.5] text-[var(--text-base)] outline-none placeholder:text-[var(--text-weak)]"
+        class="block min-h-[96px] w-full resize-none bg-transparent px-2.5 py-2 text-caption/[1.5] text-[var(--text-base)] outline-none placeholder:text-[var(--text-weak)]"
         value={props.note.text}
         aria-label="Canvas note"
         onPointerDown={(event) => event.stopPropagation()}
@@ -106,7 +106,7 @@ export function CanvasCombineCard(props: {
   return (
     <article
       data-app-map-combine-id={props.id}
-      class="group/matrix absolute z-[8] w-[300px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)]"
+      class="group/matrix absolute z-[8] w-[300px] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)]"
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       aria-label={`Edit run matrix ${props.name}`}
       onPointerDown={(event) => event.stopPropagation()}
@@ -117,12 +117,12 @@ export function CanvasCombineCard(props: {
           class="flex min-h-11 w-full items-center gap-2 px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
           onClick={(event) => open(event, "plan")}
         >
-          <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-base)] text-[var(--text-base)]">
+          <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--surface-base)] text-[var(--text-base)]">
             <Icon name="grid" size={12} />
           </span>
           <span class="min-w-0 flex-1">
-            <span class="block text-[10px] font-medium text-[var(--text-weak)]">Run matrix</span>
-            <strong class="block truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
+            <span class="block text-micro font-medium text-[var(--text-weak)]">Run matrix</span>
+            <strong class="block truncate text-caption font-semibold text-[var(--text-strong)]">
               {props.name}
             </strong>
           </span>
@@ -132,20 +132,20 @@ export function CanvasCombineCard(props: {
       <div class="grid grid-cols-[1fr_20px_1fr] items-stretch gap-1.5 px-2 py-2">
         <button
           type="button"
-          class="min-h-16 min-w-0 rounded-[8px] px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          class="min-h-16 min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
           aria-label="Edit matrix modifiers"
           onClick={(event) => open(event, "modifiers")}
         >
-          <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
+          <span class="block text-micro font-medium text-[var(--text-weak)]">
             {props.modifiers.length === 1 ? "Modifier" : "Modifiers"}
           </span>
           <For each={props.modifiers}>
             {(modifier) => (
               <div class="mt-1 min-w-0">
-                <strong class="block truncate text-[11px] font-medium text-[var(--text-strong)]">
+                <strong class="block truncate text-caption font-medium text-[var(--text-strong)]">
                   {modifier.name}
                 </strong>
-                <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                <span class="block truncate text-micro text-[var(--text-weak)]">
                   {modifier.values.join(" · ")}
                 </span>
               </div>
@@ -153,21 +153,21 @@ export function CanvasCombineCard(props: {
           </For>
         </button>
         <span
-          class="grid place-items-center text-[14px] text-[var(--text-weaker)]"
+          class="grid place-items-center text-body text-[var(--text-weaker)]"
           aria-hidden="true"
         >
           ×
         </span>
         <button
           type="button"
-          class="min-h-16 min-w-0 rounded-[8px] px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          class="min-h-16 min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
           aria-label="Edit matrix tests"
           onClick={(event) => open(event, "tests")}
         >
-          <span class="block text-[9.5px] font-medium text-[var(--text-weak)]">
+          <span class="block text-micro font-medium text-[var(--text-weak)]">
             {props.tests.length === 1 ? "Test" : "Tests"}
           </span>
-          <p class="m-0 mt-1 line-clamp-3 text-[11px]/[1.35] font-medium text-[var(--text-strong)]">
+          <p class="m-0 mt-1 line-clamp-3 text-caption/[1.35] font-medium text-[var(--text-strong)]">
             {props.tests.join(" · ")}
           </p>
         </button>
@@ -188,7 +188,7 @@ export function CanvasCombineCard(props: {
             aria-hidden="true"
           />
         </Show>
-        <span class="min-w-0 truncate text-[10px] text-[var(--text-weak)]">
+        <span class="min-w-0 truncate text-micro text-[var(--text-weak)]">
           {props.run?.active
             ? "Running now"
             : props.run
@@ -199,7 +199,7 @@ export function CanvasCombineCard(props: {
         </span>
         <span
           class={cn(
-            "shrink-0 text-[10px] font-medium tabular-nums",
+            "shrink-0 text-micro font-medium tabular-nums",
             props.run?.problems
               ? "text-[var(--icon-critical-base)]"
               : props.run && !props.run.active
@@ -345,7 +345,7 @@ export function ScreenCard(props: {
           role="toolbar"
           aria-label={`${props.title} screen actions`}
           data-app-map-screen-actions
-          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-[9px] border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[0_4px_14px_rgb(0_0_0/10%)]"
+          class="absolute top-[30px] z-30 flex items-center gap-0.5 rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_42%,transparent)] bg-[var(--map-control-surface)] p-[3px] shadow-[0_4px_14px_rgb(0_0_0/10%)]"
           style={{ left: `${props.geometry.frameLeft + props.geometry.frameWidth + 10}px` }}
         >
           <IconButton
@@ -377,7 +377,7 @@ export function ScreenCard(props: {
           fallback={
             <strong
               class={cn(
-                "col-start-2 min-w-0 cursor-grab truncate text-center text-[12px] font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing",
+                "col-start-2 min-w-0 cursor-grab truncate text-center text-caption font-medium tracking-[-0.01em] text-[var(--text-strong)] active:cursor-grabbing",
                 showsLeftStatus() || showsRunStatus() ? "max-w-[148px]" : "max-w-[228px]",
               )}
               data-tip="Drag to move · Double-click to rename · F2"
@@ -397,7 +397,7 @@ export function ScreenCard(props: {
         >
           <input
             ref={(element) => (titleInput = element)}
-            class="col-span-3 box-border h-6 min-w-0 w-full rounded-[5px] border border-[var(--text-interactive-base)] bg-[var(--map-control-surface)] px-1.5 text-center text-[12px]/[1.4625] font-medium tracking-[-0.01em] text-[var(--text-strong)] outline-none shadow-[0_0_0_1px_var(--text-interactive-base)]"
+            class="col-span-3 box-border h-6 min-w-0 w-full rounded-md border border-[var(--text-interactive-base)] bg-[var(--map-control-surface)] px-1.5 text-center text-caption/[1.4625] font-medium tracking-[-0.01em] text-[var(--text-strong)] outline-none shadow-[0_0_0_1px_var(--text-interactive-base)]"
             aria-label="Screen name"
             data-focus-contained
             value={props.title}
@@ -416,27 +416,27 @@ export function ScreenCard(props: {
         </Show>
         <Show when={!props.editing && props.connectionOrigin}>
           <span
-            class="absolute left-[calc(100%+4px)] shrink-0 whitespace-nowrap rounded-[5px] bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--text-interactive-base)]"
+            class="absolute left-[calc(100%+4px)] shrink-0 whitespace-nowrap rounded-md bg-[color-mix(in_srgb,var(--text-interactive-base)_16%,transparent)] px-1.5 py-0.5 text-micro font-semibold text-[var(--text-interactive-base)]"
             data-tip="Selected path starts on this screen"
           >
             Origin
           </span>
         </Show>
         <Show when={!props.editing && !props.connectionOrigin && props.here}>
-          <span class="col-start-1 row-start-1 inline-flex items-center justify-self-start gap-1 whitespace-nowrap rounded-[5px] bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--icon-success-base)]">
+          <span class="col-start-1 row-start-1 inline-flex items-center justify-self-start gap-1 whitespace-nowrap rounded-md bg-[color-mix(in_srgb,var(--icon-success-base)_16%,transparent)] px-1.5 py-0.5 text-micro font-semibold text-[var(--icon-success-base)]">
             <i class="size-1.5 rounded-full bg-current motion-safe:animate-pulse" />
             Here
           </span>
         </Show>
         <Show when={showsStart()}>
-          <span class="col-start-1 row-start-1 justify-self-start whitespace-nowrap rounded-[5px] bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--text-interactive-base)]">
+          <span class="col-start-1 row-start-1 justify-self-start whitespace-nowrap rounded-md bg-[var(--product-accent-soft)] px-1.5 py-0.5 text-micro font-medium text-[var(--text-interactive-base)]">
             Start
           </span>
         </Show>
         <Show when={showsRunStatus()}>
           <span
             class={cn(
-              "col-start-3 row-start-1 inline-flex items-center justify-self-end gap-1 whitespace-nowrap text-[9px] font-medium capitalize",
+              "col-start-3 row-start-1 inline-flex items-center justify-self-end gap-1 whitespace-nowrap text-micro font-medium capitalize",
               props.runState === "failed"
                 ? "text-[var(--icon-critical-base)]"
                 : props.runState === "running"
@@ -457,7 +457,7 @@ export function ScreenCard(props: {
           <div
             data-screen-frame
             class={cn(
-              "grid min-h-0 place-items-center overflow-hidden rounded-[9px] bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-150",
+              "grid min-h-0 place-items-center overflow-hidden rounded-xl bg-[var(--background-base)] text-center transition-[box-shadow,transform] duration-150",
               frameStateClass(),
             )}
             style={{
@@ -466,10 +466,10 @@ export function ScreenCard(props: {
             }}
           >
             <div class="grid max-w-[168px] justify-items-center gap-2 text-[var(--text-weak)] transition-colors duration-150 group-hover/screen:text-[var(--text-base)]">
-              <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--surface-base-hover)]">
+              <span class="grid size-8 place-items-center rounded-xl bg-[var(--surface-base-hover)]">
                 <Icon name="camera" size={14} />
               </span>
-              <span class="text-[10.5px] font-medium text-[var(--text-base)]">No screenshot</span>
+              <span class="text-micro font-medium text-[var(--text-base)]">No screenshot</span>
             </div>
           </div>
         }
@@ -478,7 +478,7 @@ export function ScreenCard(props: {
           <div
             data-screen-frame
             class={cn(
-              "min-h-0 overflow-hidden rounded-[9px] bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-150",
+              "min-h-0 overflow-hidden rounded-xl bg-[oklch(0.12_0.01_270)] transition-[box-shadow,transform] duration-150",
               frameStateClass(),
             )}
             style={{
@@ -519,7 +519,7 @@ export function ScreenCard(props: {
                             <Show when={rect}>
                               {(value) => (
                                 <div
-                                  class="absolute rounded-[4px] border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_12px_color-mix(in_srgb,var(--text-interactive-base)_36%,transparent)]"
+                                  class="absolute rounded border-2 border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%),0_0_12px_color-mix(in_srgb,var(--text-interactive-base)_36%,transparent)]"
                                   style={{
                                     left: `${value().x * 100}%`,
                                     top: `${value().y * 100}%`,

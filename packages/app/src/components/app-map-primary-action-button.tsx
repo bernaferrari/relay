@@ -17,7 +17,7 @@ export function AppMapPrimaryActionButton(props: {
       <Button
         variant="primary"
         size="lg"
-        class="text-[12px] aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+        class="text-caption aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
         aria-describedby={control().describedBy}
         aria-disabled={control().blocked ? "true" : undefined}
         data-tip={control().reason || props.fallbackTip}

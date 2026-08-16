@@ -69,6 +69,7 @@ import {
   authoringSessions,
   runWithOperationContext,
   reconcilePersistedAppMapRuns,
+  recoverCollaborationState,
   type AuthoringRuntime,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
@@ -1141,9 +1142,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
         }),
     );
   }
-  // App Map run entities are a rebuildable projection of immutable reports.
-  // Reconcile before accepting requests so a crash can never leave Coverage
-  // permanently behind the Run Observatory.
+  // Rebuild App Map run projections and repair persisted collaboration state.
+  await recoverCollaborationState();
   await reconcilePersistedAppMapRuns();
   await pruneIosVideoTakes();
   assertSafeBinding(host, token);

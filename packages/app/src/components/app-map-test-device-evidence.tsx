@@ -12,17 +12,22 @@ import {
   runEvidenceCounts,
 } from "../lib/app-map-test-evidence";
 import { cn } from "../lib/cn";
+import { productIconButton } from "../lib/ui";
 import { deviceReadiness } from "../lib/device-readiness";
+import { scenarioStepTitle } from "../lib/app-map-test-step-path";
 import { AppMapTestDevicePanel } from "./app-map-test-device-panel";
 import { AppMapTestEvidencePanel } from "./app-map-test-evidence-panel";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import { useAppMapScrollSurface } from "../lib/use-app-map-scroll-surface";
+import { Icon } from "./icon";
 
 export type InspectorTab = "device" | "evidence";
 
-const tabClass =
-  "relative min-h-11 flex-1 border-b-2 border-transparent px-3 text-[11px] font-semibold transition-[color,border-color,background-color,transform] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus";
-
+/**
+ * The right rail. It answers one question — "what does this step look like?" —
+ * either right now on the device or as it was in the last run, so the two views
+ * are one switch rather than two unrelated column headers.
+ */
 export function AppMapTestDeviceEvidence(props: {
   appMap?: AppMap;
   test: AppMapScenarioTest;
@@ -33,6 +38,7 @@ export function AppMapTestDeviceEvidence(props: {
   selectedTab?: InspectorTab;
   onTabChange?: (tab: InspectorTab) => void;
   hideTabs?: boolean;
+  onClose?: () => void;
 }) {
   const server = useServer();
   const [tab, setTab] = createSignal<InspectorTab>("device");
@@ -75,6 +81,12 @@ export function AppMapTestDeviceEvidence(props: {
     provenanceForTestStep(props.compiledPlan, props.selectedStepId),
   );
   const selectedStep = createMemo(() => findTestStep(props.test.steps, props.selectedStepId));
+  const selectedStepLabel = createMemo(() => {
+    const step = selectedStep();
+    const map = props.appMap;
+    if (!step) return undefined;
+    return map ? scenarioStepTitle(map, step) : step.intent;
+  });
   const mappedLiveScreenId = createMemo(() => {
     const map = props.appMap;
     if (!map) return undefined;
@@ -167,38 +179,71 @@ export function AppMapTestDeviceEvidence(props: {
 
   return (
     <aside
-      class="flex h-full min-h-0 flex-col border-t border-border-weak-base bg-background-base"
-      aria-label="Test device and evidence"
+      class="flex h-full min-h-0 flex-col bg-background-base"
+      aria-label="Device and results for the selected step"
     >
       <div
-        class={props.hideTabs ? "hidden" : "flex border-b border-border-weak-base px-2"}
-        role="tablist"
-        aria-label="Test context"
+        class={cn(
+          "flex min-h-9 shrink-0 items-center gap-1 border-b border-border-weak-base px-2 py-1",
+          props.hideTabs && "hidden",
+        )}
         aria-hidden={props.hideTabs ? "true" : undefined}
       >
-        <ContextTab
-          ref={(element) => (deviceTab = element)}
-          tab="device"
-          selected={tab() === "device"}
-          onKeyDown={onTabKeyDown}
-          onSelect={() => selectTab("device")}
-        />
-        <ContextTab
-          ref={(element) => (evidenceTab = element)}
-          tab="evidence"
-          selected={tab() === "evidence"}
-          count={latestRun() ? 1 : 0}
-          onKeyDown={onTabKeyDown}
-          onSelect={() => selectTab("evidence")}
-        />
+        <Show when={props.onClose}>
+          <button
+            type="button"
+            class={cn(productIconButton, "size-8")}
+            aria-label="Hide device"
+            onClick={() => props.onClose?.()}
+          >
+            <Icon name="chevron-right" size={15} />
+          </button>
+        </Show>
+        <div
+          class="flex min-w-0 flex-1 gap-0.5 rounded-md bg-surface-base p-0.5"
+          role="tablist"
+          aria-label="Device view"
+        >
+          <ContextTab
+            ref={(element) => (deviceTab = element)}
+            tab="device"
+            selected={tab() === "device"}
+            onKeyDown={onTabKeyDown}
+            onSelect={() => selectTab("device")}
+          />
+          <ContextTab
+            ref={(element) => (evidenceTab = element)}
+            tab="evidence"
+            selected={tab() === "evidence"}
+            count={latestRun() ? 1 : 0}
+            onKeyDown={onTabKeyDown}
+            onSelect={() => selectTab("evidence")}
+          />
+        </div>
       </div>
+
+      <Show when={selectedStepLabel()}>
+        {(label) => (
+          <p
+            class="m-0 flex shrink-0 items-center gap-1.5 border-b border-border-weak-base px-2.5 py-1.5 text-caption/[1.3] text-text-weak"
+            data-test-rail-step={props.selectedStepId}
+          >
+            <Icon name="arrow-right" size={11} class="shrink-0 text-text-weaker" />
+            <span class="min-w-0 truncate">
+              <span class="text-text-weaker">Showing </span>
+              <span class="font-medium text-text-base">{label()}</span>
+            </span>
+          </p>
+        )}
+      </Show>
+
       <section
         id="test-context-device-panel"
         role="tabpanel"
         aria-labelledby="test-context-device-tab"
         hidden={tab() !== "device"}
         inert={tab() !== "device"}
-        class="min-h-[260px] flex-1 overflow-y-auto p-3"
+        class="min-h-0 flex-1 overflow-y-auto p-2.5"
       >
         <AppMapTestDevicePanel
           frame={currentFrame()}
@@ -231,7 +276,7 @@ export function AppMapTestDeviceEvidence(props: {
         aria-labelledby="test-context-evidence-tab"
         hidden={tab() !== "evidence"}
         inert={tab() !== "evidence"}
-        class="min-h-[260px] flex-1 overflow-y-auto p-3"
+        class="min-h-0 flex-1 overflow-y-auto p-2.5"
       >
         <AppMapTestEvidencePanel
           test={props.test}
@@ -290,6 +335,10 @@ function screenIdForTestStep(
   return undefined;
 }
 
+/**
+ * "Live" and "Last run" instead of "Device" and "Results": the map view already
+ * owns the word Results, and these two are the same subject at two moments.
+ */
 function ContextTab(props: {
   ref: (element: HTMLButtonElement) => void;
   tab: InspectorTab;
@@ -308,27 +357,22 @@ function ContextTab(props: {
       aria-selected={props.selected}
       tabindex={props.selected ? 0 : -1}
       class={cn(
-        tabClass,
+        "min-h-7 flex-1 rounded px-2 text-caption font-medium",
+        "transition-colors duration-150 motion-reduce:transition-none",
+        "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
         props.selected
-          ? "border-border-interactive-base text-text-strong"
-          : "text-text-weak hover:bg-surface-base-hover hover:text-text-strong",
+          ? "bg-background-base text-text-strong shadow-[0_1px_2px_rgb(0_0_0/6%)]"
+          : "text-text-weak hover:text-text-strong",
       )}
       onKeyDown={props.onKeyDown}
       onClick={props.onSelect}
     >
-      <span>{props.tab === "device" ? "Device" : "Results"}</span>
-      <Show when={props.tab === "evidence" && props.count !== undefined}>
+      {props.tab === "device" ? "Live" : "Last run"}
+      <Show when={props.tab === "evidence" && props.count}>
         <span
-          class={cn(
-            "ml-1 inline-grid min-w-5 place-items-center rounded-full px-1.5 text-[9px] tabular-nums",
-            props.selected
-              ? "bg-background-base text-text-strong"
-              : "bg-surface-base text-text-weak",
-          )}
-          aria-label={`${props.count} ${props.count === 1 ? "result" : "results"}`}
-        >
-          {props.count}
-        </span>
+          class="ml-1 inline-block size-1.5 rounded-full bg-icon-interactive-base align-middle"
+          aria-label="This test has a result"
+        />
       </Show>
     </button>
   );

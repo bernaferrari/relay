@@ -40,7 +40,7 @@ export function RunsRefreshControl(props: {
       <div class="flex items-center gap-2">
         <Show when={state().lastSuccessAt}>
           {(timestamp) => (
-            <span class="text-[11px] tabular-nums text-text-weak" aria-live="polite">
+            <span class="text-caption tabular-nums text-text-weak" aria-live="polite">
               Updated {new Date(timestamp()).toLocaleTimeString([], { timeStyle: "medium" })}
             </span>
           )}
@@ -66,7 +66,7 @@ export function RunsRefreshControl(props: {
       <Show when={state().error}>
         {(message) => (
           <div
-            class="flex items-center gap-2 text-right text-[11px] text-text-critical-base"
+            class="flex items-center gap-2 text-right text-caption text-text-critical-base"
             role="alert"
           >
             <span>{message()}</span>

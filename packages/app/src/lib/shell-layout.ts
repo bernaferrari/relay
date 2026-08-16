@@ -52,7 +52,7 @@ export const shellTopbarTitle =
 export const shellTopbarActions = "flex shrink-0 items-center gap-2.5 max-[680px]:gap-1";
 
 export const shellBreadcrumb = cn(
-  "flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--text-weak)]",
+  "flex min-w-0 items-center gap-1.5 text-body text-[var(--text-weak)]",
   "[&_strong]:min-w-0 [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap",
   "[&_strong]:font-medium [&_strong]:text-[var(--text-base)]",
 );
@@ -63,7 +63,7 @@ export const shellViewTabs = "flex items-center gap-1";
 
 export const shellViewTab = cn(
   "inline-flex min-h-[30px] items-center gap-[7px] rounded-lg px-2.5",
-  "text-[12px] font-medium text-[var(--text-weak)] transition-colors",
+  "text-caption font-medium text-[var(--text-weak)] transition-colors",
   "hover:enabled:bg-[var(--surface-base)] hover:enabled:text-[var(--text-strong)]",
   "disabled:cursor-not-allowed disabled:opacity-40",
 );
@@ -73,7 +73,7 @@ export const shellViewTabActive = cn(
   "shadow-[inset_0_0_0_1px_var(--border-strong-base)]",
 );
 
-export const shellSaveState = "mr-1.5 text-[11px] text-[var(--text-weak)]";
+export const shellSaveState = "mr-1.5 text-caption text-[var(--text-weak)]";
 
 export const shellStudioBody = cn(
   "grid min-h-0 min-w-0 flex-1",

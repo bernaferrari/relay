@@ -50,27 +50,27 @@ function CheckDetail(props: {
     <div class="grid gap-3 border-t border-border-weak-base px-3.5 py-3">
       <Show when={props.check.error}>
         <div class="grid gap-1 rounded-lg bg-surface-critical-weak px-3 py-2.5">
-          <span class="text-[9px] font-semibold tracking-[0.08em] text-text-critical-base uppercase">
+          <span class="text-micro font-semibold tracking-[0.08em] text-text-critical-base uppercase">
             Failure
           </span>
-          <p class="m-0 whitespace-pre-wrap break-words text-[11px]/[1.5] text-text-strong">
+          <p class="m-0 whitespace-pre-wrap break-words text-caption/[1.5] text-text-strong">
             {props.check.error}
           </p>
         </div>
       </Show>
       <Show when={props.check.dependencyReason}>
         <div class="grid gap-1 rounded-lg bg-surface-warning-weak px-3 py-2.5">
-          <span class="text-[9px] font-semibold tracking-[0.08em] text-text-warning-base uppercase">
+          <span class="text-micro font-semibold tracking-[0.08em] text-text-warning-base uppercase">
             {reasonLabel()}
           </span>
-          <p class="m-0 whitespace-pre-wrap break-words text-[11px]/[1.5] text-text-strong">
+          <p class="m-0 whitespace-pre-wrap break-words text-caption/[1.5] text-text-strong">
             {props.check.dependencyReason}
           </p>
         </div>
       </Show>
       <Show when={props.check.frames.length > 0}>
         <div class="grid gap-2">
-          <strong class="text-[10px] font-medium text-text-weak">Failure screenshot</strong>
+          <strong class="text-micro font-medium text-text-weak">Failure screenshot</strong>
           <For each={props.check.frames}>
             {(evidenceFrame) => {
               const source = () => props.frameSource?.(evidenceFrame) ?? "";
@@ -95,7 +95,7 @@ function CheckDetail(props: {
                       class="h-11 w-16 rounded-md bg-background-deep object-cover"
                     />
                   </Show>
-                  <span class="min-w-0 truncate text-[10.5px] text-text-base">
+                  <span class="min-w-0 truncate text-micro text-text-base">
                     {evidenceFrame.frame.caption ?? "Captured failure"}
                   </span>
                   <Show when={props.onOpenFrame}>
@@ -110,7 +110,7 @@ function CheckDetail(props: {
       <For each={props.check.evidence}>
         {(artifact) => (
           <details class="group rounded-lg border border-border-weak-base bg-background-base">
-            <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-[10.5px] font-medium text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+            <summary class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-micro font-medium text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
               Structured evidence
               <Icon
                 name="chevron-down"
@@ -118,14 +118,14 @@ function CheckDetail(props: {
                 class="transition-transform group-open:rotate-180"
               />
             </summary>
-            <pre class="m-0 max-h-64 overflow-auto border-t border-border-weak-base p-3 font-mono text-[9.5px]/[1.5] text-text-weak">
+            <pre class="m-0 max-h-64 overflow-auto border-t border-border-weak-base p-3 font-mono text-micro/[1.5] text-text-weak">
               {JSON.stringify(artifact.data, null, 2)}
             </pre>
           </details>
         )}
       </For>
       {props.check.frames.length || props.check.evidence.length ? null : (
-        <p class="m-0 text-[10.5px]/[1.45] text-text-weaker">
+        <p class="m-0 text-micro/[1.45] text-text-weaker">
           No additional screenshot or structured evidence was captured for this check.
         </p>
       )}
@@ -147,16 +147,16 @@ export function CampaignCheckResults(props: {
           <div>
             <strong
               id="campaign-checks-heading"
-              class="block text-[13px] font-semibold text-text-strong"
+              class="block text-body font-semibold text-text-strong"
             >
               Campaign checks
             </strong>
-            <span class="mt-0.5 block text-[10.5px]/[1.4] text-text-weaker">
+            <span class="mt-0.5 block text-micro/[1.4] text-text-weaker">
               Independent checks keep their own outcome and evidence.
             </span>
           </div>
           <div
-            class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-[9.5px] tabular-nums text-text-weaker"
+            class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-micro tabular-nums text-text-weaker"
             aria-label="Check totals"
           >
             <For
@@ -193,17 +193,15 @@ export function CampaignCheckResults(props: {
                       <Icon name={presentation().icon} size={13} />
                     </span>
                     <span class="min-w-0">
-                      <strong class="block truncate text-[11.5px] font-medium text-text-strong">
+                      <strong class="block truncate text-caption font-medium text-text-strong">
                         {check.title}
                       </strong>
-                      <span
-                        class={cn("mt-0.5 block text-[9.5px] font-medium", presentation().tone)}
-                      >
+                      <span class={cn("mt-0.5 block text-micro font-medium", presentation().tone)}>
                         {presentation().label}
                       </span>
                     </span>
                     <Show when={check.durationMs !== undefined}>
-                      <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+                      <span class="font-mono text-micro tabular-nums text-text-weaker">
                         {formatReviewTime(check.durationMs!)}
                       </span>
                     </Show>
@@ -226,7 +224,7 @@ export function CampaignCheckResults(props: {
         <Show
           when={checks().some((check) => check.status === "failed" || check.status === "blocked")}
         >
-          <p class="m-0 text-[10px]/[1.45] text-text-weaker">
+          <p class="m-0 text-micro/[1.45] text-text-weaker">
             Retry in the report header replays the saved run. Relay only offers a narrower retry
             when the execution contract identifies a safe retry target.
           </p>

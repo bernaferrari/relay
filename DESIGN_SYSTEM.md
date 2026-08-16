@@ -60,14 +60,17 @@ Use a four-point spacing grid with 2px allowed only for optical alignment.
 - Sections inside a panel: 16–20px
 - Page hero to primary content: 24px
 
-Default product type (also encoded as `--type-caption` / `--type-body` / `--type-control` /
-`--type-title` in app tokens):
+Default product type (Tailwind `text-micro` / `text-caption` / `text-body` / `text-title` /
+`text-display`, also aliased as `--type-*`):
 
-- Caption/metadata: 11px, muted, ~1.25 line-height
-- Body/control: 13px, 1.4–1.45 line-height
-- Panel title: 16–18px
-- Page title: 28–32px
-- Canvas tool labels often sit at 10.5–12px; keep them tabular where counts matter
+- Micro / canvas chrome: 10px (`text-micro`)
+- Caption/metadata: 11px, muted, ~1.25 line-height (`text-caption`)
+- Body/control: 13px, 1.4–1.45 line-height (`text-body`)
+- Panel title: 16px (`text-title`)
+- Page title: 28px (`text-display`)
+
+Do not use arbitrary `text-[Npx]` or `rounded-[Npx]`. Map radii to `rounded-sm` through
+`rounded-3xl`. Keep `text-[var(--…)]` when you need a semantic color.
 
 Do not repeat the same fact at adjacent hierarchy levels. Metadata is shown only when it helps the
 next decision.
@@ -91,7 +94,7 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 Prefer user language:
 
 - App Map (canvas), path or run (execution)—not recipe, suite, or Journey in chrome
-- **State set** (language/theme/account list), **Test** (what you run), **Run matrix** (state combinations × tests)—never “Combine”, option set, work, or locale matrix in chrome
+- **Modifier** (language/theme/account list), **Test** (what you run), **Run matrix** (modifiers × tests)—never “Combine”, “State set”, option set, work, or locale matrix in chrome
 - Run report, not immutable report
 - Target or device, not adapter instance
 - Saved with this run, not frozen observability payload

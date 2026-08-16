@@ -54,10 +54,10 @@ export function AppMapDeviceCompanion(props: {
         props.closing && "ui-device-companion--closing",
         props.deviceSelected
           ? cn(
-              "bottom-4 rounded-[14px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
+              "bottom-4 rounded-2xl max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
               "w-[min(var(--app-map-device-panel-width),calc(100%-32px))]",
             )
-          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[14px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
+          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-2xl max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
       )}
       data-frame-orientation={renderedOrientation()}
       aria-label="Device"
@@ -82,7 +82,7 @@ export function AppMapDeviceCompanion(props: {
             </button>
           </Show>
           <label
-            class="relative inline-flex h-7 items-center rounded-md pl-2 text-[11px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
+            class="relative inline-flex h-7 items-center rounded-md pl-2 text-caption text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-base)]"
             data-tip={ACCESSIBILITY_OVERLAY_MODE_DESCRIPTIONS[server.accessibilityMode()]}
           >
             <span class="pointer-events-none font-medium text-[var(--text-base)]">Elements</span>
@@ -131,7 +131,7 @@ export function AppMapDeviceCompanion(props: {
               aria-hidden="true"
             />
             <span class="min-w-0 flex-1">
-              <span class="block truncate text-[11px] font-medium text-[var(--text-strong)]">
+              <span class="block truncate text-caption font-medium text-[var(--text-strong)]">
                 {run().state === "queued"
                   ? "Queued"
                   : run().state === "paused"
@@ -141,11 +141,11 @@ export function AppMapDeviceCompanion(props: {
               </span>
               <Show when={run().caseLabel}>
                 {(label) => (
-                  <span class="block truncate text-[10px] text-[var(--text-weak)]">{label()}</span>
+                  <span class="block truncate text-micro text-[var(--text-weak)]">{label()}</span>
                 )}
               </Show>
             </span>
-            <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+            <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
               {run().totalSteps
                 ? `${Math.min(run().completedSteps, run().totalSteps!)} / ${run().totalSteps}`
                 : run().completedSteps
@@ -183,7 +183,7 @@ export function AppMapDeviceCompanion(props: {
           <Show when={props.outsideMapApp || props.unmapped || props.mappedScreenName}>
             <footer class="flex min-h-14 shrink-0 items-center gap-3 border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3">
               <span
-                class="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-[var(--text-weak)]"
+                class="flex min-w-0 flex-1 items-center gap-1.5 text-caption text-[var(--text-weak)]"
                 data-tip={
                   props.outsideMapApp
                     ? `Return to ${props.mapName?.trim() || "the mapped app"} before capturing.`

@@ -923,7 +923,7 @@ export function DeviceStage(_props: {
               )}
               style={{ "aspect-ratio": frameAspect() }}
             >
-              <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[20px]")}>
+              <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-3xl")}>
                 {/* The workbench can preview an uncaptured plan. Embedded Live
                 Device instead owns real target readiness, so it never masks a
                 setup or capture state with unrelated planned-step content. */}
@@ -1233,7 +1233,7 @@ export function DeviceStage(_props: {
                     <For each={recordedNodeOutlines()}>
                       {(highlight) => (
                         <i
-                          class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
+                          class="pointer-events-none absolute z-[2] rounded-sm border border-[color-mix(in_srgb,var(--text-interactive-base)_34%,transparent)]"
                           style={highlight}
                           data-recorded-node-outline
                           aria-hidden="true"
@@ -1246,7 +1246,7 @@ export function DeviceStage(_props: {
                   >
                     {(highlight) => (
                       <i
-                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                        class="pointer-events-none absolute z-[3] rounded border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
                         style={highlight()}
                         aria-hidden="true"
                       />
@@ -1255,7 +1255,7 @@ export function DeviceStage(_props: {
                   <Show when={focusedEvidenceHighlight()}>
                     {(highlight) => (
                       <div
-                        class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
+                        class="pointer-events-none absolute z-[3] rounded border-[1.5px] border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
                         style={highlight()}
                         aria-hidden="true"
                       />
@@ -1322,13 +1322,13 @@ export function DeviceStage(_props: {
                   </Show>
                   <Show when={server.accessibilityMode() === "always" && !picker()}>
                     <div
-                      class="pointer-events-none absolute inset-0 z-[3] overflow-hidden rounded-[20px]"
+                      class="pointer-events-none absolute inset-0 z-[3] overflow-hidden rounded-3xl"
                       aria-hidden="true"
                     >
                       <For each={accessibilityOutlines()}>
                         {(outline) => (
                           <i
-                            class="absolute rounded-[2px] border border-[color-mix(in_srgb,var(--border-interactive-base)_46%,transparent)] bg-[color-mix(in_srgb,var(--surface-brand-base)_4%,transparent)]"
+                            class="absolute rounded-sm border border-[color-mix(in_srgb,var(--border-interactive-base)_46%,transparent)] bg-[color-mix(in_srgb,var(--surface-brand-base)_4%,transparent)]"
                             style={outline}
                           />
                         )}
@@ -1344,11 +1344,11 @@ export function DeviceStage(_props: {
                   >
                     {(h) => (
                       <div
-                        class="pointer-events-none absolute inset-0 z-[4] overflow-hidden rounded-[20px]"
+                        class="pointer-events-none absolute inset-0 z-[4] overflow-hidden rounded-3xl"
                         aria-hidden="true"
                       >
                         <div
-                          class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
+                          class="absolute rounded border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
                           style={h().rect}
                         />
                       </div>
@@ -1357,7 +1357,7 @@ export function DeviceStage(_props: {
                   <Show when={pickedHighlight()}>
                     {(h) => (
                       <div
-                        class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18]"
+                        class="pointer-events-none absolute z-[5] rounded border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18]"
                         aria-hidden="true"
                         style={h()}
                       />
@@ -1421,7 +1421,7 @@ export function DeviceStage(_props: {
                 {(h) => (
                   <div
                     class={cn(
-                      "pointer-events-none absolute z-[8] max-w-[72%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
+                      "pointer-events-none absolute z-[8] max-w-[72%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-caption leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
                       h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
                     )}
                     style={{

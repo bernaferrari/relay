@@ -25,12 +25,12 @@ const RUN_FILTERS: { id: RunFilter; label: string }[] = [
 ];
 
 const segmentedControl = cn(
-  "flex h-10 items-center gap-0.5 rounded-[10px] bg-[var(--background-deep)] p-1",
+  "flex h-10 items-center gap-0.5 rounded-xl bg-[var(--background-deep)] p-1",
   "shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
 );
 
 const segmentedTab = cn(
-  "min-h-8 flex-1 rounded-[7px] px-2 text-[11.5px] font-medium text-text-weak",
+  "min-h-8 flex-1 rounded-lg px-2 text-caption font-medium text-text-weak",
   "transition-[background-color,color,box-shadow] duration-150",
   "hover:bg-surface-base-hover hover:text-text-base",
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
@@ -43,7 +43,7 @@ const segmentedTabActive = cn(
 
 const groupLabel = cn(
   "grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-2 rounded-lg px-2",
-  "text-left text-[10.5px]/[1.25] font-semibold tracking-[0.06em] text-text-weaker uppercase",
+  "text-left text-micro/[1.25] font-semibold tracking-[0.06em] text-text-weaker uppercase",
   "transition-colors hover:bg-surface-base-hover hover:text-text-weak",
   "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
 );
@@ -121,13 +121,13 @@ export function MapLibrary(props: {
       {/* Clearance for the desktop traffic lights only — the wordmark and the
           overflow menu are parked until they have a real home. */}
       <div class="shell-drag relative h-[var(--nav-top-pad,56px)] shrink-0">
-        <span class="absolute right-12 bottom-[13px] hidden items-center gap-1.5 text-[12px] font-semibold tracking-[-0.02em] text-text-base [.qa--desktop_&]:flex">
+        <span class="absolute right-12 bottom-[13px] hidden items-center gap-1.5 text-caption font-semibold tracking-[-0.02em] text-text-base [.qa--desktop_&]:flex">
           <RelayMark size={17} />
           Relay
         </span>
         <button
           type="button"
-          class="absolute right-2 bottom-2 grid size-10 place-items-center rounded-[9px] text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+          class="absolute right-2 bottom-2 grid size-10 place-items-center rounded-xl text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-strong"
           aria-label="Close library"
           data-tip="Close library · Esc"
           onClick={props.onClose}
@@ -183,12 +183,12 @@ export function MapLibrary(props: {
 
       <Show when={props.area === "tests"}>
         <div class="mb-1.5 shrink-0 px-2.5">
-          <label class="group/library-search relative flex h-10 w-full items-center gap-2 rounded-[8px] bg-[var(--background-deep)] px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors focus-within:bg-[var(--background-base)] focus-within:text-text-interactive-base">
+          <label class="group/library-search relative flex h-10 w-full items-center gap-2 rounded-lg bg-[var(--background-deep)] px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors focus-within:bg-[var(--background-base)] focus-within:text-text-interactive-base">
             <Icon name="search" size={14} />
             <span class="sr-only">Search maps</span>
             <input
               ref={(element) => (searchInput = element)}
-              class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-text-strong outline-none placeholder:text-text-weaker"
+              class="min-w-0 flex-1 border-0 bg-transparent text-body text-text-strong outline-none placeholder:text-text-weaker"
               data-focus-contained
               type="search"
               value={props.query}
@@ -210,16 +210,16 @@ export function MapLibrary(props: {
             when={authoredMaps().length > 0 || unfinishedMaps().length > 0 || props.query.trim()}
             fallback={
               <div class="grid justify-items-center gap-2 px-3 py-8 text-center">
-                <span class="grid size-10 place-items-center rounded-[12px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                <span class="grid size-10 place-items-center rounded-xl bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                   <Icon name="map" size={18} />
                 </span>
-                <strong class="text-[13px] font-semibold text-text-strong">No maps yet</strong>
-                <p class="m-0 max-w-[28ch] text-[11.5px] leading-relaxed text-text-weak">
+                <strong class="text-body font-semibold text-text-strong">No maps yet</strong>
+                <p class="m-0 max-w-[28ch] text-caption leading-relaxed text-text-weak">
                   Create a map, connect a device, and save your first screen.
                 </p>
                 <button
                   type="button"
-                  class="mt-1 inline-flex min-h-10 items-center gap-1.5 rounded-[9px] bg-[var(--product-accent-soft)] px-3 text-[12px] font-semibold text-[var(--text-interactive-base)]"
+                  class="mt-1 inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)]"
                   onClick={props.onCreate}
                 >
                   <Icon name="plus" size={14} /> New map
@@ -264,7 +264,7 @@ export function MapLibrary(props: {
                   <Show when={hiddenUnfinishedCount() > 0}>
                     <button
                       type="button"
-                      class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                      class="flex min-h-9 w-full items-center justify-center rounded-lg text-caption font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
                       onClick={() => setAllUnfinishedVisible(true)}
                     >
                       Show {hiddenUnfinishedCount()} more
@@ -277,7 +277,7 @@ export function MapLibrary(props: {
                   >
                     <button
                       type="button"
-                      class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                      class="flex min-h-9 w-full items-center justify-center rounded-lg text-caption font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
                       onClick={() => setAllUnfinishedVisible(false)}
                     >
                       Show fewer
@@ -288,7 +288,7 @@ export function MapLibrary(props: {
             </Show>
 
             <Show when={props.query.trim().length > 0 && props.items.length === 0}>
-              <p class="px-3 py-6 text-center text-[11.5px] text-text-weak">
+              <p class="px-3 py-6 text-center text-caption text-text-weak">
                 No maps match “{props.query}”.
               </p>
             </Show>
@@ -308,7 +308,7 @@ export function MapLibrary(props: {
             type="button"
             class={cn(
               "mb-1 flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left",
-              "text-[12px] font-medium text-text-interactive-base transition-colors",
+              "text-caption font-medium text-text-interactive-base transition-colors",
               "hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
             )}
             onClick={props.onCreate}
@@ -330,7 +330,7 @@ export function MapLibrary(props: {
           />
           <button
             type="button"
-            class="mb-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+            class="mb-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-caption font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
             onClick={() => importInput?.click()}
           >
             <Icon name="upload" size={14} /> Import map
@@ -338,7 +338,7 @@ export function MapLibrary(props: {
         </Show>
         <button
           type="button"
-          class="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+          class="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-caption font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
           onClick={props.onOpenSettings}
         >
           <Icon name="sliders" size={15} /> Settings
@@ -360,14 +360,14 @@ function MapLibraryRow(props: {
   return (
     <div
       class={cn(
-        "group relative flex min-h-10 items-center gap-1 rounded-[8px] px-1 transition-colors duration-100",
+        "group relative flex min-h-10 items-center gap-1 rounded-lg px-1 transition-colors duration-100",
         props.selected ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
       )}
     >
       <button
         type="button"
         class={cn(
-          "grid min-w-0 flex-1 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-[7px] px-2 py-1.5 text-left transition-colors duration-100",
+          "grid min-w-0 flex-1 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-100",
           props.selected ? "text-text-strong" : "text-text-weak group-hover:text-text-base",
           "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
         )}
@@ -385,12 +385,12 @@ function MapLibraryRow(props: {
           <Icon name={appMapIcon(props.appMap)} size={13} />
         </span>
         <span
-          class={cn("truncate text-[12.5px]/[1.3] font-[550]", !props.selected && "text-text-weak")}
+          class={cn("truncate text-body/[1.3] font-[550]", !props.selected && "text-text-weak")}
         >
           {displayTitle(props.appMap.name)}
         </span>
         <Show when={props.appMap.screenCount > 0}>
-          <small class={cn("shrink-0 text-[10px] text-text-weaker tabular-nums", mono)}>
+          <small class={cn("shrink-0 text-micro text-text-weaker tabular-nums", mono)}>
             {props.appMap.screenCount}
           </small>
         </Show>
@@ -398,7 +398,7 @@ function MapLibraryRow(props: {
       <button
         type="button"
         class={cn(
-          "grid size-7 shrink-0 place-items-center rounded-[6px] text-text-weaker transition-[background-color,color,opacity] duration-100 hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
+          "grid size-7 shrink-0 place-items-center rounded-md text-text-weaker transition-[background-color,color,opacity] duration-100 hover:bg-[var(--background-base)] hover:text-[var(--icon-critical-base)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
           !props.selected && "invisible pointer-events-none",
         )}
         aria-label={`Delete ${displayTitle(props.appMap.name)}`}
@@ -447,7 +447,7 @@ function RunList(props: { onOpenRun: (id: string) => void }) {
                 <button
                   type="button"
                   aria-pressed={active()}
-                  class={cn(segmentedTab, "text-[11px]", active() && segmentedTabActive)}
+                  class={cn(segmentedTab, "text-caption", active() && segmentedTabActive)}
                   onClick={() => setFilter(option.id)}
                 >
                   {option.label}
@@ -461,7 +461,7 @@ function RunList(props: { onOpenRun: (id: string) => void }) {
         <For
           each={rows()}
           fallback={
-            <p class="px-3 py-6 text-center text-[11.5px]/[1.5] text-text-weak">
+            <p class="px-3 py-6 text-center text-caption/[1.5] text-text-weak">
               {filter() === "all"
                 ? "No runs yet. Run a path from the map to see results here."
                 : "Nothing matches this filter."}
@@ -500,20 +500,20 @@ function RunRow(props: { job: JobInfo; onOpen: (id: string) => void }) {
       <span class="min-w-0">
         <span
           class={cn(
-            "block truncate text-[12px]/[1.3] font-[550] text-text-weak",
+            "block truncate text-caption/[1.3] font-[550] text-text-weak",
             selected() && "text-text-strong",
           )}
         >
           {title()}
         </span>
-        <small class="block truncate text-[9.5px]/[1.35] text-text-weaker">
+        <small class="block truncate text-micro/[1.35] text-text-weaker">
           {fmtAgo(
             props.job.finishedAt ?? props.job.startedAt ?? props.job.queuedAt,
             server.clock(),
           )}
         </small>
       </span>
-      <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
+      <small class={cn("shrink-0 text-micro text-text-weaker", mono)}>
         {fmtDur(props.job, server.clock()) || "—"}
       </small>
     </button>

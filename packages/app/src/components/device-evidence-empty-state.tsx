@@ -17,7 +17,7 @@ export function DeviceEvidenceEmptyState(props: {
 }) {
   return (
     <div
-      class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center gap-1 text-12-medium text-text-base"
+      class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center gap-1 text-caption font-medium text-text-base"
       role="status"
       aria-label="Device unavailable"
     >

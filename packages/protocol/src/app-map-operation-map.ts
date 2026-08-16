@@ -38,8 +38,17 @@ type AppMapJobSummary = {
   [key: string]: unknown;
 };
 
+export type DegradedAppMapRef = {
+  key: string;
+  id?: string;
+  error: string;
+};
+
 export type AppMapOperationMap = {
-  "app-map.list": { input: Record<string, never>; output: { appMaps: AppMap[] } };
+  "app-map.list": {
+    input: Record<string, never>;
+    output: { appMaps: AppMap[]; degraded?: DegradedAppMapRef[] };
+  };
   "app-map.get": { input: { appMapId: string }; output: { appMap: AppMap } };
   "app-map.remove": { input: { appMapId: string }; output: { ok: true } };
   "app-map.create": {

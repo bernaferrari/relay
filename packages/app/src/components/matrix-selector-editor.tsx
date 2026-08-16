@@ -6,8 +6,8 @@ import { toggleListValue, type MatrixSelectorDraft } from "../lib/compatibility-
 import { platformLabel } from "../lib/target-presentation";
 
 const inputCls =
-  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
-const rowTitleCls = "text-12-medium text-text-strong";
+  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-caption text-text-strong focus:border-border-focus focus:outline-none";
+const rowTitleCls = "text-caption font-medium text-text-strong";
 export const matrixPlatforms: TargetProfile["platform"][] = ["android", "ios", "browser"];
 export const matrixCapabilities: TargetCapability[] = [
   "screenshot",
@@ -72,7 +72,7 @@ export function MatrixRuleFields(props: {
         <div class="mt-2 flex flex-wrap gap-1.5">
           <For each={matrixPlatforms}>
             {(platformName) => (
-              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-caption text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
                 <input
                   class="sr-only"
                   type="checkbox"
@@ -100,7 +100,7 @@ export function MatrixRuleFields(props: {
           spellcheck={false}
           onInput={(event) => update({ osVersionPrefixes: event.currentTarget.value })}
         />
-        <span class="text-10-regular text-text-weak">
+        <span class="text-micro text-text-weak">
           Optional. Prefix matching includes minor releases such as 18.1.
         </span>
       </label>
@@ -115,16 +115,14 @@ export function MatrixRuleFields(props: {
           spellcheck={false}
           onInput={(event) => update({ nameIncludes: event.currentTarget.value })}
         />
-        <span class="text-10-regular text-text-weak">
-          Optional. Separate alternatives with commas.
-        </span>
+        <span class="text-micro text-text-weak">Optional. Separate alternatives with commas.</span>
       </label>
       <fieldset class="m-0 border-0 p-0">
         <legend class={rowTitleCls}>Must support</legend>
         <div class="mt-2 flex flex-wrap gap-1.5">
           <For each={matrixCapabilities}>
             {(capability) => (
-              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+              <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-caption text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-[var(--product-accent-soft)] has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
                 <input
                   class="sr-only"
                   type="checkbox"
@@ -157,7 +155,7 @@ export function MatrixSelectorEditor(props: {
   return (
     <div class="grid gap-2.5 rounded-lg border border-border-weak-base bg-background-base p-2.5">
       <div class="flex items-center justify-between gap-2">
-        <strong class="text-11-medium text-text-strong">Rule {props.index}</strong>
+        <strong class="text-caption font-medium text-text-strong">Rule {props.index}</strong>
         <Button variant="ghost" size="sm" type="button" onClick={props.onRemove}>
           Remove
         </Button>
@@ -177,7 +175,7 @@ export function MatrixSelectorEditor(props: {
             type="button"
             aria-pressed={props.draft.mode === mode}
             class={cn(
-              "h-7 rounded text-10-medium transition-colors",
+              "h-7 rounded text-micro font-medium transition-colors",
               props.draft.mode === mode
                 ? "bg-surface-base text-text-strong shadow-sm"
                 : "text-text-weak hover:text-text-strong",
@@ -192,11 +190,11 @@ export function MatrixSelectorEditor(props: {
         <div class="grid max-h-36 gap-0.5 overflow-y-auto rounded-md border border-border-weak-base p-1">
           <Show
             when={props.profiles.length > 0}
-            fallback={<span class="p-2 text-11-regular text-text-weak">No targets available.</span>}
+            fallback={<span class="p-2 text-caption text-text-weak">No targets available.</span>}
           >
             <For each={props.profiles}>
               {(profile) => (
-                <label class="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1.5 text-11-regular text-text-strong hover:bg-surface-raised-stronger-non-alpha">
+                <label class="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1.5 text-caption text-text-strong hover:bg-surface-raised-stronger-non-alpha">
                   <input
                     type="checkbox"
                     checked={props.draft.targetIds.includes(profile.targetId)}
@@ -207,9 +205,7 @@ export function MatrixSelectorEditor(props: {
                     }
                   />
                   <span class="min-w-0 flex-1 truncate">{profile.name}</span>
-                  <span class="text-10-regular text-text-weak">
-                    {platformLabel(profile.platform)}
-                  </span>
+                  <span class="text-micro text-text-weak">{platformLabel(profile.platform)}</span>
                 </label>
               )}
             </For>

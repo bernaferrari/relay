@@ -79,7 +79,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         aria-label="Settings"
       >
         <div class="flex shrink-0 items-center justify-between border-b border-border-weak-base px-[18px] pt-4 pb-3.5">
-          <h2 class="m-0 text-16-medium tracking-tight text-text-strong">Settings</h2>
+          <h2 class="m-0 text-title font-medium tracking-tight text-text-strong">Settings</h2>
           <IconButton
             variant="ghost"
             size="normal"
@@ -100,7 +100,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 <button
                   type="button"
                   class={cn(
-                    "rounded-md px-2.5 py-[7px] text-left text-12-medium text-text-base transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong",
+                    "rounded-md px-2.5 py-[7px] text-left text-caption font-medium text-text-base transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong",
                     section() === id && "bg-surface-base-active text-text-strong",
                   )}
                   onClick={() => setSection(id)}
@@ -110,7 +110,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
               )}
             </For>
           </nav>
-          <div class="flex flex-col gap-1 overflow-y-auto bg-surface-raised-stronger-non-alpha px-5 pt-[18px] pb-6 text-12-regular text-text-strong">
+          <div class="flex flex-col gap-1 overflow-y-auto bg-surface-raised-stronger-non-alpha px-5 pt-[18px] pb-6 text-caption text-text-strong">
             <Show when={section() === "appearance"}>
               <AppearanceSettingsPanel />
             </Show>

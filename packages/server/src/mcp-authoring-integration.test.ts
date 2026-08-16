@@ -103,7 +103,7 @@ async function connectMcp(invoker: OperationInvoker) {
   const { InMemoryTransport } = requireFromMcp("@modelcontextprotocol/server") as {
     InMemoryTransport: InMemoryTransportConstructor;
   };
-  const server = createMcpServer({ invoker, scope: { projectId } });
+  const server = createMcpServer({ invoker, scope: { projectId }, profile: "author" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,

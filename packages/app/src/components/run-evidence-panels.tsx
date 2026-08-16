@@ -17,7 +17,7 @@ export function EvidenceList(props: {
       <For
         each={props.items}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
+          <div class="rounded-xl border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-caption text-[var(--text-weak)]">
             {props.empty}
           </div>
         }
@@ -31,16 +31,16 @@ export function EvidenceList(props: {
                   <Icon name={evidenceIcon(item.kind)} size={14} />
                 </span>
                 <div class="min-w-0">
-                  <strong class="block truncate text-[12.5px] font-medium text-text-strong">
+                  <strong class="block truncate text-body font-medium text-text-strong">
                     {evidenceTitle(item.kind)}
                   </strong>
                   <Show when={summary()}>
-                    <span class="mt-0.5 block truncate text-[10.5px] text-text-weaker">
+                    <span class="mt-0.5 block truncate text-micro text-text-weaker">
                       {summary()}
                     </span>
                   </Show>
                 </div>
-                <time class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+                <time class="font-mono text-micro tabular-nums text-text-weaker">
                   {new Date(item.capturedAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -49,7 +49,7 @@ export function EvidenceList(props: {
                 </time>
               </header>
               <details class="group border-t border-[var(--border-weak-base)]">
-                <summary class="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-3 text-[10px] font-medium text-text-weaker hover:text-text-base [&::-webkit-details-marker]:hidden">
+                <summary class="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-3 text-micro font-medium text-text-weaker hover:text-text-base [&::-webkit-details-marker]:hidden">
                   View payload
                   <Icon
                     name="chevron-down"
@@ -57,7 +57,7 @@ export function EvidenceList(props: {
                     class="transition-transform duration-150 group-open:rotate-180"
                   />
                 </summary>
-                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--border-weak-base)] bg-[var(--background-deep)] p-3 font-mono text-[10px]/[1.5] text-[var(--text-base)]">
+                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--border-weak-base)] bg-[var(--background-deep)] p-3 font-mono text-micro/[1.5] text-[var(--text-base)]">
                   {JSON.stringify(item.data, null, 2)}
                 </pre>
               </details>
@@ -85,8 +85,8 @@ function EvidenceChannelBanner(props: {
   return (
     <header class="mb-3 flex flex-wrap items-start justify-between gap-2">
       <div class="min-w-0">
-        <strong class="block text-[13px] font-semibold text-text-strong">{props.title}</strong>
-        <span class="mt-0.5 block text-[10.5px] leading-[1.4] text-text-weaker">
+        <strong class="block text-body font-semibold text-text-strong">{props.title}</strong>
+        <span class="mt-0.5 block text-micro leading-[1.4] text-text-weaker">
           {props.loading
             ? "Refreshing structured evidence…"
             : evidenceChannelNote(props.channel, props.note)}
@@ -94,7 +94,7 @@ function EvidenceChannelBanner(props: {
       </div>
       <span
         class={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base px-2 py-1 text-[9px] font-medium",
+          "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base px-2 py-1 text-micro font-medium",
           tone(),
         )}
       >
@@ -139,7 +139,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
         when={props.evidence && inspectable()}
         fallback={
           <Show when={!props.evidence}>
-            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
               {props.loading
                 ? "Preparing network evidence…"
                 : "No structured network evidence is available for this run."}
@@ -159,15 +159,15 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
               onInput={(event) => setFilter(event.currentTarget.value)}
               placeholder="Filter URL, method, or result"
               aria-label="Filter network evidence"
-              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-caption text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
             />
           </div>
-          <span class="shrink-0 font-mono text-[10px] text-text-weaker">{rows().length} shown</span>
+          <span class="shrink-0 font-mono text-micro text-text-weaker">{rows().length} shown</span>
         </div>
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
               {filter()
                 ? "No requests match this filter."
                 : "No HTTP or WebSocket exchanges were observed."}
@@ -175,7 +175,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
           }
         >
           <div class="overflow-hidden rounded-xl border border-border-weak-base">
-            <div class="grid grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2 text-[9px] font-medium tracking-[0.08em] text-text-weaker uppercase">
+            <div class="grid grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2 text-micro font-medium tracking-[0.08em] text-text-weaker uppercase">
               <span>Result</span>
               <span>Method</span>
               <span>URL</span>
@@ -185,7 +185,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
             <For each={rows()}>
               {(entry) => (
                 <details class="group border-b border-border-weak-base last:border-0">
-                  <summary class="grid cursor-pointer list-none grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] items-center gap-2 px-3 py-2.5 text-[10.5px] hover:bg-surface-raised-base-hover [&::-webkit-details-marker]:hidden">
+                  <summary class="grid cursor-pointer list-none grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] items-center gap-2 px-3 py-2.5 text-micro hover:bg-surface-raised-base-hover [&::-webkit-details-marker]:hidden">
                     <span
                       class={cn(
                         "font-medium",
@@ -200,7 +200,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
                     </span>
                     <code class="text-text-base">{entry.method ?? "—"}</code>
                     <span
-                      class="min-w-0 truncate font-mono text-[10px] text-text-base"
+                      class="min-w-0 truncate font-mono text-micro text-text-base"
                       title={entry.url}
                     >
                       {entry.url ?? "Unknown endpoint"}
@@ -210,7 +210,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
                       {entry.durationMs === undefined ? "—" : `${Math.round(entry.durationMs)}ms`}
                     </span>
                   </summary>
-                  <div class="grid gap-2 border-t border-border-weak-base bg-background-weak px-3 py-2.5 text-[10px] text-text-weak">
+                  <div class="grid gap-2 border-t border-border-weak-base bg-background-weak px-3 py-2.5 text-micro text-text-weak">
                     <Show when={entry.source || entry.at}>
                       <span>
                         {entry.source ?? "Runtime"}
@@ -218,7 +218,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
                       </span>
                     </Show>
                     <Show when={entry.requestBody || entry.responseBody}>
-                      <pre class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[9.5px]/[1.45] text-text-base">
+                      <pre class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-micro/[1.45] text-text-base">
                         {entry.requestBody ? `Request\n${entry.requestBody}` : ""}
                         {entry.responseBody ? `\nResponse\n${entry.responseBody}` : ""}
                       </pre>
@@ -295,7 +295,7 @@ export function RunLogsEvidence(props: {
               role="tab"
               aria-selected={source() === kind}
               class={cn(
-                "min-h-7 rounded-md px-2.5 text-[10px] font-medium text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base",
+                "min-h-7 rounded-md px-2.5 text-micro font-medium text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base",
                 source() === kind && "bg-surface-base-active text-text-strong",
               )}
               onClick={() => setSource(kind)}
@@ -318,7 +318,7 @@ export function RunLogsEvidence(props: {
               onInput={(event) => setFilter(event.currentTarget.value)}
               placeholder="Filter log messages"
               aria-label="Filter log messages"
-              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-caption text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
             />
           </div>
         </Show>
@@ -327,7 +327,7 @@ export function RunLogsEvidence(props: {
         when={activeSourceInspectable() && rows().length > 0}
         fallback={
           <Show when={activeSourceInspectable()}>
-            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
               {props.loading
                 ? "Preparing device logs…"
                 : source() === "device"
@@ -341,7 +341,7 @@ export function RunLogsEvidence(props: {
           <For each={rows()}>
             {(entry) => (
               <div class="grid grid-cols-[48px_62px_minmax(0,1fr)] gap-2 border-b border-border-weak-base px-3 py-2 last:border-0">
-                <span class="font-mono text-[9px] tabular-nums text-text-weaker">
+                <span class="font-mono text-micro tabular-nums text-text-weaker">
                   {entry.at
                     ? new Date(entry.at).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -352,7 +352,7 @@ export function RunLogsEvidence(props: {
                 </span>
                 <span
                   class={cn(
-                    "font-mono text-[9px] uppercase",
+                    "font-mono text-micro uppercase",
                     entry.level === "error" || entry.level === "warn"
                       ? "text-[var(--icon-warning-base)]"
                       : "text-text-weaker",
@@ -360,7 +360,7 @@ export function RunLogsEvidence(props: {
                 >
                   {entry.level}
                 </span>
-                <span class="whitespace-pre-wrap break-words font-mono text-[10px]/[1.45] text-text-base">
+                <span class="whitespace-pre-wrap break-words font-mono text-micro/[1.45] text-text-base">
                   {entry.message}
                 </span>
               </div>
@@ -399,7 +399,7 @@ export function RunPerformanceEvidence(props: {
         when={inspectable() && samples().length > 0}
         fallback={
           <Show when={inspectable()}>
-            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
               {props.loading
                 ? "Preparing performance evidence…"
                 : "No performance samples were observed during this run."}
@@ -412,14 +412,16 @@ export function RunPerformanceEvidence(props: {
             {(sample) => (
               <article class="rounded-xl border border-border-weak-base bg-surface-raised-stronger-non-alpha p-3">
                 <header class="flex items-center justify-between gap-2">
-                  <strong class="text-[11px] font-semibold text-text-strong">{sample.phase}</strong>
-                  <span class="font-mono text-[9.5px] text-text-weaker">
+                  <strong class="text-caption font-semibold text-text-strong">
+                    {sample.phase}
+                  </strong>
+                  <span class="font-mono text-micro text-text-weaker">
                     {sample.at ? new Date(sample.at).toLocaleTimeString() : "—"}
                   </span>
                 </header>
                 <div class="mt-2 flex flex-wrap gap-1.5">
                   {Object.entries(sample.metrics).map(([key, value]) => (
-                    <span class="rounded-md bg-surface-base-active px-2 py-1 font-mono text-[9.5px] text-text-base">
+                    <span class="rounded-md bg-surface-base-active px-2 py-1 font-mono text-micro text-text-base">
                       {key}: {String(value)}
                     </span>
                   ))}

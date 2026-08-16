@@ -28,7 +28,7 @@ export function RunMatrixCaptureCard(props: {
   const worldLabel = () => (props.values.length && props.world !== valueLabel() ? props.world : "");
 
   return (
-    <article class="min-w-0 overflow-hidden rounded-[12px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)]">
+    <article class="min-w-0 overflow-hidden rounded-xl border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)]">
       <button
         type="button"
         class="block w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
@@ -38,7 +38,7 @@ export function RunMatrixCaptureCard(props: {
         <Show
           when={available()}
           fallback={
-            <div class="grid aspect-[4/3] min-h-32 place-items-center bg-[var(--surface-base)] px-4 text-center text-[10.5px] text-[var(--text-weaker)]">
+            <div class="grid aspect-[4/3] min-h-32 place-items-center bg-[var(--surface-base)] px-4 text-center text-micro text-[var(--text-weaker)]">
               {waiting()
                 ? "Waiting for capture…"
                 : imageFailed()
@@ -59,11 +59,11 @@ export function RunMatrixCaptureCard(props: {
         </Show>
         <span class="flex min-w-0 items-center gap-2 border-t border-[var(--border-weak-base)] px-3 py-2.5">
           <span class="flex min-w-0 flex-1 items-baseline gap-2">
-            <strong class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+            <strong class="truncate text-caption font-medium text-[var(--text-strong)]">
               {valueLabel()}
             </strong>
             <Show when={worldLabel()}>
-              <span class="shrink-0 text-[9.5px] text-[var(--text-weak)]">{worldLabel()}</span>
+              <span class="shrink-0 text-micro text-[var(--text-weak)]">{worldLabel()}</span>
             </Show>
           </span>
           <Show
@@ -71,7 +71,7 @@ export function RunMatrixCaptureCard(props: {
             fallback={
               <span
                 class={cn(
-                  "shrink-0 text-[9.5px]",
+                  "shrink-0 text-micro",
                   status().tone === "fail"
                     ? "text-[var(--icon-critical-base)]"
                     : "text-[var(--text-weak)]",
@@ -81,7 +81,7 @@ export function RunMatrixCaptureCard(props: {
               </span>
             }
           >
-            <span class="shrink-0 text-[9.5px] text-[var(--icon-warning-base)]">Missing</span>
+            <span class="shrink-0 text-micro text-[var(--icon-warning-base)]">Missing</span>
           </Show>
         </span>
       </button>

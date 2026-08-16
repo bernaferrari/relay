@@ -24,7 +24,7 @@ export function DeviceCompanionStage(props: {
         "relative z-0 min-h-0 flex-1 overflow-hidden bg-[color-mix(in_srgb,var(--background-base)_76%,var(--map-canvas))]",
         "[&>section]:!p-2",
         "[&_[data-device-chrome]]:!bg-transparent [&_[data-device-chrome]]:!p-0 [&_[data-device-chrome]]:!shadow-none",
-        "[&_.phone-screen]:!rounded-[8px] [&_.phone-screen]:shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
+        "[&_.phone-screen]:!rounded-lg [&_.phone-screen]:shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
       )}
     >
       <DeviceStage
@@ -35,7 +35,7 @@ export function DeviceCompanionStage(props: {
       />
       <Show when={server.health() !== "online" && server.liveFrame()?.base64}>
         <div class="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-4">
-          <span class="rounded-full bg-black/72 px-2.5 py-1 text-[10.5px] font-medium text-white shadow-sm backdrop-blur-sm">
+          <span class="rounded-full bg-black/72 px-2.5 py-1 text-micro font-medium text-white shadow-sm backdrop-blur-sm">
             Last frame · reconnect to control
           </span>
         </div>

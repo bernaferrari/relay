@@ -37,7 +37,7 @@ export function StatusChip(props: {
     <span
       class={cn(
         "inline-flex h-[22px] w-fit shrink-0 items-center gap-1.5 rounded-md px-2",
-        "text-[11px] font-semibold ring-1 ring-inset",
+        "text-caption font-semibold ring-1 ring-inset",
         TONE_CLASS[props.tone],
         props.class,
       )}

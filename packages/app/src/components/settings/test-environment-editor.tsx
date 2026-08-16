@@ -77,15 +77,15 @@ function ExactDeviceSelector(props: {
         <div>
           <strong
             id="test-environment-device-heading"
-            class="block text-11-medium text-text-strong"
+            class="block text-caption font-medium text-text-strong"
           >
             3. Select devices
           </strong>
-          <span class="mt-0.5 block text-10-regular text-text-weak">
+          <span class="mt-0.5 block text-micro text-text-weak">
             Tests run once on every selected device.
           </span>
         </div>
-        <span class="shrink-0 text-10-regular tabular-nums text-text-weak">
+        <span class="shrink-0 text-micro tabular-nums text-text-weak">
           {props.selectedIds.length} selected
         </span>
       </div>
@@ -136,8 +136,10 @@ function ExactDeviceSelector(props: {
             fallback={
               <div class="grid min-h-28 place-items-center px-6 text-center">
                 <div>
-                  <strong class="text-11-medium text-text-strong">No devices available</strong>
-                  <p class="m-0 mt-1 text-10-regular leading-relaxed text-text-weak">
+                  <strong class="text-caption font-medium text-text-strong">
+                    No devices available
+                  </strong>
+                  <p class="m-0 mt-1 text-micro leading-relaxed text-text-weak">
                     Connect a mobile device or add a browser target first.
                   </p>
                 </div>
@@ -149,8 +151,10 @@ function ExactDeviceSelector(props: {
               fallback={
                 <div class="grid min-h-28 place-items-center px-6 text-center">
                   <div>
-                    <strong class="text-11-medium text-text-strong">No matching devices</strong>
-                    <p class="m-0 mt-1 text-10-regular text-text-weak">
+                    <strong class="text-caption font-medium text-text-strong">
+                      No matching devices
+                    </strong>
+                    <p class="m-0 mt-1 text-micro text-text-weak">
                       Try a model, OS version, or platform name.
                     </p>
                   </div>
@@ -160,7 +164,7 @@ function ExactDeviceSelector(props: {
               <For each={groupedProfiles()}>
                 {(group) => (
                   <div class="grid gap-0.5">
-                    <div class="sticky top-0 z-10 flex h-7 items-center justify-between bg-background-base px-2 text-10-medium text-text-weak">
+                    <div class="sticky top-0 z-10 flex h-7 items-center justify-between bg-background-base px-2 text-micro font-medium text-text-weak">
                       <span>{platformLabel(group.platform)}</span>
                       <span class="tabular-nums">{group.profiles.length}</span>
                     </div>
@@ -177,11 +181,11 @@ function ExactDeviceSelector(props: {
                             }
                           />
                           <span class="grid min-w-0 flex-1 gap-0.5">
-                            <strong class="truncate text-11-medium text-text-strong">
+                            <strong class="truncate text-caption font-medium text-text-strong">
                               {profile.name}
                             </strong>
                             <Show when={targetProfileDetail(profile)}>
-                              <span class="truncate text-10-regular text-text-weak">
+                              <span class="truncate text-micro text-text-weak">
                                 {targetProfileDetail(profile)}
                               </span>
                             </Show>
@@ -251,10 +255,10 @@ export function TestEnvironmentEditor(props: {
     >
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <strong class="block text-13-medium text-text-strong">
+          <strong class="block text-body font-medium text-text-strong">
             {props.matrix ? "Edit environment" : "New environment"}
           </strong>
-          <span class="mt-1 block max-w-[36rem] text-11-regular leading-relaxed text-text-weak">
+          <span class="mt-1 block max-w-[36rem] text-caption leading-relaxed text-text-weak">
             Give this device set a name, then decide whether its membership stays fixed or updates
             automatically.
           </span>
@@ -274,7 +278,7 @@ export function TestEnvironmentEditor(props: {
 
       <Show when={error()}>
         <p
-          class="m-0 rounded-md bg-surface-critical-weak px-3 py-2 text-11-regular text-icon-critical-base"
+          class="m-0 rounded-md bg-surface-critical-weak px-3 py-2 text-caption text-icon-critical-base"
           role="alert"
         >
           {error()}
@@ -295,7 +299,7 @@ export function TestEnvironmentEditor(props: {
             setDraft((current) => ({ ...current, name: event.currentTarget.value }))
           }
         />
-        <span class="text-10-regular text-text-weak">
+        <span class="text-micro text-text-weak">
           You will see this name when choosing where a test runs.
         </span>
       </label>
@@ -317,8 +321,8 @@ export function TestEnvironmentEditor(props: {
                   <Icon name={choice.icon} size={14} />
                 </span>
                 <span class="grid min-w-0 gap-1">
-                  <strong class="text-11-medium text-text-strong">{choice.title}</strong>
-                  <span class="text-10-regular leading-relaxed text-text-weak">
+                  <strong class="text-caption font-medium text-text-strong">{choice.title}</strong>
+                  <span class="text-micro leading-relaxed text-text-weak">
                     {choice.description}
                   </span>
                 </span>
@@ -342,11 +346,11 @@ export function TestEnvironmentEditor(props: {
           <div>
             <strong
               id="test-environment-rules-heading"
-              class="block text-11-medium text-text-strong"
+              class="block text-caption font-medium text-text-strong"
             >
               3. Define which devices belong
             </strong>
-            <span class="mt-0.5 block text-10-regular text-text-weak">
+            <span class="mt-0.5 block text-micro text-text-weak">
               A device is included when it matches every condition you set below.
             </span>
           </div>
@@ -361,11 +365,11 @@ export function TestEnvironmentEditor(props: {
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
               <span class={rowTitleCls}>More matches</span>
-              <p class="mt-0.5 mb-0 text-10-regular text-text-weak">
+              <p class="mt-0.5 mb-0 text-micro text-text-weak">
                 Devices are included when any of these matches apply.
               </p>
             </div>
-            <span class="shrink-0 text-10-regular tabular-nums text-text-weak">
+            <span class="shrink-0 text-micro tabular-nums text-text-weak">
               {draft().additional.length} {draft().additional.length === 1 ? "rule" : "rules"}
             </span>
           </div>
@@ -404,7 +408,7 @@ export function TestEnvironmentEditor(props: {
       </Show>
 
       <footer class="flex items-center justify-between gap-3 border-t border-border-weak-base pt-3">
-        <span class="min-w-0 text-10-regular text-text-weak">
+        <span class="min-w-0 text-micro text-text-weak">
           {draft().primary.mode === "targets"
             ? draft().primary.targetIds.length > 0
               ? `${draft().primary.targetIds.length} ${draft().primary.targetIds.length === 1 ? "device" : "devices"} will run each test.`

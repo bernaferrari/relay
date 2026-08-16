@@ -20,10 +20,10 @@ const RUN_GRAPH_NODE_GAP = 96;
 // (not imported) so this read-only run-report view stays decoupled from the
 // planning editor's state and interactions.
 const boardChrome =
-  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_92%,transparent)] shadow-[var(--shadow-lg)] backdrop-blur-[12px]";
+  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_92%,transparent)] shadow-[var(--shadow-lg)] backdrop-blur-[12px]";
 
 const controlBtn =
-  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--text-base)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]";
+  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-lg text-micro text-[var(--text-base)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]";
 
 function formatStepDuration(durationMs: number): string {
   return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(1)}s`;
@@ -169,12 +169,12 @@ export function RunGraph(props: {
         drag = null;
       }}
     >
-      <div class={cn(boardChrome, "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--text-base)]")}>
+      <div class={cn(boardChrome, "left-3.5 gap-2.5 px-2.5 text-micro text-[var(--text-base)]")}>
         <span class="inline-flex items-center gap-1.5 font-semibold">
           <i class="size-1.5 rounded-full bg-[var(--text-interactive-base)] shadow-[0_0_9px_color-mix(in_srgb,var(--text-interactive-base)_65%,transparent)]" />
           {nodes().length} {nodes().length === 1 ? "step" : "steps"}
         </span>
-        <b class="border-l border-[var(--border-weak-base)] pl-2.5 font-mono text-[9px] font-normal text-[var(--text-weak)]">
+        <b class="border-l border-[var(--border-weak-base)] pl-2.5 font-mono text-micro font-normal text-[var(--text-weak)]">
           {resultCounts().running > 0
             ? `Running step ${resultCounts().passed + resultCounts().failed + 1}`
             : resultCounts().failed > 0
@@ -186,7 +186,7 @@ export function RunGraph(props: {
         <button type="button" class={controlBtn} onClick={() => zoom(-0.1)} aria-label="Zoom out">
           −
         </button>
-        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-[10px] text-[var(--text-weak)]">
+        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-micro text-[var(--text-weak)]">
           {Math.round(view().scale * 100)}%
         </span>
         <button type="button" class={controlBtn} onClick={() => zoom(0.1)} aria-label="Zoom in">
@@ -266,7 +266,7 @@ export function RunGraph(props: {
                   />
                   <Show when={label()}>
                     <text
-                      class="pointer-events-none fill-[var(--text-weak)] font-mono text-[9px]"
+                      class="pointer-events-none fill-[var(--text-weak)] font-mono text-micro"
                       x={(x1() + x2()) / 2}
                       y={(y1() + y2()) / 2 - 10}
                       text-anchor="middle"
@@ -290,7 +290,7 @@ export function RunGraph(props: {
                 data-run-graph-node
                 aria-label={`Step ${item.index + 1}: ${item.moment.title}. ${executionStateLabel(item.moment.state, "step")}`}
                 aria-current={active() ? "step" : undefined}
-                class="group absolute top-0 left-0 w-[220px] origin-top-left cursor-pointer select-none rounded-[18px] p-0 text-left outline-none"
+                class="group absolute top-0 left-0 w-[220px] origin-top-left cursor-pointer select-none rounded-3xl p-0 text-left outline-none"
                 style={{ transform: `translate3d(${item.x}px, ${item.y}px, 0)` }}
                 onClick={() => props.onSelect(item.index)}
                 onKeyDown={(event) => {
@@ -343,7 +343,7 @@ function RunGraphNode(props: {
   return (
     <div
       class={cn(
-        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
+        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-3xl border shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--run-graph-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
@@ -366,10 +366,10 @@ function RunGraphNode(props: {
       }}
     >
       <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--border-weak-base)_72%,transparent)] px-3 text-[var(--text-weak)]">
-        <span class="font-mono text-[11px] leading-none text-[var(--text-base)]">
+        <span class="font-mono text-caption leading-none text-[var(--text-base)]">
           {String(props.index + 1).padStart(2, "0")}
         </span>
-        <span class="truncate text-[10px] font-semibold tracking-[0.09em] uppercase">
+        <span class="truncate text-micro font-semibold tracking-[0.09em] uppercase">
           {glyph()?.label ?? "Step"}
         </span>
       </header>
@@ -377,11 +377,11 @@ function RunGraphNode(props: {
         when={props.src}
         fallback={
           <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--run-graph-node-accent)_13%,transparent),transparent_42%),var(--background-deep)] p-5 text-center">
-            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--run-graph-node-accent)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--run-graph-node-accent)_11%,var(--surface-base))] text-[color-mix(in_srgb,var(--run-graph-node-accent)_78%,white)]">
+            <span class="grid size-[46px] place-items-center rounded-2xl border border-[color-mix(in_srgb,var(--run-graph-node-accent)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--run-graph-node-accent)_11%,var(--surface-base))] text-[color-mix(in_srgb,var(--run-graph-node-accent)_78%,white)]">
               <Icon name={failed() ? "alert" : (glyph()?.icon ?? "bolt")} size={22} />
             </span>
             <div class="mt-4 min-w-0">
-              <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--text-strong)]">
+              <strong class="line-clamp-3 block text-body/[1.4] font-semibold tracking-[-0.012em] text-[var(--text-strong)]">
                 {props.moment.title}
               </strong>
             </div>
@@ -398,19 +398,19 @@ function RunGraphNode(props: {
           <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pt-8 pb-2.5">
             <Show when={glyph()}>
               {(g) => (
-                <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-[color-mix(in_srgb,var(--text-invert-strong)_65%,transparent)] uppercase">
+                <small class="mb-0.5 block text-micro font-semibold tracking-[0.08em] text-[color-mix(in_srgb,var(--text-invert-strong)_65%,transparent)] uppercase">
                   {g().label}
                 </small>
               )}
             </Show>
-            <strong class="line-clamp-1 block text-[13px] font-semibold text-[var(--text-invert-strong)]">
+            <strong class="line-clamp-1 block text-body font-semibold text-[var(--text-invert-strong)]">
               {props.moment.title}
             </strong>
           </div>
         </div>
       </Show>
       <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--border-weak-base)_72%,transparent)] px-3 text-[var(--text-weak)]">
-        <span class="inline-flex items-center gap-1.5 text-[10px]">
+        <span class="inline-flex items-center gap-1.5 text-micro">
           <i class={cn("size-1.5 rounded-full", runStateDot(props.moment.state))} />
           {executionStateLabel(props.moment.state, "step")}
           <Show when={props.moment.durationMs}>

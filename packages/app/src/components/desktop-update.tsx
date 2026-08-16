@@ -91,25 +91,25 @@ export function DesktopUpdateDialog() {
               <Icon name="download" size={18} />
             </span>
             <div class="min-w-0 flex-1">
-              <span class="text-11-medium uppercase tracking-[0.12em] text-text-weak">
+              <span class="text-caption font-medium uppercase tracking-[0.12em] text-text-weak">
                 Update ready
               </span>
               <h2
                 id="desktop-update-title"
-                class="mt-1 mb-0 text-16-medium tracking-tight text-text-strong"
+                class="mt-1 mb-0 text-title font-medium tracking-tight text-text-strong"
               >
                 Relay {state().releaseName ?? state().version} is ready
               </h2>
-              <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
+              <p class="mt-1 mb-0 text-caption leading-relaxed text-text-weak">
                 The update is downloaded. Restart when you’re ready; current work stays on disk.
               </p>
             </div>
           </div>
           <div class="px-5 py-4">
-            <span class="text-12-medium text-text-strong">What’s new</span>
+            <span class="text-caption font-medium text-text-strong">What’s new</span>
             <ul
               id="desktop-update-notes"
-              class="mt-2 mb-0 grid list-disc gap-1 pl-4 text-12-regular leading-relaxed text-text-weak"
+              class="mt-2 mb-0 grid list-disc gap-1 pl-4 text-caption leading-relaxed text-text-weak"
             >
               {cleanNotes(state().releaseNotes).map((note) => (
                 <li>{note}</li>
@@ -119,14 +119,14 @@ export function DesktopUpdateDialog() {
           <div class="flex items-center justify-between gap-3 border-t border-border-weak-base bg-background-base px-5 py-3.5">
             <button
               type="button"
-              class="rounded-md px-2 py-1.5 text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
+              class="rounded-md px-2 py-1.5 text-caption font-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
               onClick={() => void later()}
             >
               Skip this version
             </button>
             <button
               type="button"
-              class="inline-flex h-8 items-center gap-2 rounded-md bg-button-primary-base px-3 text-12-medium text-icon-invert-base shadow-sm transition-transform hover:brightness-110 active:translate-y-px"
+              class="inline-flex h-8 items-center gap-2 rounded-md bg-button-primary-base px-3 text-caption font-medium text-icon-invert-base shadow-sm transition-transform hover:brightness-110 active:translate-y-px"
               autofocus
               onClick={install}
             >

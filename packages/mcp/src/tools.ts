@@ -2,6 +2,7 @@ import { operationDefinitions, type OperationDefinition, type OperationId } from
 import { relayToolInputSchema, type RelayToolInputSchema } from "./input-schemas.js";
 
 export const relayMcpProfiles = [
+  "control",
   "map",
   "observe",
   "author",
@@ -14,7 +15,7 @@ export const relayMcpProfiles = [
 ] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
-export const defaultRelayMcpProfile: RelayMcpProfile = "author";
+export const defaultRelayMcpProfile: RelayMcpProfile = "control";
 
 export const relayMcpExclusions = [
   {
@@ -83,6 +84,17 @@ function isToolOperation(
   return !excludedOperationIdSet.has(definition.id);
 }
 
+const extraGuidance: Partial<Record<OperationId, string>> = {
+  "target.interact":
+    " Prefer identifier, then label, then text, then point. Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen.",
+  "target.snapshot.capture":
+    " The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
+  "target.recover":
+    " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
+  "lease.create":
+    " Exclusive control is required before sending input. Observation remains available without a lease.",
+};
+
 function toolDescriptor(
   definition: OperationDefinition<Exclude<OperationId, ExcludedOperationId>>,
 ): RelayMcpToolDescriptor {
@@ -96,11 +108,12 @@ function toolDescriptor(
   ]
     .filter(Boolean)
     .join(" ");
+  const guidance = extraGuidance[definition.id] ?? "";
   return Object.freeze({
     name: relayToolName(definition.id),
     operationId: definition.id,
     title: definition.label,
-    description: `${definition.label}. Pass operation fields directly.${requirements ? ` ${requirements}` : ""}${requiresConfirmation ? " Requires confirm: true." : ""}`,
+    description: `${definition.label}. Pass operation fields directly.${requirements ? ` ${requirements}` : ""}${guidance}${requiresConfirmation ? " Requires confirm: true." : ""}`,
     annotations: Object.freeze({
       readOnlyHint: definition.mode === "query",
       destructiveHint:
@@ -117,6 +130,22 @@ function toolDescriptor(
 export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
   operationDefinitions.filter(isToolOperation).map(toolDescriptor),
 );
+
+const controlOperations = [
+  "system.health.get",
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.snapshot.capture",
+  "target.screenshot.capture",
+  "target.interact",
+  "target.recover",
+  "target.app.launch",
+  "target.ui.describe",
+  "lease.list",
+  "lease.create",
+  "lease.release",
+] as const satisfies readonly OperationId[];
 
 const observeOperations = [
   "system.health.get",
@@ -192,6 +221,8 @@ const testOperations = [
   "app-map.test.propose",
   "app-map.test.compile",
   "app-map.test.run",
+  "target.interact",
+  "target.recover",
   "job.list",
   "job.get",
   "job.cancel",
@@ -206,6 +237,8 @@ const runOperations = [
   "target.list",
   "target.preflight",
   "target.screenshot.capture",
+  "target.interact",
+  "target.recover",
   "lease.list",
   "lease.create",
   "app-map.list",
@@ -285,6 +318,7 @@ const adminOperations = [
 ] as const satisfies readonly OperationId[];
 
 const profileOperations: Record<Exclude<RelayMcpProfile, "full">, ReadonlySet<OperationId>> = {
+  control: new Set(controlOperations),
   map: new Set(mapOperations),
   observe: new Set(observeOperations),
   author: new Set(authorOperations),

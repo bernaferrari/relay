@@ -126,6 +126,21 @@ export function moveScenarioStepTree(
   }).steps;
 }
 
+/** Drag-reorder inside one branch. `toIndex` is the final resting index. */
+export function reorderScenarioStepTree(
+  steps: readonly AppMapScenarioTestStep[],
+  stepId: string,
+  toIndex: number,
+): AppMapScenarioTestStep[] {
+  return mapSiblingList(steps, stepId, (siblings, index) => {
+    const destination = Math.max(0, Math.min(toIndex, siblings.length - 1));
+    if (destination === index) return siblings;
+    const [moved] = siblings.splice(index, 1);
+    siblings.splice(destination, 0, moved!);
+    return siblings;
+  }).steps;
+}
+
 function renewIds(step: AppMapScenarioTestStep, makeId: () => string): AppMapScenarioTestStep {
   const copy = { ...structuredClone(step), id: makeId() };
   if (copy.kind === "decision") {

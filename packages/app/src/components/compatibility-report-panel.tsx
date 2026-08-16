@@ -23,7 +23,7 @@ export function CompatibilityReportPanel(props: {
     <Show
       when={props.report}
       fallback={
-        <div class="rounded-[10px] border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
+        <div class="rounded-xl border border-dashed border-[var(--border-weak-base)] px-3 py-4 text-center text-caption text-[var(--text-weak)]">
           Preparing the comparison…
         </div>
       }
@@ -33,15 +33,15 @@ export function CompatibilityReportPanel(props: {
           <header class="flex items-start justify-between gap-3">
             <div>
               <span class={eyebrow}>Compatibility matrix</span>
-              <strong class="mt-0.5 block text-[13px] text-[var(--text-strong)]">
+              <strong class="mt-0.5 block text-body text-[var(--text-strong)]">
                 {report().matrixName ?? "Target comparison"}
               </strong>
-              <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
+              <small class="mt-0.5 block text-micro text-[var(--text-weak)]">
                 {report().profiles.length} target{report().profiles.length === 1 ? "" : "s"} ·{" "}
                 {report().total} evidence run{report().total === 1 ? "" : "s"}
               </small>
             </div>
-            <span class="shrink-0 rounded-full border border-[var(--border-weak-base)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
+            <span class="shrink-0 rounded-full border border-[var(--border-weak-base)] px-[7px] py-1 text-micro tracking-[0.08em] text-[var(--text-weak)] uppercase">
               Same test setup
             </span>
           </header>
@@ -50,17 +50,17 @@ export function CompatibilityReportPanel(props: {
               {(profile) => (
                 <article
                   class={cn(
-                    "grid gap-2.5 rounded-[10px] border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base)_55%,transparent)] p-3",
+                    "grid gap-2.5 rounded-xl border border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--surface-base)_55%,transparent)] p-3",
                     profile.profile.id === props.selectedProfileId &&
                       "border-border-interactive-base bg-surface-interactive-weak",
                   )}
                 >
                   <header class="flex items-start justify-between gap-3">
                     <div>
-                      <strong class="block text-[13px] text-[var(--text-strong)]">
+                      <strong class="block text-body text-[var(--text-strong)]">
                         {profile.profile.name}
                       </strong>
-                      <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
+                      <small class="mt-0.5 block text-micro text-[var(--text-weak)]">
                         {profile.profile.platform}
                         {profile.profile.osVersion ? ` · ${profile.profile.osVersion}` : ""}
                       </small>
@@ -72,28 +72,28 @@ export function CompatibilityReportPanel(props: {
                     </span>
                   </header>
                   <div class="grid grid-cols-2 gap-2">
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--background-base)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                    <span class="grid gap-0.5 rounded-lg bg-[var(--background-base)] p-2">
+                      <b class="text-micro font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Pass rate
                       </b>
-                      <strong class="text-[12px] text-[var(--text-strong)]">
+                      <strong class="text-caption text-[var(--text-strong)]">
                         {profile.passRate == null
                           ? "No product verdict yet"
                           : `${Math.round(profile.passRate * 100)}%`}
                       </strong>
                     </span>
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--background-base)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                    <span class="grid gap-0.5 rounded-lg bg-[var(--background-base)] p-2">
+                      <b class="text-micro font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Median duration
                       </b>
-                      <strong class="text-[12px] text-[var(--text-strong)]">
+                      <strong class="text-caption text-[var(--text-strong)]">
                         {profile.medianDurationMs == null
                           ? "—"
                           : `${(profile.medianDurationMs / 1000).toFixed(1)}s`}
                       </strong>
                     </span>
                   </div>
-                  <p class="m-0 text-[10px]/[1.45] text-[var(--text-base)]">
+                  <p class="m-0 text-micro/[1.45] text-[var(--text-base)]">
                     {profile.passed} passed · {profile.productFailures} product ·{" "}
                     {profile.harnessFailures} harness
                     {profile.uncertain ? ` · ${profile.uncertain} uncertain` : ""}
@@ -101,7 +101,7 @@ export function CompatibilityReportPanel(props: {
                   </p>
                   <Show when={profile.baseline}>
                     {(baseline) => (
-                      <footer class="border-t border-[var(--border-weak-base)] pt-2 text-[10px]/[1.4] text-[var(--text-weak)]">
+                      <footer class="border-t border-[var(--border-weak-base)] pt-2 text-micro/[1.4] text-[var(--text-weak)]">
                         Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
                         {formatPassDelta(baseline().passRateDelta)} ·{" "}
                         {formatDurationDelta(baseline().durationDeltaMs)}

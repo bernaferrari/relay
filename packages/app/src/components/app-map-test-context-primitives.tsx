@@ -4,8 +4,8 @@ import { Icon, type IconName } from "./icon";
 export function TestContextMetric(props: { label: string; value: string }) {
   return (
     <span class="grid min-w-0 gap-0.5 bg-surface-base p-2.5">
-      <span class="text-[9.5px] text-text-weaker">{props.label}</span>
-      <strong class="truncate text-[12px] font-semibold tabular-nums text-text-strong">
+      <span class="text-micro text-text-weaker">{props.label}</span>
+      <strong class="truncate text-caption font-semibold tabular-nums text-text-strong">
         {props.value}
       </strong>
     </span>
@@ -24,8 +24,8 @@ export function TestContextEmpty(props: {
         <span class="mx-auto grid size-10 place-items-center rounded-xl bg-background-base text-text-weak">
           <Icon name={props.icon} size={17} />
         </span>
-        <strong class="mt-3 block text-[13px] font-semibold text-text-strong">{props.title}</strong>
-        <p class="mt-1 text-[11px]/[1.5] text-text-weak">{props.detail}</p>
+        <strong class="mt-3 block text-body font-semibold text-text-strong">{props.title}</strong>
+        <p class="mt-1 text-caption/[1.5] text-text-weak">{props.detail}</p>
         {props.action}
       </div>
     </div>

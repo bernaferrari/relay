@@ -53,17 +53,17 @@ export function AppMapCombineHeader(props: {
   return (
     <header class="flex items-start gap-3 border-b border-[var(--border-weak-base)] px-4 py-3.5">
       <div class="min-w-0 flex-1">
-        <p class="m-0 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-weaker)]">
+        <p class="m-0 text-micro font-semibold uppercase tracking-[0.06em] text-[var(--text-weaker)]">
           Run matrix
         </p>
-        <h2 class="m-0 mt-0.5 truncate text-[15px]/[1.25] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
+        <h2 class="m-0 mt-0.5 truncate text-title/[1.25] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
           {props.headline}
         </h2>
-        <p class="m-0 mt-0.5 text-[11.5px]/[1.35] text-[var(--text-weak)]">{props.subhead}</p>
+        <p class="m-0 mt-0.5 text-caption/[1.35] text-[var(--text-weak)]">{props.subhead}</p>
       </div>
       <button
         type="button"
-        class="grid size-10 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+        class="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
         aria-label="Close run matrix"
         onClick={props.onClose}
       >
@@ -82,16 +82,16 @@ export function AppMapCombineStrategy(props: {
     <Show when={props.modifierCount > 1}>
       <section class="grid gap-2" aria-labelledby="coverage-title">
         <div class={copyStack}>
-          <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
+          <h3 id="coverage-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
             2. Multiply modifiers
           </h3>
-          <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
+          <p class={cn(copyDescription, "m-0 text-micro")}>
             Choose whether every value meets every other value.
           </p>
         </div>
         <div
           class={cn(
-            "grid gap-1 rounded-[9px] bg-[var(--surface-base)] p-1",
+            "grid gap-1 rounded-xl bg-[var(--surface-base)] p-1",
             props.modifierCount > 2 ? "grid-cols-3" : "grid-cols-2",
           )}
           role="radiogroup"
@@ -155,10 +155,10 @@ export function AppMapCombinePlan(props: {
       >
         <div class="flex min-h-8 items-center justify-between gap-2">
           <div class={copyStack}>
-            <h3 id="matrix-states-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
+            <h3 id="matrix-states-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
               1. Choose modifiers
             </h3>
-            <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
+            <p class={cn(copyDescription, "m-0 text-micro")}>
               A modifier changes one thing, then returns to the test start.
             </p>
           </div>
@@ -172,14 +172,14 @@ export function AppMapCombinePlan(props: {
           fallback={
             <button
               type="button"
-              class="grid min-h-20 place-items-center rounded-[10px] border border-dashed border-[var(--border-strong-base)] px-4 text-center hover:bg-[var(--surface-base-hover)]"
+              class="grid min-h-20 place-items-center rounded-xl border border-dashed border-[var(--border-strong-base)] px-4 text-center hover:bg-[var(--surface-base-hover)]"
               onClick={props.onCreateModifier}
             >
               <span class={cn(copyStack, "items-center")}>
-                <strong class={cn(copyTitle, "block text-[12px]")}>
+                <strong class={cn(copyTitle, "block text-caption")}>
                   Create the first modifier
                 </strong>
-                <span class={cn(copyDescription, "block text-[10.5px]")}>
+                <span class={cn(copyDescription, "block text-micro")}>
                   Teach Relay a language, account, theme, model, or another list.
                 </span>
               </span>
@@ -192,20 +192,20 @@ export function AppMapCombinePlan(props: {
                 const selected = () => props.selectedVariableIds.includes(variable.id);
                 const editing = () => props.editingValuesFor === variable.id && selected();
                 return (
-                  <div class={cn("rounded-[9px]", selected() && "bg-[var(--surface-base)]")}>
+                  <div class={cn("rounded-xl", selected() && "bg-[var(--surface-base)]")}>
                     <div class="flex min-h-11 items-center gap-1 px-1.5">
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-[7px] px-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                        class="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                         aria-pressed={selected()}
                         onClick={() => props.onToggleVariable(variable)}
                       >
                         <SelectionMark selected={selected()} />
                         <span class={cn(copyStack, "flex-1")}>
-                          <strong class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}>
+                          <strong class={cn(copyTitle, "block truncate text-caption font-medium")}>
                             {variable.name}
                           </strong>
-                          <span class={cn(copyDescription, "block text-[10px] tabular-nums")}>
+                          <span class={cn(copyDescription, "block text-micro tabular-nums")}>
                             {props.valuesFor(variable).length} of {variable.options.length} values ·{" "}
                             {modifierMethodLabel(variable)}
                           </span>
@@ -214,7 +214,7 @@ export function AppMapCombinePlan(props: {
                       <Show when={selected()}>
                         <button
                           type="button"
-                          class="grid size-10 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                          class="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                           aria-label={`${editing() ? "Hide" : "Choose"} ${variable.name} values`}
                           aria-expanded={editing()}
                           onClick={() => props.onToggleValues(editing() ? undefined : variable.id)}
@@ -227,7 +227,7 @@ export function AppMapCombinePlan(props: {
                       >
                         <button
                           type="button"
-                          class="grid size-10 shrink-0 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                          class="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                           aria-label={`Edit ${variable.name} modifier`}
                           data-tip={`Edit ${variable.name}`}
                           onClick={() => props.onEditModifier(variable.id)}
@@ -265,10 +265,10 @@ export function AppMapCombinePlan(props: {
           tabIndex={-1}
         >
           <div class={copyStack}>
-            <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
+            <h3 id="matrix-tests-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
               {props.selectedVariables.length > 1 ? "3" : "2"}. Choose tests
             </h3>
-            <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
+            <p class={cn(copyDescription, "m-0 text-micro")}>
               Choose one or more saved graph Tests.
             </p>
           </div>
@@ -278,11 +278,11 @@ export function AppMapCombinePlan(props: {
               <div
                 class={cn(
                   copyStack,
-                  "items-center rounded-[9px] bg-[var(--surface-base)] px-3 py-4 text-center",
+                  "items-center rounded-xl bg-[var(--surface-base)] px-3 py-4 text-center",
                 )}
               >
-                <strong class={cn(copyTitle, "block text-[12px]")}>No reusable test yet</strong>
-                <span class={cn(copyDescription, "block text-[10.5px]")}>
+                <strong class={cn(copyTitle, "block text-caption")}>No reusable test yet</strong>
+                <span class={cn(copyDescription, "block text-micro")}>
                   Create a Test in the Test editor, then return here to add it to this matrix.
                 </span>
               </div>
@@ -297,31 +297,31 @@ export function AppMapCombinePlan(props: {
                   return (
                     <div
                       class={cn(
-                        "flex min-h-11 items-center gap-2 rounded-[8px] px-2.5 text-left hover:bg-[var(--surface-base-hover)]",
+                        "flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-left hover:bg-[var(--surface-base-hover)]",
                         selected() && "bg-[var(--surface-base)]",
                       )}
                     >
                       <button
                         type="button"
-                        class="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-[7px] text-left focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                        class="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                         aria-pressed={selected()}
                         onClick={() => props.onToggleTest(candidate)}
                       >
                         <SelectionMark selected={selected()} />
                         <span class={cn(copyStack, "min-w-0 flex-1")}>
-                          <strong class={cn(copyTitle, "block truncate text-[11.5px] font-medium")}>
+                          <strong class={cn(copyTitle, "block truncate text-caption font-medium")}>
                             {candidate.name}
                           </strong>
-                          <span class={cn(copyDescription, "block text-[10px]")}>
+                          <span class={cn(copyDescription, "block text-micro")}>
                             {candidateDescription(candidate)}
                           </span>
                         </span>
                       </button>
                       <Show when={selected()}>
-                        <label class="grid shrink-0 gap-0.5 text-[9px] font-medium text-[var(--text-weak)]">
+                        <label class="grid shrink-0 gap-0.5 text-micro font-medium text-[var(--text-weak)]">
                           Screenshots
                           <select
-                            class="h-8 rounded-[7px] border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2 text-[10.5px] text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+                            class="h-8 rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] px-2 text-micro text-[var(--text-base)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
                             value={mode()}
                             aria-label={`Screenshots for ${candidate.name}`}
                             onChange={(event) =>
@@ -356,14 +356,14 @@ export function AppMapCombinePlan(props: {
         >
           <div class="flex items-end justify-between gap-2">
             <div class={copyStack}>
-              <h3 id="matrix-preview-title" class={cn(copyTitle, "m-0 text-[12px] font-semibold")}>
+              <h3 id="matrix-preview-title" class={cn(copyTitle, "m-0 text-caption font-semibold")}>
                 Run plan
               </h3>
-              <p class={cn(copyDescription, "m-0 text-[10.5px]")}>
+              <p class={cn(copyDescription, "m-0 text-micro")}>
                 Rows are modifier combinations. Columns are reusable tests.
               </p>
             </div>
-            <span class="shrink-0 text-[10px] tabular-nums text-[var(--text-weak)]">
+            <span class="shrink-0 text-micro tabular-nums text-[var(--text-weak)]">
               {props.projection.cellCount} checks
               {props.projection.truncated
                 ? ` · first ${props.projection.worlds.length} rows shown`
@@ -373,24 +373,24 @@ export function AppMapCombinePlan(props: {
           <Show
             when={!props.projection.issue}
             fallback={
-              <p class="m-0 rounded-[8px] bg-[var(--surface-warning-weak,var(--surface-base))] px-2.5 py-2 text-[11px] text-[var(--text-warning-base,var(--text-base))]">
+              <p class="m-0 rounded-lg bg-[var(--surface-warning-weak,var(--surface-base))] px-2.5 py-2 text-caption text-[var(--text-warning-base,var(--text-base))]">
                 {props.projection.issue}
               </p>
             }
           >
             <div
-              class="max-h-72 overflow-auto overscroll-contain rounded-[9px] border border-[var(--border-weak-base)]"
+              class="max-h-72 overflow-auto overscroll-contain rounded-xl border border-[var(--border-weak-base)]"
               onWheel={(event) => event.stopPropagation()}
             >
               <table class="w-full min-w-[360px] border-collapse text-left">
                 <thead class="sticky top-0 z-[2] bg-[var(--surface-raised-stronger-non-alpha)]">
                   <tr class="border-b border-[var(--border-weak-base)]">
-                    <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[10px] font-medium text-[var(--text-weak)]">
+                    <th class="sticky left-0 z-[3] min-w-40 bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-weak)]">
                       Modifiers
                     </th>
                     <For each={props.selectedTests}>
                       {(test) => (
-                        <th class="min-w-28 px-2 py-2 text-[10px] font-medium text-[var(--text-weak)]">
+                        <th class="min-w-28 px-2 py-2 text-micro font-medium text-[var(--text-weak)]">
                           {test.name}
                         </th>
                       )}
@@ -401,7 +401,7 @@ export function AppMapCombinePlan(props: {
                   <For each={props.projection.worlds}>
                     {(world, worldIndex) => (
                       <tr class="border-b border-[var(--border-weak-base)] last:border-b-0">
-                        <th class="sticky left-0 z-[1] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-[10.5px] font-medium text-[var(--text-strong)]">
+                        <th class="sticky left-0 z-[1] bg-[var(--surface-raised-stronger-non-alpha)] px-2.5 py-2 text-micro font-medium text-[var(--text-strong)]">
                           {world.label}
                         </th>
                         <For each={props.selectedTests}>
@@ -409,7 +409,7 @@ export function AppMapCombinePlan(props: {
                             <td class="px-1.5 py-1">
                               <button
                                 type="button"
-                                class="grid min-h-9 w-full place-items-center rounded-[7px] text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
+                                class="grid min-h-9 w-full place-items-center rounded-lg text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)] disabled:text-[var(--text-weaker)]"
                                 data-tip={
                                   props.canRunOnDevice
                                     ? undefined
@@ -441,7 +441,7 @@ function SelectionMark(props: { selected: boolean }) {
   return (
     <span
       class={cn(
-        "grid size-4 shrink-0 place-items-center rounded-[4px] border",
+        "grid size-4 shrink-0 place-items-center rounded border",
         props.selected
           ? "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-[var(--button-primary-foreground,var(--icon-invert-base))]"
           : "border-[var(--border-strong-base)]",
@@ -464,7 +464,7 @@ function StrategyButton(props: {
     <button
       type="button"
       class={cn(
-        "min-h-10 rounded-[7px] px-2 text-[11px] font-medium",
+        "min-h-10 rounded-lg px-2 text-caption font-medium",
         props.active
           ? "bg-[var(--surface-raised-stronger-non-alpha)] text-[var(--text-strong)] shadow-[var(--shadow-xs-border-base)]"
           : "text-[var(--text-weak)] hover:text-[var(--text-strong)]",
@@ -506,7 +506,7 @@ export function AppMapCombineFooter(props: {
             <Icon name="trash" size={11} /> Delete
           </Button>
         </Show>
-        <span class="min-w-0 truncate text-[10.5px] text-[var(--text-weak)]">
+        <span class="min-w-0 truncate text-micro text-[var(--text-weak)]">
           {props.combinations} combinations × {props.testCount} tests
         </span>
       </div>

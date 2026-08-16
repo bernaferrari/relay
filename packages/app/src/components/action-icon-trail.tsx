@@ -21,7 +21,7 @@ export function ActionIconTrail(props: {
       <For each={shown()}>
         {(glyph) => (
           <span
-            class="grid size-4 shrink-0 place-items-center rounded-[4px] text-text-weaker"
+            class="grid size-4 shrink-0 place-items-center rounded text-text-weaker"
             data-tip={GLYPH_META[glyph]?.label ?? glyph}
           >
             <Show
@@ -34,7 +34,7 @@ export function ActionIconTrail(props: {
         )}
       </For>
       <Show when={overflow() > 0}>
-        <span class="pl-0.5 font-mono text-[9px] tabular-nums text-text-weaker">+{overflow()}</span>
+        <span class="pl-0.5 font-mono text-micro tabular-nums text-text-weaker">+{overflow()}</span>
       </Show>
     </span>
   );

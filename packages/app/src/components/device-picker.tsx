@@ -192,7 +192,7 @@ export function DevicePicker(props: {
             ref={(element) => (trigger = element)}
             type="button"
             class={cn(
-              "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-[10px] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150",
+              "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-xl px-3 text-caption font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150",
               "bg-[var(--map-control-surface)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100",
               open() && "bg-[var(--surface-base-hover)] text-[var(--text-strong)]",
             )}
@@ -232,7 +232,7 @@ export function DevicePicker(props: {
       >
         <div
           class={cn(
-            "inline-flex h-10 min-w-0 items-stretch overflow-hidden rounded-[11px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-control)]",
+            "inline-flex h-10 min-w-0 items-stretch overflow-hidden rounded-xl bg-[var(--map-control-surface)] shadow-[var(--map-elevation-control)]",
             props.liveOpen && "text-[var(--text-interactive-base)]",
           )}
           role="group"
@@ -240,7 +240,7 @@ export function DevicePicker(props: {
         >
           <button
             type="button"
-            class="inline-flex min-w-0 items-center gap-2 px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+            class="inline-flex min-w-0 items-center gap-2 px-3 text-caption font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
             aria-pressed={props.liveOpen}
             aria-label={
               activeTargetSet()
@@ -306,7 +306,7 @@ export function DevicePicker(props: {
         <div
           ref={(element) => (dialog = element)}
           id="target-picker-dialog"
-          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-[11px] bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[var(--map-elevation-panel)]"
+          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[var(--map-elevation-panel)]"
           role="dialog"
           aria-labelledby="target-picker-title"
           onKeyDown={(event) => {
@@ -332,7 +332,7 @@ export function DevicePicker(props: {
           <header class="flex h-12 shrink-0 items-center justify-between gap-3 px-3">
             <span
               id="target-picker-title"
-              class="inline-flex min-w-0 items-center gap-4 text-[12px] leading-none font-semibold text-[var(--text-base)]"
+              class="inline-flex min-w-0 items-center gap-4 text-caption leading-none font-semibold text-[var(--text-base)]"
             >
               <span class="inline-flex h-6 items-center">Devices</span>
             </span>
@@ -364,7 +364,7 @@ export function DevicePicker(props: {
               <span class="sr-only">Filter devices</span>
               <input
                 ref={(element) => (searchInput = element)}
-                class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                class="min-w-0 flex-1 border-0 bg-transparent text-body text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
                 data-focus-contained
                 type="search"
                 value={query()}
@@ -376,7 +376,7 @@ export function DevicePicker(props: {
           <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
             <Show when={(props.targetSets?.length ?? 0) > 0}>
               <section class="mb-1 border-b border-[var(--border-weak-base)] pb-1">
-                <span class="block px-2.5 pt-1 pb-1.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                <span class="block px-2.5 pt-1 pb-1.5 text-micro font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
                   Target sets
                 </span>
                 <For each={props.targetSets}>
@@ -398,10 +398,10 @@ export function DevicePicker(props: {
                       <span class="grid size-[22px] place-items-center text-[var(--text-weak)]">
                         <Icon name="grid" size={14} />
                       </span>
-                      <span class="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-base)]">
+                      <span class="min-w-0 flex-1 truncate text-caption font-medium text-[var(--text-base)]">
                         {targetSet.name}
                       </span>
-                      <span class="text-[9.5px] text-[var(--text-weak)]">Parallel</span>
+                      <span class="text-micro text-[var(--text-weak)]">Parallel</span>
                     </button>
                   )}
                 </For>
@@ -417,37 +417,37 @@ export function DevicePicker(props: {
                       class="flex flex-col items-center px-4 pt-7 pb-6 text-center"
                       aria-live="polite"
                     >
-                      <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                      <span class="grid size-11 place-items-center rounded-xl bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                         <Icon
                           name="refresh"
                           size={20}
                           class="ui-refresh-spin motion-reduce:opacity-70"
                         />
                       </span>
-                      <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
+                      <strong class="mt-3 text-body font-semibold text-[var(--text-strong)]">
                         Looking for devices…
                       </strong>
-                      <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
+                      <p class="mt-1 mb-0 max-w-[220px] text-caption/[1.5] text-[var(--text-weak)]">
                         Checking connected devices and simulators.
                       </p>
                     </div>
                   }
                 >
                   <div class="flex flex-col items-center px-4 pt-7 pb-6 text-center">
-                    <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                    <span class="grid size-11 place-items-center rounded-xl bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                       <Icon name="smartphone" size={20} />
                     </span>
-                    <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
+                    <strong class="mt-3 text-body font-semibold text-[var(--text-strong)]">
                       No devices found
                     </strong>
-                    <p class="mt-1 mb-0 max-w-[240px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
+                    <p class="mt-1 mb-0 max-w-[240px] text-caption/[1.5] text-[var(--text-weak)]">
                       Plug in a phone over USB, start an iOS Simulator / Android emulator, or open
                       device setup for signing help.
                     </p>
                     <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
                       <button
                         type="button"
-                        class="inline-flex min-h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
+                        class="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[var(--product-accent-soft)] px-3 text-caption font-semibold text-[var(--text-interactive-base)] transition-colors hover:bg-[color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]"
                         onClick={() => {
                           setOpen(false);
                           window.dispatchEvent(
@@ -462,7 +462,7 @@ export function DevicePicker(props: {
                       <Show when={props.onManageTargets}>
                         <button
                           type="button"
-                          class="inline-flex min-h-10 items-center gap-1.5 rounded-[8px] px-3 text-[11.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                          class="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-caption font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                           onClick={() => {
                             setOpen(false);
                             props.onManageTargets?.();
@@ -508,12 +508,12 @@ export function DevicePicker(props: {
               <Show when={virtualGroups().length > 0}>
                 <button
                   type="button"
-                  class="mt-0.5 flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[11px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
+                  class="mt-0.5 flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-caption font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
                   aria-expanded={virtualExpanded()}
                   onClick={() => setShowVirtualDevices((value) => !value)}
                 >
                   <span>Virtual devices</span>
-                  <span class="ml-auto tabular-nums text-[10px] text-[var(--text-weak)]">
+                  <span class="ml-auto tabular-nums text-micro text-[var(--text-weak)]">
                     {virtualGroups().length}
                   </span>
                   <Icon
@@ -549,7 +549,7 @@ export function DevicePicker(props: {
                   virtualGroups().length === 0
                 }
               >
-                <div class="px-4 py-6 text-center text-[12px] text-[var(--text-weak)]">
+                <div class="px-4 py-6 text-center text-caption text-[var(--text-weak)]">
                   {query() ? `No devices match “${query()}”.` : "No devices available."}
                 </div>
               </Show>
@@ -559,7 +559,7 @@ export function DevicePicker(props: {
             <footer class="shrink-0 border-t border-[var(--border-weak-base)] p-1">
               <button
                 type="button"
-                class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-caption font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
                 onClick={() => {
                   closePicker();
                   props.onManageTargets!();
@@ -631,7 +631,7 @@ function TargetRow(props: {
         aria-current={props.selected ? "true" : undefined}
         aria-label={`${target().displayName}, ${status()}`}
         disabled={!pickable()}
-        class="min-w-0 truncate rounded text-left text-[12px]/[1.3] font-medium text-[var(--text-base)] enabled:cursor-pointer enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] enabled:hover:text-[var(--text-strong)] disabled:cursor-default focus-visible:outline-none"
+        class="min-w-0 truncate rounded text-left text-caption/[1.3] font-medium text-[var(--text-base)] enabled:cursor-pointer enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] enabled:hover:text-[var(--text-strong)] disabled:cursor-default focus-visible:outline-none"
         onClick={() => (authorizable() ? props.onAuthorize?.() : props.onPick())}
       >
         {target().displayName}
@@ -641,7 +641,7 @@ function TargetRow(props: {
           <button
             type="button"
             class={cn(
-              "rounded-md px-2 py-1 text-[10.5px] font-semibold text-[var(--text-interactive-base)] active:scale-[0.96] motion-reduce:active:scale-100",
+              "rounded-md px-2 py-1 text-micro font-semibold text-[var(--text-interactive-base)] active:scale-[0.96] motion-reduce:active:scale-100",
               "shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors",
               "hover:bg-[var(--product-accent-soft)]",
               props.starting && "pointer-events-none",
@@ -659,7 +659,7 @@ function TargetRow(props: {
         <Show when={!startable()}>
           <small
             class={cn(
-              "max-w-[112px] truncate text-[10.5px] text-[var(--text-weak)]",
+              "max-w-[112px] truncate text-micro text-[var(--text-weak)]",
               !available() && "text-[var(--icon-warning-base)]",
             )}
           >

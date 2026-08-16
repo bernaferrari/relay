@@ -104,7 +104,7 @@ test("results make the latest failure and exact authored step actionable", () =>
 
   expect(root.textContent).toContain("Latest result");
   expect(root.textContent).toContain("Failed");
-  expect(root.textContent).toContain("Failure location");
+  expect(root.textContent).toContain("Failed at");
   expect(root.textContent).toContain("Confirm the total");
   expect(root.textContent).toContain("Expected $42, observed $41");
   expect(root.textContent).toContain("1/1");

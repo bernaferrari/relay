@@ -13,7 +13,7 @@ import {
   findAppMapCaptureScreen,
   formatAppMapYaml,
   importAppMap,
-  listAppMaps,
+  listAppMapCatalog,
   now,
   proposalFromDiscovery,
   reviewAppMapScreenCapture,
@@ -77,7 +77,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
   if (await handleAppMapScrollSurfaceRoute(input)) return true;
 
   if (method === "GET" && pathname === "/app-maps") {
-    json(response, 200, { appMaps: await listAppMaps(scope.projectId) });
+    json(response, 200, await listAppMapCatalog(scope.projectId));
     return true;
   }
   if (method === "POST" && pathname === "/app-maps/import") {

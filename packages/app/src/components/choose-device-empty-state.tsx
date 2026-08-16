@@ -23,7 +23,7 @@ export function ChooseDeviceEmptyState(props: {
       )}
       aria-labelledby="choose-device-title"
     >
-      <span class="grid size-11 place-items-center rounded-[14px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]">
+      <span class="grid size-11 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]">
         <Icon
           name={props.offline ? "alert" : props.scanning ? "refresh" : "smartphone"}
           size={19}
@@ -32,7 +32,7 @@ export function ChooseDeviceEmptyState(props: {
       </span>
       <h2
         id="choose-device-title"
-        class="m-0 mt-3 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]"
+        class="m-0 mt-3 text-title font-semibold tracking-[-0.025em] text-[var(--text-strong)]"
       >
         {props.offline
           ? "Relay is offline"
@@ -42,7 +42,7 @@ export function ChooseDeviceEmptyState(props: {
               ? "Connect a device to record"
               : "Connect a device to begin"}
       </h2>
-      <p class="m-0 mt-1.5 max-w-[34ch] text-[12px]/[1.5] text-[var(--text-weak)]">
+      <p class="m-0 mt-1.5 max-w-[34ch] text-caption/[1.5] text-[var(--text-weak)]">
         {props.offline
           ? "Start the local Relay service again. Your maps stay safe."
           : props.scanning

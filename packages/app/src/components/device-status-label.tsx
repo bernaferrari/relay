@@ -67,7 +67,7 @@ export function DeviceStatusLabel(props: {
   if (props.identityOnly) {
     return (
       <span
-        class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
+        class="inline-flex min-w-0 items-center gap-2 text-caption font-medium text-[var(--text-base)]"
         data-tip={props.status.detail ?? props.status.label}
       >
         <Icon name="smartphone" size={13} class="shrink-0 text-[var(--text-weak)]" />
@@ -77,7 +77,7 @@ export function DeviceStatusLabel(props: {
   }
   return (
     <span
-      class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
+      class="inline-flex min-w-0 items-center gap-2 text-caption font-medium text-[var(--text-base)]"
       role="status"
       aria-live="polite"
       aria-label={props.label ? `${props.label}: ${props.status.label}` : undefined}
@@ -132,7 +132,7 @@ export function DeviceStatusLabel(props: {
       </Show>
       <span class="min-w-0 truncate">{props.label ?? props.status.label}</span>
       <Show when={showState()}>
-        <span class="shrink-0 text-[10px] font-medium text-[var(--text-weak)]">
+        <span class="shrink-0 text-micro font-medium text-[var(--text-weak)]">
           {props.status.label}
         </span>
       </Show>

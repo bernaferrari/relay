@@ -26,7 +26,7 @@ export function DeviceConnectState(props: {
   }
 
   return (
-    <div class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center text-12-medium">
+    <div class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center text-caption font-medium">
       <button
         type="button"
         class="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg bg-surface-base px-2.5 text-text-base shadow-[inset_0_0_0_1px_var(--border-weak-base)] transition-colors hover:bg-surface-base-hover hover:text-text-strong disabled:cursor-not-allowed disabled:text-text-weaker"

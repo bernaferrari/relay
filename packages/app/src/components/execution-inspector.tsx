@@ -94,11 +94,14 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
           <div class="min-w-0">
             <span class={eyebrow}>Execution</span>
             <h2
-              class={cn("mt-1.5 text-[19px] font-semibold tracking-[-0.025em]", stateTone(state()))}
+              class={cn(
+                "mt-1.5 text-display font-semibold tracking-[-0.025em]",
+                stateTone(state()),
+              )}
             >
               {executionStateLabel(state())}
             </h2>
-            <p class="mt-1 text-[12px]/[1.45] text-[var(--text-base)]">
+            <p class="mt-1 text-caption/[1.45] text-[var(--text-base)]">
               {executionStateDetail(state())}
             </p>
           </div>
@@ -119,18 +122,18 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
 
         <div class="mt-4 flex items-end justify-between gap-3">
           <div>
-            <strong class="font-mono text-[13px] tabular-nums text-[var(--text-strong)]">
+            <strong class="font-mono text-body tabular-nums text-[var(--text-strong)]">
               Step {Math.min(currentIndex() + 1, total())} of {total()}
             </strong>
             <Show when={fmtDur(props.job, server.clock())}>
               {(duration) => (
-                <small class="ml-2 font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
+                <small class="ml-2 font-mono text-micro tabular-nums text-[var(--text-weak)]">
                   {duration()}
                 </small>
               )}
             </Show>
           </div>
-          <span class="font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
+          <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
             {Math.min(observed(), total())} reached
           </span>
         </div>
@@ -140,7 +143,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
         <section class="rounded-xl bg-[var(--surface-base)] p-4 shadow-[inset_0_0_0_1px_var(--border-weak-base)]">
           <div class="flex items-center justify-between gap-3">
             <span class={eyebrow}>Selected step</span>
-            <span class="font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
+            <span class="font-mono text-micro tabular-nums text-[var(--text-weak)]">
               {focusedTrace()?.durationMs
                 ? focusedTrace()!.durationMs! < 1000
                   ? `${Math.round(focusedTrace()!.durationMs!)}ms`
@@ -148,10 +151,10 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
                 : "—"}
             </span>
           </div>
-          <strong class="mt-2 block text-[14px]/[1.4] font-medium text-[var(--text-strong)]">
+          <strong class="mt-2 block text-body/[1.4] font-medium text-[var(--text-strong)]">
             {focusedTitle()}
           </strong>
-          <div class="mt-3 flex items-center gap-2 text-[11px] text-[var(--text-base)]">
+          <div class="mt-3 flex items-center gap-2 text-caption text-[var(--text-base)]">
             <span
               class={cn(
                 "size-1.5 rounded-full",
@@ -167,7 +170,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
             {executionStateLabel(focusedMoment()?.state ?? "planned", "step")}
           </div>
           <Show when={focusedMoment()?.state === "failed" && props.job.error}>
-            <p class="mt-3 rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_9%,transparent)] px-3 py-2.5 text-[11.5px]/[1.45] text-[var(--text-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-critical-base)_24%,transparent)]">
+            <p class="mt-3 rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_9%,transparent)] px-3 py-2.5 text-caption/[1.45] text-[var(--text-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-critical-base)_24%,transparent)]">
               {friendlyError(props.job.error!)}
             </p>
           </Show>
@@ -177,7 +180,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
           {(checkpoint) => (
             <section class="mt-3 rounded-xl bg-[color-mix(in_srgb,var(--icon-warning-base)_8%,var(--surface-base))] p-4 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-warning-base)_28%,var(--border-weak-base))]">
               <span class={eyebrow}>Do this on the device</span>
-              <strong class="mt-2 block text-[13px]/[1.4] text-[var(--text-strong)]">
+              <strong class="mt-2 block text-body/[1.4] text-[var(--text-strong)]">
                 {checkpoint().message}
               </strong>
             </section>
@@ -217,7 +220,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
         <Show when={state() === "running" || state() === "paused"}>
           <button
             type="button"
-            class="col-span-2 min-h-9 rounded-lg text-[11.5px] font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
+            class="col-span-2 min-h-9 rounded-lg text-caption font-medium text-[var(--text-weak)] hover:bg-[var(--surface-base)] hover:text-[var(--icon-critical-base)]"
             onClick={() => void server.cancelJob(props.job.id)}
           >
             Stop run

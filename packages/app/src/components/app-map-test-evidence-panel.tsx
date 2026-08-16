@@ -6,6 +6,7 @@ import {
   type AppMapTestRun,
   type AppMapTestStepRunState,
 } from "../lib/app-map-test-evidence";
+import { cn } from "../lib/cn";
 import { findScenarioStep } from "../lib/app-map-test-editor-tree";
 import type { PersistedRun } from "../lib/api-types";
 import { runTargetLabel } from "../lib/run-presentation";
@@ -18,6 +19,13 @@ import {
 } from "./app-map-test-context-primitives";
 
 type EvidenceCounts = { frames: number; events: number; artifacts: number };
+
+/** One disclosure grammar for the two low-frequency detail cards in this rail. */
+const evidenceSummary = cn(
+  "flex min-h-9 cursor-pointer list-none items-center px-2.5 text-caption font-medium text-text-base",
+  "hover:text-text-strong",
+  "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-strong-focus",
+);
 
 export function AppMapTestEvidencePanel(props: {
   test: AppMapScenarioTest;
@@ -46,7 +54,7 @@ export function AppMapTestEvidencePanel(props: {
   const selectedFrame = createMemo(() => selectedOutcome()?.latestFrame);
 
   return (
-    <div class="grid gap-3">
+    <div class="grid gap-2.5">
       <Show
         when={props.plan}
         fallback={
@@ -59,7 +67,6 @@ export function AppMapTestEvidencePanel(props: {
       >
         {(plan) => (
           <>
-            <CompiledTestSummary plan={plan()} />
             <Show
               when={props.run}
               fallback={
@@ -72,21 +79,8 @@ export function AppMapTestEvidencePanel(props: {
             >
               {(run) => (
                 <>
-                  <RunResultCard
-                    run={run()}
-                    counts={props.counts}
-                    devices={props.devices}
-                    onOpenRun={props.onOpenRun}
-                  />
-                  <Show when={failure()}>
-                    {(localized) => (
-                      <FailureCard
-                        failure={localized()}
-                        test={props.test}
-                        onSelectStep={props.onSelectStep}
-                      />
-                    )}
-                  </Show>
+                  {/* The selected step comes first: evidence is per step, and the
+                      old order buried it under two run-level cards. */}
                   <Show when={props.selectedStepId}>
                     <SelectedStepResult
                       stepIntent={selectedStep()?.intent ?? "Selected step"}
@@ -96,19 +90,35 @@ export function AppMapTestEvidencePanel(props: {
                       frameUrl={props.frameUrl}
                     />
                   </Show>
+                  <Show when={failure()}>
+                    {(localized) => (
+                      <FailureCard
+                        failure={localized()}
+                        test={props.test}
+                        onSelectStep={props.onSelectStep}
+                      />
+                    )}
+                  </Show>
+                  <RunResultCard
+                    run={run()}
+                    counts={props.counts}
+                    devices={props.devices}
+                    onOpenRun={props.onOpenRun}
+                  />
                 </>
               )}
             </Show>
             <ProvenanceCard selectedStepId={props.selectedStepId} provenance={props.provenance} />
+            <CompiledTestSummary plan={plan()} />
           </>
         )}
       </Show>
       <Show when={props.detailError}>
         <p
-          class="m-0 rounded-lg border border-border-critical-base bg-surface-critical-weak p-3 text-[11px]/[1.5] text-text-critical-base"
+          class="m-0 rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-caption/[1.45] text-text-critical-base"
           role="alert"
         >
-          Some evidence details could not be loaded. The summary above uses only the data Relay has.{" "}
+          Some evidence details could not be loaded. This summary uses only the data Relay has.{" "}
           {props.detailError}
         </p>
       </Show>
@@ -118,24 +128,19 @@ export function AppMapTestEvidencePanel(props: {
 
 function CompiledTestSummary(props: { plan: AppMapCompiledTest }) {
   return (
-    <section class="rounded-xl border border-border-weak-base bg-surface-base p-3">
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
-            Compiled revision
-          </p>
-          <strong class="mt-1 block text-[12px] text-text-strong">
-            Map revision {props.plan.appMapRevision}
-          </strong>
-        </div>
-        <span class="text-[10.5px] tabular-nums text-text-weak">
-          {Object.keys(props.plan.recipes).length} recipes
-        </span>
+    <details class="rounded-md border border-border-weak-base">
+      <summary class={evidenceSummary}>What ran · map revision {props.plan.appMapRevision}</summary>
+      <div class="border-t border-border-weak-base p-2.5">
+        <p class="m-0 text-caption/[1.4] text-text-weak">
+          {Object.keys(props.plan.recipes).length}{" "}
+          {Object.keys(props.plan.recipes).length === 1 ? "recipe" : "recipes"} compiled from this
+          revision.
+        </p>
+        <code class="mt-1.5 block overflow-x-auto rounded bg-background-deep p-1.5 font-mono text-micro/[1.45] text-text-weak">
+          {props.plan.rootRecipeId}
+        </code>
       </div>
-      <code class="mt-3 block overflow-x-auto rounded-lg bg-background-deep p-2 font-mono text-[9.5px]/[1.45] text-text-weak">
-        {props.plan.rootRecipeId}
-      </code>
-    </section>
+    </details>
   );
 }
 
@@ -153,7 +158,7 @@ function RunResultCard(props: {
   const observedAt = () => props.run.finishedAt ?? props.run.startedAt ?? props.run.queuedAt;
   return (
     <section
-      class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-base"
+      class="overflow-hidden rounded-md border border-border-weak-base"
       aria-label="Latest Test result"
     >
       <Show
@@ -178,7 +183,7 @@ function RunResultCard(props: {
             target={runTargetLabel(props.run, props.devices)}
             observedAt={observedAt()}
           />
-          <span class="shrink-0 text-[11px] font-semibold text-text-interactive-base">
+          <span class="shrink-0 text-caption font-semibold text-text-interactive-base">
             Open <span aria-hidden="true">→</span>
           </span>
         </button>
@@ -213,10 +218,10 @@ function RunResultHeaderContent(props: {
   return (
     <span class="min-w-0">
       <span class="flex flex-wrap items-center gap-2">
-        <strong class="truncate text-[12px] font-semibold text-text-strong">Latest result</strong>
+        <strong class="truncate text-caption font-semibold text-text-strong">Latest result</strong>
         <StatusChip tone={props.status.tone} label={props.status.label} />
       </span>
-      <span class="mt-1 block truncate text-[10.5px] text-text-weak">
+      <span class="mt-1 block truncate text-micro text-text-weak">
         {props.target} ·{" "}
         {props.observedAt === undefined
           ? "Time not recorded"
@@ -234,17 +239,16 @@ function FailureCard(props: {
   const step = () => findScenarioStep(props.test.steps, props.failure.testStepId);
   return (
     <section
-      class="rounded-xl border border-border-critical-base bg-surface-critical-weak p-3 text-text-critical-base"
+      class="rounded-md border border-border-critical-base bg-surface-critical-weak p-2.5 text-text-critical-base"
       role="alert"
     >
-      <p class="m-0 text-[10px] font-semibold tracking-[0.08em] uppercase">Failure location</p>
-      <strong class="mt-1 block text-[12px]">
-        {step()?.intent ?? (props.failure.testStepId ? "Authored step" : "Run-level failure")}
+      <strong class="block text-caption font-medium">
+        Failed at {step()?.intent ?? (props.failure.testStepId ? "an authored step" : "run level")}
       </strong>
-      <p class="mt-1 break-words text-[11px]/[1.5]">
+      <p class="mt-1 break-words text-caption/[1.45]">
         {props.failure.message ?? "The run failed without a recorded error message."}
       </p>
-      <div class="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+      <div class="mt-2 flex flex-wrap items-center gap-2 text-micro">
         <Show when={props.failure.category}>
           <span class="rounded-md bg-background-base/60 px-2 py-1">{props.failure.category}</span>
         </Show>
@@ -274,20 +278,17 @@ function SelectedStepResult(props: {
   const presentation = () => stepState(props.outcome?.state ?? "unobserved");
   return (
     <section
-      class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-base"
+      class="overflow-hidden rounded-md border border-border-weak-base"
       aria-label="Selected step result"
     >
-      <header class="flex items-start justify-between gap-3 p-3">
-        <div class="min-w-0">
-          <p class="m-0 text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
-            Selected step
-          </p>
-          <strong class="mt-1 block text-[12px]/[1.4] text-text-strong">{props.stepIntent}</strong>
-        </div>
+      <header class="flex items-start justify-between gap-2 p-2.5">
+        <strong class="min-w-0 text-caption font-medium text-text-strong">
+          {props.stepIntent}
+        </strong>
         <StatusChip tone={presentation().tone} label={presentation().label} />
       </header>
       <Show when={props.outcome?.totalRecipeSteps === 0}>
-        <p class="mx-3 mt-0 mb-3 rounded-lg bg-background-base p-2.5 text-[10.5px]/[1.5] text-text-weak">
+        <p class="mx-3 mt-0 mb-3 rounded-lg bg-background-base p-2.5 text-micro/[1.5] text-text-weak">
           This step compiled into a nested recipe, but this run has no nested trace join. Relay will
           not infer an outcome.
         </p>
@@ -323,29 +324,29 @@ function ProvenanceCard(props: {
   provenance: AppMapCompiledTest["stepProvenance"];
 }) {
   return (
-    <details class="rounded-xl border border-border-weak-base bg-surface-base">
-      <summary class="flex min-h-11 cursor-pointer items-center px-3 text-[11px] font-semibold text-text-strong focus-visible:outline-2 focus-visible:outline-offset-[-3px]">
-        {props.selectedStepId ? "Selected step provenance" : "Test provenance"} ·{" "}
+    <details class="rounded-md border border-border-weak-base">
+      <summary class={evidenceSummary}>
+        {props.selectedStepId ? "How this step compiled" : "How this test compiled"} ·{" "}
         {props.provenance.length}
       </summary>
-      <div class="border-t border-border-weak-base px-3">
+      <div class="border-t border-border-weak-base px-2.5">
         <For
           each={props.provenance}
           fallback={
-            <p class="my-3 text-[11px] text-text-weak">This selection emitted no recipe step.</p>
+            <p class="my-3 text-caption text-text-weak">This selection emitted no recipe step.</p>
           }
         >
           {(item) => (
             <article class="grid gap-1 border-t border-border-weak-base py-2.5 first:border-0">
               <div class="flex items-center justify-between gap-2">
-                <strong class="truncate font-mono text-[10px] font-medium text-text-strong">
+                <strong class="truncate font-mono text-micro font-medium text-text-strong">
                   {item.recipeStepId}
                 </strong>
-                <span class="shrink-0 text-[9.5px] tabular-nums text-text-weaker">
+                <span class="shrink-0 text-micro tabular-nums text-text-weaker">
                   Step {item.stepIndex + 1}
                 </span>
               </div>
-              <span class="truncate text-[10px] text-text-weak">
+              <span class="truncate text-micro text-text-weak">
                 {item.bindingKind}
                 {item.referencedEntityIds.length
                   ? ` · ${item.referencedEntityIds.join(", ")}`

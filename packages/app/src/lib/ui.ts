@@ -9,7 +9,7 @@
  *    text-text-weak / text-text-weaker only for true secondary meta.
  * 4. List selection = AB: hover:bg-surface-raised-base-hover + active:bg-surface-base-active.
  * 5. Text buttons come from @relay/ui/button. This file only keeps structural chrome recipes.
- * 6. Type = AB scale: text-12-regular/medium, text-14-regular/medium, text-16-medium.
+ * 6. Type = product scale: text-micro / text-caption / text-body / text-title / text-display.
  * 7. cn() does NOT merge — never stack exclusive color recipes.
  */
 import { cn } from "./cn";
@@ -23,12 +23,12 @@ export const tColor = cn(
   easeHover,
 );
 
-/* ─── Type scale (AgentBoard text-12 / text-14 / text-16) ─── */
-export const type12 = "text-12-regular";
-export const type12Med = "text-12-medium";
-export const type14 = "text-14-regular";
-export const type14Med = "text-14-medium";
-export const type16Med = "text-16-medium";
+/* ─── Type scale (product micro / caption / body / title) ─── */
+export const type12 = "text-caption";
+export const type12Med = "text-caption font-medium";
+export const type14 = "text-body";
+export const type14Med = "text-body font-medium";
+export const type16Med = "text-title font-medium";
 
 /** Primary label ink */
 export const ink = "text-text-strong";
@@ -86,7 +86,7 @@ export const listRowExpanded = "bg-surface-raised-base-hover";
 /** Full-width / chrome bar control — color wash only, no scale */
 export const btnBar = cn(
   "inline-flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5",
-  "text-left text-12-medium text-text-strong select-none",
+  "text-left text-caption font-medium text-text-strong select-none",
   "transition-[background-color,box-shadow,color,border-color] duration-150",
   easeOut,
   "disabled:cursor-not-allowed disabled:text-text-weak",
@@ -105,13 +105,13 @@ export const seg = cn(
 );
 
 export const segBtn = cn(
-  "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2.5 text-12-medium text-text-base select-none",
+  "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2.5 text-caption font-medium text-text-base select-none",
   tColor,
   "hover:bg-surface-raised-base-hover hover:text-text-strong",
 );
 
 export const segBtnOn = cn(
-  "h-7 rounded-md px-2.5 text-12-medium text-text-strong select-none",
+  "h-7 rounded-md px-2.5 text-caption font-medium text-text-strong select-none",
   "bg-surface-raised-stronger-non-alpha shadow-xs-border-base",
   tColor,
 );
@@ -129,7 +129,7 @@ export const propertySeg = cn(
 
 const propertySegBtnBase = cn(
   "inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-md px-2",
-  "text-[10.5px] font-medium text-[var(--text-weak)] select-none",
+  "text-micro font-medium text-[var(--text-weak)] select-none",
   "transition-[background-color,color,box-shadow,transform] duration-100 ease-out",
   "active:enabled:scale-[0.98]",
 );
@@ -148,12 +148,12 @@ export const propertySegBtnOn = cn(
 export const mono = "font-mono tabular-nums";
 
 export const fieldLabel = cn(
-  "w-16 shrink-0 pt-[9px] text-[11px] leading-none font-normal text-text-base",
+  "w-16 shrink-0 pt-[9px] text-caption leading-none font-normal text-text-base",
 );
 
 export const fieldInput = cn(
   "h-8 min-w-0 w-full rounded-md bg-surface-raised-stronger-non-alpha px-2.5",
-  "text-[11px] font-normal text-text-strong ring-1 ring-inset ring-border-weak-base",
+  "text-caption font-normal text-text-strong ring-1 ring-inset ring-border-weak-base",
   "placeholder:text-text-weak",
   "transition-[box-shadow] duration-150",
   "focus:outline-none focus:ring-2 focus:ring-border-interactive-base/45",
@@ -175,8 +175,8 @@ export const modalScrim = "ui-scrim fixed inset-0 z-[90]";
 
 const stepIndexShell = cn(
   mono,
-  "grid size-[26px] shrink-0 place-items-center rounded-[7px]",
-  "text-12-medium leading-none tabular-nums",
+  "grid size-[26px] shrink-0 place-items-center rounded-lg",
+  "text-caption font-medium leading-none tabular-nums",
 );
 
 export const stepIndex = cn(
@@ -192,7 +192,7 @@ export const stepIndexOn = cn(
 
 export const kindPill = cn(
   "inline-flex shrink-0 items-center rounded-full px-1.5 py-px",
-  "text-12-medium tracking-wide text-text-base",
+  "text-caption font-medium tracking-wide text-text-base",
   "bg-surface-base ring-1 ring-inset ring-border-weak-base",
 );
 
@@ -200,7 +200,7 @@ export const kindPill = cn(
 
 /** Uppercase section label used across shell surfaces */
 export const eyebrow = cn(
-  "block text-[11px]/[1.2] font-semibold tracking-[0.09em] text-text-weak uppercase",
+  "block text-caption/[1.2] font-semibold tracking-[0.09em] text-text-weak uppercase",
 );
 
 /**
@@ -210,7 +210,7 @@ export const eyebrow = cn(
  */
 export const tabUnderline = cn(
   "relative inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5",
-  "text-[12.5px]/[1.25] font-semibold text-text-weaker transition-colors",
+  "text-body/[1.25] font-semibold text-text-weaker transition-colors",
   "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0",
   "after:rounded-full after:bg-surface-brand-base after:transition-transform",
   "hover:enabled:bg-surface-raised-base-hover hover:enabled:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
@@ -220,7 +220,7 @@ export const tabUnderlineActive = "text-text-strong after:scale-x-100";
 
 /** Compact 36×36 chrome icon with a 44×44 effective pointer target. */
 export const productIconButton = cn(
-  "relative inline-grid size-9 shrink-0 place-items-center rounded-[9px] text-text-base select-none before:absolute before:-inset-1 before:content-['']",
+  "relative inline-grid size-9 shrink-0 place-items-center rounded-xl text-text-base select-none before:absolute before:-inset-1 before:content-['']",
   "transition-[color,background-color,transform] duration-150",
   "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
   "active:enabled:scale-[0.97]",
@@ -248,15 +248,15 @@ export const productPageHero = cn(
 );
 
 export const productPageTitle = cn(
-  "m-0 text-[30px] font-semibold leading-[1.12] tracking-[-0.035em] text-balance text-text-strong",
+  "m-0 text-display font-semibold leading-[1.12] tracking-[-0.035em] text-balance text-text-strong",
 );
 
-export const productPageLead = cn("m-0 max-w-[720px] text-[13px]/[1.45] text-text-base");
+export const productPageLead = cn("m-0 max-w-[720px] text-body/[1.45] text-text-base");
 
 /* Colorless base — tones append exactly one text- and one bg- pair (cn never merges). */
 const statusBase = cn(
   "inline-flex w-fit min-h-[22px] items-center gap-1 rounded-md px-2",
-  "text-[11px] font-semibold ring-1 ring-inset",
+  "text-caption font-semibold ring-1 ring-inset",
 );
 
 /** Job/run status chip — pass the job status or a simplified tone. */
@@ -310,7 +310,7 @@ export function kindPillTone(kind: string): string {
 /** Soft status chip — tint + ring (never solid inverted blocks) */
 export const statusPill = cn(
   "inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5",
-  "text-12-medium tracking-tight ring-1 ring-inset",
+  "text-caption font-medium tracking-tight ring-1 ring-inset",
 );
 
 export function statusPillTone(tone: "pass" | "heal" | "fail" | "run" | "idle" | string): string {
