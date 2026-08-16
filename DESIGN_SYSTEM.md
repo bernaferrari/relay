@@ -94,7 +94,7 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 Prefer user language:
 
 - App Map (canvas), path or run (execution)—not recipe, suite, or Journey in chrome
-- **Modifier** (language/theme/account list), **Test** (what you run), **Run matrix** (modifiers × tests)—never “Combine”, “State set”, option set, work, or locale matrix in chrome
+- **Modifier** (language/theme/account list), **Test** (what you run), **Run matrix** (modifiers × tests)—never “Combine”, “State set”, “Variable”, option set, work, or locale matrix in chrome
 - Run report, not immutable report
 - Target or device, not adapter instance
 - Saved with this run, not frozen observability payload

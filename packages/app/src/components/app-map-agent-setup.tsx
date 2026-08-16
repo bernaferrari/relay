@@ -43,7 +43,7 @@ export function AppMapAgentSetup(props: {
       <label class="grid gap-1.5">
         <span class="text-micro font-semibold text-[var(--text-base)]">Goal</span>
         <textarea
-          class="min-h-24 resize-y rounded-xl border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-title/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)] min-[681px]:text-body"
+          class="min-h-24 resize-y rounded-xl border border-[var(--border-strong-base)] bg-[var(--surface-base)] px-3 py-2.5 text-body/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--background-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)]"
           value={props.goal}
           placeholder="Map onboarding and find every safe path into settings"
           onInput={(event) => props.onGoal(event.currentTarget.value)}

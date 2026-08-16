@@ -18,7 +18,7 @@ import {
 } from "./take-action-model";
 
 const field =
-  "h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-title text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)] min-[761px]:text-caption";
+  "h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-base)] px-3 text-body text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--text-weak)] focus-visible:border-[var(--text-interactive-base)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--text-interactive-base)_14%,transparent)]";
 const label = "grid gap-1.5 text-micro font-medium text-[var(--text-base)]";
 const iconButton =
   "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-[background-color,color,transform] duration-100 hover:bg-[var(--surface-raised-base)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-35";

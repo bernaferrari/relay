@@ -63,7 +63,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
           <strong class="block text-micro font-medium text-[var(--text-strong)]">
             {props.stack
               ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} runs`
-              : "Test data"}
+              : "Modifiers"}
           </strong>
           <span class="block truncate text-micro text-[var(--text-weak)]">
             {props.stack
@@ -218,7 +218,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                   props.onSave({
                     name:
                       props.stack?.name ??
-                      (variables.length === 1 ? variables[0]!.name : "Test data"),
+                      (variables.length === 1 ? variables[0]!.name : "Modifiers"),
                     dataIds: dataIds(),
                     strategy: strategy(),
                   });

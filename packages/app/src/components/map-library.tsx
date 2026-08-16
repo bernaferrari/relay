@@ -1,12 +1,16 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useRecorder } from "../context/recorder";
 import { useServer, type JobInfo } from "../context/server";
-import type { MapLibraryItem } from "../lib/app-map-library";
+import {
+  degradedLibraryItem,
+  type DegradedLibraryItem,
+  type MapLibraryItem,
+} from "../lib/app-map-library";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { shellNav, shellNavClosed } from "../lib/shell-layout";
-import { mono } from "../lib/ui";
+import { copyStack, mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
@@ -77,6 +81,7 @@ export function MapLibrary(props: {
   let searchInput: HTMLInputElement | undefined;
   let importInput: HTMLInputElement | undefined;
   const recorder = useRecorder();
+  const server = useServer();
   const [unfinishedOpen, setUnfinishedOpen] = createSignal(false);
   const [allUnfinishedVisible, setAllUnfinishedVisible] = createSignal(false);
   const authoredMaps = () => props.items.filter((map) => map.screenCount > 0);
@@ -92,6 +97,18 @@ export function MapLibrary(props: {
   });
   const hiddenUnfinishedCount = () =>
     Math.max(0, unfinishedMaps().length - visibleUnfinishedMaps().length);
+  const degradedMaps = createMemo(() => {
+    const needle = props.query.trim().toLowerCase();
+    return server
+      .degradedAppMaps()
+      .map(degradedLibraryItem)
+      .filter(
+        (item) =>
+          !needle ||
+          item.title.toLowerCase().includes(needle) ||
+          item.error.toLowerCase().includes(needle),
+      );
+  });
 
   createEffect(() => {
     if (unfinishedMaps().some((map) => map.id === props.selectedId)) setUnfinishedOpen(true);
@@ -207,7 +224,12 @@ export function MapLibrary(props: {
 
         <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2">
           <Show
-            when={authoredMaps().length > 0 || unfinishedMaps().length > 0 || props.query.trim()}
+            when={
+              authoredMaps().length > 0 ||
+              unfinishedMaps().length > 0 ||
+              degradedMaps().length > 0 ||
+              props.query.trim()
+            }
             fallback={
               <div class="grid justify-items-center gap-2 px-3 py-8 text-center">
                 <span class="grid size-10 place-items-center rounded-xl bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
@@ -237,6 +259,8 @@ export function MapLibrary(props: {
                 />
               )}
             </For>
+
+            <For each={degradedMaps()}>{(item) => <DegradedLibraryRow item={item} />}</For>
 
             <Show when={unfinishedMaps().length > 0}>
               <section class="mt-2 border-t border-border-weak-base pt-1.5">
@@ -345,6 +369,29 @@ export function MapLibrary(props: {
         </button>
       </footer>
     </aside>
+  );
+}
+
+/** Quarantined maps stay visible as a card, never as a 500 that hides the rest. */
+function DegradedLibraryRow(props: { item: DegradedLibraryItem }) {
+  return (
+    <div
+      class="flex min-h-10 items-start gap-2 rounded-lg px-3 py-1.5 text-left"
+      title={props.item.error}
+      role="status"
+    >
+      <span class="mt-0.5 justify-self-center text-text-critical-base" aria-hidden="true">
+        <Icon name="alert" size={13} />
+      </span>
+      <span class={copyStack}>
+        <strong class="block truncate text-body/[1.3] font-[550] text-text-strong">
+          {props.item.title}
+        </strong>
+        <small class="block truncate text-micro text-text-weak">
+          Needs attention · {props.item.error}
+        </small>
+      </span>
+    </div>
   );
 }
 

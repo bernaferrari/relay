@@ -1,5 +1,11 @@
 import { createSignal, type Accessor } from "solid-js";
-import type { AppMap, OperationId, OperationInput, OperationOutput } from "@relay/protocol";
+import type {
+  AppMap,
+  DegradedAppMapRef,
+  OperationId,
+  OperationInput,
+  OperationOutput,
+} from "@relay/protocol";
 import type { HealthState } from "./api-types";
 
 type RunAction = <Id extends OperationId>(
@@ -12,12 +18,14 @@ export function createServerAppMapController(input: {
   runAction: RunAction;
 }) {
   const [appMaps, setAppMaps] = createSignal<AppMap[]>([]);
+  const [degradedAppMaps, setDegradedAppMaps] = createSignal<DegradedAppMapRef[]>([]);
   const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
 
   async function refreshAppMaps(): Promise<AppMap[]> {
     if (input.health() === "offline") return appMaps();
     const result = await input.runAction("app-map.list", {});
     setAppMaps(result.appMaps);
+    setDegradedAppMaps(result.degraded ?? []);
     setAppMapsLoaded(true);
     return result.appMaps;
   }
@@ -37,5 +45,5 @@ export function createServerAppMapController(input: {
     return result.appMap;
   }
 
-  return { appMaps, appMapsLoaded, refreshAppMaps, loadAppMap, createAppMap };
+  return { appMaps, appMapsLoaded, degradedAppMaps, refreshAppMaps, loadAppMap, createAppMap };
 }

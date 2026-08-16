@@ -48,7 +48,7 @@ export function RunBrowser(props: {
         </span>
         <span class="sr-only">Search runs</span>
         <input
-          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-title text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)] min-[681px]:text-caption"
+          class="h-8 w-full rounded-lg border border-transparent bg-[var(--surface-base)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[background-color,border-color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)] focus:bg-[var(--background-base)]"
           value={query()}
           placeholder="Search runs"
           onInput={(event) => setQuery(event.currentTarget.value)}

@@ -38,6 +38,7 @@ export const relayMcpResourceUris = {
   authoringSession: "relay://authoring-sessions/{sessionId}",
   targets: "relay://targets",
   targetObservation: "relay://targets/{targetId}/observation",
+  controlGotchas: "relay://control/gotchas",
 } as const;
 
 export type RelayResourceScope = {
@@ -405,6 +406,26 @@ export function registerRelayResources(
   server: McpServer,
   { invoker, scope, profile, tools }: RegisterRelayResourcesOptions,
 ): void {
+  registerStaticResource(
+    server,
+    "control-gotchas",
+    "Relay device-control gotchas",
+    relayMcpResourceUris.controlGotchas,
+    async () => ({
+      mandatory: true,
+      readBefore: ["target.interact", "target.recover", "target.snapshot", "app.launch"],
+      rules: [
+        "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
+        "If a tap does not change pixels, it missed; try the label, not a cell center.",
+        "A missing accessibility tree is not a failed session — screenshot plus point still works.",
+        "On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with this actor, then retry.",
+        "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
+        "Launch does not wait on XCTest. No active session is not a failed launch — recover the runner.",
+        "Do not retry snapshot in a loop. Do not fail a tour only because the tree is missing.",
+      ],
+    }),
+    scope,
+  );
   registerStaticResource(
     server,
     "operations",

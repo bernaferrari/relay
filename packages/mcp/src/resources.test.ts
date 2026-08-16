@@ -192,6 +192,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       relayMcpResourceUris.runs,
       relayMcpResourceUris.authoringSessions,
       relayMcpResourceUris.targets,
+      relayMcpResourceUris.controlGotchas,
       "relay://app-maps/map-1",
       "relay://authoring-sessions/session-1",
       "relay://runs/run-1",
@@ -223,6 +224,23 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
         relayMcpResourceUris.targetObservation,
       ],
     );
+  } finally {
+    await session.close();
+  }
+});
+
+test("publishes device-control gotchas as a mandatory JSON resource", async () => {
+  const session = await connectMcp();
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.controlGotchas }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: { mandatory: boolean; rules: string[]; readBefore: string[] };
+    };
+    assert.equal(envelope.data.mandatory, true);
+    assert.ok(envelope.data.readBefore.includes("target.interact"));
+    assert.ok(envelope.data.rules.some((rule) => rule.includes("identifier")));
   } finally {
     await session.close();
   }

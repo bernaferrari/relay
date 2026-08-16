@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap } from "@relay/protocol";
-import { appMapLibraryItem } from "./app-map-library";
+import { appMapLibraryItem, degradedLibraryItem } from "./app-map-library";
 
 test("projects a library row from the canonical App Map alone", () => {
   const appMap = {
@@ -19,4 +19,19 @@ test("projects a library row from the canonical App Map alone", () => {
     screenCount: 2,
     connectionCount: 1,
   });
+});
+
+test("projects a quarantined map as a library card without throwing", () => {
+  assert.deepEqual(
+    degradedLibraryItem({ key: "mobile:broken", error: "App Map schemaVersion must be 1" }),
+    {
+      key: "mobile:broken",
+      title: "broken",
+      error: "App Map schemaVersion must be 1",
+    },
+  );
+  assert.equal(
+    degradedLibraryItem({ key: "orphan", id: "saved", error: "parse failed" }).title,
+    "saved",
+  );
 });

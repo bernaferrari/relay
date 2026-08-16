@@ -393,7 +393,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRecipes,
     });
 
-    const { appMaps, appMapsLoaded, refreshAppMaps, loadAppMap, createAppMap } =
+    const { appMaps, appMapsLoaded, degradedAppMaps, refreshAppMaps, loadAppMap, createAppMap } =
       createServerAppMapController({ health, runAction });
 
     const {
@@ -869,10 +869,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           setSelectedAppMapId(null);
         }
         if (!selectedAppMapId()) {
-          const latestMap = appMaps().toSorted(
-            (left, right) => right.updatedAt - left.updatedAt,
-          )[0];
-          if (latestMap) setSelectedAppMapId(latestMap.id);
+          const latest = appMaps().toSorted((a, b) => b.updatedAt - a.updatedAt)[0];
+          if (latest) setSelectedAppMapId(latest.id);
         }
         const selectedTestId = selectedRecipeId();
         if (selectedTestId && !recipes().some((recipe) => recipe.id === selectedTestId)) {
@@ -1020,6 +1018,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       recipesLoaded,
       appMaps,
       appMapsLoaded,
+      degradedAppMaps,
       refreshAppMaps,
       loadAppMap,
       createAppMap,

@@ -201,10 +201,10 @@ export function MapPropertiesPanel(props: {
                 </span>
                 <span class="min-w-0 flex-1">
                   <strong class="block text-caption font-medium text-[var(--text-base)]">
-                    Test data
+                    Modifiers
                   </strong>
                   <small class="mt-0.5 block text-micro text-[var(--text-weak)]">
-                    Shared lists and private values for a run
+                    Languages, accounts, and other lists a run can vary
                   </small>
                 </span>
                 <Icon

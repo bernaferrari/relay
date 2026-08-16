@@ -24,7 +24,15 @@ import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import { trapFocus } from "../lib/modal";
-import { modalPanel, modalScrim, eyebrow, productIconButton } from "../lib/ui";
+import {
+  chromeMenuItem,
+  chromeMenuItemDanger,
+  modalPanel,
+  modalScrim,
+  eyebrow,
+  productIconButton,
+} from "../lib/ui";
+import { WorkspaceSkeleton } from "./workspace-skeleton";
 import {
   shellRoot,
   shellRootNavVar,
@@ -64,14 +72,6 @@ const MapLibrary = lazy(() =>
 const AppMapCombine = lazy(() =>
   import("./app-map-combine").then((module) => ({ default: module.AppMapCombine })),
 );
-
-function WorkspaceLoading(props: { label: string }) {
-  return (
-    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--background-deep)] text-caption text-[var(--text-weak)]">
-      Loading {props.label}…
-    </div>
-  );
-}
 
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
@@ -806,7 +806,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] max-[760px]:flex"
+                      class={cn("hidden max-[760px]:flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
@@ -818,7 +818,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(
@@ -833,7 +833,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(
@@ -848,7 +848,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] transition-[background-color,color] duration-150 ease-out hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]"
+                      class={cn("flex", chromeMenuItem)}
                       aria-label="Re-layout map"
                       data-tip="Arrange screens to reduce connector crossings"
                       onClick={() => {
@@ -862,7 +862,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         window.dispatchEvent(new CustomEvent("relay:toggle-map-history"));
@@ -873,7 +873,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void duplicateSelected();
@@ -884,7 +884,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--text-base)] hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]"
+                      class={cn("flex", chromeMenuItem)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void exportSelected();
@@ -895,7 +895,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption text-[var(--icon-critical-base)] hover:bg-[var(--surface-base-hover)]"
+                      class={cn("flex", chromeMenuItemDanger)}
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void deleteSelected();
@@ -954,7 +954,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <Show
                   when={selectedMap()}
                   fallback={
-                    <Suspense fallback={<WorkspaceLoading label="canvas" />}>
+                    <Suspense fallback={<WorkspaceSkeleton label="canvas" />}>
                       <EmptyAppMap
                         deviceOpen={devicePanelOpen()}
                         creating={creatingBlankMap()}
@@ -993,13 +993,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     aria-label="Run matrix"
                     onWheel={(event) => event.stopPropagation()}
                   >
-                    <Suspense
-                      fallback={
-                        <div class="grid h-40 flex-1 place-items-center text-caption text-[var(--text-weak)]">
-                          Loading run matrix…
-                        </div>
-                      }
-                    >
+                    <Suspense fallback={<WorkspaceSkeleton label="run matrix" />}>
                       <AppMapCombine
                         combineId={combineFocusId()}
                         focusSection={combineFocusSection()}
@@ -1025,7 +1019,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </Show>
 
           <Show when={area() === "runs"}>
-            <Suspense fallback={<WorkspaceLoading label="runs" />}>
+            <Suspense fallback={<WorkspaceSkeleton label="runs" />}>
               <RunsWorkspace
                 onOpenMap={openMap}
                 onOpenTest={openTest}
@@ -1049,16 +1043,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             class={cn(modalPanel, "h-[min(82vh,760px)] w-[min(100%,980px)] outline-none")}
             role="dialog"
             aria-modal="true"
-            aria-label="Test data"
+            aria-label="Modifiers"
             tabindex={-1}
           >
-            <Suspense
-              fallback={
-                <div class="grid h-full place-items-center text-caption text-[var(--text-weak)]">
-                  Loading test data…
-                </div>
-              }
-            >
+            <Suspense fallback={<WorkspaceSkeleton label="modifiers" />}>
               <DataWorkspace
                 embedded
                 onClose={() => setVariablesOpen(false)}

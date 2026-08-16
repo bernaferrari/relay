@@ -10,7 +10,7 @@ const numberedType =
   /\btext-(?:8|9|10|11|12|13|14|15|16|18|20|24|28)(?:-(?:regular|medium|semibold|bold))?\b/g;
 const arbitraryRadius = /\brounded(?:-[a-z]+)?-\[\d+(?:\.\d+)?px\]/g;
 const bannedVocab =
-  /(['"`])(?:(?!\1)[^\n])*?\b(?:State set|Combine)\b(?:(?!\1)[^\n])*?\1|>\s*(?:State set|Combine)\b/g;
+  /(['"`])(?:(?!\1)[^\n])*?\b(?:State set|Combine|Variable)\b(?:(?!\1)[^\n])*?\1|>\s*(?:State set|Combine|Variable)\b/g;
 
 async function filesIn(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

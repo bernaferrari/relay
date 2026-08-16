@@ -36,6 +36,7 @@ export const relayMcpInstructions = [
   "A missing accessibility tree is not a failed session — screenshot plus point still works.",
   "On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with this actor, then retry.",
   "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
+  "Read relay://control/gotchas before the first interact, recover, snapshot, or launch.",
 ].join(" ");
 
 export const relayMcpTextLimit = 8_192;

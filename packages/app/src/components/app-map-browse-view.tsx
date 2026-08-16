@@ -147,7 +147,7 @@ export function AppMapBrowseView(props: {
               </span>
               <span class="sr-only">Search {props.mode}</span>
               <input
-                class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-title text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)] min-[681px]:text-caption"
+                class="h-9 w-full rounded-lg border-0 bg-transparent pr-3 pl-9 text-body text-[var(--text-strong)] outline-none transition-colors duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--surface-base)]"
                 value={query()}
                 placeholder={props.mode === "screens" ? "Search screens" : "Search runs"}
                 onInput={(event) => setQuery(event.currentTarget.value)}
@@ -453,7 +453,7 @@ function FilterSelect(props: {
     <label class="relative shrink-0">
       <span class="sr-only">{props.label}</span>
       <select
-        class="h-9 min-w-[124px] appearance-none rounded-lg border-0 bg-transparent pr-8 pl-3 text-title font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)] min-[681px]:text-micro"
+        class="h-9 min-w-[124px] appearance-none rounded-lg border-0 bg-transparent pr-8 pl-3 text-body font-medium text-[var(--text-base)] outline-none transition-colors duration-150 hover:bg-[var(--surface-base)] focus:bg-[var(--surface-base)]"
         value={props.value}
         onChange={(event) => props.onChange(event.currentTarget.value)}
       >

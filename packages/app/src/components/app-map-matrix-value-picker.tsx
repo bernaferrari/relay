@@ -70,7 +70,7 @@ export function AppMapMatrixValuePicker(props: {
         </span>
         <input
           type="search"
-          class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-title text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-150 placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
+          class="h-11 w-full rounded-lg border border-[var(--border-weak-base)] bg-[var(--surface-raised-stronger-non-alpha)] pr-2.5 pl-8 text-body text-[var(--text-strong)] outline-none transition-[border-color,background-color] duration-150 placeholder:text-[var(--text-weaker)] hover:bg-[var(--surface-base-hover)] focus:border-[var(--border-strong-base)]"
           value={query()}
           placeholder="Search available values"
           onInput={(event) => setQuery(event.currentTarget.value)}

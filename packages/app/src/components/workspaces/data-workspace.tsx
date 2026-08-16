@@ -45,7 +45,7 @@ type DataRow = {
 };
 
 const fieldClass =
-  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-title/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
+  "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-body/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
 
 export function DataWorkspace(props: {
   onConfigureProvider: () => void;
@@ -122,7 +122,7 @@ export function DataWorkspace(props: {
       ...current,
       {
         id,
-        name: `variable_${current.length + 1}`,
+        name: `modifier_${current.length + 1}`,
         scope: "shared",
         mode: "Default",
         preview: "",
@@ -147,7 +147,7 @@ export function DataWorkspace(props: {
         }
       >
         <div class="min-w-0">
-          <span class={eyebrow}>Test data</span>
+          <span class={eyebrow}>Modifiers</span>
           <h2
             class={
               props.embedded
@@ -155,12 +155,12 @@ export function DataWorkspace(props: {
                 : productPageTitle
             }
           >
-            Test data
+            Modifiers
           </h2>
           <Show when={!props.embedded}>
             <p class={productPageLead}>
-              Create reusable lists such as languages, accounts, or models. Run with data repeats a
-              path for each selected value.
+              Languages, accounts, models, and other lists a run can vary. A run matrix multiplies
+              selected values by the tests you choose.
             </p>
           </Show>
         </div>
@@ -169,13 +169,13 @@ export function DataWorkspace(props: {
             Generation settings
           </Button>
           <Button variant="primary" size="lg" onClick={addRow}>
-            <Icon name="plus" size={15} /> New value
+            <Icon name="plus" size={15} /> New modifier
           </Button>
           <Show when={props.embedded && props.onClose}>
             <button
               type="button"
               class={productIconButton}
-              aria-label="Close test data"
+              aria-label="Close modifiers"
               onClick={() => props.onClose?.()}
             >
               <Icon name="x" size={14} />
@@ -192,7 +192,7 @@ export function DataWorkspace(props: {
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-[0_1px_2px_rgb(0_0_0/4%)]">
           <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-micro/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
-            <span>Variable</span>
+            <span>Modifier</span>
             <span>Scope</span>
             <span>Source</span>
             <span>Preview</span>
@@ -250,14 +250,14 @@ export function DataWorkspace(props: {
                   <Icon name="grid" size={17} />
                 </span>
                 <strong class="mt-3 block text-body/[1.3] text-text-strong">
-                  Add data only when a test needs it
+                  Add a modifier only when a test needs it
                 </strong>
                 <p class="m-0 mt-1.5 text-caption/[1.5] text-text-weaker">
                   Use a list to cover plans or roles. Language and theme can drive a data run. Keep
                   logins private so each teammate can use their own account.
                 </p>
                 <Button variant="primary" size="lg" class="mt-4" onClick={addRow}>
-                  <Icon name="plus" size={14} /> Add first value
+                  <Icon name="plus" size={14} /> Add a modifier
                 </Button>
               </div>
             </div>
@@ -271,7 +271,7 @@ export function DataWorkspace(props: {
             >
               <header class="flex min-h-16 items-center justify-between border-b border-border-weak-base px-4">
                 <div class="min-w-0">
-                  <span class={eyebrow}>Variable</span>
+                  <span class={eyebrow}>Modifier</span>
                   <strong class="mt-1 block truncate text-title/[1.25] text-text-base">
                     {row().name}
                   </strong>
@@ -279,7 +279,7 @@ export function DataWorkspace(props: {
                 <button
                   type="button"
                   class="grid size-10 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
-                  aria-label="Close variable editor"
+                  aria-label="Close modifier editor"
                   onClick={() => setSelectedId(null)}
                 >
                   <Icon name="x" size={14} />

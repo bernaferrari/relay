@@ -1,5 +1,5 @@
 /**
- * App chrome layout recipes — AgentBoard token discipline.
+ * App chrome layout recipes.
  *
  * RULES (do not break):
  * 1. Solid paper = bg-surface-raised-stronger-non-alpha | bg-background-stronger
@@ -7,7 +7,7 @@
  * 2. Alpha washes only for hover/active: surface-raised-base-hover, surface-base-active.
  * 3. Primary ink = text-text-strong. Actions/icons on rows = text-text-strong.
  *    text-text-weak / text-text-weaker only for true secondary meta.
- * 4. List selection = AB: hover:bg-surface-raised-base-hover + active:bg-surface-base-active.
+ * 4. List selection = hover:bg-surface-raised-base-hover + active:bg-surface-base-active.
  * 5. Text buttons come from @relay/ui/button. This file only keeps structural chrome recipes.
  * 6. Type = product scale: text-micro / text-caption / text-body / text-title / text-display.
  * 7. cn() does NOT merge — never stack exclusive color recipes.
@@ -22,13 +22,6 @@ export const tColor = cn(
   "duration-150",
   easeHover,
 );
-
-/* ─── Type scale (product micro / caption / body / title) ─── */
-export const type12 = "text-caption";
-export const type12Med = "text-caption font-medium";
-export const type14 = "text-body";
-export const type14Med = "text-body font-medium";
-export const type16Med = "text-title font-medium";
 
 /** Primary label ink */
 export const ink = "text-text-strong";
@@ -64,7 +57,7 @@ export const surfaceChrome =
 export const borderSubtle = "border-border-weak-base";
 export const dividerY = "h-4 w-px shrink-0 bg-border-weak-base";
 
-/** AgentBoard list row — inset chip (rounded-md), quiet hover, active = base-active */
+/** List row — inset chip (rounded-md), quiet hover, active = base-active */
 export const listRow = cn(
   "group/session relative w-full min-w-0 rounded-md transition-colors duration-100",
   "hover:bg-surface-raised-base-hover",
@@ -80,8 +73,23 @@ export const menuOption = cn(
   "[&:has(:focus-visible)]:bg-surface-raised-base-hover",
 );
 export const menuOptionOn = "bg-surface-base-active text-text-strong";
-/** Expanded (not selected) — AB: hover wash, not active */
+/** Expanded (not selected) — hover wash, not active */
 export const listRowExpanded = "bg-surface-raised-base-hover";
+
+/** Overflow / studio ⋯ menu row. One recipe so adjacent items cannot drift. */
+export const chromeMenuItem = cn(
+  "min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-caption",
+  "text-[var(--text-base)]",
+  "transition-[background-color,color] duration-150 ease-out",
+  "hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)]",
+  "focus-visible:bg-[var(--surface-base-hover)] focus-visible:text-[var(--text-strong)]",
+  "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]",
+);
+
+export const chromeMenuItemDanger = cn(
+  chromeMenuItem,
+  "text-[var(--icon-critical-base)] hover:text-[var(--icon-critical-base)]",
+);
 
 /** Full-width / chrome bar control — color wash only, no scale */
 export const btnBar = cn(
