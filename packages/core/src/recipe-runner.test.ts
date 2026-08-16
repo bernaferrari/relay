@@ -2600,7 +2600,7 @@ describe("runRecipeStep expect-screen", () => {
       runRecipeStep(device, { kind: "tap", target: { label: "Set Up Auto Top-Up" } }, ctx),
       /named target absent from current Android accessibility tree/u,
     );
-    assert.equal(snapshots, 3);
+    assert.equal(snapshots, 5);
     assert.equal(presses, 0);
   });
 

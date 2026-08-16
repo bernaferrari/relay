@@ -436,9 +436,9 @@ async function tapTarget(
     // Compose can publish the destination shell before its actionable rows.
     // Wait for a few fresh accessibility generations; never convert absence
     // into an unreviewed coordinate tap.
-    for (let attempt = 0; attempt < 3 && !named; attempt += 1) {
+    for (let attempt = 0; attempt < 5 && !named; attempt += 1) {
       await cooperativeCheckpoint();
-      await sleep(150, device);
+      await sleep(250, device);
       nodes = await snapshot(device);
       named = resolveNamedControl(nodes, namedTarget);
     }
