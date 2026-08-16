@@ -16,13 +16,7 @@ import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
-import {
-  degradedAppMapsFrom,
-  mutateCollaborationState,
-  readCollaborationState,
-  type CollaborationState,
-  type DegradedAppMap,
-} from "./collaboration-store.js";
+import { readControlStore, withControlStore, type DegradedAppMap } from "./collaboration-store.js";
 
 export { recoverCollaborationState, type DegradedAppMap } from "./collaboration-store.js";
 
@@ -30,14 +24,6 @@ export { recoverCollaborationState, type DegradedAppMap } from "./collaboration-
 export const DEVICE_LEASE_TTL_MS = 2 * 60 * 60 * 1000;
 /** Touching the device with <30 minutes left extends the same lease. */
 export const DEVICE_LEASE_RENEW_UNDER_MS = 30 * 60 * 1000;
-
-async function readState(): Promise<CollaborationState> {
-  return readCollaborationState();
-}
-
-async function mutate<T>(fn: (state: CollaborationState) => Promise<T> | T): Promise<T> {
-  return mutateCollaborationState(fn);
-}
 
 function emit(event: ResourceEvent): void {
   publish(event);
@@ -58,7 +44,7 @@ function writeRevision<T>(current: Revisioned<T>, write: RevisionWrite<T>): Revi
 }
 
 export async function listProjects(organizationId = "local"): Promise<Project[]> {
-  return (await readState()).projects.filter(
+  return (await readControlStore((store) => store.projects())).filter(
     (project) => project.organizationId === organizationId,
   );
 }
@@ -66,11 +52,11 @@ export async function listProjects(organizationId = "local"): Promise<Project[]>
 export async function saveProject(
   input: Pick<Project, "id" | "organizationId" | "name">,
 ): Promise<Project> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const existing = state.projects.find((item) => item.id === input.id);
+    const existing = store.projects().find((item) => item.id === input.id);
     const project: Project = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
-    state.projects = [...state.projects.filter((item) => item.id !== input.id), project];
+    store.upsertProject(project);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -83,7 +69,7 @@ export async function saveProject(
 }
 
 export async function listBuilds(projectId: string): Promise<Build[]> {
-  return (await readState()).builds.filter((item) => item.projectId === projectId);
+  return readControlStore((store) => store.builds(projectId));
 }
 
 export async function readBuild(projectId: string, id: string): Promise<Build | null> {
@@ -91,16 +77,13 @@ export async function readBuild(projectId: string, id: string): Promise<Build | 
 }
 
 export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): Promise<Build> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const existing = state.builds.find(
-      (item) => item.projectId === input.projectId && item.id === input.id,
-    );
+    const existing = store
+      .builds(input.projectId)
+      .find((item) => item.projectId === input.projectId && item.id === input.id);
     const build = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
-    state.builds = [
-      ...state.builds.filter((item) => item.projectId !== input.projectId || item.id !== input.id),
-      build,
-    ];
+    store.upsertBuild(build);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -113,7 +96,7 @@ export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): 
 }
 
 export async function listDevicePools(projectId: string): Promise<DevicePool[]> {
-  return (await readState()).pools.filter((item) => item.projectId === projectId);
+  return readControlStore((store) => store.pools(projectId));
 }
 
 export async function readDevicePool(projectId: string, id: string): Promise<DevicePool | null> {
@@ -124,16 +107,13 @@ export async function saveDevicePool(
   input: Omit<DevicePool, "createdAt" | "updatedAt">,
 ): Promise<DevicePool> {
   validateDevicePool(input);
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const existing = state.pools.find(
-      (item) => item.projectId === input.projectId && item.id === input.id,
-    );
+    const existing = store
+      .pools(input.projectId)
+      .find((item) => item.projectId === input.projectId && item.id === input.id);
     const pool = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
-    state.pools = [
-      ...state.pools.filter((item) => item.projectId !== input.projectId || item.id !== input.id),
-      pool,
-    ];
+    store.upsertPool(pool);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -146,7 +126,7 @@ export async function saveDevicePool(
 }
 
 export async function listCompatibilityMatrices(projectId: string): Promise<CompatibilityMatrix[]> {
-  return (await readState()).matrices.filter((item) => item.projectId === projectId);
+  return readControlStore((store) => store.matrices(projectId));
 }
 
 export async function readCompatibilityMatrix(
@@ -161,11 +141,11 @@ export async function saveCompatibilityMatrix(
 ): Promise<CompatibilityMatrix> {
   const { validateCompatibilityMatrix } = await import("./matrix.js");
   validateCompatibilityMatrix(input);
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const existing = state.matrices.find(
-      (item) => item.id === input.id && item.projectId === input.projectId,
-    );
+    const existing = store
+      .matrices(input.projectId)
+      .find((item) => item.id === input.id && item.projectId === input.projectId);
     const matrix: CompatibilityMatrix = {
       ...input,
       selectors: input.selectors.map((selector) => ({
@@ -183,12 +163,7 @@ export async function saveCompatibilityMatrix(
       createdAt: existing?.createdAt ?? at,
       updatedAt: at,
     };
-    state.matrices = [
-      ...state.matrices.filter(
-        (item) => item.id !== matrix.id || item.projectId !== matrix.projectId,
-      ),
-      matrix,
-    ];
+    store.upsertMatrix(matrix);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
@@ -201,12 +176,8 @@ export async function saveCompatibilityMatrix(
 }
 
 export async function deleteCompatibilityMatrix(projectId: string, id: string): Promise<void> {
-  return mutate((state) => {
-    const existing = state.matrices.find((item) => item.projectId === projectId && item.id === id);
-    if (!existing) throw new Error("Compatibility matrix not found");
-    state.matrices = state.matrices.filter(
-      (item) => item.projectId !== projectId || item.id !== id,
-    );
+  return withControlStore((store) => {
+    if (!store.deleteMatrix(projectId, id)) throw new Error("Compatibility matrix not found");
     emit({
       type: "resource.deleted",
       at: now(),
@@ -219,13 +190,11 @@ export async function deleteCompatibilityMatrix(projectId: string, id: string): 
 
 export async function listDeviceLeases(projectId: string): Promise<DeviceLease[]> {
   const at = now();
-  return (await readState()).leases
-    .filter((item) => item.projectId === projectId)
-    .map((item) =>
-      item.status === "leased" && item.expiresAt <= at
-        ? { ...item, status: "expired" as const }
-        : item,
-    );
+  return (await readControlStore((store) => store.leases(projectId))).map((item) =>
+    item.status === "leased" && item.expiresAt <= at
+      ? { ...item, status: "expired" as const }
+      : item,
+  );
 }
 
 /** Read-only execution check. It never creates, renews, or changes a lease. */
@@ -239,7 +208,7 @@ export async function isDeviceLeaseClaimActive(
   },
   at = now(),
 ): Promise<boolean> {
-  const lease = (await readState()).leases.find((item) => item.id === input.leaseId);
+  const lease = await readControlStore((store) => store.lease(input.leaseId));
   return Boolean(
     lease &&
     (!input.organizationId ||
@@ -281,14 +250,9 @@ export async function isDeviceLeaseSessionActive(
 export async function leaseDevice(
   input: Omit<DeviceLease, "id" | "status" | "leasedAt" | "releasedAt">,
 ): Promise<DeviceLease> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const occupied = state.leases.find(
-      (lease) =>
-        lease.deviceSerial === input.deviceSerial &&
-        lease.status === "leased" &&
-        lease.expiresAt > at,
-    );
+    const occupied = store.activeLeaseOnDevice(input.deviceSerial, at);
     if (occupied) throw new Error(`Device ${input.deviceSerial} is already leased`);
     const lease: DeviceLease = {
       ...input,
@@ -296,7 +260,7 @@ export async function leaseDevice(
       status: "leased",
       leasedAt: at,
     };
-    state.leases.push(lease);
+    store.upsertLease(lease);
     emit({
       type: "lease.changed",
       at,
@@ -309,12 +273,13 @@ export async function leaseDevice(
 }
 
 export async function renewDeviceLease(id: string, expiresAt: number): Promise<DeviceLease> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const lease = state.leases.find((item) => item.id === id);
+    const lease = store.lease(id);
     if (!lease || lease.status !== "leased") throw new Error("Device lease not found");
     if (expiresAt <= at) throw new Error("Renewal expiry must be in the future");
-    lease.expiresAt = expiresAt;
+    const next = { ...lease, expiresAt };
+    store.upsertLease(next);
     emit({
       type: "lease.changed",
       at,
@@ -322,7 +287,7 @@ export async function renewDeviceLease(id: string, expiresAt: number): Promise<D
       resource: "lease",
       resourceId: lease.id,
     });
-    return lease;
+    return next;
   });
 }
 
@@ -330,24 +295,24 @@ export async function releaseDeviceLease(
   id: string,
   scope?: { projectId: string; ownerId?: string },
 ): Promise<DeviceLease> {
-  return mutate((state) => {
-    const lease = state.leases.find((item) => item.id === id);
+  return withControlStore((store) => {
+    const lease = store.lease(id);
     if (
       !lease ||
       (scope && lease.projectId !== scope.projectId) ||
       (scope?.ownerId && lease.ownerId !== scope.ownerId)
     )
       throw new Error("Device lease not found");
-    lease.status = "released";
-    lease.releasedAt = now();
+    const next: DeviceLease = { ...lease, status: "released", releasedAt: now() };
+    store.upsertLease(next);
     emit({
       type: "lease.changed",
-      at: lease.releasedAt,
+      at: next.releasedAt!,
       projectId: lease.projectId,
       resource: "lease",
       resourceId: lease.id,
     });
-    return lease;
+    return next;
   });
 }
 
@@ -367,23 +332,23 @@ export async function takeOverDeviceLease(
     reason: string;
   },
 ): Promise<DeviceLease> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const at = now();
-    const current = state.leases.find(
-      (lease) =>
-        lease.id === id &&
-        lease.projectId === input.projectId &&
-        (!input.organizationId || lease.organizationId === input.organizationId) &&
-        lease.status === "leased" &&
-        lease.expiresAt > at,
-    );
-    if (!current) throw new Error("Active device lease not found");
+    const current = store.lease(id);
+    if (
+      !current ||
+      current.projectId !== input.projectId ||
+      (input.organizationId && current.organizationId !== input.organizationId) ||
+      current.status !== "leased" ||
+      current.expiresAt <= at
+    ) {
+      throw new Error("Active device lease not found");
+    }
     if (input.expiresAt <= at) throw new Error("Takeover expiry must be in the future");
     const reason = input.reason.trim();
     if (!reason) throw new Error("Takeover reason is required");
 
-    current.status = "released";
-    current.releasedAt = at;
+    store.upsertLease({ ...current, status: "released", releasedAt: at });
     const lease: DeviceLease = {
       id: crypto.randomUUID(),
       ...(current.organizationId ? { organizationId: current.organizationId } : {}),
@@ -398,7 +363,7 @@ export async function takeOverDeviceLease(
       handoffFromLeaseId: current.id,
       handoffReason: reason,
     };
-    state.leases.push(lease);
+    store.upsertLease(lease);
     for (const resourceId of [current.id, lease.id]) {
       emit({
         type: "lease.changed",
@@ -413,7 +378,7 @@ export async function takeOverDeviceLease(
 }
 
 export async function readProjectVariables(projectId: string): Promise<Revisioned<TestData[]>> {
-  return (await readState()).variables[projectId] ?? revisioned([]);
+  return (await readControlStore((store) => store.variables(projectId))) ?? revisioned([]);
 }
 
 function validateProjectVariables(value: TestData[]): TestData[] {
@@ -458,20 +423,19 @@ export async function writeProjectVariables(
   projectId: string,
   write: RevisionWrite<TestData[]>,
 ): Promise<Revisioned<TestData[]>> {
-  return mutate((state) => {
-    if (
-      write.idempotencyKey &&
-      state.idempotency[`${projectId}:variables:${write.idempotencyKey}`]
-    ) {
-      return state.variables[projectId] ?? revisioned([]);
+  return withControlStore((store) => {
+    const replayKey = write.idempotencyKey
+      ? `${projectId}:variables:${write.idempotencyKey}`
+      : undefined;
+    if (replayKey && store.idempotency(replayKey)) {
+      return store.variables(projectId) ?? revisioned([]);
     }
-    const next = writeRevision(state.variables[projectId] ?? revisioned([]), {
+    const next = writeRevision(store.variables(projectId) ?? revisioned([]), {
       ...write,
       value: validateProjectVariables(write.value),
     });
-    state.variables[projectId] = next;
-    if (write.idempotencyKey)
-      state.idempotency[`${projectId}:variables:${write.idempotencyKey}`] = next.revision;
+    store.upsertVariables(projectId, next);
+    if (replayKey) store.upsertIdempotency(replayKey, next.revision);
     emit({
       type: "resource.updated",
       at: next.updatedAt,
@@ -492,14 +456,10 @@ export async function listAppMapCatalog(projectId: string): Promise<{
   appMaps: AppMap[];
   degraded?: DegradedAppMap[];
 }> {
-  const state = await readState();
-  const appMaps = Object.values(state.appMaps)
-    .filter((appMap) => appMap.projectId === projectId)
-    .sort((left, right) => right.updatedAt - left.updatedAt);
-  const degraded = degradedAppMapsFrom(state).filter((item) =>
-    item.key.startsWith(`${projectId}:`),
-  );
-  return degraded.length ? { appMaps, degraded } : { appMaps };
+  return readControlStore((store) => {
+    const { appMaps, degraded } = store.listAppMaps(projectId);
+    return degraded.length ? { appMaps, degraded } : { appMaps };
+  });
 }
 
 export async function listAppMaps(projectId: string): Promise<AppMap[]> {
@@ -511,15 +471,15 @@ export async function listDegradedAppMaps(projectId: string): Promise<DegradedAp
 }
 
 export async function readAppMap(projectId: string, appMapId: string): Promise<AppMap | null> {
-  return (await readState()).appMaps[appMapKey(projectId, appMapId)] ?? null;
+  return (await readControlStore((store) => store.appMap(appMapKey(projectId, appMapId)))) ?? null;
 }
 
 export async function deleteAppMap(projectId: string, appMapId: string): Promise<boolean> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const key = appMapKey(projectId, appMapId);
-    const current = state.appMaps[key];
+    const current = store.appMap(key);
     if (!current) return false;
-    delete state.appMaps[key];
+    store.deleteAppMap(key);
     emit({
       type: "resource.deleted",
       at: now(),
@@ -539,20 +499,22 @@ export async function createAppMap(input: {
   name: string;
   at?: number;
 }): Promise<AppMap> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const key = appMapKey(input.projectId, input.appMapId);
     const operation = currentOperationContext();
     const replayKey = operation?.idempotencyKey
       ? `${input.projectId}:app-map:create:${operation.idempotencyKey}`
       : undefined;
     const fingerprint = JSON.stringify({ appMapId: input.appMapId, name: input.name });
-    if (state.appMaps[key]) {
-      if (replayKey && state.idempotency[replayKey] === fingerprint) {
-        return validateAppMap(state.appMaps[key]);
+    const existing = store.appMap(key);
+    if (existing) {
+      if (replayKey && store.idempotency(replayKey) === fingerprint) {
+        return validateAppMap(existing);
       }
       throw new Error(`App Map ${input.appMapId} already exists`);
     }
-    if (replayKey && state.idempotency[replayKey] !== undefined) {
+    if (store.hasAppMap(key)) throw new Error(`App Map ${input.appMapId} already exists`);
+    if (replayKey && store.idempotency(replayKey) !== undefined) {
       throw new Error("Idempotency key was already used with different App Map input");
     }
     const at = input.at ?? now();
@@ -581,8 +543,8 @@ export async function createAppMap(input: {
       createdAt: at,
       updatedAt: at,
     });
-    state.appMaps[key] = appMap;
-    if (replayKey) state.idempotency[replayKey] = fingerprint;
+    store.upsertAppMap(key, appMap);
+    if (replayKey) store.upsertIdempotency(replayKey, fingerprint);
     emit({
       type: "resource.created",
       at,
@@ -601,29 +563,29 @@ export async function importAppMap(input: {
   appMap: AppMap;
   conflict?: "reject" | "replace" | "copy";
 }): Promise<AppMap> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const conflict = input.conflict ?? "reject";
     const desiredId = input.appMap.id;
     let appMapId = desiredId;
     let key = appMapKey(input.projectId, appMapId);
-    if (state.appMaps[key]) {
+    if (store.hasAppMap(key)) {
       if (conflict === "reject") throw new Error(`App Map ${desiredId} already exists`);
       if (conflict === "copy") {
         appMapId = `${desiredId}-copy`;
         let suffix = 2;
-        while (state.appMaps[appMapKey(input.projectId, appMapId)]) {
+        while (store.hasAppMap(appMapKey(input.projectId, appMapId))) {
           appMapId = `${desiredId}-copy-${suffix++}`;
         }
         key = appMapKey(input.projectId, appMapId);
       }
     }
-    const existing = state.appMaps[key];
+    const existing = store.appMap(key);
     const appMap = rescopeAppMap(input.appMap, {
       organizationId: input.organizationId,
       projectId: input.projectId,
       appMapId,
     });
-    state.appMaps[key] = appMap;
+    store.upsertAppMap(key, appMap);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at: now(),
@@ -659,13 +621,13 @@ export async function duplicateAppMap(input: {
   name?: string;
   at?: number;
 }): Promise<AppMap> {
-  return mutate((state) => {
-    const source = state.appMaps[appMapKey(input.projectId, input.sourceAppMapId)];
+  return withControlStore((store) => {
+    const source = store.appMap(appMapKey(input.projectId, input.sourceAppMapId));
     if (!source || source.organizationId !== input.organizationId) {
       throw new Error(`App Map ${input.sourceAppMapId} not found`);
     }
     const key = appMapKey(input.projectId, input.appMapId);
-    if (state.appMaps[key]) throw new Error(`App Map ${input.appMapId} already exists`);
+    if (store.hasAppMap(key)) throw new Error(`App Map ${input.appMapId} already exists`);
     const at = input.at ?? now();
     const screenVariants = duplicateEntityRecord(source.screenVariants, input.appMapId, at);
     for (const variant of Object.values(screenVariants)) {
@@ -705,7 +667,7 @@ export async function duplicateAppMap(input: {
       createdAt: at,
       updatedAt: at,
     });
-    state.appMaps[key] = appMap;
+    store.upsertAppMap(key, appMap);
     emit({
       type: "resource.created",
       at,
@@ -723,9 +685,9 @@ export async function mutateStoredAppMap(
   appMapId: string,
   transform: (current: AppMap) => AppMap,
 ): Promise<AppMap> {
-  return mutate((state) => {
+  return withControlStore((store) => {
     const key = appMapKey(projectId, appMapId);
-    const current = state.appMaps[key];
+    const current = store.appMap(key);
     if (!current) throw new Error(`App Map ${appMapId} not found`);
     const validatedCurrent = validateAppMap(current);
     const next = validateAppMap(transform(validatedCurrent));
@@ -739,7 +701,7 @@ export async function mutateStoredAppMap(
     if (next.revision !== validatedCurrent.revision + 1) {
       throw new Error("App Map mutation must advance exactly one revision");
     }
-    state.appMaps[key] = next;
+    store.upsertAppMap(key, next);
     emit({
       type: "resource.updated",
       at: next.updatedAt,

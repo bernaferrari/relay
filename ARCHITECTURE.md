@@ -96,6 +96,14 @@ revisions and idempotency keys; stale writes return the current resource. Stable
 field-level operations allow a hosted collaboration provider to be added without changing domain
 entities.
 
+The control plane persists in `.relay/control.sqlite` (WAL, `busy_timeout=5000`), following the same
+`node:sqlite` pattern as the run catalog and OpenCode’s local database: one row per project, build,
+pool, matrix, lease, modifier document, idempotency key, and App Map. Nested entities stay JSON
+inside that row; leases and catalog lists never rewrite other maps. Existing `collaboration.json`
+is imported once and renamed to `collaboration.json.migrated`. This is not a canvas CRDT — SQLite
+holds server-authoritative control state. Presence and cursors stay ephemeral. A future Yjs or
+Automerge adapter still lands through `AppMapCollaborationDocument` and field-level App Map commits.
+
 Relay does not currently depend on Yjs. The domain now exposes a provider-neutral
 `AppMapCollaborationDocument` and typed field-level canvas changes so a future Yjs, Automerge, or
 hosted adapter can share notes, groups, screen layout, and connector presentation without changing

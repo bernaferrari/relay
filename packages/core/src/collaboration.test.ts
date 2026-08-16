@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { RevisionConflict } from "@relay/protocol";
+import { addAppMapScreen, APP_MAP_SCHEMA_VERSION } from "./app-map.js";
+import { CONTROL_DB_NAME } from "./collaboration-db.js";
 import {
   createAppMap,
   deleteAppMap,
@@ -30,7 +34,6 @@ import {
   writeProjectVariables,
   recoverCollaborationState,
 } from "./collaboration.js";
-import { addAppMapScreen } from "./app-map.js";
 
 async function withStateRoot<T>(
   prefix: string,
@@ -48,7 +51,53 @@ async function withStateRoot<T>(
   }
 }
 
-test("missing state initializes safely and valid mutations retain a last-known-good backup", async () => {
+function controlDb(root: string): DatabaseSync {
+  return new DatabaseSync(join(root, CONTROL_DB_NAME));
+}
+
+function appMapDocument(root: string, key: string): string {
+  const db = controlDb(root);
+  try {
+    const row = db.prepare("SELECT document FROM app_maps WHERE map_key = ?").get(key) as
+      | { document: string }
+      | undefined;
+    if (!row) throw new Error(`missing App Map ${key}`);
+    return row.document;
+  } finally {
+    db.close();
+  }
+}
+
+function sampleStoredAppMap(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schemaVersion: APP_MAP_SCHEMA_VERSION,
+    id: "store",
+    organizationId: "acme",
+    projectId: "mobile",
+    name: "Store",
+    revision: 0,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 100,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+test("missing state initializes safely and valid mutations persist in SQLite", async () => {
   await withStateRoot("relay-state-backup-", async (root) => {
     assert.equal((await listProjects("local"))[0]?.id, "default");
     await saveBuild({
@@ -58,8 +107,7 @@ test("missing state initializes safely and valid mutations retain a last-known-g
       platform: "android",
       status: "ready",
     });
-    const path = join(root, "collaboration.json");
-    const first = await readFile(path, "utf8");
+    await stat(join(root, "control.sqlite"));
     await saveBuild({
       id: "release",
       projectId: "p",
@@ -67,7 +115,7 @@ test("missing state initializes safely and valid mutations retain a last-known-g
       platform: "ios",
       status: "ready",
     });
-    assert.equal(await readFile(`${path}.bak`, "utf8"), first);
+    assert.deepEqual((await listBuilds("p")).map((build) => build.id).sort(), ["debug", "release"]);
   });
 });
 
@@ -93,6 +141,7 @@ test("invalid collaboration state rejects reads and mutations without changing o
         }),
       );
       assert.equal(await readFile(path, "utf8"), source);
+      assert.equal(existsSync(join(root, CONTROL_DB_NAME)), false);
     }
   });
 });
@@ -115,6 +164,7 @@ test(
         }),
       );
       assert.equal((await stat(path)).isDirectory(), true);
+      assert.equal(existsSync(join(root, CONTROL_DB_NAME)), false);
     });
   },
 );
@@ -471,37 +521,52 @@ test("one unreadable App Map does not take down the collection", async () => {
       name: "Store",
       at: 100,
     });
-    const path = join(root, "collaboration.json");
-    const state = JSON.parse(await readFile(path, "utf8")) as {
-      appMaps: Record<string, Record<string, unknown>>;
-    };
-    state.appMaps["mobile:broken"] = { schemaVersion: 1 };
-    state.appMaps["mobile:store"] = {
-      ...state.appMaps["mobile:store"],
-      tests: {
-        smoke: {
-          id: "smoke",
-          organizationId: "acme",
-          projectId: "mobile",
-          appMapId: "store",
-          name: "Smoke",
-          kind: "scenario",
-          intentSchemaVersion: 1,
-          steps: [
-            {
-              id: "launch",
-              kind: "instruction",
-              intent: "Launch home",
-              cleanup: { kind: "home" },
-              binding: { status: "unresolved", reason: "not mapped yet" },
+    const db = controlDb(root);
+    try {
+      const current = JSON.parse(appMapDocument(root, "mobile:store")) as Record<string, unknown>;
+      db.prepare("UPDATE app_maps SET document = ? WHERE map_key = ?").run(
+        JSON.stringify({
+          ...current,
+          tests: {
+            smoke: {
+              id: "smoke",
+              organizationId: "acme",
+              projectId: "mobile",
+              appMapId: "store",
+              name: "Smoke",
+              kind: "scenario",
+              intentSchemaVersion: 1,
+              steps: [
+                {
+                  id: "launch",
+                  kind: "instruction",
+                  intent: "Launch home",
+                  cleanup: { kind: "home" },
+                  binding: { status: "unresolved", reason: "not mapped yet" },
+                },
+              ],
+              createdAt: 100,
+              updatedAt: 100,
             },
-          ],
-          createdAt: 100,
-          updatedAt: 100,
-        },
-      },
-    };
-    await writeFile(path, JSON.stringify(state), "utf8");
+          },
+        }),
+        "mobile:store",
+      );
+      db.prepare(
+        `INSERT INTO app_maps(map_key, project_id, app_map_id, status, error, document, updated_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "mobile:broken",
+        "mobile",
+        "broken",
+        "ok",
+        null,
+        JSON.stringify({ schemaVersion: 1 }),
+        100,
+      );
+    } finally {
+      db.close();
+    }
 
     const catalog = await listAppMapCatalog("mobile");
     assert.deepEqual(
@@ -515,17 +580,21 @@ test("one unreadable App Map does not take down the collection", async () => {
   });
 });
 
-test("unreadable JSON falls back to the last-known-good backup", async () => {
+test("unreadable JSON falls back to the last-known-good backup before SQLite exists", async () => {
   await withStateRoot("relay-state-backup-recover-", async (root) => {
-    await createAppMap({
-      organizationId: "acme",
-      projectId: "mobile",
-      appMapId: "store",
-      name: "Store",
-      at: 100,
-    });
     const path = join(root, "collaboration.json");
-    const good = await readFile(path, "utf8");
+    const good = JSON.stringify({
+      projects: [
+        {
+          id: "default",
+          organizationId: "local",
+          name: "Mobile QA",
+          createdAt: 100,
+          updatedAt: 100,
+        },
+      ],
+      appMaps: { "mobile:store": sampleStoredAppMap() },
+    });
     await writeFile(`${path}.bak`, good, "utf8");
     await writeFile(path, '{"projects":', "utf8");
     const listed = await listAppMaps("mobile");
@@ -535,6 +604,61 @@ test("unreadable JSON falls back to the last-known-good backup", async () => {
     );
     const recovered = await recoverCollaborationState();
     assert.equal(recovered.recoveredFromBackup, true);
-    JSON.parse(await readFile(path, "utf8"));
+    await stat(join(root, CONTROL_DB_NAME));
+  });
+});
+
+test("legacy collaboration.json migrates into SQLite once", async () => {
+  await withStateRoot("relay-state-json-migrate-", async (root) => {
+    const path = join(root, "collaboration.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        projects: [
+          {
+            id: "default",
+            organizationId: "local",
+            name: "Mobile QA",
+            createdAt: 100,
+            updatedAt: 100,
+          },
+        ],
+        appMaps: { "mobile:store": sampleStoredAppMap() },
+      }),
+      "utf8",
+    );
+    assert.deepEqual(
+      (await listAppMaps("mobile")).map((map) => map.id),
+      ["store"],
+    );
+    assert.equal(existsSync(path), false);
+    await stat(`${path}.migrated`);
+    await stat(join(root, CONTROL_DB_NAME));
+    assert.deepEqual(
+      (await listAppMaps("mobile")).map((map) => map.id),
+      ["store"],
+    );
+  });
+});
+
+test("renewing a lease does not rewrite App Map documents", async () => {
+  await withStateRoot("relay-state-lease-isolation-", async (root) => {
+    await createAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      name: "Store",
+      at: 100,
+    });
+    const before = appMapDocument(root, "mobile:store");
+    const lease = await leaseDevice({
+      projectId: "p",
+      poolId: "android",
+      deviceSerial: "ABC",
+      ownerId: "worker-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    await renewDeviceLease(lease.id, Date.now() + 120_000);
+    assert.equal(appMapDocument(root, "mobile:store"), before);
   });
 });

@@ -25,7 +25,7 @@ async function stealStaleLock(lockPath: string): Promise<void> {
   }
 }
 
-/** Exclusive cross-process lock for collaboration.json read-modify-write. */
+/** Exclusive cross-process lock for one-shot JSON → SQLite migration. */
 export async function withCollaborationLock<T>(
   stateRoot: string,
   operation: () => Promise<T>,
