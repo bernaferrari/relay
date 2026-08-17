@@ -20,6 +20,7 @@ import {
 } from "./invoke.js";
 import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot } from "./screenshot.js";
+import { runDbCommand } from "./db-commands.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -186,6 +187,13 @@ function fallbackMode(argv: readonly string[]): OutputMode {
   return "human";
 }
 
+function firstPositional(argv: readonly string[]): string | undefined {
+  for (const token of argv) {
+    if (!token.startsWith("-") || token === "-") return token;
+  }
+  return undefined;
+}
+
 export async function runCli(
   argv: readonly string[],
   dependencies: CliDependencies = {},
@@ -194,6 +202,9 @@ export async function runCli(
   let output = new CliOutput(fallbackMode(argv), argv.includes("--quiet"), streams);
   let operationId: string | undefined;
   try {
+    if (firstPositional(argv) === "db") {
+      return await runDbCommand(argv, streams, dependencies.env ?? process.env);
+    }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);
     if (parsed.command === "help") {

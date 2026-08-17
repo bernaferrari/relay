@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { DatabaseSync } from "node:sqlite";
 import type {
   EventEnvelope,
   RelayEventPayload,
@@ -66,6 +68,76 @@ const recent: DeviceEvent[] = [];
 const MAX_RECENT = 200;
 let sequence = 0;
 
+type ControlWrite = { db: DatabaseSync; pending: DeviceEvent[] };
+const controlWrites = new AsyncLocalStorage<ControlWrite>();
+
+function isDurableControlEvent(payload: DeviceEventPayload): payload is ResourceEvent {
+  if (payload.type !== "resource.created" && payload.type !== "resource.updated") {
+    if (payload.type !== "resource.deleted" && payload.type !== "lease.changed") return false;
+  }
+  if (!("resource" in payload) || payload.resource === "presence") return false;
+  return true;
+}
+
+function persistControlEvent(db: DatabaseSync, event: DeviceEvent): void {
+  const payload = event.payload;
+  db.prepare(
+    `INSERT INTO control_events(id, at, project_id, type, resource, resource_id, payload)
+     VALUES(?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    event.eventId,
+    event.occurredAt,
+    event.projectId,
+    payload.type,
+    "resource" in payload && typeof payload.resource === "string" ? payload.resource : null,
+    "resourceId" in payload && typeof payload.resourceId === "string" ? payload.resourceId : null,
+    JSON.stringify(event),
+  );
+}
+
+function dispatch(event: DeviceEvent): void {
+  recent.push(event);
+  if (recent.length > MAX_RECENT) recent.splice(0, recent.length - MAX_RECENT);
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch {
+      /* never let a bad subscriber kill the bus */
+    }
+  }
+}
+
+/**
+ * OpenCode-style write: persist durable events in the transaction.
+ * Callers must notify after releasing the writer gate so subscribers can write again.
+ */
+export function runControlWrite<T>(
+  db: DatabaseSync,
+  write: () => T,
+): { result: T; pending: DeviceEvent[] } {
+  const pending: DeviceEvent[] = [];
+  const result = controlWrites.run({ db, pending }, () => {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const value = write();
+      db.exec("COMMIT");
+      return value;
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
+      throw error;
+    }
+  });
+  return { result, pending };
+}
+
+export function notifyControlWrite(pending: readonly DeviceEvent[]): void {
+  for (const event of pending) dispatch(event);
+}
+
 function systemContext(): OperationContext {
   const requestId = crypto.randomUUID();
   return {
@@ -105,15 +177,13 @@ export function envelopeEvent<T extends RelayEventPayload>(payload: T): EventEnv
 
 export function publish(payload: DeviceEventPayload): DeviceEvent {
   const event = envelopeEvent(payload);
-  recent.push(event);
-  if (recent.length > MAX_RECENT) recent.splice(0, recent.length - MAX_RECENT);
-  for (const l of listeners) {
-    try {
-      l(event);
-    } catch {
-      /* never let a bad subscriber kill the bus */
-    }
+  const write = controlWrites.getStore();
+  if (write) {
+    if (isDurableControlEvent(payload)) persistControlEvent(write.db, event);
+    write.pending.push(event);
+    return event;
   }
+  dispatch(event);
   return event;
 }
 

@@ -100,8 +100,12 @@ The control plane persists in `.relay/control.sqlite` (WAL, `busy_timeout=5000`)
 `node:sqlite` pattern as the run catalog and OpenCode’s local database: one row per project, build,
 pool, matrix, lease, modifier document, idempotency key, and App Map. Nested entities stay JSON
 inside that row; leases and catalog lists never rewrite other maps. Existing `collaboration.json`
-is imported once and renamed to `collaboration.json.migrated`. This is not a canvas CRDT — SQLite
-holds server-authoritative control state. Presence and cursors stay ephemeral. A future Yjs or
+is imported once and renamed to `collaboration.json.migrated`. Schema changes use `PRAGMA user_version`.
+Resource events are written to `control_events` in the same transaction and published to the in-process
+bus only after COMMIT and after the writer lock is released. A later online sync adapter can tail that
+log; presence is not durable. Subscribers may start another control write.
+`relay db` inspects the local file (`path`, `query`, `events`, `shell`) without going through HTTP.
+Presence and cursors stay ephemeral. This is not a canvas CRDT — a future Yjs or
 Automerge adapter still lands through `AppMapCollaborationDocument` and field-level App Map commits.
 
 Relay does not currently depend on Yjs. The domain now exposes a provider-neutral

@@ -5,6 +5,7 @@ import {
   operationLabel,
   type CommandPathDescriptor,
 } from "./commands.js";
+import { dbHelp } from "./db-commands.js";
 import { UsageError } from "./errors.js";
 
 const familyGroups = [
@@ -13,7 +14,7 @@ const familyGroups = [
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
-  ["System", ["generation", "system"]],
+  ["System", ["generation", "system", "db"]],
 ] as const;
 
 const globalOptions = `Global options:
@@ -51,7 +52,10 @@ function friendlyPaths(): FriendlyPath[] {
 }
 
 function familyNames(): Set<string> {
-  return new Set(friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!));
+  return new Set([
+    ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
+    "db",
+  ]);
 }
 
 function usages(commands: readonly string[]): string[] {
@@ -140,6 +144,7 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 }
 
 function renderFamilyHelp(family: string): string {
+  if (family === "db") return dbHelp();
   if (family === "operation") {
     return `Relay operation commands
 

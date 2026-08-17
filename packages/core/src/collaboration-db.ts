@@ -22,11 +22,20 @@ import {
 } from "./collaboration-json.js";
 
 export const CONTROL_DB_NAME = "control.sqlite";
+export const CONTROL_SCHEMA_VERSION = 2;
 export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
 
 const readyRoots = new Set<string>();
+
+type CachedControlDatabase = {
+  path: string;
+  db: DatabaseSync;
+};
+
+let cached: CachedControlDatabase | undefined;
+let writerGate = Promise.resolve();
 
 export function controlDatabasePath(root: string): string {
   return join(root, CONTROL_DB_NAME);
@@ -39,6 +48,7 @@ export function openControlDatabase(path: string): DatabaseSync {
     PRAGMA synchronous = NORMAL;
     PRAGMA busy_timeout = 5000;
     PRAGMA foreign_keys = ON;
+    PRAGMA cache_size = -64000;
   `);
   applyControlSchema(db);
   return db;
@@ -109,8 +119,81 @@ export function applyControlSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS app_maps_project_updated
       ON app_maps(project_id, updated_at DESC);
-    PRAGMA user_version = 1;
   `);
+  migrateControlSchema(db);
+}
+
+function userVersion(db: DatabaseSync): number {
+  const row = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
+  return Number(row?.user_version ?? 0);
+}
+
+function migrateControlSchema(db: DatabaseSync): void {
+  let version = userVersion(db);
+  if (version < 1) {
+    db.exec("PRAGMA user_version = 1");
+    version = 1;
+  }
+  if (version < 2) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS control_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        at INTEGER NOT NULL,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        resource TEXT,
+        resource_id TEXT,
+        payload TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS control_events_project_seq
+        ON control_events(project_id, seq);
+    `);
+    db.exec("PRAGMA user_version = 2");
+  }
+}
+
+export type ControlEventRow = {
+  seq: number;
+  id: string;
+  at: number;
+  projectId: string;
+  type: string;
+  resource?: string;
+  resourceId?: string;
+  payload: unknown;
+};
+
+export function listControlEventRows(
+  db: DatabaseSync,
+  afterSeq = 0,
+  limit = 100,
+): ControlEventRow[] {
+  const rows = db
+    .prepare(
+      `SELECT seq, id, at, project_id, type, resource, resource_id, payload
+       FROM control_events WHERE seq > ? ORDER BY seq LIMIT ?`,
+    )
+    .all(afterSeq, limit) as Array<{
+    seq: number;
+    id: string;
+    at: number;
+    project_id: string;
+    type: string;
+    resource?: string | null;
+    resource_id?: string | null;
+    payload: string;
+  }>;
+  return rows.map((row) => ({
+    seq: Number(row.seq),
+    id: row.id,
+    at: Number(row.at),
+    projectId: row.project_id,
+    type: row.type,
+    ...(row.resource ? { resource: row.resource } : {}),
+    ...(row.resource_id ? { resourceId: row.resource_id } : {}),
+    payload: JSON.parse(row.payload) as unknown,
+  }));
 }
 
 export function metaGet(db: DatabaseSync, key: string): string | undefined {
@@ -312,12 +395,52 @@ export type ControlMigration = {
 };
 
 function alreadyMigrated(path: string): boolean {
+  if (cached?.path === path) return metaGet(cached.db, JSON_MIGRATED_META) === "1";
   if (!existsSync(path)) return false;
   const db = openControlDatabase(path);
   try {
     return metaGet(db, JSON_MIGRATED_META) === "1";
   } finally {
     db.close();
+  }
+}
+
+function acquireControlDatabase(path: string): DatabaseSync {
+  if (cached && cached.path !== path) {
+    try {
+      cached.db.close();
+    } catch {
+      /* ignore */
+    }
+    cached = undefined;
+  }
+  if (!cached) {
+    const db = openControlDatabase(path);
+    try {
+      db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+    } catch {
+      /* ignore */
+    }
+    cached = { path, db };
+  }
+  return cached.db;
+}
+
+/** One writer at a time, OpenCode-style. Tests must reset the cache before deleting the file. */
+export async function withControlDatabase<T>(
+  path: string,
+  fn: (db: DatabaseSync) => T,
+): Promise<T> {
+  let release!: () => void;
+  const previous = writerGate;
+  writerGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return fn(acquireControlDatabase(path));
+  } finally {
+    release();
   }
 }
 
@@ -382,7 +505,14 @@ export async function ensureControlDatabase(root: string): Promise<ControlMigrat
   });
 }
 
-/** Test helper: forget that a state root already opened. */
+/** Close the cached connection so tests can delete the state directory. */
 export function resetControlDatabaseCache(): void {
   readyRoots.clear();
+  if (!cached) return;
+  try {
+    cached.db.close();
+  } catch {
+    /* ignore */
+  }
+  cached = undefined;
 }

@@ -18,7 +18,18 @@ import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
 import { readControlStore, withControlStore, type DegradedAppMap } from "./collaboration-store.js";
 
-export { recoverCollaborationState, type DegradedAppMap } from "./collaboration-store.js";
+export {
+  collaborationStateRoot,
+  listDurableControlEvents,
+  recoverCollaborationState,
+  type DegradedAppMap,
+} from "./collaboration-store.js";
+export {
+  CONTROL_DB_NAME,
+  CONTROL_SCHEMA_VERSION,
+  controlDatabasePath,
+  resetControlDatabaseCache,
+} from "./collaboration-db.js";
 
 /** Local/agent leases last long enough for a Settings tour + a server blink. */
 export const DEVICE_LEASE_TTL_MS = 2 * 60 * 60 * 1000;

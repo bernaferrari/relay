@@ -6,8 +6,6 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { RevisionConflict } from "@relay/protocol";
-import { addAppMapScreen, APP_MAP_SCHEMA_VERSION } from "./app-map.js";
-import { CONTROL_DB_NAME } from "./collaboration-db.js";
 import {
   createAppMap,
   deleteAppMap,
@@ -21,11 +19,13 @@ import {
   listAppMapCatalog,
   listDevicePools,
   listDeviceLeases,
+  listDurableControlEvents,
   listProjects,
   readAppMap,
   readProjectVariables,
   releaseDeviceLease,
   renewDeviceLease,
+  resetControlDatabaseCache,
   saveBuild,
   takeOverDeviceLease,
   saveDevicePool,
@@ -34,6 +34,10 @@ import {
   writeProjectVariables,
   recoverCollaborationState,
 } from "./collaboration.js";
+import { addAppMapScreen, APP_MAP_SCHEMA_VERSION } from "./app-map.js";
+import { CONTROL_DB_NAME, CONTROL_SCHEMA_VERSION } from "./collaboration-db.js";
+import { publish, subscribe } from "./events.js";
+import { withControlStore } from "./collaboration-store.js";
 
 async function withStateRoot<T>(
   prefix: string,
@@ -45,6 +49,7 @@ async function withStateRoot<T>(
   try {
     return await operation(root);
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -302,6 +307,7 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
     assert.equal(await readAppMap("mobile", "store"), null);
     assert.equal(await deleteAppMap("mobile", "store"), false);
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -342,6 +348,7 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
       (error) => error instanceof RevisionConflict && error.current.revision === 1,
     );
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -406,6 +413,7 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     assert.equal((await renewDeviceLease(again.id, later)).expiresAt, later);
     assert.equal(await isDeviceLeaseClaimActive({ ...claim, leaseId: again.id }), true);
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -478,6 +486,7 @@ test("device lease takeover is explicit, atomic, and preserves handoff provenanc
       /Active device lease not found/u,
     );
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -506,6 +515,7 @@ test("compatibility matrices have project-scoped CRUD", async () => {
     await deleteCompatibilityMatrix("p", "release");
     assert.deepEqual(await listCompatibilityMatrices("p"), []);
   } finally {
+    resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previous;
     await rm(root, { recursive: true, force: true });
@@ -660,5 +670,104 @@ test("renewing a lease does not rewrite App Map documents", async () => {
     });
     await renewDeviceLease(lease.id, Date.now() + 120_000);
     assert.equal(appMapDocument(root, "mobile:store"), before);
+  });
+});
+
+test("control writes notify subscribers only after COMMIT", async () => {
+  await withStateRoot("relay-state-after-commit-", async () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribe((event) => {
+      if (event.payload.type === "lease.changed") seen.push(event.payload.resourceId);
+    });
+    try {
+      await assert.rejects(
+        withControlStore(() => {
+          publish({
+            type: "lease.changed",
+            at: Date.now(),
+            projectId: "p",
+            resource: "lease",
+            resourceId: "rolled-back",
+          });
+          throw new Error("boom");
+        }),
+        /boom/u,
+      );
+      assert.deepEqual(seen, []);
+      await leaseDevice({
+        projectId: "p",
+        poolId: "android",
+        deviceSerial: "ABC",
+        ownerId: "worker-1",
+        expiresAt: Date.now() + 60_000,
+      });
+      assert.equal(seen.length, 1);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+test("subscribers can start another control write after COMMIT", async () => {
+  await withStateRoot("relay-state-reenter-write-", async () => {
+    let nested = Promise.resolve();
+    const unsubscribe = subscribe((event) => {
+      if (event.payload.type !== "lease.changed") return;
+      nested = withControlStore((store) => {
+        store.seedDefaultProject();
+      });
+    });
+    try {
+      await leaseDevice({
+        projectId: "p",
+        poolId: "android",
+        deviceSerial: "ABC",
+        ownerId: "worker-1",
+        expiresAt: Date.now() + 60_000,
+      });
+      await Promise.race([
+        nested,
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("writer gate deadlock")), 2_000);
+        }),
+      ]);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+test("durable control events survive for later sync and skip presence", async () => {
+  await withStateRoot("relay-state-control-events-", async (root) => {
+    const lease = await leaseDevice({
+      projectId: "p",
+      poolId: "android",
+      deviceSerial: "ABC",
+      ownerId: "worker-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    publish({
+      type: "resource.updated",
+      at: Date.now(),
+      projectId: "p",
+      resource: "presence",
+      resourceId: "agent:mapper",
+    });
+    const events = await listDurableControlEvents();
+    assert.equal(
+      events.some((event) => event.resourceId === lease.id && event.type === "lease.changed"),
+      true,
+    );
+    assert.equal(
+      events.some((event) => event.resource === "presence"),
+      false,
+    );
+    const db = controlDb(root);
+    try {
+      const version = db.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(Number(version.user_version), CONTROL_SCHEMA_VERSION);
+    } finally {
+      db.close();
+    }
   });
 });

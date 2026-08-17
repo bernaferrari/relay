@@ -10,14 +10,15 @@ import type {
   TestData,
 } from "@relay/protocol";
 import { loadStoredAppMap } from "./app-map/stored-map-repair.js";
+import { notifyControlWrite, runControlWrite, type DeviceEvent } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { join } from "node:path";
 import {
   controlDatabasePath,
   ensureControlDatabase,
+  listControlEventRows,
   metaDelete,
   metaGet,
-  openControlDatabase,
   parseRowDocument,
   RECOVERED_FROM_BACKUP_META,
   REPAIRED_ON_MIGRATE_META,
@@ -31,6 +32,8 @@ import {
   upsertPoolRow,
   upsertProjectRow,
   upsertVariablesRow,
+  withControlDatabase,
+  type ControlEventRow,
 } from "./collaboration-db.js";
 
 export type DegradedAppMap = {
@@ -300,40 +303,32 @@ function createStore(db: DatabaseSync): ControlStore {
   };
 }
 
-async function openReadyDatabase(): Promise<DatabaseSync> {
+async function withReadyDatabase<T>(fn: (db: DatabaseSync) => T): Promise<T> {
   const root = collaborationStateRoot();
   await ensureControlDatabase(root);
-  return openControlDatabase(controlDatabasePath(root));
+  return withControlDatabase(controlDatabasePath(root), fn);
 }
 
 export async function readControlStore<T>(fn: (store: ControlStore) => T): Promise<T> {
-  const db = await openReadyDatabase();
-  try {
-    return fn(createStore(db));
-  } finally {
-    db.close();
-  }
+  return withReadyDatabase((db) => fn(createStore(db)));
 }
 
 export async function withControlStore<T>(fn: (store: ControlStore) => T): Promise<T> {
-  const db = await openReadyDatabase();
-  try {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = fn(createStore(db));
-      db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try {
-        db.exec("ROLLBACK");
-      } catch {
-        /* ignore */
-      }
-      throw error;
-    }
-  } finally {
-    db.close();
-  }
+  let pending: DeviceEvent[] = [];
+  const result = await withReadyDatabase((db) => {
+    const written = runControlWrite(db, () => fn(createStore(db)));
+    pending = written.pending;
+    return written.result;
+  });
+  notifyControlWrite(pending);
+  return result;
+}
+
+export async function listDurableControlEvents(
+  afterSeq = 0,
+  limit = 100,
+): Promise<ControlEventRow[]> {
+  return withReadyDatabase((db) => listControlEventRows(db, afterSeq, limit));
 }
 
 /** Repair unknown fields and restore a last-known-good backup before serving. */
