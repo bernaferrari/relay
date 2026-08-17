@@ -2,6 +2,7 @@ import { validateAppMap } from "./validation.js";
 import { APP_MAP_SCHEMA_VERSION, type AppMap } from "./model.js";
 
 const UNKNOWN_FIELD = /^(.*) contains unknown field (\S+)$/;
+const OBSOLETE_INSTRUCTION_CLEANUP = /^(.*)\.cleanup\.kind must be routine$/;
 const PATH_TOKEN = /([^.[\]]+)|\[(\d+)\]/g;
 const MAX_REPAIRS = 24;
 
@@ -61,12 +62,15 @@ export function loadStoredAppMap(candidate: unknown, key: string): AppMapLoadRes
       return { ok: true, appMap, repaired };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const match = message.match(UNKNOWN_FIELD);
-      if (!match) return { ok: false, error: message, raw: candidate };
       const clone = structuredClone(value);
-      if (!deleteUnknownFieldAtLabel(clone, match[1]!, match[2]!)) {
-        return { ok: false, error: message, raw: candidate };
-      }
+      const unknownField = message.match(UNKNOWN_FIELD);
+      const obsoleteCleanup = message.match(OBSOLETE_INSTRUCTION_CLEANUP);
+      const repairedField = unknownField
+        ? deleteUnknownFieldAtLabel(clone, unknownField[1]!, unknownField[2]!)
+        : obsoleteCleanup
+          ? deleteUnknownFieldAtLabel(clone, obsoleteCleanup[1]!, "cleanup")
+          : false;
+      if (!repairedField) return { ok: false, error: message, raw: candidate };
       value = clone;
       repaired = true;
     }
