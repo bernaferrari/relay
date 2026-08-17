@@ -4,6 +4,7 @@ import {
   platformLabel,
   preferredTargetSerial,
   presentTarget,
+  targetChromeName,
   targetGroupMatchesQuery,
   targetIsPhysicalIos,
   targetIsReady,
@@ -48,6 +49,24 @@ test("presents a named simulator without exposing its UUID in the label", () => 
   assert.equal(target.statusLabel, "Simulator ready");
   assert.equal(target.details.at(-1)?.value, "BFFE9EE7-EC40-4B58-8EED-3084F08EA7CD");
   assert.equal(target.displayName.includes("BFFE"), false);
+});
+
+test("chrome labels never fall back to a raw serial", () => {
+  assert.equal(
+    targetChromeName({
+      serial: "BFFE9EE7-EC40-4B58-8EED-3084F08EA7CD",
+      name: "iPhone 16",
+      platform: "ios",
+      kind: "simulator",
+      booted: true,
+    }),
+    "iPhone 16",
+  );
+  assert.equal(
+    targetChromeName({ serial: "emulator-5554", platform: "android", booted: true }),
+    "Android device",
+  );
+  assert.equal(targetChromeName(undefined), "Device");
 });
 
 test("uses a human fallback while retaining technical identity for search and details", () => {

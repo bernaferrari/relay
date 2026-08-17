@@ -48,7 +48,7 @@ export const shellTopbar = cn(
 
 export const shellTopbarContext = "flex min-w-0 items-center gap-2";
 export const shellTopbarTitle =
-  "pointer-events-auto flex min-w-0 items-center justify-center overflow-hidden max-[1120px]:hidden";
+  "pointer-events-auto flex min-w-0 max-w-full items-center justify-center overflow-hidden max-[720px]:hidden";
 export const shellTopbarActions = "flex shrink-0 items-center gap-2.5 max-[680px]:gap-1";
 
 export const shellBreadcrumb = cn(

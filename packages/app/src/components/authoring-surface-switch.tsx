@@ -24,7 +24,7 @@ export function AuthoringSurfaceSwitch(props: {
           aria-pressed={props.value === surface}
           onClick={() => props.onChange(surface)}
         >
-          {surface === "test" ? "Test" : "Map"}
+          {surface === "test" ? "Test" : "Canvas"}
         </button>
       ))}
     </div>

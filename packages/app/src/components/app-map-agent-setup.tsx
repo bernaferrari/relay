@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { DeviceInfo } from "../lib/api-types";
+import { presentTarget } from "../lib/target-presentation";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { AGENT_MODELS } from "./app-map-agent-types";
@@ -176,7 +177,7 @@ export function AppMapAgentSetup(props: {
                       />
                       <Icon name="smartphone" size={14} class="text-[var(--text-weak)]" />
                       <span class="min-w-0 flex-1 truncate text-caption text-[var(--text-strong)]">
-                        {device.name ?? device.serial}
+                        {presentTarget(device).displayName}
                       </span>
                       <span class="text-micro text-[var(--text-weak)]">
                         {device.platform ?? "device"}

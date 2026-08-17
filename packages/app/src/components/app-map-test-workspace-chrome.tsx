@@ -389,10 +389,10 @@ export function FirstTestEmpty(props: { creating: boolean; onCreate: () => void 
           Create the first Test
         </h2>
         <p class="mt-1.5 text-caption/[1.5] text-text-weak">
-          Write readable intent first, then bind each step to a reviewed path on the App Map.
+          Write readable intent first, then bind each step to a reviewed path on this map.
         </p>
         <Button class="mt-4" disabled={props.creating} onClick={props.onCreate}>
-          {props.creating ? "Creating…" : "Create scenario test"}
+          {props.creating ? "Creating…" : "Create Test"}
         </Button>
       </div>
     </div>

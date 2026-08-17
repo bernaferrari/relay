@@ -661,8 +661,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       </Show>
 
       <main class={shellMain}>
-        {/* One toolbar. The map's name, its view, and its actions used to
-            be split across two stacked bars for no reason a user could name. */}
         <header class={cn(shellTopbar, !navOpen() && "pl-[calc(var(--traffic-pad,12px)+18px)]")}>
           <div class={shellTopbarContext}>
             <button
@@ -678,11 +676,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </div>
           <div class={shellTopbarTitle}>
             <Show
-              when={area() === "tests"}
+              when={area() === "tests" && authoringSurface() === "map"}
               fallback={
-                <strong class="max-w-full truncate text-center text-body font-medium text-[var(--text-base)]">
-                  Run history
-                </strong>
+                area() === "runs" ? (
+                  <strong class="max-w-full truncate text-center text-body font-medium text-[var(--text-base)]">
+                    Run history
+                  </strong>
+                ) : null
               }
             >
               <input

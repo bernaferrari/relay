@@ -27,6 +27,8 @@ import { CollaborationPresence } from "./collaboration-presence";
 import { CanvasNoteCard, ScreenCard } from "./app-map-canvas-primitives";
 import { AppMapCurveControl } from "./app-map-curve-control";
 import { AppMapConnectionToolbar } from "./app-map-connection-toolbar";
+import type { AgentWorker } from "./app-map-agent-types";
+import { AppMapAgentGhosts } from "./app-map-agent-ghosts";
 import type { ScreenshotOrientationEvidence, ScreenshotRotation } from "./oriented-screenshot";
 
 export type AppMapCanvasSceneProps = {
@@ -71,6 +73,7 @@ export type AppMapCanvasSceneProps = {
   onDeleteNote: (note: CanvasNote) => void;
   onScreenRotationChange?: (nodeId: string, rotation: CanvasScreenRotation) => void;
   hereScreenId?: string | null;
+  agentWorkers?: readonly AgentWorker[];
 };
 
 type ConnectionControlPreview = {
@@ -626,6 +629,11 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           />
         )}
       </Show>
+      <AppMapAgentGhosts
+        workers={props.agentWorkers ?? []}
+        nodes={props.nodes}
+        positionFor={props.positionFor}
+      />
     </>
   );
 }

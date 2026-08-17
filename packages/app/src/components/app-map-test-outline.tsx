@@ -188,7 +188,7 @@ export function AppMapTestOutline(props: {
           <div class="px-3 py-8 text-center">
             <p class="m-0 text-caption font-medium text-text-strong">Add the first step</p>
             <p class="mt-1 text-caption/[1.45] text-text-weak">
-              Every new step starts unbound, so nothing vague can run.
+              New steps are not connected yet, so nothing vague can run.
             </p>
           </div>
         </Show>

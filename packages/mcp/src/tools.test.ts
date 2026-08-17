@@ -120,7 +120,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
       operationId: "target.screenshot.capture",
       title: "Capture target screenshot",
       description:
-        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared.",
+        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared. Step 1 of a tap: capture pixels, then call interact. Do not retry snapshot in a loop if the tree is missing.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -139,6 +139,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
 test("lets agents tap by accessibility identifier", () => {
   const interact = tool("target.interact");
   assert.match(interact.description, /Prefer identifier/);
+  assert.match(interact.description, /Step 2 of a tap/);
   assert.deepEqual(
     interact.inputSchema.parse({
       serial: "ipad-1",
@@ -147,6 +148,35 @@ test("lets agents tap by accessibility identifier", () => {
     }),
     { serial: "ipad-1", kind: "identifier", identifier: "settings.gear" },
   );
+  assert.deepEqual(
+    interact.inputSchema.parse({
+      serial: "ipad-1",
+      kind: "swipe",
+      from: { x: 10, y: 20 },
+      to: { x: 10, y: 400 },
+      preview: true,
+    }),
+    {
+      serial: "ipad-1",
+      kind: "swipe",
+      from: { x: 10, y: 20 },
+      to: { x: 10, y: 400 },
+      preview: true,
+    },
+  );
+});
+
+test("advertises serial on recover and list tools in the control profile", () => {
+  assert.deepEqual(tool("target.recover").inputSchema.parse({ serial: "ipad-1" }), {
+    serial: "ipad-1",
+  });
+  assert.deepEqual(tool("target.devices.list").inputSchema.parse({}), {});
+  assert.deepEqual(tool("target.list").inputSchema.parse({}), {});
+  assert.deepEqual(tool("system.doctor.get").inputSchema.parse({}), {});
+  assert.deepEqual(tool("lease.list").inputSchema.parse({ status: "active" }), {
+    status: "active",
+  });
+  assert.match(tool("lease.create").description, /poolId "local"/);
 });
 
 test("exposes app launch as one high-intent leased target tool", () => {

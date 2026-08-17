@@ -82,6 +82,8 @@ import { useAppMapContextPanels } from "./use-app-map-context-panels";
 import { useAppMapCaptureActions } from "../lib/use-app-map-capture-actions";
 import { useAppMapWorkspaceEvents } from "../lib/use-app-map-workspace-events";
 import { useAppMapWorkspaceShell } from "../lib/use-app-map-workspace-shell";
+import { targetChromeName } from "../lib/target-presentation";
+import { mappedCompanionStatus } from "../lib/mapped-companion-status";
 import { useAppMapWorkspaceRun } from "../lib/use-app-map-workspace-run";
 
 type AppMapContextSurface = "agent" | "history" | "proposals" | null;
@@ -716,9 +718,7 @@ export function AppMapWorkspace(props: {
                 <AppMapEmptyState
                   take={recorder.take()}
                   recordState={recordState()}
-                  selectedDeviceName={
-                    selectedDevice()?.name ?? server.selectedDevice() ?? undefined
-                  }
+                  selectedDeviceName={targetChromeName(selectedDevice())}
                   deviceOpen={captureOpen()}
                   deviceSelected={Boolean(selectedDevice())}
                   liveScreenSrc={liveScreenSrc()}
@@ -739,6 +739,12 @@ export function AppMapWorkspace(props: {
                   nodes={tree().nodes}
                   connections={connections()}
                   notes={canvasState().notes ?? []}
+                  agentWorkers={
+                    contextPanels.exploration.state() === "running" ||
+                    contextPanels.exploration.state() === "stopping"
+                      ? contextPanels.exploration.workers()
+                      : []
+                  }
                   width={bounds().width}
                   height={bounds().height}
                   viewportScale={view().scale}
@@ -1122,22 +1128,13 @@ export function AppMapWorkspace(props: {
         <AppMapDeviceCompanionMount
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
-          deviceLabel={selectedDevice()?.name ?? selectedDevice()?.serial}
-          status={
-            liveDeviceOutsideMapApp()
-              ? {
-                  label: "Outside this map",
-                  kind: "attention",
-                  detail: `Return to ${activeAppMap()?.name ?? "the mapped app"} before capturing.`,
-                }
-              : liveDeviceUnmapped() && livePanelStatus().kind === "ready"
-                ? {
-                    label: "Not saved to map",
-                    kind: "info",
-                    detail: `Choose Save screen to add it to ${activeAppMap()?.name ?? "this map"}.`,
-                  }
-                : livePanelStatus()
-          }
+          deviceLabel={targetChromeName(selectedDevice())}
+          status={mappedCompanionStatus({
+            outsideMapApp: liveDeviceOutsideMapApp(),
+            unmapped: liveDeviceUnmapped(),
+            mapName: activeAppMap()?.name ?? "this map",
+            panelStatus: livePanelStatus(),
+          })}
           unmapped={liveDeviceUnmapped()}
           outsideMapApp={liveDeviceOutsideMapApp()}
           mappedScreenName={hereScreenTitle()}

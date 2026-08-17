@@ -254,7 +254,7 @@ export function AppMapDeviceCompanion(props: {
                       props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
                     }
                   />
-                  {props.captureBusy ? "Saving…" : "Save screen"}
+                  {props.captureBusy ? "Saving…" : "Save first screen"}
                 </Button>
               </Show>
             </footer>

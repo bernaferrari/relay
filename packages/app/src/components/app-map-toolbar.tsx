@@ -15,8 +15,8 @@ export function AppMapOverviewToolbar(props: {
   onOpenProposals: () => void;
   onViewChange: (view: AppMapWorkspaceView) => void;
 }) {
-  // These name three views *of the map*, so none of them may reuse a word from the
-  // document switcher ("Test | Map") or from the Test workspace ("Live | Last run").
+  // These name three views *of the canvas*, so none of them may reuse a word from the
+  // document switcher ("Test | Canvas") or from the Test workspace ("Live | Last run").
   const views = [
     ["map", "map", "Canvas"],
     ["screens", "grid", "Screens"],
@@ -51,7 +51,7 @@ export function AppMapOverviewToolbar(props: {
       }}
       aria-label={`${props.screenCount} ${props.screenCount === 1 ? "screen" : "screens"}, ${props.connectionCount} ${props.connectionCount === 1 ? "path" : "paths"}`}
     >
-      <div class="flex items-center gap-0.5" role="tablist" aria-label="Map view">
+      <div class="flex items-center gap-0.5" role="tablist" aria-label="Canvas view">
         {views.map(([id, icon, label], index) => (
           <button
             type="button"

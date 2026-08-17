@@ -128,7 +128,7 @@ test("scenario editor creates and edits stable intent without inventing a runnab
   expect(desktopLayout.style.gridTemplateColumns.split(" ").length).toBe(3);
   expect(root.textContent).not.toContain("Open map");
   const create = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Create scenario test"),
+    button.textContent?.includes("Create Test"),
   )!;
   create.click();
   await settle();

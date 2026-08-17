@@ -90,9 +90,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
             <Icon name="x" size={14} />
           </IconButton>
         </div>
-        <main class="grid min-h-0 flex-1 grid-cols-[210px_1fr]">
+        <main class="grid min-h-0 flex-1 grid-cols-[210px_1fr] max-[760px]:grid-cols-1">
           <nav
-            class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong"
+            class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong max-[760px]:flex-row max-[760px]:flex-wrap max-[760px]:border-r-0 max-[760px]:border-b"
             aria-label="Settings sections"
           >
             <For each={SECTIONS}>

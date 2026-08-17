@@ -28,7 +28,7 @@ export function AppMapCanvasViewport(props: {
         props.workspaceView === "map" && "touch-none",
         props.tool === "hand" ? "cursor-grab active:cursor-grabbing" : "cursor-default",
       )}
-      aria-label="Map"
+      aria-label="Canvas"
       onWheel={(event) => {
         const target = event.target as HTMLElement;
         if (

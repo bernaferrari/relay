@@ -890,7 +890,7 @@ export function AppMapEmptyState(props: {
     }
     if (!props.deviceOpen) {
       return {
-        title: "Open the device to continue",
+        title: "Show the live device",
         detail:
           "Show the live device, go to a starting screen, then record the path — or save a screenshot to the map.",
       };

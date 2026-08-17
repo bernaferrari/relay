@@ -85,14 +85,16 @@ function isToolOperation(
 }
 
 const extraGuidance: Partial<Record<OperationId, string>> = {
+  "target.screenshot.capture":
+    " Step 1 of a tap: capture pixels, then call interact. Do not retry snapshot in a loop if the tree is missing.",
   "target.interact":
-    " Prefer identifier, then label, then text, then point. Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen.",
+    " Step 2 of a tap: after screenshot or snapshot, send one interaction. Prefer identifier, then label, then text, then point. Use preview:true to mark without committing. Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen.",
   "target.snapshot.capture":
-    " The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
+    " Step 1 of a tap when you need identifiers or labels. The accessibility tree may be missing. Screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "lease.create":
-    " Exclusive control is required before sending input. Observation remains available without a lease.",
+    ' Only after TARGET_CONTROL_LEASE_REQUIRED. Pass poolId "local", deviceSerial, and confirm:true. Local trusted servers often mint a lease on first control.',
 };
 
 function toolDescriptor(

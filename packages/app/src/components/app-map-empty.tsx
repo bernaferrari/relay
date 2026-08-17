@@ -10,6 +10,7 @@ import {
 } from "./device-status-label";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 import { Icon } from "./icon";
+import { presentTarget } from "../lib/target-presentation";
 
 /**
  * The first project state is a real canvas, not a creation wizard and not a
@@ -67,23 +68,37 @@ export function EmptyAppMap(props: {
             </span>
             <div class="grid gap-1.5">
               <h1 class="m-0 text-display/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
-                Start your map
+                Save the first screen
               </h1>
               <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
-                Open the live device and save the first screen. Then navigate to map the rest.
+                Choose a device, show it live, then save. Navigate from there to map the rest.
               </p>
             </div>
-            <button
-              type="button"
-              class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
-              onClick={props.onToggleDevice}
+            <Show
+              when={device()}
+              fallback={
+                <button
+                  type="button"
+                  class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                  onClick={props.onOpenTargets}
+                >
+                  <Icon name="smartphone" size={14} />
+                  Choose device
+                </button>
+              }
             >
-              <Icon name="smartphone" size={14} />
-              Show live device
-              <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
-                D
-              </kbd>
-            </button>
+              <button
+                type="button"
+                class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-150 hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                onClick={props.onToggleDevice}
+              >
+                <Icon name="smartphone" size={14} />
+                Show live device
+                <kbd class="rounded-md bg-[rgb(255_255_255/18%)] px-1.5 py-0.5 font-mono text-micro font-medium">
+                  D
+                </kbd>
+              </button>
+            </Show>
           </div>
         </div>
       </Show>
@@ -102,7 +117,7 @@ export function EmptyAppMap(props: {
           <header class="flex min-h-10 shrink-0 items-center justify-between gap-3 border-b border-[var(--map-divider)] px-3">
             <DeviceStatusLabel
               status={status()}
-              label={device()?.name || device()?.serial || "Device"}
+              label={device() ? presentTarget(device()!).displayName : "Device"}
               identityOnly
             />
             <div class="flex items-center gap-1.5">
@@ -141,7 +156,7 @@ export function EmptyAppMap(props: {
                     >
                       <Icon name="refresh" size={14} class="ui-refresh-spin" />
                     </Show>
-                    {props.creating ? "Saving…" : "Save screen"}
+                    {props.creating ? "Saving…" : "Save first screen"}
                   </Button>
                 }
               >

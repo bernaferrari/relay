@@ -11,6 +11,7 @@ const identifier = (description: string) => text(description);
 const unknownRecord = z.record(z.string(), z.unknown());
 const empty = z.object({}).strict();
 const open = z.object({}).catchall(z.unknown());
+const tapPoint = z.object({ x: z.number(), y: z.number() }).strict();
 
 const targetReference = {
   serial: identifier("Connected device or managed target identifier"),
@@ -230,10 +231,20 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),
   "target.preflight": z.object({ targetId: identifier("Managed target identifier") }).strict(),
   "target.open": z.object({ targetId: identifier("Managed browser target identifier") }).strict(),
+  "system.doctor.get": empty,
+  "target.list": empty,
+  "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
   "target.boot": z.object(targetReference).strict(),
   "target.authorize": z.object(targetReference).strict(),
   "target.snapshot.capture": z.object(targetReference).strict(),
   "target.screenshot.capture": z.object(targetReference).strict(),
+  "target.recover": z
+    .object({
+      ...targetReference,
+      reason: z.enum(["connect", "observe", "control", "record", "auto"]).optional(),
+    })
+    .strict(),
+  "lease.list": z.object({ status: z.enum(["active", "all"]).optional() }).strict(),
   "target.app.launch": z
     .object({
       ...targetReference,
@@ -256,13 +267,32 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
         "key",
         "replace",
       ]),
+      preview: z.boolean().optional().describe("If true, resolve or annotate only — no commit tap"),
       identifier: z.string().min(1).optional(),
       label: z.string().min(1).optional(),
       text: z.string().optional(),
       x: z.number().optional(),
       y: z.number().optional(),
+      from: tapPoint.optional(),
+      to: tapPoint.optional(),
+      durationMs: z.number().int().positive().optional(),
+      ref: z.string().min(1).optional(),
+      query: z.string().min(1).optional(),
+      match: z.string().min(1).optional(),
+      key: z.enum(["enter", "backspace", "back", "home"]).optional(),
+      point: tapPoint.optional(),
+      target: z
+        .object({
+          identifier: z.string().min(1).optional(),
+          ref: z.string().min(1).optional(),
+          label: z.string().min(1).optional(),
+          text: z.string().min(1).optional(),
+          point: tapPoint.optional(),
+        })
+        .strict()
+        .optional(),
     })
-    .catchall(z.unknown()),
+    .strict(),
   "target.ui.describe": z.object(targetReference).strict(),
   "target.ui.back": z
     .object({
@@ -327,7 +357,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .strict(),
   "lease.create": z
     .object({
-      poolId: identifier("Device-pool identifier"),
+      poolId: identifier('Device-pool identifier. Use "local" for a connected device'),
       deviceSerial: identifier("Device serial"),
       expiresAt: natural("Lease expiration timestamp").optional(),
     })

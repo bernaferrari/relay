@@ -34,7 +34,7 @@ export const relayMcpInstructions = [
   "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
   "If a tap does not change pixels, it missed; try the label, not a cell center.",
   "A missing accessibility tree is not a failed session — screenshot plus point still works.",
-  "On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with this actor, then retry.",
+  'On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with poolId "local", deviceSerial, and confirm:true, then retry.',
   "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
   "Read relay://control/gotchas before the first interact, recover, snapshot, or launch.",
 ].join(" ");

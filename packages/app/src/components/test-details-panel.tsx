@@ -122,7 +122,7 @@ export function MapPropertiesPanel(props: {
       class={cn(
         shellSteps,
         props.presentation === "floating"
-          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-2xl border border-[var(--border-strong-base)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
+          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-2xl border border-[var(--border-strong-base)] shadow-[0_24px_72px_rgb(0_0_0/40%)] max-[900px]:top-2 max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:w-auto"
           : shellAsideDrawer,
       )}
       aria-label="Map details"
@@ -138,7 +138,7 @@ export function MapPropertiesPanel(props: {
                 class={cn(tabUnderline, "h-full", tab() === item && tabUnderlineActive)}
                 onClick={() => setTab(item)}
               >
-                {item === "properties" ? "Properties" : "Export"}
+                {item === "properties" ? "Properties" : "YAML"}
               </button>
             )}
           </For>

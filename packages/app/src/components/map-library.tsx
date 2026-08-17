@@ -237,7 +237,7 @@ export function MapLibrary(props: {
                 </span>
                 <strong class="text-body font-semibold text-text-strong">No maps yet</strong>
                 <p class="m-0 max-w-[28ch] text-caption leading-relaxed text-text-weak">
-                  Create a map, connect a device, and save your first screen.
+                  Create a map, connect a device, and save the first screen.
                 </p>
                 <button
                   type="button"

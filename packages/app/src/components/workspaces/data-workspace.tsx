@@ -147,7 +147,9 @@ export function DataWorkspace(props: {
         }
       >
         <div class="min-w-0">
-          <span class={eyebrow}>Modifiers</span>
+          <Show when={!props.embedded}>
+            <span class={eyebrow}>Modifiers</span>
+          </Show>
           <h2
             class={
               props.embedded
@@ -166,7 +168,7 @@ export function DataWorkspace(props: {
         </div>
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="lg" onClick={props.onConfigureProvider}>
-            Generation settings
+            Accounts
           </Button>
           <Button variant="primary" size="lg" onClick={addRow}>
             <Icon name="plus" size={15} /> New modifier
@@ -191,10 +193,10 @@ export function DataWorkspace(props: {
         )}
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-[0_1px_2px_rgb(0_0_0/4%)]">
-          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-micro/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
+          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-micro/[1.25] font-semibold tracking-wide text-text-weaker uppercase max-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18px]">
             <span>Modifier</span>
-            <span>Scope</span>
-            <span>Source</span>
+            <span class="max-[900px]:hidden">Scope</span>
+            <span class="max-[900px]:hidden">Source</span>
             <span>Preview</span>
             <span />
           </div>
@@ -204,7 +206,7 @@ export function DataWorkspace(props: {
                 type="button"
                 aria-current={selectedId() === row.id ? "true" : undefined}
                 class={cn(
-                  "grid min-h-14 w-full grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base px-3 text-left last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
+                  "grid min-h-14 w-full grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base px-3 text-left last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus max-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18px]",
                   selectedId() === row.id && "bg-surface-base-active",
                 )}
                 onClick={() => setSelectedId(row.id)}
@@ -221,12 +223,12 @@ export function DataWorkspace(props: {
                           : "Shared across tests"}
                   </small>
                 </span>
-                <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak">
+                <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak max-[900px]:hidden">
                   {row.scope === "private" ? "Private" : "Shared"}
                 </span>
                 <span
                   class={cn(
-                    "w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak",
+                    "w-fit rounded-md bg-surface-weak px-2 py-1 text-micro/[1.25] text-text-weak max-[900px]:hidden",
                     row.mode === "AI" && "bg-surface-info-weak text-text-info-base",
                   )}
                 >
@@ -422,7 +424,7 @@ export function DataWorkspace(props: {
                   class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-caption/[1.25] text-text-critical-base hover:bg-surface-critical-weak"
                   onClick={() => deleteRow(row().id)}
                 >
-                  <Icon name="trash" size={14} /> Delete variable
+                  <Icon name="trash" size={14} /> Delete modifier
                 </button>
                 <span class="text-micro/[1.25] text-text-weaker">
                   {draftIds().has(row().id)

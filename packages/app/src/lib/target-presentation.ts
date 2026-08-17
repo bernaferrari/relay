@@ -42,6 +42,13 @@ function cleaned(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+export function targetChromeName(
+  target: DeviceInfo | null | undefined,
+  fallback = "Device",
+): string {
+  return target ? presentTarget(target).displayName : fallback;
+}
+
 export function presentTarget(target: DeviceInfo): TargetPresentation {
   const platformName = platformLabel(target.platform);
   const defaultName =
