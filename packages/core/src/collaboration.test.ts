@@ -35,9 +35,9 @@ import {
   recoverCollaborationState,
 } from "./collaboration.js";
 import { addAppMapScreen, APP_MAP_SCHEMA_VERSION } from "./app-map.js";
-import { CONTROL_DB_NAME, CONTROL_SCHEMA_VERSION } from "./collaboration-db.js";
+import { CONTROL_DB_NAME, CONTROL_SCHEMA_VERSION, pruneControlEvents } from "./collaboration-db.js";
 import { publish, subscribe } from "./events.js";
-import { withControlStore } from "./collaboration-store.js";
+import { readControlStore, withControlStore } from "./collaboration-store.js";
 
 async function withStateRoot<T>(
   prefix: string,
@@ -766,6 +766,58 @@ test("durable control events survive for later sync and skip presence", async ()
     try {
       const version = db.prepare("PRAGMA user_version").get() as { user_version: number };
       assert.equal(Number(version.user_version), CONTROL_SCHEMA_VERSION);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test("control reads skip the writer gate after COMMIT", async () => {
+  await withStateRoot("relay-state-control-read-", async () => {
+    let nestedCount = Promise.resolve(0);
+    const unsubscribe = subscribe((event) => {
+      if (event.payload.type !== "lease.changed") return;
+      nestedCount = readControlStore((store) => store.leases("p").length);
+    });
+    try {
+      await leaseDevice({
+        projectId: "p",
+        poolId: "android",
+        deviceSerial: "ABC",
+        ownerId: "worker-1",
+        expiresAt: Date.now() + 60_000,
+      });
+      assert.equal(await nestedCount, 1);
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+test("control event log keeps a bounded newest window", async () => {
+  await withStateRoot("relay-state-event-bound-", async (root) => {
+    await leaseDevice({
+      projectId: "p",
+      poolId: "android",
+      deviceSerial: "ABC",
+      ownerId: "worker-1",
+      expiresAt: Date.now() + 60_000,
+    });
+    resetControlDatabaseCache();
+    const db = controlDb(root);
+    try {
+      for (let index = 0; index < 8; index += 1) {
+        db.prepare(
+          `INSERT INTO control_events(id, at, project_id, type, payload) VALUES(?, ?, ?, ?, ?)`,
+        ).run(`extra-${index}`, index, "p", "test", "{}");
+      }
+      pruneControlEvents(db, 3);
+      const count = db.prepare("SELECT COUNT(*) AS n FROM control_events").get() as { n: number };
+      const newest = db
+        .prepare("SELECT id FROM control_events ORDER BY seq DESC LIMIT 1")
+        .get() as { id: string };
+      assert.equal(Number(count.n), 3);
+      assert.equal(newest.id, "extra-7");
     } finally {
       db.close();
     }

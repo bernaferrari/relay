@@ -33,6 +33,7 @@ import {
   upsertProjectRow,
   upsertVariablesRow,
   withControlDatabase,
+  withControlDatabaseRead,
   type ControlEventRow,
 } from "./collaboration-db.js";
 
@@ -303,14 +304,18 @@ function createStore(db: DatabaseSync): ControlStore {
   };
 }
 
-async function withReadyDatabase<T>(fn: (db: DatabaseSync) => T): Promise<T> {
+async function withReadyDatabase<T>(
+  fn: (db: DatabaseSync) => T,
+  access: "read" | "write",
+): Promise<T> {
   const root = collaborationStateRoot();
   await ensureControlDatabase(root);
-  return withControlDatabase(controlDatabasePath(root), fn);
+  const path = controlDatabasePath(root);
+  return access === "write" ? withControlDatabase(path, fn) : withControlDatabaseRead(path, fn);
 }
 
 export async function readControlStore<T>(fn: (store: ControlStore) => T): Promise<T> {
-  return withReadyDatabase((db) => fn(createStore(db)));
+  return withReadyDatabase((db) => fn(createStore(db)), "read");
 }
 
 export async function withControlStore<T>(fn: (store: ControlStore) => T): Promise<T> {
@@ -319,7 +324,7 @@ export async function withControlStore<T>(fn: (store: ControlStore) => T): Promi
     const written = runControlWrite(db, () => fn(createStore(db)));
     pending = written.pending;
     return written.result;
-  });
+  }, "write");
   notifyControlWrite(pending);
   return result;
 }
@@ -328,7 +333,7 @@ export async function listDurableControlEvents(
   afterSeq = 0,
   limit = 100,
 ): Promise<ControlEventRow[]> {
-  return withReadyDatabase((db) => listControlEventRows(db, afterSeq, limit));
+  return withReadyDatabase((db) => listControlEventRows(db, afterSeq, limit), "read");
 }
 
 /** Repair unknown fields and restore a last-known-good backup before serving. */

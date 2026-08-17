@@ -81,18 +81,26 @@ function isDurableControlEvent(payload: DeviceEventPayload): payload is Resource
 
 function persistControlEvent(db: DatabaseSync, event: DeviceEvent): void {
   const payload = event.payload;
-  db.prepare(
-    `INSERT INTO control_events(id, at, project_id, type, resource, resource_id, payload)
+  const inserted = db
+    .prepare(
+      `INSERT INTO control_events(id, at, project_id, type, resource, resource_id, payload)
      VALUES(?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    event.eventId,
-    event.occurredAt,
-    event.projectId,
-    payload.type,
-    "resource" in payload && typeof payload.resource === "string" ? payload.resource : null,
-    "resourceId" in payload && typeof payload.resourceId === "string" ? payload.resourceId : null,
-    JSON.stringify(event),
-  );
+    )
+    .run(
+      event.eventId,
+      event.occurredAt,
+      event.projectId,
+      payload.type,
+      "resource" in payload && typeof payload.resource === "string" ? payload.resource : null,
+      "resourceId" in payload && typeof payload.resourceId === "string" ? payload.resourceId : null,
+      JSON.stringify(event),
+    );
+  if (Number(inserted.lastInsertRowid) % 32 === 0) {
+    db.prepare(
+      `DELETE FROM control_events
+       WHERE seq <= (SELECT COALESCE(MAX(seq), 0) - 5000 FROM control_events)`,
+    ).run();
+  }
 }
 
 function dispatch(event: DeviceEvent): void {

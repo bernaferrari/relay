@@ -27,6 +27,8 @@ export const JSON_MIGRATED_META = "json_migrated";
 export const RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup";
 export const REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
 
+export const CONTROL_EVENTS_RETAIN = 5_000;
+
 const readyRoots = new Set<string>();
 
 type CachedControlDatabase = {
@@ -34,7 +36,7 @@ type CachedControlDatabase = {
   db: DatabaseSync;
 };
 
-let cached: CachedControlDatabase | undefined;
+let cachedWriter: CachedControlDatabase | undefined;
 let writerGate = Promise.resolve();
 
 export function controlDatabasePath(root: string): string {
@@ -194,6 +196,14 @@ export function listControlEventRows(
     ...(row.resource_id ? { resourceId: row.resource_id } : {}),
     payload: JSON.parse(row.payload) as unknown,
   }));
+}
+
+export function pruneControlEvents(db: DatabaseSync, retain = CONTROL_EVENTS_RETAIN): void {
+  if (retain < 1) return;
+  db.prepare(
+    `DELETE FROM control_events
+     WHERE seq <= (SELECT COALESCE(MAX(seq), 0) - ? FROM control_events)`,
+  ).run(retain);
 }
 
 export function metaGet(db: DatabaseSync, key: string): string | undefined {
@@ -395,7 +405,7 @@ export type ControlMigration = {
 };
 
 function alreadyMigrated(path: string): boolean {
-  if (cached?.path === path) return metaGet(cached.db, JSON_MIGRATED_META) === "1";
+  if (cachedWriter?.path === path) return metaGet(cachedWriter.db, JSON_MIGRATED_META) === "1";
   if (!existsSync(path)) return false;
   const db = openControlDatabase(path);
   try {
@@ -405,25 +415,34 @@ function alreadyMigrated(path: string): boolean {
   }
 }
 
-function acquireControlDatabase(path: string): DatabaseSync {
-  if (cached && cached.path !== path) {
-    try {
-      cached.db.close();
-    } catch {
-      /* ignore */
-    }
-    cached = undefined;
+function closeCached(entry: CachedControlDatabase | undefined): void {
+  if (!entry) return;
+  try {
+    entry.db.close();
+  } catch {
+    /* ignore */
   }
-  if (!cached) {
+}
+
+function closeCachedIfPathChanged(path: string): void {
+  if (cachedWriter && cachedWriter.path !== path) {
+    closeCached(cachedWriter);
+    cachedWriter = undefined;
+  }
+}
+
+function acquireControlDatabase(path: string): DatabaseSync {
+  closeCachedIfPathChanged(path);
+  if (!cachedWriter) {
     const db = openControlDatabase(path);
     try {
       db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     } catch {
       /* ignore */
     }
-    cached = { path, db };
+    cachedWriter = { path, db };
   }
-  return cached.db;
+  return cachedWriter.db;
 }
 
 /** One writer at a time, OpenCode-style. Tests must reset the cache before deleting the file. */
@@ -442,6 +461,14 @@ export async function withControlDatabase<T>(
   } finally {
     release();
   }
+}
+
+/** Skip the writer queue. Safe while writes stay synchronous on this connection. */
+export async function withControlDatabaseRead<T>(
+  path: string,
+  fn: (db: DatabaseSync) => T,
+): Promise<T> {
+  return fn(acquireControlDatabase(path));
 }
 
 /**
@@ -505,14 +532,9 @@ export async function ensureControlDatabase(root: string): Promise<ControlMigrat
   });
 }
 
-/** Close the cached connection so tests can delete the state directory. */
+/** Close cached connections so tests can delete the state directory. */
 export function resetControlDatabaseCache(): void {
   readyRoots.clear();
-  if (!cached) return;
-  try {
-    cached.db.close();
-  } catch {
-    /* ignore */
-  }
-  cached = undefined;
+  closeCached(cachedWriter);
+  cachedWriter = undefined;
 }
