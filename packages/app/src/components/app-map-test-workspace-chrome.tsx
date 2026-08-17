@@ -72,7 +72,7 @@ function RailToggle(props: {
 }) {
   const label = () =>
     props.rail === "steps"
-      ? `${props.open ? "Hide" : "Show"} steps`
+      ? `${props.open ? "Hide" : "Show"} coverage`
       : `${props.open ? "Hide" : "Show"} device`;
   return (
     <button

@@ -235,7 +235,7 @@ test("restores after a screen change on the first captured movement", async () =
   });
   assert.equal(result.reason, "screen-changed");
   assert.equal(up, successfulDown);
-  assert.equal(result.restoredStartViewport, true);
+  assert.equal(result.restoredStartViewport, false);
 });
 
 test("keeps a scrollable surface when its identifier-less header shifts but semantics overlap", async () => {
@@ -351,6 +351,7 @@ test("restores all movements after a later screen change", async () => {
       },
       scrollUp: async () => {
         up += 1;
+        page = Math.max(0, page - 1);
       },
       settle: async () => {},
     },
@@ -359,6 +360,7 @@ test("restores all movements after a later screen change", async () => {
   assert.equal(result.reason, "screen-changed");
   assert.equal(result.frames.length, 2);
   assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, true);
 });
 
 test("restores after an ambiguous seam", async () => {
@@ -388,6 +390,7 @@ test("restores after an ambiguous seam", async () => {
   });
   assert.equal(result.reason, "seam-ambiguous");
   assert.equal(up, successfulDown);
+  assert.equal(result.restoredStartViewport, false);
 });
 
 test("restores after capture failure", async () => {
@@ -409,7 +412,7 @@ test("restores after capture failure", async () => {
   });
   assert.equal(result.reason, "scroll-failed");
   assert.equal(up, successfulDown);
-  assert.equal(result.restoredStartViewport, true);
+  assert.equal(result.restoredStartViewport, false);
 });
 
 test("restores after post-scroll settling fails", async () => {
@@ -515,6 +518,7 @@ test("restores every movement when the configured limit is reached", async () =>
       },
       scrollUp: async () => {
         up += 1;
+        page = Math.max(0, page - 1);
       },
       settle: async () => {},
     },
@@ -524,4 +528,21 @@ test("restores every movement when the configured limit is reached", async () =>
   assert.equal(result.frames.length, 3);
   assert.equal(up, successfulDown);
   assert.equal(result.restoredStartViewport, true);
+});
+
+test("does not claim restoration when inverse swipes leave a scrolled viewport", async () => {
+  let page = 0;
+  const result = await captureScrollableSurvey(
+    {
+      capture: async () => captured(image(page * 40), page),
+      scrollDown: async () => {
+        page += 1;
+      },
+      scrollUp: async () => {},
+      settle: async () => {},
+    },
+    { maxScrolls: 1 },
+  );
+  assert.equal(result.reason, "limit-reached");
+  assert.equal(result.restoredStartViewport, false);
 });

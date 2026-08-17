@@ -300,6 +300,24 @@ function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boole
   return meaningfulOverlap && structural.count > 0;
 }
 
+/** Restoration is proven only when the live viewport matches the frozen start
+ * semantically and visually. Inverse swipes that settle are not enough. */
+function startViewportMatches(start: ScrollSurveyCapture, restored: ScrollSurveyCapture): boolean {
+  if (!sameSurveySurface(start.snapshot, restored.snapshot)) return false;
+  const startFingerprint = start.snapshot.screenIdentity?.fingerprint;
+  const restoredFingerprint = restored.snapshot.screenIdentity?.fingerprint;
+  if (startFingerprint && restoredFingerprint && startFingerprint !== restoredFingerprint) {
+    return false;
+  }
+  const seam = verticalScrollSeam(
+    Buffer.from(start.screenshot.base64, "base64"),
+    Buffer.from(restored.screenshot.base64, "base64"),
+    start.snapshot,
+    restored.snapshot,
+  );
+  return Boolean(seam && seam.shiftY === 0);
+}
+
 function bottomSystemChromeTop(frame: ScrollSurveyFrame): number | undefined {
   const labels = new Set<string>();
   let top = frame.screenshot.height;
@@ -695,6 +713,28 @@ export async function captureScrollableSurvey(
       "Relay stopped safely, but could not restore every captured scroll movement.",
       false,
     );
+  }
+  if (owedMovements > 0) {
+    try {
+      const proved = await driver.capture();
+      if (!startViewportMatches(first, proved)) {
+        return result(
+          frames,
+          decision.status,
+          decision.reason,
+          `${decision.message} Starting viewport was not proven after restore.`,
+          false,
+        );
+      }
+    } catch {
+      return result(
+        frames,
+        decision.status,
+        decision.reason,
+        `${decision.message} Starting viewport could not be recaptured after restore.`,
+        false,
+      );
+    }
   }
   return result(frames, decision.status, decision.reason, decision.message, true);
 }

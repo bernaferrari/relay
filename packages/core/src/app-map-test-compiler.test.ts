@@ -977,6 +977,103 @@ test("scenario siblings use a reviewed direct-ancestor Back before per-edge inve
   );
 });
 
+test("scenario siblings consume a named return connection that is not a pure Back key", () => {
+  const map = fixture();
+  map.screens["add-home"] = {
+    ...screen("add-home"),
+    identity: { schemaVersion: 1, fingerprint: "c".repeat(64) },
+  };
+  map.screens.privacy = {
+    ...screen("privacy"),
+    identity: { schemaVersion: 1, fingerprint: "d".repeat(64) },
+  };
+  map.connections["add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "add-home",
+    fromScreenId: "cart",
+    destination: { kind: "screen", screenId: "add-home" },
+    actions: [{ id: "tap-add-home", kind: "tap", target: { label: "Add to Home screen" } }],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "cart",
+        identity: structuredClone(map.screens.cart!.identity!),
+        evidenceIds: ["add-home-back-tree"],
+      },
+    },
+  };
+  map.connections.privacy = {
+    ...map.connections["open-cart"]!,
+    id: "privacy",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "privacy" },
+    actions: [{ id: "tap-privacy", kind: "tap", target: { label: "Privacy" } }],
+    return: undefined,
+  };
+  map.connections["return-from-add-home"] = {
+    ...map.connections["open-cart"]!,
+    id: "return-from-add-home",
+    fromScreenId: "add-home",
+    destination: { kind: "screen", screenId: "home" },
+    actions: [{ id: "tap-cancel", kind: "tap", target: { label: "Cancel" } }],
+    return: {
+      kind: "back",
+      expectedDestination: {
+        screenId: "add-home",
+        identity: structuredClone(map.screens["add-home"]!.identity!),
+        evidenceIds: ["add-home-cancel-tree"],
+      },
+    },
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "named-return-tap",
+    name: "Named return tap",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "add-home",
+        kind: "instruction",
+        intent: "Open Add to Home screen",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-cart", "add-home"],
+        },
+      },
+      {
+        id: "privacy",
+        kind: "instruction",
+        intent: "Open Privacy",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["privacy"] },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+
+  const compiled = compileAppMapTest(map, work);
+  const sibling = Object.values(compiled.graph).find(
+    (recipe) => recipe.title === "Checkout · Open Privacy",
+  )!;
+  assert.deepEqual(sibling.steps[0], {
+    kind: "module",
+    id: "relay-return-edge-return-from-add-home",
+    recipeId: `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`,
+  });
+  assert.equal(
+    compiled.graph[
+      `app-map:${map.id}:connection:return-from-add-home:r${map.revision}`
+    ]?.steps.some((step) => step.kind === "tap" && step.target.label === "Cancel"),
+    true,
+  );
+  assert.equal(
+    sibling.steps.some((step) => step.kind === "key" && step.key === "back"),
+    false,
+  );
+});
+
 test("scenario instruction paths carry an exact contiguous destination checkpoint", () => {
   const map = fixture();
   map.screens.first = {

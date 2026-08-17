@@ -148,7 +148,7 @@ export function AppMapTestWorkspace(props: {
     }
   }
 
-  /** `/` reaches the step search even when the Steps rail is a strip. */
+  /** `/` reaches the step search even when the Coverage rail is a strip. */
   function openSearch(): void {
     if (!railOpen().steps) setRailOverride((current) => ({ ...current, steps: true }));
     queueMicrotask(() => document.getElementById("test-step-search")?.focus());
@@ -347,6 +347,9 @@ export function AppMapTestWorkspace(props: {
             error={testRun.error()}
             blockedActionLabel={runBlockerActionLabel()}
             onResolveBlocked={runBlockerActionLabel() ? resolveRunBlocker : undefined}
+            freshEvidenceAvailable={testRun.freshEvidenceAvailable()}
+            freshEvidence={testRun.freshEvidence()}
+            onFreshEvidenceChange={testRun.setFreshEvidence}
             onRun={() => void testRun.run()}
             onCancel={() => void testRun.cancel()}
             onOpenResult={() => {
@@ -367,7 +370,9 @@ export function AppMapTestWorkspace(props: {
         >
           <Show
             when={railView().steps === "docked"}
-            fallback={<RailStrip rail="steps" label="Steps" onOpen={() => toggleRail("steps")} />}
+            fallback={
+              <RailStrip rail="steps" label="Coverage" onOpen={() => toggleRail("steps")} />
+            }
           >
             <div class="flex min-h-0 flex-col border-r border-border-weak-base">
               <StepsRail />

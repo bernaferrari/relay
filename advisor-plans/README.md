@@ -6,8 +6,8 @@ Execute in order unless the dependency table says otherwise.
 
 ## Execution order and status
 
-| Plan | Title                                                      | Priority | Effort | Depends on | Status |
-| ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| Plan | Title                                                      | Priority | Effort | Depends on | Status  |
+| ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ------- |
 | 001  | Coalesce destination accessibility and screenshot evidence | P1       | M      | —          | BLOCKED |
 | 002  | Make failed-check repair evidence exact and readable       | P1       | M      | —          | DONE    |
 

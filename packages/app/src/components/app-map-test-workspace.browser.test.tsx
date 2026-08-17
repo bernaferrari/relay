@@ -639,11 +639,13 @@ test("a narrow workspace keeps the device on the right edge and never below the 
   root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
   await settle();
 
-  // Opening Steps here overlays the editor on the left edge; it does not push the
+  // Opening Coverage here overlays the editor on the left edge; it does not push the
   // device anywhere, so the grid still has exactly three columns.
   root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='steps']")!.click();
   await settle();
   expect(tracks()).toHaveLength(3);
+  expect(root.querySelector("#test-coverage-tab")?.getAttribute("aria-selected")).toBe("true");
+  expect(root.querySelector("#test-problems-tab")).not.toBeNull();
 
   // Escape leaves the floating rail and hands focus back to the control that
   // opened it, then `/` brings the rail and its search back.

@@ -166,6 +166,16 @@ export function scenarioDiagnostics(map: AppMap, test: AppMapScenarioTest): Scen
   return diagnostics;
 }
 
+export function fullSurfaceScreenIds(test: AppMapScenarioTest): string[] {
+  return [
+    ...new Set(
+      (test.surfaceBindings ?? [])
+        .filter((binding) => binding.captureMode === "full-surface")
+        .map((binding) => binding.screenId),
+    ),
+  ];
+}
+
 export function testKindDescription(test: AppMapTest): string {
   const count = scenarioStepCount(test.steps);
   return `${count} ${count === 1 ? "step" : "steps"}`;

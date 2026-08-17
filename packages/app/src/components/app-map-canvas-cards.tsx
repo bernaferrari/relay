@@ -1,10 +1,9 @@
-import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { CanvasNote } from "@relay/protocol";
 import { IconButton } from "@relay/ui/icon-button";
 import type { MapTreeNode } from "../lib/app-map-tree";
 import { cn } from "../lib/cn";
 import type { AppMapRunPresentationState } from "../lib/app-map-run-projection";
-import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import type { CanvasInteractionAnchor, ScreenCardGeometry } from "../lib/app-map-canvas-layout";
 import {
   screenCardActionsVisible,
@@ -67,149 +66,6 @@ export function CanvasNoteCard(props: {
         onInput={(event) => props.onText(event.currentTarget.value.slice(0, 480))}
         onBlur={() => props.onCommit(textAtFocus)}
       />
-    </article>
-  );
-}
-
-export function CanvasCombineCard(props: {
-  id: string;
-  name: string;
-  position: { x: number; y: number };
-  startsAt?: { screenId: string; title: string; position: { x: number; y: number } };
-  modifiers: Array<{ id: string; name: string; values: string[] }>;
-  tests: string[];
-  cellCount: number;
-  run?: {
-    jobId: string;
-    complete: number;
-    total: number;
-    passed: number;
-    problems: number;
-    active: number;
-  };
-  onOpen: (section: CanvasCombineSection) => void;
-  onOpenResults?: (jobId: string) => void;
-}) {
-  const open = (event: MouseEvent, section: CanvasCombineSection) => {
-    event.stopPropagation();
-    props.onOpen(section);
-  };
-  const progress = () =>
-    props.run?.total ? Math.min(100, (props.run.complete / props.run.total) * 100) : 0;
-  const resultLabel = () => {
-    const run = props.run;
-    if (!run) return `${props.cellCount} ${props.cellCount === 1 ? "run" : "runs"}`;
-    if (run.active) return `${run.complete} of ${run.total} complete`;
-    if (run.problems) return `${run.problems} need attention`;
-    return `${run.passed} passed`;
-  };
-  return (
-    <article
-      data-app-map-combine-id={props.id}
-      class="group/matrix absolute z-[8] w-[300px] overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--border-strong-base)_64%,transparent)] bg-[var(--surface-raised-stronger-non-alpha)] text-left shadow-[var(--map-elevation-control)] transition-[border-color,box-shadow] duration-150 hover:border-[var(--border-strong-base)] hover:shadow-[0_10px_28px_rgb(0_0_0/14%)]"
-      style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
-      aria-label={`Edit run matrix ${props.name}`}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <header class="border-b border-[color-mix(in_srgb,var(--border-weak-base)_82%,transparent)]">
-        <button
-          type="button"
-          class="flex min-h-11 w-full items-center gap-2 px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
-          onClick={(event) => open(event, "plan")}
-        >
-          <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--surface-base)] text-[var(--text-base)]">
-            <Icon name="grid" size={12} />
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block text-micro font-medium text-[var(--text-weak)]">Run matrix</span>
-            <strong class="block truncate text-caption font-semibold text-[var(--text-strong)]">
-              {props.name}
-            </strong>
-          </span>
-          <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weaker)]" />
-        </button>
-      </header>
-      <div class="grid grid-cols-[1fr_20px_1fr] items-stretch gap-1.5 px-2 py-2">
-        <button
-          type="button"
-          class="min-h-16 min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-          aria-label="Edit matrix modifiers"
-          onClick={(event) => open(event, "modifiers")}
-        >
-          <span class="block text-micro font-medium text-[var(--text-weak)]">
-            {props.modifiers.length === 1 ? "Modifier" : "Modifiers"}
-          </span>
-          <For each={props.modifiers}>
-            {(modifier) => (
-              <div class="mt-1 min-w-0">
-                <strong class="block truncate text-caption font-medium text-[var(--text-strong)]">
-                  {modifier.name}
-                </strong>
-                <span class="block truncate text-micro text-[var(--text-weak)]">
-                  {modifier.values.join(" · ")}
-                </span>
-              </div>
-            )}
-          </For>
-        </button>
-        <span
-          class="grid place-items-center text-body text-[var(--text-weaker)]"
-          aria-hidden="true"
-        >
-          ×
-        </span>
-        <button
-          type="button"
-          class="min-h-16 min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
-          aria-label="Edit matrix tests"
-          onClick={(event) => open(event, "tests")}
-        >
-          <span class="block text-micro font-medium text-[var(--text-weak)]">
-            {props.tests.length === 1 ? "Test" : "Tests"}
-          </span>
-          <p class="m-0 mt-1 line-clamp-3 text-caption/[1.35] font-medium text-[var(--text-strong)]">
-            {props.tests.join(" · ")}
-          </p>
-        </button>
-      </div>
-      <button
-        type="button"
-        class="relative flex min-h-9 w-full items-center justify-between gap-2 overflow-hidden border-t border-[var(--border-weak-base)] px-3 text-left hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--border-focus)]"
-        onClick={(event) => {
-          event.stopPropagation();
-          if (props.run && props.onOpenResults) props.onOpenResults(props.run.jobId);
-          else props.onOpen("plan");
-        }}
-      >
-        <Show when={props.run?.active}>
-          <span
-            class="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[var(--text-interactive-base)] transition-transform duration-150 motion-reduce:transition-none"
-            style={{ transform: `scaleX(${progress() / 100})` }}
-            aria-hidden="true"
-          />
-        </Show>
-        <span class="min-w-0 truncate text-micro text-[var(--text-weak)]">
-          {props.run?.active
-            ? "Running now"
-            : props.run
-              ? "View results"
-              : props.startsAt
-                ? `Starts at ${props.startsAt.title}`
-                : "Reusable tests"}
-        </span>
-        <span
-          class={cn(
-            "shrink-0 text-micro font-medium tabular-nums",
-            props.run?.problems
-              ? "text-[var(--icon-critical-base)]"
-              : props.run && !props.run.active
-                ? "text-[var(--icon-success-base)]"
-                : "text-[var(--text-base)]",
-          )}
-        >
-          {resultLabel()}
-        </span>
-      </button>
     </article>
   );
 }

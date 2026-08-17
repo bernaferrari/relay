@@ -14,6 +14,9 @@ export type TestRunControlProps = {
   onRun: () => void;
   onCancel: () => void;
   onOpenResult: () => void;
+  freshEvidenceAvailable?: boolean;
+  freshEvidence?: boolean;
+  onFreshEvidenceChange?: (value: boolean) => void;
 };
 
 const activeStatuses = new Set<JobInfo["status"]>(["queued", "running", "paused"]);
@@ -64,6 +67,18 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   // the status strip the old screen stacked under it.
   return (
     <div class="flex min-w-0 items-center gap-2">
+      {props.freshEvidenceAvailable ? (
+        <label class="flex min-h-9 shrink-0 items-center gap-1.5 text-caption text-text-base">
+          <input
+            type="checkbox"
+            class="size-3.5 accent-icon-interactive-base"
+            checked={Boolean(props.freshEvidence)}
+            disabled={busy() || active()}
+            onChange={(event) => props.onFreshEvidenceChange?.(event.currentTarget.checked)}
+          />
+          Capture fresh evidence
+        </label>
+      ) : null}
       {status() ? (
         <span
           id="test-run-control-status"

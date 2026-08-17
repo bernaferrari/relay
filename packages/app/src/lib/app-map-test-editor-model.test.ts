@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTestStep } from "@relay/protocol";
 import {
+  fullSurfaceScreenIds,
   createScenarioStep,
   createScenarioTest,
   duplicateScenarioStep,
@@ -136,4 +137,35 @@ test("tree insertion and duplication renew every id in a nested subtree", () => 
       ["copy-child", "then", 2],
     ],
   );
+});
+
+test("full-surface bindings expose unique screen ids for fresh-evidence runs", () => {
+  const work = createScenarioTest(map, "Coverage");
+  work.surfaceBindings = [
+    {
+      screenId: "voice",
+      variantId: "voice-en",
+      captureMode: "full-surface",
+      reason: "Voice list is stable.",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+    {
+      screenId: "voice",
+      variantId: "voice-pt",
+      captureMode: "full-surface",
+      reason: "Voice list is stable.",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+    {
+      screenId: "home",
+      variantId: "home-en",
+      captureMode: "viewport",
+      reason: "Home stays a viewport.",
+      compare: "visual-and-semantic",
+      repair: "propose-recapture",
+    },
+  ];
+  assert.deepEqual(fullSurfaceScreenIds(work), ["voice"]);
 });

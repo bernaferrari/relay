@@ -2,6 +2,7 @@ import { createMemo, createSignal, type Accessor } from "solid-js";
 import type { AppMap, AppMapCompiledTest, AppMapScenarioTest } from "@relay/protocol";
 import type { DeviceInfo, JobInfo } from "./api-types";
 import { isActiveTestRun, type TestRunLaunchState } from "../components/app-map-test-run-control";
+import { fullSurfaceScreenIds } from "./app-map-test-editor-model";
 
 type SaveState = "saved" | "saving" | "error";
 
@@ -29,6 +30,7 @@ export function createAppMapTestRun(options: {
     target:
       | { kind: "browser"; platform: "browser"; targetId: string }
       | { kind: "device"; platform: "android" | "ios"; targetId: string };
+    surfaceCapture?: { forceRecaptureScreenIds: string[] };
   }) => Promise<{
     plan: AppMapCompiledTest;
     planIdentity: { rootRecipeId: string };
@@ -41,6 +43,11 @@ export function createAppMapTestRun(options: {
   const [launchState, setLaunchState] = createSignal<TestRunLaunchState>("idle");
   const [error, setError] = createSignal("");
   const [mismatched, setMismatched] = createSignal(false);
+  const [freshEvidence, setFreshEvidence] = createSignal(false);
+  const fullSurfaceIds = createMemo(() => {
+    const test = options.draft();
+    return test ? fullSurfaceScreenIds(test) : [];
+  });
   const job = createMemo(() => {
     const id = jobId();
     return id ? options.jobs().find((candidate) => candidate.id === id) : undefined;
@@ -87,6 +94,9 @@ export function createAppMapTestRun(options: {
         testId: test.id,
         expectedRevision: map.revision,
         target,
+        ...(freshEvidence() && fullSurfaceIds().length
+          ? { surfaceCapture: { forceRecaptureScreenIds: fullSurfaceIds() } }
+          : {}),
       });
       setPlan(result.plan);
       setJobId(result.job.id);
@@ -120,6 +130,9 @@ export function createAppMapTestRun(options: {
     launchState,
     error,
     blockedReason,
+    freshEvidence,
+    setFreshEvidence,
+    freshEvidenceAvailable: () => fullSurfaceIds().length > 0,
     run,
     cancel,
     /** A canonical reload invalidates the compiled plan but keeps run history. */

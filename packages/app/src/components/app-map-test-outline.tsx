@@ -18,7 +18,7 @@ import { Icon } from "./icon";
 import { StepKindMenu, StepRow, type StepDropTarget } from "./app-map-test-step-row";
 
 /**
- * The Steps rail. It owns browsing: find, read, select, order, add, remove.
+ * The Coverage rail. It owns browsing: find, read, select, order, add, remove.
  * Editing a step happens in the centre column, and evidence for a step happens
  * in the device rail, so this rail never has to explain a binding.
  */
@@ -42,9 +42,11 @@ export function AppMapTestOutline(props: {
   onClose?: () => void;
 }) {
   const [query, setQuery] = createSignal("");
+  const [pane, setPane] = createSignal<"coverage" | "problems">("coverage");
   const [dragged, setDragged] = createSignal<ScenarioStepOutlineItem>();
   const [dropTarget, setDropTarget] = createSignal<StepDropTarget>();
   const outline = createMemo(() => flattenScenarioSteps(props.test.steps));
+  const problems = createMemo(() => props.diagnostics);
   const visible = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
     if (!needle) return outline();
@@ -114,32 +116,69 @@ export function AppMapTestOutline(props: {
   return (
     <div class="flex min-h-0 flex-col bg-background-base">
       <div class="flex min-h-9 shrink-0 items-center gap-1 border-b border-border-weak-base px-2 py-1">
-        <label class="relative min-w-0 flex-1" for="test-step-search">
-          <span class="sr-only">Find a step</span>
-          <Icon
-            name="search"
-            size={13}
-            class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-weaker"
-          />
-          <input
-            id="test-step-search"
-            type="search"
-            class={cn(testEditorInput, "min-h-8 border-transparent bg-transparent pl-7")}
-            value={query()}
-            placeholder={`Find in ${outline().length} ${outline().length === 1 ? "step" : "steps"}…`}
-            onInput={(event) => setQuery(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape" || !query()) return;
-              event.stopPropagation();
-              setQuery("");
-            }}
-          />
-        </label>
+        <div
+          class="flex shrink-0 rounded-md bg-surface-base-active p-0.5"
+          role="tablist"
+          aria-label="Test coverage"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="test-coverage-tab"
+            aria-selected={pane() === "coverage"}
+            class={cn(
+              "min-h-7 rounded px-2 text-micro font-medium",
+              pane() === "coverage" ? "bg-background-base text-text-strong" : "text-text-weak",
+            )}
+            onClick={() => setPane("coverage")}
+          >
+            Coverage
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="test-problems-tab"
+            aria-selected={pane() === "problems"}
+            class={cn(
+              "min-h-7 rounded px-2 text-micro font-medium",
+              pane() === "problems" ? "bg-background-base text-text-strong" : "text-text-weak",
+            )}
+            onClick={() => setPane("problems")}
+          >
+            Problems
+            <Show when={problems().length}>
+              <span class="ml-1 tabular-nums text-text-warning-base">{problems().length}</span>
+            </Show>
+          </button>
+        </div>
+        <Show when={pane() === "coverage"}>
+          <label class="relative min-w-0 flex-1" for="test-step-search">
+            <span class="sr-only">Find a step</span>
+            <Icon
+              name="search"
+              size={13}
+              class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-text-weaker"
+            />
+            <input
+              id="test-step-search"
+              type="search"
+              class={cn(testEditorInput, "min-h-8 border-transparent bg-transparent pl-7")}
+              value={query()}
+              placeholder={`Find in ${outline().length} ${outline().length === 1 ? "step" : "steps"}…`}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || !query()) return;
+                event.stopPropagation();
+                setQuery("");
+              }}
+            />
+          </label>
+        </Show>
         <Show when={props.onClose}>
           <button
             type="button"
-            class={cn(productIconButton, "size-8")}
-            aria-label="Hide steps"
+            class={cn(productIconButton, "ml-auto size-8")}
+            aria-label="Hide coverage"
             onClick={() => props.onClose?.()}
           >
             <Icon name="chevron-left" size={15} />
@@ -147,56 +186,107 @@ export function AppMapTestOutline(props: {
         </Show>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-        <ol class="m-0 grid list-none gap-1 p-0" aria-label="Test steps">
-          <For each={visible()}>
-            {(item) => (
-              <StepRow
-                item={item}
-                map={props.map}
-                selected={props.selectedStepId === item.step.id}
-                issue={props.diagnostics.find((diagnostic) => diagnostic.stepId === item.step.id)}
-                dropTarget={dropTarget()}
-                dragging={dragged()?.step.id === item.step.id}
-                onSelect={props.onSelect}
-                onOpen={props.onOpen}
-                onNavigate={navigate}
-                onAddChild={props.onAddChild}
-                onMove={props.onMove}
-                onDuplicate={props.onDuplicate}
-                onDelete={props.onDelete}
-                onDragStart={setDragged}
-                onDragOver={acceptDrop}
-                onDragEnd={() => {
-                  setDragged();
-                  setDropTarget();
-                }}
-                onDrop={commitDrop}
-              />
-            )}
-          </For>
-        </ol>
-        <Show when={query() && !visible().length}>
-          <div class="px-3 py-8 text-center">
-            <p class="m-0 text-caption font-medium text-text-strong">No matching steps</p>
-            <p class="mt-1 text-caption/[1.45] text-text-weak">
-              Search an intent, a step type, or a mapped path name.
-            </p>
-          </div>
-        </Show>
-        <Show when={!props.test.steps.length}>
-          <div class="px-3 py-8 text-center">
-            <p class="m-0 text-caption font-medium text-text-strong">Add the first step</p>
-            <p class="mt-1 text-caption/[1.45] text-text-weak">
-              New steps are not connected yet, so nothing vague can run.
-            </p>
-          </div>
-        </Show>
-      </div>
+      <Show when={pane() === "coverage"}>
+        <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+          <ol class="m-0 grid list-none gap-1 p-0" aria-label="Test steps">
+            <For each={visible()}>
+              {(item) => (
+                <StepRow
+                  item={item}
+                  map={props.map}
+                  selected={props.selectedStepId === item.step.id}
+                  issue={props.diagnostics.find((diagnostic) => diagnostic.stepId === item.step.id)}
+                  dropTarget={dropTarget()}
+                  dragging={dragged()?.step.id === item.step.id}
+                  onSelect={props.onSelect}
+                  onOpen={props.onOpen}
+                  onNavigate={navigate}
+                  onAddChild={props.onAddChild}
+                  onMove={props.onMove}
+                  onDuplicate={props.onDuplicate}
+                  onDelete={props.onDelete}
+                  onDragStart={setDragged}
+                  onDragOver={acceptDrop}
+                  onDragEnd={() => {
+                    setDragged();
+                    setDropTarget();
+                  }}
+                  onDrop={commitDrop}
+                />
+              )}
+            </For>
+          </ol>
+          <Show when={query() && !visible().length}>
+            <div class="px-3 py-8 text-center">
+              <p class="m-0 text-caption font-medium text-text-strong">No matching steps</p>
+              <p class="mt-1 text-caption/[1.45] text-text-weak">
+                Search an intent, a step type, or a mapped path name.
+              </p>
+            </div>
+          </Show>
+          <Show when={!props.test.steps.length}>
+            <div class="px-3 py-8 text-center">
+              <p class="m-0 text-caption font-medium text-text-strong">Add the first step</p>
+              <p class="mt-1 text-caption/[1.45] text-text-weak">
+                New steps are not connected yet, so nothing vague can run.
+              </p>
+            </div>
+          </Show>
+        </div>
+      </Show>
 
-      <div class="shrink-0 border-t border-border-weak-base p-2">
-        <StepKindMenu label="Add step" variant="primary" onPick={props.onAddRoot} />
-      </div>
+      <Show when={pane() === "problems"}>
+        <div
+          class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2"
+          role="tabpanel"
+          aria-labelledby="test-problems-tab"
+        >
+          <ul class="m-0 grid list-none gap-1 p-0" aria-label="Authoring problems">
+            <For
+              each={problems()}
+              fallback={
+                <li class="px-3 py-8 text-center">
+                  <p class="m-0 text-caption font-medium text-text-strong">No problems</p>
+                  <p class="mt-1 text-caption/[1.45] text-text-weak">
+                    Coverage is ready to run on the selected target.
+                  </p>
+                </li>
+              }
+            >
+              {(item) => (
+                <li>
+                  <button
+                    type="button"
+                    class={cn(
+                      "flex min-h-11 w-full items-start gap-2 rounded-md px-2.5 py-2 text-left",
+                      "hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus",
+                      item.stepId &&
+                        item.stepId === props.selectedStepId &&
+                        "bg-surface-base-active",
+                    )}
+                    onClick={() => item.stepId && props.onOpen(item.stepId)}
+                  >
+                    <span
+                      class={cn(
+                        "mt-0.5 size-1.5 shrink-0 rounded-full",
+                        item.tone === "blocker" ? "bg-icon-critical-base" : "bg-icon-warning-base",
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span class="min-w-0 text-caption/[1.4] text-text-base">{item.message}</span>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </Show>
+
+      <Show when={pane() === "coverage"}>
+        <div class="shrink-0 border-t border-border-weak-base p-2">
+          <StepKindMenu label="Add step" variant="primary" onPick={props.onAddRoot} />
+        </div>
+      </Show>
     </div>
   );
 }

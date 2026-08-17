@@ -47,6 +47,10 @@ type ReviewedReturnPlan =
       currentScreenId?: string;
     };
 
+function isReviewedInverseEdge(connection: Connection): boolean {
+  return isReviewedBackEdge(connection) || connection.return?.kind === "back";
+}
+
 function isReviewedBackEdge(connection: Connection): boolean {
   let backCount = 0;
   for (const action of connection.actions) {
@@ -104,7 +108,7 @@ function explicitReviewedAncestorInverse(
       candidate.fromScreenId === currentScreenId &&
       candidate.destination.kind === "screen" &&
       pathScreens.slice(targetIndex, currentIndex).includes(candidate.destination.screenId) &&
-      isReviewedBackEdge(candidate),
+      isReviewedInverseEdge(candidate),
   );
   if (candidates.length === 0) return { status: "absent" };
   if (candidates.length !== 1) return { status: "ambiguous" };

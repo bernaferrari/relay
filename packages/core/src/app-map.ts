@@ -54,6 +54,12 @@ export {
 export { serializeAppMap } from "./app-map/serialization.js";
 export { proposalFromDiscovery } from "./app-map/observation-proposal.js";
 export {
+  proposeNavigationFromObservation,
+  type NavigationObservationAction,
+  type NavigationObservationResult,
+  type ProposedNavigationEdge,
+} from "./app-map/navigation-observation.js";
+export {
   AppMapTestStepOperationError,
   addScenarioTestStep,
   applyScenarioTestStepEdits,

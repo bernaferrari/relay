@@ -403,6 +403,42 @@ export async function runCaptureSurfaceStep(
       cache,
     },
   });
+  if (!survey.restoredStartViewport) {
+    const capturedAt = now();
+    job.artifacts.push({
+      kind: "campaign-recovery-intervention",
+      capturedAt,
+      data: {
+        schemaVersion: 1,
+        status: "intervention-required",
+        checkId: step.screenId,
+        checkTitle: step.screenTitle,
+        transitionId: `surface:${step.surfaceId}`,
+        reason: "viewport-restore-failed",
+        recovery: {
+          action: "review-viewport-restore",
+          implicitResumeAllowed: false,
+          choices: ["fix-current-state", "teach-semantic-repair", "defer"],
+        },
+        screenshot: { caption: `surface-restore:${step.screenId}` },
+      },
+    });
+    job.artifacts.push({
+      kind: "human-intervention-requested",
+      capturedAt,
+      data: {
+        reason: "review",
+        message: `Full-surface restore was not proven for ${step.screenTitle}.`,
+        resumeLabel: "Review restore",
+        interventionKind: "viewport-restore",
+        checkId: step.screenId,
+        transitionId: `surface:${step.surfaceId}`,
+      },
+    });
+    throw new Error(
+      `Full-surface restore was not proven for ${step.screenTitle}: ${survey.message}`,
+    );
+  }
   ctx.log(
     `surface: ${step.screenTitle} · ${surface.viewports.length} viewport(s) · ${matches ? "matches baseline" : "repair proposed"}`,
   );
